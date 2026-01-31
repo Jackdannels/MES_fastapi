@@ -642,10 +642,14 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
   const manualTaskSelect = manualScheduleForm?.querySelector('select[name="task_code"]');
   const manualLabSelect = manualScheduleForm?.querySelector('select[name="device"]');
   const manualSlotSelect = manualScheduleForm?.querySelector('[data-time-slot]');
+  const manualSlotField = manualSlotSelect?.closest(".form-field");
   const manualDateInput = manualScheduleForm?.querySelector('input[name="schedule_date"]');
   const manualCustomStart = manualScheduleForm?.querySelector('input[name="custom_start"]');
   const manualCustomEnd = manualScheduleForm?.querySelector('input[name="custom_end"]');
   const manualCustomFields = manualScheduleForm?.querySelectorAll("[data-custom-time]") || [];
+  const retentionNowField = manualScheduleForm?.querySelector("[data-retention-now]");
+  const retentionNowValue = retentionNowField?.querySelector("[data-retention-now-value]");
+  let retentionNowTimer = null;
 
   const getCurrentSlotKey = () => {
     const now = new Date();
@@ -690,6 +694,34 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     }
   };
 
+  const updateRetentionNow = () => {
+    if (!retentionNowValue) {
+      return;
+    }
+    retentionNowValue.textContent = formatDateTime(new Date());
+  };
+
+  const setRetentionTimeVisibility = (isRetention) => {
+    if (manualSlotField) {
+      manualSlotField.classList.toggle("is-hidden", isRetention);
+    }
+    manualCustomFields.forEach((field) => {
+      field.classList.toggle("is-hidden", isRetention || manualSlotSelect?.value !== "custom");
+    });
+    if (retentionNowField) {
+      retentionNowField.classList.toggle("is-hidden", !isRetention);
+    }
+    if (isRetention) {
+      updateRetentionNow();
+      if (!retentionNowTimer) {
+        retentionNowTimer = window.setInterval(updateRetentionNow, 1000);
+      }
+    } else if (retentionNowTimer) {
+      window.clearInterval(retentionNowTimer);
+      retentionNowTimer = null;
+    }
+  };
+
   const syncManualRetentionLock = () => {
     if (!manualLabSelect || !labels.retentionLocation) {
       return;
@@ -699,6 +731,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
       setManualScheduleToNow();
     }
     setManualScheduleLocked(isRetention);
+    setRetentionTimeVisibility(isRetention);
   };
 
   // resetManualScheduleForm：重置手动排程表单
@@ -727,9 +760,13 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
       manualCustomEnd.value = "";
     }
     manualCustomFields.forEach((field) => field.classList.add("is-hidden"));
+    if (retentionNowField) {
+      retentionNowField.classList.add("is-hidden");
+    }
     clearConflictHighlights();
     setWarning(scheduleWarning, "");
     setManualScheduleLocked(false);
+    setRetentionTimeVisibility(false);
   };
 
   if (manualLabSelect && manualLabSelect.dataset.bound !== "1") {

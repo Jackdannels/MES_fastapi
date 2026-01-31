@@ -305,6 +305,20 @@ body {
   resize: vertical; /* 允许纵向缩放 */
 }
 
+/* 暂存间当前时间展示 */
+.form-field .retention-now {
+  width: 100%; /* 占满宽度 */
+  padding: 10px 12px; /* 内边距 */
+  border-radius: 10px; /* 圆角 */
+  border: 1px solid rgba(56, 189, 248, 0.5); /* 蓝色边框 */
+  background: rgba(56, 189, 248, 0.22); /* 蓝色背景 */
+  color: var(--text); /* 文字色 */
+  font-size: 13px; /* 字号 */
+  display: flex; /* 对齐 */
+  align-items: center; /* 垂直居中 */
+  min-height: 38px; /* 与输入框高度一致 */
+}
+
 /* 表单提示文字 */
 .form-field .helper {
   margin-top: 6px; /* 上间距 */

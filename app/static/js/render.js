@@ -307,11 +307,15 @@ function renderTasksPage(labels) {
   const tasks = loadStore(STORAGE_KEYS.tasks, []);
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
-  const unscheduledCount = tasks.filter((t) => t.status === labels.statusWaiting).length;
+  const waitingCount = tasks.filter(
+    (t) => t.status === labels.statusWaiting || t.status === labels.statusAccepted
+  ).length;
+  const retentionCount = tasks.filter((t) => t.status === labels.statusRetention).length;
+  const unscheduledCount = waitingCount + retentionCount;
 
   setText("task-external-count", externalCount);
   setText("task-internal-count", internalCount);
-  setText("task-unscheduled-count", unscheduledCount);
+  setText("task-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
 
   tbody.innerHTML = "";
   tasks.forEach((task) => {

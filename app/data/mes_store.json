@@ -1,401 +1,266 @@
 {
   "mes.tasks": [
     {
-      "id": "task-1769861352985-884",
-      "code": "SZH-2026-001",
-      "name": "四综合试验",
+      "id": "task-1769866000572-456",
+      "code": "MJ-2026-004",
+      "name": "霉菌试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 5,
+      "sample_count": 8,
       "sample_type": "",
-      "test_type": "四综合试验",
-      "required_device": "四综合试验",
-      "due_at": "2026-02-01 07:09",
-      "arrival_at": "2026-02-01 01:09",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-01 13:26",
+      "arrival_at": "2026-01-31 22:26",
       "status": "已受理",
-      "created_at": "2026-01-31T12:09:12.985Z"
+      "created_at": "2026-01-31T13:26:40.572Z"
     },
     {
-      "id": "task-1769861352724-976",
+      "id": "task-1769866000304-493",
+      "code": "MJ-2026-003",
+      "name": "霉菌试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 6,
+      "sample_type": "",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-01 05:26",
+      "arrival_at": "2026-01-31 22:26",
+      "status": "已排程",
+      "created_at": "2026-01-31T13:26:40.304Z"
+    },
+    {
+      "id": "task-1769865999694-633",
+      "code": "ZD-2026-004",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 7,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-02-01 11:26",
+      "arrival_at": "2026-01-31 22:26",
+      "status": "已受理",
+      "created_at": "2026-01-31T13:26:39.694Z"
+    },
+    {
+      "id": "task-1769864976594-738",
       "code": "ZD-2026-003",
       "name": "振动试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 6,
+      "sample_count": 7,
       "sample_type": "",
       "test_type": "振动试验",
       "required_device": "振动试验",
-      "due_at": "2026-02-01 08:09",
-      "arrival_at": "2026-01-31 21:09",
-      "status": "暂存间排放",
-      "created_at": "2026-01-31T12:09:12.724Z"
-    },
-    {
-      "id": "task-1769861352595-511",
-      "code": "ZD-2026-002",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-01 13:09",
-      "arrival_at": "2026-02-01 00:09",
-      "status": "暂存间排放",
-      "created_at": "2026-01-31T12:09:12.595Z"
-    },
-    {
-      "id": "task-1769861352452-625",
-      "code": "ZD-2026-001",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 3,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-01 09:09",
-      "arrival_at": "2026-01-31 22:09",
+      "due_at": "2026-02-01 12:09",
+      "arrival_at": "2026-02-01 01:09",
       "status": "已受理",
-      "created_at": "2026-01-31T12:09:12.452Z"
+      "created_at": "2026-01-31T13:09:36.594Z"
     },
     {
-      "id": "task-1769861352302-869",
+      "id": "task-1769864976445-095",
       "code": "YW-2026-001",
       "name": "盐雾试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 8,
+      "sample_count": 10,
       "sample_type": "",
       "test_type": "盐雾试验",
       "required_device": "盐雾试验",
-      "due_at": "2026-02-01 14:09",
-      "arrival_at": "2026-02-01 00:09",
-      "status": "已受理",
-      "created_at": "2026-01-31T12:09:12.302Z"
+      "due_at": "2026-02-01 13:09",
+      "arrival_at": "2026-01-31 23:09",
+      "status": "已排程",
+      "created_at": "2026-01-31T13:09:36.445Z"
     },
     {
-      "id": "task-1769861351973-947",
+      "id": "task-1769864976174-525",
+      "code": "MJ-2026-002",
+      "name": "霉菌试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 10,
+      "sample_type": "",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-01 14:09",
+      "arrival_at": "2026-02-01 03:09",
+      "status": "已排程",
+      "created_at": "2026-01-31T13:09:36.174Z"
+    },
+    {
+      "id": "task-1769864975859-562",
+      "code": "ZD-2026-002",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 5,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-02-01 08:09",
+      "arrival_at": "2026-02-01 02:09",
+      "status": "已受理",
+      "created_at": "2026-01-31T13:09:35.859Z"
+    },
+    {
+      "id": "task-1769864975468-810",
+      "code": "ZD-2026-001",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-02-01 08:09",
+      "arrival_at": "2026-01-31 23:09",
+      "status": "已排程",
+      "created_at": "2026-01-31T13:09:35.468Z"
+    },
+    {
+      "id": "task-1769864975123-961",
+      "code": "MJ-2026-001",
+      "name": "霉菌试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 4,
+      "sample_type": "",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-01 16:09",
+      "arrival_at": "2026-02-01 01:09",
+      "status": "已排程",
+      "created_at": "2026-01-31T13:09:35.123Z"
+    },
+    {
+      "id": "task-1769864974134-648",
       "code": "WDC-2026-001",
       "name": "温度冲击试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 8,
+      "sample_count": 5,
       "sample_type": "",
       "test_type": "温度冲击试验",
       "required_device": "温度冲击试验",
-      "due_at": "2026-02-01 17:09",
+      "due_at": "2026-02-01 11:09",
       "arrival_at": "2026-02-01 02:09",
       "status": "已受理",
-      "created_at": "2026-01-31T12:09:11.973Z"
-    },
-    {
-      "id": "task-1769861351612-380",
-      "code": "CJ-2026-001",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-01 14:09",
-      "arrival_at": "2026-01-31 23:09",
-      "status": "已受理",
-      "created_at": "2026-01-31T12:09:11.612Z"
+      "created_at": "2026-01-31T13:09:34.134Z"
     }
   ],
   "mes.schedules": [
     {
-      "id": "schedule-1769863687040-428",
-      "task_code": "ZD-2026-003",
+      "id": "schedule-1769864989366-590",
+      "task_code": "YW-2026-001",
       "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-01-31T12:48:07.040Z",
-      "end_at": "2026-01-31T12:48:07.040Z",
+      "start_at": "2026-01-31T13:09:49.366Z",
+      "end_at": "2026-01-31T13:09:49.366Z",
       "status": "已排程"
     },
     {
-      "id": "schedule-1769863696319-168",
-      "task_code": "ZD-2026-002",
+      "id": "schedule-1769865224250-797",
+      "task_code": "MJ-2026-002",
+      "device": "霉菌试验室",
+      "start_at": "2026-01-31T05:30:00.000Z",
+      "end_at": "2026-01-31T09:00:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769865908471-320",
+      "task_code": "ZD-2026-001",
       "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-01-31T12:48:16.319Z",
-      "end_at": "2026-01-31T12:48:16.319Z",
+      "start_at": "2026-01-31T13:25:08.471Z",
+      "end_at": "2026-01-31T13:25:08.471Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769865984919-545",
+      "task_code": "YW-2026-001",
+      "device": "盐雾试验室",
+      "start_at": "2026-01-31T00:00:00.000Z",
+      "end_at": "2026-01-31T03:30:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769865990997-437",
+      "task_code": "ZD-2026-001",
+      "device": "振动一室",
+      "start_at": "2026-01-31T00:00:00.000Z",
+      "end_at": "2026-01-31T03:30:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769866015259-748",
+      "task_code": "MJ-2026-001",
+      "device": "霉菌试验室",
+      "start_at": "2026-01-31T00:00:00.000Z",
+      "end_at": "2026-01-31T03:30:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769866221085-466",
+      "task_code": "MJ-2026-003",
+      "device": "恒温恒湿间（暂存间）",
+      "start_at": "2026-01-31T13:30:21.085Z",
+      "end_at": "2026-01-31T13:30:21.085Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769866231867-917",
+      "task_code": "MJ-2026-003",
+      "device": "霉菌试验室",
+      "start_at": "2026-02-01T00:00:00.000Z",
+      "end_at": "2026-02-01T03:30:00.000Z",
       "status": "已排程"
     }
   ],
-  "mes.samples": [
-    {
-      "id": "sample-1769861090941-243",
-      "code": "SP-2601-01",
-      "task_code": "CJ-2024-001",
-      "location": "室外接驳区",
-      "owner": "收样台",
-      "status": "已接收",
-      "created_at": "2026-01-31T06:04:50.941Z"
-    },
-    {
-      "id": "sample-1769861090941-299",
-      "code": "SP-2601-02",
-      "task_code": "CJ-2024-001",
-      "location": "恒温恒湿间（暂存间）",
-      "owner": "样品库",
-      "status": "已入库",
-      "created_at": "2026-01-31T07:04:50.941Z",
-      "history": [
-        {
-          "id": "sample-event-1769861090941-230",
-          "time": "2026-01-31T06:04:50.941Z",
-          "action": "样品登记",
-          "location": "室外接驳区",
-          "owner": "收样台",
-          "status": "已接收",
-          "detail": ""
-        },
-        {
-          "id": "sample-event-1769861090941-326",
-          "time": "2026-01-31T07:04:50.941Z",
-          "action": "送达暂存间",
-          "location": "恒温恒湿间（暂存间）",
-          "owner": "样品库",
-          "status": "已入库",
-          "detail": ""
-        }
-      ]
-    },
-    {
-      "id": "sample-1769861090941-852",
-      "code": "SP-2601-03",
-      "task_code": "SZH-2024-003",
-      "location": "四综合实验室",
-      "owner": "王工",
-      "status": "试验中",
-      "created_at": "2026-01-31T04:04:50.941Z",
-      "history": [
-        {
-          "id": "sample-event-1769861090941-958",
-          "time": "2026-01-31T03:04:50.941Z",
-          "action": "样品登记",
-          "location": "室外接驳区",
-          "owner": "收样台",
-          "status": "已接收",
-          "detail": ""
-        },
-        {
-          "id": "sample-event-1769861090941-190",
-          "time": "2026-01-31T04:04:50.941Z",
-          "action": "暂存间派发",
-          "location": "四综合实验室",
-          "owner": "王工",
-          "status": "试验中",
-          "detail": ""
-        }
-      ]
-    },
-    {
-      "id": "sample-1769861090941-599",
-      "code": "SP-2601-04",
-      "task_code": "YW-2024-006",
-      "location": "盐雾试验室",
-      "owner": "李工",
-      "status": "试验中",
-      "created_at": "2026-01-31T05:04:50.941Z",
-      "history": [
-        {
-          "id": "sample-event-1769861090941-809",
-          "time": "2026-01-31T04:04:50.941Z",
-          "action": "样品登记",
-          "location": "室外接驳区",
-          "owner": "收样台",
-          "status": "已接收",
-          "detail": ""
-        },
-        {
-          "id": "sample-event-1769861090941-199",
-          "time": "2026-01-31T05:04:50.941Z",
-          "action": "暂存间派发",
-          "location": "盐雾试验室",
-          "owner": "李工",
-          "status": "试验中",
-          "detail": ""
-        }
-      ]
-    },
-    {
-      "id": "sample-1769861090941-834",
-      "code": "SP-2601-05",
-      "task_code": "GDW-2024-005",
-      "location": "恒温恒湿间（暂存间）",
-      "owner": "样品库",
-      "status": "已入库",
-      "created_at": "2026-01-31T08:04:50.941Z",
-      "history": [
-        {
-          "id": "sample-event-1769861090941-416",
-          "time": "2026-01-31T07:34:50.941Z",
-          "action": "样品登记",
-          "location": "室外接驳区",
-          "owner": "收样台",
-          "status": "已接收",
-          "detail": ""
-        },
-        {
-          "id": "sample-event-1769861090941-770",
-          "time": "2026-01-31T08:04:50.941Z",
-          "action": "送达暂存间",
-          "location": "恒温恒湿间（暂存间）",
-          "owner": "样品库",
-          "status": "已入库",
-          "detail": ""
-        }
-      ]
-    },
-    {
-      "id": "sample-1769861090941-676",
-      "code": "SP-2601-06",
-      "task_code": "WDC-2024-004",
-      "location": "温度冲击一室",
-      "owner": "赵工",
-      "status": "试验中",
-      "created_at": "2026-01-31T09:04:50.941Z",
-      "history": [
-        {
-          "id": "sample-event-1769861090941-679",
-          "time": "2026-01-31T08:34:50.941Z",
-          "action": "样品登记",
-          "location": "室外接驳区",
-          "owner": "收样台",
-          "status": "已接收",
-          "detail": ""
-        },
-        {
-          "id": "sample-event-1769861090941-470",
-          "time": "2026-01-31T09:04:50.941Z",
-          "action": "暂存间派发",
-          "location": "温度冲击一室",
-          "owner": "赵工",
-          "status": "试验中",
-          "detail": ""
-        }
-      ]
-    },
-    {
-      "id": "sample-1769861090941-197",
-      "code": "SP-2601-07",
-      "task_code": "MJ-2024-007",
-      "location": "室外接驳区",
-      "owner": "收样台",
-      "status": "已接收",
-      "created_at": "2026-01-31T10:04:50.941Z"
-    }
-  ],
-  "mes.devices": [
-    {
-      "id": "device-1769861090941-759",
-      "code": "冲击一室",
-      "name": "冲击试验系统-1",
-      "type": "冲击试验",
-      "status": "可用",
-      "location": "冲击一室",
-      "next_cal": "2024-07-10"
-    },
-    {
-      "id": "device-1769861090941-062",
-      "code": "冲击二室",
-      "name": "冲击试验系统-2",
-      "type": "冲击试验",
-      "status": "可用",
-      "location": "冲击二室",
-      "next_cal": "2024-07-11"
-    },
-    {
-      "id": "device-1769861090941-152",
-      "code": "振动一室",
-      "name": "振动试验系统-1",
-      "type": "振动试验",
-      "status": "可用",
-      "location": "振动一室",
-      "next_cal": "2024-07-12"
-    },
-    {
-      "id": "device-1769861090941-915",
-      "code": "振动二室",
-      "name": "振动试验系统-2",
-      "type": "振动试验",
-      "status": "可用",
-      "location": "振动二室",
-      "next_cal": "2024-07-13"
-    },
-    {
-      "id": "device-1769861090941-175",
-      "code": "四综合实验室",
-      "name": "四综合试验系统",
-      "type": "四综合试验",
-      "status": "可用",
-      "location": "四综合实验室",
-      "next_cal": "2024-07-05"
-    },
-    {
-      "id": "device-1769861090941-850",
-      "code": "温度冲击一室",
-      "name": "温度冲击系统-1",
-      "type": "温度冲击试验",
-      "status": "可用",
-      "location": "温度冲击一室",
-      "next_cal": "2024-07-15"
-    },
-    {
-      "id": "device-1769861090941-121",
-      "code": "温度冲击二室",
-      "name": "温度冲击系统-2",
-      "type": "温度冲击试验",
-      "status": "可用",
-      "location": "温度冲击二室",
-      "next_cal": "2024-07-16"
-    },
-    {
-      "id": "device-1769861090941-586",
-      "code": "高低温湿热一室",
-      "name": "高低温湿热系统",
-      "type": "高低温湿热试验",
-      "status": "维护/校准",
-      "location": "高低温湿热一室",
-      "next_cal": "2024-06-30"
-    },
-    {
-      "id": "device-1769861090941-162",
-      "code": "盐雾试验室",
-      "name": "盐雾试验箱",
-      "type": "盐雾试验",
-      "status": "可用",
-      "location": "盐雾试验室",
-      "next_cal": "2024-07-02"
-    },
-    {
-      "id": "device-1769861090941-754",
-      "code": "霉菌试验室",
-      "name": "霉菌培养箱",
-      "type": "霉菌试验",
-      "status": "可用",
-      "location": "霉菌试验室",
-      "next_cal": "2024-07-08"
-    }
-  ],
+  "mes.samples": [],
+  "mes.devices": [],
   "mes.streams": [
     {
-      "id": "stream-1769863687040-858",
-      "task_code": "ZD-2026-003",
+      "id": "stream-1769864989366-888",
+      "task_code": "YW-2026-001",
       "device": "恒温恒湿间（暂存间）",
-      "last_packet": "2026-01-31 20:48",
+      "last_packet": "2026-01-31 21:09",
       "quality": "98.0%",
       "status": "采集中",
       "reported": false
     },
     {
-      "id": "stream-1769863696319-698",
-      "task_code": "ZD-2026-002",
+      "id": "stream-1769865224250-257",
+      "task_code": "MJ-2026-002",
+      "device": "霉菌试验室",
+      "last_packet": "2026-01-31 21:13",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1769865908471-963",
+      "task_code": "ZD-2026-001",
       "device": "恒温恒湿间（暂存间）",
-      "last_packet": "2026-01-31 20:48",
+      "last_packet": "2026-01-31 21:25",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1769866015259-624",
+      "task_code": "MJ-2026-001",
+      "device": "霉菌试验室",
+      "last_packet": "2026-01-31 21:26",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1769866221085-950",
+      "task_code": "MJ-2026-003",
+      "device": "恒温恒湿间（暂存间）",
+      "last_packet": "2026-01-31 21:30",
       "quality": "98.0%",
       "status": "采集中",
       "reported": false
