@@ -1,0 +1,124 @@
+﻿<template>
+  <section class="grid cols-3 stagger">
+    <div class="card">
+      <div class="muted">自动采集流</div>
+      <div class="kpi" id="data-stream-count">0</div>
+      <div class="muted">Modbus 节点在线</div>
+    </div>
+    <div class="card">
+      <div class="muted">校验队列</div>
+      <div class="kpi" id="data-validation-count">0</div>
+      <div class="muted">待复核</div>
+    </div>
+    <div class="card">
+      <div class="muted">报告待出</div>
+      <div class="kpi" id="data-report-count">0</div>
+      <div class="muted">固定模板</div>
+    </div>
+  </section>
+
+  <section class="card section">
+    <h3>采集监控</h3>
+    <div class="toolbar">
+      <input class="search-input" data-filter-input="#data-table" placeholder="筛选任务/设备/状态" />
+    </div>
+    <table class="table" id="data-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>任务</th>
+          <th data-sort>设备</th>
+          <th data-sort>最近数据包</th>
+          <th data-sort>数据质量</th>
+          <th data-sort>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="data-table-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card section">
+    <h3>数据校验与报告</h3>
+    <div class="form-grid" data-form="data-report">
+      <div class="form-field">
+        <label>校验规则</label>
+        <select name="rule">
+          <option>完整性校验</option>
+          <option>范围校验</option>
+          <option>时间戳一致性</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>报告模板</label>
+        <select name="template">
+          <option>重金属检测固定模板</option>
+          <option>含量检测固定模板</option>
+          <option>稳定性固定模板</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>关联任务</label>
+        <input type="text" name="task_code" placeholder="任务编号" />
+      </div>
+      <div class="form-field">
+        <label>开始时间</label>
+        <input type="datetime-local" name="range_start" />
+      </div>
+      <div class="form-field">
+        <label>结束时间</label>
+        <input type="datetime-local" name="range_end" />
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label>异常说明</label>
+        <textarea name="remark" placeholder="记录异常数据原因与处理方式"></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="action-btn" href="#" data-action="data-validate">执行校验</a>
+      <a class="action-btn secondary" href="#" data-modal-open="report-modal">生成报告</a>
+    </div>
+  </section>
+
+  <div class="modal" id="report-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <strong>报告预览</strong>
+        <button class="modal-close" data-modal-close="report-modal">关闭</button>
+      </div>
+      <p class="muted">将使用固定模板生成报告，包含任务信息、设备数据与结论摘要。</p>
+      <div class="form-actions">
+        <a class="action-btn" href="#" data-action="report-generate">确认生成</a>
+        <a class="action-btn secondary" href="#">取消</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="data-drawer">
+    <div class="modal-backdrop" data-drawer-close="data-drawer"></div>
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <strong>数据明细</strong>
+        <button class="drawer-close" data-drawer-close="data-drawer">关闭</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>采集状态</label>
+          <select>
+            <option>采集中</option>
+            <option>已完成</option>
+            <option>有缺口</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>数据质量</label>
+          <input type="text" placeholder="98.8%" />
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label>异常记录</label>
+          <textarea placeholder="记录缺口或异常信息"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}样品管理{% endblock %}
+{% block content %}
+<section class="grid cols-3 stagger">
+  <div class="card">
+    <div class="muted">今日到样</div>
+    <div class="kpi" id="sample-arrived-count">0</div>
+    <div class="muted">等待登记</div>
+  </div>
+  <div class="card">
+    <div class="muted">试验中</div>
+    <div class="kpi" id="sample-running-count">0</div>
+    <div class="muted">已分配设备</div>
+  </div>
+  <div class="card">
+    <div class="muted">留样库存</div>
+    <div class="kpi" id="sample-retention-count">0</div>
+    <div class="muted">可追溯样品</div>
+  </div>
+</section>
+
+<section class="card section">
+  <h3>样品登记</h3>
+  <form data-form="sample-intake">
+    <div class="form-grid">
+      <div class="form-field">
+        <label>样品编号</label>
+        <input type="text" name="code" placeholder="例如：SP-2403-11">
+      </div>
+      <div class="form-field">
+        <label>关联任务</label>
+        <input type="text" name="task_code" placeholder="任务编号/名称">
+      </div>
+      <div class="form-field">
+        <label>样品类型</label>
+        <input type="text" name="sample_type" placeholder="固体/液体/粉末">
+      </div>
+      <div class="form-field">
+        <label>批次/批号</label>
+        <input type="text" name="batch_no" placeholder="批次号">
+      </div>
+      <div class="form-field">
+        <label>到样时间</label>
+        <input type="datetime-local" name="arrival_at">
+      </div>
+      <div class="form-field">
+        <label>数量</label>
+        <input type="number" name="quantity" placeholder="例如：12">
+      </div>
+      <div class="form-field">
+        <label>保存条件</label>
+        <input type="text" name="storage_condition" placeholder="常温/冷藏/避光">
+      </div>
+      <div class="form-field">
+        <label>标签/条码</label>
+        <input type="text" name="barcode" placeholder="扫描或输入条码">
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label>备注</label>
+        <textarea name="remark" placeholder="样品状态与特殊说明"></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="action-btn" href="#" data-action="sample-submit">确认登记</a>
+      <a class="action-btn secondary" href="#" data-action="sample-draft">保存草稿</a>
+    </div>
+  </form>
+</section>
+
+<div class="tabs section" data-tab-group="samples" data-tab-role="tabs">
+  <button class="tab-btn active" type="button" data-tab-btn="sample-flow">样品流转</button>
+  <button class="tab-btn" type="button" data-tab-btn="sample-staging">暂存间</button>
+</div>
+
+<section class="card section" data-tab-panel="sample-flow" data-tab-group="samples">
+  <h3>样品流转与状态</h3>
+  <div class="toolbar">
+    <input class="search-input" data-filter-input="#sample-table" placeholder="筛选样品/任务/位置">
+    <a class="action-btn" href="#" data-modal-open="sample-modal">批量入库</a>
+  </div>
+  <table class="table" id="sample-table" data-sortable>
+    <thead>
+      <tr>
+        <th data-sort>样品编号</th>
+        <th data-sort>任务</th>
+        <th data-sort>当前位置</th>
+        <th data-sort>责任人</th>
+        <th data-sort>状态</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="sample-table-body"></tbody>
+  </table>
+</section>
+
+<section class="card section is-hidden" data-tab-panel="sample-staging" data-tab-group="samples">
+  <h3>暂存间</h3>
+  <div class="toolbar">
+    <div class="muted">暂存间未试验样品 <span id="staging-count">0</span></div>
+    <input class="search-input" data-filter-input="#staging-table" placeholder="筛选样品/任务/状态">
+  </div>
+  <table class="table" id="staging-table" data-sortable>
+    <thead>
+      <tr>
+        <th data-sort>样品编号</th>
+        <th data-sort>任务</th>
+        <th data-sort>当前位置</th>
+        <th data-sort>状态</th>
+        <th data-sort>责任人</th>
+      </tr>
+    </thead>
+    <tbody id="staging-table-body"></tbody>
+  </table>
+  <div class="form-grid section" data-form="staging-dispatch">
+    <div class="form-field">
+      <label>派发样品</label>
+      <textarea name="codes" placeholder="输入或扫描样品编号"></textarea>
+    </div>
+    <div class="form-field">
+      <label>目标实验室</label>
+      <select name="target_lab" data-test-lab-select>
+        <option value="">请选择实验室</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label>责任人</label>
+      <input type="text" name="owner" placeholder="负责人姓名">
+    </div>
+  </div>
+  <div class="form-actions">
+    <a class="action-btn" href="#" data-action="staging-dispatch">派发至实验室</a>
+    <a class="action-btn secondary" href="#" data-action="staging-reset">清空输入</a>
+  </div>
+  <div class="form-alert is-hidden" data-staging-warning></div>
+</section>
+
+<section class="card section">
+  <h3>样品全生命周期追踪</h3>
+  <form data-form="sample-trace">
+    <div class="form-grid">
+      <div class="form-field">
+        <label>试验序号</label>
+        <input type="text" name="task_code" placeholder="例如：SZH-2024-003">
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="action-btn" href="#" data-action="sample-trace-run">查询</a>
+      <a class="action-btn secondary" href="#" data-action="sample-trace-reset">清空</a>
+    </div>
+  </form>
+  <div class="muted" id="sample-trace-summary">请输入试验序号查询样品全生命周期。</div>
+  <div class="timeline" id="sample-trace-timeline"></div>
+</section>
+
+<div class="modal" id="sample-modal">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content">
+    <div class="modal-header">
+      <strong>批量入库</strong>
+      <button class="modal-close" data-modal-close="sample-modal">关闭</button>
+    </div>
+    <div class="form-grid" data-form="sample-batch">
+      <div class="form-field">
+        <label>入库位置</label>
+        <select name="location" data-lab-select>
+          <option value="">请选择实验室</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>责任人</label>
+        <input type="text" name="owner" placeholder="负责人姓名">
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label>样品列表</label>
+        <textarea name="codes" placeholder="输入或扫描多个样品编号"></textarea>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="action-btn" href="#" data-action="sample-batch-submit">确认入库</a>
+      <a class="action-btn secondary" href="#">取消</a>
+    </div>
+  </div>
+</div>
+
+<div class="drawer" id="sample-drawer">
+  <div class="modal-backdrop" data-drawer-close="sample-drawer"></div>
+  <div class="drawer-content">
+    <div class="drawer-header">
+      <strong>样品详情</strong>
+      <button class="drawer-close" data-drawer-close="sample-drawer">关闭</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>样品编号</label>
+        <input type="text" name="code" placeholder="SP-2403-11">
+      </div>
+      <div class="form-field">
+        <label>状态</label>
+        <select name="status">
+          <option>已接收</option>
+          <option>试验中</option>
+          <option>已入库</option>
+          <option>已处置</option>
+        </select>
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label>流转备注</label>
+        <textarea name="remark" placeholder="更新流转信息"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

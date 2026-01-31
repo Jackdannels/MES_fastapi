@@ -1,0 +1,7 @@
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.24,<1.0
+pydantic-settings>=2.0,<3.0
+python-dotenv>=1.0,<2.0
+jinja2>=3.1,<4.0
+# Dameng driver (adjust if your environment uses a different package)
+dmPython>=2.5

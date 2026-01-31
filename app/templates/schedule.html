@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}排程看板{% endblock %}
+{% block content %}
+  <div class="tabs section" data-tab-group="schedule-board" data-tab-role="tabs">
+    <button class="tab-btn active" type="button" data-tab-btn="unpacking">&#25509;&#39539;&#21306;&#25490;&#31243;</button>
+    <button class="tab-btn" type="button" data-tab-btn="retention">&#26242;&#23384;&#38388;&#25490;&#31243;</button>
+  </div>
+
+  <section class="card section">
+    <h3>&#25163;&#21160;&#25490;&#31243;</h3>
+    <form data-form="manual-schedule">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>&#20219;&#21153;&#32534;&#21495;</label>
+          <select
+            name="task_code"
+            data-task-select
+            data-placeholder="&#35831;&#36873;&#25321;&#24050;&#25509;&#25910;&#20219;&#21153;"
+            data-empty-placeholder="&#26242;&#26080;&#24050;&#25509;&#25910;&#20219;&#21153;"
+          >
+            <option value="">&#35831;&#36873;&#25321;&#24050;&#25509;&#25910;&#20219;&#21153;</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>&#23454;&#39564;&#23460;</label>
+          <select
+            name="device"
+            data-schedule-lab-select
+            data-placeholder="&#35831;&#36873;&#25321;&#23454;&#39564;&#23460;"
+            data-empty-placeholder="&#35831;&#20808;&#36873;&#25321;&#20219;&#21153;"
+            data-custom-label="&#20854;&#20182;/&#33258;&#23450;&#20041;"
+          >
+            <option value="">&#35831;&#36873;&#25321;&#23454;&#39564;&#23460;</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>&#25490;&#31243;&#26085;&#26399;</label>
+          <input type="date" name="schedule_date" />
+        </div>
+        <div class="form-field">
+          <label>&#26102;&#27573;</label>
+          <select name="time_slot" data-time-slot>
+            <option value="morning">&#19978;&#21320;&#65288;08:00-11:30&#65289;</option>
+            <option value="afternoon">&#19979;&#21320;&#65288;13:30-17:00&#65289;</option>
+            <option value="custom">&#33258;&#23450;&#20041;</option>
+          </select>
+        </div>
+        <div class="form-field is-hidden" data-custom-time>
+          <label>&#24320;&#22987;&#26102;&#38388;</label>
+          <input type="time" name="custom_start" />
+        </div>
+        <div class="form-field is-hidden" data-custom-time>
+          <label>&#32467;&#26463;&#26102;&#38388;</label>
+          <input type="time" name="custom_end" />
+        </div>
+      </div>
+      <div class="form-actions">
+        <a class="action-btn" href="#" data-action="manual-schedule-run">&#30830;&#35748;&#25490;&#31243;</a>
+        <a class="action-btn secondary" href="#" data-action="manual-schedule-reset">&#28165;&#31354;</a>
+      </div>
+      <div class="form-alert is-hidden" data-schedule-warning></div>
+    </form>
+  </section>
+
+  <section class="card section is-hidden" data-retention-internal>
+    <div class="retention-internal-header">
+      <div>
+        <h3>&#26242;&#23384;&#38388;&#20869;&#37096;&#25490;&#31243;&#21333;</h3>
+        <div class="muted">&#20165;&#26174;&#31034;&#26410;&#20998;&#37197;&#23454;&#39564;&#23460;&#30340;&#20219;&#21153;</div>
+      </div>
+      <div class="retention-internal-count">
+        <div class="muted">&#24453;&#20998;&#37197;</div>
+        <div class="kpi" id="retention-internal-count">0</div>
+      </div>
+    </div>
+    <table class="table" id="retention-internal-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>&#20219;&#21153;&#32534;&#21495;</th>
+          <th data-sort>&#35797;&#39564;&#31867;&#22411;</th>
+          <th data-sort>&#26242;&#23384;&#26102;&#38388;</th>
+          <th>&#24050;&#31561;&#24453;</th>
+        </tr>
+      </thead>
+      <tbody id="retention-internal-table-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card section">
+    <h3>&#35774;&#22791;&#31354;&#38386;&#25490;&#31243;&#65288;&#19978;&#21320;/&#19979;&#21320;&#65289;</h3>
+    <div class="gantt-wrap">
+      <table
+        class="gantt"
+        id="gantt-table"
+        data-days="3"
+        data-label-am="&#19978;&#21320; 08:00-11:30"
+        data-label-pm="&#19979;&#21320; 13:30-17:00"
+        data-label-idle="&#31354;&#38386;"
+        data-label-conflict="&#20914;&#31361;"
+        data-label-empty="&#26242;&#26080;&#35774;&#22791;"
+      >
+        <thead id="gantt-head">
+          <tr id="gantt-day-row">
+            <th rowspan="2" class="gantt-sticky" data-static="1">&#35774;&#22791;</th>
+          </tr>
+          <tr id="gantt-slot-row"></tr>
+        </thead>
+        <tbody id="gantt-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="grid cols-3 section">
+    <div class="card">
+      <h3>&#19979;&#19968;&#27425;&#25490;&#31243;&#25552;&#31034;</h3>
+      <div class="muted">&#22522;&#20110;&#35774;&#22791;&#31354;&#38386;&#19982;&#26679;&#21697;&#21040;&#26679;</div>
+      <div class="kpi" id="schedule-next-auto">--:--</div>
+    </div>
+    <div class="card">
+      <h3>&#20914;&#31361;&#25552;&#37266;</h3>
+      <div class="muted">&#24453;&#22788;&#29702;</div>
+      <div class="kpi" id="schedule-conflict-count">0</div>
+    </div>
+    <div class="card">
+      <h3>&#21464;&#26356;&#30003;&#35831;</h3>
+      <div class="muted">24&#23567;&#26102;&#20869;</div>
+      <div class="kpi" id="schedule-change-count">0</div>
+    </div>
+  </section>
+
+  <section class="card section">
+    <h3>&#25490;&#31243;&#28165;&#21333;</h3>
+    <div class="toolbar">
+      <input class="search-input" data-filter-input="#schedule-table" placeholder="&#31579;&#36873;&#20219;&#21153;/&#35774;&#22791;/&#26102;&#38388;" />
+    </div>
+    <table class="table" id="schedule-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>&#20219;&#21153;</th>
+          <th data-sort>&#35774;&#22791;</th>
+          <th data-sort>&#24320;&#22987;&#26102;&#38388;</th>
+          <th data-sort>&#32467;&#26463;&#26102;&#38388;</th>
+          <th data-sort>&#29366;&#24577;</th>
+          <th>&#25805;&#20316;</th>
+        </tr>
+      </thead>
+      <tbody id="schedule-table-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card section">
+    <h3>&#24453;&#35299;&#20915;&#20914;&#31361;</h3>
+    <div class="toolbar">
+      <input class="search-input" data-filter-input="#conflict-table" placeholder="&#31579;&#36873;&#20219;&#21153;/&#35774;&#22791;/&#20914;&#31361;&#31867;&#22411;" />
+    </div>
+    <table class="table" id="conflict-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>&#20219;&#21153;</th>
+          <th data-sort>&#35774;&#22791;</th>
+          <th data-sort>&#20914;&#31361;&#31867;&#22411;</th>
+          <th data-sort>&#24433;&#21709;</th>
+          <th>&#24314;&#35758;</th>
+          <th>&#25805;&#20316;</th>
+        </tr>
+      </thead>
+      <tbody id="conflict-table-body"></tbody>
+    </table>
+  </section>
+
+  <div class="drawer" id="schedule-drawer">
+    <div class="modal-backdrop" data-drawer-close="schedule-drawer"></div>
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <strong>&#25490;&#31243;&#32534;&#36753;</strong>
+        <button class="drawer-close" data-drawer-close="schedule-drawer">&#20851;&#38381;</button>
+      </div>
+      <form class="form-grid" data-form="schedule-edit">
+        <div class="form-field">
+          <label>&#20219;&#21153;&#32534;&#21495;</label>
+          <input type="text" name="task_code" readonly />
+        </div>
+        <div class="form-field">
+          <label>&#23454;&#39564;&#23460;</label>
+          <select
+            name="device"
+            data-schedule-edit-lab
+            data-placeholder="&#35831;&#36873;&#25321;&#23454;&#39564;&#23460;"
+            data-empty-placeholder="&#26242;&#26080;&#23454;&#39564;&#23460;"
+            data-custom-label="&#20854;&#20182;/&#33258;&#23450;&#20041;"
+          >
+            <option value="">&#35831;&#36873;&#25321;&#23454;&#39564;&#23460;</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>&#25490;&#31243;&#26085;&#26399;</label>
+          <input type="date" name="schedule_date" />
+        </div>
+        <div class="form-field">
+          <label>&#26102;&#27573;</label>
+          <select name="time_slot" data-edit-time-slot>
+            <option value="morning">&#19978;&#21320;&#65288;08:00-11:30&#65289;</option>
+            <option value="afternoon">&#19979;&#21320;&#65288;13:30-17:00&#65289;</option>
+            <option value="custom">&#33258;&#23450;&#20041;</option>
+          </select>
+        </div>
+        <div class="form-field is-hidden" data-edit-custom-time>
+          <label>&#24320;&#22987;&#26102;&#38388;</label>
+          <input type="time" name="custom_start" />
+        </div>
+        <div class="form-field is-hidden" data-edit-custom-time>
+          <label>&#32467;&#26463;&#26102;&#38388;</label>
+          <input type="time" name="custom_end" />
+        </div>
+        <div class="form-actions" style="grid-column: 1 / -1;">
+          <a class="action-btn" href="#" data-action="schedule-update">&#20445;&#23384;&#20462;&#25913;</a>
+          <a class="action-btn secondary" href="#" data-action="schedule-delete">&#21024;&#38500;&#25490;&#31243;</a>
+        </div>
+        <div class="form-alert is-hidden" data-schedule-edit-warning style="grid-column: 1 / -1;"></div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

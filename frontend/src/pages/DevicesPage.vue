@@ -1,0 +1,281 @@
+﻿<template>
+  <section class="grid cols-3 stagger">
+    <div class="card">
+      <div class="muted">可用设备</div>
+      <div class="kpi" id="device-idle-count">0</div>
+      <div class="muted">可排程</div>
+    </div>
+    <div class="card">
+      <div class="muted">使用中</div>
+      <div class="kpi" id="device-active-count">0</div>
+      <div class="muted">自动采集中</div>
+    </div>
+    <div class="card">
+      <div class="muted">维护/校准</div>
+      <div class="kpi" id="device-maintenance-count">0</div>
+      <div class="muted">待处理</div>
+    </div>
+  </section>
+
+  <section class="card section">
+    <h3>设备台账</h3>
+    <form data-form="device-form">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>设备编号</label>
+          <input type="text" name="code" placeholder="例如：HPLC-03" />
+        </div>
+        <div class="form-field">
+          <label>设备名称</label>
+          <input type="text" name="name" placeholder="高效液相色谱仪" />
+        </div>
+        <div class="form-field">
+          <label>试验类型</label>
+          <select name="type" data-test-type-select>
+            <option value="">请选择试验类型</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>型号/规格</label>
+          <input type="text" name="model" placeholder="型号或规格" />
+        </div>
+        <div class="form-field">
+          <label>负责人</label>
+          <input type="text" name="owner" placeholder="设备负责人" />
+        </div>
+        <div class="form-field">
+          <label>状态</label>
+          <select name="status">
+            <option>可用</option>
+            <option>使用中</option>
+            <option>维护/校准</option>
+            <option>停用</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>位置</label>
+          <select name="location" data-lab-select>
+            <option value="">请选择实验室</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>下次校准时间</label>
+          <input type="date" name="next_cal" />
+        </div>
+        <div class="form-field">
+          <label>采集启用</label>
+          <select name="acquisition_enabled">
+            <option>启用</option>
+            <option>停用</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a class="action-btn" href="#" data-action="device-save">保存设备</a>
+        <a class="action-btn secondary" href="#" data-action="device-add">新增设备</a>
+        <a class="action-btn secondary" href="#" data-drawer-open="device-drawer">维护记录</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card section">
+    <h3>设备列表</h3>
+    <div class="toolbar">
+      <input class="search-input" data-filter-input="#device-table" placeholder="筛选设备/状态/位置" />
+    </div>
+    <table class="table" id="device-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>设备编号</th>
+          <th data-sort>设备名称</th>
+          <th data-sort>试验类型</th>
+          <th data-sort>状态</th>
+          <th data-sort>位置</th>
+          <th data-sort>下次校准</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="device-table-body"></tbody>
+    </table>
+  </section>
+
+  <section class="card section">
+    <h3>Modbus 连接配置</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>协议</label>
+        <select>
+          <option>TCP</option>
+          <option>RTU</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>IP/串口</label>
+        <input type="text" placeholder="TCP: 10.10.0.23 / RTU: COM3" />
+      </div>
+      <div class="form-field">
+        <label>端口/波特率</label>
+        <input type="text" placeholder="TCP: 502 / RTU: 9600" />
+      </div>
+      <div class="form-field">
+        <label>从站地址</label>
+        <input type="number" placeholder="例如：1" />
+      </div>
+      <div class="form-field">
+        <label>功能码</label>
+        <select>
+          <option>03 读保持寄存器</option>
+          <option>04 读输入寄存器</option>
+          <option>01 读线圈</option>
+          <option>02 读离散输入</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>采样周期</label>
+        <input type="text" placeholder="例如：1s" />
+      </div>
+      <div class="form-field">
+        <label>超时/重试</label>
+        <input type="text" placeholder="例如：3s / 2次" />
+      </div>
+      <div class="form-field">
+        <label>数据校验</label>
+        <select>
+          <option>CRC</option>
+          <option>无</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-actions">
+      <a class="action-btn" href="#">测试连接</a>
+      <a class="action-btn secondary" href="#">保存配置</a>
+    </div>
+  </section>
+
+  <section class="card section">
+    <h3>点位映射</h3>
+    <div class="toolbar">
+      <input class="search-input" data-filter-input="#point-table" placeholder="筛选点位/地址/单位" />
+      <a class="action-btn" href="#" data-modal-open="point-modal">新增点位</a>
+      <a class="action-btn secondary" href="#">导入模板</a>
+    </div>
+    <table class="table" id="point-table" data-sortable>
+      <thead>
+        <tr>
+          <th data-sort>点位名称</th>
+          <th data-sort>寄存器地址</th>
+          <th data-sort>数据类型</th>
+          <th data-sort>比例系数</th>
+          <th data-sort>单位</th>
+          <th data-sort>频率</th>
+          <th>备注</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>温度</td>
+          <td>40001</td>
+          <td>INT16</td>
+          <td>0.1</td>
+          <td>°C</td>
+          <td>1s</td>
+          <td>反应腔温度</td>
+        </tr>
+        <tr>
+          <td>压力</td>
+          <td>40003</td>
+          <td>INT16</td>
+          <td>0.01</td>
+          <td>MPa</td>
+          <td>2s</td>
+          <td>进样压力</td>
+        </tr>
+        <tr>
+          <td>流量</td>
+          <td>40005</td>
+          <td>FLOAT32</td>
+          <td>1</td>
+          <td>mL/min</td>
+          <td>5s</td>
+          <td>泵流量</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="modal" id="point-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <strong>新增点位</strong>
+        <button class="modal-close" data-modal-close="point-modal">关闭</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>点位名称</label>
+          <input type="text" placeholder="例如：温度" />
+        </div>
+        <div class="form-field">
+          <label>寄存器地址</label>
+          <input type="text" placeholder="40001" />
+        </div>
+        <div class="form-field">
+          <label>数据类型</label>
+          <select>
+            <option>INT16</option>
+            <option>UINT16</option>
+            <option>FLOAT32</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>比例系数</label>
+          <input type="text" placeholder="0.1" />
+        </div>
+        <div class="form-field">
+          <label>单位</label>
+          <input type="text" placeholder="°C" />
+        </div>
+        <div class="form-field">
+          <label>采样频率</label>
+          <input type="text" placeholder="1s" />
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label>备注</label>
+          <textarea placeholder="说明点位用途"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <a class="action-btn" href="#">保存点位</a>
+        <a class="action-btn secondary" href="#">取消</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="device-drawer">
+    <div class="modal-backdrop" data-drawer-close="device-drawer"></div>
+    <div class="drawer-content">
+      <div class="drawer-header">
+        <strong>设备维护记录</strong>
+        <button class="drawer-close" data-drawer-close="device-drawer">关闭</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-field">
+          <label>最近校准</label>
+          <input type="date" />
+        </div>
+        <div class="form-field">
+          <label>维护类型</label>
+          <select>
+            <option>校准</option>
+            <option>保养</option>
+            <option>维修</option>
+          </select>
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label>维护记录</label>
+          <textarea placeholder="记录维护内容与结果"></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
