@@ -11,7 +11,7 @@ function getLabels() {
     statusWaiting: data.labelStatusWaiting || "Waiting",
     statusScheduled: data.labelStatusScheduled || "Scheduled",
     statusRunning: data.labelStatusRunning || "Running",
-    statusRetention: data.labelStatusRetention || "\u6682\u5b58\u95f4\u5b58\u653e",
+    statusRetention: data.labelStatusRetention || "\u6682\u5b58\u95f4\u6392\u653e",
     sampleReceived: data.labelSampleReceived || "Received",
     sampleTesting: data.labelSampleTesting || "Testing",
     sampleStored: data.labelSampleStored || "Stored",

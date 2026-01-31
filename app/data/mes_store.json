@@ -1,36 +1,6 @@
 {
   "mes.tasks": [
     {
-      "id": "task-1769861353217-980",
-      "code": "CJ-2026-002",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 10,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-01 10:09",
-      "arrival_at": "2026-01-31 22:09",
-      "status": "已受理",
-      "created_at": "2026-01-31T12:09:13.217Z"
-    },
-    {
-      "id": "task-1769861353097-293",
-      "code": "SZH-2026-002",
-      "name": "四综合试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "四综合试验",
-      "required_device": "四综合试验",
-      "due_at": "2026-02-01 07:09",
-      "arrival_at": "2026-02-01 02:09",
-      "status": "已排程",
-      "created_at": "2026-01-31T12:09:13.097Z"
-    },
-    {
       "id": "task-1769861352985-884",
       "code": "SZH-2026-001",
       "name": "四综合试验",
@@ -46,21 +16,6 @@
       "created_at": "2026-01-31T12:09:12.985Z"
     },
     {
-      "id": "task-1769861352850-193",
-      "code": "ZD-2026-004",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 3,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-01 17:09",
-      "arrival_at": "2026-02-01 02:09",
-      "status": "已受理",
-      "created_at": "2026-01-31T12:09:12.850Z"
-    },
-    {
       "id": "task-1769861352724-976",
       "code": "ZD-2026-003",
       "name": "振动试验",
@@ -72,7 +27,7 @@
       "required_device": "振动试验",
       "due_at": "2026-02-01 08:09",
       "arrival_at": "2026-01-31 21:09",
-      "status": "已受理",
+      "status": "暂存间排放",
       "created_at": "2026-01-31T12:09:12.724Z"
     },
     {
@@ -87,7 +42,7 @@
       "required_device": "振动试验",
       "due_at": "2026-02-01 13:09",
       "arrival_at": "2026-02-01 00:09",
-      "status": "已受理",
+      "status": "暂存间排放",
       "created_at": "2026-01-31T12:09:12.595Z"
     },
     {
@@ -153,11 +108,19 @@
   ],
   "mes.schedules": [
     {
-      "id": "schedule-1769861359521-258",
-      "task_code": "SZH-2026-002",
+      "id": "schedule-1769863687040-428",
+      "task_code": "ZD-2026-003",
       "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-01-31T12:09:19.521Z",
-      "end_at": "2026-01-31T12:09:19.521Z",
+      "start_at": "2026-01-31T12:48:07.040Z",
+      "end_at": "2026-01-31T12:48:07.040Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1769863696319-168",
+      "task_code": "ZD-2026-002",
+      "device": "恒温恒湿间（暂存间）",
+      "start_at": "2026-01-31T12:48:16.319Z",
+      "end_at": "2026-01-31T12:48:16.319Z",
       "status": "已排程"
     }
   ],
@@ -420,10 +383,19 @@
   ],
   "mes.streams": [
     {
-      "id": "stream-1769861359521-780",
-      "task_code": "SZH-2026-002",
+      "id": "stream-1769863687040-858",
+      "task_code": "ZD-2026-003",
       "device": "恒温恒湿间（暂存间）",
-      "last_packet": "2026-01-31 20:09",
+      "last_packet": "2026-01-31 20:48",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1769863696319-698",
+      "task_code": "ZD-2026-002",
+      "device": "恒温恒湿间（暂存间）",
+      "last_packet": "2026-01-31 20:48",
       "quality": "98.0%",
       "status": "采集中",
       "reported": false

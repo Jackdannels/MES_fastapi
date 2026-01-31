@@ -1005,7 +1005,10 @@ function renderSchedulePage(labels) {
   renderRetentionInternalSchedule(labels);
   renderScheduleFormOptions(labels, devices);
   const scheduleForm = document.querySelector('[data-form="manual-schedule"]');
-  const filterDevice = scheduleForm?.dataset.ganttFilter || scheduleForm?.querySelector('select[name="device"]')?.value || "";
+  let filterDevice = scheduleForm?.dataset.ganttFilter || scheduleForm?.querySelector('select[name="device"]')?.value || "";
+  if (labels.retentionLocation && filterDevice === labels.retentionLocation) {
+    filterDevice = "";
+  }
   const ganttEntries = computed.filter((entry) => !conflictIgnored.has(entry.device));
   renderGanttSchedule(ganttEntries, devices, filterDevice);
 }

@@ -734,7 +734,9 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
 
   if (manualLabSelect && manualLabSelect.dataset.bound !== "1") {
     manualLabSelect.addEventListener("change", () => {
-      manualScheduleForm.dataset.ganttFilter = manualLabSelect.value || "";
+      const selectedLab = manualLabSelect.value || "";
+      manualScheduleForm.dataset.ganttFilter =
+        labels.retentionLocation && selectedLab === labels.retentionLocation ? "" : selectedLab;
       syncManualRetentionLock();
       renderAll(labels);
     });
@@ -853,7 +855,7 @@ const manualScheduleReset = document.querySelector('[data-action="manual-schedul
       // task：当前任务
       const task = tasks.find((t) => t.code === data.task_code);
       if (task) {
-        task.status = labels.statusScheduled;
+        task.status = isRetentionSchedule ? labels.statusRetention : labels.statusScheduled;
       }
       if (!streams.find((stream) => stream.task_code === data.task_code)) {
         streams.push({
@@ -1113,6 +1115,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         stream.device = data.device;
       }
       saveStore(STORAGE_KEYS.streams, streams);
+      const tasks = loadStore(STORAGE_KEYS.tasks, []);
+      const task = tasks.find((entry) => entry.code === data.task_code);
+      if (task) {
+        task.status = data.device === labels.retentionLocation ? labels.statusRetention : labels.statusScheduled;
+      }
+      saveStore(STORAGE_KEYS.tasks, tasks);
 
       renderAll(labels);
       if (scheduleDrawer) {
