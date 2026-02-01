@@ -1207,9 +1207,15 @@ function renderDashboardPage(labels) {
 
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
+  const waitingCount = tasks.filter(
+    (t) => t.status === labels.statusWaiting || t.status === labels.statusAccepted
+  ).length;
+  const retentionCount = tasks.filter((t) => t.status === labels.statusRetention).length;
+  const unscheduledCount = waitingCount + retentionCount;
   setText("dashboard-intake-count", tasks.length);
   setText("dashboard-intake-note", `${labels.sourceExternal} ${externalCount} / ${labels.sourceInternal} ${internalCount}`);
   setText("dashboard-scheduled-count", schedules.length);
+  setText("dashboard-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
 
   const computedDevices = devices.map((device) => ({
     ...device,

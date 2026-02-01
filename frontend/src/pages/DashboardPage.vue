@@ -11,6 +11,11 @@
       <div class="muted">未来 48 小时</div>
     </div>
     <div class="card">
+      <div class="muted">待排程</div>
+      <div class="kpi" id="dashboard-unscheduled-count">0</div>
+      <div class="muted">需设备空闲</div>
+    </div>
+    <div class="card">
       <div class="muted">运行设备</div>
       <div class="kpi" id="dashboard-device-count">0</div>
       <div class="muted" id="dashboard-device-note">校准中 0 台</div>
