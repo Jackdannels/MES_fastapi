@@ -1,4 +1,4 @@
-/* FILE: actions.js
+﻿/* FILE: actions.js
  * UI action handlers for tasks, scheduling, and samples.
  * Mutates localStorage via storage.js and triggers UI re-render.
  */
@@ -15,7 +15,7 @@ const SLOT_RANGES = {
 
 const TEST_TASK_TYPES = Object.keys(TEST_PREFIX_MAP);
 
-// formatLocalDate：格式化本地日期
+// formatLocalDate锛氭牸寮忓寲鏈湴鏃ユ湡
 function formatLocalDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -27,7 +27,7 @@ function formatLocalDate(value) {
   return `${year}-${month}-${day}`;
 }
 
-// formatLocalTime：格式化本地时间
+// formatLocalTime锛氭牸寮忓寲鏈湴鏃堕棿
 function formatLocalTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -38,7 +38,7 @@ function formatLocalTime(value) {
   return `${hours}:${minutes}`;
 }
 
-// toDateTimeLocalValue：转换为datetime-local输入值
+// toDateTimeLocalValue锛氳浆鎹负datetime-local杈撳叆鍊?
 function toDateTimeLocalValue(value) {
   if (!value) {
     return "";
@@ -59,7 +59,7 @@ function toDateTimeLocalValue(value) {
   return date.toISOString().slice(0, 16);
 }
 
-// escapeSelectorValue：转义选择器值
+// escapeSelectorValue锛氳浆涔夐€夋嫨鍣ㄥ€?
 function escapeSelectorValue(value) {
   if (window.CSS && typeof window.CSS.escape === "function") {
     return window.CSS.escape(value);
@@ -67,12 +67,12 @@ function escapeSelectorValue(value) {
   return value.replace(/["\\]/g, "\\$&");
 }
 
-// overlaps：判断时间区间是否重叠
+// overlaps锛氬垽鏂椂闂村尯闂存槸鍚﹂噸鍙?
 function overlaps(start, end, rangeStart, rangeEnd) {
   return start < rangeEnd && end > rangeStart;
 }
 
-// parseCodeList：解析编号列表
+// parseCodeList锛氳В鏋愮紪鍙峰垪琛?
 function parseCodeList(value) {
   return (value || "")
     .split(/[\s,;]+/)
@@ -80,9 +80,9 @@ function parseCodeList(value) {
     .filter(Boolean);
 }
 
-// attachActionHandlers：绑定页面动作事件
+// attachActionHandlers锛氱粦瀹氶〉闈㈠姩浣滀簨浠?
 function attachActionHandlers(labels) {
-  // setWarning：设置表单警告提示
+  // setWarning锛氳缃〃鍗曡鍛婃彁绀?
   const setWarning = (element, message) => {
     if (!element) {
       return;
@@ -107,10 +107,10 @@ function attachActionHandlers(labels) {
   const testingRandom = document.body?.dataset?.testingRandom === "1";
   const randomTaskYear = document.body?.dataset?.randomTaskYear || "2026";
 
-  // getSlotLabel：获取时段显示文案
+  // getSlotLabel锛氳幏鍙栨椂娈垫樉绀烘枃妗?
   const getSlotLabel = (slotKey) => (slotKey === "afternoon" ? labels.slotAfternoon : labels.slotMorning);
 
-  // resolveSampleStatus：根据位置推导样品状态
+  // resolveSampleStatus锛氭牴鎹綅缃帹瀵兼牱鍝佺姸鎬?
   const resolveSampleStatus = (location) => {
     if (location === labels.retentionLocation) {
       return labels.sampleStored;
@@ -124,14 +124,14 @@ function attachActionHandlers(labels) {
     return labels.sampleReceived;
   };
 
-  // ensureSampleHistory：确保样品历史数组
+  // ensureSampleHistory锛氱‘淇濇牱鍝佸巻鍙叉暟缁?
   const ensureSampleHistory = (sample) => {
     if (!Array.isArray(sample.history)) {
       sample.history = [];
     }
   };
 
-  // appendSampleHistory：追加样品历史记录
+  // appendSampleHistory锛氳拷鍔犳牱鍝佸巻鍙茶褰?
   const appendSampleHistory = (sample, action, detail = "") => {
     ensureSampleHistory(sample);
     sample.history.unshift({
@@ -145,12 +145,12 @@ function attachActionHandlers(labels) {
     });
   };
 
-  // ensureOption：确保下拉选项存在
+  // ensureOption锛氱‘淇濅笅鎷夐€夐」瀛樺湪
   const ensureOption = (select, value) => {
     if (!select || !value) {
       return;
     }
-    // exists：检查选项是否已存在
+    // exists锛氭鏌ラ€夐」鏄惁宸插瓨鍦?
     const exists = Array.from(select.options).some((option) => option.value === value);
     if (!exists) {
       const option = document.createElement("option");
@@ -160,7 +160,7 @@ function attachActionHandlers(labels) {
     }
   };
 
-  // nextTaskCode：生成下一个任务编号
+  // nextTaskCode锛氱敓鎴愪笅涓€涓换鍔＄紪鍙?
   const nextTaskCode = (prefix, year, tasks) => {
     const pattern = new RegExp(`^${prefix}-${year}-(\\d{3})$`);
     let maxSeq = 0;
@@ -180,10 +180,10 @@ function attachActionHandlers(labels) {
     return `${prefix}-${year}-${next}`;
   };
 
-  // buildRandomTask：构建随机任务
+  // buildRandomTask锛氭瀯寤洪殢鏈轰换鍔?
   const buildRandomTask = (tasks, statusOverride) => {
     const filteredTypes = TEST_TASK_TYPES.filter(
-      (type) => !type.includes("\u6052\u6e29\u6052\u6e7f") && !type.includes("\u9ad8\u4f4e\u6e29\u6e7f\u70ed")
+      (type) => !type.includes("恒温恒湿") && !type.includes("高低温湿热")
     );
     const pool = filteredTypes.length ? filteredTypes : TEST_TASK_TYPES;
     const testType = pool[Math.floor(Math.random() * pool.length)];
@@ -209,7 +209,7 @@ function attachActionHandlers(labels) {
     };
   };
 
-  // resolveScheduleTimes：解析排程时间信息
+  // resolveScheduleTimes锛氳В鏋愭帓绋嬫椂闂翠俊鎭?
   const resolveScheduleTimes = (data, warningEl) => {
     const dateValue = data.schedule_date || "";
     if (!dateValue) {
@@ -240,12 +240,12 @@ function attachActionHandlers(labels) {
     return { dateValue, slot, startTime, endTime, startAt, endAt };
   };
 
-  // clearConflictHighlights：清除冲突高亮
+  // clearConflictHighlights锛氭竻闄ゅ啿绐侀珮浜?
   const clearConflictHighlights = () => {
     document.querySelectorAll(".gantt-slot.focus").forEach((slot) => slot.classList.remove("focus"));
   };
 
-  // highlightConflictSlots：高亮冲突时段
+  // highlightConflictSlots锛氶珮浜啿绐佹椂娈?
   const highlightConflictSlots = (device, dateValue, startAt, endAt) => {
     clearConflictHighlights();
     if (!device || !dateValue) {
@@ -268,7 +268,7 @@ function attachActionHandlers(labels) {
     });
   };
 
-  // buildSuggestion：生成可用时段建议
+  // buildSuggestion锛氱敓鎴愬彲鐢ㄦ椂娈靛缓璁?
   const buildSuggestion = (schedules, device, dateValue, ignoreId) => {
     if (!device || !dateValue) {
       return "";
@@ -277,7 +277,7 @@ function attachActionHandlers(labels) {
     if (Number.isNaN(startDate.getTime())) {
       return "";
     }
-    // isSlotFree：判断时段是否空闲
+    // isSlotFree锛氬垽鏂椂娈垫槸鍚︾┖闂?
     const isSlotFree = (dayValue, range) =>
       !schedules.some((entry) => {
         if (ignoreId && entry.id === ignoreId) {
@@ -312,7 +312,7 @@ function attachActionHandlers(labels) {
     return `${labels.scheduleSuggestPrefix}${labels.scheduleSuggestNone}`;
   };
 
-  // fillLabOptions：填充实验室下拉选项
+  // fillLabOptions锛氬～鍏呭疄楠屽涓嬫媺閫夐」
   const fillLabOptions = (select, labs, currentValue) => {
     if (!select) {
       return;
@@ -342,7 +342,7 @@ function attachActionHandlers(labels) {
     }
   };
 
-// handleTaskCreate：处理任务创建
+// handleTaskCreate锛氬鐞嗕换鍔″垱寤?
 const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     const data = getFormData(formSelector);
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
@@ -421,12 +421,12 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     });
   }
 
-  // getTaskEditForm：获取任务编辑表单
+  // getTaskEditForm锛氳幏鍙栦换鍔＄紪杈戣〃鍗?
   const getTaskEditForm = () => document.querySelector('[data-form="task-edit"]');
-  // getTaskDrawer：获取任务抽屉
+  // getTaskDrawer锛氳幏鍙栦换鍔℃娊灞?
   const getTaskDrawer = () => document.getElementById("task-drawer");
 
-  // openTaskEditor：打开任务编辑抽屉并填充
+  // openTaskEditor锛氭墦寮€浠诲姟缂栬緫鎶藉眽骞跺～鍏?
   const openTaskEditor = (taskId, taskCode) => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -501,7 +501,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     }
   };
 
-  // bindTaskEditClick：绑定任务编辑点击事件
+  // bindTaskEditClick锛氱粦瀹氫换鍔＄紪杈戠偣鍑讳簨浠?
   const bindTaskEditClick = () => {
     if (document.body?.dataset.taskEditBound === "1") {
       return;
@@ -530,7 +530,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
   };
   bindTaskEditClick();
 
-  // performTaskUpdate：保存任务编辑内容
+  // performTaskUpdate锛氫繚瀛樹换鍔＄紪杈戝唴瀹?
   const performTaskUpdate = () => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -578,7 +578,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     });
   }
 
-  // performTaskDelete：删除任务并刷新
+  // performTaskDelete锛氬垹闄や换鍔″苟鍒锋柊
   const performTaskDelete = () => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -593,16 +593,16 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
     const task =
       tasks.find((item) => item.id === taskId) || (taskCode ? tasks.find((item) => item.code === taskCode) : null);
-    // updated：移除目标后的新列表
+    // updated锛氱Щ闄ょ洰鏍囧悗鐨勬柊鍒楄〃
     const updated = taskId ? tasks.filter((item) => item.id !== taskId) : tasks.filter((item) => item !== task);
     saveStore(STORAGE_KEYS.tasks, updated);
 
     if (task?.code) {
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
       const streams = loadStore(STORAGE_KEYS.streams, []);
-      // nextSchedules：移除任务后的排程列表
+      // nextSchedules锛氱Щ闄や换鍔″悗鐨勬帓绋嬪垪琛?
       const nextSchedules = schedules.filter((entry) => entry.task_code !== task.code);
-      // nextStreams：移除任务后的数据流列表
+      // nextStreams锛氱Щ闄や换鍔″悗鐨勬暟鎹祦鍒楄〃
       const nextStreams = streams.filter((entry) => entry.task_code !== task.code);
       saveStore(STORAGE_KEYS.schedules, nextSchedules);
       saveStore(STORAGE_KEYS.streams, nextStreams);
@@ -734,7 +734,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     setRetentionTimeVisibility(isRetention);
   };
 
-  // resetManualScheduleForm：重置手动排程表单
+  // resetManualScheduleForm锛氶噸缃墜鍔ㄦ帓绋嬭〃鍗?
   const resetManualScheduleForm = () => {
     if (!manualScheduleForm) {
       return;
@@ -881,20 +881,38 @@ const manualScheduleReset = document.querySelector('[data-action="manual-schedul
       setWarning(scheduleWarning, "");
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const streams = loadStore(STORAGE_KEYS.streams, []);
-      schedules.push({
-        id: generateId("schedule"),
-        task_code: data.task_code,
-        device: data.device,
-        start_at: startAt.toISOString(),
-        end_at: endAt.toISOString(),
-        status: labels.statusScheduled,
-      });
-      // task：当前任务
+      const retentionSchedule =
+        !isRetentionSchedule && labels.retentionLocation
+          ? schedules.find(
+              (entry) => entry.task_code === data.task_code && entry.device === labels.retentionLocation
+            )
+          : null;
+      if (retentionSchedule) {
+        retentionSchedule.device = data.device;
+        retentionSchedule.start_at = startAt.toISOString();
+        retentionSchedule.end_at = endAt.toISOString();
+        retentionSchedule.status = labels.statusScheduled;
+      } else {
+        schedules.push({
+          id: generateId("schedule"),
+          task_code: data.task_code,
+          device: data.device,
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+          status: labels.statusScheduled,
+        });
+      }
+      // task锛氬綋鍓嶄换鍔?
       const task = tasks.find((t) => t.code === data.task_code);
       if (task) {
         task.status = isRetentionSchedule ? labels.statusRetention : labels.statusScheduled;
       }
-      if (!streams.find((stream) => stream.task_code === data.task_code)) {
+      const stream = streams.find((item) => item.task_code === data.task_code);
+      if (stream) {
+        if (!isRetentionSchedule) {
+          stream.device = data.device;
+        }
+      } else {
         streams.push({
           id: generateId("stream"),
           task_code: data.task_code,
@@ -921,14 +939,14 @@ const manualScheduleReset = document.querySelector('[data-action="manual-schedul
   // Schedule edit drawer: load, update, delete schedule entries.
 const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
   const scheduleDrawer = document.getElementById("schedule-drawer");
-  // bindEditTimeSlot：绑定排程时间段联动
+  // bindEditTimeSlot锛氱粦瀹氭帓绋嬫椂闂存鑱斿姩
   const bindEditTimeSlot = () => {
     if (!scheduleEditForm) {
       return;
     }
     const slotSelect = scheduleEditForm.querySelector('[data-edit-time-slot]');
     const customFields = scheduleEditForm.querySelectorAll("[data-edit-custom-time]");
-    // toggleCustom：切换自定义时间输入
+    // toggleCustom锛氬垏鎹㈣嚜瀹氫箟鏃堕棿杈撳叆
     const toggleCustom = () => {
       const isCustom = slotSelect?.value === "custom";
       customFields.forEach((field) => field.classList.toggle("is-hidden", !isCustom));
@@ -940,7 +958,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     toggleCustom();
   };
 
-  // openScheduleEditor：打开排程编辑抽屉并填充
+  // openScheduleEditor锛氭墦寮€鎺掔▼缂栬緫鎶藉眽骞跺～鍏?
   const openScheduleEditor = (scheduleId) => {
     if (!scheduleId || !scheduleEditForm) {
       return;
@@ -948,12 +966,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     const schedules = loadStore(STORAGE_KEYS.schedules, []);
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
     const devices = loadStore(STORAGE_KEYS.devices, []);
-    // schedule：当前排程
+    // schedule锛氬綋鍓嶆帓绋?
     const schedule = schedules.find((entry) => entry.id === scheduleId);
     if (!schedule) {
       return;
     }
-    // task：当前任务
+    // task锛氬綋鍓嶄换鍔?
     const task = tasks.find((item) => item.code === schedule.task_code);
     const testType = task?.test_type || "";
     const labs = getLabsForTestType(testType);
@@ -1004,7 +1022,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     }
   };
 
-  // handleScheduleEditClick：绑定排程编辑点击事件
+  // handleScheduleEditClick锛氱粦瀹氭帓绋嬬紪杈戠偣鍑讳簨浠?
   const handleScheduleEditClick = (event) => {
     const trigger = event.target.closest('[data-action="schedule-edit"]');
     if (!trigger) {
@@ -1076,7 +1094,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       }
       const { dateValue, startAt, endAt } = resolved;
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
-      // schedule：当前排程
+      // schedule锛氬綋鍓嶆帓绋?
       const schedule = schedules.find((entry) => entry.id === scheduleId);
       if (!schedule) {
         return;
@@ -1146,7 +1164,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       saveStore(STORAGE_KEYS.schedules, schedules);
 
       const streams = loadStore(STORAGE_KEYS.streams, []);
-      // stream：当前数据流
+      // stream锛氬綋鍓嶆暟鎹祦
       const stream = streams.find((entry) => entry.task_code === data.task_code);
       if (stream) {
         stream.device = data.device;
@@ -1178,15 +1196,15 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         return;
       }
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
-      // schedule：当前排程
+      // schedule锛氬綋鍓嶆帓绋?
       const schedule = schedules.find((entry) => entry.id === scheduleId);
-      // updated：移除目标后的新列表
+      // updated锛氱Щ闄ょ洰鏍囧悗鐨勬柊鍒楄〃
       const updated = schedules.filter((entry) => entry.id !== scheduleId);
       saveStore(STORAGE_KEYS.schedules, updated);
 
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       if (schedule) {
-        // task：当前任务
+        // task锛氬綋鍓嶄换鍔?
         const task = tasks.find((entry) => entry.code === schedule.task_code);
         if (task) {
           task.status = labels.statusWaiting;
@@ -1220,11 +1238,11 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
         status: labels.sampleReceived,
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "样品登记");
+      appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
-      // task：当前任务
+      // task锛氬綋鍓嶄换鍔?
       const task = tasks.find((t) => t.code === data.task_code);
       if (task && task.status === labels.statusAccepted) {
         task.status = labels.statusWaiting;
@@ -1252,7 +1270,7 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
         status: labels.sampleReceived,
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "样品登记");
+      appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
@@ -1271,12 +1289,12 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
       }
       const samples = loadStore(STORAGE_KEYS.samples, []);
       const now = new Date().toISOString();
-      const actionText = targetLocation === labels.retentionLocation ? "\u63a5\u9a73\u533a\u9001\u8fbe\u6682\u5b58\u95f4" : "\u6279\u91cf\u5165\u5e93";
+      const actionText = targetLocation === labels.retentionLocation ? "接驳区送达暂存间" : "批量入库";
       codes.forEach((code) => {
         if (!code) {
           return;
         }
-        // sample：当前样品
+        // sample锛氬綋鍓嶆牱鍝?
         let sample = samples.find((item) => item.code === code);
         if (!sample) {
           sample = {
@@ -1312,7 +1330,7 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
   }
 
   // Intake/Unpacking dispatch to lab or retention.
-const unpackingDispatch = document.querySelector('[data-action="unpacking-dispatch"]');
+  const unpackingDispatch = document.querySelector('[data-action="unpacking-dispatch"]');
   if (unpackingDispatch) {
     unpackingDispatch.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1347,7 +1365,8 @@ const unpackingDispatch = document.querySelector('[data-action="unpacking-dispat
         sample.owner = data.owner || sample.owner;
         sample.status = resolveSampleStatus(targetLocation);
         sample.updated_at = new Date().toISOString();
-        const actionText = targetLocation === labels.retentionLocation ? "\u63a5\u9a73\u533a\u9001\u8fbe\u6682\u5b58\u95f4" : "\u63a5\u9a73\u533a\u6d3e\u53d1";
+        const actionText =
+          targetLocation === labels.retentionLocation ? "接驳区送达暂存间" : "接驳区派发";
         appendSampleHistory(sample, actionText);
       });
       const warnings = [];
@@ -1357,7 +1376,7 @@ const unpackingDispatch = document.querySelector('[data-action="unpacking-dispat
       if (notUnpacking.length) {
         warnings.push(`样品不在接驳区：${notUnpacking.join("、")}`);
       }
-      setWarning(unpackingWarning, warnings.length ? `${warnings.join("；")}。` : "");
+      setWarning(unpackingWarning, warnings.length ? `${warnings.join("，")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1381,7 +1400,7 @@ const unpackingDispatch = document.querySelector('[data-action="unpacking-dispat
   }
 
   // Retention dispatch: only forward to labs.
-const retentionDispatch = document.querySelector('[data-action="retention-dispatch"]');
+  const retentionDispatch = document.querySelector('[data-action="retention-dispatch"]');
   if (retentionDispatch) {
     retentionDispatch.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1423,7 +1442,7 @@ const retentionDispatch = document.querySelector('[data-action="retention-dispat
       if (notRetention.length) {
         warnings.push(`样品不在暂存间：${notRetention.join("、")}`);
       }
-      setWarning(retentionWarning, warnings.length ? `${warnings.join("；")}。` : "");
+      setWarning(retentionWarning, warnings.length ? `${warnings.join("，")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1447,7 +1466,7 @@ const retentionDispatch = document.querySelector('[data-action="retention-dispat
   }
 
   // Staging dispatch: forward to labs and update history.
-const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]');
+  const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]');
   if (stagingDispatch) {
     stagingDispatch.addEventListener("click", (event) => {
       event.preventDefault();
@@ -1485,7 +1504,7 @@ const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]
       if (notStaging.length) {
         warnings.push(`不在暂存间：${notStaging.join("、")}`);
       }
-      setWarning(stagingWarning, warnings.length ? `${warnings.join("。")}。` : "");
+      setWarning(stagingWarning, warnings.length ? `${warnings.join("，")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1507,7 +1526,6 @@ const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]
       setWarning(stagingWarning, "");
     });
   }
-
   const sampleTraceRun = document.querySelector('[data-action="sample-trace-run"]');
   if (sampleTraceRun) {
     sampleTraceRun.addEventListener("click", (event) => {
@@ -1564,7 +1582,7 @@ const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]
         return;
       }
       const devices = loadStore(STORAGE_KEYS.devices, []);
-      // existing：已存在设备记录
+      // existing锛氬凡瀛樺湪璁惧璁板綍
       const existing = devices.find((device) => device.code === data.code);
       if (existing) {
         existing.name = data.name || existing.name;
@@ -1609,7 +1627,7 @@ const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]
       const data = getFormData('[data-form="data-report"]');
       const streams = loadStore(STORAGE_KEYS.streams, []);
       if (data.task_code) {
-        // target：目标数据流
+        // target锛氱洰鏍囨暟鎹祦
         const target = streams.find((stream) => stream.task_code === data.task_code);
         if (target) {
           target.reported = true;
@@ -1632,3 +1650,6 @@ const stagingDispatch = document.querySelector('[data-action="staging-dispatch"]
 }
 
 export { attachActionHandlers };
+
+
+

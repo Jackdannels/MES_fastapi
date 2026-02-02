@@ -1,4 +1,4 @@
-/* FILE: labels.js
+﻿/* FILE: labels.js
  * Reads UI labels from <body data-*> attributes.
  */
 // Read labels from <body data-*> attributes.
@@ -10,8 +10,10 @@ function getLabels() {
     statusAccepted: data.labelStatusAccepted || "Accepted",
     statusWaiting: data.labelStatusWaiting || "Waiting",
     statusScheduled: data.labelStatusScheduled || "Scheduled",
-    statusRunning: data.labelStatusRunning || "Running",
-    statusRetention: data.labelStatusRetention || "\u6682\u5b58\u95f4\u6392\u653e",
+    statusRunning: data.labelStatusRunning || "实验中",
+    statusExperimenting: data.labelStatusExperimenting || "实验中",
+    statusCompleted: data.labelStatusCompleted || "实验已经完成",
+    statusRetention: data.labelStatusRetention || "暂存间排放",
     sampleReceived: data.labelSampleReceived || "Received",
     sampleTesting: data.labelSampleTesting || "Testing",
     sampleStored: data.labelSampleStored || "Stored",
@@ -54,3 +56,4 @@ function getLabels() {
 }
 
 export { getLabels };
+

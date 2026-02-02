@@ -1,4 +1,4 @@
-/* FILE: utils.js
+﻿/* FILE: utils.js
  * Shared helpers (formatting, status classes, form data).
  */
 function generateId(prefix) {
@@ -32,10 +32,13 @@ function formatDateTime(value) {
 function statusClass(value, labels) {
   const normalized = (value || "").trim();
   const matches = (target) => target && normalized === target;
-  if (matches(labels.statusRunning) || normalized === "???") {
+  if (matches(labels.statusExperimenting) || matches(labels.statusRunning) || normalized === "???") {
     return "status running";
   }
-  if (matches(labels.statusRetention) || normalized == "\u6682\u5b58\u95f4\u5b58\u653e") {
+  if (matches(labels.statusCompleted)) {
+    return "status completed";
+  }
+  if (matches(labels.statusRetention) || normalized == "暂存间存放") {
     return "status retention";
   }
   if (matches(labels.statusScheduled) || normalized === "???") {
@@ -78,3 +81,4 @@ function getFormData(rootSelector) {
 }
 
 export { generateId, formatDateTime, statusClass, setText, getFormData };
+

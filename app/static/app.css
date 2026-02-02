@@ -213,7 +213,7 @@ body {
 /* 卡片标题 */
 .card h3 {
   margin: 0 0 8px; /* 外边距 */
-  font-size: 16px; /* 字号 */
+  font-size: 18px; /* 字号 */
 }
 
 /* KPI 数字 */
@@ -233,11 +233,15 @@ body {
 .table {
   width: 100%; /* 占满宽度 */
   border-collapse: collapse; /* 合并边框 */
-  font-size: 13px; /* 字号 */
+  font-size: 16px; /* 字号 */
 }
 
 /* 表格单元格 */
-.table th,
+.table th {
+  font-size: 14px; /* 表头字号 */
+  font-weight: 600; /* 可选：加粗 */
+  background: rgba(56, 189, 248, 0.18); /* 背景色 */
+}
 .table td {
   padding: 12px 10px; /* 内边距 */
   text-align: left; /* 左对齐 */
@@ -577,6 +581,12 @@ body {
   border: 1px solid rgba(34, 197, 94, 0.6); /* 边框 */
 }
 
+/* 状态：已完成 */
+.status.completed {
+  background: rgba(148, 163, 184, 0.35); /* 背景 */
+  border: 1px solid rgba(148, 163, 184, 0.6); /* 边框 */
+}
+
 /* 时间线 */
 .timeline {
   display: grid; /* 网格布局 */
@@ -664,8 +674,10 @@ body {
   background: rgba(241, 245, 249, 0.95); /* 背景 */
   color: var(--text); /* 文字色 */
   font-weight: 500; /* 字重 */
+  font-size: 16px; /* 字号 */
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif; /* 指定微软雅黑 */
 }
-
+ 
 /* 甘特图左侧冻结列 */
 .gantt-sticky {
   position: sticky; /* 吸附 */
@@ -675,6 +687,7 @@ body {
   text-align: left; /* 左对齐 */
   font-size: 16px; /* 与空闲文本一致 */
   font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif; /* 指定微软雅黑 */
+  font-weight: 700; /* 加粗 */
 }
 
 /* 甘特图设备名单元 */

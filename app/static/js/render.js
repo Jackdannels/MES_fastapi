@@ -305,6 +305,7 @@ function renderTasksPage(labels) {
     return;
   }
   const tasks = loadStore(STORAGE_KEYS.tasks, []);
+  const schedules = loadStore(STORAGE_KEYS.schedules, []);
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
   const waitingCount = tasks.filter(
@@ -317,8 +318,65 @@ function renderTasksPage(labels) {
   setText("task-internal-count", internalCount);
   setText("task-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
 
+  const now = new Date();
+  const retentionStatus = labels.statusRetention || "暂存间排放";
+  const runningStatus = labels.statusExperimenting || labels.statusRunning || "实验中";
+  const completedStatus = labels.statusCompleted || "实验已经完成";
+  const scheduledStatus = labels.statusScheduled || "已排程";
+  const schedulesByTask = new Map();
+  let taskStatusUpdated = false;
+  schedules.forEach((entry) => {
+    if (!entry?.task_code) {
+      return;
+    }
+    if (!schedulesByTask.has(entry.task_code)) {
+      schedulesByTask.set(entry.task_code, []);
+    }
+    schedulesByTask.get(entry.task_code).push(entry);
+  });
+  const resolveTaskStatus = (task) => {
+    const entries = schedulesByTask.get(task.code) || [];
+    if (!entries.length) {
+      return task.status || "";
+    }
+    const labEntries = entries.filter((entry) => entry.device !== labels.retentionLocation);
+    const retentionEntries = entries.filter((entry) => entry.device === labels.retentionLocation);
+    if (!labEntries.length && retentionEntries.length) {
+      return retentionStatus;
+    }
+    if (!labEntries.length) {
+      return task.status || scheduledStatus;
+    }
+    const validEntries = labEntries.filter((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
+    });
+    if (!validEntries.length) {
+      return scheduledStatus;
+    }
+    const hasActive = validEntries.some((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return start <= now && end >= now;
+    });
+    if (hasActive) {
+      return runningStatus;
+    }
+    const allEnded = validEntries.every((entry) => new Date(entry.end_at) < now);
+    if (allEnded) {
+      return completedStatus;
+    }
+    return scheduledStatus;
+  };
+
   tbody.innerHTML = "";
   tasks.forEach((task) => {
+    const displayStatus = resolveTaskStatus(task);
+    if (displayStatus && displayStatus !== task.status) {
+      task.status = displayStatus;
+      taskStatusUpdated = true;
+    }
     const row = document.createElement("tr");
     if (task.id) {
       row.dataset.taskId = task.id;
@@ -333,13 +391,16 @@ function renderTasksPage(labels) {
       <td>${task.test_type || ""}</td>
       <td><span class="pill">${task.required_device || "-"}</span></td>
       <td>${formatDateTime(task.due_at)}</td>
-      <td><span class="${statusClass(task.status, labels)}">${task.status || ""}</span></td>
+      <td><span class="${statusClass(displayStatus, labels)}">${displayStatus || ""}</span></td>
       <td><button type="button" class="action-link" data-action="task-edit" data-drawer-open="task-drawer" data-task-id="${
         task.id || ""
       }" data-task-code="${task.code || ""}">${labels.edit}</button></td>
     `;
     tbody.appendChild(row);
   });
+  if (taskStatusUpdated) {
+    saveStore(STORAGE_KEYS.tasks, tasks);
+  }
   renderTaskQuickSelect(tasks);
 }
 

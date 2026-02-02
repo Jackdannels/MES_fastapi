@@ -105,7 +105,7 @@
   </section>
 
   <section class="card section">
-    <h3>待排程任务清单</h3>
+    <h3>总任务清单</h3>
     <div class="toolbar">
       <input class="search-input" data-filter-input="#task-table" placeholder="筛选任务编号/客户/设备" />
       <a class="action-btn" href="#" data-modal-open="task-modal">快速新建</a>

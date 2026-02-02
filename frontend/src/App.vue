@@ -33,6 +33,7 @@
         <div class="header-actions">
           <RouterLink class="action-btn" to="/tasks#task-modal" data-modal-open="task-modal">新建任务</RouterLink>
           <RouterLink class="action-btn secondary" to="/schedule">查看排程</RouterLink>
+          <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
         </div>
       </header>
       <RouterView />
@@ -51,6 +52,9 @@ const pageTitle = computed(() => route.meta?.title || "七二四新火工区信�
 const pageSubtitle = computed(() => route.meta?.subtitle || "");
 
 const isActive = (name) => route.name === name;
+const refreshPage = () => {
+  window.location.reload();
+};
 
 const runLegacyBoot = async () => {
   await nextTick();
