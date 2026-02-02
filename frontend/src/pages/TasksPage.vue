@@ -238,10 +238,11 @@
         <div class="form-field">
           <label>状态</label>
           <select name="status">
-            <option>已受理</option>
             <option>待排程</option>
             <option>已排程</option>
-            <option>执行中</option>
+            <option>实验中</option>
+            <option>实验已经完成</option>
+            <option>暂存间排放</option>
           </select>
         </div>
         <div class="form-field" style="grid-column: 1 / -1;">

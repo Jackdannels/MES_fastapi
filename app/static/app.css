@@ -571,8 +571,8 @@ body {
 
 /* 状态：留样 */
 .status.retention {
-  background: rgba(148, 163, 184, 0.35); /* 背景 */
-  border: 1px solid rgba(148, 163, 184, 0.6); /* 边框 */
+  background: rgba(139, 92, 246, 0.22); /* 背景 */
+  border: 1px solid rgba(139, 92, 246, 0.5); /* 边框 */
 }
 
 /* 状态：运行中 */
@@ -583,8 +583,8 @@ body {
 
 /* 状态：已完成 */
 .status.completed {
-  background: rgba(148, 163, 184, 0.35); /* 背景 */
-  border: 1px solid rgba(148, 163, 184, 0.6); /* 边框 */
+  background: rgba(100, 116, 139, 0.28); /* 背景 */
+  border: 1px solid rgba(100, 116, 139, 0.55); /* 边框 */
 }
 
 /* 时间线 */

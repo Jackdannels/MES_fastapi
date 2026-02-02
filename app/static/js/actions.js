@@ -204,7 +204,7 @@ function attachActionHandlers(labels) {
       required_device: testType,
       due_at: formatDateTime(due),
       arrival_at: formatDateTime(arrival),
-      status: statusOverride || labels.statusAccepted,
+      status: statusOverride || labels.statusWaiting,
       created_at: now.toISOString(),
     };
   };
@@ -364,7 +364,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
           required_device: data.required_device || data.test_type || "",
           due_at: data.due_at || "",
           arrival_at: data.arrival_at || "",
-          status: statusOverride || labels.statusAccepted,
+          status: statusOverride || labels.statusWaiting,
           created_at: new Date().toISOString(),
         };
     setWarning(warningEl, "");
@@ -377,7 +377,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
   if (taskSubmit) {
     taskSubmit.addEventListener("click", (event) => {
       event.preventDefault();
-      if (handleTaskCreate('[data-form="task-intake"]', labels.statusAccepted, taskWarning)) {
+      if (handleTaskCreate('[data-form="task-intake"]', labels.statusWaiting, taskWarning)) {
         renderAll(labels);
       }
     });
@@ -397,7 +397,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
   if (taskQuick) {
     taskQuick.addEventListener("click", (event) => {
       event.preventDefault();
-      if (handleTaskCreate('[data-form="task-quick"]', labels.statusAccepted, taskQuickWarning)) {
+      if (handleTaskCreate('[data-form="task-quick"]', labels.statusWaiting, taskQuickWarning)) {
         const modal = document.getElementById("task-modal");
         if (modal) {
           modal.classList.remove("is-open");
@@ -1244,7 +1244,7 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       // task锛氬綋鍓嶄换鍔?
       const task = tasks.find((t) => t.code === data.task_code);
-      if (task && task.status === labels.statusAccepted) {
+      if (task && (task.status === labels.statusAccepted || task.status === "已受理")) {
         task.status = labels.statusWaiting;
       }
       saveStore(STORAGE_KEYS.tasks, tasks);

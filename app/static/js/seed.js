@@ -137,7 +137,7 @@ function buildSeed(labels) {
       required_device: "温度冲击试验",
       due_at: textTime(20),
       arrival_at: textTime(3),
-      status: labels.statusAccepted,
+      status: labels.statusWaiting,
       created_at: createdAt,
     },
     {
@@ -182,7 +182,7 @@ function buildSeed(labels) {
       required_device: "霉菌试验",
       due_at: textTime(60),
       arrival_at: textTime(12),
-      status: labels.statusAccepted,
+      status: labels.statusWaiting,
       created_at: createdAt,
     },
   ];

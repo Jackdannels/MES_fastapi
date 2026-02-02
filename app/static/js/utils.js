@@ -44,7 +44,7 @@ function statusClass(value, labels) {
   if (matches(labels.statusScheduled) || normalized === "???") {
     return "status scheduled";
   }
-  if (matches(labels.statusAccepted) || normalized === "???") {
+  if (labels.statusAccepted && labels.statusAccepted !== labels.statusWaiting && matches(labels.statusAccepted)) {
     return "status accepted";
   }
   if (matches(labels.statusWaiting) || normalized === "???" || matches(labels.dataGap)) {

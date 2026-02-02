@@ -16,9 +16,9 @@
       <div class="muted">需设备空闲</div>
     </div>
     <div class="card">
-      <div class="muted">运行设备</div>
+      <div class="muted">正在运行</div>
       <div class="kpi" id="dashboard-device-count">0</div>
-      <div class="muted" id="dashboard-device-note">校准中 0 台</div>
+      <div class="muted" id="dashboard-device-note">实验中任务</div>
     </div>
     <div class="card">
       <div class="muted">预警</div>

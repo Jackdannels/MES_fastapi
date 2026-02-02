@@ -7,7 +7,7 @@ function getLabels() {
   return {
     sourceExternal: data.labelSourceExternal || "External",
     sourceInternal: data.labelSourceInternal || "Internal",
-    statusAccepted: data.labelStatusAccepted || "Accepted",
+    statusAccepted: data.labelStatusAccepted || "待排程",
     statusWaiting: data.labelStatusWaiting || "Waiting",
     statusScheduled: data.labelStatusScheduled || "Scheduled",
     statusRunning: data.labelStatusRunning || "实验中",

@@ -96,6 +96,7 @@ function renderGanttSchedule(computed, devices, filterDevice = "") {
   if (!table || !dayRow || !slotRow || !body) {
     return;
   }
+  const deviceList = Array.isArray(devices) ? devices : [];
   const activeFilter = (filterDevice || "").trim();
   const totalDays = Math.max(1, Number.parseInt(table.dataset.days || "3", 10));
   const labelAm = table.dataset.labelAm || "AM";
@@ -141,7 +142,7 @@ function renderGanttSchedule(computed, devices, filterDevice = "") {
       deviceRows.push({ code: value });
     };
     TEST_LABS.forEach((lab) => pushDevice(lab));
-    devices.forEach((device) => pushDevice(device.code || device.name || ""));
+    deviceList.forEach((device) => pushDevice(device.code || device.name || ""));
     Array.from(new Set(computed.map((entry) => entry.device).filter(Boolean))).forEach((code) => pushDevice(code));
   }
 
@@ -306,17 +307,18 @@ function renderTasksPage(labels) {
   }
   const tasks = loadStore(STORAGE_KEYS.tasks, []);
   const schedules = loadStore(STORAGE_KEYS.schedules, []);
+  let normalizedStatusUpdated = false;
+  tasks.forEach((task) => {
+    if (!task?.status) {
+      return;
+    }
+    if (task.status === "已受理" || task.status === labels.statusAccepted) {
+      task.status = labels.statusWaiting;
+      normalizedStatusUpdated = true;
+    }
+  });
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
-  const waitingCount = tasks.filter(
-    (t) => t.status === labels.statusWaiting || t.status === labels.statusAccepted
-  ).length;
-  const retentionCount = tasks.filter((t) => t.status === labels.statusRetention).length;
-  const unscheduledCount = waitingCount + retentionCount;
-
-  setText("task-external-count", externalCount);
-  setText("task-internal-count", internalCount);
-  setText("task-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
 
   const now = new Date();
   const retentionStatus = labels.statusRetention || "暂存间排放";
@@ -324,7 +326,7 @@ function renderTasksPage(labels) {
   const completedStatus = labels.statusCompleted || "实验已经完成";
   const scheduledStatus = labels.statusScheduled || "已排程";
   const schedulesByTask = new Map();
-  let taskStatusUpdated = false;
+  let taskStatusUpdated = normalizedStatusUpdated;
   schedules.forEach((entry) => {
     if (!entry?.task_code) {
       return;
@@ -370,12 +372,21 @@ function renderTasksPage(labels) {
     return scheduledStatus;
   };
 
+  let waitingCount = 0;
+  let retentionCount = 0;
   tbody.innerHTML = "";
   tasks.forEach((task) => {
     const displayStatus = resolveTaskStatus(task);
+    const effectiveStatus = displayStatus || task.status || "";
     if (displayStatus && displayStatus !== task.status) {
       task.status = displayStatus;
       taskStatusUpdated = true;
+    }
+    if (effectiveStatus === labels.statusRetention) {
+      retentionCount += 1;
+    }
+    if (effectiveStatus === labels.statusWaiting || effectiveStatus === labels.statusAccepted) {
+      waitingCount += 1;
     }
     const row = document.createElement("tr");
     if (task.id) {
@@ -398,6 +409,10 @@ function renderTasksPage(labels) {
     `;
     tbody.appendChild(row);
   });
+  const unscheduledCount = waitingCount + retentionCount;
+  setText("task-external-count", externalCount);
+  setText("task-internal-count", internalCount);
+  setText("task-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
   if (taskStatusUpdated) {
     saveStore(STORAGE_KEYS.tasks, tasks);
   }
@@ -912,8 +927,14 @@ function renderDevicesPage(labels) {
   if (!tbody) {
     return;
   }
-  const devices = loadStore(STORAGE_KEYS.devices, []);
-  const schedules = loadStore(STORAGE_KEYS.schedules, []);
+  let devices = loadStore(STORAGE_KEYS.devices, []);
+  let schedules = loadStore(STORAGE_KEYS.schedules, []);
+  if (!Array.isArray(devices)) {
+    devices = [];
+  }
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
   const computed = devices.map((device) => ({
     ...device,
     status: computeDeviceStatus(device, schedules, labels),
@@ -949,7 +970,13 @@ function renderSchedulePage(labels) {
     return;
   }
   let schedules = loadStore(STORAGE_KEYS.schedules, []);
-  const devices = loadStore(STORAGE_KEYS.devices, []);
+  let devices = loadStore(STORAGE_KEYS.devices, []);
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
+  if (!Array.isArray(devices)) {
+    devices = [];
+  }
   const now = new Date();
   const retentionStatus = labels.statusRetention || "\u6682\u5b58\u95f4\u5b58\u653e";
   const runningStatus = labels.statusRunning || "\u6267\u884c\u4e2d";
@@ -1064,7 +1091,10 @@ function renderSchedulePage(labels) {
   setText("schedule-conflict-count", conflicts.length);
   setText("schedule-next-auto", formatDateTime(new Date(Date.now() + 60 * 60 * 1000)));
   setText("schedule-change-count", 0);
-  const samples = loadStore(STORAGE_KEYS.samples, []);
+  let samples = loadStore(STORAGE_KEYS.samples, []);
+  if (!Array.isArray(samples)) {
+    samples = [];
+  }
   renderUnpackingSchedule(labels, samples);
   renderRetentionSchedule(labels, samples);
   renderRetentionInternalSchedule(labels);
@@ -1261,10 +1291,89 @@ function renderDashboardPage(labels) {
   if (!taskBody) {
     return;
   }
-  const tasks = loadStore(STORAGE_KEYS.tasks, []);
-  const schedules = loadStore(STORAGE_KEYS.schedules, []);
-  const devices = loadStore(STORAGE_KEYS.devices, []);
-  const streams = loadStore(STORAGE_KEYS.streams, []);
+  let tasks = loadStore(STORAGE_KEYS.tasks, []);
+  let schedules = loadStore(STORAGE_KEYS.schedules, []);
+  let devices = loadStore(STORAGE_KEYS.devices, []);
+  let streams = loadStore(STORAGE_KEYS.streams, []);
+  if (!Array.isArray(tasks)) {
+    tasks = [];
+  }
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
+  if (!Array.isArray(devices)) {
+    devices = [];
+  }
+  if (!Array.isArray(streams)) {
+    streams = [];
+  }
+
+  const now = new Date();
+  const retentionStatus = labels.statusRetention || "暂存间排放";
+  const runningStatus = labels.statusExperimenting || labels.statusRunning || "实验中";
+  const completedStatus = labels.statusCompleted || "实验已经完成";
+  const scheduledStatus = labels.statusScheduled || "已排程";
+  const schedulesByTask = new Map();
+  let taskStatusUpdated = false;
+  schedules.forEach((entry) => {
+    if (!entry?.task_code) {
+      return;
+    }
+    if (!schedulesByTask.has(entry.task_code)) {
+      schedulesByTask.set(entry.task_code, []);
+    }
+    schedulesByTask.get(entry.task_code).push(entry);
+  });
+  const resolveTaskStatus = (task) => {
+    const entries = schedulesByTask.get(task.code) || [];
+    if (!entries.length) {
+      return task.status || "";
+    }
+    const labEntries = entries.filter((entry) => entry.device !== labels.retentionLocation);
+    const retentionEntries = entries.filter((entry) => entry.device === labels.retentionLocation);
+    if (!labEntries.length && retentionEntries.length) {
+      return retentionStatus;
+    }
+    if (!labEntries.length) {
+      return task.status || scheduledStatus;
+    }
+    const validEntries = labEntries.filter((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
+    });
+    if (!validEntries.length) {
+      return scheduledStatus;
+    }
+    const hasActive = validEntries.some((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return start <= now && end >= now;
+    });
+    if (hasActive) {
+      return runningStatus;
+    }
+    const allEnded = validEntries.every((entry) => new Date(entry.end_at) < now);
+    if (allEnded) {
+      return completedStatus;
+    }
+    return scheduledStatus;
+  };
+
+  let runningTaskCount = 0;
+  tasks.forEach((task) => {
+    const status = resolveTaskStatus(task);
+    if (status && status !== task.status) {
+      task.status = status;
+      taskStatusUpdated = true;
+    }
+    if (status === runningStatus) {
+      runningTaskCount += 1;
+    }
+  });
+  if (taskStatusUpdated) {
+    saveStore(STORAGE_KEYS.tasks, tasks);
+  }
 
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
@@ -1275,7 +1384,8 @@ function renderDashboardPage(labels) {
   const unscheduledCount = waitingCount + retentionCount;
   setText("dashboard-intake-count", tasks.length);
   setText("dashboard-intake-note", `${labels.sourceExternal} ${externalCount} / ${labels.sourceInternal} ${internalCount}`);
-  setText("dashboard-scheduled-count", schedules.length);
+  const scheduledCount = schedules.filter((entry) => entry.device !== labels.retentionLocation).length;
+  setText("dashboard-scheduled-count", scheduledCount);
   setText("dashboard-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
 
   const computedDevices = devices.map((device) => ({
@@ -1284,9 +1394,8 @@ function renderDashboardPage(labels) {
   }));
   const activeDevices = computedDevices.filter((d) => d.status === labels.deviceInUse).length;
   const maintenanceDevices = computedDevices.filter((d) => d.status === labels.deviceMaintenance).length;
-  setText("dashboard-device-count", activeDevices);
-  const maintenanceNote = `${labels.maintenancePrefix} ${maintenanceDevices} ${labels.maintenanceSuffix}`.trim();
-  setText("dashboard-device-note", maintenanceNote);
+  setText("dashboard-device-count", runningTaskCount);
+  setText("dashboard-device-note", "实验中任务");
 
   const gapCount = streams.filter((s) => s.status === labels.dataGap).length;
   setText("dashboard-alert-count", gapCount);
