@@ -12,7 +12,7 @@ function getLabels() {
     statusScheduled: data.labelStatusScheduled || "Scheduled",
     statusRunning: data.labelStatusRunning || "实验中",
     statusExperimenting: data.labelStatusExperimenting || "实验中",
-    statusCompleted: data.labelStatusCompleted || "实验已经完成",
+    statusCompleted: data.labelStatusCompleted || "实验已完成",
     statusRetention: data.labelStatusRetention || "暂存间排放",
     sampleReceived: data.labelSampleReceived || "Received",
     sampleTesting: data.labelSampleTesting || "Testing",
