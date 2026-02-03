@@ -12,7 +12,7 @@
       "required_device": "冲击试验",
       "due_at": "2026-02-03 11:39",
       "arrival_at": "2026-02-02 22:39",
-      "status": "待排程",
+      "status": "暂存间排放",
       "created_at": "2026-02-02T11:39:50.770Z"
     },
     {
@@ -176,6 +176,14 @@
       "start_at": "2026-02-02T11:30:53.952Z",
       "end_at": "2026-02-02T11:30:53.952Z",
       "status": "已排程"
+    },
+    {
+      "id": "schedule-1770115638480-190",
+      "task_code": "CJ-2026-001",
+      "device": "恒温恒湿间（暂存间）",
+      "start_at": "2026-02-03T10:47:18.480Z",
+      "end_at": "2026-02-03T10:47:18.480Z",
+      "status": "已排程"
     }
   ],
   "mes.samples": null,
@@ -222,6 +230,15 @@
       "task_code": "ZD-2026-001",
       "device": "恒温恒湿间（暂存间）",
       "last_packet": "2026-02-02 19:30",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1770115638481-461",
+      "task_code": "CJ-2026-001",
+      "device": "恒温恒湿间（暂存间）",
+      "last_packet": "2026-02-03 18:47",
       "quality": "98.0%",
       "status": "采集中",
       "reported": false

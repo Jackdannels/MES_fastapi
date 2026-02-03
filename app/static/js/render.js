@@ -773,9 +773,18 @@ function renderRetentionInternalSchedule(labels) {
     return;
   }
 
-  const tasks = loadStore(STORAGE_KEYS.tasks, []);
-  const samples = loadStore(STORAGE_KEYS.samples, []);
-  const schedules = loadStore(STORAGE_KEYS.schedules, []);
+  let tasks = loadStore(STORAGE_KEYS.tasks, []);
+  let samples = loadStore(STORAGE_KEYS.samples, []);
+  let schedules = loadStore(STORAGE_KEYS.schedules, []);
+  if (!Array.isArray(tasks)) {
+    tasks = [];
+  }
+  if (!Array.isArray(samples)) {
+    samples = [];
+  }
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
 
   const taskByCode = new Map();
   tasks.forEach((task) => {
@@ -1245,29 +1254,12 @@ function renderScheduleFormOptions(labels, devices) {
   }
 
   const tasks = loadStore(STORAGE_KEYS.tasks, []);
-  const samples = loadStore(STORAGE_KEYS.samples, []);
   const schedules = loadStore(STORAGE_KEYS.schedules, []);
   const tabGroup = document.querySelector('[data-tab-group="schedule-board"][data-tab-role="tabs"]');
   const activeTab = tabGroup?.querySelector(".tab-btn.active");
   const isRetentionTab = activeTab?.getAttribute("data-tab-btn") === "retention";
   const retentionTaskCodes = new Set();
-  const scheduledToLab = new Set(
-    schedules
-      .filter((entry) => entry?.task_code && entry?.device && entry.device !== labels.retentionLocation)
-      .map((entry) => entry.task_code)
-  );
   if (isRetentionTab && labels.retentionLocation) {
-    samples.forEach((sample) => {
-      if (
-        sample.location === labels.retentionLocation &&
-        sample.status !== labels.sampleTesting &&
-        isRetentionFromIntake(sample, labels) &&
-        sample.task_code &&
-        !RETENTION_EXCLUDE_CODES.has(sample.task_code)
-      ) {
-        retentionTaskCodes.add(sample.task_code);
-      }
-    });
     schedules.forEach((entry) => {
       if (
         entry.device === labels.retentionLocation &&
@@ -1279,12 +1271,7 @@ function renderScheduleFormOptions(labels, devices) {
     });
   }
   const candidates = isRetentionTab
-    ? tasks.filter(
-        (task) =>
-          retentionTaskCodes.has(task.code) &&
-          !scheduledToLab.has(task.code) &&
-          !isRetentionExcludedTask(task)
-      )
+    ? tasks.filter((task) => retentionTaskCodes.has(task.code) && !isRetentionExcludedTask(task))
     : tasks.filter((task) => task.status === labels.statusAccepted);
   const previousTask = taskSelect.value;
   const taskPlaceholderText = taskSelect.dataset.placeholder || "Select task";
