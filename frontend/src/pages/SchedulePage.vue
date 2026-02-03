@@ -103,7 +103,7 @@
       >
         <thead id="gantt-head">
           <tr id="gantt-day-row">
-            <th rowspan="2" class="gantt-sticky" data-static="1">设备</th>
+            <th rowspan="2" class="gantt-sticky" data-static="1">试验室</th>
           </tr>
           <tr id="gantt-slot-row"></tr>
         </thead>

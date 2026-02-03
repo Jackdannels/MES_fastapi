@@ -890,19 +890,132 @@ function renderRetentionInternalSchedule(labels) {
   ensureRetentionAgeTimer();
 }
 
+function isReceivedTask(task, labels) {
+  if (!task) {
+    return false;
+  }
+  const status = (task.status || "").trim();
+  if (!status) {
+    return false;
+  }
+  if (labels?.statusCompleted && status === labels.statusCompleted) {
+    return false;
+  }
+  const receivedStatuses = new Set(
+    [
+      labels?.statusAccepted,
+      labels?.statusWaiting,
+      labels?.statusScheduled,
+      labels?.statusRunning,
+      labels?.statusExperimenting,
+      labels?.statusRetention,
+      "已受理",
+      "待排程",
+      "已排程",
+      "实验中",
+      "暂存间排放",
+      "暂存间存放",
+    ].filter(Boolean)
+  );
+  return receivedStatuses.has(status);
+}
+
+function buildSampleTaskList(tasks, samples, schedules) {
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  const list = [];
+  const byCode = new Map();
+  taskList.forEach((task) => {
+    if (!task?.code) {
+      return;
+    }
+    byCode.set(task.code, task);
+    list.push(task);
+  });
+  const appendMissing = (code) => {
+    const value = (code || "").trim();
+    if (!value || byCode.has(value)) {
+      return;
+    }
+    const placeholder = { code: value, name: "", sample_count: "" };
+    byCode.set(value, placeholder);
+    list.push(placeholder);
+  };
+  (Array.isArray(samples) ? samples : []).forEach((sample) => appendMissing(sample.task_code));
+  (Array.isArray(schedules) ? schedules : []).forEach((entry) => appendMissing(entry.task_code));
+  return list;
+}
+
+function fillSampleTaskSelects(taskList) {
+  const tasks = Array.isArray(taskList) ? taskList : [];
+  document.querySelectorAll("select[data-sample-task-select]").forEach((select) => {
+    const previousValue = select.value;
+    const placeholderText = select.dataset.placeholder || "Select task";
+    const emptyText = select.dataset.emptyPlaceholder || "No tasks";
+
+    select.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = tasks.length ? placeholderText : emptyText;
+    select.appendChild(placeholder);
+
+    tasks.forEach((task) => {
+      if (!task?.code) {
+        return;
+      }
+      const option = document.createElement("option");
+      option.value = task.code;
+      option.textContent = `${task.code}${task.name ? ` ${task.name}` : ""}`.trim();
+      select.appendChild(option);
+    });
+
+    if (previousValue && tasks.some((task) => task.code === previousValue)) {
+      select.value = previousValue;
+    }
+  });
+}
+
+function renderSampleTaskSummary(taskList, samples) {
+  const select = document.querySelector('select[data-sample-task-select="summary"]');
+  const countEl = document.getElementById("sample-task-count");
+  if (!select || !countEl) {
+    return;
+  }
+  const tasks = Array.isArray(taskList) ? taskList : [];
+  const sampleList = Array.isArray(samples) ? samples : [];
+
+  const updateCount = () => {
+    const code = (select.value || "").trim();
+    if (!code) {
+      countEl.textContent = "0";
+      return;
+    }
+    const task = tasks.find((item) => item.code === code);
+    const rawCount = task?.sample_count ?? 0;
+    if (rawCount !== "" && Number.isFinite(Number(rawCount))) {
+      countEl.textContent = String(rawCount);
+      return;
+    }
+    const actualCount = sampleList.filter((sample) => sample.task_code === code).length;
+    countEl.textContent = String(actualCount);
+  };
+
+  if (select.dataset.bound !== "1") {
+    select.addEventListener("change", updateCount);
+    select.dataset.bound = "1";
+  }
+
+  updateCount();
+}
+
 function renderSamplesPage(labels) {
   const tbody = document.getElementById("sample-table-body");
   if (!tbody) {
     return;
   }
-  const samples = loadStore(STORAGE_KEYS.samples, []);
-  const arrivedCount = samples.filter((s) => s.status === labels.sampleReceived).length;
-  const runningCount = samples.filter((s) => s.status === labels.sampleTesting).length;
-  const retentionCount = samples.filter((s) => s.status === labels.sampleStored).length;
-
-  setText("sample-arrived-count", arrivedCount);
-  setText("sample-running-count", runningCount);
-  setText("sample-retention-count", retentionCount);
+  let samples = loadStore(STORAGE_KEYS.samples, []);
+  if (!Array.isArray(samples)) {
+    samples = [];
+  }
 
   tbody.innerHTML = "";
   samples.forEach((sample) => {
@@ -917,6 +1030,17 @@ function renderSamplesPage(labels) {
     `;
     tbody.appendChild(row);
   });
+  let tasks = loadStore(STORAGE_KEYS.tasks, []);
+  let schedules = loadStore(STORAGE_KEYS.schedules, []);
+  if (!Array.isArray(tasks)) {
+    tasks = [];
+  }
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
+  const sampleTasks = buildSampleTaskList(tasks, samples, schedules);
+  fillSampleTaskSelects(sampleTasks);
+  renderSampleTaskSummary(sampleTasks, samples);
   renderStagingSamples(labels, samples);
   const traceInput = document.querySelector('[data-form="sample-trace"] input[name="task_code"]');
   renderSampleTrace(labels, traceInput ? traceInput.value : "");

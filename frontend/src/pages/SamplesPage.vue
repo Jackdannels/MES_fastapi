@@ -1,22 +1,4 @@
 ﻿<template>
-  <section class="grid cols-3 stagger">
-    <div class="card">
-      <div class="muted">今日到样</div>
-      <div class="kpi" id="sample-arrived-count">0</div>
-      <div class="muted">等待登记</div>
-    </div>
-    <div class="card">
-      <div class="muted">试验中</div>
-      <div class="kpi" id="sample-running-count">0</div>
-      <div class="muted">已分配设备</div>
-    </div>
-    <div class="card">
-      <div class="muted">留样库存</div>
-      <div class="kpi" id="sample-retention-count">0</div>
-      <div class="muted">可追溯样品</div>
-    </div>
-  </section>
-
   <section class="card section">
     <h3>样品登记</h3>
     <form data-form="sample-intake">
@@ -27,7 +9,14 @@
         </div>
         <div class="form-field">
           <label>关联任务</label>
-          <input type="text" name="task_code" placeholder="任务编号/名称" />
+          <select
+            name="task_code"
+            data-sample-task-select="intake"
+            data-placeholder="请选择任务"
+            data-empty-placeholder="暂无任务"
+          >
+            <option value="">请选择任务</option>
+          </select>
         </div>
         <div class="form-field">
           <label>样品类型</label>
@@ -62,7 +51,29 @@
         <a class="action-btn" href="#" data-action="sample-submit">确认登记</a>
         <a class="action-btn secondary" href="#" data-action="sample-draft">保存草稿</a>
       </div>
+      <div class="form-alert is-hidden" data-sample-warning></div>
     </form>
+  </section>
+
+  <section class="card section">
+    <h3>任务样品数量</h3>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>选择任务</label>
+        <select
+          name="task_code"
+          data-sample-task-select="summary"
+          data-placeholder="请选择任务"
+          data-empty-placeholder="暂无任务"
+        >
+          <option value="">请选择任务</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>样品数量</label>
+        <div class="kpi" id="sample-task-count">0</div>
+      </div>
+    </div>
   </section>
 
   <div class="tabs section" data-tab-group="samples" data-tab-role="tabs">

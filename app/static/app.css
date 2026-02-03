@@ -673,7 +673,7 @@ body {
 .gantt thead th {
   background: rgba(241, 245, 249, 0.95); /* 背景 */
   color: var(--text); /* 文字色 */
-  font-weight: 500; /* 字重 */
+  font-weight: 900; /* 字重 */
   font-size: 16px; /* 字号 */
   font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif; /* 指定微软雅黑 */
 }

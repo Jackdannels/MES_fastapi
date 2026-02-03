@@ -98,6 +98,7 @@ function attachActionHandlers(labels) {
 
   const taskWarning = document.querySelector("[data-task-warning]");
   const taskQuickWarning = document.querySelector("[data-task-quick-warning]");
+  const sampleWarning = document.querySelector("[data-sample-warning]");
   const scheduleWarning = document.querySelector("[data-schedule-warning]");
   const scheduleEditWarning = document.querySelector("[data-schedule-edit-warning]");
   const stagingWarning = document.querySelector("[data-staging-warning]");
@@ -1220,15 +1221,26 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
   }
 
   // Sample intake and batch operations.
-const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
+  const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
   if (sampleSubmit) {
     sampleSubmit.addEventListener("click", (event) => {
       event.preventDefault();
       const data = getFormData('[data-form="sample-intake"]');
+      const tasks = loadStore(STORAGE_KEYS.tasks, []);
+      const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
+      const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
       const samples = loadStore(STORAGE_KEYS.samples, []);
+      if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
+        const existingCount = samples.filter((item) => item.task_code === task.code).length;
+        if (existingCount >= plannedCount) {
+          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
+          return;
+        }
+      }
+      setWarning(sampleWarning, "");
       const sample = {
         id: generateId("sample"),
         code: data.code,
@@ -1241,9 +1253,7 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
       appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
-      const tasks = loadStore(STORAGE_KEYS.tasks, []);
       // task锛氬綋鍓嶄换鍔?
-      const task = tasks.find((t) => t.code === data.task_code);
       if (task && (task.status === labels.statusAccepted || task.status === "已受理")) {
         task.status = labels.statusWaiting;
       }
@@ -1257,10 +1267,21 @@ const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
     sampleDraft.addEventListener("click", (event) => {
       event.preventDefault();
       const data = getFormData('[data-form="sample-intake"]');
+      const tasks = loadStore(STORAGE_KEYS.tasks, []);
+      const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
+      const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
       const samples = loadStore(STORAGE_KEYS.samples, []);
+      if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
+        const existingCount = samples.filter((item) => item.task_code === task.code).length;
+        if (existingCount >= plannedCount) {
+          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
+          return;
+        }
+      }
+      setWarning(sampleWarning, "");
       const sample = {
         id: generateId("sample"),
         code: data.code,
