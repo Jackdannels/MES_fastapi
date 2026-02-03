@@ -109,6 +109,7 @@
     <div class="toolbar">
       <input class="search-input" data-filter-input="#task-table" placeholder="筛选任务编号/客户/设备" />
       <a class="action-btn" href="#" data-modal-open="task-modal">快速新建</a>
+      <div class="task-list-pagination" id="task-list-pagination"></div>
     </div>
     <table class="table" id="task-table" data-sortable>
       <thead>

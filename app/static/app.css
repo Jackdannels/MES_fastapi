@@ -241,10 +241,13 @@ body {
   font-size: 14px; /* 表头字号 */
   font-weight: 600; /* 可选：加粗 */
   background: rgba(56, 189, 248, 0.18); /* 背景色 */
+  padding: 12px 10px; /* 与单元格对齐 */
+  text-align: left; /* 左对齐 */
+  vertical-align: middle; /* 垂直居中 */
 }
 .table td {
   padding: 12px 10px; /* 内边距 */
-  text-align: left; /* 左对齐 */
+  text-align: middle; /* 左对齐 */
   border-bottom: 1px solid rgba(15, 23, 42, 0.08); /* 底部边框 */
 }
 
@@ -371,6 +374,62 @@ body {
   gap: 12px; /* 间距 */
   margin-bottom: 16px; /* 下间距 */
   align-items: center; /* 垂直居中 */
+}
+
+/* 中控总览任务队列头部 */
+.dashboard-task-header {
+  display: flex; /* 横向布局 */
+  align-items: center; /* 垂直居中 */
+  justify-content: space-between; /* 两端对齐 */
+  gap: 12px; /* 间距 */
+  margin-bottom: 12px; /* 下间距 */
+}
+
+/* 任务队列/任务清单分页 */
+.dashboard-task-pagination,
+.task-list-pagination {
+  display: flex; /* 横向排列 */
+  gap: 6px; /* 间距 */
+  align-items: center; /* 垂直居中 */
+}
+
+.dashboard-task-pagination {
+  justify-content: flex-end; /* 靠右 */
+}
+
+.task-list-pagination {
+  justify-content: flex-end; /* 靠右 */
+  margin-left: auto; /* 推到右侧 */
+}
+
+.dashboard-task-pagination .page-btn,
+.task-list-pagination .page-btn {
+  border: 1px solid rgba(15, 23, 42, 0.16); /* 边框 */
+  background: rgba(248, 250, 252, 0.9); /* 背景 */
+  color: var(--text); /* 文字色 */
+  border-radius: 8px; /* 圆角 */
+  padding: 8px 12px; /* 内边距 */
+  font-size: 14px; /* 字号 */
+  cursor: pointer; /* 指针 */
+}
+
+.dashboard-task-pagination .page-btn.active,
+.task-list-pagination .page-btn.active {
+  background: rgba(56, 189, 248, 0.28); /* 选中背景 */
+  border-color: rgba(56, 189, 248, 0.5); /* 边框色 */
+}
+
+.dashboard-task-pagination .page-btn[disabled],
+.task-list-pagination .page-btn[disabled] {
+  cursor: not-allowed; /* 禁用指针 */
+  opacity: 0.5; /* 降低透明度 */
+}
+
+.dashboard-task-pagination .page-ellipsis,
+.task-list-pagination .page-ellipsis {
+  color: var(--muted); /* 省略号颜色 */
+  font-size: 12px; /* 字号 */
+  padding: 0 4px; /* 左右间距 */
 }
 
 /* 留样/内部排程头部 */

@@ -1,4 +1,4 @@
-/* FILE: render.js
+﻿/* FILE: render.js
  * UI renderers for tables, gantt view, and summary widgets.
  * Reads localStorage and paints DOM for each page.
  */
@@ -305,8 +305,15 @@ function renderTasksPage(labels) {
   if (!tbody) {
     return;
   }
-  const tasks = loadStore(STORAGE_KEYS.tasks, []);
-  const schedules = loadStore(STORAGE_KEYS.schedules, []);
+  const pagination = document.getElementById("task-list-pagination");
+  let tasks = loadStore(STORAGE_KEYS.tasks, []);
+  let schedules = loadStore(STORAGE_KEYS.schedules, []);
+  if (!Array.isArray(tasks)) {
+    tasks = [];
+  }
+  if (!Array.isArray(schedules)) {
+    schedules = [];
+  }
   let normalizedStatusUpdated = false;
   tasks.forEach((task) => {
     if (!task?.status) {
@@ -374,7 +381,7 @@ function renderTasksPage(labels) {
 
   let waitingCount = 0;
   let retentionCount = 0;
-  tbody.innerHTML = "";
+  const rows = [];
   tasks.forEach((task) => {
     const displayStatus = resolveTaskStatus(task);
     const effectiveStatus = displayStatus || task.status || "";
@@ -388,6 +395,28 @@ function renderTasksPage(labels) {
     if (effectiveStatus === labels.statusWaiting || effectiveStatus === labels.statusAccepted) {
       waitingCount += 1;
     }
+    rows.push({ task, displayStatus });
+  });
+
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  let currentPage = pagination ? Number.parseInt(pagination.dataset.page || "1", 10) : 1;
+  if (!Number.isFinite(currentPage) || currentPage < 1) {
+    currentPage = 1;
+  }
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
+  if (pagination) {
+    pagination.dataset.page = String(currentPage);
+    pagination.dataset.total = String(totalPages);
+  }
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const pageItems = rows.slice(startIndex, startIndex + pageSize);
+
+  tbody.innerHTML = "";
+  pageItems.forEach(({ task, displayStatus }) => {
     const row = document.createElement("tr");
     if (task.id) {
       row.dataset.taskId = task.id;
@@ -415,6 +444,94 @@ function renderTasksPage(labels) {
   setText("task-unscheduled-count", `${unscheduledCount}（暂存间存放${retentionCount}）`);
   if (taskStatusUpdated) {
     saveStore(STORAGE_KEYS.tasks, tasks);
+  }
+  if (pagination) {
+    const appendEllipsis = () => {
+      const span = document.createElement("span");
+      span.className = "page-ellipsis";
+      span.textContent = "...";
+      pagination.appendChild(span);
+    };
+    const appendPage = (page) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `page-btn${page === currentPage ? " active" : ""}`;
+      btn.textContent = String(page);
+      btn.dataset.page = String(page);
+      pagination.appendChild(btn);
+    };
+    const appendNav = (label, action, disabled) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "page-btn nav";
+      btn.textContent = label;
+      btn.dataset.page = action;
+      btn.disabled = disabled;
+      pagination.appendChild(btn);
+    };
+
+    pagination.innerHTML = "";
+    if (totalPages <= 1) {
+      pagination.classList.add("is-hidden");
+    } else {
+      pagination.classList.remove("is-hidden");
+      appendNav("上一页", "prev", currentPage <= 1);
+
+      if (totalPages <= 5) {
+        for (let i = 1; i <= totalPages; i += 1) {
+          appendPage(i);
+        }
+      } else if (currentPage <= 3) {
+        [1, 2, 3, 4].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        appendPage(1);
+        appendEllipsis();
+        [totalPages - 3, totalPages - 2, totalPages - 1, totalPages].forEach((page) => appendPage(page));
+      } else {
+        appendPage(1);
+        appendEllipsis();
+        [currentPage - 1, currentPage, currentPage + 1].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      }
+
+      appendNav("下一页", "next", currentPage >= totalPages);
+
+      if (pagination.dataset.bound !== "1") {
+        pagination.addEventListener("click", (event) => {
+          const target = event.target.closest(".page-btn");
+          if (!target || target.disabled) {
+            return;
+          }
+          const action = target.dataset.page || "";
+          const total = Number.parseInt(pagination.dataset.total || "1", 10);
+          let current = Number.parseInt(pagination.dataset.page || "1", 10);
+          if (!Number.isFinite(current) || current < 1) {
+            current = 1;
+          }
+          const maxPage = Number.isFinite(total) && total > 0 ? total : 1;
+          let nextPage = current;
+          if (action === "prev") {
+            nextPage = Math.max(1, current - 1);
+          } else if (action === "next") {
+            nextPage = Math.min(maxPage, current + 1);
+          } else {
+            const parsed = Number.parseInt(action, 10);
+            if (Number.isFinite(parsed)) {
+              nextPage = parsed;
+            }
+          }
+          if (nextPage === current) {
+            return;
+          }
+          pagination.dataset.page = String(nextPage);
+          renderTasksPage(labels);
+        });
+        pagination.dataset.bound = "1";
+      }
+    }
   }
   renderTaskQuickSelect(tasks);
 }
@@ -1402,6 +1519,7 @@ function renderDashboardPage(labels) {
   if (!taskBody) {
     return;
   }
+  const pagination = document.getElementById("dashboard-task-pagination");
   let tasks = loadStore(STORAGE_KEYS.tasks, []);
   let schedules = loadStore(STORAGE_KEYS.schedules, []);
   let devices = loadStore(STORAGE_KEYS.devices, []);
@@ -1512,8 +1630,25 @@ function renderDashboardPage(labels) {
   setText("dashboard-alert-count", gapCount);
   setText("dashboard-alert-note", gapCount > 0 ? labels.alertGap : labels.alertNone);
 
+  const pageSize = 8; // 中控总览中任务队列每页任务数量
+  const totalPages = Math.max(1, Math.ceil(tasks.length / pageSize));
+  let currentPage = pagination ? Number.parseInt(pagination.dataset.page || "1", 10) : 1;
+  if (!Number.isFinite(currentPage) || currentPage < 1) {
+    currentPage = 1;
+  }
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
+  if (pagination) {
+    pagination.dataset.page = String(currentPage);
+    pagination.dataset.total = String(totalPages);
+  }
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const pageItems = tasks.slice(startIndex, startIndex + pageSize);
+
   taskBody.innerHTML = "";
-  tasks.slice(0, 3).forEach((task) => {
+  pageItems.forEach((task) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${task.code || ""}</td>
@@ -1522,6 +1657,95 @@ function renderDashboardPage(labels) {
     `;
     taskBody.appendChild(row);
   });
+
+  if (pagination) {
+    const appendEllipsis = () => {
+      const span = document.createElement("span");
+      span.className = "page-ellipsis";
+      span.textContent = "...";
+      pagination.appendChild(span);
+    };
+    const appendPage = (page) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `page-btn${page === currentPage ? " active" : ""}`;
+      btn.textContent = String(page);
+      btn.dataset.page = String(page);
+      pagination.appendChild(btn);
+    };
+    const appendNav = (label, action, disabled) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "page-btn nav";
+      btn.textContent = label;
+      btn.dataset.page = action;
+      btn.disabled = disabled;
+      pagination.appendChild(btn);
+    };
+
+    pagination.innerHTML = "";
+    if (totalPages <= 1) {
+      pagination.classList.add("is-hidden");
+    } else {
+      pagination.classList.remove("is-hidden");
+      appendNav("上一页", "prev", currentPage <= 1);
+
+      if (totalPages <= 5) {
+        for (let i = 1; i <= totalPages; i += 1) {
+          appendPage(i);
+        }
+      } else if (currentPage <= 3) {
+        [1, 2, 3, 4].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        appendPage(1);
+        appendEllipsis();
+        [totalPages - 3, totalPages - 2, totalPages - 1, totalPages].forEach((page) => appendPage(page));
+      } else {
+        appendPage(1);
+        appendEllipsis();
+        [currentPage - 1, currentPage, currentPage + 1].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      }
+
+      appendNav("下一页", "next", currentPage >= totalPages);
+
+      if (pagination.dataset.bound !== "1") {
+        pagination.addEventListener("click", (event) => {
+          const target = event.target.closest(".page-btn");
+          if (!target || target.disabled) {
+            return;
+          }
+          const action = target.dataset.page || "";
+          const total = Number.parseInt(pagination.dataset.total || "1", 10);
+          let current = Number.parseInt(pagination.dataset.page || "1", 10);
+          if (!Number.isFinite(current) || current < 1) {
+            current = 1;
+          }
+          const maxPage = Number.isFinite(total) && total > 0 ? total : 1;
+          let nextPage = current;
+          if (action === "prev") {
+            nextPage = Math.max(1, current - 1);
+          } else if (action === "next") {
+            nextPage = Math.min(maxPage, current + 1);
+          } else {
+            const parsed = Number.parseInt(action, 10);
+            if (Number.isFinite(parsed)) {
+              nextPage = parsed;
+            }
+          }
+          if (nextPage === current) {
+            return;
+          }
+          pagination.dataset.page = String(nextPage);
+          renderDashboardPage(labels);
+        });
+        pagination.dataset.bound = "1";
+      }
+    }
+  }
 
   const deviceList = document.getElementById("dashboard-device-list");
   if (deviceList) {

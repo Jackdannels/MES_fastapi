@@ -29,7 +29,10 @@
 
   <section class="grid cols-3 section">
     <div class="card">
-      <h3>任务队列</h3>
+      <div class="dashboard-task-header">
+        <h3>任务队列</h3>
+        <div class="dashboard-task-pagination" id="dashboard-task-pagination"></div>
+      </div>
       <table class="table" data-sortable>
         <thead>
           <tr>

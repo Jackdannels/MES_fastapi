@@ -238,6 +238,11 @@ function attachActionHandlers(labels) {
       setWarning(warningEl, labels.scheduleTimeInvalid);
       return null;
     }
+    const now = new Date();
+    if (endAt <= now) {
+      setWarning(warningEl, labels.scheduleTimeInvalid);
+      return null;
+    }
     return { dateValue, slot, startTime, endTime, startAt, endAt };
   };
 
