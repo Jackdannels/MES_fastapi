@@ -16,6 +16,7 @@ const LAB_LOCATIONS = [
   "盐雾试验室",
   "霉菌试验室",
   "恒温恒湿间（暂存间）",
+  "恒温恒湿间（实验后暂存间）",
   "拆箱操作间",
   "室外接驳区",
 ];
@@ -87,17 +88,21 @@ function bindLabToTestType(select) {
 
 // Populate lab selects and sync test type when needed.
 function initLabSelects() {
+  const labels = getLabels();
+  const dynamicLocations = [
+    labels.intakeLocation,
+    labels.unpackingLocation,
+    labels.preRetentionLocation,
+    labels.retentionLocation,
+    labels.postRetentionLocation,
+  ].filter(Boolean);
   document.querySelectorAll("select[data-lab-select]").forEach((select) => {
     if (select.dataset.labFilled === "1") {
       bindLabToTestType(select);
       return;
     }
-    LAB_LOCATIONS.forEach((name) => {
-      const option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
-      select.appendChild(option);
-    });
+    LAB_LOCATIONS.forEach((name) => appendOption(select, name));
+    dynamicLocations.forEach((name) => appendOption(select, name));
     const customOption = document.createElement("option");
     customOption.value = "其他/自定义";
     customOption.textContent = "其他/自定义";

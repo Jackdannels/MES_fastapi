@@ -1,4 +1,4 @@
-﻿/* FILE: actions.js
+/* FILE: actions.js
  * UI action handlers for tasks, scheduling, and samples.
  * Mutates localStorage via storage.js and triggers UI re-render.
  */
@@ -80,6 +80,74 @@ function parseCodeList(value) {
     .filter(Boolean);
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildTaskSampleCodes(taskCode, plannedCount, taskSamples) {
+  const code = (taskCode || "").trim();
+  if (!code) {
+    return [];
+  }
+  const list = Array.isArray(taskSamples) ? taskSamples : [];
+  const existingCodes = Array.from(
+    new Set(
+      list
+        .map((item) => (item?.code || "").trim())
+        .filter(Boolean)
+    )
+  );
+  const pattern = new RegExp(`^${escapeRegExp(code)}-SP-(\\d{3})$`);
+  let maxIndex = 0;
+  existingCodes.forEach((itemCode) => {
+    const match = itemCode.match(pattern);
+    if (!match) {
+      return;
+    }
+    const index = Number.parseInt(match[1], 10);
+    if (Number.isFinite(index)) {
+      maxIndex = Math.max(maxIndex, index);
+    }
+  });
+  let targetCount = Number.isFinite(plannedCount) && plannedCount > 0 ? Math.floor(plannedCount) : existingCodes.length;
+  if (targetCount <= 0 && maxIndex > 0) {
+    targetCount = maxIndex;
+  }
+  const generatedCodes = [];
+  for (let index = 1; index <= targetCount; index += 1) {
+    generatedCodes.push(`${code}-SP-${String(index).padStart(3, "0")}`);
+  }
+  const extraExisting = existingCodes.filter((itemCode) => !generatedCodes.includes(itemCode));
+  return [...generatedCodes, ...extraExisting];
+}
+
+function nextTaskSampleCode(taskCode, samples) {
+  const code = (taskCode || "").trim();
+  if (!code) {
+    return "";
+  }
+  const list = Array.isArray(samples) ? samples : [];
+  const taskSamples = list.filter((item) => (item?.task_code || "").trim() === code);
+  const pattern = new RegExp(`^${escapeRegExp(code)}-SP-(\\d{3})$`);
+  let maxIndex = 0;
+  taskSamples.forEach((item) => {
+    const sampleCode = (item?.code || "").trim();
+    const match = sampleCode.match(pattern);
+    if (!match) {
+      return;
+    }
+    const index = Number.parseInt(match[1], 10);
+    if (Number.isFinite(index)) {
+      maxIndex = Math.max(maxIndex, index);
+    }
+  });
+  return `${code}-SP-${String(maxIndex + 1).padStart(3, "0")}`;
+}
+
 // attachActionHandlers锛氱粦瀹氶〉闈㈠姩浣滀簨浠?
 function attachActionHandlers(labels) {
   // setWarning锛氳缃〃鍗曡鍛婃彁绀?
@@ -95,10 +163,18 @@ function attachActionHandlers(labels) {
     element.textContent = "";
     element.classList.add("is-hidden");
   };
+  const bindClickOnce = (element, boundKey, handler) => {
+    if (!element || element.dataset[boundKey] === "1") {
+      return;
+    }
+    element.addEventListener("click", handler);
+    element.dataset[boundKey] = "1";
+  };
 
   const taskWarning = document.querySelector("[data-task-warning]");
   const taskQuickWarning = document.querySelector("[data-task-quick-warning]");
   const sampleWarning = document.querySelector("[data-sample-warning]");
+  const sampleProcessWarning = document.querySelector("[data-sample-process-warning]");
   const scheduleWarning = document.querySelector("[data-schedule-warning]");
   const scheduleEditWarning = document.querySelector("[data-schedule-edit-warning]");
   const stagingWarning = document.querySelector("[data-staging-warning]");
@@ -113,16 +189,54 @@ function attachActionHandlers(labels) {
 
   // resolveSampleStatus锛氭牴鎹綅缃帹瀵兼牱鍝佺姸鎬?
   const resolveSampleStatus = (location) => {
-    if (location === labels.retentionLocation) {
-      return labels.sampleStored;
+    const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
+    const postRetentionLocation = labels.postRetentionLocation || "";
+    if (location === postRetentionLocation) {
+      return labels.sampleStored || "已入库";
     }
-    if (location === labels.unpackingLocation || location === labels.intakeLocation) {
+    if (location === preRetentionLocation || location === labels.unpackingLocation || location === labels.intakeLocation) {
       return labels.sampleReceived;
     }
     if (TEST_LABS.includes(location)) {
       return labels.sampleTesting;
     }
     return labels.sampleReceived;
+  };
+
+  const resolveFlowStatusByLocation = (location, status = "") => {
+    const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
+    const postRetentionLocation = labels.postRetentionLocation || "";
+    const isPostRetention = Boolean(postRetentionLocation) && location === postRetentionLocation;
+    const isPreRetention = Boolean(preRetentionLocation) && location === preRetentionLocation;
+    const currentStatus = (status || "").trim();
+    if (currentStatus === "厂家收回" || currentStatus === "已处置") {
+      return "厂家收回";
+    }
+    if (currentStatus === "放置暂存间") {
+      return "放置暂存间";
+    }
+    if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === labels.sampleStored) {
+      return isPostRetention ? "放置暂存间" : "到货";
+    }
+    if (currentStatus === "实验完成" || currentStatus === labels.statusCompleted || currentStatus === "实验已完成") {
+      return "实验完成";
+    }
+    if (currentStatus === "实验准备就绪") {
+      return "实验准备就绪";
+    }
+    if (isPostRetention) {
+      return "放置暂存间";
+    }
+    if (isPreRetention) {
+      return "到货";
+    }
+    if (TEST_LABS.includes(location)) {
+      return "到达实验间";
+    }
+    if (location === labels.unpackingLocation || location === labels.intakeLocation) {
+      return "到货";
+    }
+    return "运输中";
   };
 
   // ensureSampleHistory锛氱‘淇濇牱鍝佸巻鍙叉暟缁?
@@ -348,8 +462,60 @@ function attachActionHandlers(labels) {
     }
   };
 
-// handleTaskCreate锛氬鐞嗕换鍔″垱寤?
-const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
+  const ensureTaskSamples = (task) => {
+    const taskCode = (task?.code || "").trim();
+    if (!taskCode) {
+      return;
+    }
+    const plannedCount = Number.parseInt(task?.sample_count, 10);
+    if (!Number.isFinite(plannedCount) || plannedCount <= 0) {
+      return;
+    }
+    const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+    const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
+    const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
+    const now = new Date().toISOString();
+    let changed = false;
+
+    autoCodes.forEach((code) => {
+      const exists = samples.find((item) => item.code === code);
+      if (!exists) {
+        const sample = {
+          id: generateId("sample"),
+          code,
+          task_code: taskCode,
+          location: "",
+          owner: "",
+          status: "运输中",
+          flow_status: "运输中",
+          created_at: now,
+        };
+        appendSampleHistory(sample, "样品绑定任务", `任务 ${taskCode}`);
+        samples.unshift(sample);
+        changed = true;
+        return;
+      }
+      if (!exists.task_code) {
+        exists.task_code = taskCode;
+        changed = true;
+      }
+      if (!exists.status) {
+        exists.status = "运输中";
+        changed = true;
+      }
+      if (!exists.flow_status) {
+        exists.flow_status = resolveFlowStatusByLocation(exists.location, exists.status || "运输中");
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      saveStore(STORAGE_KEYS.samples, samples);
+    }
+  };
+
+  // handleTaskCreate锛氬鐞嗕换鍔″垱寤?
+  const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     const data = getFormData(formSelector);
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
     if (!data.name && !testingRandom) {
@@ -376,12 +542,13 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     setWarning(warningEl, "");
     tasks.unshift(task);
     saveStore(STORAGE_KEYS.tasks, tasks);
+    ensureTaskSamples(task);
     return true;
   };
 
   const taskSubmit = document.querySelector('[data-action="task-submit"]');
   if (taskSubmit) {
-    taskSubmit.addEventListener("click", (event) => {
+    bindClickOnce(taskSubmit, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-intake"]', labels.statusWaiting, taskWarning)) {
         renderAll(labels);
@@ -391,7 +558,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
 
   const taskDraft = document.querySelector('[data-action="task-draft"]');
   if (taskDraft) {
-    taskDraft.addEventListener("click", (event) => {
+    bindClickOnce(taskDraft, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-intake"]', labels.statusWaiting, taskWarning)) {
         renderAll(labels);
@@ -401,7 +568,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
 
   const taskQuick = document.querySelector('[data-action="task-quick-submit"]');
   if (taskQuick) {
-    taskQuick.addEventListener("click", (event) => {
+    bindClickOnce(taskQuick, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-quick"]', labels.statusWaiting, taskQuickWarning)) {
         const modal = document.getElementById("task-modal");
@@ -415,7 +582,7 @@ const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
 
   const taskQuickDraft = document.querySelector('[data-action="task-quick-draft"]');
   if (taskQuickDraft) {
-    taskQuickDraft.addEventListener("click", (event) => {
+    bindClickOnce(taskQuickDraft, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-quick"]', labels.statusWaiting, taskQuickWarning)) {
         const modal = document.getElementById("task-modal");
@@ -1226,6 +1393,86 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
   }
 
   // Sample intake and batch operations.
+  const sampleIntakeForm = document.querySelector('[data-form="sample-intake"]');
+  if (sampleIntakeForm) {
+    const intakeTaskSelect = sampleIntakeForm.querySelector('select[name="task_code"]');
+    const intakeCodeInput = sampleIntakeForm.querySelector('input[name="code"]');
+    const syncIntakeCode = () => {
+      if (!intakeTaskSelect || !intakeCodeInput) {
+        return;
+      }
+      const taskCode = (intakeTaskSelect.value || "").trim();
+      if (!taskCode) {
+        intakeCodeInput.value = "";
+        return;
+      }
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      intakeCodeInput.value = nextTaskSampleCode(taskCode, samples);
+    };
+    if (intakeTaskSelect && intakeCodeInput && intakeTaskSelect.dataset.autoCodeBound !== "1") {
+      intakeTaskSelect.addEventListener("change", syncIntakeCode);
+      intakeTaskSelect.dataset.autoCodeBound = "1";
+    }
+    if (intakeTaskSelect && intakeCodeInput && !intakeCodeInput.value) {
+      syncIntakeCode();
+    }
+  }
+
+  const sampleSummaryTaskSelect = document.querySelector('select[data-sample-task-select="summary"]');
+  if (sampleSummaryTaskSelect && sampleSummaryTaskSelect.dataset.persistBound !== "1") {
+    sampleSummaryTaskSelect.addEventListener("change", (event) => {
+      const taskCode = (sampleSummaryTaskSelect.value || "").trim();
+      if (!taskCode) {
+        return;
+      }
+      const tasks = loadStore(STORAGE_KEYS.tasks, []);
+      const task = tasks.find((item) => (item.code || "").trim() === taskCode);
+      const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
+      const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
+      let changed = false;
+      const now = new Date().toISOString();
+
+      autoCodes.forEach((code) => {
+        const exists = samples.find((item) => item.code === code);
+        if (exists) {
+          if (!exists.task_code) {
+            exists.task_code = taskCode;
+            changed = true;
+          }
+          if (!exists.flow_status) {
+            exists.flow_status = resolveFlowStatusByLocation(exists.location, exists.status);
+            changed = true;
+          }
+          return;
+        }
+        const sample = {
+          id: generateId("sample"),
+          code,
+          task_code: taskCode,
+          location: "",
+          owner: "",
+          status: "运输中",
+          flow_status: "运输中",
+          created_at: now,
+        };
+        appendSampleHistory(sample, "样品绑定任务", `任务 ${taskCode}`);
+        samples.unshift(sample);
+        changed = true;
+      });
+
+      if (changed) {
+        saveStore(STORAGE_KEYS.samples, samples);
+        renderAll(labels);
+        if (event && typeof event.stopImmediatePropagation === "function") {
+          event.stopImmediatePropagation();
+        }
+      }
+    });
+    sampleSummaryTaskSelect.dataset.persistBound = "1";
+  }
+
   const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
   if (sampleSubmit) {
     sampleSubmit.addEventListener("click", (event) => {
@@ -1234,10 +1481,13 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
       const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      if (!data.code && data.task_code) {
+        data.code = nextTaskSampleCode(data.task_code, samples);
+      }
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
       if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
@@ -1250,12 +1500,13 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         id: generateId("sample"),
         code: data.code,
         task_code: data.task_code || "",
-        location: labels.intakeLocation || labels.unpackingLocation,
+        location: "",
         owner: "",
-        status: labels.sampleReceived,
+        status: "运输中",
+        flow_status: "运输中",
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "鏍峰搧鐧昏");
+      appendSampleHistory(sample, "样品登记");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       // task锛氬綋鍓嶄换鍔?
@@ -1275,10 +1526,13 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
       const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      if (!data.code && data.task_code) {
+        data.code = nextTaskSampleCode(data.task_code, samples);
+      }
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
       if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
@@ -1291,12 +1545,13 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         id: generateId("sample"),
         code: data.code,
         task_code: data.task_code || "",
-        location: labels.intakeLocation || labels.unpackingLocation,
+        location: "",
         owner: "",
-        status: labels.sampleReceived,
+        status: "运输中",
+        flow_status: "运输中",
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "鏍峰搧鐧昏");
+      appendSampleHistory(sample, "样品登记");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
@@ -1309,13 +1564,20 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       event.preventDefault();
       const data = getFormData('[data-form="sample-batch"]');
       const codes = parseCodeList(data.codes);
-      const targetLocation = data.location || labels.intakeLocation || labels.retentionLocation;
+      const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
+      const postRetentionLocation = labels.postRetentionLocation || "";
+      const targetLocation = data.location || labels.intakeLocation || labels.unpackingLocation || preRetentionLocation;
       if (!targetLocation || codes.length === 0) {
         return;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const now = new Date().toISOString();
-      const actionText = targetLocation === labels.retentionLocation ? "接驳区送达暂存间" : "批量入库";
+      const actionText =
+        targetLocation === postRetentionLocation
+          ? "送达实验后暂存间"
+          : targetLocation === preRetentionLocation
+            ? "接驳区送达实验前暂存间"
+            : "批量入库";
       codes.forEach((code) => {
         if (!code) {
           return;
@@ -1330,6 +1592,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
             location: targetLocation,
             owner: data.owner || "",
             status: resolveSampleStatus(targetLocation),
+            flow_status: resolveFlowStatusByLocation(targetLocation, resolveSampleStatus(targetLocation)),
             created_at: now,
           };
           samples.unshift(sample);
@@ -1337,9 +1600,10 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
           sample.location = targetLocation;
           sample.owner = data.owner || sample.owner;
           sample.status = resolveSampleStatus(targetLocation);
+          sample.flow_status = resolveFlowStatusByLocation(targetLocation, sample.status);
           sample.updated_at = now;
         }
-        if (targetLocation === labels.retentionLocation) {
+        if (targetLocation === preRetentionLocation) {
           sample.retention_source = "intake";
         } else if (sample.retention_source) {
           delete sample.retention_source;
@@ -1355,12 +1619,110 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     });
   }
 
+  const sampleTaskStore = document.querySelector('[data-action="sample-task-store"]');
+  if (sampleTaskStore) {
+    sampleTaskStore.addEventListener("click", (event) => {
+      event.preventDefault();
+      const data = getFormData('[data-form="sample-task-process"]');
+      const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
+      const select = document.querySelector('select[data-sample-task-select="summary"]');
+      const taskCode = (select?.value || sampleTaskStore.dataset.taskCode || "").trim();
+      if (!taskCode) {
+        setWarning(sampleProcessWarning, "请先选择任务。");
+        return;
+      }
+
+      const targetLocation = labels.intakeLocation || labels.unpackingLocation || preRetentionLocation;
+      if (!targetLocation) {
+        setWarning(sampleProcessWarning, "未配置默认入库位置。");
+        return;
+      }
+
+      const tasks = loadStore(STORAGE_KEYS.tasks, []);
+      const task = tasks.find((item) => (item.code || "").trim() === taskCode);
+      const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
+      const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
+      const requestedCodes = parseCodeList(data.codes);
+      const codes = requestedCodes.length > 0 ? requestedCodes : autoCodes;
+      if (codes.length === 0) {
+        setWarning(sampleProcessWarning, `任务 ${taskCode} 暂无可入库样品编号。`);
+        return;
+      }
+
+      const outOfTask = [];
+      const success = [];
+      const now = new Date().toISOString();
+      const actionText = "任务样品入库（接驳区）";
+      const intakeStatus = resolveSampleStatus(targetLocation);
+      const intakeFlowStatus = resolveFlowStatusByLocation(targetLocation, intakeStatus);
+      codes.forEach((code) => {
+        let sample = samples.find((item) => item.code === code);
+        if (!sample) {
+          sample = {
+            id: generateId("sample"),
+            code,
+            task_code: taskCode,
+            location: targetLocation,
+            owner: "",
+            status: intakeStatus,
+            flow_status: intakeFlowStatus,
+            created_at: now,
+          };
+          if (targetLocation === preRetentionLocation) {
+            sample.retention_source = "intake";
+          }
+          appendSampleHistory(sample, actionText, `任务 ${taskCode}`);
+          samples.unshift(sample);
+          success.push(code);
+          return;
+        }
+        const boundTaskCode = (sample.task_code || "").trim();
+        if (boundTaskCode && boundTaskCode !== taskCode) {
+          outOfTask.push(code);
+          return;
+        }
+        sample.task_code = taskCode;
+        sample.location = targetLocation;
+        sample.status = intakeStatus;
+        sample.flow_status = intakeFlowStatus;
+        sample.updated_at = now;
+        if (targetLocation === preRetentionLocation) {
+          sample.retention_source = "intake";
+        } else if (sample.retention_source) {
+          delete sample.retention_source;
+        }
+        appendSampleHistory(sample, actionText, `任务 ${taskCode}`);
+        success.push(code);
+      });
+
+      if (success.length === 0) {
+        const errors = [];
+        if (outOfTask.length) {
+          errors.push(`不属于任务 ${taskCode}：${outOfTask.join("、")}`);
+        }
+        setWarning(sampleProcessWarning, errors.length ? `${errors.join("，")}。` : `任务 ${taskCode} 暂无可入库样品。`);
+        return;
+      }
+
+      saveStore(STORAGE_KEYS.samples, samples);
+      const notices = [`任务 ${taskCode} 已登记到 ${targetLocation} ${success.length} 个样品。`];
+      if (outOfTask.length) {
+        notices.push(`不属于任务 ${taskCode}：${outOfTask.join("、")}。`);
+      }
+      setWarning(sampleProcessWarning, notices.join(" "));
+      renderAll(labels);
+    });
+  }
+
   // Intake/Unpacking dispatch to lab or retention.
   const unpackingDispatch = document.querySelector('[data-action="unpacking-dispatch"]');
   if (unpackingDispatch) {
     unpackingDispatch.addEventListener("click", (event) => {
       event.preventDefault();
       const data = getFormData('[data-form="unpacking-dispatch"]');
+      const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
       const targetLocation = data.target_location || "";
       const codes = parseCodeList(data.codes);
       const intakeLocations = [labels.intakeLocation, labels.unpackingLocation].filter(Boolean);
@@ -1368,7 +1730,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         setWarning(unpackingWarning, "请填写样品编号并选择目标位置。");
         return;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notUnpacking = [];
       codes.forEach((code) => {
@@ -1383,16 +1745,17 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
           return;
         }
         sample.location = targetLocation;
-        if (targetLocation === labels.retentionLocation) {
+        if (targetLocation === preRetentionLocation) {
           sample.retention_source = "intake";
         } else if (sample.retention_source) {
           delete sample.retention_source;
         }
         sample.owner = data.owner || sample.owner;
         sample.status = resolveSampleStatus(targetLocation);
+        sample.flow_status = resolveFlowStatusByLocation(targetLocation, sample.status);
         sample.updated_at = new Date().toISOString();
         const actionText =
-          targetLocation === labels.retentionLocation ? "接驳区送达暂存间" : "接驳区派发";
+          targetLocation === preRetentionLocation ? "接驳区送达实验前暂存间" : "接驳区派发";
         appendSampleHistory(sample, actionText);
       });
       const warnings = [];
@@ -1431,17 +1794,18 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     retentionDispatch.addEventListener("click", (event) => {
       event.preventDefault();
       const data = getFormData('[data-form="retention-dispatch"]');
+      const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
         setWarning(retentionWarning, "请填写样品编号并选择目标实验室。");
         return;
       }
-      if (targetLab === labels.retentionLocation) {
+      if (targetLab === preRetentionLocation) {
         setWarning(retentionWarning, "暂存间排程只能派发至实验室。");
         return;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notRetention = [];
       codes.forEach((code) => {
@@ -1451,13 +1815,14 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
           missing.push(code);
           return;
         }
-        if (sample.location !== labels.retentionLocation) {
+        if (sample.location !== preRetentionLocation) {
           notRetention.push(code);
           return;
         }
         sample.location = targetLab;
         sample.owner = data.owner || sample.owner;
         sample.status = resolveSampleStatus(targetLab);
+        sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
         appendSampleHistory(sample, "暂存间派发");
       });
@@ -1497,13 +1862,14 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     stagingDispatch.addEventListener("click", (event) => {
       event.preventDefault();
       const data = getFormData('[data-form="staging-dispatch"]');
+      const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
         setWarning(stagingWarning, "请填写样品编号并选择目标实验室。");
         return;
       }
-      const samples = loadStore(STORAGE_KEYS.samples, []);
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notStaging = [];
       codes.forEach((code) => {
@@ -1513,13 +1879,14 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
           missing.push(code);
           return;
         }
-        if (sample.location !== labels.retentionLocation) {
+        if (sample.location !== preRetentionLocation) {
           notStaging.push(code);
           return;
         }
         sample.location = targetLab;
         sample.owner = data.owner || sample.owner;
         sample.status = labels.sampleTesting;
+        sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
         appendSampleHistory(sample, "暂存间派发");
       });

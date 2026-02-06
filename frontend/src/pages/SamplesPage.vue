@@ -5,7 +5,8 @@
       <div class="form-grid">
         <div class="form-field">
           <label>样品编号</label>
-          <input type="text" name="code" placeholder="例如：SP-2403-11" />
+          <input type="text" name="code" readonly placeholder="选择关联任务后自动生成样品编号" />
+          <div class="helper">按任务号自动生成并绑定，例如：SZH-2024-003-SP-001</div>
         </div>
         <div class="form-field">
           <label>关联任务</label>
@@ -56,22 +57,54 @@
   </section>
 
   <section class="card section">
-    <h3>任务样品数量</h3>
-    <div class="form-grid">
-      <div class="form-field">
-        <label>选择任务</label>
-        <select
-          name="task_code"
-          data-sample-task-select="summary"
-          data-placeholder="请选择任务"
-          data-empty-placeholder="暂无任务"
-        >
-          <option value="">请选择任务</option>
-        </select>
+    <h3>样品流程管理</h3>
+    <div class="sample-process-layout">
+      <div>
+        <div class="form-grid" data-form="sample-task-process">
+          <div class="form-field">
+            <label>选择任务</label>
+            <select
+              name="task_code"
+              data-sample-task-select="summary"
+              data-placeholder="请选择任务"
+              data-empty-placeholder="暂无任务"
+            >
+              <option value="">请选择任务</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>样品数量</label>
+            <div class="kpi" id="sample-task-count">0</div>
+            <div class="helper" id="sample-task-count-hint">请选择任务后查看样品数量与样品编号。</div>
+          </div>
+          <div class="form-field" style="grid-column: 1 / -1;">
+            <label>样品编号</label>
+            <textarea
+              class="sample-codes-input"
+              id="sample-task-codes"
+              name="codes"
+              readonly
+              placeholder="选择任务后按任务号自动生成并绑定样品编号"
+            ></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="action-btn" type="button" data-action="sample-task-store">确认入库</button>
+        </div>
+        <div class="form-alert is-hidden" data-sample-process-warning></div>
       </div>
-      <div class="form-field">
-        <label>样品数量</label>
-        <div class="kpi" id="sample-task-count">0</div>
+      <div class="sample-flow-card">
+        <div class="sample-flow-title">统一样品流程图</div>
+        <div class="sample-flow-status" id="sample-flow-current">当前状态：未选择任务</div>
+        <ol class="sample-flow-unified" id="sample-flow-unified">
+          <li data-flow-step="0">运输中</li>
+          <li data-flow-step="1">到货</li>
+          <li data-flow-step="2">到达实验间</li>
+          <li data-flow-step="3">实验准备就绪</li>
+          <li data-flow-step="4">实验完成</li>
+          <li data-flow-step="5">放置暂存间</li>
+          <li data-flow-step="6">厂家收回</li>
+        </ol>
       </div>
     </div>
   </section>
@@ -84,14 +117,21 @@
   <section class="card section" data-tab-panel="sample-flow" data-tab-group="samples">
     <h3>样品流转与状态</h3>
     <div class="toolbar">
-      <input class="search-input" data-filter-input="#sample-table" placeholder="筛选样品/任务/位置" />
+      <input class="search-input" id="sample-list-search" placeholder="筛选任务/样品/位置/状态" />
+      <select class="search-input" id="sample-list-filter-task">
+        <option value="">全部任务</option>
+      </select>
+      <select class="search-input" id="sample-list-filter-status">
+        <option value="">全部状态</option>
+      </select>
       <a class="action-btn" href="#" data-modal-open="sample-modal">批量入库</a>
+      <div class="task-list-pagination" id="sample-list-pagination"></div>
     </div>
     <table class="table" id="sample-table" data-sortable>
       <thead>
         <tr>
-          <th data-sort>样品编号</th>
           <th data-sort>任务</th>
+          <th data-sort>样品编号</th>
           <th data-sort>当前位置</th>
           <th data-sort>责任人</th>
           <th data-sort>状态</th>

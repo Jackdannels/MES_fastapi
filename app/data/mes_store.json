@@ -1,67 +1,7 @@
 {
   "mes.tasks": [
     {
-      "id": "task-1770117205136-390",
-      "code": "SZH-2026-005",
-      "name": "四综合试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 3,
-      "sample_type": "",
-      "test_type": "四综合试验",
-      "required_device": "四综合试验",
-      "due_at": "2026-02-04 08:13",
-      "arrival_at": "2026-02-03 20:13",
-      "status": "暂存间排放",
-      "created_at": "2026-02-03T11:13:25.136Z"
-    },
-    {
-      "id": "task-1770117205008-539",
-      "code": "ZD-2026-004",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 5,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-04 12:13",
-      "arrival_at": "2026-02-03 21:13",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:13:25.008Z"
-    },
-    {
-      "id": "task-1770117204911-593",
-      "code": "CJ-2026-006",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 9,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-04 02:13",
-      "arrival_at": "2026-02-03 21:13",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:13:24.911Z"
-    },
-    {
-      "id": "task-1770117204785-518",
-      "code": "CJ-2026-005",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-04 05:13",
-      "arrival_at": "2026-02-04 00:13",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:13:24.785Z"
-    },
-    {
-      "id": "task-1770117204663-898",
+      "id": "task-1770369659808-192",
       "code": "MJ-2026-004",
       "name": "霉菌试验",
       "source": "外部委托",
@@ -70,43 +10,103 @@
       "sample_type": "",
       "test_type": "霉菌试验",
       "required_device": "霉菌试验",
-      "due_at": "2026-02-04 11:13",
-      "arrival_at": "2026-02-03 22:13",
+      "due_at": "2026-02-07 00:20",
+      "arrival_at": "2026-02-06 19:20",
       "status": "待排程",
-      "created_at": "2026-02-03T11:13:24.663Z"
+      "created_at": "2026-02-06T09:20:59.808Z"
     },
     {
-      "id": "task-1770117204446-898",
-      "code": "YW-2026-008",
-      "name": "盐雾试验",
+      "id": "task-1770369659487-365",
+      "code": "WDC-2026-005",
+      "name": "温度冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 9,
+      "sample_type": "",
+      "test_type": "温度冲击试验",
+      "required_device": "温度冲击试验",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 21:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:59.487Z"
+    },
+    {
+      "id": "task-1770369659104-866",
+      "code": "CJ-2026-007",
+      "name": "冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 9,
+      "sample_type": "",
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 13:20",
+      "arrival_at": "2026-02-06 22:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:59.104Z"
+    },
+    {
+      "id": "task-1770369658720-990",
+      "code": "ZD-2026-003",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 9,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-02-07 04:20",
+      "arrival_at": "2026-02-06 18:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:58.720Z"
+    },
+    {
+      "id": "task-1770369658458-746",
+      "code": "MJ-2026-003",
+      "name": "霉菌试验",
       "source": "外部委托",
       "priority": "Medium",
       "sample_count": 3,
       "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-04 09:13",
-      "arrival_at": "2026-02-03 20:13",
-      "status": "实验已完成",
-      "created_at": "2026-02-03T11:13:24.446Z"
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-07 03:20",
+      "arrival_at": "2026-02-06 22:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:58.458Z"
     },
     {
-      "id": "task-1770117201753-314",
-      "code": "SZH-2026-004",
+      "id": "task-1770369658330-473",
+      "code": "SZH-2026-003",
       "name": "四综合试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 5,
+      "sample_count": 7,
       "sample_type": "",
       "test_type": "四综合试验",
       "required_device": "四综合试验",
-      "due_at": "2026-02-04 15:13",
-      "arrival_at": "2026-02-04 01:13",
+      "due_at": "2026-02-07 08:20",
+      "arrival_at": "2026-02-06 18:20",
       "status": "待排程",
-      "created_at": "2026-02-03T11:13:21.753Z"
+      "created_at": "2026-02-06T09:20:58.330Z"
     },
     {
-      "id": "task-1770117201656-084",
+      "id": "task-1770369658197-569",
+      "code": "MJ-2026-002",
+      "name": "霉菌试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 9,
+      "sample_type": "",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 19:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:58.197Z"
+    },
+    {
+      "id": "task-1770369658062-509",
       "code": "YW-2026-007",
       "name": "盐雾试验",
       "source": "外部委托",
@@ -115,28 +115,103 @@
       "sample_type": "",
       "test_type": "盐雾试验",
       "required_device": "盐雾试验",
-      "due_at": "2026-02-04 07:13",
-      "arrival_at": "2026-02-03 23:13",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 18:20",
       "status": "待排程",
-      "created_at": "2026-02-03T11:13:21.656Z"
+      "created_at": "2026-02-06T09:20:58.062Z"
     },
     {
-      "id": "task-1770117201521-496",
+      "id": "task-1770369657919-019",
+      "code": "ZD-2026-002",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-02-06 23:20",
+      "arrival_at": "2026-02-06 19:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:57.919Z"
+    },
+    {
+      "id": "task-1770369657746-000",
+      "code": "WDC-2026-004",
+      "name": "温度冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "温度冲击试验",
+      "required_device": "温度冲击试验",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 23:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:57.746Z"
+    },
+    {
+      "id": "task-1770369657595-488",
+      "code": "SZH-2026-002",
+      "name": "四综合试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "四综合试验",
+      "required_device": "四综合试验",
+      "due_at": "2026-02-07 10:20",
+      "arrival_at": "2026-02-06 19:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:57.595Z"
+    },
+    {
+      "id": "task-1770369657102-786",
       "code": "YW-2026-006",
       "name": "盐雾试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 5,
+      "sample_count": 4,
       "sample_type": "",
       "test_type": "盐雾试验",
       "required_device": "盐雾试验",
-      "due_at": "2026-02-04 05:13",
-      "arrival_at": "2026-02-03 23:13",
+      "due_at": "2026-02-07 07:20",
+      "arrival_at": "2026-02-06 22:20",
       "status": "待排程",
-      "created_at": "2026-02-03T11:13:21.521Z"
+      "created_at": "2026-02-06T09:20:57.102Z"
     },
     {
-      "id": "task-1770117201393-057",
+      "id": "task-1770369656967-790",
+      "code": "CJ-2026-006",
+      "name": "冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 6,
+      "sample_type": "",
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 20:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.967Z"
+    },
+    {
+      "id": "task-1770369656831-824",
+      "code": "CJ-2026-005",
+      "name": "冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 7,
+      "sample_type": "",
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 02:20",
+      "arrival_at": "2026-02-06 20:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.831Z"
+    },
+    {
+      "id": "task-1770369656673-927",
       "code": "CJ-2026-004",
       "name": "冲击试验",
       "source": "外部委托",
@@ -145,224 +220,29 @@
       "sample_type": "",
       "test_type": "冲击试验",
       "required_device": "冲击试验",
-      "due_at": "2026-02-04 14:13",
-      "arrival_at": "2026-02-03 23:13",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 18:20",
       "status": "待排程",
-      "created_at": "2026-02-03T11:13:21.393Z"
+      "created_at": "2026-02-06T09:20:56.673Z"
     },
     {
-      "id": "task-1770116902483-082",
-      "code": "ZD-2026-003",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 3,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-04 06:08",
-      "arrival_at": "2026-02-03 23:08",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:08:22.483Z"
-    },
-    {
-      "id": "task-1770116902363-897",
-      "code": "YW-2026-005",
-      "name": "盐雾试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 9,
-      "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-04 13:08",
-      "arrival_at": "2026-02-03 22:08",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:08:22.363Z"
-    },
-    {
-      "id": "task-1770116902218-829",
-      "code": "YW-2026-004",
-      "name": "盐雾试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 10,
-      "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-04 03:08",
-      "arrival_at": "2026-02-03 21:08",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:08:22.218Z"
-    },
-    {
-      "id": "task-1770116902083-210",
-      "code": "YW-2026-003",
-      "name": "盐雾试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 3,
-      "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-04 06:08",
-      "arrival_at": "2026-02-04 00:08",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:08:22.083Z"
-    },
-    {
-      "id": "task-1770116873419-115",
+      "id": "task-1770369656538-442",
       "code": "CJ-2026-003",
       "name": "冲击试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 7,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-04 07:07",
-      "arrival_at": "2026-02-04 00:07",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:07:53.419Z"
-    },
-    {
-      "id": "task-1770116873312-455",
-      "code": "YW-2026-002",
-      "name": "盐雾试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-04 07:07",
-      "arrival_at": "2026-02-03 20:07",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:07:53.312Z"
-    },
-    {
-      "id": "task-1770116873187-178",
-      "code": "CJ-2026-002",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 8,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-04 11:07",
-      "arrival_at": "2026-02-03 22:07",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:07:53.187Z"
-    },
-    {
-      "id": "task-1770116873068-791",
-      "code": "MJ-2026-003",
-      "name": "霉菌试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 7,
-      "sample_type": "",
-      "test_type": "霉菌试验",
-      "required_device": "霉菌试验",
-      "due_at": "2026-02-04 03:07",
-      "arrival_at": "2026-02-03 21:07",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:07:53.068Z"
-    },
-    {
-      "id": "task-1770116872925-494",
-      "code": "MJ-2026-002",
-      "name": "霉菌试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 8,
-      "sample_type": "",
-      "test_type": "霉菌试验",
-      "required_device": "霉菌试验",
-      "due_at": "2026-02-04 16:07",
-      "arrival_at": "2026-02-04 01:07",
-      "status": "待排程",
-      "created_at": "2026-02-03T11:07:52.925Z"
-    },
-    {
-      "id": "task-1770032390770-388",
-      "code": "CJ-2026-001",
-      "name": "冲击试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 7,
-      "sample_type": "",
-      "test_type": "冲击试验",
-      "required_device": "冲击试验",
-      "due_at": "2026-02-03 11:39",
-      "arrival_at": "2026-02-02 22:39",
-      "status": "暂存间排放",
-      "created_at": "2026-02-02T11:39:50.770Z"
-    },
-    {
-      "id": "task-1770032390651-166",
-      "code": "MJ-2026-001",
-      "name": "霉菌试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 4,
-      "sample_type": "",
-      "test_type": "霉菌试验",
-      "required_device": "霉菌试验",
-      "due_at": "2026-02-03 00:39",
-      "arrival_at": "2026-02-02 20:39",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T11:39:50.651Z"
-    },
-    {
-      "id": "task-1770019564481-505",
-      "code": "ZD-2026-002",
-      "name": "振动试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "振动试验",
-      "required_device": "振动试验",
-      "due_at": "2026-02-03 07:06",
-      "arrival_at": "2026-02-02 19:06",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T08:06:04.481Z"
-    },
-    {
-      "id": "task-1770019564366-702",
-      "code": "SZH-2026-003",
-      "name": "四综合试验",
-      "source": "外部委托",
-      "priority": "Medium",
       "sample_count": 3,
       "sample_type": "",
-      "test_type": "四综合试验",
-      "required_device": "四综合试验",
-      "due_at": "2026-02-03 07:06",
-      "arrival_at": "2026-02-02 17:06",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T08:06:04.366Z"
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 09:20",
+      "arrival_at": "2026-02-06 21:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.538Z"
     },
     {
-      "id": "task-1770019564239-461",
-      "code": "YW-2026-001",
-      "name": "盐雾试验",
-      "source": "外部委托",
-      "priority": "Medium",
-      "sample_count": 6,
-      "sample_type": "",
-      "test_type": "盐雾试验",
-      "required_device": "盐雾试验",
-      "due_at": "2026-02-03 01:06",
-      "arrival_at": "2026-02-02 20:06",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T08:06:04.239Z"
-    },
-    {
-      "id": "task-1770019564120-994",
-      "code": "WDC-2026-001",
+      "id": "task-1770369656395-378",
+      "code": "WDC-2026-003",
       "name": "温度冲击试验",
       "source": "外部委托",
       "priority": "Medium",
@@ -370,13 +250,43 @@
       "sample_type": "",
       "test_type": "温度冲击试验",
       "required_device": "温度冲击试验",
-      "due_at": "2026-02-03 02:06",
-      "arrival_at": "2026-02-02 20:06",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T08:06:04.120Z"
+      "due_at": "2026-02-07 00:20",
+      "arrival_at": "2026-02-06 18:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.395Z"
     },
     {
-      "id": "task-1770019563999-242",
+      "id": "task-1770369656255-436",
+      "code": "YW-2026-005",
+      "name": "盐雾试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 4,
+      "sample_type": "",
+      "test_type": "盐雾试验",
+      "required_device": "盐雾试验",
+      "due_at": "2026-02-07 08:20",
+      "arrival_at": "2026-02-06 22:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.255Z"
+    },
+    {
+      "id": "task-1770369656125-213",
+      "code": "WDC-2026-002",
+      "name": "温度冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 5,
+      "sample_type": "",
+      "test_type": "温度冲击试验",
+      "required_device": "温度冲击试验",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 18:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:56.125Z"
+    },
+    {
+      "id": "task-1770369655991-035",
       "code": "ZD-2026-001",
       "name": "振动试验",
       "source": "外部委托",
@@ -385,200 +295,4423 @@
       "sample_type": "",
       "test_type": "振动试验",
       "required_device": "振动试验",
-      "due_at": "2026-02-03 11:06",
-      "arrival_at": "2026-02-02 22:06",
-      "status": "实验已完成",
-      "created_at": "2026-02-02T08:06:03.999Z"
+      "due_at": "2026-02-06 22:20",
+      "arrival_at": "2026-02-06 18:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:55.990Z"
     },
     {
-      "id": "task-1770019563864-745",
-      "code": "SZH-2026-002",
-      "name": "四综合试验",
+      "id": "task-1770369655721-175",
+      "code": "YW-2026-004",
+      "name": "盐雾试验",
       "source": "外部委托",
       "priority": "Medium",
-      "sample_count": 4,
+      "sample_count": 9,
       "sample_type": "",
-      "test_type": "四综合试验",
-      "required_device": "四综合试验",
-      "due_at": "2026-02-02 23:06",
-      "arrival_at": "2026-02-02 19:06",
+      "test_type": "盐雾试验",
+      "required_device": "盐雾试验",
+      "due_at": "2026-02-07 03:20",
+      "arrival_at": "2026-02-06 19:20",
       "status": "待排程",
-      "created_at": "2026-02-02T08:06:03.864Z"
+      "created_at": "2026-02-06T09:20:55.721Z"
     },
     {
-      "id": "task-1770019563722-495",
-      "code": "SZH-2026-001",
-      "name": "四综合试验",
+      "id": "task-1770369655579-401",
+      "code": "CJ-2026-002",
+      "name": "冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 9,
+      "sample_type": "",
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 03:20",
+      "arrival_at": "2026-02-06 23:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:55.579Z"
+    },
+    {
+      "id": "task-1770369655445-098",
+      "code": "YW-2026-003",
+      "name": "盐雾试验",
       "source": "外部委托",
       "priority": "Medium",
       "sample_count": 3,
       "sample_type": "",
+      "test_type": "盐雾试验",
+      "required_device": "盐雾试验",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 18:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:55.445Z"
+    },
+    {
+      "id": "task-1770369655308-690",
+      "code": "WDC-2026-001",
+      "name": "温度冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 7,
+      "sample_type": "",
+      "test_type": "温度冲击试验",
+      "required_device": "温度冲击试验",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 23:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:55.308Z"
+    },
+    {
+      "id": "task-1770369655183-283",
+      "code": "SZH-2026-001",
+      "name": "四综合试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 10,
+      "sample_type": "",
       "test_type": "四综合试验",
       "required_device": "四综合试验",
-      "due_at": "2026-02-03 01:06",
-      "arrival_at": "2026-02-02 20:06",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 18:20",
       "status": "待排程",
-      "created_at": "2026-02-02T08:06:03.722Z"
+      "created_at": "2026-02-06T09:20:55.183Z"
+    },
+    {
+      "id": "task-1770369655046-072",
+      "code": "YW-2026-002",
+      "name": "盐雾试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 6,
+      "sample_type": "",
+      "test_type": "盐雾试验",
+      "required_device": "盐雾试验",
+      "due_at": "2026-02-07 06:20",
+      "arrival_at": "2026-02-06 21:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:55.046Z"
+    },
+    {
+      "id": "task-1770369654896-741",
+      "code": "CJ-2026-001",
+      "name": "冲击试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 10,
+      "sample_type": "",
+      "test_type": "冲击试验",
+      "required_device": "冲击试验",
+      "due_at": "2026-02-07 05:20",
+      "arrival_at": "2026-02-06 19:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:54.896Z"
+    },
+    {
+      "id": "task-1770369654746-672",
+      "code": "MJ-2026-001",
+      "name": "霉菌试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "霉菌试验",
+      "required_device": "霉菌试验",
+      "due_at": "2026-02-07 07:20",
+      "arrival_at": "2026-02-06 20:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:54.745Z"
+    },
+    {
+      "id": "task-1770369654595-835",
+      "code": "YW-2026-001",
+      "name": "盐雾试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 3,
+      "sample_type": "",
+      "test_type": "盐雾试验",
+      "required_device": "盐雾试验",
+      "due_at": "2026-02-07 04:20",
+      "arrival_at": "2026-02-06 22:20",
+      "status": "待排程",
+      "created_at": "2026-02-06T09:20:54.595Z"
     }
   ],
-  "mes.schedules": [
+  "mes.schedules": [],
+  "mes.samples": [
     {
-      "id": "schedule-1770019580960-218",
+      "id": "sample-1770369659808-506",
+      "code": "MJ-2026-004-SP-003",
+      "task_code": "MJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.808Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659808-921",
+          "time": "2026-02-06T09:20:59.808Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659808-437",
+      "code": "MJ-2026-004-SP-002",
+      "task_code": "MJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.808Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659808-249",
+          "time": "2026-02-06T09:20:59.808Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659808-924",
+      "code": "MJ-2026-004-SP-001",
+      "task_code": "MJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.808Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659808-006",
+          "time": "2026-02-06T09:20:59.808Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-040",
+      "code": "WDC-2026-005-SP-009",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-946",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-861",
+      "code": "WDC-2026-005-SP-008",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-454",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-249",
+      "code": "WDC-2026-005-SP-007",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-084",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-611",
+      "code": "WDC-2026-005-SP-006",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-681",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-987",
+      "code": "WDC-2026-005-SP-005",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-667",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-559",
+      "code": "WDC-2026-005-SP-004",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-547",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-299",
+      "code": "WDC-2026-005-SP-003",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-253",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-729",
+      "code": "WDC-2026-005-SP-002",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-178",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659487-736",
+      "code": "WDC-2026-005-SP-001",
+      "task_code": "WDC-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659487-605",
+          "time": "2026-02-06T09:20:59.487Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-837",
+      "code": "CJ-2026-007-SP-009",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-549",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-779",
+      "code": "CJ-2026-007-SP-008",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-958",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-074",
+      "code": "CJ-2026-007-SP-007",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-969",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-110",
+      "code": "CJ-2026-007-SP-006",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-073",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-181",
+      "code": "CJ-2026-007-SP-005",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-983",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-815",
+      "code": "CJ-2026-007-SP-004",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-812",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-484",
+      "code": "CJ-2026-007-SP-003",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-356",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-814",
+      "code": "CJ-2026-007-SP-002",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-785",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369659104-824",
+      "code": "CJ-2026-007-SP-001",
+      "task_code": "CJ-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:59.104Z",
+      "history": [
+        {
+          "id": "sample-event-1770369659104-032",
+          "time": "2026-02-06T09:20:59.104Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-025",
+      "code": "ZD-2026-003-SP-009",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-684",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-231",
+      "code": "ZD-2026-003-SP-008",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-794",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-587",
+      "code": "ZD-2026-003-SP-007",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-765",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-314",
+      "code": "ZD-2026-003-SP-006",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-481",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-011",
+      "code": "ZD-2026-003-SP-005",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-003",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-263",
+      "code": "ZD-2026-003-SP-004",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-161",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-712",
+      "code": "ZD-2026-003-SP-003",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-886",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-540",
+      "code": "ZD-2026-003-SP-002",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-313",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658720-288",
+      "code": "ZD-2026-003-SP-001",
+      "task_code": "ZD-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.720Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658720-088",
+          "time": "2026-02-06T09:20:58.720Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658458-439",
+      "code": "MJ-2026-003-SP-003",
+      "task_code": "MJ-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.458Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658458-094",
+          "time": "2026-02-06T09:20:58.458Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658458-530",
+      "code": "MJ-2026-003-SP-002",
+      "task_code": "MJ-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.458Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658458-467",
+          "time": "2026-02-06T09:20:58.458Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658458-323",
+      "code": "MJ-2026-003-SP-001",
+      "task_code": "MJ-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.458Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658458-129",
+          "time": "2026-02-06T09:20:58.458Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658330-176",
+      "code": "SZH-2026-003-SP-007",
       "task_code": "SZH-2026-003",
-      "device": "四综合实验室",
-      "start_at": "2026-02-02T05:30:00.000Z",
-      "end_at": "2026-02-02T09:00:00.000Z",
-      "status": "已排程"
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-247",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
     },
     {
-      "id": "schedule-1770019600862-291",
-      "task_code": "YW-2026-001",
-      "device": "盐雾试验室",
-      "start_at": "2026-02-03T00:00:00.000Z",
-      "end_at": "2026-02-03T03:30:00.000Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770020110055-056",
-      "task_code": "WDC-2026-001",
-      "device": "温度冲击二室",
-      "start_at": "2026-02-01T00:00:00.000Z",
-      "end_at": "2026-02-01T03:30:00.000Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770024320880-508",
-      "task_code": "ZD-2026-002",
-      "device": "振动一室",
-      "start_at": "2026-02-02T09:25:00.000Z",
-      "end_at": "2026-02-02T13:25:00.000Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770031853953-377",
-      "task_code": "ZD-2026-001",
-      "device": "振动一室",
-      "start_at": "2026-02-04T00:00:00.000Z",
-      "end_at": "2026-02-04T03:30:00.000Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770115638480-190",
-      "task_code": "CJ-2026-001",
-      "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-02-03T10:47:18.480Z",
-      "end_at": "2026-02-03T10:47:18.480Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770116685382-583",
-      "task_code": "MJ-2026-001",
-      "device": "霉菌试验室",
-      "start_at": "2026-02-04T00:00:00.000Z",
-      "end_at": "2026-02-04T03:30:00.000Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770121047144-716",
-      "task_code": "SZH-2026-005",
-      "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-02-03T12:17:27.144Z",
-      "end_at": "2026-02-03T12:17:27.144Z",
-      "status": "已排程"
-    },
-    {
-      "id": "schedule-1770121058517-363",
-      "task_code": "YW-2026-008",
-      "device": "盐雾试验室",
-      "start_at": "2026-02-04T00:00:00.000Z",
-      "end_at": "2026-02-04T03:30:00.000Z",
-      "status": "已排程"
-    }
-  ],
-  "mes.samples": null,
-  "mes.devices": null,
-  "mes.streams": [
-    {
-      "id": "stream-1770019580960-425",
+      "id": "sample-1770369658330-936",
+      "code": "SZH-2026-003-SP-006",
       "task_code": "SZH-2026-003",
-      "device": "四综合实验室",
-      "last_packet": "2026-02-02 16:06",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-642",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
     },
     {
-      "id": "stream-1770019600862-110",
-      "task_code": "YW-2026-001",
-      "device": "盐雾试验室",
-      "last_packet": "2026-02-02 16:06",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "id": "sample-1770369658330-880",
+      "code": "SZH-2026-003-SP-005",
+      "task_code": "SZH-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-505",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
     },
     {
-      "id": "stream-1770020110055-792",
-      "task_code": "WDC-2026-001",
-      "device": "温度冲击二室",
-      "last_packet": "2026-02-02 16:15",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "id": "sample-1770369658330-866",
+      "code": "SZH-2026-003-SP-004",
+      "task_code": "SZH-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-937",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
     },
     {
-      "id": "stream-1770024320880-668",
+      "id": "sample-1770369658330-712",
+      "code": "SZH-2026-003-SP-003",
+      "task_code": "SZH-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-705",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658330-270",
+      "code": "SZH-2026-003-SP-002",
+      "task_code": "SZH-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-162",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658330-989",
+      "code": "SZH-2026-003-SP-001",
+      "task_code": "SZH-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658330-850",
+          "time": "2026-02-06T09:20:58.330Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-472",
+      "code": "MJ-2026-002-SP-009",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-620",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-524",
+      "code": "MJ-2026-002-SP-008",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-761",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-184",
+      "code": "MJ-2026-002-SP-007",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-291",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-981",
+      "code": "MJ-2026-002-SP-006",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-114",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-922",
+      "code": "MJ-2026-002-SP-005",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-486",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-529",
+      "code": "MJ-2026-002-SP-004",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-848",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-817",
+      "code": "MJ-2026-002-SP-003",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-005",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658198-319",
+      "code": "MJ-2026-002-SP-002",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658198-078",
+          "time": "2026-02-06T09:20:58.198Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658197-469",
+      "code": "MJ-2026-002-SP-001",
+      "task_code": "MJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.197Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658197-452",
+          "time": "2026-02-06T09:20:58.197Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-265",
+      "code": "YW-2026-007-SP-009",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-526",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-004",
+      "code": "YW-2026-007-SP-008",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-766",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-637",
+      "code": "YW-2026-007-SP-007",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-106",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-715",
+      "code": "YW-2026-007-SP-006",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-994",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-036",
+      "code": "YW-2026-007-SP-005",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-258",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-278",
+      "code": "YW-2026-007-SP-004",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-147",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-124",
+      "code": "YW-2026-007-SP-003",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-709",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-317",
+      "code": "YW-2026-007-SP-002",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-497",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369658062-722",
+      "code": "YW-2026-007-SP-001",
+      "task_code": "YW-2026-007",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:58.062Z",
+      "history": [
+        {
+          "id": "sample-event-1770369658062-326",
+          "time": "2026-02-06T09:20:58.062Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-007"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-690",
+      "code": "ZD-2026-002-SP-008",
       "task_code": "ZD-2026-002",
-      "device": "振动一室",
-      "last_packet": "2026-02-02 17:25",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-770",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
     },
     {
-      "id": "stream-1770031853953-654",
+      "id": "sample-1770369657919-335",
+      "code": "ZD-2026-002-SP-007",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-465",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-206",
+      "code": "ZD-2026-002-SP-006",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-179",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-545",
+      "code": "ZD-2026-002-SP-005",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-563",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-479",
+      "code": "ZD-2026-002-SP-004",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-649",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-473",
+      "code": "ZD-2026-002-SP-003",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-449",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-845",
+      "code": "ZD-2026-002-SP-002",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-285",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657919-699",
+      "code": "ZD-2026-002-SP-001",
+      "task_code": "ZD-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.919Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657919-889",
+          "time": "2026-02-06T09:20:57.919Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-932",
+      "code": "WDC-2026-004-SP-008",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-222",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-821",
+      "code": "WDC-2026-004-SP-007",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-887",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-682",
+      "code": "WDC-2026-004-SP-006",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-831",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-898",
+      "code": "WDC-2026-004-SP-005",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-258",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-424",
+      "code": "WDC-2026-004-SP-004",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-365",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-808",
+      "code": "WDC-2026-004-SP-003",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-788",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-691",
+      "code": "WDC-2026-004-SP-002",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-657",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657746-456",
+      "code": "WDC-2026-004-SP-001",
+      "task_code": "WDC-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657746-930",
+          "time": "2026-02-06T09:20:57.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-142",
+      "code": "SZH-2026-002-SP-008",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-340",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-840",
+      "code": "SZH-2026-002-SP-007",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-991",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-112",
+      "code": "SZH-2026-002-SP-006",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-608",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-766",
+      "code": "SZH-2026-002-SP-005",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-881",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-645",
+      "code": "SZH-2026-002-SP-004",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-739",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-750",
+      "code": "SZH-2026-002-SP-003",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-189",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-243",
+      "code": "SZH-2026-002-SP-002",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-100",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657595-705",
+      "code": "SZH-2026-002-SP-001",
+      "task_code": "SZH-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657595-857",
+          "time": "2026-02-06T09:20:57.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657102-113",
+      "code": "YW-2026-006-SP-004",
+      "task_code": "YW-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.102Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657102-748",
+          "time": "2026-02-06T09:20:57.102Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657102-892",
+      "code": "YW-2026-006-SP-003",
+      "task_code": "YW-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.102Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657102-629",
+          "time": "2026-02-06T09:20:57.102Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657102-141",
+      "code": "YW-2026-006-SP-002",
+      "task_code": "YW-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.102Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657102-073",
+          "time": "2026-02-06T09:20:57.102Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369657102-341",
+      "code": "YW-2026-006-SP-001",
+      "task_code": "YW-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:57.102Z",
+      "history": [
+        {
+          "id": "sample-event-1770369657102-104",
+          "time": "2026-02-06T09:20:57.102Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-202",
+      "code": "CJ-2026-006-SP-006",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-261",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-707",
+      "code": "CJ-2026-006-SP-005",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-027",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-495",
+      "code": "CJ-2026-006-SP-004",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-208",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-677",
+      "code": "CJ-2026-006-SP-003",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-603",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-203",
+      "code": "CJ-2026-006-SP-002",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-305",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656967-452",
+      "code": "CJ-2026-006-SP-001",
+      "task_code": "CJ-2026-006",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.967Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656967-438",
+          "time": "2026-02-06T09:20:56.967Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-006"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-996",
+      "code": "CJ-2026-005-SP-007",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-694",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-888",
+      "code": "CJ-2026-005-SP-006",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-172",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-785",
+      "code": "CJ-2026-005-SP-005",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-346",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-231",
+      "code": "CJ-2026-005-SP-004",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-056",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-483",
+      "code": "CJ-2026-005-SP-003",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-094",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-185",
+      "code": "CJ-2026-005-SP-002",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-365",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656831-584",
+      "code": "CJ-2026-005-SP-001",
+      "task_code": "CJ-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.831Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656831-130",
+          "time": "2026-02-06T09:20:56.831Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-029",
+      "code": "CJ-2026-004-SP-009",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-839",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-531",
+      "code": "CJ-2026-004-SP-008",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-847",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-262",
+      "code": "CJ-2026-004-SP-007",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-895",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-605",
+      "code": "CJ-2026-004-SP-006",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-074",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-161",
+      "code": "CJ-2026-004-SP-005",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-807",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-787",
+      "code": "CJ-2026-004-SP-004",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-020",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-958",
+      "code": "CJ-2026-004-SP-003",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-432",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-988",
+      "code": "CJ-2026-004-SP-002",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-581",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656673-508",
+      "code": "CJ-2026-004-SP-001",
+      "task_code": "CJ-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.673Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656673-517",
+          "time": "2026-02-06T09:20:56.673Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656538-923",
+      "code": "CJ-2026-003-SP-003",
+      "task_code": "CJ-2026-003",
+      "location": "室外接驳区",
+      "owner": "",
+      "status": "已接收",
+      "flow_status": "到货",
+      "created_at": "2026-02-06T09:20:56.538Z",
+      "history": [
+        {
+          "id": "sample-event-1770369892637-166",
+          "time": "2026-02-06T09:24:52.637Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 CJ-2026-003"
+        },
+        {
+          "id": "sample-event-1770369656538-751",
+          "time": "2026-02-06T09:20:56.538Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-003"
+        }
+      ],
+      "updated_at": "2026-02-06T09:24:52.637Z"
+    },
+    {
+      "id": "sample-1770369656538-446",
+      "code": "CJ-2026-003-SP-002",
+      "task_code": "CJ-2026-003",
+      "location": "室外接驳区",
+      "owner": "",
+      "status": "已接收",
+      "flow_status": "到货",
+      "created_at": "2026-02-06T09:20:56.538Z",
+      "history": [
+        {
+          "id": "sample-event-1770369892637-935",
+          "time": "2026-02-06T09:24:52.637Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 CJ-2026-003"
+        },
+        {
+          "id": "sample-event-1770369656538-221",
+          "time": "2026-02-06T09:20:56.538Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-003"
+        }
+      ],
+      "updated_at": "2026-02-06T09:24:52.637Z"
+    },
+    {
+      "id": "sample-1770369656538-692",
+      "code": "CJ-2026-003-SP-001",
+      "task_code": "CJ-2026-003",
+      "location": "室外接驳区",
+      "owner": "",
+      "status": "已接收",
+      "flow_status": "到货",
+      "created_at": "2026-02-06T09:20:56.538Z",
+      "history": [
+        {
+          "id": "sample-event-1770369892637-859",
+          "time": "2026-02-06T09:24:52.637Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 CJ-2026-003"
+        },
+        {
+          "id": "sample-event-1770369656538-539",
+          "time": "2026-02-06T09:20:56.538Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-003"
+        }
+      ],
+      "updated_at": "2026-02-06T09:24:52.637Z"
+    },
+    {
+      "id": "sample-1770369656395-598",
+      "code": "WDC-2026-003-SP-008",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-609",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-037",
+      "code": "WDC-2026-003-SP-007",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-259",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-317",
+      "code": "WDC-2026-003-SP-006",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-176",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-378",
+      "code": "WDC-2026-003-SP-005",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-654",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-719",
+      "code": "WDC-2026-003-SP-004",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-456",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-494",
+      "code": "WDC-2026-003-SP-003",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-663",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-818",
+      "code": "WDC-2026-003-SP-002",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-878",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656395-464",
+      "code": "WDC-2026-003-SP-001",
+      "task_code": "WDC-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.395Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656395-129",
+          "time": "2026-02-06T09:20:56.395Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656255-993",
+      "code": "YW-2026-005-SP-004",
+      "task_code": "YW-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.255Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656255-512",
+          "time": "2026-02-06T09:20:56.255Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656255-562",
+      "code": "YW-2026-005-SP-003",
+      "task_code": "YW-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.255Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656255-267",
+          "time": "2026-02-06T09:20:56.255Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656255-543",
+      "code": "YW-2026-005-SP-002",
+      "task_code": "YW-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.255Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656255-079",
+          "time": "2026-02-06T09:20:56.255Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656255-231",
+      "code": "YW-2026-005-SP-001",
+      "task_code": "YW-2026-005",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.255Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656255-492",
+          "time": "2026-02-06T09:20:56.255Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-005"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656125-086",
+      "code": "WDC-2026-002-SP-005",
+      "task_code": "WDC-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.125Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656125-888",
+          "time": "2026-02-06T09:20:56.125Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656125-259",
+      "code": "WDC-2026-002-SP-004",
+      "task_code": "WDC-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.125Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656125-276",
+          "time": "2026-02-06T09:20:56.125Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656125-753",
+      "code": "WDC-2026-002-SP-003",
+      "task_code": "WDC-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.125Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656125-222",
+          "time": "2026-02-06T09:20:56.125Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656125-927",
+      "code": "WDC-2026-002-SP-002",
+      "task_code": "WDC-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.125Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656125-171",
+          "time": "2026-02-06T09:20:56.125Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369656125-275",
+      "code": "WDC-2026-002-SP-001",
+      "task_code": "WDC-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:56.125Z",
+      "history": [
+        {
+          "id": "sample-event-1770369656125-951",
+          "time": "2026-02-06T09:20:56.125Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-512",
+      "code": "ZD-2026-001-SP-009",
       "task_code": "ZD-2026-001",
-      "device": "振动一室",
-      "last_packet": "2026-02-02 19:30",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-641",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
     },
     {
-      "id": "stream-1770115638481-461",
+      "id": "sample-1770369655991-605",
+      "code": "ZD-2026-001-SP-008",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-015",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-286",
+      "code": "ZD-2026-001-SP-007",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-341",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-198",
+      "code": "ZD-2026-001-SP-006",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-720",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-560",
+      "code": "ZD-2026-001-SP-005",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-397",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-609",
+      "code": "ZD-2026-001-SP-004",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-805",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-022",
+      "code": "ZD-2026-001-SP-003",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-736",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-229",
+      "code": "ZD-2026-001-SP-002",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-547",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655991-878",
+      "code": "ZD-2026-001-SP-001",
+      "task_code": "ZD-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.991Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655991-373",
+          "time": "2026-02-06T09:20:55.991Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 ZD-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-118",
+      "code": "YW-2026-004-SP-009",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-362",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-193",
+      "code": "YW-2026-004-SP-008",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-712",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-141",
+      "code": "YW-2026-004-SP-007",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-408",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-735",
+      "code": "YW-2026-004-SP-006",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-778",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-818",
+      "code": "YW-2026-004-SP-005",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-302",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-045",
+      "code": "YW-2026-004-SP-004",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-455",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-968",
+      "code": "YW-2026-004-SP-003",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-884",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-933",
+      "code": "YW-2026-004-SP-002",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-674",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655721-969",
+      "code": "YW-2026-004-SP-001",
+      "task_code": "YW-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.721Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655721-306",
+          "time": "2026-02-06T09:20:55.721Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-610",
+      "code": "CJ-2026-002-SP-009",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-496",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-599",
+      "code": "CJ-2026-002-SP-008",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-442",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-596",
+      "code": "CJ-2026-002-SP-007",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-076",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-178",
+      "code": "CJ-2026-002-SP-006",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-152",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-307",
+      "code": "CJ-2026-002-SP-005",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-617",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-027",
+      "code": "CJ-2026-002-SP-004",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-015",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-796",
+      "code": "CJ-2026-002-SP-003",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-111",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-083",
+      "code": "CJ-2026-002-SP-002",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-624",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655579-320",
+      "code": "CJ-2026-002-SP-001",
+      "task_code": "CJ-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.579Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655579-689",
+          "time": "2026-02-06T09:20:55.579Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655445-138",
+      "code": "YW-2026-003-SP-003",
+      "task_code": "YW-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.445Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655445-737",
+          "time": "2026-02-06T09:20:55.445Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655445-070",
+      "code": "YW-2026-003-SP-002",
+      "task_code": "YW-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.445Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655445-573",
+          "time": "2026-02-06T09:20:55.445Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655445-859",
+      "code": "YW-2026-003-SP-001",
+      "task_code": "YW-2026-003",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.445Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655445-625",
+          "time": "2026-02-06T09:20:55.445Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-003"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-496",
+      "code": "WDC-2026-001-SP-007",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-263",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-040",
+      "code": "WDC-2026-001-SP-006",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-862",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-650",
+      "code": "WDC-2026-001-SP-005",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-739",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-394",
+      "code": "WDC-2026-001-SP-004",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-509",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-173",
+      "code": "WDC-2026-001-SP-003",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-372",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-462",
+      "code": "WDC-2026-001-SP-002",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-883",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655308-152",
+      "code": "WDC-2026-001-SP-001",
+      "task_code": "WDC-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.308Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655308-901",
+          "time": "2026-02-06T09:20:55.308Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 WDC-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-361",
+      "code": "SZH-2026-001-SP-010",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-225",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-674",
+      "code": "SZH-2026-001-SP-009",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-156",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-937",
+      "code": "SZH-2026-001-SP-008",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-072",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-442",
+      "code": "SZH-2026-001-SP-007",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-956",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-450",
+      "code": "SZH-2026-001-SP-006",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-438",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-048",
+      "code": "SZH-2026-001-SP-005",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-467",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-764",
+      "code": "SZH-2026-001-SP-004",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-102",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-197",
+      "code": "SZH-2026-001-SP-003",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-948",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-118",
+      "code": "SZH-2026-001-SP-002",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-280",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655183-767",
+      "code": "SZH-2026-001-SP-001",
+      "task_code": "SZH-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.183Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655183-692",
+          "time": "2026-02-06T09:20:55.183Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 SZH-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655047-327",
+      "code": "YW-2026-002-SP-006",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-847",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655047-333",
+      "code": "YW-2026-002-SP-005",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-147",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655047-208",
+      "code": "YW-2026-002-SP-004",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-071",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655047-183",
+      "code": "YW-2026-002-SP-003",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-777",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655047-453",
+      "code": "YW-2026-002-SP-002",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-909",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369655046-211",
+      "code": "YW-2026-002-SP-001",
+      "task_code": "YW-2026-002",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:55.046Z",
+      "history": [
+        {
+          "id": "sample-event-1770369655047-569",
+          "time": "2026-02-06T09:20:55.047Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-002"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-190",
+      "code": "CJ-2026-001-SP-010",
       "task_code": "CJ-2026-001",
-      "device": "恒温恒湿间（暂存间）",
-      "last_packet": "2026-02-03 18:47",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-118",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
     },
     {
-      "id": "stream-1770116685382-170",
+      "id": "sample-1770369654896-781",
+      "code": "CJ-2026-001-SP-009",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-215",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-893",
+      "code": "CJ-2026-001-SP-008",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-304",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-632",
+      "code": "CJ-2026-001-SP-007",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-741",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-257",
+      "code": "CJ-2026-001-SP-006",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-490",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-753",
+      "code": "CJ-2026-001-SP-005",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-247",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-237",
+      "code": "CJ-2026-001-SP-004",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-098",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-142",
+      "code": "CJ-2026-001-SP-003",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-829",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-623",
+      "code": "CJ-2026-001-SP-002",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-559",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654896-650",
+      "code": "CJ-2026-001-SP-001",
+      "task_code": "CJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.896Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654896-615",
+          "time": "2026-02-06T09:20:54.896Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 CJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-225",
+      "code": "MJ-2026-001-SP-008",
       "task_code": "MJ-2026-001",
-      "device": "霉菌试验室",
-      "last_packet": "2026-02-03 19:04",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-010",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
     },
     {
-      "id": "stream-1770121047144-483",
-      "task_code": "SZH-2026-005",
-      "device": "恒温恒湿间（暂存间）",
-      "last_packet": "2026-02-03 20:17",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "id": "sample-1770369654746-398",
+      "code": "MJ-2026-001-SP-007",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-330",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
     },
     {
-      "id": "stream-1770121058517-461",
-      "task_code": "YW-2026-008",
-      "device": "盐雾试验室",
-      "last_packet": "2026-02-03 20:17",
-      "quality": "98.0%",
-      "status": "采集中",
-      "reported": false
+      "id": "sample-1770369654746-905",
+      "code": "MJ-2026-001-SP-006",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-483",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-410",
+      "code": "MJ-2026-001-SP-005",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-039",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-292",
+      "code": "MJ-2026-001-SP-004",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-617",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-673",
+      "code": "MJ-2026-001-SP-003",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-562",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-952",
+      "code": "MJ-2026-001-SP-002",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-513",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654746-937",
+      "code": "MJ-2026-001-SP-001",
+      "task_code": "MJ-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.746Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654746-610",
+          "time": "2026-02-06T09:20:54.746Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 MJ-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654595-371",
+      "code": "YW-2026-001-SP-003",
+      "task_code": "YW-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654595-593",
+          "time": "2026-02-06T09:20:54.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654595-553",
+      "code": "YW-2026-001-SP-002",
+      "task_code": "YW-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654595-458",
+          "time": "2026-02-06T09:20:54.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-001"
+        }
+      ]
+    },
+    {
+      "id": "sample-1770369654595-802",
+      "code": "YW-2026-001-SP-001",
+      "task_code": "YW-2026-001",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-02-06T09:20:54.595Z",
+      "history": [
+        {
+          "id": "sample-event-1770369654595-267",
+          "time": "2026-02-06T09:20:54.595Z",
+          "action": "样品绑定任务",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "任务 YW-2026-001"
+        }
+      ]
     }
   ],
-  "mes.conflicts": null
+  "mes.devices": [],
+  "mes.streams": [],
+  "mes.conflicts": []
 }

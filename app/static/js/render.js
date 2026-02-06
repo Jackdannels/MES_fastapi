@@ -731,8 +731,9 @@ function renderStagingSamples(labels, samples) {
   if (!body) {
     return;
   }
+  const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
   const stagingSamples = samples.filter(
-    (sample) => sample.location === labels.retentionLocation && sample.status !== labels.sampleTesting
+    (sample) => sample.location === preRetentionLocation && sample.status !== labels.sampleTesting
   );
   setText("staging-count", stagingSamples.length);
   body.innerHTML = "";
@@ -892,10 +893,11 @@ function isRetentionExcludedTask(task) {
   return RETENTION_EXCLUDE_NAME.test(name);
 }
 function isRetentionFromIntake(sample, labels) {
+  const preRetentionLocation = labels?.preRetentionLocation || labels?.retentionLocation;
   if (sample.retention_source) {
     return sample.retention_source === "intake";
   }
-  if (labels?.retentionLocation && sample.location === labels.retentionLocation) {
+  if (preRetentionLocation && sample.location === preRetentionLocation) {
     return true;
   }
   if (Array.isArray(sample.history)) {
@@ -964,9 +966,10 @@ function renderRetentionSchedule(labels, samples) {
   if (!body) {
     return;
   }
+  const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
   const retentionSamples = samples.filter(
     (sample) =>
-      sample.location === labels.retentionLocation &&
+      sample.location === preRetentionLocation &&
       sample.status !== labels.sampleTesting &&
       isRetentionFromIntake(sample, labels)
   );
@@ -1020,19 +1023,20 @@ function renderRetentionInternalSchedule(labels) {
     }
   });
 
+  const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
   const scheduledToLab = new Set(
     schedules
-      .filter((entry) => entry?.task_code && entry?.device && entry.device !== labels.retentionLocation)
+      .filter((entry) => entry?.task_code && entry?.device && entry.device !== preRetentionLocation)
       .map((entry) => entry.task_code)
   );
   const retentionSchedules = schedules.filter(
-    (entry) => entry?.task_code && entry?.device === labels.retentionLocation
+    (entry) => entry?.task_code && entry?.device === preRetentionLocation
   );
 
   const retentionTasks = new Map();
   const retentionSamples = samples.filter(
     (sample) =>
-      sample.location === labels.retentionLocation &&
+      sample.location === preRetentionLocation &&
       sample.status !== labels.sampleTesting &&
       isRetentionFromIntake(sample, labels)
   );
@@ -1181,6 +1185,125 @@ function buildSampleTaskList(tasks, samples, schedules) {
   return list;
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildTaskSampleCodes(taskCode, plannedCount, samplesForTask) {
+  const code = (taskCode || "").trim();
+  if (!code) {
+    return [];
+  }
+  const list = Array.isArray(samplesForTask) ? samplesForTask : [];
+  const existingCodes = Array.from(
+    new Set(
+      list
+        .map((item) => (item?.code || "").trim())
+        .filter(Boolean)
+    )
+  );
+  const pattern = new RegExp(`^${escapeRegExp(code)}-SP-(\\d{3})$`);
+  let maxIndex = 0;
+  existingCodes.forEach((itemCode) => {
+    const match = itemCode.match(pattern);
+    if (!match) {
+      return;
+    }
+    const index = Number.parseInt(match[1], 10);
+    if (Number.isFinite(index)) {
+      maxIndex = Math.max(maxIndex, index);
+    }
+  });
+  let targetCount = Number.isFinite(plannedCount) && plannedCount > 0 ? Math.floor(plannedCount) : existingCodes.length;
+  if (targetCount <= 0 && maxIndex > 0) {
+    targetCount = maxIndex;
+  }
+  const generatedCodes = [];
+  for (let index = 1; index <= targetCount; index += 1) {
+    generatedCodes.push(`${code}-SP-${String(index).padStart(3, "0")}`);
+  }
+  const extraExisting = existingCodes.filter((itemCode) => !generatedCodes.includes(itemCode));
+  return [...generatedCodes, ...extraExisting];
+}
+
+const UNIFIED_SAMPLE_FLOW_STEPS = [
+  "运输中",
+  "到货",
+  "到达实验间",
+  "实验准备就绪",
+  "实验完成",
+  "放置暂存间",
+  "厂家收回",
+];
+
+function resolveSampleFlowStageIndex(sample, labels) {
+  if (!sample) {
+    return 0;
+  }
+  const flowStatus = (sample.flow_status || sample.status || "").trim();
+  const location = (sample.location || "").trim();
+  const preRetentionLocation = labels?.preRetentionLocation || labels?.retentionLocation || "";
+  const postRetentionLocation = labels?.postRetentionLocation || "";
+  const isPreRetention = Boolean(preRetentionLocation) && location === preRetentionLocation;
+  const isPostRetention = Boolean(postRetentionLocation) && location === postRetentionLocation;
+  if (!flowStatus && !location) {
+    return 0;
+  }
+  if (flowStatus === "厂家收回" || flowStatus === "已处置") {
+    return 6;
+  }
+  if (flowStatus === "放置暂存间" && (!location || isPostRetention)) {
+    return 5;
+  }
+  if (flowStatus === "入库" || flowStatus === "已入库" || flowStatus === labels?.sampleStored) {
+    return isPostRetention ? 5 : 1;
+  }
+  if (flowStatus === "实验完成" || flowStatus === labels?.statusCompleted || flowStatus === "实验已完成") {
+    return 4;
+  }
+  if (flowStatus === "实验准备就绪" || flowStatus === "试验中" || flowStatus === labels?.sampleTesting) {
+    return 3;
+  }
+  if (flowStatus === "到达实验间" || TEST_LABS.includes(location)) {
+    return 2;
+  }
+  if (flowStatus === "到货" || flowStatus === "已接收" || flowStatus === labels?.sampleReceived) {
+    return 1;
+  }
+  if (isPostRetention) {
+    return 5;
+  }
+  if (isPreRetention) {
+    return 1;
+  }
+  if (location && TEST_LABS.includes(location)) {
+    return 2;
+  }
+  if (location && (location === labels?.unpackingLocation || location === labels?.intakeLocation)) {
+    return 1;
+  }
+  return 0;
+}
+
+function renderUnifiedSampleFlow(stageIndex) {
+  const flowContainer = document.getElementById("sample-flow-unified");
+  const currentEl = document.getElementById("sample-flow-current");
+  if (!flowContainer) {
+    return;
+  }
+  const normalized = Number.isFinite(stageIndex) ? Math.max(-1, Math.min(6, stageIndex)) : -1;
+  flowContainer.querySelectorAll("li[data-flow-step]").forEach((item) => {
+    const step = Number.parseInt(item.dataset.flowStep || "-1", 10);
+    const reached = Number.isFinite(step) && normalized >= step && normalized >= 0;
+    item.classList.toggle("reached", reached);
+    item.classList.toggle("current", Number.isFinite(step) && step === normalized && normalized >= 0);
+  });
+  if (currentEl) {
+    currentEl.textContent =
+      normalized >= 0 ? `当前状态：${UNIFIED_SAMPLE_FLOW_STEPS[normalized]}` : "当前状态：未选择任务";
+  }
+}
+
 function fillSampleTaskSelects(taskList) {
   const tasks = Array.isArray(taskList) ? taskList : [];
   document.querySelectorAll("select[data-sample-task-select]").forEach((select) => {
@@ -1210,9 +1333,13 @@ function fillSampleTaskSelects(taskList) {
   });
 }
 
-function renderSampleTaskSummary(taskList, samples) {
+function renderSampleTaskSummary(taskList, samples, labels) {
   const select = document.querySelector('select[data-sample-task-select="summary"]');
   const countEl = document.getElementById("sample-task-count");
+  const countHintEl = document.getElementById("sample-task-count-hint");
+  const processForm = document.querySelector('[data-form="sample-task-process"]');
+  const codesInput = processForm?.querySelector('textarea[name="codes"]') || null;
+  const storeBtn = document.querySelector('[data-action="sample-task-store"]');
   if (!select || !countEl) {
     return;
   }
@@ -1223,16 +1350,50 @@ function renderSampleTaskSummary(taskList, samples) {
     const code = (select.value || "").trim();
     if (!code) {
       countEl.textContent = "0";
+      if (countHintEl) {
+        countHintEl.textContent = "请选择任务后查看样品数量与样品编号。";
+      }
+      if (codesInput) {
+        codesInput.value = "";
+      }
+      if (storeBtn) {
+        storeBtn.disabled = true;
+        storeBtn.dataset.taskCode = "";
+      }
+      renderUnifiedSampleFlow(-1);
       return;
     }
+
     const task = tasks.find((item) => item.code === code);
-    const rawCount = task?.sample_count ?? 0;
-    if (rawCount !== "" && Number.isFinite(Number(rawCount))) {
-      countEl.textContent = String(rawCount);
-      return;
+    const taskSamples = sampleList.filter((sample) => (sample.task_code || "").trim() === code);
+    const sampleCodes = taskSamples.map((sample) => (sample.code || "").trim()).filter(Boolean);
+
+    const rawCount = task?.sample_count ?? "";
+    const plannedCount = rawCount !== "" && Number.isFinite(Number(rawCount)) ? Number(rawCount) : NaN;
+    const autoCodes = buildTaskSampleCodes(code, plannedCount, taskSamples);
+    if (Number.isFinite(plannedCount)) {
+      countEl.textContent = String(plannedCount);
+      if (countHintEl) {
+        countHintEl.textContent = `计划 ${plannedCount}，已登记 ${sampleCodes.length}，编号按任务自动绑定。`;
+      }
+    } else {
+      countEl.textContent = String(sampleCodes.length);
+      if (countHintEl) {
+        countHintEl.textContent = `该任务已登记 ${sampleCodes.length} 个样品，编号按任务自动绑定。`;
+      }
     }
-    const actualCount = sampleList.filter((sample) => sample.task_code === code).length;
-    countEl.textContent = String(actualCount);
+
+    if (codesInput) {
+      codesInput.value = autoCodes.join("\n");
+    }
+    if (storeBtn) {
+      storeBtn.disabled = autoCodes.length === 0;
+      storeBtn.dataset.taskCode = code;
+    }
+    const taskStage = taskSamples.length
+      ? taskSamples.reduce((maxStage, sample) => Math.max(maxStage, resolveSampleFlowStageIndex(sample, labels)), 0)
+      : 0;
+    renderUnifiedSampleFlow(taskStage);
   };
 
   if (select.dataset.bound !== "1") {
@@ -1248,24 +1409,15 @@ function renderSamplesPage(labels) {
   if (!tbody) {
     return;
   }
+  const pagination = document.getElementById("sample-list-pagination");
+  const searchInput = document.getElementById("sample-list-search");
+  const taskFilter = document.getElementById("sample-list-filter-task");
+  const statusFilter = document.getElementById("sample-list-filter-status");
   let samples = loadStore(STORAGE_KEYS.samples, []);
   if (!Array.isArray(samples)) {
     samples = [];
   }
 
-  tbody.innerHTML = "";
-  samples.forEach((sample) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${sample.code || ""}</td>
-      <td>${sample.task_code || ""}</td>
-      <td>${sample.location || ""}</td>
-      <td>${sample.owner || ""}</td>
-      <td><span class="${statusClass(sample.status, labels)}">${sample.status || ""}</span></td>
-      <td><a class="action-link" href="#" data-drawer-open="sample-drawer">${labels.edit}</a></td>
-    `;
-    tbody.appendChild(row);
-  });
   let tasks = loadStore(STORAGE_KEYS.tasks, []);
   let schedules = loadStore(STORAGE_KEYS.schedules, []);
   if (!Array.isArray(tasks)) {
@@ -1275,8 +1427,219 @@ function renderSamplesPage(labels) {
     schedules = [];
   }
   const sampleTasks = buildSampleTaskList(tasks, samples, schedules);
+  if (taskFilter) {
+    const previousValue = taskFilter.value;
+    const codes = Array.from(
+      new Set(
+        sampleTasks
+          .map((task) => (task?.code || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    taskFilter.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "全部任务";
+    taskFilter.appendChild(defaultOption);
+    codes.forEach((code) => {
+      const option = document.createElement("option");
+      option.value = code;
+      option.textContent = code;
+      taskFilter.appendChild(option);
+    });
+    if (previousValue && codes.includes(previousValue)) {
+      taskFilter.value = previousValue;
+    }
+  }
+  if (statusFilter) {
+    const previousValue = statusFilter.value;
+    const statuses = Array.from(
+      new Set(
+        samples
+          .map((sample) => (sample?.status || "").trim())
+          .filter(Boolean)
+      )
+    );
+    statusFilter.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "全部状态";
+    statusFilter.appendChild(defaultOption);
+    statuses.forEach((status) => {
+      const option = document.createElement("option");
+      option.value = status;
+      option.textContent = status;
+      statusFilter.appendChild(option);
+    });
+    if (previousValue && statuses.includes(previousValue)) {
+      statusFilter.value = previousValue;
+    }
+  }
+
+  const query = (searchInput?.value || "").trim().toLowerCase();
+  const selectedTask = (taskFilter?.value || "").trim();
+  const selectedStatus = (statusFilter?.value || "").trim();
+  const filteredSamples = samples.filter((sample) => {
+    if (selectedTask && (sample.task_code || "") !== selectedTask) {
+      return false;
+    }
+    if (selectedStatus && (sample.status || "") !== selectedStatus) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const searchText = [
+      sample.task_code || "",
+      sample.code || "",
+      sample.location || "",
+      sample.owner || "",
+      sample.status || "",
+      sample.flow_status || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+    return searchText.includes(query);
+  });
+
+  const pageSize = 8;
+  const totalPages = Math.max(1, Math.ceil(filteredSamples.length / pageSize));
+  let currentPage = pagination ? Number.parseInt(pagination.dataset.page || "1", 10) : 1;
+  if (!Number.isFinite(currentPage) || currentPage < 1) {
+    currentPage = 1;
+  }
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
+  if (pagination) {
+    pagination.dataset.page = String(currentPage);
+    pagination.dataset.total = String(totalPages);
+  }
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const pageItems = filteredSamples.slice(startIndex, startIndex + pageSize);
+
+  tbody.innerHTML = "";
+  pageItems.forEach((sample) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${sample.task_code || ""}</td>
+      <td>${sample.code || ""}</td>
+      <td>${sample.location || ""}</td>
+      <td>${sample.owner || ""}</td>
+      <td><span class="${statusClass(sample.status, labels)}">${sample.status || ""}</span></td>
+      <td><a class="action-link" href="#" data-drawer-open="sample-drawer">${labels.edit}</a></td>
+    `;
+    tbody.appendChild(row);
+  });
+
+  const bindSampleFilters = (element, eventName) => {
+    if (!element || element.dataset.bound === "1") {
+      return;
+    }
+    element.addEventListener(eventName, () => {
+      if (pagination) {
+        pagination.dataset.page = "1";
+      }
+      renderSamplesPage(labels);
+    });
+    element.dataset.bound = "1";
+  };
+  bindSampleFilters(searchInput, "input");
+  bindSampleFilters(taskFilter, "change");
+  bindSampleFilters(statusFilter, "change");
+
+  if (pagination) {
+    const appendEllipsis = () => {
+      const span = document.createElement("span");
+      span.className = "page-ellipsis";
+      span.textContent = "...";
+      pagination.appendChild(span);
+    };
+    const appendPage = (page) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `page-btn${page === currentPage ? " active" : ""}`;
+      btn.textContent = String(page);
+      btn.dataset.page = String(page);
+      pagination.appendChild(btn);
+    };
+    const appendNav = (label, action, disabled) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "page-btn nav";
+      btn.textContent = label;
+      btn.dataset.page = action;
+      btn.disabled = disabled;
+      pagination.appendChild(btn);
+    };
+
+    pagination.innerHTML = "";
+    if (totalPages <= 1) {
+      pagination.classList.add("is-hidden");
+    } else {
+      pagination.classList.remove("is-hidden");
+      appendNav("上一页", "prev", currentPage <= 1);
+
+      if (totalPages <= 5) {
+        for (let i = 1; i <= totalPages; i += 1) {
+          appendPage(i);
+        }
+      } else if (currentPage <= 3) {
+        [1, 2, 3, 4].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        appendPage(1);
+        appendEllipsis();
+        [totalPages - 3, totalPages - 2, totalPages - 1, totalPages].forEach((page) => appendPage(page));
+      } else {
+        appendPage(1);
+        appendEllipsis();
+        [currentPage - 1, currentPage, currentPage + 1].forEach((page) => appendPage(page));
+        appendEllipsis();
+        appendPage(totalPages);
+      }
+
+      appendNav("下一页", "next", currentPage >= totalPages);
+
+      if (pagination.dataset.bound !== "1") {
+        pagination.addEventListener("click", (event) => {
+          const target = event.target.closest(".page-btn");
+          if (!target || target.disabled) {
+            return;
+          }
+          const action = target.dataset.page || "";
+          const total = Number.parseInt(pagination.dataset.total || "1", 10);
+          let current = Number.parseInt(pagination.dataset.page || "1", 10);
+          if (!Number.isFinite(current) || current < 1) {
+            current = 1;
+          }
+          const maxPage = Number.isFinite(total) && total > 0 ? total : 1;
+          let nextPage = current;
+          if (action === "prev") {
+            nextPage = Math.max(1, current - 1);
+          } else if (action === "next") {
+            nextPage = Math.min(maxPage, current + 1);
+          } else {
+            const parsed = Number.parseInt(action, 10);
+            if (Number.isFinite(parsed)) {
+              nextPage = parsed;
+            }
+          }
+          if (nextPage === current) {
+            return;
+          }
+          pagination.dataset.page = String(nextPage);
+          renderSamplesPage(labels);
+        });
+        pagination.dataset.bound = "1";
+      }
+    }
+  }
+
   fillSampleTaskSelects(sampleTasks);
-  renderSampleTaskSummary(sampleTasks, samples);
+  renderSampleTaskSummary(sampleTasks, samples, labels);
   renderStagingSamples(labels, samples);
   const traceInput = document.querySelector('[data-form="sample-trace"] input[name="task_code"]');
   renderSampleTrace(labels, traceInput ? traceInput.value : "");
