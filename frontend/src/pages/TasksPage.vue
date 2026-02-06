@@ -107,7 +107,13 @@
   <section class="card section">
     <h3>总任务清单</h3>
     <div class="toolbar">
-      <input class="search-input" data-filter-input="#task-table" placeholder="筛选任务编号/客户/设备" />
+      <input class="search-input" id="task-list-search" placeholder="筛选任务编号/客户/设备" />
+      <select class="search-input" id="task-list-filter-test-type">
+        <option value="">全部试验类型</option>
+      </select>
+      <select class="search-input" id="task-list-filter-status">
+        <option value="">全部状态</option>
+      </select>
       <a class="action-btn" href="#" data-modal-open="task-modal">快速新建</a>
       <div class="task-list-pagination" id="task-list-pagination"></div>
     </div>
@@ -117,7 +123,7 @@
           <th data-sort>任务编号</th>
           <th data-sort>来源</th>
           <th data-sort>样品</th>
-          <th data-sort>试验类型</th>
+          <th data-sort>实验类型</th>
           <th data-sort>设备要求</th>
           <th data-sort>期望完成</th>
           <th data-sort>状态</th>

@@ -23,6 +23,72 @@ function computeDeviceStatus(device, schedules, labels) {
   return device.status || labels.deviceIdle;
 }
 
+function createTaskStatusResolver(tasks, schedules, labels, now = new Date()) {
+  const retentionStatus = labels.statusRetention || "暂存间存放";
+  const runningStatus = labels.statusExperimenting || labels.statusRunning || "实验中";
+  const completedStatus = labels.statusCompleted || "实验已经完成";
+  const scheduledStatus = labels.statusScheduled || "已排程";
+  const schedulesByTask = new Map();
+
+  (Array.isArray(schedules) ? schedules : []).forEach((entry) => {
+    if (!entry?.task_code) {
+      return;
+    }
+    if (!schedulesByTask.has(entry.task_code)) {
+      schedulesByTask.set(entry.task_code, []);
+    }
+    schedulesByTask.get(entry.task_code).push(entry);
+  });
+
+  const resolveTaskStatus = (taskOrCode, fallback = "") => {
+    const code = typeof taskOrCode === "string" ? taskOrCode : taskOrCode?.code || "";
+    const baseStatus = typeof taskOrCode === "string" ? fallback : taskOrCode?.status || fallback;
+    if (!code) {
+      return baseStatus || "";
+    }
+
+    const entries = schedulesByTask.get(code) || [];
+    if (!entries.length) {
+      return baseStatus || "";
+    }
+
+    const labEntries = entries.filter((entry) => entry.device !== labels.retentionLocation);
+    const retentionEntries = entries.filter((entry) => entry.device === labels.retentionLocation);
+    if (!labEntries.length && retentionEntries.length) {
+      return retentionStatus;
+    }
+    if (!labEntries.length) {
+      return baseStatus || scheduledStatus;
+    }
+
+    const validEntries = labEntries.filter((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
+    });
+    if (!validEntries.length) {
+      return scheduledStatus;
+    }
+
+    const hasActive = validEntries.some((entry) => {
+      const start = new Date(entry.start_at);
+      const end = new Date(entry.end_at);
+      return start <= now && end >= now;
+    });
+    if (hasActive) {
+      return runningStatus;
+    }
+
+    const allEnded = validEntries.every((entry) => new Date(entry.end_at) < now);
+    if (allEnded) {
+      return completedStatus;
+    }
+    return scheduledStatus;
+  };
+
+  return { resolveTaskStatus, retentionStatus, runningStatus, completedStatus, scheduledStatus };
+}
+
 function toDateTimeLocalValue(value) {
   if (!value) {
     return "";
@@ -96,6 +162,7 @@ function renderGanttSchedule(computed, devices, filterDevice = "") {
   if (!table || !dayRow || !slotRow || !body) {
     return;
   }
+  const now = new Date();
   const deviceList = Array.isArray(devices) ? devices : [];
   const activeFilter = (filterDevice || "").trim();
   const totalDays = Math.max(1, Number.parseInt(table.dataset.days || "3", 10));
@@ -250,6 +317,15 @@ function renderGanttSchedule(computed, devices, filterDevice = "") {
           if (entries[0].id) {
             slot.dataset.scheduleId = entries[0].id;
           }
+          const entryStart = new Date(entries[0].start_at);
+          const entryEnd = new Date(entries[0].end_at);
+          if (!Number.isNaN(entryStart.getTime()) && !Number.isNaN(entryEnd.getTime())) {
+            if (entryEnd < now) {
+              slot.classList.add("completed");
+            } else if (entryStart <= now && entryEnd >= now) {
+              slot.classList.add("running");
+            }
+          }
           slot.textContent = entries[0].task_code || entries[0].device || "";
           slot.title = `${entries[0].task_code || ""} ${formatDateTime(entries[0].start_at)}-${formatDateTime(
             entries[0].end_at
@@ -306,6 +382,9 @@ function renderTasksPage(labels) {
     return;
   }
   const pagination = document.getElementById("task-list-pagination");
+  const searchInput = document.getElementById("task-list-search");
+  const testTypeFilter = document.getElementById("task-list-filter-test-type");
+  const statusFilter = document.getElementById("task-list-filter-status");
   let tasks = loadStore(STORAGE_KEYS.tasks, []);
   let schedules = loadStore(STORAGE_KEYS.schedules, []);
   if (!Array.isArray(tasks)) {
@@ -327,57 +406,8 @@ function renderTasksPage(labels) {
   const externalCount = tasks.filter((t) => t.source === labels.sourceExternal).length;
   const internalCount = tasks.filter((t) => t.source === labels.sourceInternal).length;
 
-  const now = new Date();
-  const retentionStatus = labels.statusRetention || "暂存间排放";
-  const runningStatus = labels.statusExperimenting || labels.statusRunning || "实验中";
-  const completedStatus = labels.statusCompleted || "实验已经完成";
-  const scheduledStatus = labels.statusScheduled || "已排程";
-  const schedulesByTask = new Map();
+  const { resolveTaskStatus, retentionStatus } = createTaskStatusResolver(tasks, schedules, labels, new Date());
   let taskStatusUpdated = normalizedStatusUpdated;
-  schedules.forEach((entry) => {
-    if (!entry?.task_code) {
-      return;
-    }
-    if (!schedulesByTask.has(entry.task_code)) {
-      schedulesByTask.set(entry.task_code, []);
-    }
-    schedulesByTask.get(entry.task_code).push(entry);
-  });
-  const resolveTaskStatus = (task) => {
-    const entries = schedulesByTask.get(task.code) || [];
-    if (!entries.length) {
-      return task.status || "";
-    }
-    const labEntries = entries.filter((entry) => entry.device !== labels.retentionLocation);
-    const retentionEntries = entries.filter((entry) => entry.device === labels.retentionLocation);
-    if (!labEntries.length && retentionEntries.length) {
-      return retentionStatus;
-    }
-    if (!labEntries.length) {
-      return task.status || scheduledStatus;
-    }
-    const validEntries = labEntries.filter((entry) => {
-      const start = new Date(entry.start_at);
-      const end = new Date(entry.end_at);
-      return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
-    });
-    if (!validEntries.length) {
-      return scheduledStatus;
-    }
-    const hasActive = validEntries.some((entry) => {
-      const start = new Date(entry.start_at);
-      const end = new Date(entry.end_at);
-      return start <= now && end >= now;
-    });
-    if (hasActive) {
-      return runningStatus;
-    }
-    const allEnded = validEntries.every((entry) => new Date(entry.end_at) < now);
-    if (allEnded) {
-      return completedStatus;
-    }
-    return scheduledStatus;
-  };
 
   let waitingCount = 0;
   let retentionCount = 0;
@@ -389,7 +419,7 @@ function renderTasksPage(labels) {
       task.status = displayStatus;
       taskStatusUpdated = true;
     }
-    if (effectiveStatus === labels.statusRetention) {
+    if (effectiveStatus === retentionStatus || effectiveStatus === labels.statusRetention) {
       retentionCount += 1;
     }
     if (effectiveStatus === labels.statusWaiting || effectiveStatus === labels.statusAccepted) {
@@ -398,8 +428,72 @@ function renderTasksPage(labels) {
     rows.push({ task, displayStatus });
   });
 
+  const fillFilterSelect = (select, values, placeholder) => {
+    if (!select) {
+      return;
+    }
+    const previous = select.value;
+    select.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = placeholder;
+    select.appendChild(defaultOption);
+    values.forEach((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+    if (previous && values.includes(previous)) {
+      select.value = previous;
+    }
+  };
+
+  const testTypeValues = Array.from(
+    new Set(
+      rows
+        .map(({ task }) => (task.test_type || "").trim())
+        .filter(Boolean)
+    )
+  ).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  const statusValues = Array.from(
+    new Set(
+      rows
+        .map(({ displayStatus }) => (displayStatus || "").trim())
+        .filter(Boolean)
+    )
+  );
+  fillFilterSelect(testTypeFilter, testTypeValues, "全部试验类型");
+  fillFilterSelect(statusFilter, statusValues, "全部状态");
+
+  const query = (searchInput?.value || "").trim().toLowerCase();
+  const selectedType = (testTypeFilter?.value || "").trim();
+  const selectedStatus = (statusFilter?.value || "").trim();
+  const filteredRows = rows.filter(({ task, displayStatus }) => {
+    if (selectedType && (task.test_type || "") !== selectedType) {
+      return false;
+    }
+    if (selectedStatus && (displayStatus || "") !== selectedStatus) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const searchText = [
+      task.code || "",
+      task.name || "",
+      task.source || "",
+      task.test_type || "",
+      task.required_device || "",
+      displayStatus || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+    return searchText.includes(query);
+  });
+
   const pageSize = 8;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   let currentPage = pagination ? Number.parseInt(pagination.dataset.page || "1", 10) : 1;
   if (!Number.isFinite(currentPage) || currentPage < 1) {
     currentPage = 1;
@@ -413,7 +507,7 @@ function renderTasksPage(labels) {
   }
 
   const startIndex = (currentPage - 1) * pageSize;
-  const pageItems = rows.slice(startIndex, startIndex + pageSize);
+  const pageItems = filteredRows.slice(startIndex, startIndex + pageSize);
 
   tbody.innerHTML = "";
   pageItems.forEach(({ task, displayStatus }) => {
@@ -445,6 +539,22 @@ function renderTasksPage(labels) {
   if (taskStatusUpdated) {
     saveStore(STORAGE_KEYS.tasks, tasks);
   }
+  const bindTaskFilters = (element, eventName) => {
+    if (!element || element.dataset.bound === "1") {
+      return;
+    }
+    element.addEventListener(eventName, () => {
+      if (pagination) {
+        pagination.dataset.page = "1";
+      }
+      renderTasksPage(labels);
+    });
+    element.dataset.bound = "1";
+  };
+  bindTaskFilters(searchInput, "input");
+  bindTaskFilters(testTypeFilter, "change");
+  bindTaskFilters(statusFilter, "change");
+
   if (pagination) {
     const appendEllipsis = () => {
       const span = document.createElement("span");
@@ -1221,16 +1331,16 @@ function renderSchedulePage(labels) {
   }
   let schedules = loadStore(STORAGE_KEYS.schedules, []);
   let devices = loadStore(STORAGE_KEYS.devices, []);
+  let tasks = loadStore(STORAGE_KEYS.tasks, []);
   if (!Array.isArray(schedules)) {
     schedules = [];
   }
   if (!Array.isArray(devices)) {
     devices = [];
   }
-  const now = new Date();
-  const retentionStatus = labels.statusRetention || "\u6682\u5b58\u95f4\u5b58\u653e";
-  const runningStatus = labels.statusRunning || "\u6267\u884c\u4e2d";
-  const scheduledStatus = labels.statusScheduled || "\u5df2\u6392\u7a0b";
+  if (!Array.isArray(tasks)) {
+    tasks = [];
+  }
   const filteredSchedules = schedules.filter(
     (entry) => !(entry.device === labels.retentionLocation && RETENTION_EXCLUDE_CODES.has(entry.task_code))
   );
@@ -1244,7 +1354,6 @@ function renderSchedulePage(labels) {
     schedules = filteredSchedules;
     saveStore(STORAGE_KEYS.schedules, schedules);
     if (removedCodes.size) {
-      const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const remainingCodes = new Set(schedules.map((entry) => entry.task_code).filter(Boolean));
       let updated = false;
       tasks.forEach((task) => {
@@ -1258,15 +1367,20 @@ function renderSchedulePage(labels) {
       }
     }
   }
+  const { resolveTaskStatus } = createTaskStatusResolver(tasks, schedules, labels, new Date());
+  let taskStatusUpdated = false;
+  tasks.forEach((task) => {
+    const nextStatus = resolveTaskStatus(task, task.status || "");
+    if (nextStatus && nextStatus !== task.status) {
+      task.status = nextStatus;
+      taskStatusUpdated = true;
+    }
+  });
+  if (taskStatusUpdated) {
+    saveStore(STORAGE_KEYS.tasks, tasks);
+  }
   const computed = schedules.map((entry) => {
-    const start = new Date(entry.start_at);
-    const end = new Date(entry.end_at);
-    const status =
-      entry.device === labels.retentionLocation
-        ? retentionStatus
-        : start <= now && end >= now
-          ? runningStatus
-          : scheduledStatus;
+    const status = resolveTaskStatus(entry.task_code, entry.status || "");
     return { ...entry, status };
   });
 
@@ -1537,57 +1651,13 @@ function renderDashboardPage(labels) {
     streams = [];
   }
 
-  const now = new Date();
-  const retentionStatus = labels.statusRetention || "暂存间排放";
-  const runningStatus = labels.statusExperimenting || labels.statusRunning || "实验中";
-  const completedStatus = labels.statusCompleted || "实验已经完成";
-  const scheduledStatus = labels.statusScheduled || "已排程";
-  const schedulesByTask = new Map();
+  const { resolveTaskStatus, retentionStatus, runningStatus } = createTaskStatusResolver(
+    tasks,
+    schedules,
+    labels,
+    new Date()
+  );
   let taskStatusUpdated = false;
-  schedules.forEach((entry) => {
-    if (!entry?.task_code) {
-      return;
-    }
-    if (!schedulesByTask.has(entry.task_code)) {
-      schedulesByTask.set(entry.task_code, []);
-    }
-    schedulesByTask.get(entry.task_code).push(entry);
-  });
-  const resolveTaskStatus = (task) => {
-    const entries = schedulesByTask.get(task.code) || [];
-    if (!entries.length) {
-      return task.status || "";
-    }
-    const labEntries = entries.filter((entry) => entry.device !== labels.retentionLocation);
-    const retentionEntries = entries.filter((entry) => entry.device === labels.retentionLocation);
-    if (!labEntries.length && retentionEntries.length) {
-      return retentionStatus;
-    }
-    if (!labEntries.length) {
-      return task.status || scheduledStatus;
-    }
-    const validEntries = labEntries.filter((entry) => {
-      const start = new Date(entry.start_at);
-      const end = new Date(entry.end_at);
-      return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime());
-    });
-    if (!validEntries.length) {
-      return scheduledStatus;
-    }
-    const hasActive = validEntries.some((entry) => {
-      const start = new Date(entry.start_at);
-      const end = new Date(entry.end_at);
-      return start <= now && end >= now;
-    });
-    if (hasActive) {
-      return runningStatus;
-    }
-    const allEnded = validEntries.every((entry) => new Date(entry.end_at) < now);
-    if (allEnded) {
-      return completedStatus;
-    }
-    return scheduledStatus;
-  };
 
   let runningTaskCount = 0;
   tasks.forEach((task) => {
@@ -1609,7 +1679,7 @@ function renderDashboardPage(labels) {
   const waitingCount = tasks.filter(
     (t) => t.status === labels.statusWaiting || t.status === labels.statusAccepted
   ).length;
-  const retentionCount = tasks.filter((t) => t.status === labels.statusRetention).length;
+  const retentionCount = tasks.filter((t) => t.status === retentionStatus || t.status === labels.statusRetention).length;
   const unscheduledCount = waitingCount + retentionCount;
   setText("dashboard-intake-count", tasks.length);
   setText("dashboard-intake-note", `${labels.sourceExternal} ${externalCount} / ${labels.sourceInternal} ${internalCount}`);

@@ -787,6 +787,20 @@ body {
   color: var(--text); /* 文字色 */
 }
 
+/* 运行中槽 */
+.gantt-slot.busy.running {
+  background: rgba(34, 197, 94, 0.28); /* 绿色背景 */
+  border-color: rgba(34, 197, 94, 0.5); /* 绿色边框 */
+  color: var(--text); /* 文字色 */
+}
+
+/* 已完成槽 */
+.gantt-slot.busy.completed {
+  background: rgba(148, 163, 184, 0.28); /* 灰色背景 */
+  border-color: rgba(148, 163, 184, 0.5); /* 灰色边框 */
+  color: var(--text); /* 文字色 */
+}
+
 /* 冲突槽 */
 .gantt-slot.conflict {
   border-style: solid; /* 实线边框 */
