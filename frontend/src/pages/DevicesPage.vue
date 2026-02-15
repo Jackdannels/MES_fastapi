@@ -86,6 +86,7 @@
     <table class="table" id="device-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>设备编号</th>
           <th data-sort>设备名称</th>
           <th data-sort>试验类型</th>
@@ -162,6 +163,7 @@
     <table class="table" id="point-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>点位名称</th>
           <th data-sort>寄存器地址</th>
           <th data-sort>数据类型</th>
@@ -173,6 +175,7 @@
       </thead>
       <tbody>
         <tr>
+          <td>1</td>
           <td>温度</td>
           <td>40001</td>
           <td>INT16</td>
@@ -182,6 +185,7 @@
           <td>反应腔温度</td>
         </tr>
         <tr>
+          <td>2</td>
           <td>压力</td>
           <td>40003</td>
           <td>INT16</td>
@@ -191,6 +195,7 @@
           <td>进样压力</td>
         </tr>
         <tr>
+          <td>3</td>
           <td>流量</td>
           <td>40005</td>
           <td>FLOAT32</td>

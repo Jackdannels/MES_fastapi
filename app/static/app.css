@@ -676,7 +676,7 @@ body {
 /* 样品流程左右布局 */
 .sample-process-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 2fr) clamp(420px, 30vw, 560px);
   gap: 16px;
   align-items: start;
 }
@@ -692,7 +692,7 @@ body {
   border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
-  padding: 14px 14px 10px;
+  padding: 16px 16px 12px;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 
@@ -721,11 +721,11 @@ body {
 /* 流程图节点 */
 .sample-flow-unified li {
   position: relative;
-  padding: 8px 10px 8px 34px;
+  padding: 10px 12px 10px 36px;
   border-radius: 10px;
   border: 1px solid rgba(56, 189, 248, 0.28);
   background: rgba(56, 189, 248, 0.1);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* 节点圆点 */

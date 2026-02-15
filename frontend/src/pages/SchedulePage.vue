@@ -78,6 +78,7 @@
     <table class="table" id="retention-internal-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>任务编号</th>
           <th data-sort>试验类型</th>
           <th data-sort>暂存时间</th>
@@ -138,6 +139,7 @@
     <table class="table" id="schedule-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>任务</th>
           <th data-sort>设备</th>
           <th data-sort>开始时间</th>
@@ -158,6 +160,7 @@
     <table class="table" id="conflict-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>任务</th>
           <th data-sort>设备</th>
           <th data-sort>冲突类型</th>

@@ -27,7 +27,7 @@
       "required_device": "温度冲击试验",
       "due_at": "2026-02-07 05:20",
       "arrival_at": "2026-02-06 21:20",
-      "status": "待排程",
+      "status": "实验已完成",
       "created_at": "2026-02-06T09:20:59.487Z"
     },
     {
@@ -42,7 +42,7 @@
       "required_device": "冲击试验",
       "due_at": "2026-02-07 13:20",
       "arrival_at": "2026-02-06 22:20",
-      "status": "待排程",
+      "status": "暂存间排放",
       "created_at": "2026-02-06T09:20:59.104Z"
     },
     {
@@ -436,7 +436,24 @@
       "created_at": "2026-02-06T09:20:54.595Z"
     }
   ],
-  "mes.schedules": [],
+  "mes.schedules": [
+    {
+      "id": "schedule-1770371343945-705",
+      "task_code": "WDC-2026-005",
+      "device": "温度冲击一室",
+      "start_at": "2026-02-07T00:00:00.000Z",
+      "end_at": "2026-02-07T03:30:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1770371968264-548",
+      "task_code": "CJ-2026-007",
+      "device": "恒温恒湿间（暂存间）",
+      "start_at": "2026-02-06T09:59:28.264Z",
+      "end_at": "2026-02-06T09:59:28.264Z",
+      "status": "已排程"
+    }
+  ],
   "mes.samples": [
     {
       "id": "sample-1770369659808-506",
@@ -505,12 +522,21 @@
       "id": "sample-1770369659487-040",
       "code": "WDC-2026-005-SP-009",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-784",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-946",
           "time": "2026-02-06T09:20:59.487Z",
@@ -520,18 +546,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-861",
       "code": "WDC-2026-005-SP-008",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-736",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-454",
           "time": "2026-02-06T09:20:59.487Z",
@@ -541,18 +577,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-249",
       "code": "WDC-2026-005-SP-007",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-703",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-084",
           "time": "2026-02-06T09:20:59.487Z",
@@ -562,18 +608,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-611",
       "code": "WDC-2026-005-SP-006",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-937",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-681",
           "time": "2026-02-06T09:20:59.487Z",
@@ -583,18 +639,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-987",
       "code": "WDC-2026-005-SP-005",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-647",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-667",
           "time": "2026-02-06T09:20:59.487Z",
@@ -604,18 +670,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-559",
       "code": "WDC-2026-005-SP-004",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-821",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-547",
           "time": "2026-02-06T09:20:59.487Z",
@@ -625,18 +701,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-299",
       "code": "WDC-2026-005-SP-003",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-476",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-253",
           "time": "2026-02-06T09:20:59.487Z",
@@ -646,18 +732,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-729",
       "code": "WDC-2026-005-SP-002",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-932",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-178",
           "time": "2026-02-06T09:20:59.487Z",
@@ -667,18 +763,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659487-736",
       "code": "WDC-2026-005-SP-001",
       "task_code": "WDC-2026-005",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1771170643550-811",
+          "time": "2026-02-15T15:50:43.550Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
         {
           "id": "sample-event-1770369659487-605",
           "time": "2026-02-06T09:20:59.487Z",
@@ -688,7 +794,8 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-005"
         }
-      ]
+      ],
+      "updated_at": "2026-02-15T15:50:43.549Z"
     },
     {
       "id": "sample-1770369659104-837",
@@ -1828,12 +1935,21 @@
       "id": "sample-1770369657746-932",
       "code": "WDC-2026-004-SP-008",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-344",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-222",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1843,18 +1959,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-821",
       "code": "WDC-2026-004-SP-007",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-334",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-887",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1864,18 +1990,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-682",
       "code": "WDC-2026-004-SP-006",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-225",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-831",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1885,18 +2021,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-898",
       "code": "WDC-2026-004-SP-005",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-737",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-258",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1906,18 +2052,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-424",
       "code": "WDC-2026-004-SP-004",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-799",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-365",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1927,18 +2083,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-808",
       "code": "WDC-2026-004-SP-003",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-034",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-788",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1948,18 +2114,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-691",
       "code": "WDC-2026-004-SP-002",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-767",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-657",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1969,18 +2145,28 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657746-456",
       "code": "WDC-2026-004-SP-001",
       "task_code": "WDC-2026-004",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:57.746Z",
       "history": [
+        {
+          "id": "sample-event-1770371537456-674",
+          "time": "2026-02-06T09:52:17.456Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-004"
+        },
         {
           "id": "sample-event-1770369657746-930",
           "time": "2026-02-06T09:20:57.746Z",
@@ -1990,7 +2176,8 @@
           "status": "运输中",
           "detail": "任务 WDC-2026-004"
         }
-      ]
+      ],
+      "updated_at": "2026-02-06T09:52:17.456Z"
     },
     {
       "id": "sample-1770369657595-142",
@@ -4712,6 +4899,25 @@
     }
   ],
   "mes.devices": [],
-  "mes.streams": [],
+  "mes.streams": [
+    {
+      "id": "stream-1770371343945-869",
+      "task_code": "WDC-2026-005",
+      "device": "温度冲击一室",
+      "last_packet": "2026-02-06 17:49",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1770371968264-431",
+      "task_code": "CJ-2026-007",
+      "device": "恒温恒湿间（暂存间）",
+      "last_packet": "2026-02-06 17:59",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    }
+  ],
   "mes.conflicts": []
 }

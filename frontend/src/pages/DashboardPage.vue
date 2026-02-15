@@ -36,6 +36,7 @@
       <table class="table" data-sortable>
         <thead>
           <tr>
+            <th>序号</th>
             <th data-sort>任务</th>
             <th data-sort>来源</th>
             <th data-sort>状态</th>

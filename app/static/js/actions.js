@@ -1,4 +1,4 @@
-/* FILE: actions.js
+﻿/* FILE: actions.js
  * UI action handlers for tasks, scheduling, and samples.
  * Mutates localStorage via storage.js and triggers UI re-render.
  */
@@ -15,7 +15,7 @@ const SLOT_RANGES = {
 
 const TEST_TASK_TYPES = Object.keys(TEST_PREFIX_MAP);
 
-// formatLocalDate锛氭牸寮忓寲鏈湴鏃ユ湡
+// formatLocalDate閿涙碍鐗稿蹇撳閺堫剙婀撮弮銉︽埂
 function formatLocalDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -27,7 +27,7 @@ function formatLocalDate(value) {
   return `${year}-${month}-${day}`;
 }
 
-// formatLocalTime锛氭牸寮忓寲鏈湴鏃堕棿
+// formatLocalTime閿涙碍鐗稿蹇撳閺堫剙婀撮弮鍫曟？
 function formatLocalTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -38,7 +38,7 @@ function formatLocalTime(value) {
   return `${hours}:${minutes}`;
 }
 
-// toDateTimeLocalValue锛氳浆鎹负datetime-local杈撳叆鍊?
+// toDateTimeLocalValue閿涙俺娴嗛幑顫礋datetime-local鏉堟挸鍙嗛崐?
 function toDateTimeLocalValue(value) {
   if (!value) {
     return "";
@@ -59,7 +59,7 @@ function toDateTimeLocalValue(value) {
   return date.toISOString().slice(0, 16);
 }
 
-// escapeSelectorValue锛氳浆涔夐€夋嫨鍣ㄥ€?
+// escapeSelectorValue閿涙俺娴嗘稊澶愨偓澶嬪閸ｃ劌鈧?
 function escapeSelectorValue(value) {
   if (window.CSS && typeof window.CSS.escape === "function") {
     return window.CSS.escape(value);
@@ -67,12 +67,12 @@ function escapeSelectorValue(value) {
   return value.replace(/["\\]/g, "\\$&");
 }
 
-// overlaps锛氬垽鏂椂闂村尯闂存槸鍚﹂噸鍙?
+// overlaps閿涙艾鍨介弬顓熸闂傛潙灏梻瀛樻Ц閸氾箓鍣搁崣?
 function overlaps(start, end, rangeStart, rangeEnd) {
   return start < rangeEnd && end > rangeStart;
 }
 
-// parseCodeList锛氳В鏋愮紪鍙峰垪琛?
+// parseCodeList閿涙俺袙閺嬫劗绱崣宄板灙鐞?
 function parseCodeList(value) {
   return (value || "")
     .split(/[\s,;]+/)
@@ -121,8 +121,7 @@ function buildTaskSampleCodes(taskCode, plannedCount, taskSamples) {
   for (let index = 1; index <= targetCount; index += 1) {
     generatedCodes.push(`${code}-SP-${String(index).padStart(3, "0")}`);
   }
-  const extraExisting = existingCodes.filter((itemCode) => !generatedCodes.includes(itemCode));
-  return [...generatedCodes, ...extraExisting];
+  return generatedCodes;
 }
 
 function nextTaskSampleCode(taskCode, samples) {
@@ -148,9 +147,78 @@ function nextTaskSampleCode(taskCode, samples) {
   return `${code}-SP-${String(maxIndex + 1).padStart(3, "0")}`;
 }
 
-// attachActionHandlers锛氱粦瀹氶〉闈㈠姩浣滀簨浠?
+function buildSampleTrayCode(sampleCode, serial) {
+  const code = (sampleCode || "").trim();
+  const index = Number.parseInt(serial, 10);
+  if (!code || !Number.isFinite(index) || index <= 0) {
+    return "";
+  }
+  return `${code}-TP-${String(index).padStart(3, "0")}`;
+}
+
+function parseSampleTrayPlan(value) {
+  const lines = String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const entries = [];
+  const errors = [];
+  lines.forEach((line, index) => {
+    const lineNo = index + 1;
+    const parts = line
+      .split(/[,\uff0c;\uff1b|\t]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length < 2) {
+      errors.push(`第 ${lineNo} 行格式错误，应为“样品编号,托盘数量”。`);
+      return;
+    }
+    const sampleCode = parts[0];
+    const quantity = Number.parseInt(parts[1], 10);
+    if (!sampleCode) {
+      errors.push(`第 ${lineNo} 行缺少样品编号。`);
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      errors.push(`第 ${lineNo} 行托盘数量必须为正整数。`);
+      return;
+    }
+    entries.push({
+      lineNo,
+      sampleCode,
+      quantity: Math.floor(quantity),
+    });
+  });
+  return { entries, errors };
+}
+
+function getSampleTrays(sample) {
+  if (!sample || !Array.isArray(sample.trays)) {
+    return [];
+  }
+  const sampleCode = (sample.code || "").trim();
+  return sample.trays
+    .filter((tray) => {
+      if (!tray) {
+        return false;
+      }
+      const traySampleCode = (tray.sample_code || sampleCode || "").trim();
+      const quantity = Number.parseInt(tray.quantity, 10);
+      return traySampleCode === sampleCode && Number.isFinite(quantity) && quantity > 0;
+    })
+    .map((tray, index) => ({
+      id: tray.id || generateId("tray"),
+      tray_code: buildSampleTrayCode(sampleCode, index + 1),
+      sample_code: sampleCode,
+      quantity: Math.floor(Number.parseInt(tray.quantity, 10)),
+      created_at: tray.created_at || sample.created_at || new Date().toISOString(),
+      updated_at: tray.updated_at || sample.updated_at || sample.created_at || new Date().toISOString(),
+    }));
+}
+
+// attachActionHandlers閿涙氨绮︾€规岸銆夐棃銏犲З娴ｆ粈绨ㄦ禒?
 function attachActionHandlers(labels) {
-  // setWarning锛氳缃〃鍗曡鍛婃彁绀?
+  // setWarning閿涙俺顔曠純顔裤€冮崡鏇☆劅閸涘﹥褰佺粈?
   const setWarning = (element, message) => {
     if (!element) {
       return;
@@ -184,15 +252,15 @@ function attachActionHandlers(labels) {
   const testingRandom = document.body?.dataset?.testingRandom === "1";
   const randomTaskYear = document.body?.dataset?.randomTaskYear || "2026";
 
-  // getSlotLabel锛氳幏鍙栨椂娈垫樉绀烘枃妗?
+  // getSlotLabel閿涙俺骞忛崣鏍ㄦ濞堝灚妯夌粈鐑樻瀮濡?
   const getSlotLabel = (slotKey) => (slotKey === "afternoon" ? labels.slotAfternoon : labels.slotMorning);
 
-  // resolveSampleStatus锛氭牴鎹綅缃帹瀵兼牱鍝佺姸鎬?
+  // resolveSampleStatus閿涙碍鐗撮幑顔荤秴缂冾喗甯圭€靛吋鐗遍崫浣哄Ц閹?
   const resolveSampleStatus = (location) => {
     const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
     const postRetentionLocation = labels.postRetentionLocation || "";
     if (location === postRetentionLocation) {
-      return labels.sampleStored || "已入库";
+      return labels.sampleStored || "宸插叆搴?;
     }
     if (location === preRetentionLocation || location === labels.unpackingLocation || location === labels.intakeLocation) {
       return labels.sampleReceived;
@@ -209,44 +277,44 @@ function attachActionHandlers(labels) {
     const isPostRetention = Boolean(postRetentionLocation) && location === postRetentionLocation;
     const isPreRetention = Boolean(preRetentionLocation) && location === preRetentionLocation;
     const currentStatus = (status || "").trim();
-    if (currentStatus === "厂家收回" || currentStatus === "已处置") {
-      return "厂家收回";
+    if (currentStatus === "鍘傚鏀跺洖" || currentStatus === "宸插缃?) {
+      return "鍘傚鏀跺洖";
     }
-    if (currentStatus === "放置暂存间") {
-      return "放置暂存间";
+    if (currentStatus === "鏀剧疆鏆傚瓨闂?) {
+      return "鏀剧疆鏆傚瓨闂?;
     }
-    if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === labels.sampleStored) {
-      return isPostRetention ? "放置暂存间" : "到货";
+    if (currentStatus === "鍏ュ簱" || currentStatus === "宸插叆搴? || currentStatus === labels.sampleStored) {
+      return isPostRetention ? "鏀剧疆鏆傚瓨闂? : "鍒拌揣";
     }
-    if (currentStatus === "实验完成" || currentStatus === labels.statusCompleted || currentStatus === "实验已完成") {
-      return "实验完成";
+    if (currentStatus === "瀹為獙瀹屾垚" || currentStatus === labels.statusCompleted || currentStatus === "瀹為獙宸插畬鎴?) {
+      return "瀹為獙瀹屾垚";
     }
-    if (currentStatus === "实验准备就绪") {
-      return "实验准备就绪";
+    if (currentStatus === "瀹為獙鍑嗗灏辩华") {
+      return "瀹為獙鍑嗗灏辩华";
     }
     if (isPostRetention) {
-      return "放置暂存间";
+      return "鏀剧疆鏆傚瓨闂?;
     }
     if (isPreRetention) {
-      return "到货";
+      return "鍒拌揣";
     }
     if (TEST_LABS.includes(location)) {
-      return "到达实验间";
+      return "鍒拌揪瀹為獙闂?;
     }
     if (location === labels.unpackingLocation || location === labels.intakeLocation) {
-      return "到货";
+      return "鍒拌揣";
     }
-    return "运输中";
+    return "杩愯緭涓?;
   };
 
-  // ensureSampleHistory锛氱‘淇濇牱鍝佸巻鍙叉暟缁?
+  // ensureSampleHistory閿涙氨鈥樻穱婵囩壉閸濅礁宸婚崣鍙夋殶缂?
   const ensureSampleHistory = (sample) => {
     if (!Array.isArray(sample.history)) {
       sample.history = [];
     }
   };
 
-  // appendSampleHistory锛氳拷鍔犳牱鍝佸巻鍙茶褰?
+  // appendSampleHistory閿涙俺鎷烽崝鐘崇壉閸濅礁宸婚崣鑼额唶瑜?
   const appendSampleHistory = (sample, action, detail = "") => {
     ensureSampleHistory(sample);
     sample.history.unshift({
@@ -260,12 +328,12 @@ function attachActionHandlers(labels) {
     });
   };
 
-  // ensureOption锛氱‘淇濅笅鎷夐€夐」瀛樺湪
+  // ensureOption閿涙氨鈥樻穱婵呯瑓閹峰鈧銆嶇€涙ê婀?
   const ensureOption = (select, value) => {
     if (!select || !value) {
       return;
     }
-    // exists锛氭鏌ラ€夐」鏄惁宸插瓨鍦?
+    // exists閿涙碍顥呴弻銉┾偓澶愩€嶉弰顖氭儊瀹告彃鐡ㄩ崷?
     const exists = Array.from(select.options).some((option) => option.value === value);
     if (!exists) {
       const option = document.createElement("option");
@@ -275,7 +343,7 @@ function attachActionHandlers(labels) {
     }
   };
 
-  // nextTaskCode锛氱敓鎴愪笅涓€涓换鍔＄紪鍙?
+  // nextTaskCode閿涙氨鏁撻幋鎰瑓娑撯偓娑擃亙鎹㈤崝锛勭椽閸?
   const nextTaskCode = (prefix, year, tasks) => {
     const pattern = new RegExp(`^${prefix}-${year}-(\\d{3})$`);
     let maxSeq = 0;
@@ -295,10 +363,10 @@ function attachActionHandlers(labels) {
     return `${prefix}-${year}-${next}`;
   };
 
-  // buildRandomTask锛氭瀯寤洪殢鏈轰换鍔?
+  // buildRandomTask閿涙碍鐎娲閺堣桨鎹㈤崝?
   const buildRandomTask = (tasks, statusOverride) => {
     const filteredTypes = TEST_TASK_TYPES.filter(
-      (type) => !type.includes("恒温恒湿") && !type.includes("高低温湿热")
+      (type) => !type.includes("鎭掓俯鎭掓箍") && !type.includes("楂樹綆娓╂箍鐑?)
     );
     const pool = filteredTypes.length ? filteredTypes : TEST_TASK_TYPES;
     const testType = pool[Math.floor(Math.random() * pool.length)];
@@ -324,7 +392,7 @@ function attachActionHandlers(labels) {
     };
   };
 
-  // resolveScheduleTimes锛氳В鏋愭帓绋嬫椂闂翠俊鎭?
+  // resolveScheduleTimes閿涙俺袙閺嬫劖甯撶粙瀣闂傜繝淇婇幁?
   const resolveScheduleTimes = (data, warningEl) => {
     const dateValue = data.schedule_date || "";
     if (!dateValue) {
@@ -360,12 +428,12 @@ function attachActionHandlers(labels) {
     return { dateValue, slot, startTime, endTime, startAt, endAt };
   };
 
-  // clearConflictHighlights锛氭竻闄ゅ啿绐侀珮浜?
+  // clearConflictHighlights閿涙碍绔婚梽銈呭暱缁愪線鐝禍?
   const clearConflictHighlights = () => {
     document.querySelectorAll(".gantt-slot.focus").forEach((slot) => slot.classList.remove("focus"));
   };
 
-  // highlightConflictSlots锛氶珮浜啿绐佹椂娈?
+  // highlightConflictSlots閿涙岸鐝禍顔煎暱缁愪焦妞傚▓?
   const highlightConflictSlots = (device, dateValue, startAt, endAt) => {
     clearConflictHighlights();
     if (!device || !dateValue) {
@@ -388,7 +456,7 @@ function attachActionHandlers(labels) {
     });
   };
 
-  // buildSuggestion锛氱敓鎴愬彲鐢ㄦ椂娈靛缓璁?
+  // buildSuggestion閿涙氨鏁撻幋鎰讲閻劍妞傚▓闈涚紦鐠?
   const buildSuggestion = (schedules, device, dateValue, ignoreId) => {
     if (!device || !dateValue) {
       return "";
@@ -397,7 +465,7 @@ function attachActionHandlers(labels) {
     if (Number.isNaN(startDate.getTime())) {
       return "";
     }
-    // isSlotFree锛氬垽鏂椂娈垫槸鍚︾┖闂?
+    // isSlotFree閿涙艾鍨介弬顓熸濞堝灚妲搁崥锔锯敄闂?
     const isSlotFree = (dayValue, range) =>
       !schedules.some((entry) => {
         if (ignoreId && entry.id === ignoreId) {
@@ -432,7 +500,7 @@ function attachActionHandlers(labels) {
     return `${labels.scheduleSuggestPrefix}${labels.scheduleSuggestNone}`;
   };
 
-  // fillLabOptions锛氬～鍏呭疄楠屽涓嬫媺閫夐」
+  // fillLabOptions閿涙艾锝為崗鍛杽妤犲苯顓绘稉瀣闁銆?
   const fillLabOptions = (select, labs, currentValue) => {
     if (!select) {
       return;
@@ -462,59 +530,146 @@ function attachActionHandlers(labels) {
     }
   };
 
-  const ensureTaskSamples = (task) => {
+  const getTaskSampleSerial = (sampleCode, taskCode) => {
+    const code = (sampleCode || "").trim();
+    const task = (taskCode || "").trim();
+    if (!code || !task) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const match = code.match(new RegExp(`^${escapeRegExp(task)}-SP-(\\d{3})$`));
+    if (!match) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const serial = Number.parseInt(match[1], 10);
+    return Number.isFinite(serial) ? serial : Number.POSITIVE_INFINITY;
+  };
+
+  const compareTaskSamples = (left, right, taskCode) => {
+    const leftIndex = getTaskSampleSerial(left?.code, taskCode);
+    const rightIndex = getTaskSampleSerial(right?.code, taskCode);
+    if (leftIndex !== rightIndex) {
+      return leftIndex - rightIndex;
+    }
+    const leftCreatedAt = new Date(left?.created_at || left?.updated_at || 0).getTime();
+    const rightCreatedAt = new Date(right?.created_at || right?.updated_at || 0).getTime();
+    if (leftCreatedAt !== rightCreatedAt) {
+      return leftCreatedAt - rightCreatedAt;
+    }
+    return (left?.id || "").localeCompare(right?.id || "");
+  };
+
+  const syncTaskSamples = (task, previousTaskCode = "") => {
     const taskCode = (task?.code || "").trim();
     if (!taskCode) {
-      return;
+      return { changed: false, codes: [] };
     }
-    const plannedCount = Number.parseInt(task?.sample_count, 10);
-    if (!Number.isFinite(plannedCount) || plannedCount <= 0) {
-      return;
-    }
-    const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
-    const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
-    const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
+
+    const previousCode = (previousTaskCode || "").trim();
+    let samples = asArray(loadStore(STORAGE_KEYS.samples, []));
     const now = new Date().toISOString();
     let changed = false;
 
-    autoCodes.forEach((code) => {
-      const exists = samples.find((item) => item.code === code);
-      if (!exists) {
-        const sample = {
+    if (previousCode && previousCode !== taskCode) {
+      const oldPattern = new RegExp(`^${escapeRegExp(previousCode)}-SP-(\\d{3})$`);
+      samples.forEach((sample) => {
+        if ((sample?.task_code || "").trim() !== previousCode) {
+          return;
+        }
+        sample.task_code = taskCode;
+        const currentCode = (sample.code || "").trim();
+        const matched = currentCode.match(oldPattern);
+        if (matched) {
+          sample.code = `${taskCode}-SP-${matched[1]}`;
+        }
+        sample.updated_at = now;
+        appendSampleHistory(sample, "浠诲姟鏍峰搧閲嶇粦", `浠诲姟 ${previousCode} -> ${taskCode}`);
+        changed = true;
+      });
+    }
+
+    const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
+    const plannedRaw = Number.parseInt(task?.sample_count, 10);
+    const plannedCount =
+      Number.isFinite(plannedRaw) && plannedRaw >= 0 ? Math.floor(plannedRaw) : taskSamples.length;
+    const expectedCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
+    const sortedSamples = [...taskSamples].sort((left, right) => compareTaskSamples(left, right, taskCode));
+    const used = new Set();
+
+    expectedCodes.forEach((expectedCode) => {
+      let sampleChanged = false;
+      let sample = sortedSamples.find(
+        (item) => !used.has(item) && (item?.code || "").trim() === expectedCode
+      );
+      if (!sample) {
+        sample = sortedSamples.find((item) => !used.has(item));
+      }
+
+      if (!sample) {
+        sample = {
           id: generateId("sample"),
-          code,
+          code: expectedCode,
           task_code: taskCode,
           location: "",
           owner: "",
-          status: "运输中",
-          flow_status: "运输中",
+          status: "杩愯緭涓?,
+          flow_status: "杩愯緭涓?,
           created_at: now,
         };
-        appendSampleHistory(sample, "样品绑定任务", `任务 ${taskCode}`);
+        appendSampleHistory(sample, "鏍峰搧缁戝畾浠诲姟", `浠诲姟 ${taskCode}`);
         samples.unshift(sample);
+        used.add(sample);
         changed = true;
         return;
       }
-      if (!exists.task_code) {
-        exists.task_code = taskCode;
+
+      used.add(sample);
+      const oldCode = (sample.code || "").trim();
+      if (oldCode !== expectedCode) {
+        sample.code = expectedCode;
+        appendSampleHistory(sample, "鏍峰搧缂栧彿閲嶆帓", `${oldCode} -> ${expectedCode}`);
         changed = true;
+        sampleChanged = true;
       }
-      if (!exists.status) {
-        exists.status = "运输中";
+      if ((sample.task_code || "").trim() !== taskCode) {
+        sample.task_code = taskCode;
         changed = true;
+        sampleChanged = true;
       }
-      if (!exists.flow_status) {
-        exists.flow_status = resolveFlowStatusByLocation(exists.location, exists.status || "运输中");
+      if (!sample.status) {
+        sample.status = "杩愯緭涓?;
         changed = true;
+        sampleChanged = true;
+      }
+      if (!sample.flow_status) {
+        sample.flow_status = resolveFlowStatusByLocation(sample.location, sample.status || "杩愯緭涓?);
+        changed = true;
+        sampleChanged = true;
+      }
+      if (!sample.created_at) {
+        sample.created_at = now;
+        changed = true;
+        sampleChanged = true;
+      }
+      if (sampleChanged) {
+        sample.updated_at = now;
       }
     });
+
+    const hasExtra = taskSamples.some((item) => !used.has(item));
+    if (hasExtra) {
+      samples = samples.filter((item) => (item.task_code || "").trim() !== taskCode || used.has(item));
+      changed = true;
+    }
 
     if (changed) {
       saveStore(STORAGE_KEYS.samples, samples);
     }
+    return { changed, codes: expectedCodes };
   };
 
-  // handleTaskCreate锛氬鐞嗕换鍔″垱寤?
+  const ensureTaskSamples = (task, previousTaskCode = "") => syncTaskSamples(task, previousTaskCode);
+
+  // handleTaskCreate閿涙艾顦╅悶鍡曟崲閸斺€冲灡瀵?
   const handleTaskCreate = (formSelector, statusOverride, warningEl) => {
     const data = getFormData(formSelector);
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
@@ -594,12 +749,12 @@ function attachActionHandlers(labels) {
     });
   }
 
-  // getTaskEditForm锛氳幏鍙栦换鍔＄紪杈戣〃鍗?
+  // getTaskEditForm閿涙俺骞忛崣鏍︽崲閸旓紕绱潏鎴ｃ€冮崡?
   const getTaskEditForm = () => document.querySelector('[data-form="task-edit"]');
-  // getTaskDrawer锛氳幏鍙栦换鍔℃娊灞?
+  // getTaskDrawer閿涙俺骞忛崣鏍︽崲閸斺剝濞婄仦?
   const getTaskDrawer = () => document.getElementById("task-drawer");
 
-  // openTaskEditor锛氭墦寮€浠诲姟缂栬緫鎶藉眽骞跺～鍏?
+  // openTaskEditor閿涙碍澧﹀鈧禒璇插缂傛牞绶幎钘夌溄楠炶泛锝為崗?
   const openTaskEditor = (taskId, taskCode) => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -674,7 +829,7 @@ function attachActionHandlers(labels) {
     }
   };
 
-  // bindTaskEditClick锛氱粦瀹氫换鍔＄紪杈戠偣鍑讳簨浠?
+  // bindTaskEditClick閿涙氨绮︾€规矮鎹㈤崝锛勭椽鏉堟垹鍋ｉ崙璁崇皑娴?
   const bindTaskEditClick = () => {
     if (document.body?.dataset.taskEditBound === "1") {
       return;
@@ -703,7 +858,7 @@ function attachActionHandlers(labels) {
   };
   bindTaskEditClick();
 
-  // performTaskUpdate锛氫繚瀛樹换鍔＄紪杈戝唴瀹?
+  // performTaskUpdate閿涙矮绻氱€涙ü鎹㈤崝锛勭椽鏉堟垵鍞寸€?
   const performTaskUpdate = () => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -722,6 +877,7 @@ function attachActionHandlers(labels) {
     if (!task) {
       return;
     }
+    const previousTaskCode = (task.code || "").trim();
     task.code = data.code || task.code;
     task.name = data.name || "";
     task.source = data.source || "";
@@ -736,6 +892,8 @@ function attachActionHandlers(labels) {
     task.remark = data.remark || "";
     task.updated_at = new Date().toISOString();
     saveStore(STORAGE_KEYS.tasks, tasks);
+    ensureTaskSamples(task, previousTaskCode);
+    taskEditForm.dataset.taskCode = task.code || "";
     setWarning(taskEditWarning, "");
     renderAll(labels);
     if (taskDrawer) {
@@ -751,7 +909,7 @@ function attachActionHandlers(labels) {
     });
   }
 
-  // performTaskDelete锛氬垹闄や换鍔″苟鍒锋柊
+  // performTaskDelete閿涙艾鍨归梽銈勬崲閸斺€宠嫙閸掗攱鏌?
   const performTaskDelete = () => {
     const taskEditForm = getTaskEditForm();
     if (!taskEditForm) {
@@ -766,19 +924,22 @@ function attachActionHandlers(labels) {
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
     const task =
       tasks.find((item) => item.id === taskId) || (taskCode ? tasks.find((item) => item.code === taskCode) : null);
-    // updated锛氱Щ闄ょ洰鏍囧悗鐨勬柊鍒楄〃
+    // updated閿涙氨些闂勩倗娲伴弽鍥ф倵閻ㄥ嫭鏌婇崚妤勩€?
     const updated = taskId ? tasks.filter((item) => item.id !== taskId) : tasks.filter((item) => item !== task);
     saveStore(STORAGE_KEYS.tasks, updated);
 
     if (task?.code) {
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
       const streams = loadStore(STORAGE_KEYS.streams, []);
-      // nextSchedules锛氱Щ闄や换鍔″悗鐨勬帓绋嬪垪琛?
+      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
+      // nextSchedules閿涙氨些闂勩倓鎹㈤崝鈥虫倵閻ㄥ嫭甯撶粙瀣灙鐞?
       const nextSchedules = schedules.filter((entry) => entry.task_code !== task.code);
-      // nextStreams锛氱Щ闄や换鍔″悗鐨勬暟鎹祦鍒楄〃
+      // nextStreams閿涙氨些闂勩倓鎹㈤崝鈥虫倵閻ㄥ嫭鏆熼幑顔界ウ閸掓銆?
       const nextStreams = streams.filter((entry) => entry.task_code !== task.code);
+      const nextSamples = samples.filter((item) => (item.task_code || "").trim() !== task.code);
       saveStore(STORAGE_KEYS.schedules, nextSchedules);
       saveStore(STORAGE_KEYS.streams, nextStreams);
+      saveStore(STORAGE_KEYS.samples, nextSamples);
     }
 
     setWarning(taskEditWarning, "");
@@ -907,7 +1068,7 @@ function attachActionHandlers(labels) {
     setRetentionTimeVisibility(isRetention);
   };
 
-  // resetManualScheduleForm锛氶噸缃墜鍔ㄦ帓绋嬭〃鍗?
+  // resetManualScheduleForm閿涙岸鍣哥純顔藉閸斻劍甯撶粙瀣€冮崡?
   const resetManualScheduleForm = () => {
     if (!manualScheduleForm) {
       return;
@@ -1075,7 +1236,7 @@ const manualScheduleReset = document.querySelector('[data-action="manual-schedul
           status: labels.statusScheduled,
         });
       }
-      // task锛氬綋鍓嶄换鍔?
+      // task閿涙艾缍嬮崜宥勬崲閸?
       const task = tasks.find((t) => t.code === data.task_code);
       if (task) {
         task.status = isRetentionSchedule ? labels.statusRetention : labels.statusScheduled;
@@ -1112,14 +1273,14 @@ const manualScheduleReset = document.querySelector('[data-action="manual-schedul
   // Schedule edit drawer: load, update, delete schedule entries.
 const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
   const scheduleDrawer = document.getElementById("schedule-drawer");
-  // bindEditTimeSlot锛氱粦瀹氭帓绋嬫椂闂存鑱斿姩
+  // bindEditTimeSlot閿涙氨绮︾€规碍甯撶粙瀣闂傚瓨顔岄懕鏂垮З
   const bindEditTimeSlot = () => {
     if (!scheduleEditForm) {
       return;
     }
     const slotSelect = scheduleEditForm.querySelector('[data-edit-time-slot]');
     const customFields = scheduleEditForm.querySelectorAll("[data-edit-custom-time]");
-    // toggleCustom锛氬垏鎹㈣嚜瀹氫箟鏃堕棿杈撳叆
+    // toggleCustom閿涙艾鍨忛幑銏ｅ殰鐎规矮绠熼弮鍫曟？鏉堟挸鍙?
     const toggleCustom = () => {
       const isCustom = slotSelect?.value === "custom";
       customFields.forEach((field) => field.classList.toggle("is-hidden", !isCustom));
@@ -1131,7 +1292,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     toggleCustom();
   };
 
-  // openScheduleEditor锛氭墦寮€鎺掔▼缂栬緫鎶藉眽骞跺～鍏?
+  // openScheduleEditor閿涙碍澧﹀鈧幒鎺斺柤缂傛牞绶幎钘夌溄楠炶泛锝為崗?
   const openScheduleEditor = (scheduleId) => {
     if (!scheduleId || !scheduleEditForm) {
       return;
@@ -1139,12 +1300,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     const schedules = loadStore(STORAGE_KEYS.schedules, []);
     const tasks = loadStore(STORAGE_KEYS.tasks, []);
     const devices = loadStore(STORAGE_KEYS.devices, []);
-    // schedule锛氬綋鍓嶆帓绋?
+    // schedule閿涙艾缍嬮崜宥嗗笓缁?
     const schedule = schedules.find((entry) => entry.id === scheduleId);
     if (!schedule) {
       return;
     }
-    // task锛氬綋鍓嶄换鍔?
+    // task閿涙艾缍嬮崜宥勬崲閸?
     const task = tasks.find((item) => item.code === schedule.task_code);
     const testType = task?.test_type || "";
     const labs = getLabsForTestType(testType);
@@ -1195,7 +1356,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     }
   };
 
-  // handleScheduleEditClick锛氱粦瀹氭帓绋嬬紪杈戠偣鍑讳簨浠?
+  // handleScheduleEditClick閿涙氨绮︾€规碍甯撶粙瀣椽鏉堟垹鍋ｉ崙璁崇皑娴?
   const handleScheduleEditClick = (event) => {
     const trigger = event.target.closest('[data-action="schedule-edit"]');
     if (!trigger) {
@@ -1267,7 +1428,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       }
       const { dateValue, startAt, endAt } = resolved;
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
-      // schedule锛氬綋鍓嶆帓绋?
+      // schedule閿涙艾缍嬮崜宥嗗笓缁?
       const schedule = schedules.find((entry) => entry.id === scheduleId);
       if (!schedule) {
         return;
@@ -1337,7 +1498,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       saveStore(STORAGE_KEYS.schedules, schedules);
 
       const streams = loadStore(STORAGE_KEYS.streams, []);
-      // stream锛氬綋鍓嶆暟鎹祦
+      // stream閿涙艾缍嬮崜宥嗘殶閹诡喗绁?
       const stream = streams.find((entry) => entry.task_code === data.task_code);
       if (stream) {
         stream.device = data.device;
@@ -1369,15 +1530,15 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         return;
       }
       const schedules = loadStore(STORAGE_KEYS.schedules, []);
-      // schedule锛氬綋鍓嶆帓绋?
+      // schedule閿涙艾缍嬮崜宥嗗笓缁?
       const schedule = schedules.find((entry) => entry.id === scheduleId);
-      // updated锛氱Щ闄ょ洰鏍囧悗鐨勬柊鍒楄〃
+      // updated閿涙氨些闂勩倗娲伴弽鍥ф倵閻ㄥ嫭鏌婇崚妤勩€?
       const updated = schedules.filter((entry) => entry.id !== scheduleId);
       saveStore(STORAGE_KEYS.schedules, updated);
 
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       if (schedule) {
-        // task锛氬綋鍓嶄换鍔?
+        // task閿涙艾缍嬮崜宥勬崲閸?
         const task = tasks.find((entry) => entry.code === schedule.task_code);
         if (task) {
           task.status = labels.statusWaiting;
@@ -1427,43 +1588,8 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       }
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = tasks.find((item) => (item.code || "").trim() === taskCode);
-      const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
-      const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
-      const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
-      const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
-      let changed = false;
-      const now = new Date().toISOString();
-
-      autoCodes.forEach((code) => {
-        const exists = samples.find((item) => item.code === code);
-        if (exists) {
-          if (!exists.task_code) {
-            exists.task_code = taskCode;
-            changed = true;
-          }
-          if (!exists.flow_status) {
-            exists.flow_status = resolveFlowStatusByLocation(exists.location, exists.status);
-            changed = true;
-          }
-          return;
-        }
-        const sample = {
-          id: generateId("sample"),
-          code,
-          task_code: taskCode,
-          location: "",
-          owner: "",
-          status: "运输中",
-          flow_status: "运输中",
-          created_at: now,
-        };
-        appendSampleHistory(sample, "样品绑定任务", `任务 ${taskCode}`);
-        samples.unshift(sample);
-        changed = true;
-      });
-
+      const changed = task ? ensureTaskSamples(task).changed : false;
       if (changed) {
-        saveStore(STORAGE_KEYS.samples, samples);
         renderAll(labels);
         if (event && typeof event.stopImmediatePropagation === "function") {
           event.stopImmediatePropagation();
@@ -1480,6 +1606,9 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const data = getFormData('[data-form="sample-intake"]');
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
+      if (task) {
+        ensureTaskSamples(task);
+      }
       const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       if (!data.code && data.task_code) {
@@ -1488,12 +1617,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
-      if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
+      if (task && Number.isFinite(plannedCount) && plannedCount >= 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
-          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
+          setWarning(sampleWarning, `浠诲姟 ${task.code} 鐨勬牱鍝佹暟閲忓凡杈惧埌 ${plannedCount}銆俙);
           return;
         }
+      }
+      if (samples.some((item) => (item.code || "").trim() === (data.code || "").trim())) {
+        setWarning(sampleWarning, `鏍峰搧缂栧彿 ${data.code} 宸插瓨鍦ㄣ€俙);
+        return;
       }
       setWarning(sampleWarning, "");
       const sample = {
@@ -1502,15 +1635,15 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         task_code: data.task_code || "",
         location: "",
         owner: "",
-        status: "运输中",
-        flow_status: "运输中",
+        status: "杩愯緭涓?,
+        flow_status: "杩愯緭涓?,
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "样品登记");
+      appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
-      // task锛氬綋鍓嶄换鍔?
-      if (task && (task.status === labels.statusAccepted || task.status === "已受理")) {
+      // task閿涙艾缍嬮崜宥勬崲閸?
+      if (task && (task.status === labels.statusAccepted || task.status === "宸插彈鐞?)) {
         task.status = labels.statusWaiting;
       }
       saveStore(STORAGE_KEYS.tasks, tasks);
@@ -1525,6 +1658,9 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const data = getFormData('[data-form="sample-intake"]');
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = data.task_code ? tasks.find((t) => t.code === data.task_code) : null;
+      if (task) {
+        ensureTaskSamples(task);
+      }
       const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       if (!data.code && data.task_code) {
@@ -1533,12 +1669,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       if (!data.code) {
         data.code = `SP-${Date.now().toString().slice(-6)}`;
       }
-      if (task && Number.isFinite(plannedCount) && plannedCount > 0) {
+      if (task && Number.isFinite(plannedCount) && plannedCount >= 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
-          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
+          setWarning(sampleWarning, `浠诲姟 ${task.code} 鐨勬牱鍝佹暟閲忓凡杈惧埌 ${plannedCount}銆俙);
           return;
         }
+      }
+      if (samples.some((item) => (item.code || "").trim() === (data.code || "").trim())) {
+        setWarning(sampleWarning, `鏍峰搧缂栧彿 ${data.code} 宸插瓨鍦ㄣ€俙);
+        return;
       }
       setWarning(sampleWarning, "");
       const sample = {
@@ -1547,11 +1687,11 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         task_code: data.task_code || "",
         location: "",
         owner: "",
-        status: "运输中",
-        flow_status: "运输中",
+        status: "杩愯緭涓?,
+        flow_status: "杩愯緭涓?,
         created_at: new Date().toISOString(),
       };
-      appendSampleHistory(sample, "样品登记");
+      appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
@@ -1574,15 +1714,15 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const now = new Date().toISOString();
       const actionText =
         targetLocation === postRetentionLocation
-          ? "送达实验后暂存间"
+          ? "閫佽揪瀹為獙鍚庢殏瀛橀棿"
           : targetLocation === preRetentionLocation
-            ? "接驳区送达实验前暂存间"
-            : "批量入库";
+            ? "鎺ラ┏鍖洪€佽揪瀹為獙鍓嶆殏瀛橀棿"
+            : "鎵归噺鍏ュ簱";
       codes.forEach((code) => {
         if (!code) {
           return;
         }
-        // sample锛氬綋鍓嶆牱鍝?
+        // sample閿涙艾缍嬮崜宥嗙壉閸?
         let sample = samples.find((item) => item.code === code);
         if (!sample) {
           sample = {
@@ -1640,23 +1780,73 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
 
       const tasks = loadStore(STORAGE_KEYS.tasks, []);
       const task = tasks.find((item) => (item.code || "").trim() === taskCode);
+      if (task) {
+        ensureTaskSamples(task);
+      }
+
       const plannedCount = task ? Number.parseInt(task.sample_count, 10) : NaN;
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const taskSamples = samples.filter((item) => (item.task_code || "").trim() === taskCode);
       const autoCodes = buildTaskSampleCodes(taskCode, plannedCount, taskSamples);
       const requestedCodes = parseCodeList(data.codes);
-      const codes = requestedCodes.length > 0 ? requestedCodes : autoCodes;
+      const allowedCodeSet = new Set(autoCodes);
+      const invalidRequestedCodes = requestedCodes.filter((code) => !allowedCodeSet.has(code));
+      const codes = requestedCodes.length > 0 ? requestedCodes.filter((code) => allowedCodeSet.has(code)) : autoCodes;
       if (codes.length === 0) {
         setWarning(sampleProcessWarning, `任务 ${taskCode} 暂无可入库样品编号。`);
         return;
       }
 
+      const { entries: trayPlanEntries, errors: trayPlanErrors } = parseSampleTrayPlan(data.tray_plan);
+      if (trayPlanErrors.length) {
+        setWarning(sampleProcessWarning, trayPlanErrors.join("；"));
+        return;
+      }
+
+      const selectedCodeSet = new Set(codes);
+      const trayPlanByCode = new Map();
+      const invalidPlanCodes = [];
+      trayPlanEntries.forEach((entry) => {
+        if (!selectedCodeSet.has(entry.sampleCode)) {
+          invalidPlanCodes.push(entry.sampleCode);
+          return;
+        }
+        if (!trayPlanByCode.has(entry.sampleCode)) {
+          trayPlanByCode.set(entry.sampleCode, []);
+        }
+        trayPlanByCode.get(entry.sampleCode).push(entry);
+      });
+      const uniqueInvalidPlanCodes = Array.from(new Set(invalidPlanCodes));
+      if (uniqueInvalidPlanCodes.length) {
+        setWarning(sampleProcessWarning, `分装计划中存在不属于当前任务样品的编号：${uniqueInvalidPlanCodes.join("、")}`);
+        return;
+      }
+
+      const missingTrayPlan = [];
+      codes.forEach((code) => {
+        const plannedTrays = trayPlanByCode.get(code) || [];
+        if (plannedTrays.length) {
+          return;
+        }
+        const sample = samples.find((item) => item.code === code);
+        const existingTrays = getSampleTrays(sample);
+        if (!existingTrays.length) {
+          missingTrayPlan.push(code);
+        }
+      });
+      if (missingTrayPlan.length) {
+        setWarning(sampleProcessWarning, `以下样品未配置分装托盘：${missingTrayPlan.join("、")}`);
+        return;
+      }
+
       const outOfTask = [];
       const success = [];
+      const trayUpdated = [];
       const now = new Date().toISOString();
       const actionText = "任务样品入库（接驳区）";
       const intakeStatus = resolveSampleStatus(targetLocation);
       const intakeFlowStatus = resolveFlowStatusByLocation(targetLocation, intakeStatus);
+
       codes.forEach((code) => {
         let sample = samples.find((item) => item.code === code);
         if (!sample) {
@@ -1673,49 +1863,80 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
           if (targetLocation === preRetentionLocation) {
             sample.retention_source = "intake";
           }
-          appendSampleHistory(sample, actionText, `任务 ${taskCode}`);
           samples.unshift(sample);
-          success.push(code);
-          return;
+        } else {
+          const boundTaskCode = (sample.task_code || "").trim();
+          if (boundTaskCode && boundTaskCode !== taskCode) {
+            outOfTask.push(code);
+            return;
+          }
+          sample.updated_at = now;
         }
-        const boundTaskCode = (sample.task_code || "").trim();
-        if (boundTaskCode && boundTaskCode !== taskCode) {
-          outOfTask.push(code);
-          return;
-        }
+
         sample.task_code = taskCode;
         sample.location = targetLocation;
         sample.status = intakeStatus;
         sample.flow_status = intakeFlowStatus;
-        sample.updated_at = now;
         if (targetLocation === preRetentionLocation) {
           sample.retention_source = "intake";
         } else if (sample.retention_source) {
           delete sample.retention_source;
         }
+
+        const plannedTrays = trayPlanByCode.get(code) || [];
+        const existingTrays = getSampleTrays(sample);
+        if (plannedTrays.length) {
+          sample.trays = plannedTrays.map((entry, index) => ({
+            id: existingTrays[index]?.id || generateId("tray"),
+            tray_code: buildSampleTrayCode(code, index + 1),
+            sample_code: code,
+            quantity: entry.quantity,
+            created_at: existingTrays[index]?.created_at || now,
+            updated_at: now,
+          }));
+          const trayQuantityTotal = sample.trays.reduce((total, tray) => total + tray.quantity, 0);
+          appendSampleHistory(sample, "样品分装托盘", `共 ${sample.trays.length} 盘，合计数量 ${trayQuantityTotal}`);
+          trayUpdated.push(`${code}(${sample.trays.length}盘)`);
+        } else {
+          sample.trays = existingTrays.map((tray, index) => ({
+            ...tray,
+            tray_code: buildSampleTrayCode(code, index + 1),
+            sample_code: code,
+            updated_at: now,
+          }));
+        }
+
         appendSampleHistory(sample, actionText, `任务 ${taskCode}`);
         success.push(code);
       });
 
       if (success.length === 0) {
         const errors = [];
-        if (outOfTask.length) {
-          errors.push(`不属于任务 ${taskCode}：${outOfTask.join("、")}`);
+        if (invalidRequestedCodes.length) {
+          errors.push(`样品编号不属于任务计划：${invalidRequestedCodes.join("、")}`);
         }
-        setWarning(sampleProcessWarning, errors.length ? `${errors.join("，")}。` : `任务 ${taskCode} 暂无可入库样品。`);
+        if (outOfTask.length) {
+          errors.push(`样品不属于任务 ${taskCode}：${outOfTask.join("、")}`);
+        }
+        setWarning(sampleProcessWarning, errors.length ? `${errors.join("；")}。` : `任务 ${taskCode} 暂无可入库样品。`);
         return;
       }
 
       saveStore(STORAGE_KEYS.samples, samples);
       const notices = [`任务 ${taskCode} 已登记到 ${targetLocation} ${success.length} 个样品。`];
+      if (trayUpdated.length) {
+        notices.push(`已完成托盘分装：${trayUpdated.join("，")}。`);
+      }
+      if (invalidRequestedCodes.length) {
+        notices.push(`已忽略不属于任务计划的样品：${invalidRequestedCodes.join("、")}。`);
+      }
       if (outOfTask.length) {
-        notices.push(`不属于任务 ${taskCode}：${outOfTask.join("、")}。`);
+        notices.push(`不属于任务 ${taskCode} 的样品：${outOfTask.join("、")}。`);
       }
       setWarning(sampleProcessWarning, notices.join(" "));
       renderAll(labels);
     });
   }
-
   // Intake/Unpacking dispatch to lab or retention.
   const unpackingDispatch = document.querySelector('[data-action="unpacking-dispatch"]');
   if (unpackingDispatch) {
@@ -1727,14 +1948,14 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const codes = parseCodeList(data.codes);
       const intakeLocations = [labels.intakeLocation, labels.unpackingLocation].filter(Boolean);
       if (!targetLocation || codes.length === 0) {
-        setWarning(unpackingWarning, "请填写样品编号并选择目标位置。");
+        setWarning(unpackingWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣浣嶇疆銆?);
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notUnpacking = [];
       codes.forEach((code) => {
-        // sample：当前样品
+        // sample锛氬綋鍓嶆牱鍝?
         const sample = samples.find((item) => item.code === code);
         if (!sample) {
           missing.push(code);
@@ -1755,17 +1976,17 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.flow_status = resolveFlowStatusByLocation(targetLocation, sample.status);
         sample.updated_at = new Date().toISOString();
         const actionText =
-          targetLocation === preRetentionLocation ? "接驳区送达实验前暂存间" : "接驳区派发";
+          targetLocation === preRetentionLocation ? "鎺ラ┏鍖洪€佽揪瀹為獙鍓嶆殏瀛橀棿" : "鎺ラ┏鍖烘淳鍙?;
         appendSampleHistory(sample, actionText);
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`未找到样品：${missing.join("、")}`);
+        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
       }
       if (notUnpacking.length) {
-        warnings.push(`样品不在接驳区：${notUnpacking.join("、")}`);
+        warnings.push(`鏍峰搧涓嶅湪鎺ラ┏鍖猴細${notUnpacking.join("銆?)}`);
       }
-      setWarning(unpackingWarning, warnings.length ? `${warnings.join("，")}。` : "");
+      setWarning(unpackingWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1798,18 +2019,18 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
-        setWarning(retentionWarning, "请填写样品编号并选择目标实验室。");
+        setWarning(retentionWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣瀹為獙瀹ゃ€?);
         return;
       }
       if (targetLab === preRetentionLocation) {
-        setWarning(retentionWarning, "暂存间排程只能派发至实验室。");
+        setWarning(retentionWarning, "鏆傚瓨闂存帓绋嬪彧鑳芥淳鍙戣嚦瀹為獙瀹ゃ€?);
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notRetention = [];
       codes.forEach((code) => {
-        // sample：当前样品
+        // sample锛氬綋鍓嶆牱鍝?
         const sample = samples.find((item) => item.code === code);
         if (!sample) {
           missing.push(code);
@@ -1824,16 +2045,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.status = resolveSampleStatus(targetLab);
         sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
-        appendSampleHistory(sample, "暂存间派发");
+        appendSampleHistory(sample, "鏆傚瓨闂存淳鍙?);
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`未找到样品：${missing.join("、")}`);
+        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
       }
       if (notRetention.length) {
-        warnings.push(`样品不在暂存间：${notRetention.join("、")}`);
+        warnings.push(`鏍峰搧涓嶅湪鏆傚瓨闂达細${notRetention.join("銆?)}`);
       }
-      setWarning(retentionWarning, warnings.length ? `${warnings.join("，")}。` : "");
+      setWarning(retentionWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1866,14 +2087,14 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
-        setWarning(stagingWarning, "请填写样品编号并选择目标实验室。");
+        setWarning(stagingWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣瀹為獙瀹ゃ€?);
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
       const missing = [];
       const notStaging = [];
       codes.forEach((code) => {
-        // sample：当前样品
+        // sample锛氬綋鍓嶆牱鍝?
         const sample = samples.find((item) => item.code === code);
         if (!sample) {
           missing.push(code);
@@ -1888,16 +2109,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.status = labels.sampleTesting;
         sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
-        appendSampleHistory(sample, "暂存间派发");
+        appendSampleHistory(sample, "鏆傚瓨闂存淳鍙?);
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`未找到样品：${missing.join("、")}`);
+        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
       }
       if (notStaging.length) {
-        warnings.push(`不在暂存间：${notStaging.join("、")}`);
+        warnings.push(`涓嶅湪鏆傚瓨闂达細${notStaging.join("銆?)}`);
       }
-      setWarning(stagingWarning, warnings.length ? `${warnings.join("，")}。` : "");
+      setWarning(stagingWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -1975,7 +2196,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         return;
       }
       const devices = loadStore(STORAGE_KEYS.devices, []);
-      // existing锛氬凡瀛樺湪璁惧璁板綍
+      // existing閿涙艾鍑＄€涙ê婀拋鎯ь槵鐠佹澘缍?
       const existing = devices.find((device) => device.code === data.code);
       if (existing) {
         existing.name = data.name || existing.name;
@@ -2020,7 +2241,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const data = getFormData('[data-form="data-report"]');
       const streams = loadStore(STORAGE_KEYS.streams, []);
       if (data.task_code) {
-        // target锛氱洰鏍囨暟鎹祦
+        // target閿涙氨娲伴弽鍥ㄦ殶閹诡喗绁?
         const target = streams.find((stream) => stream.task_code === data.task_code);
         if (target) {
           target.reported = true;
@@ -2043,6 +2264,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
 }
 
 export { attachActionHandlers };
+
 
 
 

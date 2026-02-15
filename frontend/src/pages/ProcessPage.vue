@@ -66,6 +66,7 @@
     <table class="table">
       <thead>
         <tr>
+          <th>序号</th>
           <th>时间</th>
           <th>步骤</th>
           <th>执行人</th>
@@ -75,6 +76,7 @@
       </thead>
       <tbody>
         <tr>
+          <td>1</td>
           <td>09:10</td>
           <td>样品前处理</td>
           <td>Lab-02</td>
@@ -82,6 +84,7 @@
           <td>样品标签核对完成</td>
         </tr>
         <tr>
+          <td>2</td>
           <td>10:05</td>
           <td>设备预热</td>
           <td>Lab-05</td>
@@ -89,6 +92,7 @@
           <td>温度稳定</td>
         </tr>
         <tr>
+          <td>3</td>
           <td>10:20</td>
           <td>开始采集</td>
           <td>Lab-05</td>

@@ -25,6 +25,7 @@
     <table class="table" id="data-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>任务</th>
           <th data-sort>设备</th>
           <th data-sort>最近数据包</th>

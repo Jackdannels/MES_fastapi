@@ -26,6 +26,7 @@
     <table class="table" id="role-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>角色</th>
           <th data-sort>范围</th>
           <th data-sort>关键权限</th>
@@ -34,18 +35,21 @@
       </thead>
       <tbody>
         <tr>
+          <td>1</td>
           <td>排程员</td>
           <td>任务 + 排程</td>
           <td>创建、改排</td>
           <td><a class="action-link" href="#" data-drawer-open="role-drawer">编辑</a></td>
         </tr>
         <tr>
+          <td>2</td>
           <td>试验主管</td>
           <td>过程 + 数据</td>
           <td>审批、数据锁定</td>
           <td><a class="action-link" href="#" data-drawer-open="role-drawer">编辑</a></td>
         </tr>
         <tr>
+          <td>3</td>
           <td>设备工程师</td>
           <td>设备</td>
           <td>校准、维护</td>

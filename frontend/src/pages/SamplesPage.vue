@@ -87,6 +87,27 @@
               placeholder="选择任务后按任务号自动生成并绑定样品编号"
             ></textarea>
           </div>
+          <div class="form-field" style="grid-column: 1 / -1;">
+            <label>样品分装（每行一个托盘）</label>
+            <textarea
+              id="sample-task-tray-plan"
+              name="tray_plan"
+              placeholder="格式：样品编号,托盘数量；例如：SZH-2026-003-SP-001,4"
+            ></textarea>
+            <div class="helper">
+              托盘编号会自动按样品编号生成（如：SZH-2026-003-SP-001-TP-001）。同一样品可填写多行分成多个托盘，单个托盘只允许一个样品。
+            </div>
+          </div>
+          <div class="form-field" style="grid-column: 1 / -1;">
+            <label>托盘编号预览</label>
+            <textarea
+              class="sample-codes-input"
+              id="sample-task-tray-preview"
+              name="tray_preview"
+              readonly
+              placeholder="完成分装后将显示托盘编号与托盘数量"
+            ></textarea>
+          </div>
         </div>
         <div class="form-actions">
           <button class="action-btn" type="button" data-action="sample-task-store">确认入库</button>
@@ -130,8 +151,10 @@
     <table class="table" id="sample-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>任务</th>
           <th data-sort>样品编号</th>
+          <th data-sort>托盘数</th>
           <th data-sort>当前位置</th>
           <th data-sort>责任人</th>
           <th data-sort>状态</th>
@@ -151,6 +174,7 @@
     <table class="table" id="staging-table" data-sortable>
       <thead>
         <tr>
+          <th>序号</th>
           <th data-sort>样品编号</th>
           <th data-sort>任务</th>
           <th data-sort>当前位置</th>

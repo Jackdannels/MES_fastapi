@@ -510,7 +510,8 @@ function renderTasksPage(labels) {
   const pageItems = filteredRows.slice(startIndex, startIndex + pageSize);
 
   tbody.innerHTML = "";
-  pageItems.forEach(({ task, displayStatus }) => {
+  pageItems.forEach(({ task, displayStatus }, index) => {
+    const serial = startIndex + index + 1;
     const row = document.createElement("tr");
     if (task.id) {
       row.dataset.taskId = task.id;
@@ -519,6 +520,7 @@ function renderTasksPage(labels) {
       row.dataset.taskCode = task.code;
     }
     row.innerHTML = `
+      <td>${serial}</td>
       <td>${task.code || ""}</td>
       <td>${task.source || ""}</td>
       <td>${task.sample_count || ""}</td>
@@ -737,9 +739,10 @@ function renderStagingSamples(labels, samples) {
   );
   setText("staging-count", stagingSamples.length);
   body.innerHTML = "";
-  stagingSamples.forEach((sample) => {
+  stagingSamples.forEach((sample, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${sample.code || ""}</td>
       <td>${sample.task_code || ""}</td>
       <td>${sample.location || ""}</td>
@@ -856,9 +859,10 @@ function renderUnpackingSchedule(labels, samples) {
   const unpackingSamples = samples.filter((sample) => intakeLocations.includes(sample.location));
   setText("unpacking-count", unpackingSamples.length);
   body.innerHTML = "";
-  unpackingSamples.forEach((sample) => {
+  unpackingSamples.forEach((sample, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${sample.code || ""}</td>
       <td>${sample.task_code || ""}</td>
       <td>${sample.location || ""}</td>
@@ -975,9 +979,10 @@ function renderRetentionSchedule(labels, samples) {
   );
   setText("retention-schedule-count", retentionSamples.length);
   body.innerHTML = "";
-  retentionSamples.forEach((sample) => {
+  retentionSamples.forEach((sample, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${sample.code || ""}</td>
       <td>${sample.task_code || ""}</td>
       <td>${sample.location || ""}</td>
@@ -1101,15 +1106,16 @@ function renderRetentionInternalSchedule(labels) {
   body.innerHTML = "";
   if (list.length === 0) {
     const row = document.createElement("tr");
-    row.innerHTML = `<td class="muted" colspan="4">\u6682\u65e0\u6682\u5b58\u95f4\u5f85\u5206\u914d\u4efb\u52a1</td>`;
+    row.innerHTML = `<td class="muted" colspan="5">\u6682\u65e0\u6682\u5b58\u95f4\u5f85\u5206\u914d\u4efb\u52a1</td>`;
     body.appendChild(row);
     return;
   }
 
-  list.forEach((item) => {
+  list.forEach((item, index) => {
     const row = document.createElement("tr");
     const sinceText = item.since ? formatDateTime(item.since) : "-";
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${item.code}</td>
       <td>${item.testType || ""}</td>
       <td>${sinceText}</td>
@@ -1222,8 +1228,71 @@ function buildTaskSampleCodes(taskCode, plannedCount, samplesForTask) {
   for (let index = 1; index <= targetCount; index += 1) {
     generatedCodes.push(`${code}-SP-${String(index).padStart(3, "0")}`);
   }
-  const extraExisting = existingCodes.filter((itemCode) => !generatedCodes.includes(itemCode));
-  return [...generatedCodes, ...extraExisting];
+  return generatedCodes;
+}
+
+function buildSampleTrayCode(sampleCode, serial) {
+  const code = (sampleCode || "").trim();
+  const index = Number.parseInt(serial, 10);
+  if (!code || !Number.isFinite(index) || index <= 0) {
+    return "";
+  }
+  return `${code}-TP-${String(index).padStart(3, "0")}`;
+}
+
+function parseSampleTrayPlan(value) {
+  const lines = String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const entries = [];
+  const errors = [];
+  lines.forEach((line, index) => {
+    const parts = line
+      .split(/[,\uff0c;\uff1b|\t]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (parts.length < 2) {
+      errors.push(`第${index + 1}行格式错误，应为“样品编号,托盘数量”`);
+      return;
+    }
+    const sampleCode = parts[0];
+    const quantity = Number.parseInt(parts[1], 10);
+    if (!sampleCode) {
+      errors.push(`第${index + 1}行缺少样品编号`);
+      return;
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      errors.push(`第${index + 1}行托盘数量必须为正整数`);
+      return;
+    }
+    entries.push({
+      sampleCode,
+      quantity: Math.floor(quantity),
+    });
+  });
+  return { entries, errors };
+}
+
+function getSampleTrayList(sample) {
+  if (!sample || !Array.isArray(sample.trays)) {
+    return [];
+  }
+  const sampleCode = (sample.code || "").trim();
+  return sample.trays
+    .filter((tray) => {
+      if (!tray) {
+        return false;
+      }
+      const traySampleCode = (tray.sample_code || sampleCode || "").trim();
+      const quantity = Number.parseInt(tray.quantity, 10);
+      return traySampleCode === sampleCode && Number.isFinite(quantity) && quantity > 0;
+    })
+    .map((tray, index) => ({
+      tray_code: tray.tray_code || buildSampleTrayCode(sampleCode, index + 1),
+      sample_code: sampleCode,
+      quantity: Math.floor(Number.parseInt(tray.quantity, 10)),
+    }));
 }
 
 const UNIFIED_SAMPLE_FLOW_STEPS = [
@@ -1339,12 +1408,50 @@ function renderSampleTaskSummary(taskList, samples, labels) {
   const countHintEl = document.getElementById("sample-task-count-hint");
   const processForm = document.querySelector('[data-form="sample-task-process"]');
   const codesInput = processForm?.querySelector('textarea[name="codes"]') || null;
+  const trayPlanInput = processForm?.querySelector('textarea[name="tray_plan"]') || null;
+  const trayPreviewInput = processForm?.querySelector('textarea[name="tray_preview"]') || null;
   const storeBtn = document.querySelector('[data-action="sample-task-store"]');
   if (!select || !countEl) {
     return;
   }
   const tasks = Array.isArray(taskList) ? taskList : [];
   const sampleList = Array.isArray(samples) ? samples : [];
+
+  const syncTrayPreview = (sampleCodes, taskSamples) => {
+    if (!trayPreviewInput) {
+      return;
+    }
+    const codeSet = new Set(sampleCodes);
+    const rawPlan = (trayPlanInput?.value || "").trim();
+    if (rawPlan) {
+      const { entries, errors } = parseSampleTrayPlan(rawPlan);
+      if (errors.length) {
+        trayPreviewInput.value = errors.map((message) => `[格式错误] ${message}`).join("\n");
+        return;
+      }
+      const trayIndexBySample = new Map();
+      const lines = [];
+      entries.forEach((entry) => {
+        if (!codeSet.has(entry.sampleCode)) {
+          return;
+        }
+        const nextIndex = (trayIndexBySample.get(entry.sampleCode) || 0) + 1;
+        trayIndexBySample.set(entry.sampleCode, nextIndex);
+        lines.push(`${buildSampleTrayCode(entry.sampleCode, nextIndex)} | 数量 ${entry.quantity}`);
+      });
+      trayPreviewInput.value = lines.join("\n");
+      return;
+    }
+
+    const existingLines = [];
+    taskSamples.forEach((sample) => {
+      const trays = getSampleTrayList(sample);
+      trays.forEach((tray) => {
+        existingLines.push(`${tray.tray_code} | 数量 ${tray.quantity}`);
+      });
+    });
+    trayPreviewInput.value = existingLines.join("\n");
+  };
 
   const updateCount = () => {
     const code = (select.value || "").trim();
@@ -1355,6 +1462,13 @@ function renderSampleTaskSummary(taskList, samples, labels) {
       }
       if (codesInput) {
         codesInput.value = "";
+      }
+      if (trayPlanInput) {
+        trayPlanInput.dataset.taskCode = "";
+        trayPlanInput.value = "";
+      }
+      if (trayPreviewInput) {
+        trayPreviewInput.value = "";
       }
       if (storeBtn) {
         storeBtn.disabled = true;
@@ -1367,6 +1481,7 @@ function renderSampleTaskSummary(taskList, samples, labels) {
     const task = tasks.find((item) => item.code === code);
     const taskSamples = sampleList.filter((sample) => (sample.task_code || "").trim() === code);
     const sampleCodes = taskSamples.map((sample) => (sample.code || "").trim()).filter(Boolean);
+    const trayCount = taskSamples.reduce((total, sample) => total + getSampleTrayList(sample).length, 0);
 
     const rawCount = task?.sample_count ?? "";
     const plannedCount = rawCount !== "" && Number.isFinite(Number(rawCount)) ? Number(rawCount) : NaN;
@@ -1374,18 +1489,25 @@ function renderSampleTaskSummary(taskList, samples, labels) {
     if (Number.isFinite(plannedCount)) {
       countEl.textContent = String(plannedCount);
       if (countHintEl) {
-        countHintEl.textContent = `计划 ${plannedCount}，已登记 ${sampleCodes.length}，编号按任务自动绑定。`;
+        countHintEl.textContent = `计划 ${plannedCount}，已登记 ${sampleCodes.length}，已分装托盘 ${trayCount}。`;
       }
     } else {
       countEl.textContent = String(sampleCodes.length);
       if (countHintEl) {
-        countHintEl.textContent = `该任务已登记 ${sampleCodes.length} 个样品，编号按任务自动绑定。`;
+        countHintEl.textContent = `该任务已登记 ${sampleCodes.length} 个样品，已分装托盘 ${trayCount}。`;
       }
     }
 
     if (codesInput) {
       codesInput.value = autoCodes.join("\n");
     }
+    if (trayPlanInput) {
+      if (trayPlanInput.dataset.taskCode !== code) {
+        trayPlanInput.value = "";
+      }
+      trayPlanInput.dataset.taskCode = code;
+    }
+    syncTrayPreview(autoCodes, taskSamples);
     if (storeBtn) {
       storeBtn.disabled = autoCodes.length === 0;
       storeBtn.dataset.taskCode = code;
@@ -1399,6 +1521,10 @@ function renderSampleTaskSummary(taskList, samples, labels) {
   if (select.dataset.bound !== "1") {
     select.addEventListener("change", updateCount);
     select.dataset.bound = "1";
+  }
+  if (trayPlanInput && trayPlanInput.dataset.bound !== "1") {
+    trayPlanInput.addEventListener("input", updateCount);
+    trayPlanInput.dataset.bound = "1";
   }
 
   updateCount();
@@ -1489,9 +1615,11 @@ function renderSamplesPage(labels) {
     if (!query) {
       return true;
     }
+    const trayList = getSampleTrayList(sample);
     const searchText = [
       sample.task_code || "",
       sample.code || "",
+      trayList.map((tray) => tray.tray_code).join(" "),
       sample.location || "",
       sample.owner || "",
       sample.status || "",
@@ -1520,11 +1648,15 @@ function renderSamplesPage(labels) {
   const pageItems = filteredSamples.slice(startIndex, startIndex + pageSize);
 
   tbody.innerHTML = "";
-  pageItems.forEach((sample) => {
+  pageItems.forEach((sample, index) => {
+    const serial = startIndex + index + 1;
+    const trayCount = getSampleTrayList(sample).length;
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${serial}</td>
       <td>${sample.task_code || ""}</td>
       <td>${sample.code || ""}</td>
+      <td>${trayCount}</td>
       <td>${sample.location || ""}</td>
       <td>${sample.owner || ""}</td>
       <td><span class="${statusClass(sample.status, labels)}">${sample.status || ""}</span></td>
@@ -1671,9 +1803,10 @@ function renderDevicesPage(labels) {
   setText("device-maintenance-count", maintenanceCount);
 
   tbody.innerHTML = "";
-  computed.forEach((device) => {
+  computed.forEach((device, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${device.code || ""}</td>
       <td>${device.name || ""}</td>
       <td>${device.type || ""}</td>
@@ -1748,12 +1881,13 @@ function renderSchedulePage(labels) {
   });
 
   tbody.innerHTML = "";
-  computed.forEach((entry) => {
+  computed.forEach((entry, index) => {
     const row = document.createElement("tr");
     if (entry.id) {
       row.dataset.scheduleId = entry.id;
     }
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${entry.task_code || ""}</td>
       <td>${entry.device || ""}</td>
       <td>${formatDateTime(entry.start_at)}</td>
@@ -1799,9 +1933,10 @@ function renderSchedulePage(labels) {
   const conflictBody = document.getElementById("conflict-table-body");
   if (conflictBody) {
     conflictBody.innerHTML = "";
-    conflicts.forEach((item) => {
+    conflicts.forEach((item, index) => {
       const row = document.createElement("tr");
       row.innerHTML = `
+        <td>${index + 1}</td>
         <td>${item.task_code}</td>
         <td>${item.device}</td>
         <td>${item.reason}</td>
@@ -1977,9 +2112,10 @@ function renderDataPage(labels) {
   setText("data-report-count", reportQueue);
 
   tbody.innerHTML = "";
-  streams.forEach((stream) => {
+  streams.forEach((stream, index) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${index + 1}</td>
       <td>${stream.task_code || ""}</td>
       <td>${stream.device || ""}</td>
       <td>${stream.last_packet || ""}</td>
@@ -2081,9 +2217,11 @@ function renderDashboardPage(labels) {
   const pageItems = tasks.slice(startIndex, startIndex + pageSize);
 
   taskBody.innerHTML = "";
-  pageItems.forEach((task) => {
+  pageItems.forEach((task, index) => {
+    const serial = startIndex + index + 1;
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td>${serial}</td>
       <td>${task.code || ""}</td>
       <td>${task.source || ""}</td>
       <td><span class="${statusClass(task.status, labels)}">${task.status || ""}</span></td>
