@@ -88,14 +88,34 @@
             ></textarea>
           </div>
           <div class="form-field" style="grid-column: 1 / -1;">
-            <label>样品分装（每行一个托盘）</label>
+            <label>样品分装</label>
+            <div class="sample-tray-builder" id="sample-tray-builder">
+              <div class="sample-tray-source">
+                <div class="sample-tray-title">可选样品</div>
+                <div class="sample-tray-source-hint" id="sample-tray-source-hint">当前未选中托盘</div>
+                <div class="sample-tray-source-list" id="sample-tray-source"></div>
+              </div>
+              <div class="sample-tray-main">
+                <div class="sample-tray-toolbar">
+                  <div class="sample-tray-title">托盘分装</div>
+                  <label class="sample-tray-limit" for="sample-tray-limit-input">
+                    <span>统一上限（每托盘最多样品数）</span>
+                    <input id="sample-tray-limit-input" type="number" min="1" step="1" />
+                  </label>
+                  <button class="action-btn secondary sample-tray-add-btn" type="button" data-action="sample-tray-add">
+                    新增托盘
+                  </button>
+                </div>
+                <div class="sample-tray-list" id="sample-tray-list"></div>
+              </div>
+            </div>
             <textarea
               id="sample-task-tray-plan"
               name="tray_plan"
-              placeholder="格式：样品编号,托盘数量；例如：SZH-2026-003-SP-001,4"
+              placeholder="格式：样品编号,数量,托盘编号；例如：SZH-2026-003-SP-001,1,SZH-2026-003-TP-001"
             ></textarea>
             <div class="helper">
-              托盘编号会自动按样品编号生成（如：SZH-2026-003-SP-001-TP-001）。同一样品可填写多行分成多个托盘，单个托盘只允许一个样品。
+              默认统一上限 5、默认 2 个托盘；按样品编号顺序连续分配（如 1-4、5-8），支持托盘间拖拽。
             </div>
           </div>
           <div class="form-field" style="grid-column: 1 / -1;">

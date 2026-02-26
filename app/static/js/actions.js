@@ -156,6 +156,15 @@ function buildSampleTrayCode(sampleCode, serial) {
   return `${code}-TP-${String(index).padStart(3, "0")}`;
 }
 
+function buildTaskTrayCode(taskCode, serial) {
+  const code = (taskCode || "").trim();
+  const index = Number.parseInt(serial, 10);
+  if (!code || !Number.isFinite(index) || index <= 0) {
+    return "";
+  }
+  return `${code}-TP-${String(index).padStart(3, "0")}`;
+}
+
 function parseSampleTrayPlan(value) {
   const lines = String(value || "")
     .split(/\r?\n/)
@@ -170,11 +179,18 @@ function parseSampleTrayPlan(value) {
       .map((part) => part.trim())
       .filter(Boolean);
     if (parts.length < 2) {
-      errors.push(`第 ${lineNo} 行格式错误，应为“样品编号,托盘数量”。`);
+      errors.push(`第 ${lineNo} 行格式错误，应为“样品编号,托盘数量[,托盘编号]”。`);
       return;
     }
-    const sampleCode = parts[0];
-    const quantity = Number.parseInt(parts[1], 10);
+    let sampleCode = parts[0];
+    let quantityText = parts[1];
+    let trayCode = parts[2] || "";
+    if (parts.length >= 3 && /-TP-\d{3}$/i.test(parts[0])) {
+      trayCode = parts[0];
+      sampleCode = parts[1];
+      quantityText = parts[2];
+    }
+    const quantity = Number.parseInt(quantityText, 10);
     if (!sampleCode) {
       errors.push(`第 ${lineNo} 行缺少样品编号。`);
       return;
@@ -187,6 +203,7 @@ function parseSampleTrayPlan(value) {
       lineNo,
       sampleCode,
       quantity: Math.floor(quantity),
+      trayCode: (trayCode || "").trim(),
     });
   });
   return { entries, errors };
@@ -208,7 +225,7 @@ function getSampleTrays(sample) {
     })
     .map((tray, index) => ({
       id: tray.id || generateId("tray"),
-      tray_code: buildSampleTrayCode(sampleCode, index + 1),
+      tray_code: (tray.tray_code || "").trim() || buildSampleTrayCode(sampleCode, index + 1),
       sample_code: sampleCode,
       quantity: Math.floor(Number.parseInt(tray.quantity, 10)),
       created_at: tray.created_at || sample.created_at || new Date().toISOString(),
@@ -260,7 +277,7 @@ function attachActionHandlers(labels) {
     const preRetentionLocation = labels.preRetentionLocation || labels.retentionLocation;
     const postRetentionLocation = labels.postRetentionLocation || "";
     if (location === postRetentionLocation) {
-      return labels.sampleStored || "宸插叆搴?;
+      return labels.sampleStored || "已入库";
     }
     if (location === preRetentionLocation || location === labels.unpackingLocation || location === labels.intakeLocation) {
       return labels.sampleReceived;
@@ -277,34 +294,34 @@ function attachActionHandlers(labels) {
     const isPostRetention = Boolean(postRetentionLocation) && location === postRetentionLocation;
     const isPreRetention = Boolean(preRetentionLocation) && location === preRetentionLocation;
     const currentStatus = (status || "").trim();
-    if (currentStatus === "鍘傚鏀跺洖" || currentStatus === "宸插缃?) {
-      return "鍘傚鏀跺洖";
+    if (currentStatus === "厂家收回" || currentStatus === "已处置") {
+      return "厂家收回";
     }
-    if (currentStatus === "鏀剧疆鏆傚瓨闂?) {
-      return "鏀剧疆鏆傚瓨闂?;
+    if (currentStatus === "放置暂存间") {
+      return "放置暂存间";
     }
-    if (currentStatus === "鍏ュ簱" || currentStatus === "宸插叆搴? || currentStatus === labels.sampleStored) {
-      return isPostRetention ? "鏀剧疆鏆傚瓨闂? : "鍒拌揣";
+    if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === labels.sampleStored) {
+      return isPostRetention ? "放置暂存间" : "到货";
     }
-    if (currentStatus === "瀹為獙瀹屾垚" || currentStatus === labels.statusCompleted || currentStatus === "瀹為獙宸插畬鎴?) {
-      return "瀹為獙瀹屾垚";
+    if (currentStatus === "实验完成" || currentStatus === labels.statusCompleted || currentStatus === "实验已完成") {
+      return "实验完成";
     }
-    if (currentStatus === "瀹為獙鍑嗗灏辩华") {
-      return "瀹為獙鍑嗗灏辩华";
+    if (currentStatus === "实验准备就绪") {
+      return "实验准备就绪";
     }
     if (isPostRetention) {
-      return "鏀剧疆鏆傚瓨闂?;
+      return "放置暂存间";
     }
     if (isPreRetention) {
-      return "鍒拌揣";
+      return "到货";
     }
     if (TEST_LABS.includes(location)) {
-      return "鍒拌揪瀹為獙闂?;
+      return "到达实验间";
     }
     if (location === labels.unpackingLocation || location === labels.intakeLocation) {
-      return "鍒拌揣";
+      return "到货";
     }
-    return "杩愯緭涓?;
+    return "运输中";
   };
 
   // ensureSampleHistory閿涙氨鈥樻穱婵囩壉閸濅礁宸婚崣鍙夋殶缂?
@@ -366,7 +383,7 @@ function attachActionHandlers(labels) {
   // buildRandomTask閿涙碍鐎娲閺堣桨鎹㈤崝?
   const buildRandomTask = (tasks, statusOverride) => {
     const filteredTypes = TEST_TASK_TYPES.filter(
-      (type) => !type.includes("鎭掓俯鎭掓箍") && !type.includes("楂樹綆娓╂箍鐑?)
+      (type) => !type.includes("恒温恒湿") && !type.includes("高低温湿热")
     );
     const pool = filteredTypes.length ? filteredTypes : TEST_TASK_TYPES;
     const testType = pool[Math.floor(Math.random() * pool.length)];
@@ -611,8 +628,8 @@ function attachActionHandlers(labels) {
           task_code: taskCode,
           location: "",
           owner: "",
-          status: "杩愯緭涓?,
-          flow_status: "杩愯緭涓?,
+          status: "运输中",
+          flow_status: "运输中",
           created_at: now,
         };
         appendSampleHistory(sample, "鏍峰搧缁戝畾浠诲姟", `浠诲姟 ${taskCode}`);
@@ -636,12 +653,12 @@ function attachActionHandlers(labels) {
         sampleChanged = true;
       }
       if (!sample.status) {
-        sample.status = "杩愯緭涓?;
+        sample.status = "运输中";
         changed = true;
         sampleChanged = true;
       }
       if (!sample.flow_status) {
-        sample.flow_status = resolveFlowStatusByLocation(sample.location, sample.status || "杩愯緭涓?);
+        sample.flow_status = resolveFlowStatusByLocation(sample.location, sample.status || "运输中");
         changed = true;
         sampleChanged = true;
       }
@@ -1620,12 +1637,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       if (task && Number.isFinite(plannedCount) && plannedCount >= 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
-          setWarning(sampleWarning, `浠诲姟 ${task.code} 鐨勬牱鍝佹暟閲忓凡杈惧埌 ${plannedCount}銆俙);
+          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
           return;
         }
       }
       if (samples.some((item) => (item.code || "").trim() === (data.code || "").trim())) {
-        setWarning(sampleWarning, `鏍峰搧缂栧彿 ${data.code} 宸插瓨鍦ㄣ€俙);
+        setWarning(sampleWarning, `样品编号 ${data.code} 已存在。`);
         return;
       }
       setWarning(sampleWarning, "");
@@ -1635,15 +1652,15 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         task_code: data.task_code || "",
         location: "",
         owner: "",
-        status: "杩愯緭涓?,
-        flow_status: "杩愯緭涓?,
+        status: "运输中",
+        flow_status: "运输中",
         created_at: new Date().toISOString(),
       };
       appendSampleHistory(sample, "鏍峰搧鐧昏");
       samples.unshift(sample);
       saveStore(STORAGE_KEYS.samples, samples);
       // task閿涙艾缍嬮崜宥勬崲閸?
-      if (task && (task.status === labels.statusAccepted || task.status === "宸插彈鐞?)) {
+      if (task && (task.status === labels.statusAccepted || task.status === "已受理")) {
         task.status = labels.statusWaiting;
       }
       saveStore(STORAGE_KEYS.tasks, tasks);
@@ -1672,12 +1689,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       if (task && Number.isFinite(plannedCount) && plannedCount >= 0) {
         const existingCount = samples.filter((item) => item.task_code === task.code).length;
         if (existingCount >= plannedCount) {
-          setWarning(sampleWarning, `浠诲姟 ${task.code} 鐨勬牱鍝佹暟閲忓凡杈惧埌 ${plannedCount}銆俙);
+          setWarning(sampleWarning, `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`);
           return;
         }
       }
       if (samples.some((item) => (item.code || "").trim() === (data.code || "").trim())) {
-        setWarning(sampleWarning, `鏍峰搧缂栧彿 ${data.code} 宸插瓨鍦ㄣ€俙);
+        setWarning(sampleWarning, `样品编号 ${data.code} 已存在。`);
         return;
       }
       setWarning(sampleWarning, "");
@@ -1687,8 +1704,8 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         task_code: data.task_code || "",
         location: "",
         owner: "",
-        status: "杩愯緭涓?,
-        flow_status: "杩愯緭涓?,
+        status: "运输中",
+        flow_status: "运输中",
         created_at: new Date().toISOString(),
       };
       appendSampleHistory(sample, "鏍峰搧鐧昏");
@@ -1888,7 +1905,11 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         if (plannedTrays.length) {
           sample.trays = plannedTrays.map((entry, index) => ({
             id: existingTrays[index]?.id || generateId("tray"),
-            tray_code: buildSampleTrayCode(code, index + 1),
+            tray_code:
+              (entry.trayCode || "").trim() ||
+              (existingTrays[index]?.tray_code || "").trim() ||
+              buildTaskTrayCode(taskCode, index + 1) ||
+              buildSampleTrayCode(code, index + 1),
             sample_code: code,
             quantity: entry.quantity,
             created_at: existingTrays[index]?.created_at || now,
@@ -1900,7 +1921,10 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         } else {
           sample.trays = existingTrays.map((tray, index) => ({
             ...tray,
-            tray_code: buildSampleTrayCode(code, index + 1),
+            tray_code:
+              (tray.tray_code || "").trim() ||
+              buildTaskTrayCode(taskCode, index + 1) ||
+              buildSampleTrayCode(code, index + 1),
             sample_code: code,
             updated_at: now,
           }));
@@ -1948,7 +1972,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const codes = parseCodeList(data.codes);
       const intakeLocations = [labels.intakeLocation, labels.unpackingLocation].filter(Boolean);
       if (!targetLocation || codes.length === 0) {
-        setWarning(unpackingWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣浣嶇疆銆?);
+        setWarning(unpackingWarning, "请填写样品编号并选择目标位置。");
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
@@ -1976,17 +2000,17 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.flow_status = resolveFlowStatusByLocation(targetLocation, sample.status);
         sample.updated_at = new Date().toISOString();
         const actionText =
-          targetLocation === preRetentionLocation ? "鎺ラ┏鍖洪€佽揪瀹為獙鍓嶆殏瀛橀棿" : "鎺ラ┏鍖烘淳鍙?;
+          targetLocation === preRetentionLocation ? "接驳区送达实验前暂存间" : "接驳区派发";
         appendSampleHistory(sample, actionText);
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
+        warnings.push(`未找到样品：${missing.join("、")}`);
       }
       if (notUnpacking.length) {
-        warnings.push(`鏍峰搧涓嶅湪鎺ラ┏鍖猴細${notUnpacking.join("銆?)}`);
+        warnings.push(`样品不在接驳区：${notUnpacking.join("、")}`);
       }
-      setWarning(unpackingWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
+      setWarning(unpackingWarning, warnings.length ? `${warnings.join("；")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -2019,11 +2043,11 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
-        setWarning(retentionWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣瀹為獙瀹ゃ€?);
+        setWarning(retentionWarning, "请填写样品编号并选择目标实验室。");
         return;
       }
       if (targetLab === preRetentionLocation) {
-        setWarning(retentionWarning, "鏆傚瓨闂存帓绋嬪彧鑳芥淳鍙戣嚦瀹為獙瀹ゃ€?);
+        setWarning(retentionWarning, "暂存间排程只允许派发至实验室。");
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
@@ -2045,16 +2069,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.status = resolveSampleStatus(targetLab);
         sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
-        appendSampleHistory(sample, "鏆傚瓨闂存淳鍙?);
+        appendSampleHistory(sample, "暂存间派发");
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
+        warnings.push(`未找到样品：${missing.join("、")}`);
       }
       if (notRetention.length) {
-        warnings.push(`鏍峰搧涓嶅湪鏆傚瓨闂达細${notRetention.join("銆?)}`);
+        warnings.push(`样品不在暂存间：${notRetention.join("、")}`);
       }
-      setWarning(retentionWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
+      setWarning(retentionWarning, warnings.length ? `${warnings.join("；")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });
@@ -2087,7 +2111,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const targetLab = data.target_lab || "";
       const codes = parseCodeList(data.codes);
       if (!targetLab || codes.length === 0) {
-        setWarning(stagingWarning, "璇峰～鍐欐牱鍝佺紪鍙峰苟閫夋嫨鐩爣瀹為獙瀹ゃ€?);
+        setWarning(stagingWarning, "请填写样品编号并选择目标实验室。");
         return;
       }
       const samples = asArray(loadStore(STORAGE_KEYS.samples, []));
@@ -2109,16 +2133,16 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         sample.status = labels.sampleTesting;
         sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status);
         sample.updated_at = new Date().toISOString();
-        appendSampleHistory(sample, "鏆傚瓨闂存淳鍙?);
+        appendSampleHistory(sample, "暂存间派发");
       });
       const warnings = [];
       if (missing.length) {
-        warnings.push(`鏈壘鍒版牱鍝侊細${missing.join("銆?)}`);
+        warnings.push(`未找到样品：${missing.join("、")}`);
       }
       if (notStaging.length) {
-        warnings.push(`涓嶅湪鏆傚瓨闂达細${notStaging.join("銆?)}`);
+        warnings.push(`不在暂存间：${notStaging.join("、")}`);
       }
-      setWarning(stagingWarning, warnings.length ? `${warnings.join("锛?)}銆俙 : "");
+      setWarning(stagingWarning, warnings.length ? `${warnings.join("；")}。` : "");
       saveStore(STORAGE_KEYS.samples, samples);
       renderAll(labels);
     });

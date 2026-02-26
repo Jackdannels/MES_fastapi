@@ -1240,6 +1240,15 @@ function buildSampleTrayCode(sampleCode, serial) {
   return `${code}-TP-${String(index).padStart(3, "0")}`;
 }
 
+function buildTaskTrayCode(taskCode, serial) {
+  const code = (taskCode || "").trim();
+  const index = Number.parseInt(serial, 10);
+  if (!code || !Number.isFinite(index) || index <= 0) {
+    return "";
+  }
+  return `${code}-TP-${String(index).padStart(3, "0")}`;
+}
+
 function parseSampleTrayPlan(value) {
   const lines = String(value || "")
     .split(/\r?\n/)
@@ -1253,11 +1262,18 @@ function parseSampleTrayPlan(value) {
       .map((part) => part.trim())
       .filter(Boolean);
     if (parts.length < 2) {
-      errors.push(`第${index + 1}行格式错误，应为“样品编号,托盘数量”`);
+      errors.push(`第${index + 1}行格式错误，应为“样品编号,托盘数量[,托盘编号]”`);
       return;
     }
-    const sampleCode = parts[0];
-    const quantity = Number.parseInt(parts[1], 10);
+    let sampleCode = parts[0];
+    let quantityText = parts[1];
+    let trayCode = parts[2] || "";
+    if (parts.length >= 3 && /-TP-\d{3}$/i.test(parts[0])) {
+      trayCode = parts[0];
+      sampleCode = parts[1];
+      quantityText = parts[2];
+    }
+    const quantity = Number.parseInt(quantityText, 10);
     if (!sampleCode) {
       errors.push(`第${index + 1}行缺少样品编号`);
       return;
@@ -1269,6 +1285,7 @@ function parseSampleTrayPlan(value) {
     entries.push({
       sampleCode,
       quantity: Math.floor(quantity),
+      trayCode: (trayCode || "").trim(),
     });
   });
   return { entries, errors };
@@ -1403,6 +1420,8 @@ function fillSampleTaskSelects(taskList) {
 }
 
 function renderSampleTaskSummary(taskList, samples, labels) {
+  const DEFAULT_TRAY_LIMIT = 5;
+  const DEFAULT_TRAY_COUNT = 2;
   const select = document.querySelector('select[data-sample-task-select="summary"]');
   const countEl = document.getElementById("sample-task-count");
   const countHintEl = document.getElementById("sample-task-count-hint");
@@ -1410,47 +1429,597 @@ function renderSampleTaskSummary(taskList, samples, labels) {
   const codesInput = processForm?.querySelector('textarea[name="codes"]') || null;
   const trayPlanInput = processForm?.querySelector('textarea[name="tray_plan"]') || null;
   const trayPreviewInput = processForm?.querySelector('textarea[name="tray_preview"]') || null;
+  const traySource = document.getElementById("sample-tray-source");
+  const traySourcePanel = traySource?.closest(".sample-tray-source") || null;
+  const traySourceHint = document.getElementById("sample-tray-source-hint");
+  const trayList = document.getElementById("sample-tray-list");
+  const trayLimitInput = document.getElementById("sample-tray-limit-input");
+  const trayAddBtn = document.querySelector('[data-action="sample-tray-add"]');
   const storeBtn = document.querySelector('[data-action="sample-task-store"]');
   if (!select || !countEl) {
     return;
   }
   const tasks = Array.isArray(taskList) ? taskList : [];
   const sampleList = Array.isArray(samples) ? samples : [];
+  const trayDraft = {
+    taskCode: "",
+    sampleCodes: [],
+    trays: [],
+    activeIndex: -1,
+    maxPerTray: DEFAULT_TRAY_LIMIT,
+  };
+  let traySeed = 0;
 
-  const syncTrayPreview = (sampleCodes, taskSamples) => {
+  const nextTrayId = () => {
+    traySeed += 1;
+    return `tray-draft-${Date.now()}-${traySeed}`;
+  };
+
+  const compareSampleCode = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
+  const normalizeTrayCapacity = (value, fallback = 1) => {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return Math.max(1, Number.parseInt(fallback, 10) || 1);
+    }
+    return Math.floor(parsed);
+  };
+  const getRequiredTrayCount = (totalSamples, maxPerTray) => {
+    const total = Math.max(0, Number.parseInt(totalSamples, 10) || 0);
+    const max = normalizeTrayCapacity(maxPerTray, 1);
+    return Math.max(1, Math.ceil(Math.max(total, 1) / max));
+  };
+  const getTrayColorHue = (index) => {
+    const safe = Math.max(0, Number.parseInt(index, 10) || 0);
+    return (safe * 61 + 160) % 360;
+  };
+  const uniqList = (values) => {
+    const output = [];
+    const seen = new Set();
+    (Array.isArray(values) ? values : []).forEach((item) => {
+      const value = String(item || "").trim();
+      if (!value || seen.has(value)) {
+        return;
+      }
+      seen.add(value);
+      output.push(value);
+    });
+    return output;
+  };
+  const syncTextareaHeight = (textarea) => {
+    if (!textarea) {
+      return;
+    }
+    const lineCount = Math.max(1, String(textarea.value || "").split(/\r?\n/).length);
+    textarea.rows = Math.max(3, lineCount);
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+
+  const buildTrayPlanError = (errors, invalidCodes = []) => {
+    const messages = [];
+    if (Array.isArray(errors) && errors.length) {
+      messages.push(...errors.map((message) => `[格式错误] ${message}`));
+    }
+    const uniqueInvalid = Array.from(new Set((Array.isArray(invalidCodes) ? invalidCodes : []).filter(Boolean)));
+    if (uniqueInvalid.length) {
+      messages.push(`[编号错误] 不属于当前任务样品：${uniqueInvalid.join("、")}`);
+    }
+    return messages.join("\n");
+  };
+
+  const parseTrayPlanToDraft = (rawPlan, taskCode) => {
+    const { entries, errors } = parseSampleTrayPlan(rawPlan);
+    const allowedSet = new Set(trayDraft.sampleCodes);
+    const invalidCodes = [];
+    const trayMap = new Map();
+    entries.forEach((entry, index) => {
+      const sampleCode = (entry.sampleCode || "").trim();
+      if (!sampleCode || !allowedSet.has(sampleCode)) {
+        if (sampleCode) {
+          invalidCodes.push(sampleCode);
+        }
+        return;
+      }
+      const trayKey = (entry.trayCode || "").trim() || `TMP-${index + 1}`;
+      if (!trayMap.has(trayKey)) {
+        trayMap.set(trayKey, {
+          id: nextTrayId(),
+          trayCode: trayKey,
+          capacity: 1,
+          samples: [],
+        });
+      }
+      const tray = trayMap.get(trayKey);
+      if (!tray.samples.includes(sampleCode)) {
+        tray.samples.push(sampleCode);
+      }
+      tray.capacity = Math.max(tray.capacity, tray.samples.length);
+    });
+    const error = buildTrayPlanError(errors, invalidCodes);
+    if (error) {
+      return { trays: [], error };
+    }
+    const trays = Array.from(trayMap.values()).sort((left, right) => compareSampleCode(left.trayCode, right.trayCode));
+    trays.forEach((tray, index) => {
+      tray.trayCode = buildTaskTrayCode(taskCode, index + 1) || tray.trayCode;
+    });
+    return {
+      trays,
+      error: "",
+    };
+  };
+
+  const normalizeTrays = (rawTrays, taskCode) => {
+    const allowedSet = new Set(trayDraft.sampleCodes);
+    const assigned = new Set();
+    const normalized = [];
+    const sourceTrays = Array.isArray(rawTrays) ? rawTrays : [];
+    const maxPerTray = normalizeTrayCapacity(trayDraft.maxPerTray, 1);
+    const overflow = [];
+
+    sourceTrays.forEach((rawTray) => {
+      const traySamples = [];
+      uniqList(rawTray?.samples || []).forEach((sampleCode) => {
+        if (!allowedSet.has(sampleCode) || assigned.has(sampleCode)) {
+          return;
+        }
+        assigned.add(sampleCode);
+        traySamples.push(sampleCode);
+      });
+      if (!traySamples.length && sourceTrays.length > 1) {
+        return;
+      }
+      while (traySamples.length > maxPerTray) {
+        const removed = traySamples.pop();
+        if (removed) {
+          assigned.delete(removed);
+          overflow.unshift(removed);
+        }
+      }
+      traySamples.sort(compareSampleCode);
+      normalized.push({
+        id: rawTray?.id || nextTrayId(),
+        trayCode: (rawTray?.trayCode || "").trim(),
+        capacity: maxPerTray,
+        samples: traySamples,
+      });
+    });
+
+    const unassigned = trayDraft.sampleCodes.filter((sampleCode) => !assigned.has(sampleCode)).concat(overflow);
+    unassigned.forEach((sampleCode) => {
+      const target = normalized.find((tray) => tray.samples.length < maxPerTray);
+      if (target) {
+        target.samples.push(sampleCode);
+        return;
+      }
+      normalized.push({
+        id: nextTrayId(),
+        trayCode: "",
+        capacity: maxPerTray,
+        samples: [sampleCode],
+      });
+    });
+
+    if (normalized.length === 0 && trayDraft.sampleCodes.length > 0) {
+      normalized.push({
+        id: nextTrayId(),
+        trayCode: "",
+        capacity: maxPerTray,
+        samples: trayDraft.sampleCodes.slice(0, maxPerTray),
+      });
+      trayDraft.sampleCodes.slice(maxPerTray).forEach((sampleCode) => {
+        normalized.push({
+          id: nextTrayId(),
+          trayCode: "",
+          capacity: maxPerTray,
+          samples: [sampleCode],
+        });
+      });
+    }
+
+    normalized.forEach((tray) => {
+      tray.samples = tray.samples.slice().sort(compareSampleCode);
+    });
+    normalized.sort((left, right) => {
+      const leftKey = left.samples[0] || "";
+      const rightKey = right.samples[0] || "";
+      if (!leftKey && !rightKey) {
+        return 0;
+      }
+      if (!leftKey) {
+        return 1;
+      }
+      if (!rightKey) {
+        return -1;
+      }
+      return compareSampleCode(leftKey, rightKey);
+    });
+
+    normalized.forEach((tray, index) => {
+      tray.trayCode =
+        buildTaskTrayCode(taskCode, index + 1) || tray.trayCode || `TRAY-${String(index + 1).padStart(3, "0")}`;
+      tray.capacity = maxPerTray;
+    });
+
+    return normalized;
+  };
+
+  const buildDraftFromSamples = (taskSamples) => {
+    const allowedSet = new Set(trayDraft.sampleCodes);
+    const trayMap = new Map();
+    (Array.isArray(taskSamples) ? taskSamples : []).forEach((sample) => {
+      const sampleCode = (sample?.code || "").trim();
+      if (!sampleCode || !allowedSet.has(sampleCode)) {
+        return;
+      }
+      getSampleTrayList(sample).forEach((tray, index) => {
+        const key = (tray.tray_code || "").trim() || `AUTO-${sampleCode}-${index + 1}`;
+        if (!trayMap.has(key)) {
+          trayMap.set(key, {
+            id: nextTrayId(),
+            trayCode: key,
+            capacity: normalizeTrayCapacity(trayDraft.maxPerTray, 1),
+            samples: [],
+          });
+        }
+        const target = trayMap.get(key);
+        if (!target.samples.includes(sampleCode)) {
+          target.samples.push(sampleCode);
+        }
+      });
+    });
+    return Array.from(trayMap.values());
+  };
+
+  const syncTrayPreview = (errorMessage = "") => {
     if (!trayPreviewInput) {
       return;
     }
-    const codeSet = new Set(sampleCodes);
-    const rawPlan = (trayPlanInput?.value || "").trim();
-    if (rawPlan) {
-      const { entries, errors } = parseSampleTrayPlan(rawPlan);
-      if (errors.length) {
-        trayPreviewInput.value = errors.map((message) => `[格式错误] ${message}`).join("\n");
-        return;
-      }
-      const trayIndexBySample = new Map();
-      const lines = [];
-      entries.forEach((entry) => {
-        if (!codeSet.has(entry.sampleCode)) {
-          return;
-        }
-        const nextIndex = (trayIndexBySample.get(entry.sampleCode) || 0) + 1;
-        trayIndexBySample.set(entry.sampleCode, nextIndex);
-        lines.push(`${buildSampleTrayCode(entry.sampleCode, nextIndex)} | 数量 ${entry.quantity}`);
-      });
-      trayPreviewInput.value = lines.join("\n");
+    if (errorMessage) {
+      trayPreviewInput.value = errorMessage;
+      syncTextareaHeight(trayPreviewInput);
       return;
     }
+    const lines = trayDraft.trays.map((tray) => {
+      const sampleText = tray.samples.length ? tray.samples.join("、") : "未分配样品";
+      return `${tray.trayCode} | ${tray.samples.length} / ${tray.capacity} | ${sampleText}`;
+    });
+    trayPreviewInput.value = lines.join("\n");
+    syncTextareaHeight(trayPreviewInput);
+  };
 
-    const existingLines = [];
-    taskSamples.forEach((sample) => {
-      const trays = getSampleTrayList(sample);
-      trays.forEach((tray) => {
-        existingLines.push(`${tray.tray_code} | 数量 ${tray.quantity}`);
+  const syncTrayPlanFromDraft = () => {
+    if (!trayPlanInput) {
+      syncTrayPreview("");
+      return;
+    }
+    const lines = [];
+    trayDraft.trays.forEach((tray) => {
+      tray.samples.forEach((sampleCode) => {
+        lines.push(`${sampleCode},1,${tray.trayCode}`);
       });
     });
-    trayPreviewInput.value = existingLines.join("\n");
+    trayPlanInput.value = lines.join("\n");
+    trayPlanInput.dataset.taskCode = trayDraft.taskCode;
+    syncTextareaHeight(trayPlanInput);
+    syncTrayPreview("");
+  };
+
+  const setTrayDraft = (trays, taskCode) => {
+    trayDraft.trays = normalizeTrays(trays, taskCode);
+    if (trayDraft.trays.length === 0) {
+      trayDraft.activeIndex = -1;
+      return;
+    }
+    if (trayDraft.activeIndex < 0 || trayDraft.activeIndex >= trayDraft.trays.length) {
+      trayDraft.activeIndex = 0;
+    }
+  };
+
+  const applyUnifiedLimit = (nextLimit) => {
+    const normalizedLimit = normalizeTrayCapacity(nextLimit, trayDraft.maxPerTray || 1);
+    trayDraft.maxPerTray = normalizedLimit;
+    const requiredTrayCount = getRequiredTrayCount(trayDraft.sampleCodes.length, trayDraft.maxPerTray);
+    rebalanceEvenly(requiredTrayCount);
+    if (trayDraft.activeIndex >= trayDraft.trays.length) {
+      trayDraft.activeIndex = trayDraft.trays.length - 1;
+    }
+    if (trayLimitInput) {
+      trayLimitInput.value = String(trayDraft.maxPerTray);
+    }
+  };
+
+  const moveSampleToTray = (sampleCode, targetIndex) => {
+    const code = (sampleCode || "").trim();
+    if (!code || !trayDraft.sampleCodes.includes(code)) {
+      return false;
+    }
+    if (!Number.isFinite(targetIndex) || targetIndex < 0 || targetIndex >= trayDraft.trays.length) {
+      return false;
+    }
+    const target = trayDraft.trays[targetIndex];
+    const currentIndex = trayDraft.trays.findIndex((tray) => tray.samples.includes(code));
+    if (currentIndex === targetIndex) {
+      return true;
+    }
+    if (target.samples.length >= trayDraft.maxPerTray) {
+      return false;
+    }
+    if (currentIndex >= 0) {
+      trayDraft.trays[currentIndex].samples = trayDraft.trays[currentIndex].samples.filter((item) => item !== code);
+    }
+    target.samples.push(code);
+    target.samples = uniqList(target.samples);
+    trayDraft.trays = normalizeTrays(trayDraft.trays, trayDraft.taskCode);
+    return true;
+  };
+
+  const placeOverflow = (overflowSamples, startIndex = 0) => {
+    const overflow = uniqList(overflowSamples);
+    overflow.forEach((sampleCode) => {
+      let placed = false;
+      for (let offset = 0; offset < trayDraft.trays.length; offset += 1) {
+        const index = (startIndex + offset) % trayDraft.trays.length;
+        const tray = trayDraft.trays[index];
+        if (tray.samples.length < trayDraft.maxPerTray) {
+          tray.samples.push(sampleCode);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        trayDraft.trays.push({
+          id: nextTrayId(),
+          trayCode: "",
+          capacity: trayDraft.maxPerTray,
+          samples: [sampleCode],
+        });
+      }
+    });
+    trayDraft.trays = normalizeTrays(trayDraft.trays, trayDraft.taskCode);
+  };
+
+  const rebalanceEvenly = (trayCount) => {
+    const requested = Math.max(1, Number.parseInt(trayCount, 10) || 1);
+    const allCodes = trayDraft.sampleCodes.slice().sort(compareSampleCode);
+    const required = getRequiredTrayCount(allCodes.length, trayDraft.maxPerTray);
+    const count = Math.max(requested, required);
+    const trays = [];
+    const baseSize = count > 0 ? Math.floor(allCodes.length / count) : 0;
+    const remainder = count > 0 ? allCodes.length % count : 0;
+    let cursor = 0;
+    for (let index = 0; index < count; index += 1) {
+      const take = baseSize + (index < remainder ? 1 : 0);
+      const samples = allCodes.slice(cursor, cursor + take);
+      cursor += take;
+      trays.push({
+        id: nextTrayId(),
+        trayCode: "",
+        capacity: trayDraft.maxPerTray,
+        samples,
+      });
+    }
+    trayDraft.trays = normalizeTrays(trays, trayDraft.taskCode);
+    trayDraft.activeIndex = Math.min(count - 1, trayDraft.trays.length - 1);
+  };
+
+  const removeTrayAt = (index) => {
+    if (!Number.isFinite(index) || index < 0 || index >= trayDraft.trays.length) {
+      return;
+    }
+    if (trayDraft.trays.length <= 1) {
+      return;
+    }
+    const overflow = trayDraft.trays[index].samples.slice();
+    trayDraft.trays.splice(index, 1);
+    placeOverflow(overflow, index);
+    if (trayDraft.activeIndex >= trayDraft.trays.length) {
+      trayDraft.activeIndex = trayDraft.trays.length - 1;
+    }
+  };
+
+  const getSampleOwner = (sampleCode) =>
+    trayDraft.trays.findIndex((tray) => tray.samples.includes(sampleCode));
+
+  const renderTraySource = () => {
+    if (!traySource) {
+      return;
+    }
+    const hasActiveTray = trayDraft.activeIndex >= 0 && trayDraft.activeIndex < trayDraft.trays.length;
+    if (traySourcePanel) {
+      traySourcePanel.classList.toggle("has-active-tray", hasActiveTray);
+    }
+    if (traySourceHint) {
+      if (hasActiveTray) {
+        const activeTray = trayDraft.trays[trayDraft.activeIndex];
+        traySourceHint.textContent = `当前托盘：${activeTray?.trayCode || `托盘 #${trayDraft.activeIndex + 1}`}（可拖拽样品到此托盘）`;
+      } else {
+        traySourceHint.textContent = "当前未选中托盘（点击托盘可聚焦，点击左侧空白可取消）";
+      }
+    }
+    traySource.innerHTML = "";
+    if (!trayDraft.sampleCodes.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "当前任务暂无样品编号";
+      traySource.appendChild(empty);
+      return;
+    }
+    trayDraft.sampleCodes.forEach((sampleCode) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "sample-tray-chip";
+      chip.draggable = true;
+      chip.dataset.sampleCode = sampleCode;
+      chip.textContent = sampleCode;
+      const ownerIndex = getSampleOwner(sampleCode);
+      chip.classList.toggle("is-active", ownerIndex === trayDraft.activeIndex);
+      chip.classList.toggle("is-assigned", ownerIndex >= 0);
+      chip.classList.toggle("is-target", ownerIndex === trayDraft.activeIndex && hasActiveTray);
+      chip.classList.toggle("is-dim", hasActiveTray && ownerIndex !== trayDraft.activeIndex);
+      if (ownerIndex >= 0) {
+        chip.style.setProperty("--tray-hue", String(getTrayColorHue(ownerIndex)));
+      } else {
+        chip.style.removeProperty("--tray-hue");
+      }
+      chip.addEventListener("dragstart", (event) => {
+        event.dataTransfer?.setData("text/plain", sampleCode);
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+        }
+      });
+      traySource.appendChild(chip);
+    });
+  };
+
+  const renderTrayList = () => {
+    if (!trayList) {
+      return;
+    }
+    trayList.innerHTML = "";
+    if (!trayDraft.trays.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted";
+      empty.textContent = "点击“新增托盘”后，可拖动样品到托盘。";
+      trayList.appendChild(empty);
+      return;
+    }
+    const displayTrays = trayDraft.trays;
+    displayTrays.forEach((tray, index) => {
+      const card = document.createElement("div");
+      card.className = "sample-tray-card";
+      card.dataset.trayIndex = String(index);
+      card.classList.toggle("is-active", index === trayDraft.activeIndex);
+      card.addEventListener("click", () => {
+        trayDraft.activeIndex = trayDraft.activeIndex === index ? -1 : index;
+        renderTraySource();
+        renderTrayList();
+      });
+      card.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+        card.classList.add("is-drag-over");
+      });
+      card.addEventListener("dragleave", () => {
+        card.classList.remove("is-drag-over");
+      });
+      card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        card.classList.remove("is-drag-over");
+        const droppedCode = (event.dataTransfer?.getData("text/plain") || "").trim();
+        if (!droppedCode) {
+          return;
+        }
+        if (!moveSampleToTray(droppedCode, index)) {
+          return;
+        }
+        trayDraft.activeIndex = index;
+        renderTraySource();
+        renderTrayList();
+        syncTrayPlanFromDraft();
+      });
+
+      const head = document.createElement("div");
+      head.className = "sample-tray-card-head";
+      const title = document.createElement("span");
+      title.textContent = tray.trayCode || "未编号托盘";
+      const order = document.createElement("span");
+      order.textContent = `托盘 #${index + 1}`;
+      head.appendChild(title);
+      head.appendChild(order);
+      card.appendChild(head);
+
+      const meta = document.createElement("div");
+      meta.className = "sample-tray-card-meta";
+      meta.textContent = `已放置 ${tray.samples.length} / ${trayDraft.maxPerTray}`;
+      card.appendChild(meta);
+
+      const sampleWrap = document.createElement("div");
+      sampleWrap.className = "sample-tray-samples";
+      if (!tray.samples.length) {
+        const empty = document.createElement("span");
+        empty.className = "sample-tray-empty";
+        empty.textContent = "未分配样品";
+        sampleWrap.appendChild(empty);
+      } else {
+        tray.samples.forEach((sampleCode) => {
+          const tag = document.createElement("button");
+          tag.type = "button";
+          tag.className = "sample-tray-sample-tag";
+          tag.draggable = true;
+          tag.dataset.sampleCode = sampleCode;
+          tag.textContent = sampleCode;
+          tag.title = "拖拽到其他托盘";
+          tag.addEventListener("dragstart", (event) => {
+            event.stopPropagation();
+            event.dataTransfer?.setData("text/plain", sampleCode);
+            if (event.dataTransfer) {
+              event.dataTransfer.effectAllowed = "move";
+            }
+          });
+          sampleWrap.appendChild(tag);
+        });
+      }
+      card.appendChild(sampleWrap);
+
+      const controls = document.createElement("div");
+      controls.className = "sample-tray-card-controls";
+
+      const capacityWrap = document.createElement("label");
+      capacityWrap.className = "sample-tray-capacity";
+      capacityWrap.textContent = `数量（当前放置样品数）：${tray.samples.length}`;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "sample-tray-remove";
+      removeBtn.textContent = "删除";
+      removeBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        removeTrayAt(index);
+        renderTraySource();
+        renderTrayList();
+        syncTrayPlanFromDraft();
+      });
+
+      controls.appendChild(capacityWrap);
+      controls.appendChild(removeBtn);
+      card.appendChild(controls);
+      trayList.appendChild(card);
+    });
+  };
+
+  const renderTrayBuilder = () => {
+    renderTraySource();
+    renderTrayList();
+    if (trayLimitInput) {
+      trayLimitInput.value = String(Math.max(1, trayDraft.maxPerTray || 1));
+      trayLimitInput.disabled = !trayDraft.taskCode || trayDraft.sampleCodes.length === 0;
+    }
+    if (trayAddBtn) {
+      trayAddBtn.disabled = !trayDraft.taskCode || trayDraft.sampleCodes.length === 0;
+    }
+  };
+
+  const handleTrayPlanInput = () => {
+    if (!trayPlanInput || !trayDraft.taskCode) {
+      return;
+    }
+    const parsed = parseTrayPlanToDraft(trayPlanInput.value, trayDraft.taskCode);
+    if (parsed.error) {
+      syncTrayPreview(parsed.error);
+      syncTextareaHeight(trayPlanInput);
+      return;
+    }
+    trayDraft.maxPerTray = Math.max(
+      normalizeTrayCapacity(trayDraft.maxPerTray, 1),
+      ...parsed.trays.map((item) => (Array.isArray(item.samples) ? item.samples.length : 0))
+    );
+    setTrayDraft(parsed.trays, trayDraft.taskCode);
+    renderTrayBuilder();
+    syncTrayPlanFromDraft();
   };
 
   const updateCount = () => {
@@ -1462,14 +2031,23 @@ function renderSampleTaskSummary(taskList, samples, labels) {
       }
       if (codesInput) {
         codesInput.value = "";
+        syncTextareaHeight(codesInput);
       }
       if (trayPlanInput) {
         trayPlanInput.dataset.taskCode = "";
         trayPlanInput.value = "";
+        syncTextareaHeight(trayPlanInput);
       }
       if (trayPreviewInput) {
         trayPreviewInput.value = "";
+        syncTextareaHeight(trayPreviewInput);
       }
+      trayDraft.taskCode = "";
+      trayDraft.sampleCodes = [];
+      trayDraft.maxPerTray = DEFAULT_TRAY_LIMIT;
+      trayDraft.trays = [{ id: nextTrayId(), trayCode: "", capacity: DEFAULT_TRAY_LIMIT, samples: [] }];
+      trayDraft.activeIndex = -1;
+      renderTrayBuilder();
       if (storeBtn) {
         storeBtn.disabled = true;
         storeBtn.dataset.taskCode = "";
@@ -1500,14 +2078,57 @@ function renderSampleTaskSummary(taskList, samples, labels) {
 
     if (codesInput) {
       codesInput.value = autoCodes.join("\n");
+      syncTextareaHeight(codesInput);
     }
+
+    trayDraft.taskCode = code;
+    trayDraft.sampleCodes = autoCodes.slice();
+
+    const previousTaskCode = trayPlanInput?.dataset.taskCode || "";
+    trayDraft.maxPerTray = DEFAULT_TRAY_LIMIT;
     if (trayPlanInput) {
-      if (trayPlanInput.dataset.taskCode !== code) {
+      if (previousTaskCode !== code) {
         trayPlanInput.value = "";
       }
       trayPlanInput.dataset.taskCode = code;
+      syncTextareaHeight(trayPlanInput);
     }
-    syncTrayPreview(autoCodes, taskSamples);
+
+    const rawPlan = (trayPlanInput?.value || "").trim();
+    let parsedError = "";
+    if (rawPlan) {
+      const parsed = parseTrayPlanToDraft(rawPlan, code);
+      if (parsed.error) {
+        parsedError = parsed.error;
+        const fromSamples = buildDraftFromSamples(taskSamples);
+        if (fromSamples.length) {
+          setTrayDraft(fromSamples, code);
+        } else {
+          const defaultTrayCount = autoCodes.length > DEFAULT_TRAY_LIMIT ? DEFAULT_TRAY_COUNT : 1;
+          rebalanceEvenly(defaultTrayCount);
+        }
+      } else {
+        setTrayDraft(parsed.trays, code);
+      }
+    } else {
+      const fromSamples = buildDraftFromSamples(taskSamples);
+      if (fromSamples.length) {
+        setTrayDraft(fromSamples, code);
+      } else {
+        const defaultTrayCount = autoCodes.length > DEFAULT_TRAY_LIMIT ? DEFAULT_TRAY_COUNT : 1;
+        rebalanceEvenly(defaultTrayCount);
+      }
+    }
+    renderTrayBuilder();
+    if (parsedError) {
+      syncTrayPreview(parsedError);
+      if (trayPlanInput) {
+        syncTextareaHeight(trayPlanInput);
+      }
+    } else {
+      syncTrayPlanFromDraft();
+    }
+
     if (storeBtn) {
       storeBtn.disabled = autoCodes.length === 0;
       storeBtn.dataset.taskCode = code;
@@ -1518,13 +2139,40 @@ function renderSampleTaskSummary(taskList, samples, labels) {
     renderUnifiedSampleFlow(taskStage);
   };
 
-  if (select.dataset.bound !== "1") {
-    select.addEventListener("change", updateCount);
-    select.dataset.bound = "1";
+  select.onchange = updateCount;
+  if (traySourcePanel) {
+    traySourcePanel.onclick = (event) => {
+      if (event.target?.closest?.(".sample-tray-chip")) {
+        return;
+      }
+      trayDraft.activeIndex = -1;
+      renderTraySource();
+      renderTrayList();
+    };
   }
-  if (trayPlanInput && trayPlanInput.dataset.bound !== "1") {
-    trayPlanInput.addEventListener("input", updateCount);
-    trayPlanInput.dataset.bound = "1";
+  if (trayPlanInput) {
+    trayPlanInput.oninput = handleTrayPlanInput;
+  }
+  if (trayLimitInput) {
+    trayLimitInput.onchange = () => {
+      if (!trayDraft.taskCode || trayDraft.sampleCodes.length === 0) {
+        return;
+      }
+      applyUnifiedLimit(trayLimitInput.value);
+      renderTrayBuilder();
+      syncTrayPlanFromDraft();
+    };
+  }
+  if (trayAddBtn) {
+    trayAddBtn.onclick = (event) => {
+      event.preventDefault();
+      if (!trayDraft.taskCode || trayDraft.sampleCodes.length === 0) {
+        return;
+      }
+      rebalanceEvenly(trayDraft.trays.length + 1);
+      renderTrayBuilder();
+      syncTrayPlanFromDraft();
+    };
   }
 
   updateCount();
