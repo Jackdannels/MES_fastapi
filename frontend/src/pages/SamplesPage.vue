@@ -60,10 +60,11 @@
     <h3>样品流程管理</h3>
     <div class="sample-process-layout">
       <div>
-        <div class="form-grid" data-form="sample-task-process">
-          <div class="form-field">
+        <div class="form-grid sample-task-process-grid" data-form="sample-task-process">
+          <div class="form-field sample-task-focus-field">
             <label>选择任务</label>
             <select
+              class="sample-task-focus-select"
               name="task_code"
               data-sample-task-select="summary"
               data-placeholder="请选择任务"
@@ -71,8 +72,9 @@
             >
               <option value="">请选择任务</option>
             </select>
+            <div class="helper sample-task-focus-hint">请选择任务后，自动加载样品数量、编号与托盘分配信息。</div>
           </div>
-          <div class="form-field">
+          <div class="form-field sample-task-count-field">
             <label>样品数量</label>
             <div class="kpi" id="sample-task-count">0</div>
             <div class="helper" id="sample-task-count-hint">请选择任务后查看样品数量与样品编号。</div>
