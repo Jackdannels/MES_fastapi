@@ -345,6 +345,191 @@ function attachActionHandlers(labels) {
     });
   };
 
+  const escapeHtml = (value) =>
+    String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+  const escapeAttr = (value) =>
+    String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const printTrayBarcodes = (taskCode, trayCodes) => {
+    const codes = Array.from(new Set((Array.isArray(trayCodes) ? trayCodes : []).map((code) => String(code || "").trim())))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    if (!codes.length) {
+      setWarning(sampleProcessWarning, "当前没有可打印的托盘编号，请先确认入库。");
+      return;
+    }
+    const popup = window.open("", "_blank", "width=980,height=760");
+    if (!popup) {
+      setWarning(sampleProcessWarning, "浏览器拦截了打印窗口，请允许弹窗后重试。");
+      return;
+    }
+    const cards = codes
+      .map((code, index) => {
+        return `
+          <section class="label">
+            <div class="seq">序号 ${index + 1}</div>
+            <div class="task">任务：${escapeHtml(taskCode || "-")}</div>
+            <div class="tray">托盘编号：${escapeHtml(code)}</div>
+            <svg class="barcode-svg" data-code="${escapeAttr(code)}"></svg>
+            <div class="hint">${escapeHtml(code)}</div>
+          </section>
+        `;
+      })
+      .join("");
+    popup.document.open();
+    popup.document.write(`<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>托盘编码打印</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 16px; font-family: "Microsoft YaHei", "Segoe UI", sans-serif; color: #0f172a; }
+      .sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .label { border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; page-break-inside: avoid; }
+      .seq { font-size: 12px; color: #475569; margin-bottom: 6px; }
+      .task, .tray { font-size: 14px; margin-bottom: 4px; }
+      .barcode-svg { display: block; width: 100%; height: 90px; margin: 10px 0 6px; background: #fff; }
+      .hint { font-size: 12px; letter-spacing: 0.08em; color: #334155; }
+      .warn { margin-top: 10px; color: #b91c1c; font-size: 12px; }
+      @media print {
+        body { margin: 8mm; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">${cards}</main>
+    <div id="barcode-print-warn" class="warn" style="display:none;">
+      部分托盘编号包含不可编码字符，已自动替换为 "-" 后打印。
+    </div>
+    <script>
+      (function () {
+        const CODE128_PATTERNS = [
+          "212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312",
+          "231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212",
+          "223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121",
+          "111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331",
+          "132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123",
+          "311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124",
+          "121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114",
+          "413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112",
+          "421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311",
+          "113141","114131","311141","411131","211412","211214","211232","2331112"
+        ];
+
+        const encodeCode128B = (value) => {
+          const text = String(value || "").replace(/[^\\x20-\\x7E]/g, "-");
+          const codes = [104];
+          for (let i = 0; i < text.length; i += 1) {
+            codes.push(text.charCodeAt(i) - 32);
+          }
+          let checksum = 104;
+          for (let i = 1; i < codes.length; i += 1) {
+            checksum += codes[i] * i;
+          }
+          checksum %= 103;
+          codes.push(checksum, 106);
+          return { text, codes };
+        };
+
+        const drawCode128 = (svg, value) => {
+          const encoded = encodeCode128B(value);
+          const moduleWidth = 2;
+          const quiet = 10;
+          const height = 90;
+          let totalModules = quiet * 2;
+          encoded.codes.forEach((code) => {
+            const pattern = CODE128_PATTERNS[code] || "";
+            for (let i = 0; i < pattern.length; i += 1) {
+              totalModules += Number.parseInt(pattern[i], 10) || 0;
+            }
+          });
+          const width = totalModules * moduleWidth;
+          svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+          svg.setAttribute("width", width);
+          svg.setAttribute("height", height);
+          svg.innerHTML = "";
+
+          const ns = "http://www.w3.org/2000/svg";
+          let cursor = quiet * moduleWidth;
+          encoded.codes.forEach((code) => {
+            const pattern = CODE128_PATTERNS[code] || "";
+            for (let i = 0; i < pattern.length; i += 1) {
+              const unit = Number.parseInt(pattern[i], 10) || 0;
+              const w = unit * moduleWidth;
+              if (i % 2 === 0 && w > 0) {
+                const rect = document.createElementNS(ns, "rect");
+                rect.setAttribute("x", String(cursor));
+                rect.setAttribute("y", "0");
+                rect.setAttribute("width", String(w));
+                rect.setAttribute("height", String(height));
+                rect.setAttribute("fill", "#000");
+                svg.appendChild(rect);
+              }
+              cursor += w;
+            }
+          });
+          return encoded.text;
+        };
+
+        const renderBarcodes = () => {
+          const list = Array.from(document.querySelectorAll(".barcode-svg"));
+          let replaced = false;
+          list.forEach((svg) => {
+            const code = svg.getAttribute("data-code") || "";
+            try {
+              const normalized = drawCode128(svg, code);
+              if (normalized !== code) {
+                replaced = true;
+              }
+            } catch (error) {
+              replaced = true;
+            }
+          });
+          if (replaced) {
+            const warn = document.getElementById("barcode-print-warn");
+            if (warn) {
+              warn.style.display = "block";
+            }
+          }
+          return list.length > 0;
+        };
+
+        const run = () => {
+          const ready = renderBarcodes();
+          if (!ready) {
+            return;
+          }
+          setTimeout(function () {
+            window.focus();
+            window.print();
+          }, 120);
+        };
+
+        if (document.readyState === "complete") {
+          run();
+        } else {
+          window.addEventListener("load", run, { once: true });
+        }
+      })();
+    </script>
+  </body>
+</html>`);
+    popup.document.close();
+    popup.onafterprint = () => popup.close();
+  };
+
   // ensureOption閿涙氨鈥樻穱婵呯瑓閹峰鈧銆嶇€涙ê婀?
   const ensureOption = (select, value) => {
     if (!select || !value) {
@@ -1616,6 +1801,25 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
     sampleSummaryTaskSelect.dataset.persistBound = "1";
   }
 
+  const sampleTrayPrint = document.querySelector('[data-action="sample-tray-print"]');
+  if (sampleTrayPrint && sampleTrayPrint.dataset.bound !== "1") {
+    sampleTrayPrint.addEventListener("click", (event) => {
+      event.preventDefault();
+      if (sampleTrayPrint.disabled) {
+        return;
+      }
+      const taskCode = (sampleTrayPrint.dataset.taskCode || "").trim();
+      const trayCodes = parseCodeList(sampleTrayPrint.dataset.trayCodes || "");
+      if (!taskCode || trayCodes.length === 0) {
+        setWarning(sampleProcessWarning, "当前没有可打印的托盘编号，请先确认入库。");
+        return;
+      }
+      setWarning(sampleProcessWarning, "");
+      printTrayBarcodes(taskCode, trayCodes);
+    });
+    sampleTrayPrint.dataset.bound = "1";
+  }
+
   const sampleSubmit = document.querySelector('[data-action="sample-submit"]');
   if (sampleSubmit) {
     sampleSubmit.addEventListener("click", (event) => {
@@ -1838,6 +2042,13 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
         setWarning(sampleProcessWarning, `分装计划中存在不属于当前任务样品的编号：${uniqueInvalidPlanCodes.join("、")}`);
         return;
       }
+      const trayCodesFromPlan = Array.from(
+        new Set(
+          trayPlanEntries
+            .map((entry) => (entry?.trayCode || "").trim())
+            .filter(Boolean)
+        )
+      );
 
       const missingTrayPlan = [];
       codes.forEach((code) => {
@@ -1859,6 +2070,7 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       const outOfTask = [];
       const success = [];
       const trayUpdated = [];
+      const confirmedTrayCodeSet = new Set(trayCodesFromPlan);
       const now = new Date().toISOString();
       const actionText = "任务样品入库（接驳区）";
       const intakeStatus = resolveSampleStatus(targetLocation);
@@ -1915,6 +2127,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
             created_at: existingTrays[index]?.created_at || now,
             updated_at: now,
           }));
+          sample.trays.forEach((tray) => {
+            const trayCode = (tray?.tray_code || "").trim();
+            if (trayCode) {
+              confirmedTrayCodeSet.add(trayCode);
+            }
+          });
           const trayQuantityTotal = sample.trays.reduce((total, tray) => total + tray.quantity, 0);
           appendSampleHistory(sample, "样品分装托盘", `共 ${sample.trays.length} 盘，合计数量 ${trayQuantityTotal}`);
           trayUpdated.push(`${code}(${sample.trays.length}盘)`);
@@ -1928,6 +2146,12 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
             sample_code: code,
             updated_at: now,
           }));
+          sample.trays.forEach((tray) => {
+            const trayCode = (tray?.tray_code || "").trim();
+            if (trayCode) {
+              confirmedTrayCodeSet.add(trayCode);
+            }
+          });
         }
 
         appendSampleHistory(sample, actionText, `任务 ${taskCode}`);
@@ -1947,6 +2171,22 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
       }
 
       saveStore(STORAGE_KEYS.samples, samples);
+      if (task) {
+        const confirmedTrayCodesForTask = Array.from(confirmedTrayCodeSet).sort((a, b) =>
+          String(a || "").localeCompare(String(b || ""), "zh-Hans-CN")
+        );
+        task.tray_codes = confirmedTrayCodesForTask;
+        task.updated_at = now;
+        saveStore(STORAGE_KEYS.tasks, tasks);
+      }
+      if (sampleTrayPrint) {
+        const confirmedTrayCodes = Array.from(confirmedTrayCodeSet).sort((a, b) =>
+          String(a || "").localeCompare(String(b || ""), "zh-Hans-CN")
+        );
+        sampleTrayPrint.disabled = confirmedTrayCodes.length === 0;
+        sampleTrayPrint.dataset.taskCode = taskCode;
+        sampleTrayPrint.dataset.trayCodes = confirmedTrayCodes.join(",");
+      }
       const notices = [`任务 ${taskCode} 已登记到 ${targetLocation} ${success.length} 个样品。`];
       if (trayUpdated.length) {
         notices.push(`已完成托盘分装：${trayUpdated.join("，")}。`);

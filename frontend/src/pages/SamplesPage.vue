@@ -133,6 +133,9 @@
         </div>
         <div class="form-actions">
           <button class="action-btn" type="button" data-action="sample-task-store">确认入库</button>
+          <button class="action-btn secondary" type="button" data-action="sample-tray-print" disabled>
+            编码打印
+          </button>
         </div>
         <div class="form-alert is-hidden" data-sample-process-warning></div>
       </div>

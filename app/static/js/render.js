@@ -1436,6 +1436,7 @@ function renderSampleTaskSummary(taskList, samples, labels) {
   const trayLimitInput = document.getElementById("sample-tray-limit-input");
   const trayAddBtn = document.querySelector('[data-action="sample-tray-add"]');
   const storeBtn = document.querySelector('[data-action="sample-task-store"]');
+  const printBtn = document.querySelector('[data-action="sample-tray-print"]');
   if (!select || !countEl) {
     return;
   }
@@ -2052,6 +2053,11 @@ function renderSampleTaskSummary(taskList, samples, labels) {
         storeBtn.disabled = true;
         storeBtn.dataset.taskCode = "";
       }
+      if (printBtn) {
+        printBtn.disabled = true;
+        printBtn.dataset.taskCode = "";
+        printBtn.dataset.trayCodes = "";
+      }
       renderUnifiedSampleFlow(-1);
       return;
     }
@@ -2059,7 +2065,18 @@ function renderSampleTaskSummary(taskList, samples, labels) {
     const task = tasks.find((item) => item.code === code);
     const taskSamples = sampleList.filter((sample) => (sample.task_code || "").trim() === code);
     const sampleCodes = taskSamples.map((sample) => (sample.code || "").trim()).filter(Boolean);
-    const trayCount = taskSamples.reduce((total, sample) => total + getSampleTrayList(sample).length, 0);
+    const sampleTrayCodes = Array.from(
+      new Set(
+        taskSamples
+          .flatMap((sample) => getSampleTrayList(sample))
+          .map((tray) => (tray.tray_code || "").trim())
+          .filter(Boolean)
+      )
+    );
+    const taskTrayCodes = Array.isArray(task?.tray_codes)
+      ? task.tray_codes.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const trayCount = Math.max(sampleTrayCodes.length, taskTrayCodes.length);
 
     const rawCount = task?.sample_count ?? "";
     const plannedCount = rawCount !== "" && Number.isFinite(Number(rawCount)) ? Number(rawCount) : NaN;
@@ -2132,6 +2149,13 @@ function renderSampleTaskSummary(taskList, samples, labels) {
     if (storeBtn) {
       storeBtn.disabled = autoCodes.length === 0;
       storeBtn.dataset.taskCode = code;
+    }
+    if (printBtn) {
+      const trayCodes = Array.from(new Set(sampleTrayCodes.concat(taskTrayCodes))).sort(compareSampleCode);
+      const hasConfirmedTray = trayCodes.length > 0;
+      printBtn.disabled = !hasConfirmedTray;
+      printBtn.dataset.taskCode = code;
+      printBtn.dataset.trayCodes = trayCodes.join(",");
     }
     const taskStage = taskSamples.length
       ? taskSamples.reduce((maxStage, sample) => Math.max(maxStage, resolveSampleFlowStageIndex(sample, labels)), 0)
