@@ -39,10 +39,27 @@ function attachManualScheduleTimeHandlers() {
 }
 
 function attachPickerHandlers() {
+  const formatHints = {
+    date: "年/月/日",
+    "datetime-local": "年/月/日",
+    time: "时:分",
+  };
   document.querySelectorAll('input[type="date"], input[type="time"], input[type="datetime-local"]').forEach((input) => {
     if (input.dataset.pickerBound === "1") {
       return;
     }
+    const hint = formatHints[input.type] || "";
+    if (hint) {
+      input.dataset.formatHint = hint;
+      input.setAttribute("title", `格式：${hint}`);
+      input.setAttribute("placeholder", hint);
+    }
+    const syncHintState = () => {
+      if (!hint) {
+        return;
+      }
+      input.classList.toggle("format-hint-empty", !input.value);
+    };
     const openPicker = () => {
       if (typeof input.showPicker === "function") {
         try {
@@ -52,8 +69,12 @@ function attachPickerHandlers() {
         }
       }
     };
+    input.addEventListener("input", syncHintState);
+    input.addEventListener("change", syncHintState);
+    input.addEventListener("blur", syncHintState);
     input.addEventListener("focus", openPicker);
     input.addEventListener("click", openPicker);
+    syncHintState();
     input.dataset.pickerBound = "1";
   });
 }

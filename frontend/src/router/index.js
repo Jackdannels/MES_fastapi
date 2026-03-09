@@ -39,8 +39,8 @@ const routes = [
     name: "task-overview",
     component: TaskOverviewPage,
     meta: {
-      title: "任务总览",
-      subtitle: "按任务编号查看任务类型、样品与托盘分配明细。",
+      title: "任务/托盘总览",
+      subtitle: "按任务与托盘双视角查看类型、分配与排期状态。",
       module: "central",
     },
   },
@@ -80,7 +80,7 @@ const routes = [
     component: ProcessPage,
     meta: {
       title: "试验过程管控",
-      subtitle: "SOP 驱动执行，异常与复测闭环。",
+      subtitle: "按实验室查看当前状态、任务占用与排期入口。",
       module: "central",
     },
   },

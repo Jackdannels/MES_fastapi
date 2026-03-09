@@ -9,7 +9,7 @@
       </div>
       <nav class="nav">
         <RouterLink class="nav-link" :class="{ active: isActive('dashboard') }" to="/">中控总览</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('task-overview') }" to="/task-overview">任务总览</RouterLink>
+        <RouterLink class="nav-link" :class="{ active: isActive('task-overview') }" to="/task-overview">任务/托盘总览</RouterLink>
         <RouterLink class="nav-link" :class="{ active: isActive('tasks') }" to="/tasks">任务受理</RouterLink>
         <RouterLink class="nav-link" :class="{ active: isActive('schedule') }" to="/schedule">排程看板</RouterLink>
         <RouterLink class="nav-link" :class="{ active: isActive('samples') }" to="/samples">样品管理</RouterLink>

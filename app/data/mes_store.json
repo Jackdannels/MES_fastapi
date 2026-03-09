@@ -28,7 +28,12 @@
       "due_at": "2026-02-07 05:20",
       "arrival_at": "2026-02-06 21:20",
       "status": "实验已完成",
-      "created_at": "2026-02-06T09:20:59.487Z"
+      "created_at": "2026-02-06T09:20:59.487Z",
+      "tray_codes": [
+        "WDC-2026-005-TP-001",
+        "WDC-2026-005-TP-002"
+      ],
+      "updated_at": "2026-03-09T01:23:15.789Z"
     },
     {
       "id": "task-1770369659104-866",
@@ -42,7 +47,7 @@
       "required_device": "冲击试验",
       "due_at": "2026-02-07 13:20",
       "arrival_at": "2026-02-06 22:20",
-      "status": "暂存间排放",
+      "status": "实验已完成",
       "created_at": "2026-02-06T09:20:59.104Z"
     },
     {
@@ -57,7 +62,7 @@
       "required_device": "振动试验",
       "due_at": "2026-02-07 04:20",
       "arrival_at": "2026-02-06 18:20",
-      "status": "待排程",
+      "status": "暂存间排放",
       "created_at": "2026-02-06T09:20:58.720Z",
       "tray_codes": [
         "ZD-2026-003-TP-001",
@@ -92,8 +97,13 @@
       "required_device": "四综合试验",
       "due_at": "2026-02-07 08:20",
       "arrival_at": "2026-02-06 18:20",
-      "status": "待排程",
-      "created_at": "2026-02-06T09:20:58.330Z"
+      "status": "实验中",
+      "created_at": "2026-02-06T09:20:58.330Z",
+      "tray_codes": [
+        "SZH-2026-003-TP-001",
+        "SZH-2026-003-TP-002"
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z"
     },
     {
       "id": "task-1770369658197-569",
@@ -453,9 +463,25 @@
     {
       "id": "schedule-1770371968264-548",
       "task_code": "CJ-2026-007",
+      "device": "冲击一室",
+      "start_at": "2026-03-03T00:00:00.000Z",
+      "end_at": "2026-03-03T03:30:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1773043197911-433",
+      "task_code": "SZH-2026-003",
+      "device": "四综合实验室",
+      "start_at": "2026-03-09T05:30:00.000Z",
+      "end_at": "2026-03-09T09:00:00.000Z",
+      "status": "已排程"
+    },
+    {
+      "id": "schedule-1773043905024-799",
+      "task_code": "ZD-2026-003",
       "device": "恒温恒湿间（暂存间）",
-      "start_at": "2026-02-06T09:59:28.264Z",
-      "end_at": "2026-02-06T09:59:28.264Z",
+      "start_at": "2026-03-09T08:11:45.024Z",
+      "end_at": "2026-03-09T08:11:45.024Z",
       "status": "已排程"
     }
   ],
@@ -534,6 +560,24 @@
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
         {
+          "id": "sample-event-1773019395789-359",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-945",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
+        {
           "id": "sample-event-1771170643550-784",
           "time": "2026-02-15T15:50:43.550Z",
           "action": "任务样品入库（接驳区）",
@@ -552,7 +596,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-182",
+          "tray_code": "WDC-2026-005-TP-001",
+          "sample_code": "WDC-2026-005-SP-009",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-861",
@@ -564,6 +618,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-071",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-852",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-736",
           "time": "2026-02-15T15:50:43.550Z",
@@ -583,7 +655,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-012",
+          "tray_code": "WDC-2026-005-TP-002",
+          "sample_code": "WDC-2026-005-SP-008",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-249",
@@ -595,6 +677,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-098",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-491",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-703",
           "time": "2026-02-15T15:50:43.550Z",
@@ -614,7 +714,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-446",
+          "tray_code": "WDC-2026-005-TP-002",
+          "sample_code": "WDC-2026-005-SP-007",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-611",
@@ -626,6 +736,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-968",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-084",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-937",
           "time": "2026-02-15T15:50:43.550Z",
@@ -645,7 +773,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-461",
+          "tray_code": "WDC-2026-005-TP-002",
+          "sample_code": "WDC-2026-005-SP-006",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-987",
@@ -657,6 +795,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-046",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-232",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-647",
           "time": "2026-02-15T15:50:43.550Z",
@@ -676,7 +832,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-155",
+          "tray_code": "WDC-2026-005-TP-001",
+          "sample_code": "WDC-2026-005-SP-005",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-559",
@@ -688,6 +854,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-816",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-724",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-821",
           "time": "2026-02-15T15:50:43.550Z",
@@ -707,7 +891,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-535",
+          "tray_code": "WDC-2026-005-TP-002",
+          "sample_code": "WDC-2026-005-SP-004",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-299",
@@ -719,6 +913,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-712",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-356",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-476",
           "time": "2026-02-15T15:50:43.550Z",
@@ -738,7 +950,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-836",
+          "tray_code": "WDC-2026-005-TP-001",
+          "sample_code": "WDC-2026-005-SP-003",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-729",
@@ -750,6 +972,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-828",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-608",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-932",
           "time": "2026-02-15T15:50:43.550Z",
@@ -769,7 +1009,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-864",
+          "tray_code": "WDC-2026-005-TP-001",
+          "sample_code": "WDC-2026-005-SP-002",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659487-736",
@@ -781,6 +1031,24 @@
       "flow_status": "到货",
       "created_at": "2026-02-06T09:20:59.487Z",
       "history": [
+        {
+          "id": "sample-event-1773019395789-351",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 WDC-2026-005"
+        },
+        {
+          "id": "sample-event-1773019395789-311",
+          "time": "2026-03-09T01:23:15.789Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1771170643550-811",
           "time": "2026-02-15T15:50:43.550Z",
@@ -800,7 +1068,17 @@
           "detail": "任务 WDC-2026-005"
         }
       ],
-      "updated_at": "2026-02-15T15:50:43.549Z"
+      "updated_at": "2026-03-09T01:23:15.789Z",
+      "trays": [
+        {
+          "id": "tray-1773019395789-135",
+          "tray_code": "WDC-2026-005-TP-001",
+          "sample_code": "WDC-2026-005-SP-001",
+          "quantity": 1,
+          "created_at": "2026-03-09T01:23:15.789Z",
+          "updated_at": "2026-03-09T01:23:15.789Z"
+        }
+      ]
     },
     {
       "id": "sample-1770369659104-837",
@@ -2093,12 +2371,30 @@
       "id": "sample-1770369658330-176",
       "code": "SZH-2026-003-SP-007",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-715",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-377",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-247",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2108,18 +2404,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-903",
+          "tray_code": "SZH-2026-003-TP-002",
+          "sample_code": "SZH-2026-003-SP-007",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-936",
       "code": "SZH-2026-003-SP-006",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-107",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-523",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-642",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2129,18 +2454,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-663",
+          "tray_code": "SZH-2026-003-TP-002",
+          "sample_code": "SZH-2026-003-SP-006",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-880",
       "code": "SZH-2026-003-SP-005",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-958",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-269",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-505",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2150,18 +2504,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-858",
+          "tray_code": "SZH-2026-003-TP-002",
+          "sample_code": "SZH-2026-003-SP-005",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-866",
       "code": "SZH-2026-003-SP-004",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-408",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-865",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-937",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2171,18 +2554,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-531",
+          "tray_code": "SZH-2026-003-TP-001",
+          "sample_code": "SZH-2026-003-SP-004",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-712",
       "code": "SZH-2026-003-SP-003",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-540",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-647",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-705",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2192,18 +2604,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-807",
+          "tray_code": "SZH-2026-003-TP-001",
+          "sample_code": "SZH-2026-003-SP-003",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-270",
       "code": "SZH-2026-003-SP-002",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-305",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-337",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-162",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2213,18 +2654,47 @@
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
         }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-942",
+          "tray_code": "SZH-2026-003-TP-001",
+          "sample_code": "SZH-2026-003-SP-002",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
+        }
       ]
     },
     {
       "id": "sample-1770369658330-989",
       "code": "SZH-2026-003-SP-001",
       "task_code": "SZH-2026-003",
-      "location": "",
+      "location": "室外接驳区",
       "owner": "",
-      "status": "运输中",
-      "flow_status": "运输中",
+      "status": "已接收",
+      "flow_status": "到货",
       "created_at": "2026-02-06T09:20:58.330Z",
       "history": [
+        {
+          "id": "sample-event-1772479492180-622",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "任务样品入库（接驳区）",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "任务 SZH-2026-003"
+        },
+        {
+          "id": "sample-event-1772479492180-740",
+          "time": "2026-03-02T19:24:52.180Z",
+          "action": "样品分装托盘",
+          "location": "室外接驳区",
+          "owner": "",
+          "status": "已接收",
+          "detail": "共 1 盘，合计数量 1"
+        },
         {
           "id": "sample-event-1770369658330-850",
           "time": "2026-02-06T09:20:58.330Z",
@@ -2233,6 +2703,17 @@
           "owner": "",
           "status": "运输中",
           "detail": "任务 SZH-2026-003"
+        }
+      ],
+      "updated_at": "2026-03-02T19:24:52.180Z",
+      "trays": [
+        {
+          "id": "tray-1772479492180-398",
+          "tray_code": "SZH-2026-003-TP-001",
+          "sample_code": "SZH-2026-003-SP-001",
+          "quantity": 1,
+          "created_at": "2026-03-02T19:24:52.180Z",
+          "updated_at": "2026-03-02T19:24:52.180Z"
         }
       ]
     },
@@ -5763,8 +6244,26 @@
     {
       "id": "stream-1770371968264-431",
       "task_code": "CJ-2026-007",
-      "device": "恒温恒湿间（暂存间）",
+      "device": "冲击一室",
       "last_packet": "2026-02-06 17:59",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1773043197911-210",
+      "task_code": "SZH-2026-003",
+      "device": "四综合实验室",
+      "last_packet": "2026-03-09 15:59",
+      "quality": "98.0%",
+      "status": "采集中",
+      "reported": false
+    },
+    {
+      "id": "stream-1773043905024-205",
+      "task_code": "ZD-2026-003",
+      "device": "恒温恒湿间（暂存间）",
+      "last_packet": "2026-03-09 16:11",
       "quality": "98.0%",
       "status": "采集中",
       "reported": false

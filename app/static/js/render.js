@@ -3,7 +3,7 @@
  * Reads localStorage and paints DOM for each page.
  */
 import { STORAGE_KEYS, loadStore, saveStore } from "./storage.js";
-import { TEST_LABS, getLabsForTestType } from "./labs.js";
+import { TEST_LABS, TEST_PREFIX_MAP, getLabsForTestType } from "./labs.js";
 import { formatDateTime, setText, statusClass } from "./utils.js";
 
 // Device status derived from current schedules.
@@ -449,11 +449,14 @@ function renderTasksPage(labels) {
     }
   };
 
+  const canonicalTestTypes = Object.keys(TEST_PREFIX_MAP).filter(Boolean);
   const testTypeValues = Array.from(
     new Set(
-      rows
-        .map(({ task }) => (task.test_type || "").trim())
-        .filter(Boolean)
+      canonicalTestTypes.concat(
+        rows
+          .map(({ task }) => (task.test_type || "").trim())
+          .filter(Boolean)
+      )
     )
   ).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
   const statusValues = Array.from(

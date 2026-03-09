@@ -567,11 +567,7 @@ function attachActionHandlers(labels) {
 
   // buildRandomTask閿涙碍鐎娲閺堣桨鎹㈤崝?
   const buildRandomTask = (tasks, statusOverride) => {
-    const filteredTypes = TEST_TASK_TYPES.filter(
-      (type) => !type.includes("恒温恒湿") && !type.includes("高低温湿热")
-    );
-    const pool = filteredTypes.length ? filteredTypes : TEST_TASK_TYPES;
-    const testType = pool[Math.floor(Math.random() * pool.length)];
+    const testType = TEST_TASK_TYPES[Math.floor(Math.random() * TEST_TASK_TYPES.length)];
     const prefix = TEST_PREFIX_MAP[testType] || "TASK";
     const code = nextTaskCode(prefix, randomTaskYear, tasks);
     const now = new Date();

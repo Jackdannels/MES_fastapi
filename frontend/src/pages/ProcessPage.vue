@@ -1,133 +1,233 @@
-﻿<template>
-  <section class="grid cols-3 stagger">
-    <div class="card">
-      <div class="muted">活跃 SOP</div>
-      <div class="kpi">9</div>
-      <div class="muted">可执行</div>
+<template>
+  <section class="card section process-control-page">
+    <div class="process-control-header">
+      <div>
+        <h3>试验过程管控</h3>
+        <div class="muted">展示各实验室当前状态，暂存间不纳入本页。</div>
+      </div>
+      <div class="process-control-summary">
+        <div class="process-control-summary-item">
+          <span class="process-control-summary-label">实验中</span>
+          <strong>{{ runningCount }}</strong>
+        </div>
+        <div class="process-control-summary-item">
+          <span class="process-control-summary-label">已排期</span>
+          <strong>{{ scheduledCount }}</strong>
+        </div>
+        <div class="process-control-summary-item">
+          <span class="process-control-summary-label">空闲</span>
+          <strong>{{ idleCount }}</strong>
+        </div>
+      </div>
     </div>
-    <div class="card">
-      <div class="muted">执行中</div>
-      <div class="kpi">5</div>
-      <div class="muted">覆盖 3 个实验室</div>
-    </div>
-    <div class="card">
-      <div class="muted">异常/偏差</div>
-      <div class="kpi">1</div>
-      <div class="muted">待复核</div>
-    </div>
-  </section>
 
-  <section class="card section">
-    <h3>试验计划与步骤</h3>
-    <form>
-      <div class="form-grid">
-        <div class="form-field">
-          <label>任务编号</label>
-          <input type="text" placeholder="例如：WQ-2024-031" />
+    <div v-if="loading" class="muted">正在加载实验室状态...</div>
+    <div v-else class="process-lab-grid">
+      <article v-for="lab in labCards" :key="lab.name" class="process-lab-card" :class="lab.statusClass">
+        <div class="process-lab-top">
+          <div>
+            <div class="process-lab-name">{{ lab.name }}</div>
+            <div class="process-lab-type">{{ lab.testType }}</div>
+          </div>
+          <span class="process-lab-status">{{ lab.status }}</span>
         </div>
-        <div class="form-field">
-          <label>SOP 模板</label>
-          <select>
-            <option>重金属检测 SOP</option>
-            <option>含量检测 SOP</option>
-            <option>稳定性 SOP</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>负责人员</label>
-          <input type="text" placeholder="姓名" />
-        </div>
-        <div class="form-field">
-          <label>设备</label>
-          <input type="text" placeholder="HPLC-03 / ICP-07" />
-        </div>
-        <div class="form-field">
-          <label>计划开始</label>
-          <input type="datetime-local" />
-        </div>
-        <div class="form-field">
-          <label>计划结束</label>
-          <input type="datetime-local" />
-        </div>
-        <div class="form-field" style="grid-column: 1 / -1;">
-          <label>关键步骤</label>
-          <textarea placeholder="步骤1：样品前处理；步骤2：设备预热；步骤3：开始采集"></textarea>
-        </div>
-      </div>
-      <div class="form-actions">
-        <a class="action-btn" href="#">开始执行</a>
-        <a class="action-btn secondary" href="#">保存计划</a>
-      </div>
-    </form>
-  </section>
 
-  <section class="card section">
-    <h3>过程记录与异常</h3>
-    <table class="table">
-      <thead>
-        <tr>
-          <th>序号</th>
-          <th>时间</th>
-          <th>步骤</th>
-          <th>执行人</th>
-          <th>状态</th>
-          <th>备注</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>1</td>
-          <td>09:10</td>
-          <td>样品前处理</td>
-          <td>Lab-02</td>
-          <td><span class="status">完成</span></td>
-          <td>样品标签核对完成</td>
-        </tr>
-        <tr>
-          <td>2</td>
-          <td>10:05</td>
-          <td>设备预热</td>
-          <td>Lab-05</td>
-          <td><span class="status">完成</span></td>
-          <td>温度稳定</td>
-        </tr>
-        <tr>
-          <td>3</td>
-          <td>10:20</td>
-          <td>开始采集</td>
-          <td>Lab-05</td>
-          <td><span class="status warn">进行中</span></td>
-          <td>Modbus 流量正常</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+        <div class="process-lab-body">
+          <div class="process-lab-row">
+            <span>任务编号</span>
+            <strong>{{ lab.taskCode }}</strong>
+          </div>
+          <div class="process-lab-row">
+            <span>目标实验</span>
+            <strong>{{ lab.targetExperiment }}</strong>
+          </div>
+          <div class="process-lab-row">
+            <span>排期时间</span>
+            <strong>{{ lab.scheduleTime }}</strong>
+          </div>
+        </div>
 
-  <section class="card section">
-    <h3>异常与复测处理</h3>
-    <div class="form-grid">
-      <div class="form-field">
-        <label>异常类型</label>
-        <select>
-          <option>设备异常</option>
-          <option>样品异常</option>
-          <option>数据异常</option>
-          <option>操作偏差</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>处理方式</label>
-        <select>
-          <option>复测</option>
-          <option>暂停并报修</option>
-          <option>重新制备</option>
-          <option>记录并继续</option>
-        </select>
-      </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>处理说明</label>
-        <textarea placeholder="描述异常原因与处理结果"></textarea>
-      </div>
+        <div class="process-lab-actions">
+          <button class="action-btn secondary" type="button" @click="openTaskOverview(lab)">查看任务</button>
+        </div>
+      </article>
     </div>
   </section>
 </template>
+
+<script setup>
+import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+
+const STORAGE_KEYS = {
+  tasks: "mes.tasks",
+  schedules: "mes.schedules",
+};
+
+const LABS = [
+  { name: "冲击一室", testType: "冲击试验" },
+  { name: "冲击二室", testType: "冲击试验" },
+  { name: "振动一室", testType: "振动试验" },
+  { name: "振动二室", testType: "振动试验" },
+  { name: "四综合实验室", testType: "四综合试验" },
+  { name: "温度冲击一室", testType: "温度冲击试验" },
+  { name: "温度冲击二室", testType: "温度冲击试验" },
+  { name: "高低温湿热一室", testType: "高低温湿热试验" },
+  { name: "盐雾试验室", testType: "盐雾试验" },
+  { name: "霉菌试验室", testType: "霉菌试验" },
+];
+
+const loading = ref(false);
+const labCards = ref([]);
+
+const parseJson = (raw, fallback) => {
+  if (!raw) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+};
+
+const readLocalArray = (key) => {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const parsed = parseJson(window.localStorage.getItem(key), []);
+  return Array.isArray(parsed) ? parsed : [];
+};
+
+const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
+
+const formatDateTime = (value) => {
+  const time = Date.parse(String(value || ""));
+  if (!Number.isFinite(time)) {
+    return "-";
+  }
+  const date = new Date(time);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${month}/${day} ${hours}:${minutes}`;
+};
+
+const readStorageSnapshot = async () => {
+  let tasks = readLocalArray(STORAGE_KEYS.tasks);
+  let schedules = readLocalArray(STORAGE_KEYS.schedules);
+
+  try {
+    const response = await fetch("/api/storage", { headers: { Accept: "application/json" } });
+    if (response.ok) {
+      const payload = await response.json();
+      if (Array.isArray(payload?.[STORAGE_KEYS.tasks])) {
+        tasks = payload[STORAGE_KEYS.tasks];
+      }
+      if (Array.isArray(payload?.[STORAGE_KEYS.schedules])) {
+        schedules = payload[STORAGE_KEYS.schedules];
+      }
+    }
+  } catch {
+    // keep local fallback
+  }
+
+  return { tasks, schedules };
+};
+
+const buildLabCards = (tasks, schedules) => {
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  const scheduleList = Array.isArray(schedules) ? schedules : [];
+  const taskMap = new Map();
+  taskList.forEach((task) => {
+    const code = String(task?.code || "").trim();
+    if (!code) {
+      return;
+    }
+    taskMap.set(code, task);
+  });
+
+  const now = Date.now();
+
+  return LABS.map((lab) => {
+    const labSchedules = scheduleList
+      .filter((entry) => String(entry?.device || "").trim() === lab.name)
+      .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
+
+    const activeSchedule =
+      labSchedules.find((entry) => {
+        const start = Date.parse(String(entry?.start_at || ""));
+        const end = Date.parse(String(entry?.end_at || ""));
+        return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
+      }) || null;
+
+    const nextSchedule =
+      activeSchedule ||
+      labSchedules.find((entry) => {
+        const start = Date.parse(String(entry?.start_at || ""));
+        return Number.isFinite(start) && start > now;
+      }) ||
+      labSchedules[0] ||
+      null;
+
+    const taskCode = String(nextSchedule?.task_code || "").trim();
+    const task = taskMap.get(taskCode);
+    const targetExperiment = String(task?.test_type || task?.name || lab.testType || "").trim() || "-";
+
+    let status = "空闲";
+    let statusClass = "is-idle";
+    if (activeSchedule) {
+      status = "实验中";
+      statusClass = "is-running";
+    } else if (nextSchedule) {
+      status = "已排期";
+      statusClass = "is-scheduled";
+    }
+
+    return {
+      name: lab.name,
+      testType: lab.testType,
+      status,
+      statusClass,
+      taskCode: taskCode || "-",
+      targetExperiment: taskCode ? targetExperiment : "未分配",
+      scheduleTime: nextSchedule
+        ? `${formatDateTime(nextSchedule.start_at)} - ${formatDateTime(nextSchedule.end_at)}`
+        : "暂无排期",
+    };
+  }).sort((left, right) => compareText(left.name, right.name));
+};
+
+const loadLabStatus = async () => {
+  loading.value = true;
+  try {
+    const { tasks, schedules } = await readStorageSnapshot();
+    labCards.value = buildLabCards(tasks, schedules);
+  } finally {
+    loading.value = false;
+  }
+};
+
+const runningCount = computed(() => labCards.value.filter((lab) => lab.status === "实验中").length);
+const scheduledCount = computed(() => labCards.value.filter((lab) => lab.status === "已排期").length);
+const idleCount = computed(() => labCards.value.filter((lab) => lab.status === "空闲").length);
+
+const openTaskOverview = (lab) => {
+  const params = new URLSearchParams();
+  const testType = String(lab?.testType || "").trim();
+  const taskCode = String(lab?.taskCode || "").trim();
+  if (testType) {
+    params.set("testType", testType);
+  }
+  if (taskCode && taskCode !== "-") {
+    params.set("task", taskCode);
+  }
+  const query = params.toString();
+  router.push(query ? `/task-overview?${query}` : "/task-overview");
+};
+
+onMounted(loadLabStatus);
+</script>
