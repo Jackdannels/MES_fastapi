@@ -18,93 +18,6 @@
   </section>
 
   <section class="card section">
-    <h3>任务受理表单</h3>
-    <form data-form="task-intake">
-      <div class="form-grid">
-        <div class="form-field">
-          <label>任务来源</label>
-          <select name="source">
-            <option>外部委托</option>
-            <option>内部新增</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>任务名称</label>
-          <input type="text" name="name" placeholder="例如：来料检测-批次A" />
-        </div>
-        <div class="form-field">
-          <label>任务编号</label>
-          <input type="text" name="code" placeholder="自动生成或手填" />
-        </div>
-        <div class="form-field">
-          <label>委托单位/部门</label>
-          <input type="text" name="client" placeholder="客户或内部部门" />
-        </div>
-        <div class="form-field">
-          <label>联系人</label>
-          <input type="text" name="contact" placeholder="姓名" />
-        </div>
-        <div class="form-field">
-          <label>联系方式</label>
-          <input type="text" name="contact_info" placeholder="电话/邮箱" />
-        </div>
-        <div class="form-field">
-          <label>优先级</label>
-          <select name="priority">
-            <option>高</option>
-            <option>中</option>
-            <option>低</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>样品数量</label>
-          <input type="number" name="sample_count" placeholder="例如：12" />
-        </div>
-        <div class="form-field">
-          <label>样品类型</label>
-          <input type="text" name="sample_type" placeholder="例如：固体/液体/粉末" />
-        </div>
-        <div class="form-field">
-          <label>试验类型</label>
-          <select name="test_type" data-test-type-select>
-            <option value="">请选择试验类型</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>期望完成时间</label>
-          <input type="datetime-local" name="due_at" />
-        </div>
-        <div class="form-field">
-          <label>到样时间</label>
-          <input type="datetime-local" name="arrival_at" />
-        </div>
-        <div class="form-field">
-          <label>必需设备/能力</label>
-          <input type="text" name="required_device" placeholder="例如：HPLC / ICP" />
-        </div>
-        <div class="form-field">
-          <label>环境/特殊条件</label>
-          <input type="text" name="conditions" placeholder="温湿度/避光等" />
-        </div>
-        <div class="form-field">
-          <label>附件</label>
-          <input type="text" name="attachment" placeholder="上传报告或规范编号" />
-          <div class="helper">可关联委托书、规范、SOP</div>
-        </div>
-        <div class="form-field" style="grid-column: 1 / -1;">
-          <label>备注</label>
-          <textarea name="remark" placeholder="补充说明与注意事项"></textarea>
-        </div>
-      </div>
-      <div class="form-actions">
-        <a class="action-btn" href="#" data-action="task-submit">提交受理</a>
-        <a class="action-btn secondary" href="#" data-action="task-draft">保存草稿</a>
-      </div>
-      <div class="form-alert is-hidden" data-task-warning></div>
-    </form>
-  </section>
-
-  <section class="card section">
     <h3>总任务清单</h3>
     <div class="toolbar">
       <input class="search-input" id="task-list-search" placeholder="筛选任务编号/客户/设备" />
@@ -114,7 +27,6 @@
       <select class="search-input" id="task-list-filter-status">
         <option value="">全部状态</option>
       </select>
-      <a class="action-btn" href="#" data-modal-open="task-modal">快速新建</a>
       <div class="task-list-pagination" id="task-list-pagination"></div>
     </div>
     <table class="table" id="task-table" data-sortable>
@@ -135,54 +47,96 @@
     </table>
   </section>
 
-  <div class="modal" id="task-modal">
+  <div class="modal" id="task-intake-modal">
     <div class="modal-backdrop"></div>
     <div class="modal-content">
       <div class="modal-header">
-        <strong>快速新建任务</strong>
-        <button class="modal-close" data-modal-close="task-modal">关闭</button>
+        <strong>手动添加任务</strong>
+        <button class="modal-close" data-modal-close="task-intake-modal">关闭</button>
       </div>
-      <div class="form-grid" data-form="task-quick">
-        <div class="form-field">
-          <label>任务选择</label>
-          <select
-            name="task_template"
-            data-task-quick-select
-            data-placeholder="选择已有任务（可选）"
-            data-empty-placeholder="暂无可选任务"
-          >
-            <option value="">选择已有任务（可选）</option>
-          </select>
+      <form data-form="task-intake">
+        <div class="form-grid">
+          <div class="form-field">
+            <label>任务来源</label>
+            <select name="source">
+              <option>外部委托</option>
+              <option>内部新增</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>任务名称</label>
+            <input type="text" name="name" placeholder="例如：来料检测-批次A" />
+          </div>
+          <div class="form-field">
+            <label>任务编号</label>
+            <input type="text" name="code" placeholder="根据试验类型自动生成" readonly />
+          </div>
+          <div class="form-field">
+            <label>委托单位/部门</label>
+            <input type="text" name="client" placeholder="客户或内部部门" value="内部部门" />
+          </div>
+          <div class="form-field">
+            <label>联系人</label>
+            <input type="text" name="contact" placeholder="姓名" />
+          </div>
+          <div class="form-field">
+            <label>联系方式</label>
+            <input type="text" name="contact_info" placeholder="电话/邮箱" />
+          </div>
+          <div class="form-field">
+            <label>优先级</label>
+            <select name="priority">
+              <option>高</option>
+              <option>中</option>
+              <option>低</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>样品数量</label>
+            <input type="number" name="sample_count" placeholder="例如：12" />
+          </div>
+          <div class="form-field">
+            <label>样品类型</label>
+            <input type="text" name="sample_type" placeholder="例如：固体/液体/粉末" />
+          </div>
+          <div class="form-field">
+            <label>试验类型</label>
+            <select name="test_type" data-test-type-select>
+              <option value="">请选择试验类型</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label>期望完成时间</label>
+            <input type="datetime-local" name="due_at" />
+          </div>
+          <div class="form-field">
+            <label>到样时间</label>
+            <input type="datetime-local" name="arrival_at" />
+          </div>
+          <div class="form-field">
+            <label>必需设备/能力</label>
+            <input type="text" name="required_device" placeholder="例如：HPLC / ICP" />
+          </div>
+          <div class="form-field">
+            <label>环境/特殊条件</label>
+            <input type="text" name="conditions" placeholder="温湿度/避光等" />
+          </div>
+          <div class="form-field">
+            <label>附件</label>
+            <input type="text" name="attachment" placeholder="上传报告或规范编号" />
+            <div class="helper">可关联委托书、规范、SOP</div>
+          </div>
+          <div class="form-field" style="grid-column: 1 / -1;">
+            <label>备注</label>
+            <textarea name="remark" placeholder="补充说明与注意事项"></textarea>
+          </div>
         </div>
-        <div class="form-field">
-          <label>任务名称</label>
-          <input type="text" name="name" placeholder="输入任务名称" />
+        <div class="form-actions">
+          <a class="action-btn" href="#" data-action="task-submit">提交受理</a>
+          <a class="action-btn secondary" href="#" data-action="task-draft">保存草稿</a>
         </div>
-        <div class="form-field">
-          <label>来源</label>
-          <select name="source">
-            <option>外部委托</option>
-            <option>内部新增</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>优先级</label>
-          <select name="priority">
-            <option>高</option>
-            <option>中</option>
-            <option>低</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>期望完成</label>
-          <input type="datetime-local" name="due_at" />
-        </div>
-      </div>
-      <div class="form-actions">
-        <a class="action-btn" href="#" data-action="task-quick-submit">提交</a>
-        <a class="action-btn secondary" href="#" data-action="task-quick-draft">保存草稿</a>
-      </div>
-      <div class="form-alert is-hidden" data-task-quick-warning></div>
+        <div class="form-alert is-hidden" data-task-warning></div>
+      </form>
     </div>
   </div>
 

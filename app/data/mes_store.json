@@ -1,6 +1,21 @@
 {
   "mes.tasks": [
     {
+      "id": "task-1773140412309-567",
+      "code": "ZD-2026-004",
+      "name": "振动试验",
+      "source": "外部委托",
+      "priority": "Medium",
+      "sample_count": 8,
+      "sample_type": "",
+      "test_type": "振动试验",
+      "required_device": "振动试验",
+      "due_at": "2026-03-11 01:00",
+      "arrival_at": "2026-03-10 20:00",
+      "status": "待排程",
+      "created_at": "2026-03-10T11:00:12.309Z"
+    },
+    {
       "id": "task-1770369659808-192",
       "code": "MJ-2026-004",
       "name": "霉菌试验",
@@ -97,7 +112,7 @@
       "required_device": "四综合试验",
       "due_at": "2026-02-07 08:20",
       "arrival_at": "2026-02-06 18:20",
-      "status": "实验中",
+      "status": "实验已完成",
       "created_at": "2026-02-06T09:20:58.330Z",
       "tray_codes": [
         "SZH-2026-003-TP-001",
@@ -486,6 +501,174 @@
     }
   ],
   "mes.samples": [
+    {
+      "id": "sample-1773140412310-186",
+      "code": "ZD-2026-004-SP-008",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-366",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-142",
+      "code": "ZD-2026-004-SP-007",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-396",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-547",
+      "code": "ZD-2026-004-SP-006",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-891",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-654",
+      "code": "ZD-2026-004-SP-005",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-180",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-767",
+      "code": "ZD-2026-004-SP-004",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-538",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-047",
+      "code": "ZD-2026-004-SP-003",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-824",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412310-613",
+      "code": "ZD-2026-004-SP-002",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-532",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
+    {
+      "id": "sample-1773140412309-027",
+      "code": "ZD-2026-004-SP-001",
+      "task_code": "ZD-2026-004",
+      "location": "",
+      "owner": "",
+      "status": "运输中",
+      "flow_status": "运输中",
+      "created_at": "2026-03-10T11:00:12.309Z",
+      "history": [
+        {
+          "id": "sample-event-1773140412310-336",
+          "time": "2026-03-10T11:00:12.310Z",
+          "action": "鏍峰搧缁戝畾浠诲姟",
+          "location": "",
+          "owner": "",
+          "status": "运输中",
+          "detail": "浠诲姟 ZD-2026-004"
+        }
+      ]
+    },
     {
       "id": "sample-1770369659808-506",
       "code": "MJ-2026-004-SP-003",

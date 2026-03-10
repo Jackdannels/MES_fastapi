@@ -34,7 +34,7 @@
           <p class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
-          <RouterLink class="action-btn" to="/tasks#task-modal" data-modal-open="task-modal">新建任务</RouterLink>
+          <RouterLink class="action-btn" to="/tasks#task-intake-modal" data-modal-open="task-intake-modal">新建任务</RouterLink>
           <RouterLink class="action-btn secondary" to="/schedule">查看排程</RouterLink>
           <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <button class="action-btn secondary" type="button" @click="handleLogout">退出登录</button>

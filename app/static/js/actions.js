@@ -257,7 +257,6 @@ function attachActionHandlers(labels) {
   };
 
   const taskWarning = document.querySelector("[data-task-warning]");
-  const taskQuickWarning = document.querySelector("[data-task-quick-warning]");
   const sampleWarning = document.querySelector("[data-sample-warning]");
   const sampleProcessWarning = document.querySelector("[data-sample-process-warning]");
   const scheduleWarning = document.querySelector("[data-schedule-warning]");
@@ -268,6 +267,63 @@ function attachActionHandlers(labels) {
   const taskEditWarning = document.querySelector("[data-task-edit-warning]");
   const testingRandom = document.body?.dataset?.testingRandom === "1";
   const randomTaskYear = document.body?.dataset?.randomTaskYear || "2026";
+  const taskIntakeForm = document.querySelector('[data-form="task-intake"]');
+  const taskIntakeModal = document.getElementById("task-intake-modal");
+
+  const getTaskCodeYear = () => String(new Date().getFullYear());
+
+  const buildTaskCodeByType = (testType, tasks) => {
+    const normalizedType = String(testType || "").trim();
+    if (!normalizedType) {
+      return "";
+    }
+    const prefix = TEST_PREFIX_MAP[normalizedType] || "TASK";
+    return nextTaskCode(prefix, getTaskCodeYear(), asArray(tasks));
+  };
+
+  const syncTaskIntakeDefaults = () => {
+    if (!taskIntakeForm) {
+      return;
+    }
+    const tasks = loadStore(STORAGE_KEYS.tasks, []);
+    const sourceSelect = taskIntakeForm.querySelector('select[name="source"]');
+    const testTypeSelect = taskIntakeForm.querySelector('select[name="test_type"]');
+    const codeInput = taskIntakeForm.querySelector('input[name="code"]');
+    const clientInput = taskIntakeForm.querySelector('input[name="client"]');
+    const requiredInput = taskIntakeForm.querySelector('input[name="required_device"]');
+    if (sourceSelect && !sourceSelect.value) {
+      sourceSelect.value = labels.sourceExternal;
+    }
+    if (clientInput && !clientInput.value.trim()) {
+      clientInput.value = "内部部门";
+    }
+    if (codeInput) {
+      codeInput.value = buildTaskCodeByType(testTypeSelect?.value || "", tasks);
+    }
+    if (requiredInput && !requiredInput.value.trim() && testTypeSelect?.value) {
+      requiredInput.value = testTypeSelect.value;
+      requiredInput.dataset.autoValue = testTypeSelect.value;
+    }
+    setWarning(taskWarning, "");
+  };
+
+  const resetTaskIntakeForm = () => {
+    if (!taskIntakeForm) {
+      return;
+    }
+    taskIntakeForm.reset();
+    const clientInput = taskIntakeForm.querySelector('input[name="client"]');
+    if (clientInput) {
+      clientInput.value = "内部部门";
+    }
+    syncTaskIntakeDefaults();
+  };
+
+  const closeTaskIntakeModal = () => {
+    if (taskIntakeModal) {
+      taskIntakeModal.classList.remove("is-open");
+    }
+  };
 
   // getSlotLabel閿涙俺骞忛崣鏍ㄦ濞堝灚妯夌粈鐑樻瀮濡?
   const getSlotLabel = (slotKey) => (slotKey === "afternoon" ? labels.slotAfternoon : labels.slotMorning);
@@ -590,6 +646,39 @@ function attachActionHandlers(labels) {
     };
   };
 
+  if (taskIntakeForm && taskIntakeForm.dataset.bound !== "1") {
+    const testTypeSelect = taskIntakeForm.querySelector('select[name="test_type"]');
+    const requiredInput = taskIntakeForm.querySelector('input[name="required_device"]');
+    if (testTypeSelect) {
+      testTypeSelect.addEventListener("change", () => {
+        const tasks = loadStore(STORAGE_KEYS.tasks, []);
+        const codeInput = taskIntakeForm.querySelector('input[name="code"]');
+        if (codeInput) {
+          codeInput.value = buildTaskCodeByType(testTypeSelect.value, tasks);
+        }
+        if (requiredInput && (!requiredInput.value.trim() || requiredInput.value === requiredInput.dataset.autoValue)) {
+          requiredInput.value = testTypeSelect.value || "";
+          requiredInput.dataset.autoValue = testTypeSelect.value || "";
+        }
+      });
+    }
+    document.addEventListener("click", (event) => {
+      const trigger = event.target.closest('[data-modal-open="task-intake-modal"]');
+      if (!trigger) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        resetTaskIntakeForm();
+      });
+    });
+    if (window.location.hash === "#task-intake-modal") {
+      resetTaskIntakeForm();
+    } else {
+      syncTaskIntakeDefaults();
+    }
+    taskIntakeForm.dataset.bound = "1";
+  }
+
   // resolveScheduleTimes閿涙俺袙閺嬫劖甯撶粙瀣闂傜繝淇婇幁?
   const resolveScheduleTimes = (data, warningEl) => {
     const dateValue = data.schedule_date || "";
@@ -879,9 +968,12 @@ function attachActionHandlers(labels) {
       ? buildRandomTask(tasks, statusOverride)
       : {
           id: generateId("task"),
-          code: data.code || `TASK-${Date.now().toString().slice(-6)}`,
+          code: data.code || buildTaskCodeByType(data.test_type, tasks) || `TASK-${Date.now().toString().slice(-6)}`,
           name: data.name,
           source: data.source || labels.sourceExternal,
+          client: data.client || "内部部门",
+          contact: data.contact || "",
+          contact_info: data.contact_info || "",
           priority: data.priority || "Medium",
           sample_count: data.sample_count || "",
           sample_type: data.sample_type || "",
@@ -889,6 +981,9 @@ function attachActionHandlers(labels) {
           required_device: data.required_device || data.test_type || "",
           due_at: data.due_at || "",
           arrival_at: data.arrival_at || "",
+          conditions: data.conditions || "",
+          attachment: data.attachment || "",
+          remark: data.remark || "",
           status: statusOverride || labels.statusWaiting,
           created_at: new Date().toISOString(),
         };
@@ -904,6 +999,8 @@ function attachActionHandlers(labels) {
     bindClickOnce(taskSubmit, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-intake"]', labels.statusWaiting, taskWarning)) {
+        closeTaskIntakeModal();
+        resetTaskIntakeForm();
         renderAll(labels);
       }
     });
@@ -914,34 +1011,8 @@ function attachActionHandlers(labels) {
     bindClickOnce(taskDraft, "boundClick", (event) => {
       event.preventDefault();
       if (handleTaskCreate('[data-form="task-intake"]', labels.statusWaiting, taskWarning)) {
-        renderAll(labels);
-      }
-    });
-  }
-
-  const taskQuick = document.querySelector('[data-action="task-quick-submit"]');
-  if (taskQuick) {
-    bindClickOnce(taskQuick, "boundClick", (event) => {
-      event.preventDefault();
-      if (handleTaskCreate('[data-form="task-quick"]', labels.statusWaiting, taskQuickWarning)) {
-        const modal = document.getElementById("task-modal");
-        if (modal) {
-          modal.classList.remove("is-open");
-        }
-        renderAll(labels);
-      }
-    });
-  }
-
-  const taskQuickDraft = document.querySelector('[data-action="task-quick-draft"]');
-  if (taskQuickDraft) {
-    bindClickOnce(taskQuickDraft, "boundClick", (event) => {
-      event.preventDefault();
-      if (handleTaskCreate('[data-form="task-quick"]', labels.statusWaiting, taskQuickWarning)) {
-        const modal = document.getElementById("task-modal");
-        if (modal) {
-          modal.classList.remove("is-open");
-        }
+        closeTaskIntakeModal();
+        resetTaskIntakeForm();
         renderAll(labels);
       }
     });
@@ -2524,7 +2595,3 @@ const scheduleEditForm = document.querySelector('[data-form="schedule-edit"]');
 }
 
 export { attachActionHandlers };
-
-
-
-
