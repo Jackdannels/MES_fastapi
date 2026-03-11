@@ -5,7 +5,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "MES"
-    DEBUG: bool = True
+    DEBUG: bool = False
+    DEMO_USER: Optional[str] = None
+    DEMO_PASSWORD: Optional[str] = None
+    SESSION_COOKIE_NAME: str = "mes_session"
+    SESSION_COOKIE_SECURE: Optional[bool] = None
+    SESSION_SECRET_KEY: Optional[str] = None
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 30
+    SESSION_MAX_AGE_HOURS: int = 8
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"

@@ -20,37 +20,28 @@
             <option value="staging">暂存间管理</option>
           </select>
         </label>
-        <button class="action-btn login-submit" type="submit">登录</button>
+        <button class="action-btn login-submit" type="submit" :disabled="submitting">
+          {{ submitting ? "登录中..." : "登录" }}
+        </button>
       </form>
-      <div class="login-helper">默认账号：admin / 123</div>
       <div v-if="errorMessage" class="form-alert">{{ errorMessage }}</div>
     </div>
   </section>
 </template>
 
 <script setup>
-import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { loginWithCredentials, resolveModuleHome } from "@/auth";
+import { useLoginForm } from "@/composables/useLoginForm";
 
 const router = useRouter();
 const route = useRoute();
-
-const username = ref("admin");
-const password = ref("123");
-const moduleKey = ref("central");
-const errorMessage = ref("");
-
-const submitLogin = () => {
-  errorMessage.value = "";
-  const result = loginWithCredentials(username.value, password.value, moduleKey.value);
-  if (!result.ok) {
-    errorMessage.value = result.message || "登录失败";
-    return;
-  }
-  const redirectPath =
-    typeof route.query.redirect === "string" && route.query.redirect.trim() ? route.query.redirect.trim() : "";
-  const target = redirectPath || resolveModuleHome(result.module);
-  router.replace(target);
-};
+const redirectPath =
+  typeof route.query.redirect === "string" && route.query.redirect.trim() ? route.query.redirect.trim() : "";
+const { errorMessage, moduleKey, password, submitLogin, submitting, username } = useLoginForm({
+  login: loginWithCredentials,
+  navigate: (target) => router.replace(target),
+  redirectPath,
+  resolveModuleHome,
+});
 </script>

@@ -1,15 +1,30 @@
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
 
-const DEFAULT_CREDENTIALS = {
-  username: "admin",
-  password: "123",
-};
-
 const MODULE_ROUTES = {
   central: "/",
   visual: "/visualization",
   staging: "/staging-management",
 };
+
+const VALID_MODULES = new Set(Object.keys(MODULE_ROUTES));
+
+function normalizeAuthSession(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return null;
+  }
+  const username = String(parsed.username || "").trim();
+  const module = String(parsed.module || "").trim();
+  const loggedAt = String(parsed.logged_at || "").trim();
+  if (!username || !VALID_MODULES.has(module) || !loggedAt) {
+    return null;
+  }
+  return {
+    ...parsed,
+    logged_at: loggedAt,
+    module,
+    username,
+  };
+}
 
 function readAuthSession() {
   if (typeof window === "undefined") {
@@ -20,14 +35,7 @@ function readAuthSession() {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    if (!parsed.username || !parsed.module) {
-      return null;
-    }
-    return parsed;
+    return normalizeAuthSession(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -55,27 +63,89 @@ function isAuthenticated() {
   return Boolean(readAuthSession());
 }
 
-function loginWithCredentials(username, password, moduleKey) {
+async function fetchAuthSession() {
+  try {
+    const response = await fetch("/auth/session", {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      clearAuthSession();
+      return null;
+    }
+    const payload = normalizeAuthSession(await response.json());
+    if (!payload) {
+      clearAuthSession();
+      return null;
+    }
+    writeAuthSession(payload);
+    return payload;
+  } catch {
+    clearAuthSession();
+    return null;
+  }
+}
+
+async function loginWithCredentials(username, password, moduleKey) {
   const user = String(username || "").trim();
   const pass = String(password || "");
-  if (user !== DEFAULT_CREDENTIALS.username || pass !== DEFAULT_CREDENTIALS.password) {
-    return { ok: false, message: "账号或密码错误" };
-  }
   const module = MODULE_ROUTES[moduleKey] ? moduleKey : "central";
-  writeAuthSession({
-    username: user,
-    module,
-    logged_at: new Date().toISOString(),
-  });
-  return { ok: true, module };
+
+  try {
+    const response = await fetch("/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        username: user,
+        password: pass,
+        module,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, message: payload?.detail || "Login failed" };
+    }
+    const session = normalizeAuthSession({
+      username: payload.username || user,
+      module: payload.module || module,
+      logged_at: payload.logged_at || new Date().toISOString(),
+    });
+    if (!session) {
+      clearAuthSession();
+      return { ok: false, message: "Login failed" };
+    }
+    writeAuthSession(session);
+    return { ok: true, module: payload.module || module };
+  } catch {
+    return { ok: false, message: "Network error" };
+  }
+}
+
+async function logoutSession() {
+  try {
+    await fetch("/auth/logout", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  } finally {
+    clearAuthSession();
+  }
 }
 
 export {
   AUTH_STORAGE_KEY,
   MODULE_ROUTES,
   clearAuthSession,
+  fetchAuthSession,
   isAuthenticated,
   loginWithCredentials,
+  logoutSession,
   readAuthSession,
   resolveModuleHome,
 };

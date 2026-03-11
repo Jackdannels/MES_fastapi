@@ -1,13 +1,3 @@
-from fastapi import APIRouter
+from app.api.routes.crud_factory import build_crud_router
 
-router = APIRouter(prefix="/productcatalog", tags=["productcatalog"])
-
-
-@router.get("")
-def list_productcatalog():
-    return {"items": []}
-
-
-@router.post("")
-def create_productcatalog():
-    return {"id": 1}
+router = build_crud_router("/productcatalog", "productcatalog", "ProductCatalog")

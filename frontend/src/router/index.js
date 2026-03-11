@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { isAuthenticated, readAuthSession, resolveModuleHome } from "@/auth";
+import { fetchAuthSession } from "@/auth";
+import { buildRouteAccessDecision } from "@/lib/authRouting";
+import { buildDocumentTitle } from "@/lib/routerTitle";
 import LoginPage from "@/pages/LoginPage.vue";
 import DashboardPage from "@/pages/DashboardPage.vue";
 import TaskOverviewPage from "@/pages/TaskOverviewPage.vue";
@@ -32,6 +34,7 @@ const routes = [
       title: "中控总览",
       subtitle: "任务、设备与数据流的实时概览。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -52,6 +55,7 @@ const routes = [
       title: "任务受理",
       subtitle: "外部委托与内部新增统一受理与排队。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -62,6 +66,7 @@ const routes = [
       title: "排程看板",
       subtitle: "以设备空闲为核心的排程与冲突管理。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -72,6 +77,7 @@ const routes = [
       title: "样品管理",
       subtitle: "样品登记、到样确认、流转与留样全链路。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -92,6 +98,7 @@ const routes = [
       title: "设备资源",
       subtitle: "设备台账、校准状态与 Modbus 点位配置。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -102,6 +109,7 @@ const routes = [
       title: "试验数据",
       subtitle: "自动采集、校验与固定模板报告。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -112,6 +120,7 @@ const routes = [
       title: "系统信息",
       subtitle: "用户、班次与基础配置。",
       module: "central",
+      legacyUi: true,
     },
   },
   {
@@ -144,31 +153,15 @@ const router = createRouter({
   },
 });
 
-router.beforeEach((to) => {
-  if (to.meta?.layout === "auth") {
-    const session = readAuthSession();
-    if (session?.module) {
-      return resolveModuleHome(session.module);
-    }
-    return true;
-  }
-
-  if (!isAuthenticated()) {
-    return { path: "/login", query: { redirect: to.fullPath } };
-  }
-
-  const session = readAuthSession();
-  const selectedModule = session?.module || "central";
-  const targetModule = to.meta?.module || "central";
-  if (selectedModule !== targetModule) {
-    return resolveModuleHome(selectedModule);
-  }
-  return true;
+router.beforeEach(async (to) => {
+  return buildRouteAccessDecision({
+    getSession: fetchAuthSession,
+    to,
+  });
 });
 
 router.afterEach((to) => {
-  const title = to.meta?.title ? `${to.meta.title} - 七二四新火工区信息化中控管理系统` : "七二四新火工区信息化中控管理系统";
-  document.title = title;
+  document.title = buildDocumentTitle(to.meta?.title);
 });
 
 export default router;

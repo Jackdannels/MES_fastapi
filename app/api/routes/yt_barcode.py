@@ -1,13 +1,3 @@
-from fastapi import APIRouter
+from app.api.routes.crud_factory import build_crud_router
 
-router = APIRouter(prefix="/yt_barcode", tags=["yt_barcode"])
-
-
-@router.get("")
-def list_yt_barcode():
-    return {"items": []}
-
-
-@router.post("")
-def create_yt_barcode():
-    return {"id": 1}
+router = build_crud_router("/yt_barcode", "yt_barcode", "YtBarcode")

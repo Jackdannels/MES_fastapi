@@ -1,13 +1,3 @@
-from fastapi import APIRouter
+from app.api.routes.crud_factory import build_crud_router
 
-router = APIRouter(prefix="/companydepartment", tags=["companydepartment"])
-
-
-@router.get("")
-def list_companydepartment():
-    return {"items": []}
-
-
-@router.post("")
-def create_companydepartment():
-    return {"id": 1}
+router = build_crud_router("/companydepartment", "companydepartment", "CompanyDepartment")

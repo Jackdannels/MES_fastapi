@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 
 from app.db.session import get_connection
 
@@ -12,7 +13,16 @@ def health():
 
 @router.get("/db")
 def health_db():
-    conn = get_connection()
+    try:
+        conn = get_connection()
+    except RuntimeError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "detail": str(exc),
+            },
+        )
     try:
         cursor = conn.cursor()
         try:

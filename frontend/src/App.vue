@@ -86,9 +86,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, watch } from "vue";
+import { computed, nextTick, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { clearAuthSession, readAuthSession } from "@/auth";
+import { logoutSession, readAuthSession } from "@/auth";
+import { shouldBridgeLegacyUi } from "@/lib/appConfig";
 import { bootLegacyUI } from "./legacy/boot.js";
 
 const route = useRoute();
@@ -113,29 +114,32 @@ const currentModule = computed(() => {
 });
 const moduleLabel = computed(() => moduleLabelMap[currentModule.value] || moduleLabelMap.central);
 const isCentralModule = computed(() => currentModule.value === "central");
+const legacyUiBootKey = computed(() =>
+  shouldBridgeLegacyUi(route) ? `${String(route.name || "")}:${route.path || ""}` : "",
+);
 
-const isActive = (name) => route.name === name;
-const refreshPage = () => {
-  window.location.reload();
-};
-const handleLogout = () => {
-  clearAuthSession();
-  router.replace("/login");
-};
-
-const runLegacyBoot = async () => {
-  if (isAuthLayout.value || !isCentralModule.value) {
+const maybeBootLegacyUi = async () => {
+  if (!legacyUiBootKey.value) {
     return;
   }
   await nextTick();
   await bootLegacyUI();
 };
 
-onMounted(runLegacyBoot);
+const isActive = (name) => route.name === name;
+const refreshPage = () => {
+  window.location.reload();
+};
+const handleLogout = async () => {
+  await logoutSession();
+  router.replace("/login");
+};
+
 watch(
-  () => [route.path, currentModule.value, isAuthLayout.value],
+  legacyUiBootKey,
   () => {
-    runLegacyBoot();
-  }
+    void maybeBootLegacyUi();
+  },
+  { immediate: true, flush: "post" },
 );
 </script>

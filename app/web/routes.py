@@ -1,10 +1,24 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from fastapi.responses import FileResponse, PlainTextResponse
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 SPA_INDEX = BASE_DIR / "static" / "dist" / "index.html"
+SPA_ROUTES = (
+    "/",
+    "/login",
+    "/task-overview",
+    "/tasks",
+    "/schedule",
+    "/samples",
+    "/process",
+    "/devices",
+    "/data",
+    "/system",
+    "/visualization",
+    "/staging-management",
+)
 
 router = APIRouter()
 
@@ -17,42 +31,5 @@ def spa_response() -> FileResponse:
         status_code=500,
     )
 
-
-@router.get("/")
-def dashboard(request: Request):
-    return spa_response()
-
-
-@router.get("/tasks")
-def tasks(request: Request):
-    return spa_response()
-
-
-@router.get("/schedule")
-def schedule(request: Request):
-    return spa_response()
-
-
-@router.get("/samples")
-def samples(request: Request):
-    return spa_response()
-
-
-@router.get("/process")
-def process(request: Request):
-    return spa_response()
-
-
-@router.get("/devices")
-def devices(request: Request):
-    return spa_response()
-
-
-@router.get("/data")
-def data(request: Request):
-    return spa_response()
-
-
-@router.get("/system")
-def system(request: Request):
-    return spa_response()
+for route_path in SPA_ROUTES:
+    router.add_api_route(route_path, spa_response, methods=["GET"])
