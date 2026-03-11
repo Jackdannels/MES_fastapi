@@ -18,13 +18,24 @@ from dotenv import dotenv_values
 from app.core.local_run import build_local_run_env
 
 
+TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Start the local server and verify health plus auth endpoints.",
+        description=(
+            "Start the local server and verify health plus auth endpoints. "
+            "The script checks / as 404 in API-only mode, or as the frontend entry when "
+            "SERVE_WEB_APP=true is set in the env file."
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8010)
-    parser.add_argument("--env-file", default=".env")
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="Path to the env file. SERVE_WEB_APP controls whether / should be 404 or a web page.",
+    )
     parser.add_argument("--module", default="central")
     return parser.parse_args()
 
@@ -51,6 +62,10 @@ def build_trial_run_server_command(*, host: str, port: int, env_file: str) -> li
         "--env-file",
         env_file,
     ]
+
+
+def should_expect_web_app(env_values_map: dict[str, str]) -> bool:
+    return env_values_map.get("SERVE_WEB_APP", "").strip().lower() in TRUTHY_ENV_VALUES
 
 
 def fetch_json(opener, url: str, method: str = "GET", payload: dict | None = None):
@@ -88,6 +103,7 @@ def main() -> int:
     args = parse_args()
     dotenv_map = dotenv_values(REPO_ROOT / args.env_file)
     env_values = {key: value for key, value in dotenv_map.items() if value is not None}
+    expect_web_app = should_expect_web_app(env_values)
     username = env_values.get("DEMO_USER")
     password = env_values.get("DEMO_PASSWORD")
     if not username or not password:
@@ -105,7 +121,18 @@ def main() -> int:
 
     try:
         health_status, health_payload, _ = wait_for_health(base_url, server)
-        root_status, root_html, _ = fetch_text(urllib.request.build_opener(), f"{base_url}/")
+        root_html = ""
+        try:
+            root_status, root_html, _ = fetch_text(urllib.request.build_opener(), f"{base_url}/")
+        except urllib.error.HTTPError as exc:
+            root_status = exc.code
+            root_html = exc.read().decode("utf-8", errors="ignore")
+
+        if expect_web_app and root_status != 200:
+            raise RuntimeError(f"Expected web app at / but got HTTP {root_status}.")
+        if not expect_web_app and root_status != 404:
+            raise RuntimeError(f"Expected API-only 404 at / but got HTTP {root_status}.")
+
         cookies = CookieJar()
         opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
         login_status, login_payload, _ = fetch_json(
@@ -133,6 +160,7 @@ def main() -> int:
                 {
                     "health_status_code": health_status,
                     "health_payload": health_payload,
+                    "serve_web_app": expect_web_app,
                     "root_status_code": root_status,
                     "root_contains_app_shell": '<div id="app">' in root_html,
                     "login_status_code": login_status,

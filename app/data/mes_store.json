@@ -57,7 +57,7 @@
       "required_device": "冲击试验",
       "due_at": "2026-03-12 13:31",
       "arrival_at": "2026-03-11 17:31",
-      "status": "实验中",
+      "status": "实验已完成",
       "created_at": "2026-03-11T05:31:40.547Z",
       "tray_codes": [
         "CJ-2024-001-TP-001",

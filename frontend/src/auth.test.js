@@ -38,7 +38,19 @@ describe("auth", () => {
     const result = await loginWithCredentials("admin", "123", "visual");
 
     expect(result).toEqual({ ok: true, module: "visual" });
-    expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith("/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        username: "admin",
+        password: "123",
+        module: "visual",
+      }),
+    });
     expect(readAuthSession()).toEqual({
       logged_at: "2026-03-10T00:00:00Z",
       module: "visual",
@@ -75,6 +87,12 @@ describe("auth", () => {
       logged_at: "2026-03-11T00:00:00Z",
       module: "visual",
       username: "admin",
+    });
+    expect(fetch).toHaveBeenCalledWith("/auth/session", {
+      headers: {
+        Accept: "application/json",
+      },
+      credentials: "include",
     });
     expect(readAuthSession()).toEqual(session);
   });
@@ -135,6 +153,7 @@ describe("auth", () => {
       headers: {
         Accept: "application/json",
       },
+      credentials: "include",
       method: "POST",
     });
     expect(readAuthSession()).toBeNull();

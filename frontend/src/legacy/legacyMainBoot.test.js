@@ -17,19 +17,19 @@ const mocks = vi.hoisted(() => ({
   seedData: vi.fn(),
 }));
 
-vi.mock("../../../app/static/js/labels.js", () => ({
+vi.mock("./runtime/labels.js", () => ({
   getLabels: mocks.getLabels,
 }));
 
-vi.mock("../../../app/static/js/render.js", () => ({
+vi.mock("./runtime/render.js", () => ({
   renderAll: mocks.renderAll,
 }));
 
-vi.mock("../../../app/static/js/actions.js", () => ({
+vi.mock("./runtime/actions.js", () => ({
   attachActionHandlers: mocks.attachActionHandlers,
 }));
 
-vi.mock("../../../app/static/js/ui.js", () => ({
+vi.mock("./runtime/ui.js", () => ({
   attachDrawerHandlers: mocks.attachDrawerHandlers,
   attachFilterHandlers: mocks.attachFilterHandlers,
   attachModalHandlers: mocks.attachModalHandlers,
@@ -37,18 +37,18 @@ vi.mock("../../../app/static/js/ui.js", () => ({
   attachTabHandlers: mocks.attachTabHandlers,
 }));
 
-vi.mock("../../../app/static/js/labs.js", () => ({
+vi.mock("./runtime/labs.js", () => ({
   initLabSelects: mocks.initLabSelects,
   initTestLabSelects: mocks.initTestLabSelects,
   initDispatchTargetSelects: mocks.initDispatchTargetSelects,
   initTestTypeSelects: mocks.initTestTypeSelects,
 }));
 
-vi.mock("../../../app/static/js/storage.js", () => ({
+vi.mock("./runtime/storage.js", () => ({
   initRemoteStore: mocks.initRemoteStore,
 }));
 
-vi.mock("../../../app/static/js/seed.js", () => ({
+vi.mock("./runtime/seed.js", () => ({
   seedData: mocks.seedData,
 }));
 
@@ -63,7 +63,7 @@ describe("legacy boot runtime", () => {
   });
 
   test("seeds shared storage before rendering legacy pages", async () => {
-    const { bootLegacyUI } = await import("../../../app/static/js/main.js");
+    const { bootLegacyUI } = await import("./runtime/main.js");
 
     await bootLegacyUI();
 

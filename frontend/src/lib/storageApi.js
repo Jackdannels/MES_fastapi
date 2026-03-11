@@ -1,3 +1,7 @@
+import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+
+const API_BASE_URL = getFrontendApiBaseUrl();
+
 function parseJson(raw, fallback) {
   if (!raw) {
     return fallback;
@@ -33,8 +37,9 @@ async function readStorageSnapshot(keys) {
   const snapshot = Object.fromEntries(requestedKeys.map((key) => [key, readLocalArray(key)]));
 
   try {
-    const response = await fetch("/api/storage", {
+    const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
       headers: { Accept: "application/json" },
+      credentials: "include",
     });
     if (!response.ok) {
       return snapshot;
@@ -59,12 +64,13 @@ async function writeStorageUpdates(updates) {
   });
 
   try {
-    await fetch("/api/storage", {
+    await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
+      credentials: "include",
       body: JSON.stringify(payload),
     });
   } catch {

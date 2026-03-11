@@ -74,6 +74,7 @@ describe("storageApi", () => {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
+      credentials: "include",
       body: JSON.stringify({
         [STORAGE_KEYS.tasks]: [{ code: "T-2" }],
       }),

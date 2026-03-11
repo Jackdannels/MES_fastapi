@@ -6,21 +6,18 @@ import { devServerProxy } from "./src/lib/devServerProxy.js";
 
 export default defineConfig({
   plugins: [vue()],
-  base: "/static/dist/",
+  base: "/",
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   build: {
-    outDir: "../app/static/dist",
+    outDir: "dist",
     emptyOutDir: true,
   },
   server: {
     port: 5173,
     proxy: devServerProxy,
-    fs: {
-      allow: [".."],
-    },
   },
 });

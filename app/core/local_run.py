@@ -7,6 +7,7 @@ from dotenv import dotenv_values
 APP_ENV_KEYS = {
     "APP_NAME",
     "DEBUG",
+    "SERVE_WEB_APP",
     "DEMO_USER",
     "DEMO_PASSWORD",
     "SESSION_COOKIE_NAME",
@@ -14,6 +15,7 @@ APP_ENV_KEYS = {
     "SESSION_SECRET_KEY",
     "SESSION_IDLE_TIMEOUT_MINUTES",
     "SESSION_MAX_AGE_HOURS",
+    "FRONTEND_ORIGINS",
     "DM_DSN",
     "DM_HOST",
     "DM_PORT",

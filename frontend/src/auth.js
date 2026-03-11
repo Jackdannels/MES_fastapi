@@ -1,3 +1,5 @@
+import { buildApiUrl, getFrontendApiBaseUrl } from "./lib/apiBase.js";
+
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
 
 const MODULE_ROUTES = {
@@ -7,6 +9,7 @@ const MODULE_ROUTES = {
 };
 
 const VALID_MODULES = new Set(Object.keys(MODULE_ROUTES));
+const API_BASE_URL = getFrontendApiBaseUrl();
 
 function normalizeAuthSession(parsed) {
   if (!parsed || typeof parsed !== "object") {
@@ -65,10 +68,11 @@ function isAuthenticated() {
 
 async function fetchAuthSession() {
   try {
-    const response = await fetch("/auth/session", {
+    const response = await fetch(buildApiUrl("/auth/session", API_BASE_URL), {
       headers: {
         Accept: "application/json",
       },
+      credentials: "include",
     });
     if (!response.ok) {
       clearAuthSession();
@@ -93,12 +97,13 @@ async function loginWithCredentials(username, password, moduleKey) {
   const module = MODULE_ROUTES[moduleKey] ? moduleKey : "central";
 
   try {
-    const response = await fetch("/auth/login", {
+    const response = await fetch(buildApiUrl("/auth/login", API_BASE_URL), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
+      credentials: "include",
       body: JSON.stringify({
         username: user,
         password: pass,
@@ -127,11 +132,12 @@ async function loginWithCredentials(username, password, moduleKey) {
 
 async function logoutSession() {
   try {
-    await fetch("/auth/logout", {
+    await fetch(buildApiUrl("/auth/logout", API_BASE_URL), {
       method: "POST",
       headers: {
         Accept: "application/json",
       },
+      credentials: "include",
     });
   } finally {
     clearAuthSession();

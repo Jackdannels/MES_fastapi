@@ -1,4 +1,6 @@
-const backendTarget = "http://127.0.0.1:8000";
+import { DEFAULT_BACKEND_TARGET, resolveBackendTarget } from "./apiBase.js";
+
+const backendTarget = resolveBackendTarget(process.env.VITE_API_BASE_URL, DEFAULT_BACKEND_TARGET);
 
 const devServerProxy = {
   "/auth": {
@@ -6,10 +8,6 @@ const devServerProxy = {
     changeOrigin: true,
   },
   "/api": {
-    target: backendTarget,
-    changeOrigin: true,
-  },
-  "/static": {
     target: backendTarget,
     changeOrigin: true,
   },

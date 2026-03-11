@@ -12,12 +12,20 @@ from app.core.local_run import load_local_run_env
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the MES FastAPI app with .env values overriding inherited environment variables.",
+        description=(
+            "Run the MES FastAPI app with .env values overriding inherited environment variables. "
+            "The backend runs in API-only mode by default; set SERVE_WEB_APP=true in the env file "
+            "if you need FastAPI to serve frontend/dist for compatibility."
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
-    parser.add_argument("--env-file", default=".env")
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="Path to the env file. Use SERVE_WEB_APP=true there to enable compatibility web hosting.",
+    )
     return parser.parse_args()
 
 
