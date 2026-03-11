@@ -1,6 +1,8 @@
-﻿import { defineConfig } from "vite";
+import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 import { fileURLToPath, URL } from "node:url";
+
+import { devServerProxy } from "./src/lib/devServerProxy.js";
 
 export default defineConfig({
   plugins: [vue()],
@@ -16,6 +18,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: devServerProxy,
     fs: {
       allow: [".."],
     },

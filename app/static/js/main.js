@@ -6,6 +6,7 @@ import { renderAll } from "./render.js";
 import { attachActionHandlers } from "./actions.js";
 import { attachDrawerHandlers, attachFilterHandlers, attachModalHandlers, attachSortHandlers, attachTabHandlers } from "./ui.js";
 import { initLabSelects, initTestLabSelects, initDispatchTargetSelects, initTestTypeSelects } from "./labs.js";
+import { seedData } from "./seed.js";
 import { initRemoteStore } from "./storage.js";
 
 function onReady(fn) {
@@ -83,6 +84,7 @@ function attachPickerHandlers() {
 async function bootLegacyUI() {
   await initRemoteStore();
   const labels = getLabels();
+  seedData(labels);
   initLabSelects();
   initTestLabSelects();
   initDispatchTargetSelects();

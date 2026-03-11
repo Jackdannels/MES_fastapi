@@ -1,48 +1,155 @@
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 
-import { PROCESS_LABS, buildProcessLabCards, buildTaskOverviewPath } from "@/lib/processLabModel";
+import { PROCESS_LABS, buildProcessLabCards } from "@/lib/processLabModel";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 import { useStorageSnapshot } from "./useStorageSnapshot";
 
+const toText = (value, fallback = "-") => {
+  const normalized = String(value ?? "").trim();
+  return normalized || fallback;
+};
+
+const toCount = (value) => {
+  if (value === 0 || value === "0") {
+    return 0;
+  }
+  return value ? value : "-";
+};
+
+const BATCH_SUFFIX_PATTERNS = [
+  /(?:\s*[-/|]\s*|\s+)?batch\s*[a-z0-9_-]*$/i,
+  /(?:\s*[-/|]\s*|\s+)?\u6279\u6b21\s*[a-z0-9_-]*$/i,
+];
+
+const sanitizeTaskDisplayName = (value, fallback = "-") => {
+  let normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return fallback;
+  }
+  BATCH_SUFFIX_PATTERNS.forEach((pattern) => {
+    normalized = normalized.replace(pattern, "").trim();
+  });
+  return normalized || fallback;
+};
+
 function useProcessLabs(options = {}) {
   const labs = Array.isArray(options.labs) ? options.labs : PROCESS_LABS;
-  const storage = options.storage || useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules]);
+  const storage = options.storage || useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules, STORAGE_KEYS.samples]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
   const autoLoad = options.autoLoad !== false;
   const now = options.now;
-  const navigate =
-    options.navigate ||
-    ((path) => {
-      const router = options.router || useRouter();
-      return router.push(path);
-    });
 
   const loading = ref(false);
   const labCards = ref([]);
+  const tasks = ref([]);
+  const schedules = ref([]);
+  const samples = ref([]);
+  const selectedTaskDetail = ref(null);
+  const taskDrawerOpen = ref(false);
+
+  const buildTraySummary = (taskCode, task) => {
+    const trayCodes = new Set();
+
+    if (Array.isArray(task?.tray_codes)) {
+      task.tray_codes.forEach((code) => {
+        const normalized = String(code || "").trim();
+        if (normalized) {
+          trayCodes.add(normalized);
+        }
+      });
+    }
+
+    samples.value.forEach((sample) => {
+      if (String(sample?.task_code || "").trim() !== taskCode) {
+        return;
+      }
+      (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
+        const normalized = String(tray?.tray_code || "").trim();
+        if (normalized) {
+          trayCodes.add(normalized);
+        }
+      });
+    });
+
+    const ordered = Array.from(trayCodes).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+    const visible = ordered.slice(0, 3);
+    const remaining = ordered.length - visible.length;
+
+    return {
+      trayCodes: ordered,
+      trayCount: ordered.length,
+      traySummary: ordered.length === 0 ? "未分配托盘" : `${visible.join(", ")}${remaining > 0 ? ` +${remaining}` : ""}`,
+    };
+  };
+
+  const buildTaskDetail = (lab) => {
+    const taskCode = toText(lab?.taskCode, "");
+    const labName = toText(lab?.name);
+    const task =
+      tasks.value.find((item) => String(item?.code || "").trim() === taskCode) ||
+      tasks.value.find((item) => String(item?.required_device || "").trim() === String(lab?.testType || "").trim()) ||
+      null;
+    const relatedSchedules = schedules.value
+      .filter((entry) => String(entry?.device || "").trim() === String(lab?.name || "").trim())
+      .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
+    const schedule =
+      relatedSchedules.find((entry) => String(entry?.task_code || "").trim() === taskCode) || relatedSchedules[0] || null;
+    const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task);
+
+    return {
+      code: taskCode || "-",
+      displayName: sanitizeTaskDisplayName(task?.name, toText(task?.test_type, "-")),
+      dueAt: toText(task?.due_at),
+      labName,
+      name: toText(task?.name),
+      priority: toText(task?.priority),
+      requiredDevice: toText(task?.required_device, labName),
+      sampleCount: toCount(task?.sample_count),
+      scheduleTime: toText(schedule ? `${lab?.scheduleTime || ""}` : lab?.scheduleTime),
+      source: toText(task?.source),
+      status: toText(task?.status, toText(lab?.status)),
+      targetExperiment: toText(task?.test_type, toText(lab?.targetExperiment)),
+      testType: toText(task?.test_type, toText(lab?.testType)),
+      trayCodes,
+      trayCount,
+      traySummary,
+    };
+  };
 
   const loadLabStatus = async () => {
     loading.value = true;
     try {
       const snapshot = await loadSnapshot();
-      labCards.value = buildProcessLabCards(labs, snapshot[STORAGE_KEYS.tasks], snapshot[STORAGE_KEYS.schedules], now);
+      tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+      schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+      samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+      labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, now);
     } finally {
       loading.value = false;
     }
   };
 
-  const runningCount = computed(() => labCards.value.filter((lab) => lab.status === "实验中").length);
-  const scheduledCount = computed(() => labCards.value.filter((lab) => lab.status === "已排期").length);
-  const idleCount = computed(() => labCards.value.filter((lab) => lab.status === "空闲").length);
+  const runningCount = computed(() => labCards.value.filter((lab) => lab.statusClass === "is-running").length);
+  const scheduledCount = computed(() => labCards.value.filter((lab) => lab.statusClass === "is-scheduled").length);
+  const idleCount = computed(() => labCards.value.filter((lab) => lab.statusClass === "is-idle").length);
 
-  const openTaskOverview = (lab) => navigate(buildTaskOverviewPath(lab));
+  const openTaskOverview = (lab) => {
+    selectedTaskDetail.value = buildTaskDetail(lab);
+    taskDrawerOpen.value = true;
+  };
+
+  const closeTaskDrawer = () => {
+    taskDrawerOpen.value = false;
+    selectedTaskDetail.value = null;
+  };
 
   if (autoLoad) {
     onMounted(loadLabStatus);
   }
 
   return {
+    closeTaskDrawer,
     idleCount,
     labCards,
     loadLabStatus,
@@ -50,7 +157,9 @@ function useProcessLabs(options = {}) {
     openTaskOverview,
     runningCount,
     scheduledCount,
+    selectedTaskDetail,
+    taskDrawerOpen,
   };
 }
 
-export { useProcessLabs };
+export { sanitizeTaskDisplayName, useProcessLabs };

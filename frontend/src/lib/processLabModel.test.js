@@ -3,59 +3,86 @@ import { describe, expect, test } from "vitest";
 import { buildProcessLabCards, buildTaskOverviewPath } from "./processLabModel";
 
 const labs = [
-  { name: "冲击一室", testType: "冲击试验" },
-  { name: "振动一室", testType: "振动试验" },
-  { name: "盐雾试验室", testType: "盐雾试验" },
+  { name: "Impact Lab 1", testType: "Impact Test" },
+  { name: "Vibration Lab 1", testType: "Vibration Test" },
+  { name: "Salt Spray Lab", testType: "Salt Spray Test" },
 ];
 
 describe("processLabModel", () => {
-  test("buildProcessLabCards marks labs as running, scheduled, or idle", () => {
+  test("buildProcessLabCards only keeps labs that are active or still relevant", () => {
     const cards = buildProcessLabCards(
-      labs,
+      [...labs, { name: "Thermal Impact Lab", testType: "Thermal Impact Test" }],
       [
-        { code: "TASK-001", test_type: "冲击试验" },
-        { code: "TASK-002", test_type: "振动试验" },
+        { code: "TASK-001", test_type: "Impact Test" },
+        { code: "TASK-002", test_type: "Vibration Test" },
+        { code: "TASK-003", test_type: "Thermal Impact Test" },
       ],
       [
         {
-          device: "冲击一室",
+          device: "Impact Lab 1",
           end_at: "2026-03-10T10:30:00Z",
           start_at: "2026-03-10T09:30:00Z",
           task_code: "TASK-001",
         },
         {
-          device: "振动一室",
+          device: "Vibration Lab 1",
           end_at: "2026-03-10T13:00:00Z",
           start_at: "2026-03-10T12:00:00Z",
           task_code: "TASK-002",
+        },
+        {
+          device: "Thermal Impact Lab",
+          end_at: "2026-03-09T08:30:00Z",
+          start_at: "2026-03-09T06:30:00Z",
+          task_code: "TASK-003",
         },
       ],
       Date.parse("2026-03-10T10:00:00Z")
     );
 
-    expect(cards).toHaveLength(3);
-    expect(cards.find((card) => card.name === "冲击一室")).toEqual(
+    expect(cards).toHaveLength(2);
+    expect(cards.find((card) => card.name === "Impact Lab 1")).toEqual(
       expect.objectContaining({
         status: "实验中",
         statusClass: "is-running",
         taskCode: "TASK-001",
-        targetExperiment: "冲击试验",
+        targetExperiment: "Impact Test",
       })
     );
-    expect(cards.find((card) => card.name === "振动一室")).toEqual(
+    expect(cards.find((card) => card.name === "Vibration Lab 1")).toEqual(
       expect.objectContaining({
         status: "已排期",
         statusClass: "is-scheduled",
         taskCode: "TASK-002",
-        targetExperiment: "振动试验",
+        targetExperiment: "Vibration Test",
       })
     );
-    expect(cards.find((card) => card.name === "盐雾试验室")).toEqual(
+    expect(cards.find((card) => card.name === "Salt Spray Lab")).toBeUndefined();
+    expect(cards.find((card) => card.name === "Thermal Impact Lab")).toBeUndefined();
+  });
+
+  test("buildProcessLabCards keeps labs visible for 24 hours after completion", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Recent Lab", testType: "Impact Test" }],
+      [{ code: "TASK-RECENT", test_type: "Impact Test" }],
+      [
+        {
+          device: "Recent Lab",
+          end_at: "2026-03-10T08:30:00Z",
+          start_at: "2026-03-10T06:30:00Z",
+          task_code: "TASK-RECENT",
+        },
+      ],
+      Date.parse("2026-03-10T10:00:00Z")
+    );
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toEqual(
       expect.objectContaining({
-        status: "空闲",
-        statusClass: "is-idle",
-        taskCode: "-",
-        targetExperiment: "未分配",
+        name: "Recent Lab",
+        status: "已排期",
+        statusClass: "is-scheduled",
+        taskCode: "TASK-RECENT",
       })
     );
   });

@@ -12,6 +12,7 @@ const PROCESS_LABS = [
 ];
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
+const RECENT_COMPLETION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const formatDateTime = (value) => {
   const time = Date.parse(String(value || ""));
@@ -46,6 +47,10 @@ const buildProcessLabCards = (labs, tasks, schedules, now = Date.now()) => {
         .filter((entry) => String(entry?.device || "").trim() === lab.name)
         .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
 
+      if (labSchedules.length === 0) {
+        return null;
+      }
+
       const activeSchedule =
         labSchedules.find((entry) => {
           const start = Date.parse(String(entry?.start_at || ""));
@@ -53,14 +58,25 @@ const buildProcessLabCards = (labs, tasks, schedules, now = Date.now()) => {
           return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
         }) || null;
 
-      const nextSchedule =
-        activeSchedule ||
+      const upcomingSchedule =
         labSchedules.find((entry) => {
           const start = Date.parse(String(entry?.start_at || ""));
           return Number.isFinite(start) && start > now;
-        }) ||
-        labSchedules[0] ||
-        null;
+        }) || null;
+
+      const recentCompletedSchedule =
+        [...labSchedules]
+          .sort((left, right) => Date.parse(String(right?.end_at || "")) - Date.parse(String(left?.end_at || "")))
+          .find((entry) => {
+            const end = Date.parse(String(entry?.end_at || ""));
+            return Number.isFinite(end) && now - end <= RECENT_COMPLETION_WINDOW_MS;
+          }) || null;
+
+      const nextSchedule = activeSchedule || upcomingSchedule || recentCompletedSchedule || null;
+
+      if (!nextSchedule) {
+        return null;
+      }
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
@@ -88,6 +104,7 @@ const buildProcessLabCards = (labs, tasks, schedules, now = Date.now()) => {
         testType: lab.testType,
       };
     })
+    .filter(Boolean)
     .sort((left, right) => compareText(left.name, right.name));
 };
 
