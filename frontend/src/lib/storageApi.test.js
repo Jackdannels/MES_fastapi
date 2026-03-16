@@ -80,4 +80,29 @@ describe("storageApi", () => {
       }),
     });
   });
+
+  test("sanitizes legacy sample text from local storage on read", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.samples,
+      JSON.stringify([
+        {
+          code: "S-1",
+          task_code: "T-1",
+          history: [
+            {
+              action: "鏍峰搧缂栧彿閲嶆帓",
+              detail: "浠诲姟 T-1",
+            },
+          ],
+        },
+      ])
+    );
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+
+    const snapshot = await readStorageSnapshot([STORAGE_KEYS.samples]);
+
+    expect(snapshot[STORAGE_KEYS.samples][0].history[0].action).toBe("样品编号重排");
+    expect(snapshot[STORAGE_KEYS.samples][0].history[0].detail).toBe("任务 T-1");
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.samples))[0].history[0].action).toBe("样品编号重排");
+  });
 });

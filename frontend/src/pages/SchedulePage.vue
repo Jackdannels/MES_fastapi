@@ -1,229 +1,450 @@
-﻿<template>
-  <div class="tabs section" data-tab-group="schedule-board" data-tab-role="tabs">
-    <button class="tab-btn active" type="button" data-tab-btn="unpacking">接驳区排程</button>
-    <button class="tab-btn" type="button" data-tab-btn="retention">暂存间排程</button>
+<template>
+  <div class="tabs section">
+    <button
+      class="tab-btn"
+      :class="{ active: activeTab === 'unpacking' }"
+      type="button"
+      data-testid="schedule-tab-unpacking"
+      @click="setActiveTab('unpacking')"
+    >
+      {{ uiText.unpackingTab }}
+    </button>
+    <button
+      class="tab-btn"
+      :class="{ active: activeTab === 'retention' }"
+      type="button"
+      data-testid="schedule-tab-retention"
+      @click="setActiveTab('retention')"
+    >
+      {{ uiText.retentionTab }}
+    </button>
   </div>
 
   <section class="card section">
-    <h3>手动排程</h3>
-    <form data-form="manual-schedule">
+    <h3>{{ uiText.manualTitle }}</h3>
+    <form @submit.prevent="submitSchedule">
       <div class="form-grid">
         <div class="form-field">
-          <label>任务编号</label>
-          <select
-            name="task_code"
-            data-task-select
-            data-placeholder="请选择已接收任务"
-            data-empty-placeholder="暂无已接收任务"
-          >
-            <option value="">请选择已接收任务</option>
+          <label>{{ uiText.taskCode }}</label>
+          <select v-model="scheduleForm.task_code" name="task_code">
+            <option value="">{{ taskOptions.length ? uiText.selectAcceptedTask : uiText.noAcceptedTask }}</option>
+            <option v-for="option in taskOptions" :key="option.code" :value="option.code">
+              {{ option.label }}
+            </option>
           </select>
         </div>
         <div class="form-field">
-          <label>实验室</label>
-          <select
-            name="device"
-            data-schedule-lab-select
-            data-placeholder="请选择实验室"
-            data-empty-placeholder="请先选择任务"
-            data-custom-label="其他/自定义"
-          >
-            <option value="">请选择实验室</option>
+          <label>{{ uiText.lab }}</label>
+          <select v-model="scheduleForm.device" name="device">
+            <option value="">{{ manualLabOptions.length ? uiText.selectLab : uiText.selectTaskFirst }}</option>
+            <option v-for="option in manualLabOptions" :key="option" :value="option">{{ option }}</option>
           </select>
         </div>
         <div class="form-field">
-          <label>排程日期</label>
-          <input type="date" name="schedule_date" />
+          <label>{{ uiText.scheduleDate }}</label>
+          <input v-model="scheduleForm.schedule_date" type="date" name="schedule_date" :disabled="retentionSelected" />
         </div>
-        <div class="form-field">
-          <label>时段</label>
-          <select name="time_slot" data-time-slot>
-            <option value="morning">上午（08:00-11:30）</option>
-            <option value="afternoon">下午（13:30-17:00）</option>
-            <option value="custom">自定义</option>
+        <div class="form-field" :class="{ 'is-hidden': retentionSelected }">
+          <label>{{ uiText.timeSlot }}</label>
+          <select v-model="scheduleForm.time_slot" name="time_slot" :disabled="retentionSelected">
+            <option value="morning">{{ uiText.morningSlot }}</option>
+            <option value="afternoon">{{ uiText.afternoonSlot }}</option>
+            <option value="custom">{{ uiText.customSlot }}</option>
           </select>
         </div>
-        <div class="form-field is-hidden" data-retention-now>
-          <label>当前时间</label>
-          <div class="retention-now" data-retention-now-value>--:--</div>
+        <div class="form-field" :class="{ 'is-hidden': !retentionSelected }">
+          <label>{{ uiText.currentTime }}</label>
+          <div class="retention-now">{{ currentTimeLabel }}</div>
         </div>
-        <div class="form-field is-hidden" data-custom-time>
-          <label>开始时间</label>
-          <input type="time" name="custom_start" />
+        <div class="form-field" :class="{ 'is-hidden': retentionSelected }">
+          <label>{{ uiText.plannedHours }}</label>
+          <input v-model="scheduleForm.planned_hours" type="number" name="planned_hours" min="0.5" step="0.5" />
         </div>
-        <div class="form-field is-hidden" data-custom-time>
-          <label>结束时间</label>
-          <input type="time" name="custom_end" />
+        <div class="form-field" :class="{ 'is-hidden': retentionSelected || scheduleForm.time_slot !== 'custom' }">
+          <label>{{ uiText.startTime }}</label>
+          <input v-model="scheduleForm.custom_start" type="time" name="custom_start" />
         </div>
       </div>
       <div class="form-actions">
-        <a class="action-btn" href="#" data-action="manual-schedule-run">确认排程</a>
-        <a class="action-btn secondary" href="#" data-action="manual-schedule-reset">清空</a>
+        <button class="action-btn" type="button" data-testid="schedule-submit" @click="submitSchedule">{{ uiText.confirmSchedule }}</button>
+        <button class="action-btn secondary" type="button" @click="resetScheduleForm">{{ uiText.clear }}</button>
       </div>
-      <div class="form-alert is-hidden" data-schedule-warning></div>
+      <div class="form-alert" :class="{ 'is-hidden': !scheduleWarning }">{{ scheduleWarning }}</div>
     </form>
   </section>
 
-  <section class="card section is-hidden" data-retention-internal>
+  <section class="card section" :class="{ 'is-hidden': !showRetentionPanel }">
     <div class="retention-internal-header">
       <div>
-        <h3>暂存间内部排程单</h3>
-        <div class="muted">仅显示未分配实验室的任务</div>
+        <h3>{{ uiText.retentionInternalTitle }}</h3>
+        <div class="muted">{{ uiText.retentionInternalHint }}</div>
       </div>
       <div class="retention-internal-count">
-        <div class="muted">待分配</div>
-        <div class="kpi" id="retention-internal-count">0</div>
+        <div class="muted">{{ uiText.pendingAllocation }}</div>
+        <div class="kpi">{{ retentionInternalRows.length }}</div>
       </div>
     </div>
-    <table class="table" id="retention-internal-table" data-sortable>
+    <table class="table" id="retention-internal-table">
       <thead>
         <tr>
-          <th>序号</th>
-          <th data-sort>任务编号</th>
-          <th data-sort>试验类型</th>
-          <th data-sort>暂存时间</th>
-          <th>已等待</th>
+          <th>{{ uiText.index }}</th>
+          <th>{{ uiText.taskCode }}</th>
+          <th>{{ uiText.testType }}</th>
+          <th>{{ uiText.retentionTime }}</th>
+          <th>{{ uiText.waited }}</th>
         </tr>
       </thead>
-      <tbody id="retention-internal-table-body"></tbody>
+      <tbody>
+        <tr v-if="retentionInternalRows.length === 0">
+          <td class="muted" colspan="5">{{ uiText.noRetentionTasks }}</td>
+        </tr>
+        <tr v-for="(row, index) in retentionInternalRows" :key="row.code">
+          <td>{{ index + 1 }}</td>
+          <td>{{ row.code }}</td>
+          <td>{{ row.testType }}</td>
+          <td>{{ row.sinceText }}</td>
+          <td>{{ row.waitLabel }}</td>
+        </tr>
+      </tbody>
     </table>
   </section>
 
   <section class="card section">
-    <h3>设备空闲排程（上午/下午）</h3>
+    <h3>{{ uiText.ganttTitle }}</h3>
     <div class="gantt-wrap">
-      <table
-        class="gantt"
-        id="gantt-table"
-        data-days="3"
-        data-label-am="上午 08:00-11:30"
-        data-label-pm="下午 13:30-17:00"
-        data-label-idle="空闲"
-        data-label-conflict="冲突"
-        data-label-empty="暂无设备"
-      >
-        <thead id="gantt-head">
-          <tr id="gantt-day-row">
-            <th rowspan="2" class="gantt-sticky" data-static="1">试验室</th>
+      <table class="gantt" id="gantt-table">
+        <thead>
+          <tr>
+            <th rowspan="2" class="gantt-sticky">{{ uiText.lab }}</th>
+            <th v-for="day in ganttView.days" :key="day.key" colspan="2">{{ day.label }}</th>
           </tr>
-          <tr id="gantt-slot-row"></tr>
+          <tr>
+            <template v-for="day in ganttView.days" :key="`${day.key}-slots`">
+              <th>{{ uiText.morningShort }}</th>
+              <th>{{ uiText.afternoonShort }}</th>
+            </template>
+          </tr>
         </thead>
-        <tbody id="gantt-body"></tbody>
+        <tbody id="gantt-body">
+          <tr v-if="ganttView.rows.length === 0">
+            <td class="muted" :colspan="ganttView.days.length * 2 + 1">{{ uiText.noDevices }}</td>
+          </tr>
+          <tr v-for="row in ganttView.rows" :key="row.device">
+            <td class="gantt-sticky">{{ row.device }}</td>
+            <td
+              v-for="segment in row.segments"
+              :key="segment.key"
+              :colspan="segment.colspan"
+              :data-testid="segment.scheduleId ? `gantt-segment-${segment.scheduleId}` : null"
+              @click="segment.scheduleId && openTaskDetailModal(segment.scheduleId)"
+            >
+              <button
+                :class="segment.className"
+                type="button"
+                :disabled="!segment.scheduleId"
+                :title="segment.title"
+              >
+                {{ segment.label }}
+              </button>
+            </td>
+          </tr>
+        </tbody>
       </table>
     </div>
   </section>
 
   <section class="grid cols-3 section">
     <div class="card">
-      <h3>下一次排程提示</h3>
-      <div class="muted">基于设备空闲与样品到样</div>
-      <div class="kpi" id="schedule-next-auto">--:--</div>
+      <h3>{{ uiText.nextSchedule }}</h3>
+      <div class="muted">{{ uiText.nextScheduleHint }}</div>
+      <div class="kpi">{{ summaryCards.nextAuto }}</div>
     </div>
     <div class="card">
-      <h3>冲突提醒</h3>
-      <div class="muted">待处理</div>
-      <div class="kpi" id="schedule-conflict-count">0</div>
+      <h3>{{ uiText.conflictAlert }}</h3>
+      <div class="muted">{{ uiText.pending }}</div>
+      <div class="kpi">{{ summaryCards.conflictCount }}</div>
     </div>
     <div class="card">
-      <h3>变更申请</h3>
-      <div class="muted">24小时内</div>
-      <div class="kpi" id="schedule-change-count">0</div>
+      <h3>{{ uiText.changeRequest }}</h3>
+      <div class="muted">{{ uiText.last24Hours }}</div>
+      <div class="kpi">{{ summaryCards.changeCount }}</div>
     </div>
   </section>
 
   <section class="card section">
-    <h3>排程清单</h3>
+    <h3>{{ uiText.scheduleList }}</h3>
     <div class="toolbar">
-      <input class="search-input" data-filter-input="#schedule-table" placeholder="筛选任务/设备/时间" />
+      <input v-model="scheduleSearch" class="search-input" :placeholder="uiText.scheduleSearchPlaceholder" />
     </div>
-    <table class="table" id="schedule-table" data-sortable>
+    <table class="table" id="schedule-table">
       <thead>
         <tr>
-          <th>序号</th>
-          <th data-sort>任务</th>
-          <th data-sort>设备</th>
-          <th data-sort>开始时间</th>
-          <th data-sort>结束时间</th>
-          <th data-sort>状态</th>
-          <th>操作</th>
+          <th>{{ uiText.index }}</th>
+          <th>{{ uiText.task }}</th>
+          <th>{{ uiText.device }}</th>
+          <th>{{ uiText.startTime }}</th>
+          <th>{{ uiText.endTime }}</th>
+          <th>{{ uiText.status }}</th>
+          <th>{{ uiText.actions }}</th>
         </tr>
       </thead>
-      <tbody id="schedule-table-body"></tbody>
+      <tbody>
+        <tr v-if="scheduleRows.length === 0">
+          <td class="muted" colspan="7">{{ uiText.noScheduleRecords }}</td>
+        </tr>
+        <tr v-for="(row, index) in scheduleRows" :key="row.id">
+          <td>{{ index + 1 }}</td>
+          <td>{{ row.taskCode }}</td>
+          <td>{{ row.device }}</td>
+          <td>{{ row.startAt }}</td>
+          <td>{{ row.endAt }}</td>
+          <td><span :class="row.rowStatusClass">{{ row.rowStatus }}</span></td>
+          <td>
+            <button
+              class="action-link"
+              type="button"
+              :data-testid="`open-schedule-drawer-${index}`"
+              @click="openScheduleDrawer(row.id)"
+            >
+              {{ uiText.edit }}
+            </button>
+          </td>
+        </tr>
+      </tbody>
     </table>
   </section>
 
   <section class="card section">
-    <h3>待解决冲突</h3>
+    <h3>{{ uiText.conflictList }}</h3>
     <div class="toolbar">
-      <input class="search-input" data-filter-input="#conflict-table" placeholder="筛选任务/设备/冲突类型" />
+      <input v-model="conflictSearch" class="search-input" :placeholder="uiText.conflictSearchPlaceholder" />
     </div>
-    <table class="table" id="conflict-table" data-sortable>
+    <table class="table" id="conflict-table">
       <thead>
         <tr>
-          <th>序号</th>
-          <th data-sort>任务</th>
-          <th data-sort>设备</th>
-          <th data-sort>冲突类型</th>
-          <th data-sort>影响</th>
-          <th>建议</th>
-          <th>操作</th>
+          <th>{{ uiText.index }}</th>
+          <th>{{ uiText.task }}</th>
+          <th>{{ uiText.device }}</th>
+          <th>{{ uiText.conflictType }}</th>
+          <th>{{ uiText.impact }}</th>
+          <th>{{ uiText.suggestion }}</th>
+          <th>{{ uiText.actions }}</th>
         </tr>
       </thead>
-      <tbody id="conflict-table-body"></tbody>
+      <tbody>
+        <tr v-if="conflictRows.length === 0">
+          <td class="muted" colspan="7">{{ uiText.noConflictRecords }}</td>
+        </tr>
+        <tr v-for="(row, index) in conflictRows" :key="`${row.id}-${index}`">
+          <td>{{ index + 1 }}</td>
+          <td>{{ row.taskCode }}</td>
+          <td>{{ row.device }}</td>
+          <td>{{ row.reason }}</td>
+          <td>{{ row.impact }}</td>
+          <td>{{ row.suggestion }}</td>
+          <td>
+            <button class="action-link" type="button" @click="openScheduleDrawer(row.id)">{{ uiText.edit }}</button>
+          </td>
+        </tr>
+      </tbody>
     </table>
   </section>
 
-  <div class="drawer" id="schedule-drawer">
-    <div class="modal-backdrop" data-drawer-close="schedule-drawer"></div>
-    <div class="drawer-content">
-      <div class="drawer-header">
-        <strong>排程编辑</strong>
-        <button class="drawer-close" data-drawer-close="schedule-drawer">关闭</button>
+  <AppModal :open="taskDetailModalOpen" :title="uiText.taskDetailTitle" @close="closeTaskDetailModal">
+    <div v-if="selectedTaskDetail" class="form-grid">
+      <div class="form-field">
+        <label>{{ uiText.taskCode }}</label>
+        <input :value="selectedTaskDetail.code" type="text" readonly />
       </div>
-      <form class="form-grid" data-form="schedule-edit">
-        <div class="form-field">
-          <label>任务编号</label>
-          <input type="text" name="task_code" readonly />
-        </div>
-        <div class="form-field">
-          <label>实验室</label>
-          <select
-            name="device"
-            data-schedule-edit-lab
-            data-placeholder="请选择实验室"
-            data-empty-placeholder="暂无实验室"
-            data-custom-label="其他/自定义"
-          >
-            <option value="">请选择实验室</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>排程日期</label>
-          <input type="date" name="schedule_date" />
-        </div>
-        <div class="form-field">
-          <label>时段</label>
-          <select name="time_slot" data-edit-time-slot>
-            <option value="morning">上午（08:00-11:30）</option>
-            <option value="afternoon">下午（13:30-17:00）</option>
-            <option value="custom">自定义</option>
-          </select>
-        </div>
-        <div class="form-field is-hidden" data-edit-custom-time>
-          <label>开始时间</label>
-          <input type="time" name="custom_start" />
-        </div>
-        <div class="form-field is-hidden" data-edit-custom-time>
-          <label>结束时间</label>
-          <input type="time" name="custom_end" />
-        </div>
-        <div class="form-actions" style="grid-column: 1 / -1;">
-          <a class="action-btn" href="#" data-action="schedule-update">保存修改</a>
-          <a class="action-btn secondary" href="#" data-action="schedule-delete">删除排程</a>
-        </div>
-        <div class="form-alert is-hidden" data-schedule-edit-warning style="grid-column: 1 / -1;"></div>
-      </form>
+      <div class="form-field">
+        <label>{{ uiText.taskName }}</label>
+        <input :value="selectedTaskDetail.name" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.testType }}</label>
+        <input :value="selectedTaskDetail.testType" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.source }}</label>
+        <input :value="selectedTaskDetail.source" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.priority }}</label>
+        <input :value="selectedTaskDetail.priority" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.status }}</label>
+        <input :value="selectedTaskDetail.status" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.lab }}</label>
+        <input :value="selectedTaskDetail.device" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.startTime }}</label>
+        <input :value="selectedTaskDetail.startAt" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.plannedHours }}</label>
+        <input :value="selectedTaskDetail.plannedHours" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.estimatedCompletionTime }}</label>
+        <input :value="selectedTaskDetail.estimatedEndAt" type="text" readonly />
+      </div>
     </div>
-  </div>
+  </AppModal>
+
+  <AppDrawer :open="scheduleDrawerOpen" :title="uiText.editScheduleTitle" @close="closeScheduleDrawer">
+    <form class="form-grid" @submit.prevent="saveSchedule">
+      <div class="form-field">
+        <label>{{ uiText.taskCode }}</label>
+        <input v-model="editForm.task_code" type="text" name="task_code" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.lab }}</label>
+        <select v-model="editForm.device" name="device" data-testid="schedule-edit-device">
+          <option value="">{{ uiText.selectLab }}</option>
+          <option
+            v-for="option in buildEditLabOptions(editForm.device, editForm.task_code)"
+            :key="option"
+            :value="option"
+          >
+            {{ option }}
+          </option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.scheduleDate }}</label>
+        <input v-model="editForm.schedule_date" type="date" name="schedule_date" />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.timeSlot }}</label>
+        <select v-model="editForm.time_slot" name="time_slot">
+          <option value="morning">{{ uiText.morningSlot }}</option>
+          <option value="afternoon">{{ uiText.afternoonSlot }}</option>
+          <option value="custom">{{ uiText.customSlot }}</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.plannedHours }}</label>
+        <input v-model="editForm.planned_hours" type="number" name="edit_planned_hours" min="0.5" step="0.5" />
+      </div>
+      <div class="form-field" :class="{ 'is-hidden': editForm.time_slot !== 'custom' }">
+        <label>{{ uiText.startTime }}</label>
+        <input v-model="editForm.custom_start" type="time" name="custom_start" />
+      </div>
+      <div class="form-alert" :class="{ 'is-hidden': !editWarning }" style="grid-column: 1 / -1;">
+        {{ editWarning }}
+      </div>
+      <div class="form-actions" style="grid-column: 1 / -1;">
+        <button class="action-btn" type="button" data-testid="schedule-update" @click="saveSchedule">{{ uiText.saveChanges }}</button>
+        <button class="action-btn secondary" type="button" data-testid="schedule-delete" @click="removeSchedule">
+          {{ uiText.deleteSchedule }}
+        </button>
+      </div>
+    </form>
+  </AppDrawer>
 </template>
 
+<script setup>
+import AppDrawer from "@/components/shared/AppDrawer.vue";
+import AppModal from "@/components/shared/AppModal.vue";
+import { useSchedulePage } from "@/composables/useSchedulePage";
+
+const uiText = {
+  actions: "操作",
+  afternoonShort: "下午 12:00-18:00",
+  afternoonSlot: "下午（12:00-18:00）",
+  changeRequest: "变更申请",
+  clear: "清空",
+  conflictAlert: "冲突提醒",
+  conflictList: "待解决冲突",
+  conflictSearchPlaceholder: "筛选任务/设备/冲突类型",
+  conflictType: "冲突类型",
+  confirmSchedule: "确认排程",
+  currentTime: "当前时间",
+  customSlot: "自定义",
+  deleteSchedule: "删除排程",
+  device: "设备",
+  edit: "编辑",
+  editScheduleTitle: "排程编辑",
+  endTime: "结束时间",
+  estimatedCompletionTime: "预计完成时间",
+  ganttTitle: "设备空闲排程（上午/下午）",
+  impact: "影响",
+  index: "序号",
+  lab: "实验室",
+  last24Hours: "24小时内",
+  manualTitle: "手动排程",
+  morningShort: "上午 08:00-12:00",
+  morningSlot: "上午（08:00-12:00）",
+  nextSchedule: "下一次排程提示",
+  nextScheduleHint: "基于设备空闲与样品到样",
+  noAcceptedTask: "暂无已接收任务",
+  noConflictRecords: "暂无冲突记录",
+  noDevices: "暂无设备",
+  noRetentionTasks: "暂无暂存间待分配任务",
+  noScheduleRecords: "暂无排程记录",
+  pending: "待处理",
+  pendingAllocation: "待分配",
+  plannedHours: "预计实验时长（小时）",
+  priority: "优先级",
+  retentionInternalHint: "仅显示未分配实验室的任务",
+  retentionInternalTitle: "暂存间内部排程单",
+  retentionTab: "暂存间排程",
+  retentionTime: "暂存时间",
+  saveChanges: "保存修改",
+  scheduleDate: "排程日期",
+  scheduleList: "排程清单",
+  scheduleSearchPlaceholder: "筛选任务/设备/时间",
+  selectAcceptedTask: "请选择已接收任务",
+  selectLab: "请选择实验室",
+  selectTaskFirst: "请先选择任务",
+  source: "任务来源",
+  startTime: "开始时间",
+  status: "状态",
+  suggestion: "建议",
+  task: "任务",
+  taskCode: "任务编号",
+  taskDetailTitle: "任务详情",
+  taskName: "任务名称",
+  testType: "试验类型",
+  timeSlot: "时段",
+  unpackingTab: "接驳区排程",
+  waited: "已等待",
+};
+
+const {
+  activeTab,
+  buildEditLabOptions,
+  closeScheduleDrawer,
+  closeTaskDetailModal,
+  conflictRows,
+  conflictSearch,
+  currentTimeLabel,
+  editForm,
+  editWarning,
+  ganttView,
+  manualLabOptions,
+  openScheduleDrawer,
+  openTaskDetailModal,
+  removeSchedule,
+  retentionInternalRows,
+  selectedTaskDetail,
+  retentionSelected,
+  saveSchedule,
+  taskDetailModalOpen,
+  scheduleDrawerOpen,
+  scheduleForm,
+  scheduleRows,
+  scheduleSearch,
+  scheduleWarning,
+  setActiveTab,
+  showRetentionPanel,
+  submitSchedule,
+  summaryCards,
+  taskOptions,
+  resetScheduleForm,
+} = useSchedulePage();
+</script>

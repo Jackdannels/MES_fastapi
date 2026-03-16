@@ -17,9 +17,12 @@
         </button>
       </div>
       <input
-        v-model.trim="keywordModel"
+        :value="keywordInput"
         class="search-input"
-        placeholder="按任务编号/任务类型/样品编号筛选"
+        placeholder="按任务编号、任务类型或样品编号筛选"
+        @compositionend="handleCompositionEnd"
+        @compositionstart="handleCompositionStart"
+        @input="handleInput"
       />
       <select :value="timeFilter" class="search-input" @change="emit('update:timeFilter', $event.target.value)">
         <option value="all">全部时间</option>
@@ -54,7 +57,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { ref, watch } from "vue";
 
 const props = defineProps({
   customEndDate: {
@@ -109,8 +112,36 @@ const emit = defineEmits([
   "update:viewMode",
 ]);
 
-const keywordModel = computed({
-  get: () => props.keyword,
-  set: (value) => emit("update:keyword", String(value || "").trim()),
-});
+const keywordInput = ref(props.keyword);
+const isComposing = ref(false);
+
+watch(
+  () => props.keyword,
+  (value) => {
+    if (!isComposing.value) {
+      keywordInput.value = value;
+    }
+  }
+);
+
+const commitKeyword = (value) => {
+  emit("update:keyword", String(value || "").trim());
+};
+
+const handleCompositionStart = () => {
+  isComposing.value = true;
+};
+
+const handleCompositionEnd = (event) => {
+  isComposing.value = false;
+  keywordInput.value = event?.target?.value ?? "";
+  commitKeyword(keywordInput.value);
+};
+
+const handleInput = (event) => {
+  keywordInput.value = event?.target?.value ?? "";
+  if (!isComposing.value) {
+    commitKeyword(keywordInput.value);
+  }
+};
 </script>

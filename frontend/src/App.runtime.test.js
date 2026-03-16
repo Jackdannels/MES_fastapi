@@ -3,37 +3,23 @@ import { nextTick, reactive } from "vue";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App.vue";
-import { bootLegacyUI } from "./legacy/boot.js";
 
-const { routeState, configState, routerReplace, logoutSessionMock } = vi.hoisted(() => ({
+const { routeState, routerReplace, logoutSessionMock } = vi.hoisted(() => ({
   routeState: {
-    meta: { module: "central" },
+    meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
     path: "/task-overview",
-  },
-  configState: {
-    enableLegacyUiBridge: true,
   },
   routerReplace: vi.fn(),
   logoutSessionMock: vi.fn(() => Promise.resolve()),
 }));
 
 const reactiveRoute = reactive(routeState);
-const legacyRouteNames = new Set(["dashboard", "tasks", "schedule", "samples", "devices", "data", "system"]);
-
-vi.mock("./legacy/boot.js", () => ({
-  bootLegacyUI: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("@/lib/appConfig", () => ({
-  appConfig: configState,
-  shouldBridgeLegacyUi: (route) =>
-    Boolean(configState.enableLegacyUiBridge && route?.meta?.legacyUi && legacyRouteNames.has(String(route?.name || ""))),
-}));
 
 vi.mock("vue-router", () => ({
   useRoute: () => reactiveRoute,
   useRouter: () => ({
+    push: vi.fn(() => Promise.resolve()),
     replace: routerReplace,
   }),
 }));
@@ -61,62 +47,87 @@ describe("App runtime boundary", () => {
   afterEach(() => {
     wrapper?.unmount();
     wrapper = undefined;
-    reactiveRoute.meta = { module: "central" };
+    reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
     reactiveRoute.name = "task-overview";
     reactiveRoute.path = "/task-overview";
-    configState.enableLegacyUiBridge = true;
     routerReplace.mockReset();
     logoutSessionMock.mockClear();
     vi.clearAllMocks();
   });
 
-  test("boots legacy ui for configured legacy routes", async () => {
-    reactiveRoute.meta = { module: "central", legacyUi: true };
+  test("renders central shell for samples route", async () => {
+    reactiveRoute.meta = { module: "central", title: "样品管理" };
+    reactiveRoute.name = "samples";
+    reactiveRoute.path = "/samples";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("样品管理");
+  });
+
+  test("renders central shell for vue-native routes", async () => {
+    reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("任务/托盘总览");
+  });
+
+  test("updates page title area when navigating across central routes", async () => {
+    reactiveRoute.meta = { module: "central", title: "试验数据", subtitle: "自动采集、校验与固定模板报告。" };
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("试验数据");
+
+    reactiveRoute.name = "devices";
+    reactiveRoute.path = "/devices";
+    reactiveRoute.meta = { module: "central", title: "设备资源", subtitle: "设备台账、校准状态与 Modbus 点位配置。" };
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("设备资源");
+  });
+
+  test("switches between central routes without bridge side effects", async () => {
+    reactiveRoute.meta = { module: "central", title: "任务受理" };
     reactiveRoute.name = "tasks";
     reactiveRoute.path = "/tasks";
 
     mountApp();
-
+    await nextTick();
     await nextTick();
 
-    expect(bootLegacyUI).toHaveBeenCalledTimes(1);
-  });
-
-  test("does not boot legacy ui for vue-native routes", async () => {
-    mountApp();
-
-    await nextTick();
-
-    expect(bootLegacyUI).not.toHaveBeenCalled();
-  });
-
-  test("does not boot legacy ui when the bridge is disabled", async () => {
-    reactiveRoute.meta = { module: "central", legacyUi: true };
-    reactiveRoute.name = "dashboard";
-    reactiveRoute.path = "/";
-    configState.enableLegacyUiBridge = false;
-
-    mountApp();
-
-    await nextTick();
-
-    expect(bootLegacyUI).not.toHaveBeenCalled();
-  });
-
-  test("boots legacy ui after navigating from a vue-native route to a configured legacy route", async () => {
-    mountApp();
-
-    await nextTick();
-
-    reactiveRoute.meta = { module: "central", legacyUi: true };
     reactiveRoute.name = "schedule";
     reactiveRoute.path = "/schedule";
-
+    reactiveRoute.meta = { module: "central", title: "排程看板" };
     await nextTick();
     await nextTick();
-    await Promise.resolve();
 
-    expect(bootLegacyUI).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).toContain("排程看板");
+  });
+
+  test("renders sidebar and header actions with utf-8 chinese labels", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览", subtitle: "任务、设备与数据流的实时概览。" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+
+    mountApp();
+    await nextTick();
+
+    const text = wrapper.text();
+    expect(text).toContain("七二四新火工区信息化中控管理系统");
+    expect(text).toContain("实验室中控管理");
+    expect(text).toContain("中控中心");
+    expect(text).toContain("中控总览");
+    expect(text).toContain("新建任务");
+    expect(text).toContain("刷新");
+    expect(text).toContain("退出登录");
+    expect(text).toContain("自动采集");
+    expect(text).toContain("固定报告");
   });
 
   test("logout delegates to backend session cleanup before routing to login", async () => {

@@ -34,7 +34,6 @@ const routes = [
       title: "中控总览",
       subtitle: "任务、设备与数据流的实时概览。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -55,7 +54,6 @@ const routes = [
       title: "任务受理",
       subtitle: "外部委托与内部新增统一受理与排队。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -64,9 +62,8 @@ const routes = [
     component: SchedulePage,
     meta: {
       title: "排程看板",
-      subtitle: "以设备空闲为核心的排程与冲突管理。",
+      subtitle: "以设备空间为核心的排程与冲突管理。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -77,7 +74,6 @@ const routes = [
       title: "样品管理",
       subtitle: "样品登记、到样确认、流转与留样全链路。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -98,7 +94,6 @@ const routes = [
       title: "设备资源",
       subtitle: "设备台账、校准状态与 Modbus 点位配置。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -109,7 +104,6 @@ const routes = [
       title: "试验数据",
       subtitle: "自动采集、校验与固定模板报告。",
       module: "central",
-      legacyUi: true,
     },
   },
   {
@@ -120,7 +114,6 @@ const routes = [
       title: "系统信息",
       subtitle: "用户、班次与基础配置。",
       module: "central",
-      legacyUi: true,
     },
   },
   {

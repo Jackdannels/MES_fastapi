@@ -10,7 +10,7 @@ const mountToolbar = (props = {}) =>
       customStartDate: "",
       isTrayCounterAlert: false,
       keyword: "",
-      overviewCounterLabel: "已排期/总任务数",
+      overviewCounterLabel: "已排期总任务数",
       overviewCounterValue: "1/2",
       testTypeFilter: "",
       testTypeOptions: ["冲击试验", "振动试验"],
@@ -23,7 +23,7 @@ const mountToolbar = (props = {}) =>
 describe("TaskOverviewToolbar", () => {
   test("defers keyword updates until composition ends and trims the committed value", async () => {
     const wrapper = mountToolbar();
-    const input = wrapper.find('input[placeholder="按任务编号/任务类型/样品编号筛选"]');
+    const input = wrapper.find('input[placeholder="按任务编号、任务类型或样品编号筛选"]');
 
     await input.trigger("compositionstart");
     input.element.value = " TASK-001 ";
@@ -54,7 +54,7 @@ describe("TaskOverviewToolbar", () => {
     });
 
     const inputs = wrapper.findAll('input[type="date"]');
-    await wrapper.find('input[placeholder="按任务编号/任务类型/样品编号筛选"]').setValue(" TASK-001 ");
+    await wrapper.find('input[placeholder="按任务编号、任务类型或样品编号筛选"]').setValue(" TASK-001 ");
     await wrapper.findAll("select.search-input")[1].setValue("振动试验");
     await inputs[0].setValue("2026-03-02");
     await inputs[1].setValue("2026-03-09");

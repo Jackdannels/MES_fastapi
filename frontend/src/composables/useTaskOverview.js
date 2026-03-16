@@ -12,7 +12,7 @@ const TRAY_OVERVIEW_TOTAL = 10;
 const SCHEDULED_LABEL = "已排期";
 const UNSCHEDULED_LABEL = "未排期";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
-const TASK_COUNTER_LABEL = "已排期/总任务数";
+const TASK_COUNTER_LABEL = "已排期总任务数";
 const TRAY_COUNTER_LABEL = "剩余托盘/总托盘数";
 
 function getTodayDateValue(now = new Date()) {

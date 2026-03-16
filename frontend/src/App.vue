@@ -34,7 +34,9 @@
           <p class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
-          <RouterLink class="action-btn" to="/tasks#task-intake-modal" data-modal-open="task-intake-modal">新建任务</RouterLink>
+          <button class="action-btn" data-testid="open-task-intake" type="button" @click="openTaskIntake">
+            新建任务
+          </button>
           <RouterLink class="action-btn secondary" to="/schedule">查看排程</RouterLink>
           <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <button class="action-btn secondary" type="button" @click="handleLogout">退出登录</button>
@@ -86,11 +88,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, watch } from "vue";
+import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logoutSession, readAuthSession } from "@/auth";
-import { shouldBridgeLegacyUi } from "@/lib/appConfig";
-import { bootLegacyUI } from "./legacy/boot.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -114,32 +114,33 @@ const currentModule = computed(() => {
 });
 const moduleLabel = computed(() => moduleLabelMap[currentModule.value] || moduleLabelMap.central);
 const isCentralModule = computed(() => currentModule.value === "central");
-const legacyUiBootKey = computed(() =>
-  shouldBridgeLegacyUi(route) ? `${String(route.name || "")}:${route.path || ""}` : "",
-);
-
-const maybeBootLegacyUi = async () => {
-  if (!legacyUiBootKey.value) {
-    return;
-  }
-  await nextTick();
-  await bootLegacyUI();
-};
 
 const isActive = (name) => route.name === name;
+
+const openTaskIntake = async () => {
+  const target = { path: "/tasks", hash: "#task-intake-modal" };
+
+  if (route.path === target.path) {
+    window.dispatchEvent(new CustomEvent("mes:open-task-intake"));
+    if (route.hash !== target.hash) {
+      void router.push(target).catch(() => {});
+    }
+    return;
+  }
+
+  try {
+    await router.push(target);
+  } finally {
+    window.dispatchEvent(new CustomEvent("mes:open-task-intake"));
+  }
+};
+
 const refreshPage = () => {
   window.location.reload();
 };
+
 const handleLogout = async () => {
   await logoutSession();
   router.replace("/login");
 };
-
-watch(
-  legacyUiBootKey,
-  () => {
-    void maybeBootLegacyUi();
-  },
-  { immediate: true, flush: "post" },
-);
 </script>

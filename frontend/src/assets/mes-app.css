@@ -1086,8 +1086,14 @@ input[type="datetime-local"].format-hint-empty:focus::before {
 
 /* 当前阶段：绿色强调 */
 .sample-flow-unified li.current {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
   border-width: 2px;
   font-weight: 600;
+}
+
+.sample-flow-unified li.current::before {
+  background: rgba(34, 197, 94, 0.9);
 }
 
 .login-wrap {
@@ -1779,6 +1785,7 @@ input[type="datetime-local"].format-hint-empty:focus::before {
   border-bottom: 2px solid rgba(56, 189, 248, 0.18); /* 底部边框 */
   border-right: 1px solid rgba(15, 23, 42, 0.08); /* 右侧边框 */
   text-align: center; /* 居中 */
+  vertical-align: middle; /* 垂直居中 */
 }
 
 /* 甘特图表头 */
@@ -1811,54 +1818,68 @@ input[type="datetime-local"].format-hint-empty:focus::before {
 
 /* 甘特图槽（空闲/占用） */
 .gantt-slot {
+  width: 100%; /* 占满单元格宽度 */
   min-height: 40px; /* 最小高度 */
   border-radius: 10px; /* 圆角 */
   display: flex; /* 弹性布局 */
   align-items: center; /* 垂直居中 */
   justify-content: center; /* 水平居中 */
+  margin: 0 auto; /* 水平居中 */
   padding: 6px 10px; /* 内边距 */
   white-space: nowrap; /* 不换行 */
   overflow: hidden; /* 超出隐藏 */
   text-overflow: ellipsis; /* 省略号 */
+  text-align: center; /* 文字居中 */
   border: 1px dashed rgba(15, 23, 42, 0.16); /* 虚线边框 */
-  background: rgba(248, 250, 252, 0.95); /* 背景 */
-  color: var(--muted); /* 文字色 */
+  background: rgba(241, 245, 249, 0.96); /* 背景 */
+  color: #64748b; /* 文字色 */
   font-size: 14px; /* 字号 */
   font-weight: 500; /* 字重 */
+  line-height: 1.2; /* 行高 */
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif; /* 与旧版一致 */
+  box-sizing: border-box; /* 盒模型 */
+  appearance: none; /* 去除按钮默认样式 */
+  -webkit-appearance: none; /* WebKit 去默认样式 */
+  cursor: pointer; /* 指针 */
 }
 
 /* 空闲槽（更醒目） */
 .gantt-slot.idle {
   font-size: 16px; /* 字号 */
   font-weight: 600; /* 字重 */
+  border-color: rgba(148, 163, 184, 0.35); /* 灰色边框 */
+  background: rgba(241, 245, 249, 0.98); /* 浅灰背景 */
+  color: #64748b; /* 灰蓝文字 */
 }
 
 /* 已占用槽 */
 .gantt-slot.busy {
   border-style: solid; /* 实线边框 */
-  background: rgba(56, 189, 248, 0.28); /* 背景 */
-  color: var(--text); /* 文字色 */
+  border-color: rgba(37, 99, 235, 0.42); /* 蓝色边框 */
+  background: rgba(191, 219, 254, 0.72); /* 背景 */
+  color: #1e3a8a; /* 文字色 */
 }
 
 /* 运行中槽 */
 .gantt-slot.busy.running {
-  background: rgba(34, 197, 94, 0.28); /* 绿色背景 */
-  border-color: rgba(34, 197, 94, 0.5); /* 绿色边框 */
-  color: var(--text); /* 文字色 */
+  background: rgba(187, 247, 208, 0.8); /* 绿色背景 */
+  border-color: rgba(34, 197, 94, 0.58); /* 绿色边框 */
+  color: #166534; /* 文字色 */
 }
 
 /* 已完成槽 */
 .gantt-slot.busy.completed {
-  background: rgba(148, 163, 184, 0.28); /* 灰色背景 */
-  border-color: rgba(148, 163, 184, 0.5); /* 灰色边框 */
-  color: var(--text); /* 文字色 */
+  background: rgba(226, 232, 240, 0.9); /* 灰色背景 */
+  border-color: rgba(100, 116, 139, 0.45); /* 灰色边框 */
+  color: #334155; /* 文字色 */
 }
 
 /* 冲突槽 */
 .gantt-slot.conflict {
   border-style: solid; /* 实线边框 */
-  background: rgba(244, 63, 94, 0.25); /* 背景 */
-  color: var(--text); /* 文字色 */
+  background: rgba(254, 205, 211, 0.84); /* 背景 */
+  border-color: rgba(244, 63, 94, 0.48); /* 边框 */
+  color: #9f1239; /* 文字色 */
   flex-direction: column; /* 垂直排列 */
   align-items: stretch; /* 拉伸 */
 }
@@ -1899,6 +1920,26 @@ input[type="datetime-local"].format-hint-empty:focus::before {
 /* hover 时强化槽边框 */
 .gantt tbody tr:hover td .gantt-slot {
   border-color: rgba(56, 189, 248, 0.3); /* 强化边框 */
+}
+
+.gantt tbody tr:hover td .gantt-slot.idle {
+  background: rgba(241, 245, 249, 0.98); /* 保持空闲浅灰 */
+  border-color: rgba(148, 163, 184, 0.38); /* 保持空闲边框 */
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy {
+  background: rgba(191, 219, 254, 0.82); /* 保持实验蓝底 */
+  border-color: rgba(37, 99, 235, 0.5); /* 保持蓝边 */
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy.running {
+  background: rgba(187, 247, 208, 0.86); /* 保持运行绿底 */
+  border-color: rgba(34, 197, 94, 0.6); /* 保持运行绿边 */
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy.completed {
+  background: rgba(226, 232, 240, 0.94); /* 保持完成灰底 */
+  border-color: rgba(100, 116, 139, 0.5); /* 保持完成灰边 */
 }
 
 /* 逐项出现动画 */
