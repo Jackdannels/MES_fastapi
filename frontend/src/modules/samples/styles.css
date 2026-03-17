@@ -1,0 +1,408 @@
+/* 样品模块下收样、流转、托盘处理和追溯视图的页面样式。 */
+/* 主工作区采用左右双栏布局，右侧容纳追踪或辅助面板。 */
+.sample-process-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) clamp(520px, 35vw, 760px);
+  gap: 16px;
+  align-items: start;
+}
+
+/* 任务处理视图会在主栏内继续拆成主内容和辅助信息两列。 */
+.sample-task-process-grid {
+  grid-template-columns: minmax(360px, 1.65fr) minmax(220px, 1fr);
+}
+
+/* 重点录入字段需要更强的视觉强调，便于现场快速操作。 */
+.sample-task-focus-field {
+  padding: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 14px;
+  background: transparent;
+}
+
+.sample-task-focus-field label {
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: #0f3a64;
+  font-weight: 700;
+}
+
+.sample-task-focus-select {
+  min-height: 52px;
+  font-size: 24px;
+  font-weight: 600;
+  border: 1px solid rgba(56, 189, 248, 0.55) !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
+.sample-task-focus-select:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.85) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22);
+}
+
+.sample-task-focus-hint {
+  margin-top: 8px;
+  color: #0f3a64 !important;
+  font-size: 12px;
+}
+
+/* 计数 KPI 与样品编码输入做局部尺寸覆盖。 */
+.sample-task-count-field {
+  align-self: stretch;
+}
+
+.sample-task-count-field .kpi {
+  font-size: 44px;
+  line-height: 1;
+}
+
+.sample-codes-input {
+  min-height: 0;
+  max-height: none;
+  overflow-y: hidden;
+  resize: none;
+}
+
+/* 托盘构建器分成可选样品区和托盘编辑区。 */
+.sample-tray-builder {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.sample-tray-source,
+.sample-tray-main {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.85);
+  padding: 10px;
+}
+
+/* 面板标题和提示文本用于引导当前托盘操作语境。 */
+.sample-tray-title {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+}
+
+.sample-tray-source-hint {
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(248, 250, 252, 0.92);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.sample-tray-source.has-active-tray .sample-tray-source-hint {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
+}
+
+/* 左侧样品源区域支持多标签拖拽。 */
+.sample-tray-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  min-height: 54px;
+}
+
+.sample-tray-chip {
+  appearance: none;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.14);
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--text);
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+}
+
+/* 不同状态的标签通过颜色、描边和阴影区分。 */
+.sample-tray-chip.is-active {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.sample-tray-chip.is-assigned:not(.is-active) {
+  border-color: hsla(var(--tray-hue, 196), 72%, 42%, 0.78);
+  background: hsla(var(--tray-hue, 196), 85%, 52%, 0.28);
+}
+
+.sample-tray-chip.is-assigned {
+  border-color: hsla(var(--tray-hue, 196), 72%, 42%, 0.78);
+  background: hsla(var(--tray-hue, 196), 85%, 52%, 0.28);
+  box-shadow: inset 0 0 0 1px hsla(var(--tray-hue, 196), 85%, 35%, 0.2);
+}
+
+.sample-tray-chip.is-active {
+  box-shadow: 0 0 0 2px hsla(var(--tray-hue, 140), 72%, 42%, 0.22);
+}
+
+.sample-tray-chip.is-target {
+  border-width: 2px;
+  font-weight: 600;
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 3px hsla(var(--tray-hue, 196), 72%, 42%, 0.25);
+}
+
+.sample-tray-source.has-active-tray .sample-tray-chip.is-dim {
+  opacity: 0.4;
+  filter: saturate(0.6);
+}
+
+.sample-tray-chip:active {
+  cursor: grabbing;
+}
+
+/* 托盘工具栏负责新增托盘和容量限制设置。 */
+.sample-tray-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sample-tray-add-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.sample-tray-limit {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sample-tray-limit input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(248, 250, 252, 0.95);
+  color: var(--text);
+  font-size: 12px;
+}
+
+/* 右侧托盘列表展示各托盘与样品分配情况。 */
+.sample-tray-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sample-tray-card {
+  border: 1px dashed rgba(15, 23, 42, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.sample-tray-card.is-active {
+  border-style: solid;
+  border-color: rgba(34, 197, 94, 0.55);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.14);
+}
+
+.sample-tray-card.is-drag-over {
+  border-color: rgba(56, 189, 248, 0.8);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.sample-tray-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sample-tray-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sample-tray-samples {
+  min-height: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sample-tray-sample-tag {
+  appearance: none;
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  background: rgba(56, 189, 248, 0.16);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sample-tray-sample-tag:active {
+  cursor: grabbing;
+}
+
+.sample-tray-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 托盘底部控制区用于容量显示与删除操作。 */
+.sample-tray-card-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.sample-tray-capacity {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.sample-tray-remove {
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  background: rgba(244, 63, 94, 0.1);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 流转卡片以时间线形式展示统一流程节点。 */
+.sample-flow-card {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  padding: 20px 20px 16px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.sample-flow-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.sample-flow-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.sample-flow-unified {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.sample-flow-unified li {
+  position: relative;
+  padding: 12px 14px 12px 38px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.1);
+  font-size: 15px;
+}
+
+.sample-flow-unified li::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.9);
+}
+
+.sample-flow-unified li::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: calc(100% - 1px);
+  width: 2px;
+  height: 12px;
+  background: rgba(56, 189, 248, 0.35);
+}
+
+.sample-flow-unified li:last-child::after {
+  display: none;
+}
+
+.sample-flow-unified li.reached {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.sample-flow-unified li.reached::before {
+  background: rgba(34, 197, 94, 0.9);
+}
+
+.sample-flow-unified li.reached::after {
+  background: rgba(34, 197, 94, 0.35);
+}
+
+.sample-flow-unified li.current {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.14);
+  border-width: 2px;
+  font-weight: 600;
+}
+
+.sample-flow-unified li.current::before {
+  background: rgba(34, 197, 94, 0.9);
+}
+
+/* 小屏下收敛为单列，避免托盘构建器横向拥挤。 */
+@media (max-width: 980px) {
+  .sample-process-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-task-process-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-tray-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-tray-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .sample-tray-limit {
+    min-width: 0;
+    width: 100%;
+    order: 3;
+  }
+
+  .sample-tray-card-controls {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,11 @@
+/* 可视化管理页的页面外壳和看板发布相关区块样式。 */
+/* 页面内容按纵向区块堆叠。 */
+.visualization-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 去除公共 section 的额外上边距，保持页面节奏统一。 */
+.visualization-page > .section {
+  margin-top: 0;
+}

@@ -1,0 +1,38 @@
+/* 任务受理页的页面布局、受理区块和抽屉表单间距。 */
+/* 页面主体按纵向区块排列任务列表和受理入口。 */
+.tasks-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 统一取消公共 section 的默认顶边距。 */
+.tasks-page > .section {
+  margin-top: 0;
+}
+
+/* 工具栏、卡片和表格在本页内做局部布局约束。 */
+.tasks-page .toolbar {
+  justify-content: space-between;
+}
+
+.tasks-page .card {
+  min-width: 0;
+}
+
+.tasks-page .table {
+  table-layout: fixed;
+}
+
+.tasks-list-card {
+  overflow: hidden;
+}
+
+/* 新建和编辑表单使用网格统一字段间距。 */
+.tasks-intake-form {
+  display: grid;
+  gap: 14px;
+}
+
+.tasks-edit-form {
+  margin-bottom: 14px;
+}

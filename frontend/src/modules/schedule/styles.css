@@ -1,0 +1,272 @@
+/* 排程看板的页面布局、甘特展示和留样区专属样式。 */
+/* 看板概览按行展示标签列和时间槽位列。 */
+.board {
+  display: grid;
+  gap: 14px;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+.board-track {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(60px, 1fr));
+  gap: 6px;
+}
+
+.board-slot {
+  height: 32px;
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px dashed rgba(15, 23, 42, 0.12);
+}
+
+.board-slot.fill {
+  background: rgba(56, 189, 248, 0.3);
+  border-style: solid;
+}
+
+/* 留样信息在表单区内使用醒目的只读展示。 */
+.form-field .retention-now {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.22);
+  color: var(--text);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+}
+
+/* 留样内部汇总头部显示数量和老化级别。 */
+.retention-internal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.retention-internal-count {
+  text-align: right;
+}
+
+.retention-age {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid transparent;
+}
+
+/* 不同老化等级用颜色区分处置优先级。 */
+.retention-age.level-0 {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.retention-age.level-1 {
+  background: rgba(245, 158, 11, 0.22);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.retention-age.level-2 {
+  background: rgba(249, 115, 22, 0.22);
+  border-color: rgba(249, 115, 22, 0.5);
+}
+
+.retention-age.level-3 {
+  background: rgba(244, 63, 94, 0.22);
+  border-color: rgba(244, 63, 94, 0.5);
+}
+
+/* 甘特图外层负责横向滚动和圆角容器裁切。 */
+.gantt-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.gantt {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+/* 表头和固定首列保证横向滚动时仍可识别设备行。 */
+.gantt th,
+.gantt td {
+  padding: 14px 12px;
+  border-bottom: 2px solid rgba(56, 189, 248, 0.18);
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.gantt thead th {
+  background: rgba(241, 245, 249, 0.95);
+  color: var(--text);
+  font-weight: 900;
+  font-size: 16px;
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif;
+}
+
+.gantt-sticky {
+  position: sticky;
+  left: 0;
+  background: rgba(255, 255, 255, 0.98);
+  z-index: 2;
+  text-align: left;
+  font-size: 16px;
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif;
+  font-weight: 700;
+}
+
+.gantt td.gantt-sticky {
+  z-index: 1;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* 单元格内的 gantt-slot 既承载空闲态，也承载任务块。 */
+.gantt-slot {
+  width: 100%;
+  min-height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 6px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  border: 1px dashed rgba(15, 23, 42, 0.16);
+  background: rgba(241, 245, 249, 0.96);
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* 任务块根据空闲、占用、运行中、完成和冲突等状态着色。 */
+.gantt-slot.idle {
+  font-size: 16px;
+  font-weight: 600;
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(241, 245, 249, 0.98);
+  color: #64748b;
+}
+
+.gantt-slot.busy {
+  border-style: solid;
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(191, 219, 254, 0.72);
+  color: #1e3a8a;
+}
+
+.gantt-slot.busy.running {
+  background: rgba(187, 247, 208, 0.8);
+  border-color: rgba(34, 197, 94, 0.58);
+  color: #166534;
+}
+
+.gantt-slot.busy.completed {
+  background: rgba(226, 232, 240, 0.9);
+  border-color: rgba(100, 116, 139, 0.45);
+  color: #334155;
+}
+
+.gantt-slot.conflict {
+  border-style: solid;
+  background: rgba(254, 205, 211, 0.84);
+  border-color: rgba(244, 63, 94, 0.48);
+  color: #9f1239;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.gantt-conflict-label {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.gantt-conflict-select {
+  width: 100%;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: rgba(248, 250, 252, 0.98);
+  color: var(--text);
+  font-size: 11px;
+}
+
+/* 聚焦与 hover 态用于辅助当前排程定位。 */
+.gantt-slot.focus {
+  outline: 2px solid rgba(244, 63, 94, 0.8);
+  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.25);
+}
+
+.gantt tbody tr:nth-child(even) td {
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.gantt tbody tr:hover td {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.gantt tbody tr:hover td .gantt-slot {
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+.gantt tbody tr:hover td .gantt-slot.idle {
+  background: rgba(241, 245, 249, 0.98);
+  border-color: rgba(148, 163, 184, 0.38);
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy {
+  background: rgba(191, 219, 254, 0.82);
+  border-color: rgba(37, 99, 235, 0.5);
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy.running {
+  background: rgba(187, 247, 208, 0.86);
+  border-color: rgba(34, 197, 94, 0.6);
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy.completed {
+  background: rgba(226, 232, 240, 0.94);
+  border-color: rgba(100, 116, 139, 0.5);
+}
+
+/* 小屏下先压缩头部，再让行结构改成单列。 */
+@media (max-width: 980px) {
+  .retention-internal-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .retention-internal-count {
+    text-align: left;
+  }
+
+  .board-row {
+    grid-template-columns: 1fr;
+  }
+}

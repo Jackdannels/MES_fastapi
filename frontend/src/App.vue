@@ -8,15 +8,15 @@
         <span>实验室中控管理</span>
       </div>
       <nav class="nav">
-        <RouterLink class="nav-link" :class="{ active: isActive('dashboard') }" to="/">中控总览</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('task-overview') }" to="/task-overview">任务/托盘总览</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('tasks') }" to="/tasks">任务受理</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('schedule') }" to="/schedule">排程看板</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('samples') }" to="/samples">样品管理</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('process') }" to="/process">试验过程</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('devices') }" to="/devices">设备资源</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('data') }" to="/data">试验数据</RouterLink>
-        <RouterLink class="nav-link" :class="{ active: isActive('system') }" to="/system">系统信息</RouterLink>
+        <RouterLink
+          v-for="navItem in centralNavigation"
+          :key="navItem.route.name"
+          class="nav-link"
+          :class="{ active: isActive(navItem.route.name) }"
+          :to="navItem.route.path"
+        >
+          {{ navItem.route.meta?.title }}
+        </RouterLink>
       </nav>
       <div class="sidebar-footer">
         已连接：Modbus
@@ -54,20 +54,13 @@
       </div>
       <nav class="nav">
         <RouterLink
-          v-if="currentModule === 'visual'"
+          v-for="navItem in moduleNavigation"
+          :key="navItem.route.name"
           class="nav-link"
-          :class="{ active: isActive('visualization') }"
-          to="/visualization"
+          :class="{ active: isActive(navItem.route.name) }"
+          :to="navItem.route.path"
         >
-          可视化管理
-        </RouterLink>
-        <RouterLink
-          v-if="currentModule === 'staging'"
-          class="nav-link"
-          :class="{ active: isActive('staging-management') }"
-          to="/staging-management"
-        >
-          暂存间管理
+          {{ navItem.route.meta?.title }}
         </RouterLink>
       </nav>
     </aside>
@@ -91,6 +84,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { logoutSession, readAuthSession } from "@/auth";
+import { getNavigationModules } from "@/modules";
 
 const route = useRoute();
 const router = useRouter();
@@ -114,6 +108,8 @@ const currentModule = computed(() => {
 });
 const moduleLabel = computed(() => moduleLabelMap[currentModule.value] || moduleLabelMap.central);
 const isCentralModule = computed(() => currentModule.value === "central");
+const centralNavigation = computed(() => getNavigationModules("central"));
+const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
 
 const isActive = (name) => route.name === name;
 

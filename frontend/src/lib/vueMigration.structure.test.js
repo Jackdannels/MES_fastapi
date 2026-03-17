@@ -15,10 +15,10 @@ describe("vue migration structure", () => {
 
   test("page models and schedule test no longer import labs from legacy runtime", () => {
     const files = [
-      "src/lib/tasksPageModel.js",
-      "src/lib/devicesPageModel.js",
-      "src/lib/schedulePageModel.js",
-      "src/pages/SchedulePage.runtime.test.js",
+      "src/modules/tasks/model.js",
+      "src/modules/devices/model.js",
+      "src/modules/schedule/model.js",
+      "src/modules/schedule/page.runtime.test.js",
     ];
 
     files.forEach((file) => {

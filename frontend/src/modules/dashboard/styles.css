@@ -1,0 +1,44 @@
+/* 中控总览页的页面布局，以及仅属于该页的视觉分组。 */
+/* 任务列表顶部的标题和分页操作区。 */
+.dashboard-task-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dashboard-task-pagination {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* 分页按钮的基础态、激活态和不可用态。 */
+.dashboard-task-pagination .page-btn {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.dashboard-task-pagination .page-btn.active {
+  background: rgba(56, 189, 248, 0.28);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.dashboard-task-pagination .page-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 省略号用于压缩较长分页列表的视觉宽度。 */
+.dashboard-task-pagination .page-ellipsis {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 4px;
+}

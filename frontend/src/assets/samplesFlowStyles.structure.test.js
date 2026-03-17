@@ -3,14 +3,17 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("samples flow styles", () => {
-  test("current flow step keeps the green active state", () => {
-    const cssPath = resolve(process.cwd(), "src/assets/mes-app.css");
-    const cssSource = readFileSync(cssPath, "utf8");
+  test("current flow step keeps the green active state in the samples module stylesheet", () => {
+    const moduleCssPath = resolve(process.cwd(), "src/modules/samples/styles.css");
+    const moduleCssSource = readFileSync(moduleCssPath, "utf8");
+    const sharedComponentsCssPath = resolve(process.cwd(), "src/shared/styles/components.css");
+    const sharedComponentsCssSource = readFileSync(sharedComponentsCssPath, "utf8");
 
-    expect(cssSource).toContain(".sample-flow-unified li.current {");
-    expect(cssSource).toContain("border-color: rgba(34, 197, 94, 0.45);");
-    expect(cssSource).toContain("background: rgba(34, 197, 94, 0.14);");
-    expect(cssSource).toContain(".sample-flow-unified li.current::before {");
-    expect(cssSource).toContain("background: rgba(34, 197, 94, 0.9);");
+    expect(moduleCssSource).toContain(".sample-flow-unified li.current {");
+    expect(moduleCssSource).toContain("border-color: rgba(34, 197, 94, 0.45);");
+    expect(moduleCssSource).toContain("background: rgba(34, 197, 94, 0.14);");
+    expect(moduleCssSource).toContain(".sample-flow-unified li.current::before {");
+    expect(moduleCssSource).toContain("background: rgba(34, 197, 94, 0.9);");
+    expect(sharedComponentsCssSource).not.toContain(".sample-flow-unified li.current {");
   });
 });

@@ -81,7 +81,7 @@ describe("storageApi", () => {
     });
   });
 
-  test("sanitizes legacy sample text from local storage on read", async () => {
+  test("refreshes local sample cache from clean remote storage payload", async () => {
     window.localStorage.setItem(
       STORAGE_KEYS.samples,
       JSON.stringify([
@@ -97,7 +97,26 @@ describe("storageApi", () => {
         },
       ])
     );
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          [STORAGE_KEYS.samples]: [
+            {
+              code: "S-1",
+              task_code: "T-1",
+              history: [
+                {
+                  action: "样品编号重排",
+                  detail: "任务 T-1",
+                },
+              ],
+            },
+          ],
+        }),
+      })
+    );
 
     const snapshot = await readStorageSnapshot([STORAGE_KEYS.samples]);
 

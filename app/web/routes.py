@@ -2,25 +2,12 @@ from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, PlainTextResponse
+from app.modules.registry import SPA_ROUTES
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_DIST_DIR = REPO_ROOT / "frontend" / "dist"
 FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 SPA_INDEX = FRONTEND_DIST_DIR / "index.html"
-SPA_ROUTES = (
-    "/",
-    "/login",
-    "/task-overview",
-    "/tasks",
-    "/schedule",
-    "/samples",
-    "/process",
-    "/devices",
-    "/data",
-    "/system",
-    "/visualization",
-    "/staging-management",
-)
 
 
 def spa_response() -> FileResponse:

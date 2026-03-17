@@ -1,0 +1,11 @@
+/* 暂存间管理页的页面外壳和模块自有区块间距。 */
+/* 页面主体按纵向区块排列。 */
+.staging-management-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 关闭公共 section 的默认上边距，保持页面间距统一。 */
+.staging-management-page > .section {
+  margin-top: 0;
+}

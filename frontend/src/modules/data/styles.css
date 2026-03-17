@@ -1,0 +1,30 @@
+/* 试验数据页的页面布局、报告预览间距和详情面板样式。 */
+/* 页面采用纵向网格组织各个数据区块。 */
+.data-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 复用公共 section 时去掉默认外边距，保持页内节奏一致。 */
+.data-page > .section {
+  margin-top: 0;
+}
+
+/* 工具栏和表格在数据页内做轻量定制。 */
+.data-page .toolbar {
+  justify-content: space-between;
+}
+
+.data-page .table {
+  table-layout: fixed;
+}
+
+.data-monitor-card {
+  overflow: hidden;
+}
+
+/* 报告预览卡片内部使用网格堆叠内容。 */
+.data-report-card {
+  display: grid;
+  gap: 16px;
+}

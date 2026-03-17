@@ -1,0 +1,44 @@
+/* 设备资源页的页面布局、台账区块和设备表单间距。 */
+/* 页面主体按纵向区块排列。 */
+.devices-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 关闭公共 section 的顶边距，避免和页面网格重复叠加。 */
+.devices-page > .section {
+  margin-top: 0;
+}
+
+/* 工具栏、表格和表单动作区在本页做局部对齐调整。 */
+.devices-page .toolbar {
+  justify-content: space-between;
+}
+
+.devices-page .table {
+  table-layout: fixed;
+}
+
+.devices-page .form-actions {
+  flex-wrap: wrap;
+}
+
+/* 设备台账和连接配置区块采用独立卡片排布。 */
+.devices-registry-card {
+  display: grid;
+  gap: 16px;
+}
+
+.devices-table-card {
+  overflow: hidden;
+}
+
+.devices-connection-card {
+  display: grid;
+  gap: 16px;
+}
+
+/* 点位映射表保留裁切，避免内容溢出圆角容器。 */
+.devices-points-card {
+  overflow: hidden;
+}

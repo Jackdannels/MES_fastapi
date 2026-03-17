@@ -1,0 +1,26 @@
+/* 系统信息页的页面布局、角色管理区块和设置样式。 */
+/* 页面采用标准纵向区块布局。 */
+.system-page {
+  display: grid;
+  gap: 22px;
+}
+
+/* 复用 section 时去掉额外上边距。 */
+.system-page > .section {
+  margin-top: 0;
+}
+
+/* 工具栏拉开操作与筛选控件。 */
+.system-page .toolbar {
+  justify-content: space-between;
+}
+
+/* 角色与设置卡片分别控制表格裁切和内部间距。 */
+.system-roles-card {
+  overflow: hidden;
+}
+
+.system-settings-card {
+  display: grid;
+  gap: 16px;
+}

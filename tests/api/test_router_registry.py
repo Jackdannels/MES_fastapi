@@ -1,4 +1,4 @@
-from app.api.routes import API_ROUTERS
+from app.modules.registry import API_ROUTERS
 
 
 def test_api_router_registry_exposes_expected_prefixes():

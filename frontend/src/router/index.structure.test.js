@@ -20,6 +20,22 @@ const extractRouteBlock = (source, routeName) => {
 };
 
 describe("router structure", () => {
+  test("aggregates routes from the modules registry instead of importing page files directly", () => {
+    const source = readFileSync(routerPath, "utf8");
+
+    expect(source).toContain('from "@/modules"');
+    expect(source).not.toContain('from "@/pages/LoginPage.vue"');
+    expect(source).not.toContain('from "@/pages/DashboardPage.vue"');
+    expect(source).not.toContain('from "@/pages/TaskOverviewPage.vue"');
+    expect(source).not.toContain('from "@/pages/TasksPage.vue"');
+    expect(source).not.toContain('from "@/pages/SchedulePage.vue"');
+    expect(source).not.toContain('from "@/pages/SamplesPage.vue"');
+    expect(source).not.toContain('from "@/pages/ProcessPage.vue"');
+    expect(source).not.toContain('from "@/pages/DevicesPage.vue"');
+    expect(source).not.toContain('from "@/pages/DataPage.vue"');
+    expect(source).not.toContain('from "@/pages/SystemPage.vue"');
+  });
+
   test("delegates auth guard logic to authRouting helpers", () => {
     const source = readFileSync(routerPath, "utf8");
 

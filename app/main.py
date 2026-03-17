@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import API_ROUTERS
 from app.core.config import Settings, settings
+from app.modules.registry import API_ROUTERS
 from app.web import routes as web_routes
 
 
