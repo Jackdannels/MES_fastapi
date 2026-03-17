@@ -14,6 +14,7 @@ import {
   updateScheduleRecord,
 } from "./model";
 
+// 这组测试主要保护排程页最容易回归的时间边界、暂存间迁移和甘特图契约。
 describe("schedulePageModel", () => {
   test("resolveScheduleTimes keeps fixed slot boundaries", () => {
     const result = resolveScheduleTimes(
@@ -66,6 +67,7 @@ describe("schedulePageModel", () => {
   });
 
   test("createScheduleRecord rewrites retention entries when a retained task is sent to a lab", () => {
+    // 暂存间记录转正式实验室时必须复用原记录，而不是新增第二条排程。
     const result = createScheduleRecord({
       form: {
         device: "冲击一室",
@@ -95,6 +97,7 @@ describe("schedulePageModel", () => {
   });
 
   test("buildGanttRows and buildRetentionInternalRows preserve visible schedule board state", () => {
+    // 同时覆盖正式排程看板与暂存面板，避免两套视图口径漂移。
     const gantt = buildGanttRows({
       devices: [{ code: "冲击一室" }],
       schedules: [{ id: "schedule-1", task_code: "CJ-2026-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
@@ -209,6 +212,7 @@ describe("schedulePageModel", () => {
   });
 
   test("buildGanttRows extends the window and emits a continuous segment for cross-day schedules", () => {
+    // 超过默认 3 天窗口的长排程必须继续可见，并折叠成连续段。
     const gantt = buildGanttRows({
       devices: [{ code: "Lab-A" }],
       schedules: [

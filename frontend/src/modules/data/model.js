@@ -1,13 +1,16 @@
 // 将数据流记录整理为试验数据页所需的行数据、指标和报告表单默认值。
 const STATUS_COMPLETE = "已完成";
 
+// 所有文本字段统一转成去首尾空格后的字符串，避免页面直接消费 null / undefined。
 const normalizeText = (value) => String(value ?? "").trim();
 
+// 质量等数值字段在计算前转成 number，解析失败时兜底为 0。
 const toNumber = (value) => {
   const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+// 根据数据流状态映射列表项展示使用的状态样式类。
 const resolveStatusClass = (status) => {
   const normalized = normalizeText(status);
   if (normalized === "采集中") {
@@ -26,6 +29,7 @@ const resolveStatusClass = (status) => {
 function buildDataRows(streams) {
   const streamList = Array.isArray(streams) ? streams : [];
   return streamList.map((stream, index) => ({
+    // 各字段在这里一次性完成缺省值补齐，避免视图层再处理容错。
     device: normalizeText(stream?.device) || "-",
     id: normalizeText(stream?.id) || `stream-${index + 1}`,
     lastPacket: normalizeText(stream?.last_packet) || "-",
@@ -39,7 +43,9 @@ function buildDataRows(streams) {
 // 构建顶部汇总指标，包括流数量、质量和完成状态。
 function buildDataMetrics(streams) {
   const streamList = Array.isArray(streams) ? streams : [];
+  // 非“已完成”的流仍需人工校验。
   const validationCount = streamList.filter((stream) => normalizeText(stream?.status) !== STATUS_COMPLETE).length;
+  // 已完成但还未生成报告的流会进入待出报告统计。
   const reportCount = streamList.filter((stream) => normalizeText(stream?.status) === STATUS_COMPLETE && !stream?.reported).length;
   return {
     reportCount,
@@ -51,6 +57,7 @@ function buildDataMetrics(streams) {
 // 将选中的表格行标准化为详情抽屉使用的数据结构。
 function buildSelectedDataRow(row = {}) {
   return {
+    // 抽屉中质量字段固定带百分号展示。
     quality: normalizeText(row?.quality) ? `${normalizeText(row.quality)}%` : "0%",
     status: normalizeText(row?.status) || "采集中",
     taskCode: normalizeText(row?.taskCode) || "-",

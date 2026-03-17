@@ -26,8 +26,10 @@ const FLOW_STEPS = SAMPLE_FLOW_STEPS;
 const FLOW_STEP_INDEX = new Map(FLOW_STEPS.map((step, index) => [step.key, index]));
 const getCurrentFlowStepKey = (stage) => (stage === "stored" ? "arrived" : "in_transit");
 
+// 托盘处理流程里所有任务号、样品号都统一规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 
+// 打印预览区使用文本摘要快速展示当前托盘分布。
 const buildTrayPreviewText = (trayDraft) =>
   (Array.isArray(trayDraft?.trays) ? trayDraft.trays : [])
     .map((tray) => {
@@ -70,6 +72,7 @@ function useSamplesProcess() {
   const currentFlowKey = computed(() => getCurrentFlowStepKey(flowStage.value));
   const flowSteps = computed(() =>
     FLOW_STEPS.map((step, index) => {
+      // 步骤条按当前流程阶段派生出“已达成/当前”两个视觉状态。
       const currentIndex = FLOW_STEP_INDEX.get(currentFlowKey.value) ?? 0;
       return {
         ...step,
@@ -93,6 +96,7 @@ function useSamplesProcess() {
     });
     activeTrayIndex.value = trayDraft.value.trays.length ? 0 : -1;
     printPayload.value = buildInitialPrintPayload(nextTaskCode, rawTasks.value, trayDraft.value);
+    // 已经存在托盘号的任务视为已入库锁定态。
     storeLocked.value = printPayload.value.trayCodes.length > 0;
     flowStage.value = storeLocked.value ? "stored" : nextTaskCode ? "draft" : "idle";
   };
@@ -117,6 +121,7 @@ function useSamplesProcess() {
     if (!trayDraft.value.taskCode || storeLocked.value) {
       return;
     }
+    // 新增托盘后会按最新托盘数重新均衡分配样品。
     trayDraft.value.trays = buildBalancedTrayDraft({
       taskCode: trayDraft.value.taskCode,
       sampleCodes: trayDraft.value.sampleCodes,
@@ -153,6 +158,7 @@ function useSamplesProcess() {
     const parsed = Number.parseInt(String(value ?? "").trim(), 10);
     const nextLimit = Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
     trayDraft.value.maxPerTray = nextLimit;
+    // 修改单盘上限后，整份草稿会重新按新约束分布。
     trayDraft.value.trays = buildBalancedTrayDraft({
       taskCode: trayDraft.value.taskCode,
       sampleCodes: trayDraft.value.sampleCodes,
@@ -220,6 +226,7 @@ function useSamplesProcess() {
       return;
     }
 
+    // 入库确认会同时刷新任务、样品、打印载荷和流程阶段。
     rawTasks.value = result.tasks;
     rawSamples.value = result.samples;
     await persistSnapshot({
@@ -244,6 +251,7 @@ function useSamplesProcess() {
     if (!selectedTaskCode.value) {
       return;
     }
+    // 恢复后仅取消前端锁定，不回滚已落盘的任务/样品数据。
     storeLocked.value = false;
     flowStage.value = "repartition";
     printPayload.value = { taskCode: selectedTaskCode.value, trayCodes: [] };
@@ -264,6 +272,7 @@ function useSamplesProcess() {
       return;
     }
 
+    // 这里直接生成独立打印页，避免依赖运行环境额外的打印组件。
     const cards = payload.trayCodes
       .map(
         (code, index) => `

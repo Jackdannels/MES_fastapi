@@ -14,15 +14,19 @@ const SLOT_RANGES = Object.freeze({
   afternoon: { start: "12:00", end: "18:00", label: "下午 12:00-18:00" },
 });
 
+// 排程模块的大部分判断都依赖稳定字符串，因此先做统一规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 
+// 暂存间是特殊设备类型，很多冲突和状态判断都要排除它。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_KEYWORD);
 
+// 输入可能来自 ISO 字符串、空值或 Date 实例，统一在这里做容错解析。
 const parseDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+// 把 Date 对象格式化成日期输入框可直接消费的 yyyy-MM-dd。
 const toLocalDateValue = (date) => {
   const source = date instanceof Date ? new Date(date.getTime()) : new Date(date);
   if (Number.isNaN(source.getTime())) {
@@ -34,6 +38,7 @@ const toLocalDateValue = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+// 从日期对象中提取 HH:mm，供时间输入框和展示逻辑复用。
 const toLocalTimeValue = (value) => {
   const date = parseDate(value);
   if (!date) {
@@ -42,6 +47,7 @@ const toLocalTimeValue = (value) => {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 };
 
+// 排程表格统一展示 yyyy-MM-dd HH:mm 格式。
 const formatDateTime = (value) => {
   const date = parseDate(value);
   if (!date) {
@@ -50,14 +56,17 @@ const formatDateTime = (value) => {
   return `${toLocalDateValue(date)} ${toLocalTimeValue(date)}`;
 };
 
+// 甘特图和默认排程窗口经常需要按天偏移。
 const addDays = (date, days) => {
   const nextDate = new Date(date.getTime());
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
 };
 
+// 判断两个时间区间是否重叠，是冲突检测和甘特图命中的基础工具。
 const overlaps = (startA, endA, startB, endB) => startA < endB && endA > startB;
 
+// 新增排程、流记录等前端实体时使用轻量级本地 ID。
 const createId = (prefix) => {
   const random = Math.floor(Math.random() * 1000)
     .toString()
@@ -68,6 +77,7 @@ const createId = (prefix) => {
 const SLOT_SEQUENCE = ["am", "pm"];
 const HALF_DAY_MS = 12 * 60 * 60 * 1000;
 
+// 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
 const parsePlannedHours = (value) => {
   const rawValue = Number.parseFloat(String(value ?? "").trim());
   if (!Number.isFinite(rawValue)) {
@@ -77,6 +87,7 @@ const parsePlannedHours = (value) => {
   return normalized >= 0.5 ? normalized : null;
 };
 
+// 如果没有显式填写计划时长，则从开始/结束时间反推。
 const inferPlannedHours = (startAt, endAt) => {
   if (!startAt || !endAt) {
     return 3.5;
@@ -85,6 +96,7 @@ const inferPlannedHours = (startAt, endAt) => {
   return parsePlannedHours(hours) || 3.5;
 };
 
+// 甘特图里的时间段会根据当前时刻区分为进行中、已完成或忙碌。
 const getSlotState = ({ startAt, endAt, now }) => {
   if (startAt && endAt) {
     if (endAt < now) {
@@ -97,12 +109,14 @@ const getSlotState = ({ startAt, endAt, now }) => {
   return { state: "busy", className: "gantt-slot busy" };
 };
 
+// 计算视图窗口需要覆盖多少天，以便甘特图自动延展。
 const getDaySpan = (startDate, endDate) => {
   const startValue = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
   const endValue = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime();
   return Math.floor((endValue - startValue) / (24 * 60 * 60 * 1000));
 };
 
+// 手动排程默认落在“当前时刻之后最近一个合法时段”。
 const resolveLegalManualScheduleState = (now = new Date()) => {
   const current = parseDate(now) || new Date();
   const currentHour = current.getHours();
@@ -127,6 +141,7 @@ const resolveLegalManualScheduleState = (now = new Date()) => {
   };
 };
 
+// 阻止用户把手动排程放到已经过去的非法时间片。
 const isManualScheduleSelectionLegal = (form, now = new Date()) => {
   const selectedDate = normalizeText(form?.schedule_date);
   const selectedSlot = normalizeText(form?.time_slot) || "morning";
@@ -193,6 +208,7 @@ function buildScheduleEditForm(schedule) {
     timeSlot = "afternoon";
   }
 
+  // 编辑表单会尽量把固定时段还原回上午/下午选项，否则回退到自定义时段。
   return {
     custom_end: endTime,
     custom_start: startTime,
@@ -214,6 +230,7 @@ function resolveScheduleTimes(form, now = new Date()) {
 
   const isRetention = isRetentionDevice(form?.device);
   if (isRetention) {
+    // 暂存间记录按“立即进入、立即结束”的占位逻辑处理，不占正式实验时长。
     const startAt = new Date(now.getTime());
     const endAt = new Date(now.getTime());
     return {
@@ -232,6 +249,7 @@ function resolveScheduleTimes(form, now = new Date()) {
   let plannedHours = parsePlannedHours(form?.planned_hours);
 
   if (slot === "custom") {
+    // 自定义时段优先使用手填开始时间，如未填计划时长则从结束时间反推。
     startTime = normalizeText(form?.custom_start);
     if (!startTime) {
       return { error: "Custom start time required" };
@@ -243,6 +261,7 @@ function resolveScheduleTimes(form, now = new Date()) {
       plannedHours = inferPlannedHours(startAt, endAt);
     }
   } else {
+    // 上午/下午快捷时段直接复用预设时间窗。
     const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
     startTime = range.start;
     plannedHours ||= inferPlannedHours(
@@ -282,6 +301,7 @@ function resolveTaskStatus(taskCode, schedules, now = new Date()) {
   const retentionSchedules = related.filter((schedule) => isRetentionDevice(schedule?.device));
   const currentTime = now.getTime();
 
+  // 优先判断是否有正在执行的正式实验。
   const activeLab = labSchedules.find((schedule) => {
     const start = parseDate(schedule?.start_at);
     const end = parseDate(schedule?.end_at);
@@ -291,6 +311,7 @@ function resolveTaskStatus(taskCode, schedules, now = new Date()) {
     return STATUS_RUNNING;
   }
 
+  // 其次判断是否存在未来或尚未结束的正式实验排程。
   const futureLab = labSchedules.find((schedule) => {
     const end = parseDate(schedule?.end_at);
     return end && end.getTime() > currentTime;
@@ -299,6 +320,7 @@ function resolveTaskStatus(taskCode, schedules, now = new Date()) {
     return STATUS_SCHEDULED;
   }
 
+  // 有历史实验结束记录但没有后续排程时，视为已完成。
   const completedLab = labSchedules.find((schedule) => {
     const end = parseDate(schedule?.end_at);
     return end && end.getTime() < currentTime;
@@ -339,6 +361,7 @@ function buildScheduleRows({ schedules, tasks, now = new Date() }) {
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
       const task = taskByCode.get(taskCode);
+      // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
       const status = resolveTaskStatus(taskCode, schedules, now);
 
       return {
@@ -363,6 +386,7 @@ function buildConflictRows({ schedules }) {
     .map((schedule) => ({ ...schedule }));
   const byDevice = new Map();
 
+  // 冲突检查按设备分组后，只需要比较同设备下相邻时间段是否重叠。
   scheduleList.forEach((schedule) => {
     const device = normalizeText(schedule?.device);
     if (!device) {
@@ -409,6 +433,7 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
     (schedule) => !isRetentionDevice(schedule?.device),
   );
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。
   const latestVisibleEnd = visibleSchedules.reduce((latest, schedule) => {
     const scheduleEnd = parseDate(schedule?.end_at);
     if (!scheduleEnd) {
@@ -445,6 +470,7 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
 
   const rows = deviceCodes.map((device) => {
     const deviceSchedules = visibleSchedules.filter((schedule) => normalizeText(schedule?.device) === device);
+    // 每个设备按“天 x 半天”拆成离散槽位，再聚合成最终显示段。
     const slots = dayList.flatMap((day) =>
       SLOT_SEQUENCE.map((segment) => {
         const range = segment === "am" ? SLOT_RANGES.morning : SLOT_RANGES.afternoon;
@@ -473,6 +499,7 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
         }
 
         if (matched.length > 1) {
+          // 同一半天命中多条排程时直接标记为冲突槽位。
           return {
             className: "gantt-slot conflict",
             date: day.key,
@@ -504,6 +531,7 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
 
     const segments = [];
     slots.forEach((slot) => {
+      // 连续同态槽位在这里折叠成 colspan 段，减少甘特图重复单元格。
       const signature = slot.state === "idle"
         ? "idle"
         : slot.state === "conflict"
@@ -548,6 +576,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 
   const rowsByCode = new Map();
 
+  // 留样面板只关注“仅在暂存间且尚未进入正式实验”的任务。
   (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
     const taskCode = normalizeText(schedule?.task_code);
     if (!taskCode || nonRetentionCodes.has(taskCode) || !isRetentionDevice(schedule?.device)) {
@@ -570,6 +599,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 
   return Array.from(rowsByCode.values())
     .map((row) => {
+      // 等待时长按最早进入暂存间的时间计算整小时差。
       const since = row.since;
       const elapsedHours = since ? Math.max(0, Math.floor((now.getTime() - since.getTime()) / (1000 * 60 * 60))) : 0;
       return {
@@ -588,6 +618,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 // 生成手动排程表单使用的下拉选项。
 function buildManualTaskOptions({ tasks, samples, schedules, activeTab }) {
   if (activeTab === "retention") {
+    // 留样页签下，任务下拉来源于暂存中的内部任务。
     return buildRetentionInternalRows({ tasks, samples, schedules }).map((row) => ({
       code: row.code,
       label: `${row.code}${row.name ? ` ${row.name}` : ""}`.trim(),
@@ -595,6 +626,7 @@ function buildManualTaskOptions({ tasks, samples, schedules, activeTab }) {
     }));
   }
 
+  // 正常排程页签只允许选择待排程任务。
   return (Array.isArray(tasks) ? tasks : [])
     .filter((task) => normalizeText(task?.status) === STATUS_WAITING)
     .map((task) => ({
@@ -606,6 +638,7 @@ function buildManualTaskOptions({ tasks, samples, schedules, activeTab }) {
 
 function buildLabOptions({ testType, activeTab, selectedDevice = "" }) {
   let labs = normalizeText(testType) ? getLabsForTestType(normalizeText(testType)) : [];
+  // 普通排程允许把暂存间作为一个可选去向，留样页签则反过来排除它。
   if (activeTab !== "retention" && !labs.includes(RETENTION_DEVICE)) {
     labs = [...labs, RETENTION_DEVICE];
   }
@@ -628,6 +661,7 @@ function resolveRetentionTimeState(now = new Date()) {
   const afternoonEnd = parseDate(`${toLocalDateValue(current)}T${SLOT_RANGES.afternoon.end}:00`);
   let timeSlot = "custom";
 
+  // 当前时刻落在上午/下午固定窗口内时，优先回填对应快捷时段。
   if (morningStart && morningEnd && current >= morningStart && current <= morningEnd) {
     timeSlot = "morning";
   } else if (afternoonStart && afternoonEnd && current >= afternoonStart && current <= afternoonEnd) {
@@ -658,6 +692,7 @@ function buildSummaryCards({ schedules, now = new Date() }) {
 function syncTaskStatuses(tasks, schedules, now = new Date()) {
   return (Array.isArray(tasks) ? tasks : []).map((task) => ({
     ...task,
+    // 任务状态完全以当前排程快照重新计算，避免手工维护多处状态。
     status: resolveTaskStatus(task?.code, schedules, now),
   }));
 }
@@ -667,9 +702,11 @@ function ensureStreamForSchedule(streams, schedule, now = new Date()) {
   const taskCode = normalizeText(schedule?.task_code);
   const existing = nextStreams.find((stream) => normalizeText(stream?.task_code) === taskCode);
   if (existing) {
+    // 已有数据流时仅同步最新设备归属，不重复创建。
     existing.device = normalizeText(schedule?.device);
     return nextStreams;
   }
+  // 首次排程会为任务补建一条默认数据流记录。
   nextStreams.push({
     device: normalizeText(schedule?.device),
     id: createId("stream"),
@@ -693,6 +730,7 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "" }) {
     return [];
   }
 
+  // 冲突检查排除自身编辑场景，只比较同设备且时间重叠的正式排程。
   return (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
     if (normalizeText(schedule?.id) === normalizeText(ignoreId)) {
       return false;
@@ -731,6 +769,7 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
     return { error: "排程冲突，请调整时间或实验室" };
   }
 
+  // 任务此前若只在暂存间，转入正式实验室时直接复用原暂存记录。
   const retentionSchedule = nextSchedules.find(
     (schedule) => normalizeText(schedule?.task_code) === taskCode && isRetentionDevice(schedule?.device) && !isRetentionDevice(device),
   );
@@ -741,6 +780,7 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
     retentionSchedule.planned_hours = candidate.planned_hours;
     retentionSchedule.status = STATUS_SCHEDULED;
   } else {
+    // 否则新增一条排程记录，并根据设备类型设置初始状态。
     nextSchedules.push({
       id: createId("schedule"),
       ...candidate,
@@ -787,6 +827,7 @@ function updateScheduleRecord({ form, tasks, schedules, streams, now = new Date(
     return { error: "排程冲突，请调整时间或实验室" };
   }
 
+  // 编辑场景直接原位覆盖目标排程记录。
   target.device = device;
   target.start_at = candidate.start_at;
   target.end_at = candidate.end_at;

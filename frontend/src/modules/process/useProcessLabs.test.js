@@ -2,8 +2,10 @@ import { describe, expect, test, vi } from "vitest";
 
 import { useProcessLabs } from "./useProcessLabs";
 
+// 过程管控页的风险点在于：实验室卡片、抽屉详情和托盘汇总必须来自同一份快照口径。
 describe("useProcessLabs", () => {
   test("loads lab cards and opens task detail drawer in place", async () => {
+    // 这里覆盖“卡片加载 -> 原地打开抽屉 -> 汇总托盘数”的完整主流程。
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
         {

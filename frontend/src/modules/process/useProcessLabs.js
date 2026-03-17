@@ -6,11 +6,13 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 
+// 为抽屉详情提供统一的文案兜底，避免页面出现空串。
 const toText = (value, fallback = "-") => {
   const normalized = String(value ?? "").trim();
   return normalized || fallback;
 };
 
+// 数量字段在为 0 时保留数值，其余空值走占位符。
 const toCount = (value) => {
   if (value === 0 || value === "0") {
     return 0;
@@ -23,6 +25,7 @@ const BATCH_SUFFIX_PATTERNS = [
   /(?:\s*[-/|]\s*|\s+)?\u6279\u6b21\s*[a-z0-9_-]*$/i,
 ];
 
+// 任务名称里如果带“批次 / batch”后缀，抽屉标题会裁掉这部分噪音。
 const sanitizeTaskDisplayName = (value, fallback = "-") => {
   let normalized = String(value ?? "").trim();
   if (!normalized) {
@@ -53,6 +56,7 @@ function useProcessLabs(options = {}) {
   const buildTraySummary = (taskCode, task) => {
     const trayCodes = new Set();
 
+    // 任务记录和样品记录两侧都可能挂托盘号，这里统一归并。
     if (Array.isArray(task?.tray_codes)) {
       task.tray_codes.forEach((code) => {
         const normalized = String(code || "").trim();
@@ -97,6 +101,7 @@ function useProcessLabs(options = {}) {
       .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
     const schedule =
       relatedSchedules.find((entry) => String(entry?.task_code || "").trim() === taskCode) || relatedSchedules[0] || null;
+    // 抽屉里托盘信息始终以当前任务下所有样品的汇总结果为准。
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task);
 
     return {
@@ -126,6 +131,7 @@ function useProcessLabs(options = {}) {
       tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+      // 卡片最终形态统一由 model 层构建，组合函数只负责取数。
       labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, now);
     } finally {
       loading.value = false;

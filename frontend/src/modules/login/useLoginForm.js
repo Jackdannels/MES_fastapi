@@ -10,6 +10,7 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
   const submitting = ref(false);
 
   const submitLogin = async () => {
+    // 防重复提交，避免连续点击触发多次认证请求。
     if (submitting.value) {
       return;
     }
@@ -23,6 +24,7 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
         return;
       }
 
+      // 明确 redirectPath 时优先使用，否则按模块类型回到对应首页。
       const target = redirectPath || resolveModuleHome(result.module);
       navigate(target);
     } finally {

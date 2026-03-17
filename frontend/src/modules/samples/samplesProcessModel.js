@@ -5,6 +5,7 @@ const DEFAULT_TRAY_COUNT = 2;
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
+// 草稿操作里会频繁做不可变更新，这里用深拷贝隔离引用。
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
@@ -17,6 +18,7 @@ const parsePositiveInt = (value) => {
   return Math.floor(parsed);
 };
 
+// 样品、托盘、历史记录的默认 ID 都走同一套生成逻辑。
 const createId = (prefix, now = new Date().toISOString()) => {
   const safeNow = String(now).replace(/[^0-9]/g, "").slice(0, 14) || "0";
   const random = Math.floor(Math.random() * 1000)
@@ -54,6 +56,7 @@ const buildTaskSampleCodes = (taskCode, plannedCount, taskSamples) => {
 
   let targetCount = parsePositiveInt(plannedCount);
   if (!targetCount) {
+    // 没有明确计划数时，优先以现有样品数或已出现过的最大编号为准。
     targetCount = existingCodes.length || maxIndex;
   }
 
@@ -81,6 +84,7 @@ const buildTaskProcessSamples = ({ taskCode, tasks, samples }) => {
   return { task, taskSamples, sampleCodes };
 };
 
+// 按最大托盘容量将样品均衡拆分成若干托盘草稿。
 const createBalancedTrays = ({ taskCode, sampleCodes, maxPerTray = DEFAULT_TRAY_LIMIT, minimumTrayCount = DEFAULT_TRAY_COUNT }) => {
   const codes = asArray(sampleCodes).map(normalizeText).filter(Boolean).sort(compareText);
   const safeLimit = Math.max(1, parsePositiveInt(maxPerTray) || DEFAULT_TRAY_LIMIT);
@@ -92,6 +96,7 @@ const createBalancedTrays = ({ taskCode, sampleCodes, maxPerTray = DEFAULT_TRAY_
   let cursor = 0;
 
   for (let index = 0; index < trayCount; index += 1) {
+    // 使用“平均分 + 余数前置”策略，让前几个托盘多一个样品。
     const take = baseSize + (index < remainder ? 1 : 0);
     const samplesForTray = codes.slice(cursor, cursor + take);
     cursor += take;
@@ -119,6 +124,7 @@ const normalizeTrays = ({ taskCode, sampleCodes, trays, maxPerTray = DEFAULT_TRA
       .filter(Boolean)
       .sort(compareText)
       .forEach((sampleCode) => {
+        // 非当前任务样品、重复样品或超容量样品都会被过滤掉。
         if (!allowed.has(sampleCode) || assigned.has(sampleCode) || traySamples.length >= limit) {
           return;
         }
@@ -135,6 +141,7 @@ const normalizeTrays = ({ taskCode, sampleCodes, trays, maxPerTray = DEFAULT_TRA
 
   const unassigned = codes.filter((sampleCode) => !assigned.has(sampleCode));
   unassigned.forEach((sampleCode) => {
+    // 剩余未分配样品会尽量塞进还有容量的托盘，否则新建空托盘承接。
     const target = normalized.find((tray) => tray.samples.length < limit);
     if (target) {
       target.samples.push(sampleCode);
@@ -161,6 +168,7 @@ const normalizeTrays = ({ taskCode, sampleCodes, trays, maxPerTray = DEFAULT_TRA
     return compareText(leftKey, rightKey);
   });
 
+  // 归一化后会重新顺排托盘编号，保证托盘号连续。
   return normalized.map((tray, index) => ({
     ...tray,
     trayCode: buildTaskTrayCode(taskCode, index + 1),
@@ -178,6 +186,7 @@ const buildExistingTaskTrays = ({ taskCode, taskSamples, sampleCodes, maxPerTray
       return;
     }
     asArray(sample?.trays).forEach((tray, index) => {
+      // 样品已有托盘分配时，先按 trayCode 聚合回草稿。
       const trayCode = normalizeText(tray?.tray_code) || buildTaskTrayCode(taskCode, index + 1);
       if (!trayMap.has(trayCode)) {
         trayMap.set(trayCode, {
@@ -275,6 +284,7 @@ function moveSampleBetweenTrays({ trayDraft, sampleCode, targetIndex }) {
   }
 
   const limit = Math.max(1, parsePositiveInt(sourceDraft.maxPerTray) || DEFAULT_TRAY_LIMIT);
+  // 目标托盘已满时禁止移动，保持容量约束不被破坏。
   if (normalized[trayIndex].samples.length >= limit) {
     return { moved: false, trays: normalized };
   }
@@ -325,6 +335,7 @@ const appendSampleHistory = (sample, action, detail = "", nowIso) => {
     sample.history = [];
   }
   sample.history.unshift({
+    // 托盘入库会连续写入多条历史，保留每次动作的完整上下文。
     id: createId("sample-event", nowIso),
     time: nowIso,
     action,
@@ -360,6 +371,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
   const selectedCodes = asArray(trayDraft?.sampleCodes).map(normalizeText).filter(Boolean);
   const codes = selectedCodes.length ? selectedCodes : availableCodes;
 
+  // 未选择样品时回退到任务下全部可用样品号。
   if (!codes.length) {
     return { error: `任务 ${code} 暂无可入库样品编号。` };
   }
@@ -373,6 +385,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
 
   const trayCodes = normalizedTrays.map((tray) => tray.trayCode).filter(Boolean);
   const codesWithoutTray = codes.filter((sampleCode) => !normalizedTrays.some((tray) => tray.samples.includes(sampleCode)));
+  // 任何样品未落到托盘都会阻止确认入库。
   if (codesWithoutTray.length) {
     return { error: `以下样品未配置分装托盘：${codesWithoutTray.join("、")}` };
   }
@@ -395,6 +408,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
 
     const boundTaskCode = normalizeText(sample.task_code);
     if (boundTaskCode && boundTaskCode !== code) {
+      // 已绑定到其他任务的样品不能被当前任务强行接管。
       outOfTask.push(sampleCode);
       return;
     }
@@ -418,6 +432,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
         };
       });
 
+    // 每个样品会同时记录“分装托盘”和“任务入库”两条历史。
     appendSampleHistory(sample, "样品分装托盘", `共 ${sample.trays.length} 盘，合计数量 ${sample.trays.reduce((sum, tray) => sum + Number(tray.quantity || 0), 0)}`, now);
     appendSampleHistory(sample, "任务样品入库（接驳区）", `任务 ${code}`, now);
     updatedSamples.push(sample);

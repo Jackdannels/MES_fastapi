@@ -52,6 +52,7 @@ function useDevicesPage() {
   });
 
   const toggleSort = (nextKey) => {
+    // 设备表格采用单列排序，重复点击同一列时切换方向。
     if (sortKey.value === nextKey) {
       sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
       return;
@@ -61,6 +62,7 @@ function useDevicesPage() {
   };
 
   const syncFormTypeWithLocation = () => {
+    // 设备位置一旦能命中实验室映射，就自动带出推荐试验类型。
     const mappedType = syncDeviceTypeWithLocation(deviceForm.value.location, deviceForm.value.type);
     if (mappedType) {
       deviceForm.value.type = mappedType;
@@ -68,6 +70,7 @@ function useDevicesPage() {
   };
 
   const persistDevices = async (nextDevices) => {
+    // 先更新本地响应式数据，再把最新快照落盘。
     rawDevices.value = nextDevices;
     await persistSnapshot({
       [STORAGE_KEYS.devices]: nextDevices,
@@ -85,6 +88,7 @@ function useDevicesPage() {
   };
 
   const openDeviceDrawer = (row) => {
+    // 抽屉标题和维护表单都以当前选中设备为准同步刷新。
     const nextSelected = buildSelectedDevice(row ?? deviceForm.value);
     selectedDevice.value = nextSelected;
     maintenanceForm.value = createMaintenanceForm(row ?? deviceForm.value);
@@ -105,6 +109,7 @@ function useDevicesPage() {
 
   const savePoint = () => {
     const nextPoints = appendPoint(pointRows.value, pointForm.value);
+    // 长度未变化说明表单缺少关键字段，本次新增直接忽略。
     if (nextPoints.length === pointRows.value.length) {
       return;
     }
@@ -122,6 +127,7 @@ function useDevicesPage() {
   watch(
     () => deviceForm.value.location,
     () => {
+      // 位置变化时持续保持试验类型的自动联动。
       syncFormTypeWithLocation();
     },
   );

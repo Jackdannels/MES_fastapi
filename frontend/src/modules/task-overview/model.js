@@ -3,14 +3,17 @@ const STATUS_RETENTION = "暂存间存放";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const RETENTION_KEYWORD = "暂存间";
 
+// 任务号、样品号、托盘号的展示排序统一走中文比较规则。
 function compareText(left, right) {
   return String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 }
 
+// 统一清洗文本字段，后续所有聚合逻辑都基于规范化后的字符串。
 function normalizeText(value) {
   return String(value || "").trim();
 }
 
+// 历史状态“暂存间排放”在总览里统一视为“暂存间存放”。
 function normalizeStatus(value) {
   const normalized = normalizeText(value);
   if (normalized === LEGACY_STATUS_RETENTION || normalized === STATUS_RETENTION) {
@@ -19,10 +22,12 @@ function normalizeStatus(value) {
   return normalized;
 }
 
+// 判断排程设备是否属于暂存间，用于区分正式实验和留样暂存。
 function isRetentionDevice(value) {
   return normalizeText(value).includes(RETENTION_KEYWORD);
 }
 
+// 托盘数量默认至少记 1，避免空值导致统计为 0。
 function normalizeQuantity(value) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
@@ -41,6 +46,7 @@ function buildTaskRows({
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const taskMap = new Map();
 
+  // 先以任务为主表建初始行，样品和排程后续再补充到对应任务上。
   taskList.forEach((task) => {
     const code = String(task?.code || "").trim();
     if (!code) {
@@ -79,6 +85,7 @@ function buildTaskRows({
       });
     }
     const row = taskMap.get(taskCode);
+    // 一个任务可能对应多个样品编码，后续会在输出阶段去重排序。
     row.sampleCodes.push(sampleCode);
     if (Array.isArray(sample?.trays)) {
       sample.trays.forEach((tray) => {
@@ -114,6 +121,7 @@ function buildTaskRows({
       });
     }
     const row = taskMap.get(taskCode);
+    // 暂存间排程单独累计，正式实验排程累计到 scheduleCount。
     if (isRetentionDevice(entry?.device)) {
       row.retentionCount += 1;
     } else {
@@ -129,6 +137,7 @@ function buildTaskRows({
 
   return Array.from(taskMap.values())
     .map((row) => {
+      // 样品编码先去重再排序，避免同一编码因多托盘重复出现。
       const uniqueSampleCodes = Array.from(new Set(row.sampleCodes)).sort(compareText);
       const trayMap = new Map();
       row.trays.forEach((tray) => {
@@ -146,6 +155,7 @@ function buildTaskRows({
         current.totalQuantity += normalizeQuantity(tray.quantity);
       });
 
+      // 托盘维度把同 trayCode 的槽位聚合成一条记录，并列出其样品编码。
       const trays = Array.from(trayMap.values())
         .map((item) => ({
           ...item,
@@ -154,6 +164,7 @@ function buildTaskRows({
         .sort((left, right) => compareText(left.trayCode, right.trayCode));
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
+      // 有明确任务状态时沿用任务状态，否则按排程/暂存推导当前状态。
       const currentStatus = row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
 
       return {
@@ -183,6 +194,7 @@ function buildTrayOverviewRows({
   const scheduleList = Array.isArray(schedules) ? schedules : [];
 
   const taskTypeByCode = new Map();
+  // 任务号到试验类型的映射用于给托盘视图补齐目标试验名称。
   taskList.forEach((task) => {
     const code = String(task?.code || "").trim();
     if (!code) {
@@ -192,6 +204,7 @@ function buildTrayOverviewRows({
   });
 
   const scheduleByTaskCode = new Map();
+  // 同一任务可能有多次排程，托盘视图保留最近的一次正式实验室分配。
   scheduleList.forEach((entry) => {
     const taskCode = String(entry?.task_code || "").trim();
     if (!taskCode) {
@@ -223,6 +236,7 @@ function buildTrayOverviewRows({
 
     (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
       const trayCode = String(tray?.tray_code || "").trim();
+      // 托盘视图每个托盘只需要一条记录，重复 trayCode 直接跳过。
       if (!trayCode || trayMap.has(trayCode)) {
         return;
       }
@@ -245,6 +259,7 @@ function buildTrayOverviewRows({
     const slotCode = `TP-${String(index + 1).padStart(3, "0")}`;
     const tray = existingTrays[index];
     if (tray) {
+      // 有实物托盘时，槽位编码与托盘编码分开保留，便于页面同时展示“槽位”和“托盘”。
       return {
         slotCode,
         trayCode: tray.trayCode,
@@ -255,6 +270,7 @@ function buildTrayOverviewRows({
         lab: tray.lab || "-",
       };
     }
+    // 空槽位用占位数据补齐，保证页面总是渲染 totalSlots 个槽位。
     return {
       slotCode,
       trayCode: slotCode,

@@ -23,6 +23,7 @@ function useSystemPage() {
 
   const createRoleFields = ref(createRoleForm(EMPTY_ROLE_FORM));
 
+  // 编辑抽屉始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
   const editRoleFields = computed(() => createRoleForm(editRoleDrawer.payload.value?.form || EMPTY_ROLE_FORM));
 
   const toggleSort = (nextKey) => {
@@ -35,6 +36,7 @@ function useSystemPage() {
   };
 
   const openRoleModal = () => {
+    // 每次打开新增弹窗都重置为空白角色表单。
     createRoleFields.value = createRoleForm(EMPTY_ROLE_FORM);
     createRoleDialog.openWith({ id: "new-role" });
   };
@@ -44,6 +46,7 @@ function useSystemPage() {
   };
 
   const openRoleDrawer = (role) => {
+    // 抽屉直接持有选中角色，字段展示通过 editRoleFields 再做一层标准化。
     editRoleDrawer.openWith(role);
   };
 

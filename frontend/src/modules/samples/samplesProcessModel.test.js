@@ -11,6 +11,7 @@ import {
   selectTaskProcessDraft,
 } from "./samplesProcessModel";
 
+// 托盘分装是样品链路里副作用最多的环节，这组测试专门守护均衡分配和入库回写规则。
 describe("samplesProcessModel", () => {
   test("buildSampleProcessTaskOptions prefers tasks with planned samples or existing samples", () => {
     const options = buildSampleProcessTaskOptions({
@@ -65,6 +66,7 @@ describe("samplesProcessModel", () => {
   });
 
   test("confirmSampleTaskStore writes trays back to samples and task tray codes", () => {
+    // 确认入库后，任务侧 tray_codes 和样品侧 trays 必须同时落盘。
     const result = confirmSampleTaskStore({
       taskCode: "SZH-2026-001",
       tasks: [{ code: "SZH-2026-001", sample_count: "2" }],
@@ -135,6 +137,7 @@ describe("samplesProcessModel", () => {
   });
 
   test("confirmSampleTaskStore reports samples that already belong to another task", () => {
+    // 已绑定其他任务的样品号不能被当前任务直接占用。
     const result = confirmSampleTaskStore({
       taskCode: "SZH-2026-001",
       tasks: [{ code: "SZH-2026-001", sample_count: "1" }],
@@ -153,6 +156,7 @@ describe("samplesProcessModel", () => {
   });
 
   test("removeTrayFromDraft rebalances remaining trays and renumbers sequentially", () => {
+    // 删除托盘后不仅要重新均衡样品，还要保证托盘号重新连续编号。
     const result = removeTrayFromDraft({
       taskCode: "SZH-2026-001",
       sampleCodes: [

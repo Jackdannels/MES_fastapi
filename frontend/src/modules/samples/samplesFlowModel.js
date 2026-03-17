@@ -42,13 +42,16 @@ const SAMPLE_FLOW_STEPS = [
 const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
 
+// 样品流转涉及大量字符串比较，统一先做基础规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 
+// 允许通过覆盖 labels 复用同一套状态推导逻辑。
 const normalizeLabels = (labels = {}) => ({
   ...DEFAULT_LABELS,
   ...(labels && typeof labels === "object" ? labels : {}),
 });
 
+// 批量创建样品和历史记录时使用轻量级随机 ID。
 const generateId = (prefix) => {
   const stamp = Date.now();
   const rand = Math.floor(Math.random() * 1000)
@@ -57,6 +60,7 @@ const generateId = (prefix) => {
   return `${prefix}-${stamp}-${rand}`;
 };
 
+// 批量输入框支持按空格、逗号和分号拆分样品号。
 const parseCodeList = (value) =>
   Array.from(
     new Set(
@@ -73,6 +77,7 @@ const getSampleTrayList = (sample) => {
   }
   const sampleCode = normalizeText(sample.code);
   return sample.trays.filter((tray) => {
+    // 只保留与当前样品编码匹配且数量有效的托盘条目。
     if (!tray) {
       return false;
     }
@@ -90,6 +95,7 @@ const resolveSampleStatus = (location, labels = DEFAULT_LABELS) => {
   );
   const postRetentionLocation = normalizeText(normalizedLabels.postRetentionLocation);
 
+  // 按位置反推展示状态，让批量入库不需要额外指定状态。
   if (normalizedLocation && normalizedLocation === postRetentionLocation) {
     return "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4";
   }
@@ -118,6 +124,7 @@ const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LAB
   const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
   const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
 
+  // 已经是完整流转状态文案时，直接原样透传。
   if (FLOW_STATUS_LABELS.has(currentStatus)) {
     return currentStatus;
   }
@@ -162,6 +169,7 @@ const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LAB
 const appendSampleHistory = (sample, action, detail = "", now = new Date().toISOString()) => {
   const history = Array.isArray(sample.history) ? sample.history.slice() : [];
   history.unshift({
+    // 每次流转更新都记录时间、位置、责任人和状态快照。
     id: generateId("sample-event"),
     time: now,
     action,
@@ -203,6 +211,7 @@ const resolveStatusClass = (status) => {
   return "status";
 };
 
+// 排序时优先按数字比较，无法数字化时回退到中文字符串排序。
 const compareValue = (left, right, direction) => {
   const factor = direction === "desc" ? -1 : 1;
   const leftNumber = Number(left);
@@ -227,6 +236,7 @@ function buildSamplesFlowView(input = {}) {
 
   const rows = samples
     .filter((sample) => {
+      // 列表筛选同时支持任务号、状态和自由关键词。
       if (selectedTaskCode && normalizeText(sample.task_code) !== selectedTaskCode) {
         return false;
       }
@@ -254,6 +264,7 @@ function buildSamplesFlowView(input = {}) {
     })
     .map((sample) => ({
       ...sample,
+      // trayCount 和 statusClass 都在视图层消费，因此提前派生好。
       trayCount: getSampleTrayList(sample).length,
       statusClass: resolveStatusClass(sample.status),
     }));
@@ -314,9 +325,10 @@ function submitSamplesBatchIntake(input = {}) {
     normalizeText(payload.location) ||
     normalizeText(labels.intakeLocation) ||
     normalizeText(labels.unpackingLocation) ||
-    normalizeText(labels.preRetentionLocation) ||
-    normalizeText(labels.retentionLocation);
+      normalizeText(labels.preRetentionLocation) ||
+      normalizeText(labels.retentionLocation);
 
+  // 批量接样要求同时提供目标位置和至少一个样品号。
   if (!targetLocation || codes.length === 0) {
     return { error: "\u8BF7\u586B\u5199\u5165\u5E93\u4F4D\u7F6E\u548C\u6837\u54C1\u5217\u8868\u3002", samples };
   }
@@ -326,6 +338,7 @@ function submitSamplesBatchIntake(input = {}) {
     const existing = samples.find((sample) => normalizeText(sample.code) === code);
     const nextStatus = resolveSampleStatus(targetLocation, labels);
     if (existing) {
+      // 已存在样品按“更新位置与状态”处理，不重复生成记录。
       existing.location = targetLocation;
       existing.owner = normalizeText(payload.owner) || existing.owner || "";
       existing.status = nextStatus;
@@ -336,6 +349,7 @@ function submitSamplesBatchIntake(input = {}) {
     }
 
     const created = {
+      // 不存在的样品号会在批量接样时被直接创建。
       id: generateId("sample"),
       code,
       task_code: "",
@@ -367,6 +381,7 @@ function updateSampleDetail(input = {}) {
   const nextRemark = normalizeText(payload.remark);
   const now = input.now || new Date().toISOString();
 
+  // 明细抽屉只允许改状态与备注，流转状态由位置和状态共同派生。
   sample.status = nextStatus;
   sample.flow_status = resolveFlowStatusByLocation(sample.location, nextStatus, labels);
   sample.updated_at = now;
@@ -388,6 +403,7 @@ function buildSamplesStagingView(input = {}) {
 
   const rows = samples
     .filter((sample) => {
+      // 暂存派发面板只展示当前仍停留在前置暂存间的样品。
       const location = normalizeText(sample?.location);
       const status = normalizeText(sample?.status);
       if (location !== preRetentionLocation) {
@@ -410,6 +426,7 @@ function buildSamplesStagingView(input = {}) {
     })
     .map((sample) => ({
       ...sample,
+      // 选中态在视图模型里直接展开，组件层不再额外做集合判断。
       selected: selectedSet.has(normalizeText(sample?.code)),
       statusClass: resolveStatusClass(sample?.status),
     }))
@@ -439,6 +456,7 @@ function dispatchStagingSamples(input = {}) {
   const preRetentionLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation);
   const codes = Array.from(new Set([...selectedCodes, ...parseCodeList(payload.codes)].map((code) => normalizeText(code)).filter(Boolean)));
 
+  // 暂存派发要求目标实验室和样品集合都有效。
   if (!targetLab || codes.length === 0) {
     return {
       error: "请填写样品编号并选择目标实验室。",
@@ -463,6 +481,7 @@ function dispatchStagingSamples(input = {}) {
       return;
     }
 
+    // 只有当前位于暂存间的样品才允许派发到正式实验室。
     sample.location = targetLab;
     sample.owner = owner || normalizeText(sample.owner);
     sample.status = "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4";
@@ -481,6 +500,7 @@ function dispatchStagingSamples(input = {}) {
   }
 
   return {
+    // 部分成功时会同时返回更新后的样品集合和告警文本。
     error: warnings.length ? `${warnings.join("；")}。` : "",
     samples,
     dispatchedCodes,

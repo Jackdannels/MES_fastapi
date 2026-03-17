@@ -13,16 +13,21 @@ const RETENTION_LOCATION = "暂存间";
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
 const RANDOM_PRIORITIES = ["高", "中", "低"];
 
+// 本地随机演示数据在候选数组中抽取一个元素。
 const randomFrom = (items) => items[Math.floor(Math.random() * items.length)] || "";
 
+// 演示数据会基于当前时间推导到达/截止时间，因此抽出小时偏移工具函数。
 const addHours = (date, hours) => {
   const nextDate = new Date(date.getTime());
   nextDate.setHours(nextDate.getHours() + hours);
   return nextDate;
 };
 
+// 所有输入字段统一走字符串规范化，减少 null / undefined 分支。
 const normalizeText = (value) => String(value ?? "").trim();
+// 排程设备名带“暂存间”即视为暂存区，不参与正式实验状态判断。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
+// 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
 const normalizeStatusLabel = (value) => {
   const normalized = normalizeText(value);
   if (normalized === LEGACY_STATUS_RETENTION || normalized === STATUS_RETENTION) {
@@ -31,11 +36,13 @@ const normalizeStatusLabel = (value) => {
   return normalized;
 };
 
+// 时间比较统一提前解析成时间戳，无法解析时返回 NaN。
 const parseTime = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
+// 前端临时记录 ID 使用时间戳 + 随机后缀即可满足唯一性需求。
 const createId = (prefix) => {
   const random = Math.floor(Math.random() * 1000)
     .toString()
@@ -43,6 +50,7 @@ const createId = (prefix) => {
   return `${prefix}-${Date.now()}-${random}`;
 };
 
+// 将持久化时间裁剪成页面列表展示使用的 yyyy-MM-dd HH:mm。
 const formatDateTime = (value) => {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -54,6 +62,7 @@ const formatDateTime = (value) => {
   return normalized.slice(0, 16);
 };
 
+// datetime-local 组件使用 `T` 分隔，因此编辑前要做格式转换。
 const toDateTimeLocalValue = (value) => {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -68,6 +77,7 @@ const toDateTimeLocalValue = (value) => {
   return normalized;
 };
 
+// 从表单值回写记录时，再把 `T` 格式转换回页面存储习惯的空格格式。
 const fromDateTimeLocalValue = (value) => {
   const normalized = normalizeText(value);
   if (!normalized) {
@@ -76,6 +86,7 @@ const fromDateTimeLocalValue = (value) => {
   return normalized.replace("T", " ").slice(0, 16);
 };
 
+// 任务页表格和标签共用状态样式类映射。
 const statusClass = (value) => {
   const normalized = normalizeText(value);
   if (normalized === STATUS_RUNNING) {
@@ -103,6 +114,7 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
     (schedule) => normalizeText(schedule?.task_code) === taskCode,
   );
 
+  // 优先识别“当前正在正式实验室执行”的任务。
   const activeSchedule = relatedSchedules.find((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
@@ -115,11 +127,13 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
     return STATUS_RUNNING;
   }
 
+  // 其次识别是否已经进入正式排程。
   const scheduledEntry = relatedSchedules.find((schedule) => !isRetentionDevice(schedule?.device));
   if (scheduledEntry) {
     return STATUS_SCHEDULED;
   }
 
+  // 再判断是否仅处于暂存间状态。
   const retentionEntry = relatedSchedules.find((schedule) => isRetentionDevice(schedule?.device));
   if (retentionEntry) {
     return STATUS_RETENTION;
@@ -136,6 +150,7 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
 function buildTaskRows(tasks, schedules, now = Date.now()) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   return taskList.map((task, index) => {
+    // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
     const displayStatus = resolveTaskStatus(task, schedules, now);
     return {
       arrivalAt: formatDateTime(task?.arrival_at),
@@ -185,7 +200,9 @@ function buildTaskMetrics(rows) {
 function buildFilterOptions(rows) {
   const rowList = Array.isArray(rows) ? rows : [];
   return {
+    // 状态筛选仅基于当前可见行生成，保证筛选器与列表同步。
     statusOptions: Array.from(new Set(rowList.map((row) => row.displayStatus).filter(Boolean))),
+    // 试验类型既保留预设映射，也兼容列表里已经存在的自定义类型。
     testTypeOptions: Array.from(new Set(Object.keys(TEST_PREFIX_MAP).concat(rowList.map((row) => row.testType).filter(Boolean)))).sort(
       (left, right) => left.localeCompare(right, "zh-Hans-CN"),
     ),
@@ -203,6 +220,7 @@ function buildTaskCode(testType, tasks, year = new Date().getFullYear()) {
   const pattern = new RegExp(`^${prefix}-${year}-(\\d{3})$`);
   let maxSeq = 0;
 
+  // 仅统计同类型、同年份且符合命名规范的任务号，递增生成下一个序号。
   taskList.forEach((task) => {
     const taskCode = normalizeText(task?.code);
     const matched = taskCode.match(pattern);
@@ -240,6 +258,7 @@ function createTaskIntakeForm() {
   };
 }
 
+// 用于判断受理弹窗是否仍处于初始态，方便关闭前提示。
 function isTaskIntakeFormPristine(form) {
   const defaultForm = createTaskIntakeForm();
   const keys = Object.keys(defaultForm);
@@ -247,6 +266,7 @@ function isTaskIntakeFormPristine(form) {
   return keys.every((key) => normalizeText(form?.[key]) === normalizeText(defaultForm[key]));
 }
 
+// 快速生成一份随机内部任务，便于演示和联调。
 function createRandomTaskIntakeForm(now = new Date()) {
   const testType = randomFrom(Object.keys(TEST_PREFIX_MAP));
   const sampleCount = String(Math.floor(Math.random() * 5) + 1);
@@ -311,6 +331,7 @@ function buildTaskEditForm(row = {}) {
 
 // 将新的受理表单转换为可持久化的任务记录。
 function createTaskRecord(form, tasks) {
+  // 优先使用表单中已有任务号，否则按试验类型自动生成，再兜底为时间戳编号。
   const taskCode = normalizeText(form?.code) || buildTaskCode(form?.test_type, tasks) || `TASK-${Date.now().toString().slice(-6)}`;
   return {
     id: createId("task"),
@@ -344,6 +365,7 @@ function updateTaskRecord(tasks, editForm) {
   }
 
   const previousCode = normalizeText(taskList[targetIndex]?.code);
+  // 更新时保留未编辑字段，仅覆盖抽屉允许修改的部分。
   taskList[targetIndex] = {
     ...taskList[targetIndex],
     arrival_at: fromDateTimeLocalValue(editForm?.arrival_at),
@@ -379,6 +401,7 @@ function deleteTaskSnapshot(snapshot, taskId) {
 
   const taskCode = normalizeText(targetTask.code);
   return {
+    // 任务删除后，样品、排程和数据流中同任务号的记录一并移除。
     samples: (Array.isArray(snapshot?.samples) ? snapshot.samples : []).filter(
       (sample) => normalizeText(sample?.task_code) !== taskCode,
     ),
@@ -394,6 +417,7 @@ function deleteTaskSnapshot(snapshot, taskId) {
 
 const escapeRegExp = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// 按任务号生成样品编号列表，并尽量沿用已有样品数量和最大序号。
 function buildTaskSampleCodes(taskCode, sampleCount, taskSamples) {
   const normalizedCode = normalizeText(taskCode);
   if (!normalizedCode) {
@@ -433,6 +457,7 @@ function syncTaskSamples(samples, task, previousTaskCode = "") {
 
   const oldTaskCode = normalizeText(previousTaskCode);
   if (oldTaskCode && oldTaskCode !== taskCode) {
+    // 任务号变更时，先把原有关联样品整体迁移到新任务号。
     const oldPattern = new RegExp(`^${escapeRegExp(oldTaskCode)}-SP-(\\d{3})$`);
     sampleList.forEach((sample) => {
       if (normalizeText(sample?.task_code) !== oldTaskCode) {
@@ -450,6 +475,7 @@ function syncTaskSamples(samples, task, previousTaskCode = "") {
   const expectedCodes = buildTaskSampleCodes(taskCode, task?.sample_count, relatedSamples);
   const nextSamples = sampleList.filter((sample) => normalizeText(sample?.task_code) !== taskCode);
 
+  // 目标样品编号列表决定保留哪些已有样品，以及是否需要补建新样品。
   expectedCodes.forEach((code, index) => {
     const existingSample = relatedSamples[index];
     if (existingSample) {

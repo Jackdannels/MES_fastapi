@@ -57,6 +57,7 @@ function useTasksPage() {
 
   const filteredRows = computed(() =>
     allRows.value.filter((row) => {
+      // 两个下拉筛选先于表格搜索执行，缩小后续搜索数据集。
       if (selectedTestType.value && row.testType !== selectedTestType.value) {
         return false;
       }
@@ -74,6 +75,7 @@ function useTasksPage() {
   });
 
   const toggleSort = (nextKey) => {
+    // 排序行为与其他页面保持一致：同列切换方向，换列恢复升序。
     if (sortKey.value === nextKey) {
       sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
       return;
@@ -87,6 +89,7 @@ function useTasksPage() {
   };
 
   const syncIntakeDerivedFields = () => {
+    // 任务编号与推荐实验室都依赖试验类型，因此集中在这里联动。
     const nextCode = buildTaskCode(intakeForm.value.test_type, rawTasks.value);
     intakeForm.value.code = nextCode;
 
@@ -107,6 +110,7 @@ function useTasksPage() {
   };
 
   const removeTaskHash = () => {
+    // 关闭弹窗时清掉 hash，避免刷新或后退时重复拉起受理弹窗。
     if (typeof window === "undefined" || window.location.hash !== TASK_INTAKE_HASH) {
       return;
     }
@@ -135,6 +139,7 @@ function useTasksPage() {
   };
 
   const syncModalWithHash = (hashValue) => {
+    // 允许通过 URL hash 或全局事件直接打开任务受理弹窗。
     if (normalizeText(hashValue) === TASK_INTAKE_HASH) {
       openIntakeModal();
       return;
@@ -154,6 +159,7 @@ function useTasksPage() {
   };
 
   const persistAll = async (updates) => {
+    // 将任务、排程、样品、数据流的局部更新合并回当前响应式快照。
     if (Array.isArray(updates[STORAGE_KEYS.tasks])) {
       rawTasks.value = updates[STORAGE_KEYS.tasks];
     }
@@ -170,6 +176,7 @@ function useTasksPage() {
   };
 
   const submitTask = async () => {
+    // 空白表单直接提交时自动填充随机演示数据，方便快速联调。
     if (isTaskIntakeFormPristine(intakeForm.value)) {
       intakeForm.value = createRandomTaskIntakeForm();
       syncIntakeDerivedFields();
@@ -182,6 +189,7 @@ function useTasksPage() {
 
     const nextTask = createTaskRecord(intakeForm.value, rawTasks.value);
     const nextTasks = [nextTask, ...rawTasks.value];
+    // 任务创建后立即同步样品编号，保持任务与样品侧数据一致。
     const nextSamples = syncTaskSamples(rawSamples.value, nextTask);
 
     await persistAll({
@@ -204,6 +212,7 @@ function useTasksPage() {
       return;
     }
 
+    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
     const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
     await persistAll({
       [STORAGE_KEYS.tasks]: tasks,
@@ -213,6 +222,7 @@ function useTasksPage() {
   };
 
   const deleteTask = async () => {
+    // 删除动作会连带清理该任务关联的排程、样品和数据流快照。
     const nextSnapshot = deleteTaskSnapshot(
       {
         samples: rawSamples.value,
@@ -259,6 +269,7 @@ function useTasksPage() {
   );
 
   watch([selectedStatus, selectedTestType], () => {
+    // 过滤条件变化时回到第一页，避免当前页码失效。
     currentPage.value = 1;
   });
 

@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import { applyRouteFiltersState, buildOverviewMetrics, filterTaskOverviewRows } from "./useTaskOverview";
 
+// 这些 helper 测试主要保护任务总览页的筛选口径、顶部计数和路由恢复逻辑。
 describe("useTaskOverview helpers", () => {
   test("filters rows by keyword, type, and custom date range", () => {
+    // 自定义日期区间允许开始和结束倒置，过滤逻辑仍应正确命中任务。
     const rows = [
       {
         currentStatus: "进行中",
@@ -61,6 +63,7 @@ describe("useTaskOverview helpers", () => {
   });
 
   test("applies route filters without dropping existing values", () => {
+    // 路由 query 既可以切换视图，也可以覆盖当前选中任务和试验类型。
     const nextState = applyRouteFiltersState({
       routeQuery: {
         task: "TASK-002",

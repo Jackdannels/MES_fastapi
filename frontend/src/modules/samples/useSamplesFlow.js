@@ -100,6 +100,7 @@ function useSamplesFlow() {
     }),
   );
 
+  // 暂存区派发面板与主列表共享一份样品快照，但筛选口径不同。
   const sampleRows = computed(() => view.value.rows);
   const pageCount = computed(() => view.value.totalPages);
   const taskOptions = computed(() => view.value.taskOptions);
@@ -130,6 +131,7 @@ function useSamplesFlow() {
   );
 
   const load = async () => {
+    // 当前页面只消费任务与样品快照，不依赖排程和流数据。
     loading.value = true;
     const snapshot = await loadSnapshot();
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
@@ -183,6 +185,7 @@ function useSamplesFlow() {
   };
 
   const resetStaging = () => {
+    // 重置暂存派发表单时，同时清空勾选集合和提示文案。
     stagingForm.codes = "";
     stagingForm.targetLab = "";
     stagingForm.owner = "";
@@ -225,6 +228,7 @@ function useSamplesFlow() {
     });
 
     if (result.error && result.dispatchedCodes.length === 0) {
+      // 全部失败时保留表单输入，方便用户修正后重试。
       warning.value = result.error;
       return;
     }
@@ -261,6 +265,7 @@ function useSamplesFlow() {
       warning.value = result.error;
       return;
     }
+    // 批量接样成功后关闭弹窗，但不额外广播事件，因为当前页已持有最新数据。
     rawSamples.value = result.samples;
     await persistSnapshot({
       [STORAGE_KEYS.samples]: result.samples,
@@ -274,6 +279,7 @@ function useSamplesFlow() {
     if (!selected) {
       return;
     }
+    // 明细抽屉默认展示当前样品状态，备注从空白开始录入。
     detailForm.code = selected.code || "";
     detailForm.status = selected.status || "\u5230\u8D27";
     detailForm.remark = "";
@@ -304,6 +310,7 @@ function useSamplesFlow() {
       return;
     }
 
+    // 明细保存采用按 id/code 替换单条记录的方式更新本地列表。
     rawSamples.value = rawSamples.value.map((sample) =>
       String(sample?.id ?? sample?.code) === String(currentSample.id ?? currentSample.code) ? result.sample : sample,
     );
@@ -326,6 +333,7 @@ function useSamplesFlow() {
   watch(
     stagingRows,
     (rows) => {
+      // 筛选变化后自动剔除已不在当前结果集里的勾选项。
       const valid = new Set(rows.map((row) => String(row.code ?? "").trim()).filter(Boolean));
       const nextSelected = stagingSelectedCodes.value.filter((code) => valid.has(String(code ?? "").trim()));
       const changed =
@@ -340,6 +348,7 @@ function useSamplesFlow() {
 
   onMounted(() => {
     void load();
+    // 与收样页通过全局事件同步，保持不同子视图间的数据一致。
     window.addEventListener(SAMPLES_UPDATED_EVENT, load);
   });
 

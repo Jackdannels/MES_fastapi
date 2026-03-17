@@ -32,6 +32,7 @@ function useDataPage() {
   });
 
   const toggleSort = (nextKey) => {
+    // 同列点击时切换升降序，不同列点击时重置为升序。
     if (sortKey.value === nextKey) {
       sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
       return;
@@ -41,6 +42,7 @@ function useDataPage() {
   };
 
   const validateReport = () => {
+    // 报告校验只返回报告弹窗当前需要的两个核心指标。
     return {
       averageQuality: calculateAverageQuality(rawStreams.value),
       validationCount: metrics.value.validationCount,
@@ -60,6 +62,7 @@ function useDataPage() {
   };
 
   const openDataDrawer = (row) => {
+    // 抽屉只保留详情区真正要展示的字段，避免直接暴露整行数据。
     selectedRow.value = buildSelectedDataRow(row);
     dataDrawer.openWith(row);
   };

@@ -25,17 +25,20 @@ function useSampleTrace() {
   );
 
   const load = async () => {
+    // 追溯查询只依赖样品和排程两类快照。
     const snapshot = await loadSnapshot();
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
   };
 
   const runTrace = async () => {
+    // 每次查询前先重新加载快照，确保时间线基于最新数据。
     await load();
     activeTaskCode.value = String(form.task_code ?? "").trim();
   };
 
   const resetTrace = () => {
+    // 清空输入和激活任务号即可回到默认提示态。
     form.task_code = "";
     activeTaskCode.value = "";
   };

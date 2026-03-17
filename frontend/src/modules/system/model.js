@@ -41,6 +41,7 @@ const EMPTY_ROLE_FORM = Object.freeze({
 // 将角色数据标准化为新增和编辑操作共用的表单结构。
 function createRoleForm(role = EMPTY_ROLE_FORM) {
   return {
+    // 角色表单不直接复用原始对象，避免编辑态误改静态数据。
     keyPermissions: String(role?.keyPermissions || ""),
     name: String(role?.name || ""),
     scope: String(role?.scope || ""),
@@ -52,6 +53,7 @@ function buildSystemPageState() {
   return {
     roleRows: ROLE_ROWS.map((role) => ({
       ...role,
+      // 每一行都预先挂载对应表单快照，便于页面直接进入编辑态。
       form: createRoleForm(role),
     })),
     settings: { ...BASE_SETTINGS },

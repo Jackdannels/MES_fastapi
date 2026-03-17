@@ -24,10 +24,12 @@ function useSampleIntake() {
   const taskOptions = computed(() => buildSampleIntakeTaskOptions(rawTasks.value));
 
   const syncCode = () => {
+    // 任务切换后自动刷新推荐样品号，避免手工维护编号。
     form.code = form.task_code ? nextTaskSampleCode(form.task_code, rawSamples.value) : "";
   };
 
   const applySnapshot = (snapshot) => {
+    // 每次重新加载快照后，都重新派生任务选项和推荐编号。
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     syncCode();
@@ -60,6 +62,7 @@ function useSampleIntake() {
       return;
     }
 
+    // 收样成功后广播全局事件，让其他样品页面自行刷新。
     rawTasks.value = result.tasks;
     rawSamples.value = result.samples;
     await persistSnapshot({
@@ -72,6 +75,7 @@ function useSampleIntake() {
   };
 
   const handleSamplesUpdated = () => {
+    // 其他页面更新样品后，当前收样页也需要同步最新编号和任务状态。
     void load();
   };
 

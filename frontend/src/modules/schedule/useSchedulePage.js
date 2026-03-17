@@ -68,6 +68,7 @@ function useSchedulePage() {
     () => taskOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.task_code)) || null,
   );
 
+  // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
   const manualLabOptions = computed(() =>
     buildLabOptions({
       activeTab: activeTab.value,
@@ -113,6 +114,7 @@ function useSchedulePage() {
     }
 
     const task = rawTasks.value.find((entry) => normalizeText(entry?.code) === normalizeText(schedule?.task_code));
+    // 详情弹窗只取排程与任务交集字段，避免把整条记录暴露给视图层。
     return {
       code: normalizeText(schedule?.task_code),
       device: normalizeText(schedule?.device),
@@ -133,6 +135,7 @@ function useSchedulePage() {
       return scheduleRows.value;
     }
     return scheduleRows.value.filter((row) =>
+      // 排程表搜索覆盖任务号、实验室、时间段和状态四类文本。
       [row.taskCode, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
         normalizeText(value).includes(query),
       ),
@@ -152,6 +155,7 @@ function useSchedulePage() {
   });
 
   const persistAll = async (updates) => {
+    // 只同步本页关心的任务、排程和数据流，设备/样品保持原样。
     if (Array.isArray(updates[STORAGE_KEYS.tasks])) {
       rawTasks.value = updates[STORAGE_KEYS.tasks];
     }
@@ -170,6 +174,7 @@ function useSchedulePage() {
   };
 
   const syncManualScheduleLegality = () => {
+    // 固定时段如果已经落到非法时间片，会自动纠正到最近合法时段。
     if (retentionSelected.value || normalizeText(scheduleForm.value.time_slot) === "custom") {
       return;
     }
@@ -182,12 +187,14 @@ function useSchedulePage() {
   };
 
   const syncRetentionClock = () => {
+    // 页面上的当前时间、留样默认时间和合法性检查都跟随秒级时钟更新。
     now.value = new Date();
     syncManualScheduleLegality();
     syncRetentionSelection();
   };
 
   const syncRetentionSelection = () => {
+    // 一旦切到暂存间设备，开始/结束时间立即回填为“此刻”。
     if (!retentionSelected.value) {
       return;
     }
@@ -208,6 +215,7 @@ function useSchedulePage() {
       return;
     }
 
+    // 新建排程后同时同步任务状态和流记录，并重置手动排程表单。
     scheduleWarning.value = "";
     await persistAll({
       [STORAGE_KEYS.schedules]: result.schedules,
@@ -222,6 +230,7 @@ function useSchedulePage() {
     if (!schedule) {
       return;
     }
+    // 编辑抽屉字段通过 model 层统一反向映射，避免页面手拼时间字段。
     editForm.value = buildScheduleEditForm(schedule);
     editWarning.value = "";
     scheduleDrawer.openWith({ id: scheduleId });
@@ -258,6 +267,7 @@ function useSchedulePage() {
       return;
     }
 
+    // 编辑成功后沿用与新建相同的快照同步路径。
     editWarning.value = "";
     await persistAll({
       [STORAGE_KEYS.schedules]: result.schedules,
@@ -294,6 +304,7 @@ function useSchedulePage() {
   };
 
   watch(activeTab, () => {
+    // 切页签后如果当前任务不再可选，清空任务和实验室选择。
     const validTask = taskOptions.value.some((option) => option.code === normalizeText(scheduleForm.value.task_code));
     if (!validTask) {
       scheduleForm.value.task_code = "";

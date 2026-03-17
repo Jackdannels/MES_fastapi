@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
+// 用一个轻量工厂把存储、刷新和编辑器实例绑在一起，便于单测覆盖保存/删除分支。
 const createEditor = (overrides = {}) => {
   const loadSnapshot = overrides.loadSnapshot || vi.fn();
   const persistSnapshot = overrides.persistSnapshot || vi.fn(() => Promise.resolve());
@@ -22,8 +23,10 @@ const createEditor = (overrides = {}) => {
   };
 };
 
+// 这里重点守护任务总览内联编辑的两个高风险点：样品编号重排和级联删除。
 describe("useTaskOverviewEditor", () => {
   test("saveEdit accepts semicolon-delimited sample codes", async () => {
+    // 用户可能用中英文分号批量粘贴样品号，这里验证解析兼容性。
     const snapshot = {
       [STORAGE_KEYS.tasks]: [{ code: "TASK-001", test_type: "旧类型", name: "旧类型", required_device: "旧类型", sample_count: 1 }],
       [STORAGE_KEYS.samples]: [{ id: "sample-1", code: "TASK-001-SP-001", task_code: "TASK-001", trays: [] }],
@@ -107,6 +110,7 @@ describe("useTaskOverviewEditor", () => {
   });
 
   test("confirmDeleteTask removes task-linked tasks, samples, schedules, and streams after confirmation", async () => {
+    // 删除确认不仅删任务本身，还要级联清理样品、排程和数据流。
     const snapshot = {
       [STORAGE_KEYS.tasks]: [
         { code: "TASK-001", test_type: "A" },
@@ -173,6 +177,7 @@ describe("useTaskOverviewEditor", () => {
   });
 
   test("handleGlobalClick keeps the current editor open when clicking inside the active editor", () => {
+    // 点击当前编辑器内部元素不应被误判为“点击外部”。
     const { handleCardClick, openEdit, handleGlobalClick, selectedTaskCode, editingTaskCode } = createEditor();
     const row = {
       taskCode: "TASK-001",

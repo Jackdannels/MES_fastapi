@@ -43,6 +43,7 @@ function filterTaskOverviewRows({
   const ms30 = 30 * 24 * 60 * 60 * 1000;
 
   const matchTime = (row) => {
+    // 时间筛选统一基于任务聚合行里的 timeValue 字段判断。
     if (selectedTime === "all") {
       return true;
     }
@@ -63,6 +64,7 @@ function filterTaskOverviewRows({
       return new Date(rowTime).getFullYear() === now.getFullYear();
     }
     if (selectedTime === "custom") {
+      // 自定义区间允许开始结束倒置，内部会自动交换。
       const rawStart = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : Number.NaN;
       const rawEnd = customEndDate ? new Date(`${customEndDate}T23:59:59`).getTime() : Number.NaN;
       let start = Number.isFinite(rawStart) ? rawStart : null;
@@ -84,6 +86,7 @@ function filterTaskOverviewRows({
   };
 
   return rowList.filter((row) => {
+    // 关键词搜索覆盖任务号、类型、状态、样品号和托盘号。
     if (selectedType && (row?.taskType || "") !== selectedType) {
       return false;
     }
@@ -117,6 +120,7 @@ function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTota
   const inTrayMode = viewMode === "tray";
 
   return {
+    // 托盘模式下剩余托盘过少时给顶部计数器加预警态。
     isTrayCounterAlert: inTrayMode && remainingTrayCount <= 2,
     overviewCounterLabel: inTrayMode ? TRAY_COUNTER_LABEL : TASK_COUNTER_LABEL,
     overviewCounterValue: inTrayMode ? `${remainingTrayCount}/${total}` : `${scheduledTaskCount}/${rows.length}`,
@@ -135,6 +139,7 @@ function applyRouteFiltersState({ routeQuery, viewMode, testTypeFilter, selected
   const routeTestType = String(routeQuery?.testType || "").trim();
   const routeTaskCode = String(routeQuery?.task || "").trim();
   if (routeTestType) {
+    // 路由指定试验类型时，页面会强制切回任务视图。
     nextState.viewMode = "task";
     nextState.testTypeFilter = routeTestType;
   }
@@ -175,6 +180,7 @@ function useTaskOverview() {
       unscheduledLabel: UNSCHEDULED_LABEL,
     });
 
+  // 托盘视图和任务视图共享同一份底层快照，但会产出不同结构。
   const buildTrayOverviewRows = (tasks, samples, schedules) =>
     buildTrayOverviewRowsModel({
       tasks,
@@ -187,6 +193,7 @@ function useTaskOverview() {
     });
 
   const replaceOverview = (tasks, samples, schedules) => {
+    // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
     rows.value = buildRows(tasks, samples, schedules);
     trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules);
   };
@@ -244,6 +251,7 @@ function useTaskOverview() {
   );
 
   const testTypeOptions = computed(() => {
+    // 下拉项由预设试验类型和当前数据中的动态类型合并生成。
     const dynamicTypes = rows.value.map((row) => String(row?.taskType || "").trim()).filter(Boolean);
     return Array.from(new Set(TEST_TYPE_OPTIONS.concat(dynamicTypes))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
   });
@@ -270,6 +278,7 @@ function useTaskOverview() {
   };
 
   const formatTrayCount = (row) => {
+    // 无托盘时返回“未分配”，便于托盘列直接展示。
     const trays = Array.isArray(row?.trays) ? row.trays : [];
     if (trays.length === 0) {
       return UNASSIGNED_EXPERIMENT_LABEL;
@@ -278,6 +287,7 @@ function useTaskOverview() {
   };
 
   const applyRouteFilters = () => {
+    // 页面初始化和 query 变化都走同一套路由筛选合并逻辑。
     const nextState = applyRouteFiltersState({
       routeQuery: route.query,
       selectedTaskCode: selectedTaskCode.value,
@@ -303,6 +313,7 @@ function useTaskOverview() {
 
   watch(viewMode, (nextValue) => {
     if (nextValue !== "task") {
+      // 离开任务视图时清空选中卡片和编辑态，避免托盘视图残留交互状态。
       selectedTaskCode.value = "";
       if (editingTaskCode.value) {
         cancelEdit();
@@ -319,6 +330,7 @@ function useTaskOverview() {
 
   onMounted(() => {
     applyRouteFilters();
+    // 首次加载后挂全局点击，用于处理卡片外点击关闭编辑器。
     loadOverview();
     if (typeof window !== "undefined") {
       window.addEventListener("click", handleWindowClick);

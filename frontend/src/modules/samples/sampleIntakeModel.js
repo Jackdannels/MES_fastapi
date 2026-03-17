@@ -2,9 +2,11 @@
 const STATUS_TRANSIT = "运输中";
 const STATUS_WAITING = "待排程";
 
+// 样品登记涉及的字段都统一先做文本和数组规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
+// 新样品和历史记录都使用时间戳可读 ID，便于前端调试。
 const createId = (prefix, now = new Date().toISOString()) => {
   const safeNow = String(now).replace(/[^0-9]/g, "").slice(0, 14) || "0";
   const random = Math.floor(Math.random() * 1000)
@@ -25,6 +27,7 @@ const createSampleIntakeForm = () => ({
   remark: "",
 });
 
+// 收样任务下拉同时展示任务号和任务名称，方便人工识别。
 const buildSampleIntakeTaskOptions = (tasks = []) =>
   asArray(tasks)
     .map((task) => ({
@@ -41,6 +44,7 @@ const nextTaskSampleCode = (taskCode, samples = []) => {
   }
   const pattern = new RegExp(`^${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-SP-(\\d{3})$`);
   let maxIndex = 0;
+  // 同任务下找到现有最大序号，再顺延生成下一个样品号。
   asArray(samples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code);
     const match = sampleCode.match(pattern);
@@ -58,6 +62,7 @@ const nextTaskSampleCode = (taskCode, samples = []) => {
 const appendSampleHistory = (sample, action, detail = "", nowIso) => {
   const history = Array.isArray(sample.history) ? sample.history.slice() : [];
   history.unshift({
+    // 历史记录会带上样品当前位置、责任人和状态快照。
     id: createId("sample-event", nowIso),
     time: nowIso,
     action,
@@ -95,6 +100,7 @@ function submitSampleIntake(input = {}) {
 
   const plannedCount = Number.parseInt(task?.sample_count, 10);
   if (task && Number.isFinite(plannedCount) && plannedCount >= 0) {
+    // 若任务样品计划数已满，则禁止继续挂接到该任务下。
     const existingCount = samples.filter((item) => normalizeText(item?.task_code) === normalizeText(task.code)).length;
     if (existingCount >= plannedCount) {
       return { error: `任务 ${task.code} 的样品数量已达到 ${plannedCount}。`, tasks, samples };
@@ -122,6 +128,7 @@ function submitSampleIntake(input = {}) {
   sample.history = appendSampleHistory(sample, "样品登记", mode === "draft" ? "保存草稿" : "", now);
   samples.unshift(sample);
 
+  // 正式提交首个样品时，将任务状态从“已受理”推进到“待排程”。
   if (mode === "submit" && task && normalizeText(task.status) === "已受理") {
     task.status = STATUS_WAITING;
     task.updated_at = now;

@@ -3,6 +3,7 @@ import { ref } from "vue";
 
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
+// 删除确认弹窗需要独立维护一份快照统计，避免实时值抖动。
 const createEmptyDeleteConfirm = () => ({
   taskCode: "",
   sampleCount: 0,
@@ -10,6 +11,7 @@ const createEmptyDeleteConfirm = () => ({
   streamCount: 0,
 });
 
+// 内联编辑只关心任务类型、样品数和样品编号文本。
 const createEmptyEditForm = () => ({
   taskCode: "",
   taskType: "",
@@ -17,6 +19,7 @@ const createEmptyEditForm = () => ({
   sampleCodesText: "",
 });
 
+// 样品数、托盘数等编辑输入统一归一化为非负整数。
 const normalizeCount = (value) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
@@ -24,6 +27,7 @@ const normalizeCount = (value) => {
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 
+// 样品编号文本支持按换行、空白和中英文分隔符拆分。
 const splitCodeText = (value) =>
   String(value || "")
     .split(/[\n\r,，、;；\s]+/)
@@ -43,6 +47,7 @@ const uniqueCodes = (codes) => {
   return output;
 };
 
+// 自动补号时会跳过已占用编号，保证生成结果不重复。
 const buildGeneratedSampleCodes = (taskCode, count, occupiedCodes = new Set()) => {
   const safeTaskCode = String(taskCode || "").trim();
   const targetCount = normalizeCount(count);
@@ -85,6 +90,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
     editMessage.value = "";
   };
 
+  // 某张卡片是否处于编辑态，以任务号作为唯一标识。
   const isEditing = (taskCode) => editingTaskCode.value === String(taskCode || "").trim();
 
   const openEdit = (row) => {
@@ -94,6 +100,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
     }
     resetDeleteConfirm();
     if (isEditing(code)) {
+      // 再次点同一张卡片的编辑入口时，直接退出编辑态。
       editingTaskCode.value = "";
       clearEditFeedback();
       return;
@@ -120,6 +127,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
     if (editingTaskCode.value === code) {
+      // 编辑中的卡片再次点击，按“关闭编辑器”处理。
       cancelEdit();
       return;
     }
@@ -147,6 +155,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
     if (!overviewRoot.contains(target)) {
+      // 点到总览区域外部时，清空选中态并关闭编辑器。
       selectedTaskCode.value = "";
       if (editingTaskCode.value) {
         cancelEdit();
@@ -155,6 +164,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
     }
     const clickedCard = target.closest(".task-overview-card");
     if (!clickedCard) {
+      // 点到总览容器内部但不在卡片上，也视为取消选择。
       selectedTaskCode.value = "";
       if (editingTaskCode.value) {
         cancelEdit();
@@ -170,6 +180,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
     if (!target.closest(".task-overview-editor")) {
+      // 编辑态下点到卡片非编辑区，关闭当前编辑器。
       cancelEdit();
     }
   };
@@ -182,6 +193,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
     clearEditFeedback();
+    // 自动生成只负责补齐数量，不试图保留用户已手工输入的旧内容。
     const generated = buildGeneratedSampleCodes(taskCode, count, new Set());
     editForm.value.sampleCodesText = generated.join("\n");
   };
@@ -226,6 +238,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       const inputCodes = uniqueCodes(splitCodeText(editForm.value.sampleCodesText));
       let desiredCount = normalizeCount(editForm.value.sampleCount);
       if (desiredCount <= 0) {
+        // 未明确填写数量时，以用户录入的样品编号数为准。
         desiredCount = inputCodes.length;
       }
 
@@ -247,6 +260,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
           .map((sample) => String(sample?.code || "").trim())
           .filter(Boolean)
       );
+      // 阻止不同任务之间复用同一个样品编号。
       const duplicateWithOthers = finalCodes.filter((sampleCode) => otherTaskCodeSet.has(sampleCode));
       if (duplicateWithOthers.length > 0) {
         editError.value = `Sample codes already in use: ${duplicateWithOthers.join(", ")}`;
@@ -261,6 +275,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       const nextTaskSamples = finalCodes.map((sampleCode, index) => {
         const existing = taskSamples[index];
         if (existing) {
+          // 已有样品优先复用原记录，保留原托盘和创建时间等信息。
           const updated = {
             ...existing,
             code: sampleCode,
@@ -307,6 +322,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
         .filter((sample) => String(sample?.task_code || "").trim() !== code)
         .concat(nextTaskSamples);
 
+      // 保存成功后立即刷新总览卡片，避免页面还停留在旧聚合结果上。
       await persistSnapshot({
         [STORAGE_KEYS.tasks]: nextTasks,
         [STORAGE_KEYS.samples]: nextSamples,
@@ -339,6 +355,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
 
+    // 先生成确认信息，真正删除要等二次确认。
     deleteConfirm.value = {
       taskCode: code,
       sampleCount: samples.filter((sample) => String(sample?.task_code || "").trim() === code).length,
@@ -354,6 +371,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       return;
     }
     if (deleteConfirm.value.taskCode !== code) {
+      // 直接调用确认删除但尚未生成确认快照时，会先补跑一遍 request。
       await requestDeleteTask(code);
       return;
     }

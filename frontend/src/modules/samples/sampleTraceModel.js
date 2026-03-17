@@ -3,6 +3,7 @@ const DEFAULT_SUMMARY = "请输入试验序号查询样品全生命周期。";
 const STATUS_RETENTION = "暂存间存放";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 
+// 追溯链路会同时消费样品历史与排程记录，因此先统一做基础清洗。
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const normalizeStatus = (value) => {
@@ -13,6 +14,7 @@ const normalizeStatus = (value) => {
   return normalized;
 };
 
+// 优先使用样品自身已存的 history；缺失时再退回到基础登记事件。
 const buildSampleEvents = (sample) => {
   if (Array.isArray(sample?.history) && sample.history.length) {
     return sample.history.map((event) => ({
@@ -41,6 +43,7 @@ const toSortableTime = (value) => {
   return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time;
 };
 
+// 时间线元数据统一格式化成 yyyy-MM-dd HH:mm。
 const formatDateTime = (value) => {
   if (!value) {
     return "";
@@ -74,6 +77,7 @@ function buildSampleTraceView(input = {}) {
 
   const events = [];
   matches.forEach((sample) => {
+    // 每个样品的历史事件都会保留样品号，便于时间线区分来源。
     buildSampleEvents(sample).forEach((event, index) => {
       events.push({
         ...event,
@@ -84,6 +88,7 @@ function buildSampleTraceView(input = {}) {
   });
 
   scheduleMatches.forEach((entry, index) => {
+    // 排程记录会被拆成“开始/结束”两个节点，插入同一条时间线。
     if (entry?.start_at) {
       events.push({
         id: normalizeText(entry?.id) ? `${entry.id}-start` : `${taskCode}-schedule-start-${index}`,
@@ -121,6 +126,7 @@ function buildSampleTraceView(input = {}) {
     .slice()
     .sort((left, right) => toSortableTime(left?.time) - toSortableTime(right?.time))
     .map((event, index) => {
+      // 时间线标题展示“样品号/任务号 + 动作”，meta 展示详细上下文。
       const titleParts = [normalizeText(event?.sample_code) || taskCode];
       titleParts.push(normalizeText(event?.action) || "样品流转");
 

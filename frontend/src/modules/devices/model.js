@@ -39,8 +39,10 @@ const DEFAULT_POINT_ROWS = Object.freeze([
   },
 ]);
 
+// 设备页所有输入都先转成干净字符串，便于后续构造表单和展示行。
 const normalizeText = (value) => String(value ?? "").trim();
 
+// 本地演示数据使用时间戳 + 随机数生成轻量级前端 ID。
 const createId = (prefix) => {
   const random = Math.floor(Math.random() * 1000)
     .toString()
@@ -48,6 +50,7 @@ const createId = (prefix) => {
   return `${prefix}-${Date.now()}-${random}`;
 };
 
+// 判断某条排程是否在当前时刻占用了指定设备。
 const isScheduleActive = (schedule, deviceCode, now = new Date()) => {
   if (!schedule || schedule.device !== deviceCode) {
     return false;
@@ -93,6 +96,7 @@ function resolveStatusClass(status) {
 function buildDeviceRows(devices, schedules, now = new Date()) {
   const deviceList = Array.isArray(devices) ? devices : [];
   return deviceList.map((device, index) => {
+    // 设备状态优先以当前排程推导结果为准，再回退到设备自身状态。
     const status = resolveDeviceStatus(device, schedules, now);
     return {
       acquisitionEnabled: normalizeText(device?.acquisition_enabled) || "启用",
@@ -136,6 +140,7 @@ function createDeviceForm() {
   };
 }
 
+// 将表格行或原始记录统一映射为设备编辑表单字段。
 function buildDeviceForm(device = {}) {
   return {
     acquisition_enabled: normalizeText(device?.acquisitionEnabled ?? device?.acquisition_enabled) || "启用",
@@ -150,6 +155,7 @@ function buildDeviceForm(device = {}) {
   };
 }
 
+// 抽屉标题等区域只需要保留最核心的设备标识信息。
 function buildSelectedDevice(device = {}) {
   return {
     code: normalizeText(device?.code) || "-",
@@ -157,6 +163,7 @@ function buildSelectedDevice(device = {}) {
   };
 }
 
+// 维护操作只关心最近校准信息和本次维护记录。
 function createMaintenanceForm(device = {}) {
   return {
     latestCalibration: normalizeText(device?.nextCalRaw ?? device?.next_cal),
@@ -172,6 +179,7 @@ function upsertDevice(devices, form) {
     return Array.isArray(devices) ? devices.slice() : [];
   }
 
+  // 先将表单标准化为可持久化记录，避免新增和更新逻辑重复拼字段。
   const nextDevice = {
     acquisition_enabled: normalizeText(form?.acquisition_enabled) || "启用",
     code: normalizedCode,
@@ -187,6 +195,7 @@ function upsertDevice(devices, form) {
   const deviceList = Array.isArray(devices) ? devices.map((device) => ({ ...device })) : [];
   const existingIndex = deviceList.findIndex((device) => normalizeText(device?.code) === normalizedCode);
   if (existingIndex >= 0) {
+    // 命中同编码设备时执行覆盖更新。
     deviceList[existingIndex] = {
       ...deviceList[existingIndex],
       ...nextDevice,
@@ -207,6 +216,7 @@ function appendDevice(devices, form) {
     return Array.isArray(devices) ? devices.slice() : [];
   }
 
+  // append 版本始终追加新记录，不做编码去重判断。
   const deviceList = Array.isArray(devices) ? devices.map((device) => ({ ...device })) : [];
   deviceList.unshift({
     id: createId("device"),
@@ -232,6 +242,7 @@ function buildLocationOptions(devices) {
   return Array.from(new Set([...defaults, ...existingLocations]));
 }
 
+// 试验类型下拉同时保留默认实验类型和当前设备中已有的自定义类型。
 function buildTestTypeOptions(devices) {
   const defaults = [...Object.keys(TEST_PREFIX_MAP), "其他/自定义"];
   const existingTypes = (Array.isArray(devices) ? devices : [])
@@ -240,6 +251,7 @@ function buildTestTypeOptions(devices) {
   return Array.from(new Set([...defaults, ...existingTypes]));
 }
 
+// 设备位置变化时，优先套用实验室到试验类型的预设映射。
 function syncDeviceTypeWithLocation(location, fallbackType = "") {
   const mappedType = LAB_TEST_MAP[normalizeText(location)];
   return normalizeText(mappedType) || normalizeText(fallbackType);
@@ -274,6 +286,7 @@ function createPointRows() {
   return DEFAULT_POINT_ROWS.map((row) => ({ ...row }));
 }
 
+// 点位搜索在名称、地址、数据类型、单位和备注几个字段上同时生效。
 function buildVisiblePointRows(points, query) {
   const pointList = Array.isArray(points) ? points : [];
   const normalizedQuery = normalizeText(query).toLowerCase();
@@ -299,6 +312,7 @@ function appendPoint(points, form) {
     return Array.isArray(points) ? points.slice() : [];
   }
 
+  // 新增点位时保持不可变更新，避免直接修改当前列表引用。
   const pointList = Array.isArray(points) ? points.map((point) => ({ ...point })) : [];
   pointList.unshift({
     address,
