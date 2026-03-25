@@ -2,20 +2,22 @@
   <div class="task-overview-header">
     <div class="task-overview-heading">
       <h3>任务/托盘总览</h3>
-      <div class="task-overview-counter" :class="{ 'is-alert': isTrayCounterAlert }">
-        <div class="task-overview-counter-label">{{ overviewCounterLabel }}</div>
-        <div class="task-overview-counter-value">{{ overviewCounterValue }}</div>
+      <div class="task-overview-heading-metrics">
+        <div class="task-overview-counter" :class="{ 'is-alert': isTrayCounterAlert }">
+          <div class="task-overview-counter-label">{{ overviewCounterLabel }}</div>
+          <div class="task-overview-counter-value">{{ overviewCounterValue }}</div>
+        </div>
+        <div class="tabs task-overview-mode-switch">
+          <button class="tab-btn" :class="{ active: viewMode === 'task' }" type="button" @click="emit('update:viewMode', 'task')">
+            任务总览
+          </button>
+          <button class="tab-btn" :class="{ active: viewMode === 'tray' }" type="button" @click="emit('update:viewMode', 'tray')">
+            托盘总览
+          </button>
+        </div>
       </div>
     </div>
     <div class="task-overview-actions">
-      <div class="tabs task-overview-mode-switch">
-        <button class="tab-btn" :class="{ active: viewMode === 'task' }" type="button" @click="emit('update:viewMode', 'task')">
-          任务总览
-        </button>
-        <button class="tab-btn" :class="{ active: viewMode === 'tray' }" type="button" @click="emit('update:viewMode', 'tray')">
-          托盘总览
-        </button>
-      </div>
       <input
         :value="keywordInput"
         class="search-input"

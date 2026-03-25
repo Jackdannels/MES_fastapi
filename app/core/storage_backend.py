@@ -5,6 +5,9 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Iterable
 
+from app.core.config import settings
+from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_STORE_PATH = BASE_DIR / "data" / "mes_store.json"
 
@@ -97,6 +100,64 @@ class StorageBackend:
         raise NotImplementedError
 
 
+class DatabaseStorageBackend(StorageBackend):
+    def __init__(self, repository, bootstrap_storage: StorageBackend | None = None) -> None:
+        self._repository = repository
+        self._bootstrap_storage = bootstrap_storage
+        self._lock = Lock()
+
+    def _deserialize_payloads(self, payloads: Dict[str, str]) -> Dict[str, Any]:
+        normalized: Dict[str, Any] = {}
+        for key in STORAGE_KEYS:
+            raw_value = payloads.get(key)
+            try:
+                parsed = json.loads(raw_value) if raw_value else []
+            except json.JSONDecodeError:
+                parsed = []
+            normalized[key] = _normalize_value(key, parsed if isinstance(parsed, list) else [])
+        return normalized
+
+    def _serialize_updates(self, updates: Dict[str, Any]) -> Dict[str, str]:
+        serialized: Dict[str, str] = {}
+        for key, value in updates.items():
+            if key not in STORAGE_KEYS:
+                continue
+            normalized = _normalize_value(key, value if isinstance(value, list) else [])
+            serialized[key] = json.dumps(normalized, ensure_ascii=False)
+        return serialized
+
+    def _ensure_bootstrapped(self) -> Dict[str, str]:
+        payloads = self._repository.read_all()
+        if payloads or self._bootstrap_storage is None:
+            return payloads
+        bootstrap_payload = self._bootstrap_storage.read_all()
+        serialized = self._serialize_updates(bootstrap_payload)
+        self._repository.write_many(serialized)
+        return self._repository.read_all()
+
+    def read_all(self) -> Dict[str, Any]:
+        with self._lock:
+            payloads = self._ensure_bootstrapped()
+            return self._deserialize_payloads(payloads)
+
+    def read(self, key: str) -> Any:
+        with self._lock:
+            if key not in STORAGE_KEYS:
+                return []
+            payloads = self._ensure_bootstrapped()
+            return self._deserialize_payloads(payloads).get(key, [])
+
+    def write(self, key: str, value: Any) -> None:
+        self.write_many({key: value})
+
+    def write_many(self, updates: Dict[str, Any]) -> None:
+        with self._lock:
+            serialized = self._serialize_updates(updates)
+            if not serialized:
+                return
+            self._repository.write_many(serialized)
+
+
 class JsonFileStorage(StorageBackend):
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -160,5 +221,30 @@ _storage_backend: StorageBackend | None = None
 def get_storage_backend() -> StorageBackend:
     global _storage_backend
     if _storage_backend is None:
-        _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)
+        backend_name = settings.STORAGE_BACKEND.strip().lower()
+        if backend_name == "mysql":
+            from app.core.mysql_storage_backend import MySQLMesStorageBackend
+
+            repository = MySQLSnapshotRepository(
+                MySQLConnectionSettings(
+                    host=settings.MYSQL_HOST,
+                    port=settings.MYSQL_PORT,
+                    user=settings.MYSQL_USER,
+                    password=settings.MYSQL_PASSWORD,
+                    database=settings.MYSQL_DATABASE,
+                )
+            )
+            _storage_backend = MySQLMesStorageBackend(
+                MySQLConnectionSettings(
+                    host=settings.MYSQL_HOST,
+                    port=settings.MYSQL_PORT,
+                    user=settings.MYSQL_USER,
+                    password=settings.MYSQL_PASSWORD,
+                    database=settings.MYSQL_DATABASE,
+                ),
+                repository,
+                bootstrap_storage=JsonFileStorage(DEFAULT_STORE_PATH),
+            )
+        else:
+            _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)
     return _storage_backend

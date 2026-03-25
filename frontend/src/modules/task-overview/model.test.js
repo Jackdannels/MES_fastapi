@@ -48,8 +48,8 @@ describe("taskOverviewModel", () => {
     });
     expect(rows[0].sampleCodes).toEqual(["S-001", "S-002"]);
     expect(rows[0].trays).toEqual([
-      { trayCode: "TRAY-01", sampleCodes: ["S-001"], totalQuantity: 1 },
-      { trayCode: "TRAY-02", sampleCodes: ["S-002"], totalQuantity: 3 },
+      expect.objectContaining({ trayCode: "TRAY-01", sampleCodes: ["S-001"], totalQuantity: 1 }),
+      expect.objectContaining({ trayCode: "TRAY-02", sampleCodes: ["S-002"], totalQuantity: 3 }),
     ]);
   });
 
@@ -116,10 +116,73 @@ describe("taskOverviewModel", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      currentStatus: "暂存间存放",
+      currentStatus: "待排程",
       scheduleCount: 0,
       scheduleLabel: "未排程",
       taskCode: "WDC-2026-001",
     });
+  });
+
+  test("buildTaskRows prefers arrival_at over created_at for overview time", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "CJ-2026-001",
+          test_type: "冲击试验",
+          created_at: "2026-03-10T08:00:00Z",
+          arrival_at: "2026-03-18 09:14",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0].timeValue).toBe("2026-03-18 09:14");
+  });
+
+  test("buildTaskRows marks overview rows running when any tray is in the active experiment chain", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "CJ-2026-001", test_type: "冲击试验", status: "待排程" }],
+      samples: [
+        {
+          task_code: "CJ-2026-001",
+          code: "CJ-2026-001-SP-001",
+          status: "已到达实验室",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0].currentStatus).toBe("实验中");
+  });
+
+  test("buildTaskRows keeps overview rows incomplete until every tray reaches a post-complete state", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "CJ-2026-001", test_type: "冲击试验", status: "待排程" }],
+      samples: [
+        {
+          task_code: "CJ-2026-001",
+          code: "CJ-2026-001-SP-001",
+          status: "实验已完成",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+        {
+          task_code: "CJ-2026-001",
+          code: "CJ-2026-001-SP-002",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "放置实验后暂存间", quantity: 1 }],
+        },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0].currentStatus).toBe("实验完成");
   });
 });

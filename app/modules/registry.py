@@ -15,7 +15,9 @@ from app.api.routes.productcatalog import router as productcatalog_router
 from app.api.routes.quality import router as quality_router
 from app.api.routes.report import router as report_router
 from app.api.routes.storage import router as storage_router
+from app.api.routes.tasks import router as tasks_router
 from app.api.routes.technologies import router as technologies_router
+from app.api.routes.transfer_area import router as transfer_area_router
 from app.api.routes.warehouse import router as warehouse_router
 from app.api.routes.workflows import router as workflows_router
 from app.api.routes.yt_barcode import router as yt_barcode_router
@@ -39,7 +41,7 @@ MODULES = (
     AppModule(key="task-overview", spa_routes=("/task-overview",)),
     AppModule(
         key="tasks",
-        api_routers=(person_router, customer_router, companydepartment_router, permissions_router),
+        api_routers=(tasks_router, person_router, customer_router, companydepartment_router, permissions_router),
         spa_routes=("/tasks",),
     ),
     AppModule(
@@ -52,6 +54,7 @@ MODULES = (
         api_routers=(warehouse_router, productcatalog_router, yt_report_router, quality_router),
         spa_routes=("/samples",),
     ),
+    AppModule(key="handover-system", api_routers=(transfer_area_router,), spa_routes=("/handover-system",)),
     AppModule(
         key="process",
         api_routers=(manufactureplan_router, report_router, device_router),
@@ -84,6 +87,7 @@ def get_spa_routes() -> tuple[str, ...]:
         "tasks",
         "schedule",
         "samples",
+        "handover-system",
         "process",
         "devices",
         "data",

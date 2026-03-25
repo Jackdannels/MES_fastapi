@@ -6,12 +6,21 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .task-overview-heading {
   display: flex;
   align-items: center;
   gap: 14px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.task-overview-heading-metrics {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
@@ -52,10 +61,14 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: 1 1 520px;
+  min-width: 0;
 }
 
 .task-overview-mode-switch {
   margin-top: 0;
+  flex: 0 0 auto;
 }
 
 .task-overview-mode-switch .tab-btn {
@@ -418,6 +431,10 @@
 
 /* 小屏下将编辑器和卡片收敛为单列结构。 */
 @media (max-width: 980px) {
+  .task-overview-header {
+    align-items: stretch;
+  }
+
   .task-overview-editor-grid {
     grid-template-columns: 1fr;
   }
@@ -428,6 +445,12 @@
 
   .task-overview-heading {
     width: 100%;
+  }
+
+  .task-overview-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-basis: auto;
   }
 
   .task-overview-index-col {

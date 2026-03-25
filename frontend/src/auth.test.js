@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { AUTH_STORAGE_KEY, fetchAuthSession, loginWithCredentials, logoutSession, readAuthSession } from "./auth";
+import {
+  AUTH_STORAGE_KEY,
+  fetchAuthSession,
+  loginWithCredentials,
+  logoutSession,
+  readAuthSession,
+  resolveModuleHome,
+  switchSessionModule,
+} from "./auth";
 
 describe("auth", () => {
   beforeEach(() => {
@@ -157,5 +165,63 @@ describe("auth", () => {
       method: "POST",
     });
     expect(readAuthSession()).toBeNull();
+  });
+
+  test("switchSessionModule updates the cached auth session and returns the new module", async () => {
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({
+        logged_at: "2026-03-11T00:00:00Z",
+        module: "central",
+        username: "admin",
+      }),
+    );
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ username: "admin", module: "visual", logged_at: "2026-03-11T00:00:00Z" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await switchSessionModule("visual");
+
+    expect(result).toEqual({ ok: true, module: "visual" });
+    expect(fetchMock).toHaveBeenCalledWith("/auth/switch-module", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        module: "visual",
+      }),
+    });
+    expect(readAuthSession()).toEqual({
+      logged_at: "2026-03-11T00:00:00Z",
+      module: "visual",
+      username: "admin",
+    });
+  });
+
+  test("switchSessionModule returns backend validation messages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ detail: "Invalid module" }),
+      }),
+    );
+
+    const result = await switchSessionModule("unknown");
+
+    expect(result).toEqual({ ok: false, message: "Invalid module" });
+  });
+
+  test("resolveModuleHome maps the handover module to its dedicated page", () => {
+    expect(resolveModuleHome("handover")).toBe("/handover-system");
+  });
+
+  test("resolveModuleHome maps the staging module to its dedicated page", () => {
+    expect(resolveModuleHome("staging")).toBe("/staging-management");
   });
 });

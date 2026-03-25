@@ -10,6 +10,8 @@ describe("LoginPage structure", () => {
     const source = readFileSync(pagePath, "utf8");
 
     expect(source).toContain("useLoginForm");
+    expect(source).toContain("接驳区系统");
+    expect(source).toContain("暂存间系统");
     expect(source).not.toContain('ref("admin")');
     expect(source).not.toContain('ref("123")');
     expect(source).not.toContain("默认账号");

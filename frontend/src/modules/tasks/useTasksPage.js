@@ -5,6 +5,8 @@ import { useRoute } from "vue-router";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
+import { createTask, deleteTask as deleteTaskByApi, readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
   STATUS_WAITING,
   buildFilterOptions,
@@ -51,7 +53,7 @@ function useTasksPage() {
   const intakeModal = useDialogState();
   const taskDrawer = useDialogState();
 
-  const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value));
+  const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
 
@@ -158,11 +160,8 @@ function useTasksPage() {
     openIntakeModal();
   };
 
-  const persistAll = async (updates) => {
-    // 将任务、排程、样品、数据流的局部更新合并回当前响应式快照。
-    if (Array.isArray(updates[STORAGE_KEYS.tasks])) {
-      rawTasks.value = updates[STORAGE_KEYS.tasks];
-    }
+  const persistRelated = async (updates) => {
+    // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
     if (Array.isArray(updates[STORAGE_KEYS.schedules])) {
       rawSchedules.value = updates[STORAGE_KEYS.schedules];
     }
@@ -188,12 +187,12 @@ function useTasksPage() {
     }
 
     const nextTask = createTaskRecord(intakeForm.value, rawTasks.value);
-    const nextTasks = [nextTask, ...rawTasks.value];
     // 任务创建后立即同步样品编号，保持任务与样品侧数据一致。
     const nextSamples = syncTaskSamples(rawSamples.value, nextTask);
+    await createTask(nextTask);
+    rawTasks.value = await readTasks();
 
-    await persistAll({
-      [STORAGE_KEYS.tasks]: nextTasks,
+    await persistRelated({
       [STORAGE_KEYS.samples]: nextSamples,
     });
 
@@ -212,10 +211,11 @@ function useTasksPage() {
       return;
     }
 
+    await updateTaskByApi(editForm.value.id, updatedTask);
+    rawTasks.value = await readTasks();
     // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
     const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
-    await persistAll({
-      [STORAGE_KEYS.tasks]: tasks,
+    await persistRelated({
       [STORAGE_KEYS.samples]: nextSamples,
     });
     closeTaskDrawer();
@@ -233,8 +233,9 @@ function useTasksPage() {
       editForm.value.id,
     );
 
-    await persistAll({
-      [STORAGE_KEYS.tasks]: nextSnapshot.tasks,
+    await deleteTaskByApi(editForm.value.id);
+    rawTasks.value = await readTasks();
+    await persistRelated({
       [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
       [STORAGE_KEYS.samples]: nextSnapshot.samples,
       [STORAGE_KEYS.streams]: nextSnapshot.streams,
@@ -243,11 +244,22 @@ function useTasksPage() {
   };
 
   const loadTasksPage = async () => {
-    const snapshot = await loadSnapshot();
-    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+    const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+    rawTasks.value = Array.isArray(tasks) ? tasks : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
+    if (taskDrawer.open.value) {
+      const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
+      const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value).find(
+        (row) => normalizeText(row?.code) === selectedTaskCode,
+      );
+      if (selectedRow) {
+        taskDrawer.openWith(selectedRow);
+        editForm.value = buildTaskEditForm(selectedRow);
+        editWarning.value = "";
+      }
+    }
     syncIntakeDerivedFields();
     syncModalWithHash(route.hash || (typeof window !== "undefined" ? window.location.hash : ""));
   };
@@ -285,11 +297,13 @@ function useTasksPage() {
     void loadTasksPage();
     window.addEventListener("hashchange", handleHashChange);
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
   });
 
   onBeforeUnmount(() => {
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
   });
 
   return {

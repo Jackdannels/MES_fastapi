@@ -58,6 +58,16 @@ def test_login_accepts_demo_credentials(client):
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_login_accepts_handover_module(client):
+    response = client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "handover"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["module"] == "handover"
+
+
 def test_login_sets_secure_cookie_when_debug_is_disabled(client, monkeypatch):
     monkeypatch.setattr(settings, "DEBUG", False)
     monkeypatch.setattr(settings, "SESSION_COOKIE_SECURE", None, raising=False)
@@ -115,6 +125,42 @@ def test_logout_clears_session_cookie(client):
     assert "mes_session=" in response.headers["set-cookie"]
     assert response.headers["cache-control"] == "no-store"
     assert session_response.status_code == 401
+
+
+def test_switch_module_updates_the_current_auth_session(client):
+    client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "central"},
+    )
+
+    response = client.post("/auth/switch-module", json={"module": "visual"})
+    session_response = client.get("/auth/session")
+
+    assert response.status_code == 200
+    assert response.json()["username"] == settings.DEMO_USER
+    assert response.json()["module"] == "visual"
+    assert response.headers["cache-control"] == "no-store"
+    assert session_response.status_code == 200
+    assert session_response.json()["module"] == "visual"
+
+
+def test_switch_module_requires_an_authenticated_session(client):
+    response = client.post("/auth/switch-module", json={"module": "visual"})
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Not authenticated"}
+
+
+def test_switch_module_rejects_unknown_modules(client):
+    client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "central"},
+    )
+
+    response = client.post("/auth/switch-module", json={"module": "unknown"})
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid module"}
 
 
 def test_session_refreshes_idle_deadline_before_timeout(client, monkeypatch):

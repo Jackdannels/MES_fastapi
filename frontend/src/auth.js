@@ -1,12 +1,7 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./lib/apiBase.js";
+import { MODULE_ROUTES } from "./lib/moduleCatalog.js";
 
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
-
-const MODULE_ROUTES = {
-  central: "/",
-  visual: "/visualization",
-  staging: "/staging-management",
-};
 
 const VALID_MODULES = new Set(Object.keys(MODULE_ROUTES));
 const API_BASE_URL = getFrontendApiBaseUrl();
@@ -144,6 +139,44 @@ async function logoutSession() {
   }
 }
 
+async function switchSessionModule(moduleKey) {
+  const module = MODULE_ROUTES[moduleKey] ? moduleKey : "";
+  if (!module) {
+    return { ok: false, message: "Invalid module" };
+  }
+
+  try {
+    const response = await fetch(buildApiUrl("/auth/switch-module", API_BASE_URL), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        module,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { ok: false, message: payload?.detail || "Module switch failed" };
+    }
+    const session = normalizeAuthSession({
+      username: payload.username,
+      module: payload.module || module,
+      logged_at: payload.logged_at,
+    });
+    if (!session) {
+      clearAuthSession();
+      return { ok: false, message: "Module switch failed" };
+    }
+    writeAuthSession(session);
+    return { ok: true, module: session.module };
+  } catch {
+    return { ok: false, message: "Network error" };
+  }
+}
+
 export {
   AUTH_STORAGE_KEY,
   MODULE_ROUTES,
@@ -154,4 +187,5 @@ export {
   logoutSession,
   readAuthSession,
   resolveModuleHome,
+  switchSessionModule,
 };

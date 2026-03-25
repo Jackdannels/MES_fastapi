@@ -3,9 +3,11 @@ const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
 const STATUS_RUNNING = "实验中";
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RETENTION = "暂存间存放";
-const LEGACY_STATUS_RETENTION = "暂存间排放";
 const STATUS_WAITING = "待排程";
+const STATUS_RETENTION = "厂家收回";
+const LEGACY_STATUS_RETENTION = "暂存间排放";
+const LEGACY_STATUS_STORAGE = "暂存间存放";
+const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
@@ -15,7 +17,10 @@ const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOC
 // 兼容历史状态文案，保证统计口径一致。
 const normalizeStatusLabel = (value) => {
   const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === STATUS_RETENTION) {
+  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
+    return STATUS_WAITING;
+  }
+  if (normalized === STATUS_RETENTION) {
     return STATUS_RETENTION;
   }
   return normalized;
@@ -74,7 +79,7 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
   // 再判断是否只存在暂存间记录。
   const retentionEntry = matchedSchedules.find((entry) => isRetentionDevice(entry?.device));
   if (retentionEntry) {
-    return STATUS_RETENTION;
+    return STATUS_WAITING;
   }
 
   const rawStatus = normalizeStatusLabel(task?.status);
@@ -123,11 +128,14 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, now = Dat
   // 任务来源、暂存、排程和数据健康指标都在这里集中计算，页面只负责展示。
   const externalCount = normalizedTasks.filter((task) => normalizeText(task?.source) === SOURCE_EXTERNAL).length;
   const internalCount = normalizedTasks.filter((task) => normalizeText(task?.source) === SOURCE_INTERNAL).length;
-  const retentionCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_RETENTION).length;
-  const unscheduledCount = normalizedTasks.filter(
-    (task) =>
-      ![STATUS_RUNNING, STATUS_SCHEDULED].includes(normalizeText(task?.displayStatus))
-  ).length;
+  const stagedTaskCodes = new Set(
+    scheduleList
+      .filter((entry) => isRetentionDevice(entry?.device))
+      .map((entry) => normalizeText(entry?.task_code))
+      .filter(Boolean),
+  );
+  const retentionCount = normalizedTasks.filter((task) => stagedTaskCodes.has(normalizeText(task?.code))).length;
+  const unscheduledCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_WAITING).length;
   const runningTaskCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_RUNNING).length;
   const scheduledCount = scheduleList.filter((entry) => !isRetentionDevice(entry?.device)).length;
   const gapCount = streamList.filter((stream) => normalizeText(stream?.status).includes("缺口")).length;
@@ -165,7 +173,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, now = Dat
       intakeCount: normalizedTasks.length,
       intakeNote: `外部 ${externalCount} / 内部 ${internalCount}`,
       scheduledCount,
-      unscheduledCount: `${unscheduledCount}（暂存间存放${retentionCount}）`,
+      unscheduledCount: `${unscheduledCount}（${STAGING_NOTE_LABEL}${retentionCount}）`,
     },
     taskRows,
   };

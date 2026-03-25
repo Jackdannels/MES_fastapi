@@ -1,5 +1,21 @@
 ﻿const DEFAULT_TRAY_LIMIT = 5;
-const DEFAULT_TRAY_COUNT = 2;
+const DEFAULT_TRAY_COUNT = 1;
+const TEST_TYPE_LABS = Object.freeze({
+  冲击试验: ["冲击一室", "冲击二室"],
+  振动试验: ["振动一室", "振动二室"],
+  四综合试验: ["四综合实验室"],
+  温度冲击试验: ["温度冲击一室", "温度冲击二室"],
+  高低温湿热试验: ["高低温湿热一室"],
+  盐雾试验: ["盐雾试验室"],
+  霉菌试验: ["霉菌试验室"],
+});
+const TASK_STATUS_WAITING = "待排程";
+const TASK_STATUS_RUNNING = "实验中";
+const TASK_STATUS_COMPLETED = "实验已经完成";
+const TASK_STATUS_RETURNED = "厂家收回";
+const ACTIVE_TRAY_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", TASK_STATUS_RUNNING]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", TASK_STATUS_RETURNED]);
+const RETURNED_TRAY_STATUSES = new Set([TASK_STATUS_RETURNED]);
 
 // 该模型负责让托盘均衡分配和入库更新保持可预测、可测试。
 const normalizeText = (value) => String(value ?? "").trim();
@@ -9,6 +25,13 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
+const formatTaskArrivalTime = (value) => {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return text.includes("T") ? text.replace("T", " ").slice(0, 19) : text.slice(0, 19);
+};
 
 const parsePositiveInt = (value) => {
   const parsed = Number.parseInt(String(value ?? "").trim(), 10);
@@ -16,6 +39,75 @@ const parsePositiveInt = (value) => {
     return 0;
   }
   return Math.floor(parsed);
+};
+
+const parseDate = (value) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const padNumber = (value) => String(value).padStart(2, "0");
+
+const formatOutboundScheduleText = (schedule) => {
+  const startAt = parseDate(schedule?.start_at);
+  const endAt = parseDate(schedule?.end_at);
+  if (!startAt || !endAt) {
+    return "未排程";
+  }
+  return `${padNumber(startAt.getMonth() + 1)}/${padNumber(startAt.getDate())} ${padNumber(startAt.getHours())}:${padNumber(startAt.getMinutes())} - ${padNumber(endAt.getMonth() + 1)}/${padNumber(endAt.getDate())} ${padNumber(endAt.getHours())}:${padNumber(endAt.getMinutes())}`;
+};
+
+const getLabsForTestType = (testType) => {
+  const normalizedType = normalizeText(testType);
+  return Array.isArray(TEST_TYPE_LABS[normalizedType]) ? TEST_TYPE_LABS[normalizedType] : [];
+};
+
+const collectTaskTrayStatuses = (taskCode, samples) => {
+  const code = normalizeText(taskCode);
+  const trayStatusMap = new Map();
+  const fallbackStatuses = [];
+
+  asArray(samples).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== code) {
+      return;
+    }
+
+    const sampleStatus = normalizeText(sample?.status);
+    const sampleTrays = asArray(sample?.trays);
+    if (sampleTrays.length === 0) {
+      if (sampleStatus) {
+        fallbackStatuses.push(sampleStatus);
+      }
+      return;
+    }
+
+    sampleTrays.forEach((tray, index) => {
+      const trayCode = normalizeText(tray?.tray_code) || `${code}-tray-${index + 1}`;
+      const trayStatus = normalizeText(tray?.status) || sampleStatus;
+      if (trayStatus) {
+        trayStatusMap.set(trayCode, trayStatus);
+      }
+    });
+  });
+
+  return trayStatusMap.size > 0 ? Array.from(trayStatusMap.values()) : fallbackStatuses;
+};
+
+const resolveTaskDisplayStatus = (task, samples) => {
+  const trayStatuses = collectTaskTrayStatuses(task?.code, samples);
+  if (trayStatuses.length > 0) {
+    if (trayStatuses.every((status) => RETURNED_TRAY_STATUSES.has(status))) {
+      return TASK_STATUS_RETURNED;
+    }
+    if (trayStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status))) {
+      return TASK_STATUS_COMPLETED;
+    }
+    if (trayStatuses.some((status) => ACTIVE_TRAY_STATUSES.has(status))) {
+      return TASK_STATUS_RUNNING;
+    }
+  }
+
+  return normalizeText(task?.displayStatus || task?.display_status || task?.status) || TASK_STATUS_WAITING;
 };
 
 // 样品、托盘、历史记录的默认 ID 都走同一套生成逻辑。
@@ -163,8 +255,13 @@ const normalizeTrays = ({ taskCode, sampleCodes, trays, maxPerTray = DEFAULT_TRA
   }
 
   normalized.sort((left, right) => {
-    const leftKey = left.samples[0] || "~~~";
-    const rightKey = right.samples[0] || "~~~";
+    const leftEmpty = left.samples.length === 0;
+    const rightEmpty = right.samples.length === 0;
+    if (leftEmpty !== rightEmpty) {
+      return leftEmpty ? 1 : -1;
+    }
+    const leftKey = left.samples[0] || "";
+    const rightKey = right.samples[0] || "";
     return compareText(leftKey, rightKey);
   });
 
@@ -222,8 +319,10 @@ function buildSampleProcessTaskOptions({ tasks, samples }) {
     .filter((task) => parsePositiveInt(task?.sample_count) > 0 || sampleTaskCodes.has(normalizeText(task?.code)))
     .map((task) => ({
       code: normalizeText(task?.code),
+      displayStatus: resolveTaskDisplayStatus(task, samples),
       label: [normalizeText(task?.code), normalizeText(task?.name)].filter(Boolean).join(" | "),
       sampleCount: parsePositiveInt(task?.sample_count),
+      status: normalizeText(task?.status),
     }))
     .filter((option) => option.code)
     .sort((left, right) => compareText(left.code, right.code));
@@ -240,11 +339,11 @@ function buildBalancedTrayDraft({ taskCode, sampleCodes, maxPerTray = DEFAULT_TR
 }
 
 // 基于已存样品和托盘状态重建指定任务的托盘草稿。
-function selectTaskProcessDraft({ taskCode, tasks, samples }) {
+function selectTaskProcessDraft({ taskCode, tasks, samples, preferExistingTrays = true }) {
   const code = normalizeText(taskCode);
   const { task, taskSamples, sampleCodes } = buildTaskProcessSamples({ taskCode: code, tasks, samples });
   const maxPerTray = DEFAULT_TRAY_LIMIT;
-  const traysWithExisting = buildExistingTaskTrays({ taskCode: code, taskSamples, sampleCodes, maxPerTray });
+  const traysWithExisting = preferExistingTrays ? buildExistingTaskTrays({ taskCode: code, taskSamples, sampleCodes, maxPerTray }) : [];
   const trays = traysWithExisting.some((tray) => tray.samples.length > 0)
     ? traysWithExisting
     : createBalancedTrays({ taskCode: code, sampleCodes, maxPerTray });
@@ -347,7 +446,7 @@ const appendSampleHistory = (sample, action, detail = "", nowIso) => {
 };
 
 // 将确认后的托盘分配结果回写到任务和样品数据中。
-function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = {}, now = new Date().toISOString() }) {
+function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = {}, now = new Date().toISOString(), arrivalTime = "" }) {
   const code = normalizeText(taskCode);
   if (!code) {
     return { error: "请先选择任务。" };
@@ -382,15 +481,17 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
     trays: asArray(trayDraft?.trays),
     maxPerTray: trayDraft?.maxPerTray,
   });
+  const assignedTrays = normalizedTrays.filter((tray) => asArray(tray?.samples).length > 0);
 
-  const trayCodes = normalizedTrays.map((tray) => tray.trayCode).filter(Boolean);
-  const codesWithoutTray = codes.filter((sampleCode) => !normalizedTrays.some((tray) => tray.samples.includes(sampleCode)));
+  const trayCodes = assignedTrays.map((tray) => tray.trayCode).filter(Boolean);
+  const codesWithoutTray = codes.filter((sampleCode) => !assignedTrays.some((tray) => tray.samples.includes(sampleCode)));
   // 任何样品未落到托盘都会阻止确认入库。
   if (codesWithoutTray.length) {
     return { error: `以下样品未配置分装托盘：${codesWithoutTray.join("、")}` };
   }
 
-  const status = resolveSampleStatus(labels);
+  const trayStatus = resolveSampleStatus(labels);
+  const status = trayStatus;
   const flowStatus = resolveFlowStatus(labels);
   const updatedSamples = [];
   const outOfTask = [];
@@ -418,7 +519,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
     sample.status = status;
     sample.flow_status = flowStatus;
     sample.updated_at = now;
-    sample.trays = normalizedTrays
+    sample.trays = assignedTrays
       .filter((tray) => tray.samples.includes(sampleCode))
       .map((tray, index) => {
         const existing = asArray(sample.trays).find((entry) => normalizeText(entry?.tray_code) === tray.trayCode) || {};
@@ -426,6 +527,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
           id: normalizeText(existing.id) || createId("tray", now),
           tray_code: tray.trayCode,
           sample_code: sampleCode,
+          status: trayStatus,
           quantity: 1,
           created_at: normalizeText(existing.created_at) || normalizeText(sample.created_at) || now,
           updated_at: now,
@@ -444,6 +546,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
 
   if (task) {
     task.tray_codes = Array.from(new Set(trayCodes)).sort(compareText);
+    task.arrival_at = formatTaskArrivalTime(arrivalTime || now);
     task.updated_at = now;
   }
 
@@ -452,6 +555,105 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
     samples: nextSamples.sort((left, right) => compareText(left.code, right.code)),
     trayCodes: Array.from(new Set(trayCodes)).sort(compareText),
     warning: `任务 ${code} 已登记到 ${targetLocation} ${updatedSamples.length} 个样品。`,
+  };
+}
+
+function buildTrayOutboundDestinations({ taskCode, trayCode, tasks, schedules, labels = {} }) {
+  const code = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const task = asArray(tasks).find((item) => normalizeText(item?.code) === code) || null;
+  const testType = normalizeText(task?.test_type);
+  const stagingLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation) || "恒温恒湿间（暂存间）";
+  const relatedLabSchedules = asArray(schedules).filter(
+    (schedule) => normalizeText(schedule?.task_code) === code && !normalizeText(schedule?.device).includes("暂存间"),
+  );
+
+  const cards = [
+    {
+      available: true,
+      highlighted: false,
+      key: "staging",
+      label: "暂存间",
+      location: stagingLocation,
+      scheduleText: "中转缓冲",
+      status: "送至暂存间",
+      taskCode: code,
+      testType,
+      trayCode: normalizedTrayCode,
+      variant: "staging",
+    },
+  ];
+
+  getLabsForTestType(testType).forEach((lab) => {
+    const matchedSchedule = relatedLabSchedules.find((schedule) => normalizeText(schedule?.device) === lab) || null;
+    cards.push({
+      available: Boolean(matchedSchedule),
+      highlighted: Boolean(matchedSchedule),
+      key: `lab:${lab}`,
+      label: lab,
+      location: lab,
+      scheduleText: matchedSchedule ? formatOutboundScheduleText(matchedSchedule) : "未排程",
+      status: "送至实验室",
+      taskCode: code,
+      testType,
+      trayCode: normalizedTrayCode,
+      variant: matchedSchedule ? "lab-scheduled" : "lab-disabled",
+    });
+  });
+
+  return {
+    cards,
+    taskCode: code,
+    taskName: normalizeText(task?.name),
+    testType,
+    trayCode: normalizedTrayCode,
+  };
+}
+
+function submitTrayOutbound({ taskCode, trayCode, destination, samples, now = new Date().toISOString() }) {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const target = destination && typeof destination === "object" ? destination : null;
+  const nextSamples = asArray(samples).map((sample) => clone(sample));
+
+  if (!normalizedTrayCode || !target) {
+    return { error: "请先扫码托盘并选择出库目的地。", samples: nextSamples };
+  }
+  if (!target.available) {
+    return { error: "当前目的地不可选，请先使用暂存间或已排程实验室。", samples: nextSamples };
+  }
+
+  let updatedCount = 0;
+  nextSamples.forEach((sample) => {
+    if (normalizedTaskCode && normalizeText(sample?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+    const sampleTrays = asArray(sample?.trays);
+    if (!sampleTrays.some((tray) => normalizeText(tray?.tray_code) === normalizedTrayCode)) {
+      return;
+    }
+
+    sample.trays = sampleTrays.map((tray) =>
+      normalizeText(tray?.tray_code) === normalizedTrayCode
+        ? {
+            ...tray,
+            status: normalizeText(target.status),
+            updated_at: now,
+          }
+        : tray,
+    );
+    sample.location = normalizeText(target.location);
+    sample.status = normalizeText(target.status);
+    sample.flow_status = normalizeText(target.status);
+    sample.updated_at = now;
+    appendSampleHistory(sample, "扫码出库", `${normalizedTrayCode} -> ${normalizeText(target.label)}`, now);
+    updatedCount += 1;
+  });
+
+  return {
+    error: updatedCount > 0 ? "" : `未找到托盘 ${normalizedTrayCode}。`,
+    samples: nextSamples,
+    warning: updatedCount > 0 ? `托盘 ${normalizedTrayCode} 已${normalizeText(target.status)}。` : "",
   };
 }
 
@@ -465,6 +667,7 @@ function buildTrayPrintPayload({ taskCode, trayCodes }) {
 
 export {
   buildBalancedTrayDraft,
+  buildTrayOutboundDestinations,
   buildSampleProcessTaskOptions,
   buildTaskTrayCode,
   buildTrayPrintPayload,
@@ -472,4 +675,5 @@ export {
   moveSampleBetweenTrays,
   removeTrayFromDraft,
   selectTaskProcessDraft,
+  submitTrayOutbound,
 };

@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { useLoginForm } from "./useLoginForm";
 
 describe("useLoginForm", () => {
-  test("starts blank and redirects to the explicit redirect path on success", async () => {
+  test("starts with the demo credentials and redirects to the explicit redirect path on success", async () => {
     const login = vi.fn(async () => ({ module: "visual", ok: true }));
     const navigate = vi.fn();
     const resolveHome = vi.fn(() => "/visualization");
@@ -14,13 +14,10 @@ describe("useLoginForm", () => {
       resolveModuleHome: resolveHome,
     });
 
-    expect(form.username.value).toBe("");
-    expect(form.password.value).toBe("");
+    expect(form.username.value).toBe("admin");
+    expect(form.password.value).toBe("123");
     expect(form.moduleKey.value).toBe("central");
     expect(form.submitting.value).toBe(false);
-
-    form.username.value = "admin";
-    form.password.value = "123";
 
     await form.submitLogin();
 
@@ -49,5 +46,27 @@ describe("useLoginForm", () => {
     expect(navigate).not.toHaveBeenCalled();
     expect(form.errorMessage.value).toBe("Invalid credentials");
     expect(form.submitting.value).toBe(false);
+  });
+
+  test("navigates to the handover module home when login succeeds without redirect", async () => {
+    const login = vi.fn(async () => ({ module: "handover", ok: true }));
+    const navigate = vi.fn();
+    const resolveHome = vi.fn(() => "/handover-system");
+    const form = useLoginForm({
+      login,
+      navigate,
+      redirectPath: "",
+      resolveModuleHome: resolveHome,
+    });
+
+    form.username.value = "handover";
+    form.password.value = "123";
+    form.moduleKey.value = "handover";
+
+    await form.submitLogin();
+
+    expect(login).toHaveBeenCalledWith("handover", "123", "handover");
+    expect(resolveHome).toHaveBeenCalledWith("handover");
+    expect(navigate).toHaveBeenCalledWith("/handover-system");
   });
 });

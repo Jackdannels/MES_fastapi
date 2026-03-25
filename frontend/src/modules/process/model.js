@@ -1,3 +1,5 @@
+import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+
 // 根据当前排程状态生成过程管控页的实验室卡片和跳转目标。
 const PROCESS_LABS = [
   { name: "冲击一室", testType: "冲击试验" },
@@ -17,6 +19,8 @@ const compareText = (left, right) => String(left || "").localeCompare(String(rig
 // “最近完成”窗口用于给刚结束的实验室保留短时可见性。
 const RECENT_COMPLETION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STATUS_SCHEDULED = "已排程";
+const STATUS_RUNNING = "实验中";
+const STATUS_COMPLETED = "实验完成";
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
@@ -33,7 +37,9 @@ const formatDateTime = (value) => {
 };
 
 // 构建过程管控页展示的实验室卡片集合。
-const buildProcessLabCards = (labs, tasks, schedules, now = Date.now()) => {
+const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) => {
+  const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
+  const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
   const labList = Array.isArray(labs) ? labs : [];
   const taskList = Array.isArray(tasks) ? tasks : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
@@ -92,14 +98,21 @@ const buildProcessLabCards = (labs, tasks, schedules, now = Date.now()) => {
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
+      const aggregatedTaskStatus = aggregateTaskStatusFromSamples(
+        task,
+        sampleList.filter((sample) => String(sample?.task_code || "").trim() === taskCode),
+      );
       // 目标试验名称优先取任务配置，其次回退到实验室默认试验类型。
       const targetExperiment = String(task?.test_type || task?.name || lab.testType || "").trim() || "-";
 
       let status = "空闲";
       let statusClass = "is-idle";
-      if (activeSchedule) {
-        status = "实验中";
+      if (aggregatedTaskStatus === STATUS_RUNNING || activeSchedule) {
+        status = STATUS_RUNNING;
         statusClass = "is-running";
+      } else if (aggregatedTaskStatus === "实验已经完成") {
+        status = STATUS_COMPLETED;
+        statusClass = "is-completed";
       } else if (nextSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";

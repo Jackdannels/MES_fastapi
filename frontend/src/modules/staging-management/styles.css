@@ -1,11 +1,222 @@
-/* 暂存间管理页的页面外壳和模块自有区块间距。 */
 /* 页面主体按纵向区块排列。 */
 .staging-management-page {
   display: grid;
   gap: 22px;
 }
 
-/* 关闭公共 section 的默认上边距，保持页面间距统一。 */
+body:has(.staging-management-page) .page-header .eyebrow,
+body:has(.staging-management-page) .page-header .subtitle {
+  display: none;
+}
+
+body:has(.staging-management-page) .page-header {
+  margin-bottom: 18px;
+}
+
+body:has(.staging-management-page) .page-header h1 {
+  margin: 0;
+}
+
+.zancun-header-action-button {
+  white-space: nowrap;
+}
+
 .staging-management-page > .section {
   margin-top: 0;
+}
+
+.zancun-overview-card {
+  display: grid;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.zancun-overview-toolbar {
+  justify-content: space-between;
+}
+
+.zancun-overview-card .table {
+  table-layout: fixed;
+}
+
+.zancun-overview-card .table th,
+.zancun-overview-card .table td {
+  word-break: break-word;
+}
+
+[data-testid="zancun-overview-modal"] .modal-content {
+  width: min(1180px, 96vw);
+  max-height: 84vh;
+  overflow: auto;
+}
+
+.zancun-actions-card {
+  display: grid;
+  gap: 14px;
+}
+
+.zancun-actions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.zancun-actions-header p {
+  margin: 0;
+}
+
+.zancun-actions-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.zancun-action-item {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.94));
+  position: relative;
+  overflow: hidden;
+  min-height: 156px;
+  align-content: space-between;
+}
+
+.zancun-action-item::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 52px;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.zancun-action-item--stock-in {
+  border-color: rgba(16, 185, 129, 0.28);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+}
+
+.zancun-action-item--stock-in::before {
+  background: linear-gradient(135deg, rgba(167, 243, 208, 0.88), rgba(252, 211, 77, 0.28));
+}
+
+.zancun-action-item--stock-out {
+  border-color: rgba(248, 113, 113, 0.26);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.07);
+}
+
+.zancun-action-item--stock-out::before {
+  background: linear-gradient(135deg, rgba(254, 202, 202, 0.92), rgba(253, 230, 138, 0.3));
+}
+
+.zancun-action-copy {
+  display: grid;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+.zancun-action-copy h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.zancun-action-item .action-btn {
+  justify-self: flex-start;
+}
+
+.zancun-action-button {
+  width: 100%;
+  min-height: 68px;
+  padding: 14px 24px;
+  border-radius: 20px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.12);
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.zancun-action-button::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 19px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+
+.zancun-action-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 36px rgba(15, 23, 42, 0.16);
+  filter: saturate(1.04);
+}
+
+.zancun-action-button--stock-in {
+  border-color: rgba(16, 185, 129, 0.55);
+  background: linear-gradient(135deg, rgba(110, 231, 183, 0.96), rgba(253, 224, 71, 0.7));
+  color: #065f46;
+}
+
+.zancun-action-button--stock-out {
+  border-color: rgba(248, 113, 113, 0.55);
+  background: linear-gradient(135deg, rgba(254, 165, 165, 0.96), rgba(253, 230, 138, 0.66));
+  color: #7f1d1d;
+}
+
+.zancun-scan-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.zancun-scan-panel .muted {
+  margin: 0;
+}
+
+.zancun-scan-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+  border-radius: 14px;
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.08);
+  color: var(--text);
+  font-size: 14px;
+}
+
+[data-testid="zancun-scan-modal"] .form-actions {
+  justify-content: center;
+}
+
+.zancun-scan-complete-btn {
+  min-width: 180px;
+}
+
+.zancun-detail-grid input[readonly] {
+  background: rgba(241, 245, 249, 0.78);
+}
+
+@media (max-width: 720px) {
+  .zancun-overview-toolbar {
+    justify-content: flex-start;
+  }
+
+  .zancun-actions-header {
+    flex-direction: column;
+  }
+
+  .zancun-action-item .action-btn {
+    width: 100%;
+  }
 }

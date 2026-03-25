@@ -7,6 +7,10 @@
   align-items: start;
 }
 
+.sample-process-layout.is-compact-outbound {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* 任务处理视图会在主栏内继续拆成主内容和辅助信息两列。 */
 .sample-task-process-grid {
   grid-template-columns: minmax(360px, 1.65fr) minmax(220px, 1fr);
@@ -290,6 +294,135 @@
   cursor: pointer;
 }
 
+.sample-process-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sample-process-layout.is-compact-outbound .sample-process-actions {
+  align-items: stretch;
+}
+
+.sample-outbound-panel {
+  margin-left: auto;
+  width: min(620px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.sample-process-layout.is-compact-outbound .sample-outbound-panel {
+  width: min(760px, 100%);
+}
+
+.sample-outbound-panel-head {
+  display: grid;
+  gap: 4px;
+}
+
+.sample-outbound-panel-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.sample-outbound-panel-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sample-outbound-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sample-outbound-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(255, 255, 255, 0.98);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.sample-outbound-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.sample-outbound-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 8px;
+  min-height: 136px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  background: rgba(255, 255, 255, 0.98);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sample-outbound-card.is-staging {
+  border-color: rgba(251, 191, 36, 0.48);
+  background: rgba(255, 247, 237, 0.96);
+}
+
+.sample-outbound-card.is-lab-scheduled {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(232, 244, 255, 0.98);
+}
+
+.sample-outbound-card.is-lab-disabled {
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(241, 245, 249, 0.92);
+  color: #64748b;
+}
+
+.sample-outbound-card.is-selected {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.24);
+  transform: translateY(-1px);
+}
+
+.sample-outbound-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.sample-outbound-card-title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.sample-outbound-card-meta {
+  font-size: 14px;
+  color: inherit;
+}
+
+.sample-outbound-card-task,
+.sample-outbound-card-schedule {
+  font-size: 13px;
+  color: inherit;
+}
+
+.sample-outbound-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* 流转卡片以时间线形式展示统一流程节点。 */
 .sample-flow-card {
   border: 1px solid rgba(15, 23, 42, 0.12);
@@ -378,6 +511,112 @@
   background: rgba(34, 197, 94, 0.9);
 }
 
+.tray-status-select {
+  width: 100%;
+  min-width: 180px;
+}
+
+.tray-management-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.tray-management-workspace {
+  display: grid;
+  gap: 12px;
+}
+
+.tray-management-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tray-management-sidebar {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.tray-management-filter {
+  display: grid;
+  gap: 4px;
+  min-width: 220px;
+  font-size: 13px;
+  color: #0f3a64;
+}
+
+.tray-management-filter-emphasis {
+  padding: 10px 12px;
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.tray-management-filter-emphasis span {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.tray-management-filter select {
+  width: 100%;
+  min-height: 42px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tray-row-active {
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.tray-row-active td {
+  box-shadow: inset 0 1px 0 rgba(56, 189, 248, 0.2), inset 0 -1px 0 rgba(56, 189, 248, 0.2);
+}
+
+.tray-sample-summary {
+  max-width: 420px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.sample-flow-horizontal .sample-flow-unified {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sample-flow-horizontal .sample-flow-unified li {
+  min-height: 84px;
+  padding: 14px 12px 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.sample-flow-horizontal .sample-flow-unified li::before {
+  left: 50%;
+  top: auto;
+  bottom: 12px;
+  margin-top: 0;
+  margin-left: -5px;
+}
+
+.sample-flow-horizontal .sample-flow-unified li::after {
+  left: calc(100% - 1px);
+  top: 50%;
+  width: 12px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.sample-flow-horizontal .sample-flow-unified li:last-child::after {
+  display: none;
+}
+
 /* 小屏下收敛为单列，避免托盘构建器横向拥挤。 */
 @media (max-width: 980px) {
   .sample-process-layout {
@@ -392,6 +631,46 @@
     grid-template-columns: 1fr;
   }
 
+  .tray-management-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .tray-management-head {
+    flex-wrap: wrap;
+  }
+
+  .tray-management-filter {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sample-flow-horizontal .sample-flow-unified {
+    grid-template-columns: 1fr;
+  }
+
+  .sample-flow-horizontal .sample-flow-unified li {
+    min-height: 0;
+    padding: 12px 14px 12px 38px;
+    display: block;
+    text-align: left;
+  }
+
+  .sample-flow-horizontal .sample-flow-unified li::before {
+    left: 12px;
+    top: 50%;
+    bottom: auto;
+    margin-left: 0;
+    margin-top: -5px;
+  }
+
+  .sample-flow-horizontal .sample-flow-unified li::after {
+    left: 16px;
+    top: calc(100% - 1px);
+    width: 2px;
+    height: 12px;
+    transform: none;
+  }
+
   .sample-tray-toolbar {
     flex-wrap: wrap;
   }
@@ -404,5 +683,15 @@
 
   .sample-tray-card-controls {
     grid-template-columns: 1fr;
+  }
+
+  .sample-process-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sample-outbound-panel {
+    width: 100%;
+    margin-left: 0;
   }
 }

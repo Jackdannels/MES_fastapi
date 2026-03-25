@@ -2,6 +2,7 @@
 import { ref } from "vue";
 
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { deleteTask as deleteTaskByApi } from "@/lib/tasksApi";
 
 // 删除确认弹窗需要独立维护一份快照统计，避免实时值抖动。
 const createEmptyDeleteConfirm = () => ({
@@ -71,7 +72,7 @@ const buildGeneratedSampleCodes = (taskCode, count, occupiedCodes = new Set()) =
 };
 
 // 跟踪当前选中卡片，并将任务和样品编辑结果写回存储。
-function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview }) {
+function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview, deleteTask = deleteTaskByApi }) {
   const selectedTaskCode = ref("");
   const editingTaskCode = ref("");
   const savingTaskCode = ref("");
@@ -389,6 +390,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       const nextSchedules = schedules.filter((entry) => String(entry?.task_code || "").trim() !== code);
       const nextStreams = streams.filter((entry) => String(entry?.task_code || "").trim() !== code);
 
+      await deleteTask(code);
       await persistSnapshot({
         [STORAGE_KEYS.tasks]: nextTasks,
         [STORAGE_KEYS.samples]: nextSamples,
@@ -399,6 +401,9 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview 
       replaceOverview(nextTasks, nextSamples, nextSchedules);
       selectedTaskCode.value = "";
       cancelEdit();
+    } catch (error) {
+      editError.value = error instanceof Error ? error.message : `Task ${code} could not be deleted.`;
+      editMessage.value = "";
     } finally {
       deletingTaskCode.value = "";
       resetDeleteConfirm();

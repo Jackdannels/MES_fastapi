@@ -8,8 +8,8 @@ export const route = {
   name: "samples",
   component: Page,
   meta: {
-    title: "样品管理",
-    subtitle: "管理样品登记、到样确认、流转记录、留样与样品追溯。",
+    title: "样品/托盘管理",
+    subtitle: "管理样品登记、托盘状态、到样确认、流转记录与样品追溯。",
     module: "central",
   },
 };

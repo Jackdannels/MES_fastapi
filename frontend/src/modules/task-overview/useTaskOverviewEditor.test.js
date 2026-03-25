@@ -8,15 +8,18 @@ const createEditor = (overrides = {}) => {
   const loadSnapshot = overrides.loadSnapshot || vi.fn();
   const persistSnapshot = overrides.persistSnapshot || vi.fn(() => Promise.resolve());
   const replaceOverview = overrides.replaceOverview || vi.fn();
+  const deleteTask = overrides.deleteTask || vi.fn(() => Promise.resolve());
 
   const editor = useTaskOverviewEditor({
     loadSnapshot,
     persistSnapshot,
     replaceOverview,
+    deleteTask,
   });
 
   return {
     ...editor,
+    deleteTask,
     loadSnapshot,
     persistSnapshot,
     replaceOverview,
@@ -155,6 +158,28 @@ describe("useTaskOverviewEditor", () => {
       [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
       [{ id: "schedule-2", task_code: "TASK-002" }]
     );
+  });
+
+  test("confirmDeleteTask also calls the dedicated tasks delete api before refreshing overview", async () => {
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [
+        { code: "TASK-001", test_type: "A" },
+        { code: "TASK-002", test_type: "B" },
+      ],
+      [STORAGE_KEYS.samples]: [],
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const deleteTask = vi.fn(() => Promise.resolve());
+    const { requestDeleteTask, confirmDeleteTask } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+      deleteTask,
+    });
+
+    await requestDeleteTask("TASK-001");
+    await confirmDeleteTask("TASK-001");
+
+    expect(deleteTask).toHaveBeenCalledWith("TASK-001");
   });
 
   test("handleGlobalClick clears selection and editing when clicking outside the overview root", () => {

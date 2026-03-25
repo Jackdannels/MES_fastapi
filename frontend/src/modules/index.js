@@ -4,6 +4,7 @@ import taskOverviewModule from "./task-overview";
 import tasksModule from "./tasks";
 import scheduleModule from "./schedule";
 import samplesModule from "./samples";
+import handoverSystemModule from "./handover-system";
 import processModule from "./process";
 import devicesModule from "./devices";
 import dataModule from "./data";
@@ -19,6 +20,7 @@ export const MODULES = [
   tasksModule,
   scheduleModule,
   samplesModule,
+  handoverSystemModule,
   processModule,
   devicesModule,
   dataModule,

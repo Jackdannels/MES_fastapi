@@ -3,13 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
 
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
 const TEST_TYPE_OPTIONS = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"];
-const TRAY_OVERVIEW_TOTAL = 10;
 const SCHEDULED_LABEL = "已排程";
 const UNSCHEDULED_LABEL = "未排程";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
@@ -163,7 +163,7 @@ function useTaskOverview() {
   const loading = ref(false);
   const viewMode = ref("task");
   const trayOverviewRows = ref([]);
-  const trayOverviewTotal = TRAY_OVERVIEW_TOTAL;
+  const trayOverviewTotal = SYSTEM_TRAY_TOTAL;
   const keyword = ref("");
   const timeFilter = ref("all");
   const customStartDate = ref(getTodayDateValue());
@@ -186,7 +186,7 @@ function useTaskOverview() {
       tasks,
       samples,
       schedules,
-      totalSlots: TRAY_OVERVIEW_TOTAL,
+      totalSlots: SYSTEM_TRAY_TOTAL,
       scheduledLabel: SCHEDULED_LABEL,
       unscheduledLabel: UNSCHEDULED_LABEL,
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,

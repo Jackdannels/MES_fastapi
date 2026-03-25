@@ -111,4 +111,118 @@ describe("useProcessLabs", () => {
     expect(taskDrawerOpen.value).toBe(false);
     expect(selectedTaskDetail.value).toBe(null);
   });
+
+  test("keeps a lab card running when any tray is still in the active experiment chain", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "Lab-A",
+          end_at: "2026-03-11T10:30:00Z",
+          start_at: "2026-03-11T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", test_type: "Impact Test", status: "已排程" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "Lab-A", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      name: "Lab-A",
+      status: "实验中",
+      statusClass: "is-running",
+    });
+  });
+
+  test("keeps a lab card running when a tray is in in-progress status", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "Lab-A",
+          end_at: "2026-03-11T10:30:00Z",
+          start_at: "2026-03-11T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", test_type: "Impact Test", status: "已排程" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "Lab-A", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      name: "Lab-A",
+      status: "实验中",
+      statusClass: "is-running",
+    });
+  });
+
+  test("marks a lab card completed only when all trays reach complete or post-complete states", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "Lab-A",
+          end_at: "2026-03-10T10:30:00Z",
+          start_at: "2026-03-10T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", test_type: "Impact Test", status: "已排程" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          status: "实验已完成",
+          trays: [{ tray_code: "TRAY-001", status: "实验已完成", quantity: 1 }],
+        },
+        {
+          code: "S-002",
+          task_code: "TASK-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "TRAY-002", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "Lab-A", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-10T12:00:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      name: "Lab-A",
+      status: "实验完成",
+      statusClass: "is-completed",
+    });
+  });
 });

@@ -11,6 +11,7 @@ def test_module_registry_preserves_expected_route_surfaces():
     assert [router.prefix for router in API_ROUTERS] == [
         "/auth",
         "/health",
+        "/api/tasks",
         "/person",
         "/customer",
         "/companydepartment",
@@ -24,6 +25,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/productcatalog",
         "/yt_report",
         "/quality",
+        "/api/transfer-area",
         "/manufactureplan",
         "/report",
         "/device",
@@ -39,6 +41,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/tasks",
         "/schedule",
         "/samples",
+        "/handover-system",
         "/process",
         "/devices",
         "/data",

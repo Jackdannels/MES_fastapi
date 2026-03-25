@@ -1,7 +1,13 @@
+import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
-const STATUS_RETENTION = "暂存间存放";
+const STATUS_WAITING = "待排程";
+const STATUS_RETENTION = "厂家收回";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
+const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
+const TASK_COMPLETED_STATUS = "实验已经完成";
+const OVERVIEW_COMPLETED_STATUS = "实验完成";
 
 // 任务号、样品号、托盘号的展示排序统一走中文比较规则。
 function compareText(left, right) {
@@ -13,11 +19,17 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-// 历史状态“暂存间排放”在总览里统一视为“暂存间存放”。
+// 历史状态“暂存间排放/暂存间存放”在总览里统一视为“厂家收回”。
 function normalizeStatus(value) {
   const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === STATUS_RETENTION) {
+  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
+    return STATUS_WAITING;
+  }
+  if (normalized === STATUS_RETENTION) {
     return STATUS_RETENTION;
+  }
+  if (normalized === TASK_COMPLETED_STATUS) {
+    return OVERVIEW_COMPLETED_STATUS;
   }
   return normalized;
 }
@@ -57,7 +69,7 @@ function buildTaskRows({
       taskType: normalizeText(task?.test_type || task?.name),
       taskStatus: normalizeStatus(task?.status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",
-      timeValue: normalizeText(task?.created_at || task?.arrival_at || task?.due_at),
+      timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
       sampleCodes: [],
       trays: [],
       scheduleCount: 0,
@@ -96,6 +108,7 @@ function buildTaskRows({
         row.trays.push({
           trayCode,
           sampleCode,
+          status: normalizeStatus(tray?.status || sample?.status),
           quantity: normalizeQuantity(tray?.quantity),
         });
       });
@@ -145,6 +158,7 @@ function buildTaskRows({
           trayMap.set(tray.trayCode, {
             trayCode: tray.trayCode,
             sampleCodes: [],
+            status: normalizeStatus(tray.status),
             totalQuantity: 0,
           });
         }
@@ -164,8 +178,14 @@ function buildTaskRows({
         .sort((left, right) => compareText(left.trayCode, right.trayCode));
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
-      // 有明确任务状态时沿用任务状态，否则按排程/暂存推导当前状态。
-      const currentStatus = row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
+      const aggregatedStatus = normalizeStatus(
+        aggregateTaskStatusFromSamples(
+          { code: row.taskCode },
+          sampleList.filter((sample) => normalizeText(sample?.task_code) === row.taskCode),
+        ),
+      );
+      // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
+      const currentStatus = aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
 
       return {
         ...row,

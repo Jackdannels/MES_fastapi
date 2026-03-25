@@ -1,0 +1,11 @@
+USE mes_single_branch;
+
+SET NAMES utf8mb4;
+
+CREATE TABLE IF NOT EXISTS app_storage_snapshot (
+  storage_key VARCHAR(50) NOT NULL,
+  payload_json LONGTEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (storage_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

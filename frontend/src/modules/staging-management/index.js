@@ -8,8 +8,8 @@ export const route = {
   name: "staging-management",
   component: Page,
   meta: {
-    title: "暂存间管理",
-    subtitle: "管理暂存间样品的入库、位置、状态与出入库记录。",
+    title: "暂存间系统",
+    subtitle: "管理暂存间样品入库、出库与样品总览。",
     module: "staging",
   },
 };

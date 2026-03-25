@@ -2,14 +2,18 @@
 
 import { SAMPLES_UPDATED_EVENT } from "./useSampleIntake";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { formatLocalDateTime } from "@/lib/dateTime.js";
+import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
   buildBalancedTrayDraft,
+  buildTrayOutboundDestinations,
   buildSampleProcessTaskOptions,
   buildTrayPrintPayload,
   confirmSampleTaskStore,
   moveSampleBetweenTrays,
   removeTrayFromDraft,
   selectTaskProcessDraft,
+  submitTrayOutbound,
 } from "./samplesProcessModel";
 import { SAMPLE_FLOW_STEPS } from "./samplesFlowModel";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -46,10 +50,11 @@ const buildInitialPrintPayload = (taskCode, tasks, trayDraft) => {
 
 // 负责将任务样品整理成可打印托盘批次的完整处理流程。
 function useSamplesProcess() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.samples]);
+  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples, STORAGE_KEYS.schedules]);
 
   const rawTasks = ref([]);
   const rawSamples = ref([]);
+  const rawSchedules = ref([]);
   const selectedTaskCode = ref("");
   const trayDraft = ref({ taskCode: "", sampleCount: 0, sampleCodes: [], maxPerTray: 5, trays: [] });
   const activeTrayIndex = ref(-1);
@@ -58,6 +63,8 @@ function useSamplesProcess() {
   const printPayload = ref({ taskCode: "", trayCodes: [] });
   const storeLocked = ref(false);
   const flowStage = ref("idle");
+  const outboundTrayCode = ref("");
+  const selectedOutboundKey = ref("");
 
   const taskOptions = computed(() =>
     buildSampleProcessTaskOptions({
@@ -69,6 +76,21 @@ function useSamplesProcess() {
   const sampleCodesText = computed(() => (trayDraft.value.sampleCodes || []).join("\n"));
   const trayPreviewText = computed(() => buildTrayPreviewText(trayDraft.value));
   const canPrint = computed(() => printPayload.value.trayCodes.length > 0);
+  const outboundDestinations = computed(() =>
+    buildTrayOutboundDestinations({
+      labels: DEFAULT_LABELS,
+      schedules: rawSchedules.value,
+      taskCode: selectedTaskCode.value,
+      tasks: rawTasks.value,
+      trayCode: outboundTrayCode.value,
+    }),
+  );
+  const outboundCards = computed(() => outboundDestinations.value.cards || []);
+  const canSubmitOutbound = computed(() => {
+    const trayCode = normalizeText(outboundTrayCode.value);
+    const selected = outboundCards.value.find((card) => card.key === selectedOutboundKey.value) || null;
+    return Boolean(storeLocked.value && trayCode && selected && selected.available);
+  });
   const currentFlowKey = computed(() => getCurrentFlowStepKey(flowStage.value));
   const flowSteps = computed(() =>
     FLOW_STEPS.map((step, index) => {
@@ -89,6 +111,8 @@ function useSamplesProcess() {
   const rebuildDraft = (taskCode) => {
     const nextTaskCode = normalizeText(taskCode);
     selectedTaskCode.value = nextTaskCode;
+    outboundTrayCode.value = "";
+    selectedOutboundKey.value = "";
     trayDraft.value = selectTaskProcessDraft({
       taskCode: nextTaskCode,
       tasks: rawTasks.value,
@@ -102,9 +126,10 @@ function useSamplesProcess() {
   };
 
   const load = async () => {
-    const snapshot = await loadSnapshot();
-    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+    const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+    rawTasks.value = Array.isArray(tasks) ? tasks : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rebuildDraft(selectedTaskCode.value);
   };
 
@@ -115,6 +140,18 @@ function useSamplesProcess() {
   const selectTask = (taskCode) => {
     warning.value = "";
     rebuildDraft(taskCode);
+  };
+
+  const setOutboundTrayCode = (value) => {
+    outboundTrayCode.value = normalizeText(value);
+  };
+
+  const selectOutboundDestination = (key) => {
+    const destination = outboundCards.value.find((card) => card.key === normalizeText(key)) || null;
+    if (!destination || !destination.available || !storeLocked.value) {
+      return;
+    }
+    selectedOutboundKey.value = destination.key;
   };
 
   const addTray = () => {
@@ -149,6 +186,15 @@ function useSamplesProcess() {
 
   const setActiveTray = (index) => {
     activeTrayIndex.value = activeTrayIndex.value === index ? -1 : index;
+  };
+
+  const selectProcessTray = (index) => {
+    setActiveTray(index);
+    const tray = trayDraft.value.trays[index] || null;
+    if (!tray?.trayCode) {
+      return;
+    }
+    setOutboundTrayCode(tray.trayCode);
   };
 
   const setTrayLimit = (value) => {
@@ -213,13 +259,15 @@ function useSamplesProcess() {
       warning.value = "当前任务已确认入库，如需调整请先重新入库。";
       return;
     }
+    const now = new Date();
     const result = confirmSampleTaskStore({
       taskCode: selectedTaskCode.value,
       tasks: rawTasks.value,
       samples: rawSamples.value,
       trayDraft: trayDraft.value,
       labels: DEFAULT_LABELS,
-      now: new Date().toISOString(),
+      now: now.toISOString(),
+      arrivalTime: formatLocalDateTime(now),
     });
     if (result.error) {
       warning.value = result.error;
@@ -227,12 +275,16 @@ function useSamplesProcess() {
     }
 
     // 入库确认会同时刷新任务、样品、打印载荷和流程阶段。
-    rawTasks.value = result.tasks;
+    const updatedTask = result.tasks.find((task) => normalizeText(task?.code) === normalizeText(selectedTaskCode.value));
+    if (updatedTask) {
+      await updateTaskByApi(updatedTask.id || updatedTask.code, updatedTask);
+    }
+    rawTasks.value = await readTasks();
     rawSamples.value = result.samples;
     await persistSnapshot({
-      [STORAGE_KEYS.tasks]: result.tasks,
       [STORAGE_KEYS.samples]: result.samples,
     });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = result.warning || "";
     printPayload.value = buildTrayPrintPayload({
       taskCode: selectedTaskCode.value,
@@ -251,11 +303,40 @@ function useSamplesProcess() {
     if (!selectedTaskCode.value) {
       return;
     }
-    // 恢复后仅取消前端锁定，不回滚已落盘的任务/样品数据。
+    // 重新入库时丢弃上次人工分装结果，恢复为默认自动分装草稿。
     storeLocked.value = false;
     flowStage.value = "repartition";
     printPayload.value = { taskCode: selectedTaskCode.value, trayCodes: [] };
-    warning.value = "已取消当前入库锁定，可重新进行托盘分装。";
+    trayDraft.value = selectTaskProcessDraft({
+      taskCode: selectedTaskCode.value,
+      tasks: rawTasks.value,
+      samples: rawSamples.value,
+      preferExistingTrays: false,
+    });
+    activeTrayIndex.value = trayDraft.value.trays.length ? 0 : -1;
+    warning.value = "已按默认规则重置托盘分装，可重新进行入库。";
+  };
+
+  const submitOutbound = async () => {
+    const destination = outboundCards.value.find((card) => card.key === selectedOutboundKey.value) || null;
+    const result = submitTrayOutbound({
+      destination,
+      now: new Date().toISOString(),
+      samples: rawSamples.value,
+      taskCode: selectedTaskCode.value,
+      trayCode: outboundTrayCode.value,
+    });
+    if (result.error) {
+      warning.value = result.error;
+      return;
+    }
+
+    rawSamples.value = result.samples;
+    await persistSnapshot({
+      [STORAGE_KEYS.samples]: result.samples,
+    });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    warning.value = result.warning || "";
   };
 
   const printTrays = () => {
@@ -418,20 +499,28 @@ function useSamplesProcess() {
   return {
     activeTrayIndex,
     canPrint,
+    canSubmitOutbound,
     confirmStore,
     currentFlowStatus,
     flowSteps,
     handleTrayDrop,
     moveToActiveTray,
+    outboundCards,
+    outboundTrayCode,
     printTrays,
     restoreStore,
     sampleCodesText,
     selectTask,
+    selectOutboundDestination,
+    selectProcessTray,
     selectedTaskCode,
+    selectedOutboundKey,
     setActiveTray,
+    setOutboundTrayCode,
     setTrayLimit,
     startDragging,
     storeLocked,
+    submitOutbound,
     taskOptions,
     trayDraft,
     trayPreviewText,

@@ -34,16 +34,24 @@ const SAMPLE_FLOW_STEPS = [
   { key: "arrived_lab", label: "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4" },
   { key: "fixture_install", label: "\u5DE5\u88C5\u5939\u5177\u5B89\u88C5" },
   { key: "ready", label: "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA" },
+  { key: "running", label: "\u5B9E\u9A8C\u8FDB\u884C\u4E2D" },
   { key: "completed", label: "\u5B9E\u9A8C\u5DF2\u5B8C\u6210" },
   { key: "post_test_staging", label: "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4" },
   { key: "returned", label: "\u5382\u5BB6\u6536\u56DE" },
 ];
 
+const FLOW_STEP_KEY_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step) => [step.label, step.key]));
+const FLOW_STEP_INDEX_BY_KEY = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.key, index]));
+
 const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
+const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
 
 // 样品流转涉及大量字符串比较，统一先做基础规范化。
 const normalizeText = (value) => String(value ?? "").trim();
+
+// 托盘状态与样品状态保持同一套业务标签，避免两边出现分叉。
+const syncTrayStatusToSampleStatus = (status) => normalizeText(status);
 
 // 允许通过覆盖 labels 复用同一套状态推导逻辑。
 const normalizeLabels = (labels = {}) => ({
@@ -71,12 +79,18 @@ const parseCodeList = (value) =>
     ),
   );
 
+const compareText = (left, right) => normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN");
+const parseTimeValue = (value) => {
+  const timestamp = Date.parse(String(value ?? ""));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
 const getSampleTrayList = (sample) => {
   if (!sample || !Array.isArray(sample.trays)) {
     return [];
   }
   const sampleCode = normalizeText(sample.code);
-  return sample.trays.filter((tray) => {
+  const validTrays = sample.trays.filter((tray) => {
     // 只保留与当前样品编码匹配且数量有效的托盘条目。
     if (!tray) {
       return false;
@@ -85,7 +99,103 @@ const getSampleTrayList = (sample) => {
     const quantity = Number.parseInt(tray.quantity, 10);
     return traySampleCode === sampleCode && Number.isFinite(quantity) && quantity > 0;
   });
+  if (validTrays.length <= 1) {
+    return validTrays;
+  }
+  return validTrays
+    .slice()
+    .sort((left, right) => (
+      parseTimeValue(right?.updated_at) - parseTimeValue(left?.updated_at)
+      || parseTimeValue(right?.created_at) - parseTimeValue(left?.created_at)
+      || sample.trays.indexOf(right) - sample.trays.indexOf(left)
+    ))
+    .slice(0, 1);
 };
+
+function buildSamplesTrayOverviewView(input = {}) {
+  const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+  const samples = Array.isArray(input.samples) ? input.samples : [];
+  const query = normalizeText(input.query).toLowerCase();
+  const taskMap = new Map(
+    tasks.map((task) => [
+      normalizeText(task?.code),
+      {
+        code: normalizeText(task?.code),
+        name: normalizeText(task?.name),
+        testType: normalizeText(task?.test_type),
+      },
+    ]),
+  );
+  const trayMap = new Map();
+
+  samples.forEach((sample) => {
+    const sampleCode = normalizeText(sample?.code);
+    const taskCode = normalizeText(sample?.task_code);
+    const task = taskMap.get(taskCode) || { code: taskCode, name: "", testType: "" };
+    getSampleTrayList(sample).forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (!trayCode) {
+        return;
+      }
+      if (!trayMap.has(trayCode)) {
+        trayMap.set(trayCode, {
+          trayCode,
+          taskCode,
+          taskName: task.name,
+          testType: task.testType,
+          status: normalizeText(tray?.status) || normalizeText(sample?.status),
+          sampleCodes: [],
+        });
+      }
+      const row = trayMap.get(trayCode);
+      if (!row.sampleCodes.includes(sampleCode)) {
+        row.sampleCodes.push(sampleCode);
+      }
+      if (!row.status) {
+        row.status = normalizeText(tray?.status) || normalizeText(sample?.status);
+      }
+    });
+  });
+
+  const rows = Array.from(trayMap.values())
+    .map((row) => ({
+      ...row,
+      sampleCodes: row.sampleCodes.slice().sort(compareText),
+      sampleCount: row.sampleCodes.length,
+      statusClass: resolveStatusClass(row.status),
+      sampleSummary: row.sampleCodes.slice().sort(compareText).join("、"),
+    }))
+    .filter((row) => {
+      if (!query) {
+        return true;
+      }
+      return [row.trayCode, row.taskCode, row.taskName, row.testType, row.status, row.sampleSummary]
+        .map((item) => normalizeText(item).toLowerCase())
+        .join(" ")
+        .includes(query);
+    })
+    .sort((left, right) => compareText(left.trayCode, right.trayCode));
+
+  return { rows };
+}
+
+function buildTrayFlowView(input = {}) {
+  const trayCode = normalizeText(input.trayCode);
+  const status = normalizeText(input.status) || SAMPLE_FLOW_STEPS[0].label;
+  const currentKey = FLOW_STEP_KEY_BY_LABEL.get(status) || SAMPLE_FLOW_STEPS[0].key;
+  const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;
+
+  return {
+    trayCode,
+    status,
+    currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${status}` : `当前状态：${status}`,
+    steps: SAMPLE_FLOW_STEPS.map((step, index) => ({
+      ...step,
+      active: step.key === currentKey,
+      reached: index < currentIndex,
+    })),
+  };
+}
 
 const resolveSampleStatus = (location, labels = DEFAULT_LABELS) => {
   const normalizedLabels = normalizeLabels(labels);
@@ -144,6 +254,9 @@ const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LAB
   if (currentStatus === "\u5B9E\u9A8C\u5B8C\u6210" || currentStatus === "\u5B9E\u9A8C\u5DF2\u5B8C\u6210") {
     return "\u5B9E\u9A8C\u5DF2\u5B8C\u6210";
   }
+  if (currentStatus === "\u5B9E\u9A8C\u8FDB\u884C\u4E2D" || currentStatus === "\u5B9E\u9A8C\u4E2D") {
+    return "\u5B9E\u9A8C\u8FDB\u884C\u4E2D";
+  }
   if (currentStatus === "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA" || currentStatus === normalizedLabels.sampleTesting) {
     return "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA";
   }
@@ -187,7 +300,8 @@ const resolveStatusClass = (status) => {
     normalized === "\u9001\u81F3\u5B9E\u9A8C\u5BA4" ||
     normalized === "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4" ||
     normalized === "\u5DE5\u88C5\u5939\u5177\u5B89\u88C5" ||
-    normalized === "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA"
+    normalized === "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA" ||
+    normalized === "\u5B9E\u9A8C\u8FDB\u884C\u4E2D"
   ) {
     return "status running";
   }
@@ -390,6 +504,51 @@ function updateSampleDetail(input = {}) {
   return { error: "", sample };
 }
 
+function updateTrayStatus(input = {}) {
+  const trayCode = normalizeText(input.trayCode);
+  const nextStatus = syncTrayStatusToSampleStatus(input.status);
+  const labels = normalizeLabels(input.labels);
+  const now = input.now || new Date().toISOString();
+  const samples = Array.isArray(input.samples)
+    ? input.samples.map((sample) => ({
+        ...sample,
+        history: Array.isArray(sample?.history) ? sample.history.slice() : [],
+        trays: Array.isArray(sample?.trays) ? sample.trays.map((tray) => ({ ...tray })) : [],
+      }))
+    : [];
+
+  if (!trayCode || !nextStatus) {
+    return { error: "请选择托盘和目标状态。", samples };
+  }
+
+  let updatedCount = 0;
+  samples.forEach((sample) => {
+    const matchingTrays = getSampleTrayList(sample).filter((tray) => normalizeText(tray?.tray_code) === trayCode);
+    if (matchingTrays.length === 0) {
+      return;
+    }
+    sample.trays = sample.trays.map((tray) =>
+      normalizeText(tray?.tray_code) === trayCode
+        ? {
+            ...tray,
+            status: nextStatus,
+            updated_at: now,
+          }
+        : tray,
+    );
+    sample.status = nextStatus;
+    sample.flow_status = resolveFlowStatusByLocation(sample.location, nextStatus, labels);
+    sample.updated_at = now;
+    sample.history = appendSampleHistory(sample, "托盘状态更新", `${trayCode} -> ${nextStatus}`, now);
+    updatedCount += 1;
+  });
+
+  return {
+    error: updatedCount > 0 ? "" : `未找到托盘 ${trayCode}。`,
+    samples,
+  };
+}
+
 // 构建用于向实验室派发样品的暂存区列表。
 function buildSamplesStagingView(input = {}) {
   const labels = normalizeLabels(input.labels);
@@ -510,11 +669,16 @@ function dispatchStagingSamples(input = {}) {
 export {
   SAMPLE_FLOW_STEPS,
   DETAIL_STATUS_OPTIONS,
+  buildTrayFlowView,
   buildSamplesFlowView,
+  buildSamplesTrayOverviewView,
   buildSamplesStagingView,
   dispatchStagingSamples,
   getSampleTrayList,
   resolveFlowStatusByLocation,
   submitSamplesBatchIntake,
+  syncTrayStatusToSampleStatus,
+  TRAY_STATUS_OPTIONS,
+  updateTrayStatus,
   updateSampleDetail,
 };

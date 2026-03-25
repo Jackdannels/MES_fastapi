@@ -5,6 +5,7 @@ def test_api_router_registry_exposes_expected_prefixes():
     assert [router.prefix for router in API_ROUTERS] == [
         "/auth",
         "/health",
+        "/api/tasks",
         "/person",
         "/customer",
         "/companydepartment",
@@ -18,6 +19,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/productcatalog",
         "/yt_report",
         "/quality",
+        "/api/transfer-area",
         "/manufactureplan",
         "/report",
         "/device",

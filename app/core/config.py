@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 30
     SESSION_MAX_AGE_HOURS: int = 8
     FRONTEND_ORIGINS: str = "http://127.0.0.1:5173,http://localhost:5173"
+    STORAGE_BACKEND: str = "json"
+
+    MYSQL_HOST: str = "127.0.0.1"
+    MYSQL_PORT: int = 3306
+    MYSQL_USER: str = "root"
+    MYSQL_PASSWORD: str = ""
+    MYSQL_DATABASE: str = "mes_single_branch"
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"

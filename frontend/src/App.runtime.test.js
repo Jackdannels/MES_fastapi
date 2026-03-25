@@ -4,14 +4,16 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App.vue";
 
-const { routeState, routerReplace, logoutSessionMock } = vi.hoisted(() => ({
+const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock } = vi.hoisted(() => ({
   routeState: {
     meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
     path: "/task-overview",
   },
+  routerPush: vi.fn(() => Promise.resolve()),
   routerReplace: vi.fn(),
   logoutSessionMock: vi.fn(() => Promise.resolve()),
+  switchSessionModuleMock: vi.fn(async (moduleKey) => ({ ok: true, module: moduleKey })),
 }));
 
 const reactiveRoute = reactive(routeState);
@@ -19,14 +21,21 @@ const reactiveRoute = reactive(routeState);
 vi.mock("vue-router", () => ({
   useRoute: () => reactiveRoute,
   useRouter: () => ({
-    push: vi.fn(() => Promise.resolve()),
+    push: routerPush,
     replace: routerReplace,
   }),
 }));
 
 vi.mock("@/auth", () => ({
   logoutSession: logoutSessionMock,
+  resolveModuleHome: (moduleKey) => ({
+    central: "/",
+    handover: "/handover-system",
+    visual: "/visualization",
+    staging: "/staging-management",
+  })[moduleKey] || "/",
   readAuthSession: () => ({ module: "central" }),
+  switchSessionModule: switchSessionModuleMock,
 }));
 
 let wrapper;
@@ -36,7 +45,9 @@ const mountApp = () => {
     global: {
       stubs: {
         RouterLink: true,
-        RouterView: true,
+        RouterView: {
+          template: '<div data-testid="router-view-stub">Route Outlet</div>',
+        },
       },
     },
   });
@@ -50,20 +61,54 @@ describe("App runtime boundary", () => {
     reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
     reactiveRoute.name = "task-overview";
     reactiveRoute.path = "/task-overview";
+    routerPush.mockReset();
     routerReplace.mockReset();
     logoutSessionMock.mockClear();
+    switchSessionModuleMock.mockClear();
     vi.clearAllMocks();
   });
 
   test("renders central shell for samples route", async () => {
-    reactiveRoute.meta = { module: "central", title: "样品管理" };
+    reactiveRoute.meta = { module: "central", title: "样品/托盘管理" };
     reactiveRoute.name = "samples";
     reactiveRoute.path = "/samples";
 
     mountApp();
     await nextTick();
 
-    expect(wrapper.text()).toContain("样品管理");
+    expect(wrapper.text()).toContain("样品/托盘管理");
+  });
+
+  test("renders handover routes without the shared shell", async () => {
+    reactiveRoute.meta = { module: "handover", title: "接驳区系统", subtitle: "处理接驳区到样确认、托盘分装与交接。" };
+    reactiveRoute.name = "handover-system";
+    reactiveRoute.path = "/handover-system";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.get('[data-testid="router-view-stub"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("七二四新火工区信息化中控管理系统");
+    expect(wrapper.text()).not.toContain("实验室中控管理");
+    expect(wrapper.text()).not.toContain("处理中控");
+    expect(wrapper.text()).not.toContain("退出登录");
+  });
+
+  test("renders staging routes in the standalone module shell", async () => {
+    reactiveRoute.meta = { module: "staging", title: "暂存间系统", subtitle: "管理暂存间样品入库、出库与总览。" };
+    reactiveRoute.name = "staging-management";
+    reactiveRoute.path = "/staging-management";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
+    expect(wrapper.text()).toContain("暂存间系统");
+    expect(wrapper.text()).toContain("退出登录");
+    expect(wrapper.text()).not.toContain("实验室中控管理");
+    expect(wrapper.text()).not.toContain("中控中心");
+    expect(wrapper.text()).not.toContain("新建任务");
+    expect(wrapper.text()).not.toContain("查看排程");
   });
 
   test("renders central shell for vue-native routes", async () => {
@@ -130,11 +175,36 @@ describe("App runtime boundary", () => {
     expect(text).toContain("固定报告");
   });
 
-  test("logout delegates to backend session cleanup before routing to login", async () => {
+  test("opens the exit dialog instead of logging out immediately", async () => {
     mountApp();
 
-    const buttons = wrapper.findAll('button[type="button"]');
-    await buttons[buttons.length - 1].trigger("click");
+    await wrapper.get('[data-testid="app-logout"]').trigger("click");
+    await Promise.resolve();
+
+    expect(wrapper.text()).toContain("切换其他界面");
+    expect(logoutSessionMock).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  test("switches to another module without clearing the current session", async () => {
+    mountApp();
+
+    await wrapper.get('[data-testid="app-logout"]').trigger("click");
+    await wrapper.get('[data-testid="module-exit-select"]').setValue("visual");
+    await wrapper.get('[data-testid="module-exit-switch"]').trigger("click");
+    await Promise.resolve();
+
+    expect(logoutSessionMock).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(switchSessionModuleMock).toHaveBeenCalledWith("visual");
+    expect(routerPush).toHaveBeenCalledWith("/visualization");
+  });
+
+  test("full logout still delegates to backend session cleanup before routing to login", async () => {
+    mountApp();
+
+    await wrapper.get('[data-testid="app-logout"]').trigger("click");
+    await wrapper.get('[data-testid="module-exit-logout"]').trigger("click");
     await Promise.resolve();
 
     expect(logoutSessionMock).toHaveBeenCalledTimes(1);

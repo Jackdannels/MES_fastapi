@@ -132,7 +132,7 @@ function useProcessLabs(options = {}) {
       schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
       // 卡片最终形态统一由 model 层构建，组合函数只负责取数。
-      labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, now);
+      labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, samples.value, now);
     } finally {
       loading.value = false;
     }

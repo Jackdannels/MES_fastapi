@@ -21,6 +21,13 @@ const mountToolbar = (props = {}) =>
   });
 
 describe("TaskOverviewToolbar", () => {
+  test("renders the mode switch beside the overview counter instead of inside the filter actions", () => {
+    const wrapper = mountToolbar();
+
+    expect(wrapper.find(".task-overview-heading .task-overview-mode-switch").exists()).toBe(true);
+    expect(wrapper.find(".task-overview-actions .task-overview-mode-switch").exists()).toBe(false);
+  });
+
   test("defers keyword updates until composition ends and trims the committed value", async () => {
     const wrapper = mountToolbar();
     const input = wrapper.find('input[placeholder="按任务编号、任务类型或样品编号筛选"]');

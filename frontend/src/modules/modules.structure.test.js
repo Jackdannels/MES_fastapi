@@ -10,6 +10,7 @@ const moduleEntryPaths = [
   resolve(process.cwd(), "src/modules/tasks/index.js"),
   resolve(process.cwd(), "src/modules/schedule/index.js"),
   resolve(process.cwd(), "src/modules/samples/index.js"),
+  resolve(process.cwd(), "src/modules/handover-system/index.js"),
   resolve(process.cwd(), "src/modules/process/index.js"),
   resolve(process.cwd(), "src/modules/devices/index.js"),
   resolve(process.cwd(), "src/modules/data/index.js"),
@@ -32,6 +33,7 @@ describe("frontend module registry structure", () => {
     expect(source).toContain("tasks");
     expect(source).toContain("schedule");
     expect(source).toContain("samples");
+    expect(source).toContain("handover-system");
     expect(source).toContain("process");
     expect(source).toContain("devices");
     expect(source).toContain("data");

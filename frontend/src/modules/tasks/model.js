@@ -7,9 +7,15 @@ const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验中";
 const STATUS_COMPLETED = "实验已经完成";
-const STATUS_RETENTION = "暂存间存放";
+const STATUS_RETENTION = "厂家收回";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
+const LEGACY_STATUS_STORAGE = "暂存间存放";
+const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
+const ACTIVE_TRAY_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", STATUS_RUNNING]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
+const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
 const RANDOM_PRIORITIES = ["高", "中", "低"];
 
@@ -30,7 +36,10 @@ const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOC
 // 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
 const normalizeStatusLabel = (value) => {
   const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === STATUS_RETENTION) {
+  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
+    return STATUS_WAITING;
+  }
+  if (normalized === STATUS_RETENTION) {
     return STATUS_RETENTION;
   }
   return normalized;
@@ -40,6 +49,19 @@ const normalizeStatusLabel = (value) => {
 const parseTime = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const resolveBuildTaskRowsArgs = (samplesOrNow, nowMaybe) => {
+  if (Array.isArray(samplesOrNow)) {
+    return {
+      now: Number.isFinite(nowMaybe) ? nowMaybe : Date.now(),
+      samples: samplesOrNow,
+    };
+  }
+  return {
+    now: Number.isFinite(samplesOrNow) ? samplesOrNow : Date.now(),
+    samples: [],
+  };
 };
 
 // 前端临时记录 ID 使用时间戳 + 随机后缀即可满足唯一性需求。
@@ -56,10 +78,11 @@ const formatDateTime = (value) => {
   if (!normalized) {
     return "";
   }
+  const sliceLength = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(normalized) ? 19 : 16;
   if (normalized.includes("T")) {
-    return normalized.replace("T", " ").slice(0, 16);
+    return normalized.replace("T", " ").slice(0, sliceLength);
   }
-  return normalized.slice(0, 16);
+  return normalized.slice(0, sliceLength);
 };
 
 // datetime-local 组件使用 `T` 分隔，因此编辑前要做格式转换。
@@ -68,11 +91,12 @@ const toDateTimeLocalValue = (value) => {
   if (!normalized) {
     return "";
   }
+  const sliceLength = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(normalized) ? 19 : 16;
   if (normalized.includes("T")) {
-    return normalized.slice(0, 16);
+    return normalized.slice(0, sliceLength);
   }
   if (normalized.includes(" ")) {
-    return normalized.replace(" ", "T").slice(0, 16);
+    return normalized.replace(" ", "T").slice(0, sliceLength);
   }
   return normalized;
 };
@@ -83,7 +107,8 @@ const fromDateTimeLocalValue = (value) => {
   if (!normalized) {
     return "";
   }
-  return normalized.replace("T", " ").slice(0, 16);
+  const sliceLength = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/.test(normalized) ? 19 : 16;
+  return normalized.replace("T", " ").slice(0, sliceLength);
 };
 
 // 任务页表格和标签共用状态样式类映射。
@@ -107,9 +132,67 @@ const statusClass = (value) => {
   return "status";
 };
 
+const collectTaskTrayStatuses = (taskCode, samples) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const trayStatusMap = new Map();
+  const fallbackStatuses = [];
+
+  (Array.isArray(samples) ? samples : []).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+
+    const sampleStatus = normalizeText(sample?.status);
+    const sampleTrays = Array.isArray(sample?.trays) ? sample.trays : [];
+    if (sampleTrays.length === 0) {
+      if (sampleStatus) {
+        fallbackStatuses.push(sampleStatus);
+      }
+      return;
+    }
+
+    sampleTrays.forEach((tray, index) => {
+      const trayCode = normalizeText(tray?.tray_code) || `${normalizedTaskCode}-tray-${index + 1}`;
+      const trayStatus = normalizeText(tray?.status) || sampleStatus;
+      if (trayStatus) {
+        trayStatusMap.set(trayCode, trayStatus);
+      }
+    });
+  });
+
+  return trayStatusMap.size > 0 ? Array.from(trayStatusMap.values()) : fallbackStatuses;
+};
+
+const aggregateTaskStatusFromSamples = (task, samples) => {
+  const trayStatuses = collectTaskTrayStatuses(task?.code, samples);
+  if (trayStatuses.length === 0) {
+    return "";
+  }
+
+  if (trayStatuses.every((status) => RETURNED_TRAY_STATUSES.has(status))) {
+    return STATUS_RETENTION;
+  }
+  if (trayStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status))) {
+    return STATUS_COMPLETED;
+  }
+  if (trayStatuses.some((status) => ACTIVE_TRAY_STATUSES.has(status))) {
+    return STATUS_RUNNING;
+  }
+  if (trayStatuses.every((status) => PRE_RETENTION_TRAY_STATUSES.has(status))) {
+    return STATUS_WAITING;
+  }
+
+  return "";
+};
+
 // 根据当前排程时间推导任务表格中显示的任务状态。
-function resolveTaskStatus(task, schedules, now = Date.now()) {
+function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
+  const { samples, now } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
   const taskCode = normalizeText(task?.code);
+  const aggregatedStatus = aggregateTaskStatusFromSamples(task, samples);
+  if (aggregatedStatus) {
+    return aggregatedStatus;
+  }
   const relatedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (schedule) => normalizeText(schedule?.task_code) === taskCode,
   );
@@ -136,7 +219,7 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
   // 再判断是否仅处于暂存间状态。
   const retentionEntry = relatedSchedules.find((schedule) => isRetentionDevice(schedule?.device));
   if (retentionEntry) {
-    return STATUS_RETENTION;
+    return STATUS_WAITING;
   }
 
   const rawStatus = normalizeStatusLabel(task?.status);
@@ -147,11 +230,12 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
 }
 
 // 将存储中的任务和排程转换为任务页专用的表格行。
-function buildTaskRows(tasks, schedules, now = Date.now()) {
+function buildTaskRows(tasks, schedules, samplesOrNow, nowMaybe) {
+  const { samples, now } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
   const taskList = Array.isArray(tasks) ? tasks : [];
   return taskList.map((task, index) => {
     // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
-    const displayStatus = resolveTaskStatus(task, schedules, now);
+    const displayStatus = resolveTaskStatus(task, schedules, samples, now);
     return {
       arrivalAt: formatDateTime(task?.arrival_at),
       attachment: normalizeText(task?.attachment),
@@ -185,14 +269,14 @@ function buildTaskMetrics(rows) {
   const internalCount = rowList.filter((row) => row.source === SOURCE_INTERNAL).length;
   const retentionCount = rowList.filter((row) => row.displayStatus === STATUS_RETENTION).length;
   const waitingCount = rowList.filter((row) => row.displayStatus === STATUS_WAITING).length;
-  const unscheduledCount = waitingCount + retentionCount;
+  const unscheduledCount = waitingCount;
 
   return {
     externalCount,
     internalCount,
     retentionCount,
     unscheduledCount,
-    unscheduledLabel: `${unscheduledCount}（暂存间存放${retentionCount}）`,
+    unscheduledLabel: `${unscheduledCount}（${STAGING_NOTE_LABEL}${retentionCount}）`,
   };
 }
 
@@ -277,7 +361,6 @@ function createRandomTaskIntakeForm(now = new Date()) {
 
   return {
     ...createTaskIntakeForm(),
-    arrival_at: arrivalAt.toISOString().slice(0, 16),
     client: source === SOURCE_EXTERNAL ? `外部客户${suffix}` : "内部部门",
     contact: `调度员${suffix}`,
     contact_info: `1380000${suffix}`,
@@ -347,7 +430,7 @@ function createTaskRecord(form, tasks) {
     test_type: normalizeText(form?.test_type),
     required_device: normalizeText(form?.required_device) || normalizeText(form?.test_type),
     due_at: fromDateTimeLocalValue(form?.due_at),
-    arrival_at: fromDateTimeLocalValue(form?.arrival_at),
+    arrival_at: "",
     conditions: normalizeText(form?.conditions),
     attachment: normalizeText(form?.attachment),
     remark: normalizeText(form?.remark),
@@ -368,7 +451,6 @@ function updateTaskRecord(tasks, editForm) {
   // 更新时保留未编辑字段，仅覆盖抽屉允许修改的部分。
   taskList[targetIndex] = {
     ...taskList[targetIndex],
-    arrival_at: fromDateTimeLocalValue(editForm?.arrival_at),
     code: normalizeText(editForm?.code) || taskList[targetIndex].code,
     due_at: fromDateTimeLocalValue(editForm?.due_at),
     name: normalizeText(editForm?.name),
@@ -523,6 +605,8 @@ export {
   fromDateTimeLocalValue,
   isTaskIntakeFormPristine,
   normalizeText,
+  aggregateTaskStatusFromSamples,
+  collectTaskTrayStatuses,
   resolveTaskStatus,
   syncTaskSamples,
   toDateTimeLocalValue,

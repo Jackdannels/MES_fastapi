@@ -16,6 +16,13 @@ vi.mock("@/auth", () => ({
     module: "central",
     username: "tester",
   })),
+  resolveModuleHome: (moduleKey) => ({
+    central: "/",
+    handover: "/handover-system",
+    visual: "/visualization",
+    staging: "/staging-management",
+  })[moduleKey] || "/",
+  switchSessionModule: vi.fn(async (moduleKey) => ({ ok: true, module: moduleKey })),
 }));
 
 const createStorageStub = () => ({

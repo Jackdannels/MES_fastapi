@@ -3,8 +3,8 @@ import { ref } from "vue";
 
 // 将认证输入和提交流程集中到一个可复用的组合函数中。
 function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
-  const username = ref("");
-  const password = ref("");
+  const username = ref("admin");
+  const password = ref("123");
   const moduleKey = ref("central");
   const errorMessage = ref("");
   const submitting = ref(false);

@@ -1,9 +1,151 @@
 import { describe, expect, test } from "vitest";
 
-import { buildTaskMetrics, buildTaskRows } from "./model";
+import { buildTaskEditForm, buildTaskMetrics, buildTaskRows, createTaskRecord, updateTaskRecord } from "./model";
 
 describe("tasks model", () => {
-  test("treats retention-only schedules as unscheduled and includes them in the retention count", () => {
+  test("marks a task as running when any tray is sent to the lab", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "送至实验室",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "送至实验室", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        code: "CJ-2026-001",
+        displayStatus: "实验中",
+      }),
+    );
+  });
+
+  test("marks a task as running when any tray enters fixture installation", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "工装夹具安装",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "工装夹具安装", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("实验中");
+  });
+
+  test("marks a task as running when any tray enters in-progress status", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("实验中");
+  });
+
+  test("keeps a task running when one tray is complete and another tray is still active", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "实验已完成",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+        {
+          code: "CJ-2026-001-SP-002",
+          task_code: "CJ-2026-001",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("实验中");
+  });
+
+  test("marks a task completed only when all trays are in complete or post-complete states", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "实验已完成",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+        {
+          code: "CJ-2026-001-SP-002",
+          task_code: "CJ-2026-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("实验已经完成");
+  });
+
+  test("marks a task as returned only when all trays are returned to the manufacturer", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "实验已经完成" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "厂家收回", quantity: 1 }],
+        },
+        {
+          code: "CJ-2026-001-SP-002",
+          task_code: "CJ-2026-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("厂家收回");
+  });
+
+  test("keeps a task waiting when trays are only staged in the temporary room before experiment", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "CJ-2026-001-SP-001",
+          task_code: "CJ-2026-001",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "已到达暂存间", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("待排程");
+  });
+
+  test("treats retention-only schedules as unscheduled instead of returned", () => {
     const rows = buildTaskRows(
       [
         {
@@ -31,20 +173,20 @@ describe("tasks model", () => {
     expect(rows[0]).toEqual(
       expect.objectContaining({
         code: "GDW-2024-005",
-        displayStatus: "暂存间存放",
+        displayStatus: "待排程",
       }),
     );
 
     expect(buildTaskMetrics(rows)).toEqual(
       expect.objectContaining({
-        retentionCount: 1,
+        retentionCount: 0,
         unscheduledCount: 1,
-        unscheduledLabel: "1（暂存间存放1）",
+        unscheduledLabel: "1（暂存间存放0）",
       }),
     );
   });
 
-  test("treats retention devices as retention even when the stored schedule status is stale", () => {
+  test("treats retention devices as unscheduled even when the stored schedule status is stale", () => {
     const rows = buildTaskRows(
       [
         {
@@ -52,7 +194,7 @@ describe("tasks model", () => {
           code: "WDC-2026-001",
           name: "温度冲击试验",
           source: "外部委托",
-          status: "暂存间存放",
+          status: "待排程",
           test_type: "温度冲击试验",
         },
       ],
@@ -72,16 +214,75 @@ describe("tasks model", () => {
     expect(rows[0]).toEqual(
       expect.objectContaining({
         code: "WDC-2026-001",
-        displayStatus: "暂存间存放",
+        displayStatus: "待排程",
       }),
     );
 
     expect(buildTaskMetrics(rows)).toEqual(
       expect.objectContaining({
-        retentionCount: 1,
+        retentionCount: 0,
         unscheduledCount: 1,
-        unscheduledLabel: "1（暂存间存放1）",
+        unscheduledLabel: "1（暂存间存放0）",
       }),
     );
+  });
+
+  test("createTaskRecord leaves arrival_at empty until samples are confirmed into storage", () => {
+    const task = createTaskRecord(
+      {
+        code: "CJ-2026-001",
+        name: "冲击试验-批次A",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_type: "冲击试验",
+        required_device: "冲击试验",
+        arrival_at: "2026-03-18T12:30",
+      },
+      [],
+    );
+
+    expect(task.arrival_at).toBe("");
+  });
+
+  test("updateTaskRecord preserves stored arrival_at instead of taking manual form input", () => {
+    const result = updateTaskRecord(
+      [
+        {
+          id: "task-1",
+          code: "CJ-2026-001",
+          name: "冲击试验-批次A",
+          arrival_at: "2026-03-18 08:00",
+          status: "待排程",
+        },
+      ],
+      {
+        id: "task-1",
+        code: "CJ-2026-001",
+        name: "冲击试验-批次B",
+        arrival_at: "2026-03-18T13:45",
+        status: "待排程",
+      },
+    );
+
+    expect(result.tasks[0].arrival_at).toBe("2026-03-18 08:00");
+  });
+
+  test("buildTaskRows and buildTaskEditForm preserve second precision for arrival time", () => {
+    const rows = buildTaskRows(
+      [
+        {
+          id: "task-1",
+          code: "CJ-2026-001",
+          name: "冲击试验-批次A",
+          arrival_at: "2026-03-18 09:14:45",
+          status: "待排程",
+        },
+      ],
+      [],
+    );
+
+    expect(rows[0].arrivalAt).toBe("2026-03-18 09:14:45");
+    expect(buildTaskEditForm(rows[0]).arrival_at).toBe("2026-03-18T09:14:45");
   });
 });

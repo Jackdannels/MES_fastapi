@@ -130,7 +130,8 @@
         </div>
         <div class="form-field">
           <label>到样时间</label>
-          <input v-model="intakeForm.arrival_at" type="datetime-local" name="arrival_at" />
+          <input v-model="intakeForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+          <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
           <label>必需设备/能力</label>
@@ -204,7 +205,8 @@
       </div>
       <div class="form-field">
         <label>到样时间</label>
-        <input v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" />
+        <input v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+        <div class="helper">以样品管理确认入库时间为准，重新入库会覆盖</div>
       </div>
       <div class="form-field">
         <label>必需设备/能力</label>
@@ -217,7 +219,7 @@
           <option>已排程</option>
           <option>实验中</option>
           <option>实验已经完成</option>
-          <option>暂存间存放</option>
+          <option>厂家收回</option>
         </select>
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">

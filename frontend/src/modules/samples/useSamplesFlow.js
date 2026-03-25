@@ -4,12 +4,17 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { SAMPLES_UPDATED_EVENT } from "./useSampleIntake";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { formatLocalDateTime } from "@/lib/dateTime.js";
+import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
   DETAIL_STATUS_OPTIONS,
   buildSamplesFlowView,
+  buildSamplesTrayOverviewView,
   buildSamplesStagingView,
   dispatchStagingSamples,
   submitSamplesBatchIntake,
+  TRAY_STATUS_OPTIONS,
+  updateTrayStatus,
   updateSampleDetail,
 } from "./samplesFlowModel";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -41,10 +46,18 @@ const DEFAULT_LOCATION_OPTIONS = [
   "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u6682\u5B58\u95F4\uFF09",
   "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4\uFF09",
 ];
-
+const parseCodeList = (value) =>
+  Array.from(
+    new Set(
+      String(value ?? "")
+        .split(/[\s,\uFF0C;\uFF1B]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.samples]);
+  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
 
   const rawTasks = ref([]);
   const rawSamples = ref([]);
@@ -102,6 +115,13 @@ function useSamplesFlow() {
 
   // 暂存区派发面板与主列表共享一份样品快照，但筛选口径不同。
   const sampleRows = computed(() => view.value.rows);
+  const trayOverviewView = computed(() =>
+    buildSamplesTrayOverviewView({
+      tasks: rawTasks.value,
+      samples: rawSamples.value,
+    }),
+  );
+  const trayRows = computed(() => trayOverviewView.value.rows);
   const pageCount = computed(() => view.value.totalPages);
   const taskOptions = computed(() => view.value.taskOptions);
   const statusOptions = computed(() => view.value.statusOptions);
@@ -133,8 +153,8 @@ function useSamplesFlow() {
   const load = async () => {
     // 当前页面只消费任务与样品快照，不依赖排程和流数据。
     loading.value = true;
-    const snapshot = await loadSnapshot();
-    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+    const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+    rawTasks.value = Array.isArray(tasks) ? tasks : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     loading.value = false;
   };
@@ -237,6 +257,7 @@ function useSamplesFlow() {
     await persistSnapshot({
       [STORAGE_KEYS.samples]: result.samples,
     });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
 
     clearStagingInputs();
     warning.value = result.error;
@@ -255,21 +276,44 @@ function useSamplesFlow() {
   };
 
   const submitBatch = async () => {
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const arrivalTime = formatLocalDateTime(now);
     const result = submitSamplesBatchIntake({
       samples: rawSamples.value,
       payload: batchForm,
       labels: DEFAULT_LABELS,
-      now: new Date().toISOString(),
+      now: nowIso,
     });
     if (result.error) {
       warning.value = result.error;
       return;
     }
+    const affectedTaskCodes = Array.from(
+      new Set(
+        result.samples
+          .filter((sample) => parseCodeList(batchForm.codes).includes(String(sample?.code ?? "").trim()))
+          .map((sample) => String(sample?.task_code ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+    const nextTasks = rawTasks.value.map((task) => ({ ...task }));
+    for (const taskCode of affectedTaskCodes) {
+      const task = nextTasks.find((item) => String(item?.code ?? "").trim() === taskCode);
+      if (!task) {
+        continue;
+      }
+      task.arrival_at = arrivalTime;
+      task.updated_at = nowIso;
+      await updateTaskByApi(task.id || task.code, task);
+    }
     // 批量接样成功后关闭弹窗，但不额外广播事件，因为当前页已持有最新数据。
+    rawTasks.value = await readTasks();
     rawSamples.value = result.samples;
     await persistSnapshot({
       [STORAGE_KEYS.samples]: result.samples,
     });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = "";
     batchModal.close();
   };
@@ -317,8 +361,29 @@ function useSamplesFlow() {
     await persistSnapshot({
       [STORAGE_KEYS.samples]: rawSamples.value,
     });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = "";
     detailDrawer.close();
+  };
+
+  const updateTrayStatusInline = async (trayCode, status) => {
+    const result = updateTrayStatus({
+      trayCode,
+      status,
+      labels: DEFAULT_LABELS,
+      now: new Date().toISOString(),
+      samples: rawSamples.value,
+    });
+    if (result.error) {
+      warning.value = result.error;
+      return;
+    }
+    rawSamples.value = result.samples;
+    await persistSnapshot({
+      [STORAGE_KEYS.samples]: result.samples,
+    });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    warning.value = "";
   };
 
   watch(
@@ -371,6 +436,8 @@ function useSamplesFlow() {
     openDetailDrawer,
     pageCount,
     query,
+    rawSamples,
+    rawTasks,
     sampleRows,
     saveDetail,
     selectedStatus,
@@ -380,6 +447,8 @@ function useSamplesFlow() {
     setStatusFilter,
     setStagingQuery,
     setTaskFilter,
+    trayRows,
+    trayStatusOptions: TRAY_STATUS_OPTIONS,
     stagingAllSelected,
     stagingCount,
     stagingForm,
@@ -396,6 +465,7 @@ function useSamplesFlow() {
     toggleAllStagingSelection,
     toggleStagingSelection,
     toggleSort,
+    updateTrayStatusInline,
     warning,
     resetStaging,
   };

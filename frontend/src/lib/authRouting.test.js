@@ -51,6 +51,17 @@ describe("authRouting", () => {
     ).resolves.toBe(true);
   });
 
+  test("allows access when the staging module matches the target route", async () => {
+    await expect(
+      buildRouteAccessDecision({
+        session: { logged_at: "2026-03-11T00:00:00Z", module: "staging", username: "admin" },
+        to: {
+          meta: { module: "staging" },
+        },
+      })
+    ).resolves.toBe(true);
+  });
+
   test("hydrates session through the provided getter when session is omitted", async () => {
     await expect(
       buildRouteAccessDecision({

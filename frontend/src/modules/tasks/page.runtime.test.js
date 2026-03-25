@@ -111,6 +111,56 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("任务详情");
   });
 
+  test("loads tasks from the dedicated tasks api while reading related collections from storage snapshot", async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url === "/api/tasks") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: "task-remote-1",
+              code: "CJ-2026-099",
+              name: "远程冲击试验",
+              source: "外部委托",
+              priority: "高",
+              sample_count: 2,
+              sample_type: "结构件",
+              test_type: "冲击试验",
+              required_device: "冲击试验",
+              due_at: "2026-03-18 18:00",
+              arrival_at: "2026-03-18 12:00",
+              status: "待排程",
+              created_at: "2026-03-18T08:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url === "/api/storage") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SCHEDULES_KEY]: [],
+            [SAMPLES_KEY]: [],
+            [STREAMS_KEY]: [],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("CJ-2026-099");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks",
+      expect.objectContaining({
+        credentials: "include",
+      }),
+    );
+  });
+
   test("opens the intake modal from the route hash, auto-fills task code, and submits a task", async () => {
     setStorage(TASKS_KEY, [
       {
@@ -160,6 +210,97 @@ describe("TasksPage runtime", () => {
         required_device: "冲击试验",
       }),
     );
+  });
+
+  test("shows arrival time as a read-only field in intake and edit forms", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-1",
+        code: "CJ-2026-001",
+        name: "冲击试验-批次A",
+        source: "外部委托",
+        priority: "高",
+        sample_count: 2,
+        sample_type: "结构件",
+        test_type: "冲击试验",
+        required_device: "冲击试验",
+        arrival_at: "2026-03-18 08:00",
+        status: "待排程",
+        created_at: "2026-03-18T08:00:00.000Z",
+      },
+    ]);
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get('input[name="arrival_at"]').element.readOnly).toBe(true);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    const drawerArrivalInput = wrapper.find(".drawer input[name='arrival_at']");
+    expect(drawerArrivalInput.element.readOnly).toBe(true);
+  });
+
+  test("submits tasks through the dedicated tasks api and only persists dependent collections through storage", async () => {
+    window.location.hash = "#task-intake-modal";
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SCHEDULES_KEY]: [],
+            [SAMPLES_KEY]: [],
+            [STREAMS_KEY]: [],
+          }),
+        });
+      }
+      if (url === "/api/tasks" && options.method === "POST") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => JSON.parse(options.body),
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="test_type"]').setValue("冲击试验");
+    await wrapper.get('input[name="name"]').setValue("冲击试验-批次C");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/tasks",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+
+    const storageWriteCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
+    );
+    expect(storageWriteCall).toBeTruthy();
+    expect(JSON.parse(storageWriteCall[1].body)).toEqual({
+      [SAMPLES_KEY]: expect.any(Array),
+    });
   });
 
   test("creates a random task when the intake form is submitted with all default empty values", async () => {
@@ -261,5 +402,77 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+  });
+
+  test("sample update event reloads tasks and refreshes the open drawer arrival time", async () => {
+    let taskLoadCount = 0;
+    const fetchMock = vi.fn((url) => {
+      if (url === "/api/tasks") {
+        taskLoadCount += 1;
+        return Promise.resolve({
+          ok: true,
+          json: async () =>
+            taskLoadCount === 1
+              ? [
+                  {
+                    id: "task-1",
+                    code: "CJ-2026-001",
+                    name: "冲击试验-批次A",
+                    source: "外部委托",
+                    priority: "高",
+                    sample_count: 2,
+                    sample_type: "结构件",
+                    test_type: "冲击试验",
+                    required_device: "冲击试验",
+                    arrival_at: "",
+                    status: "待排程",
+                    created_at: "2026-03-18T08:00:00.000Z",
+                  },
+                ]
+              : [
+                  {
+                    id: "task-1",
+                    code: "CJ-2026-001",
+                    name: "冲击试验-批次A",
+                    source: "外部委托",
+                    priority: "高",
+                    sample_count: 2,
+                    sample_type: "结构件",
+                    test_type: "冲击试验",
+                    required_device: "冲击试验",
+                    arrival_at: "2026-03-18 09:14:45",
+                    status: "待排程",
+                    created_at: "2026-03-18T08:00:00.000Z",
+                  },
+                ],
+        });
+      }
+      if (url === "/api/storage") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SCHEDULES_KEY]: [],
+            [SAMPLES_KEY]: [],
+            [STREAMS_KEY]: [],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    const arrivalInput = () => wrapper.find(".drawer input[name='arrival_at']");
+    expect(arrivalInput().element.value).toBe("");
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(arrivalInput().element.value).toMatch(/^2026-03-18T09:14:45(?:\.000)?$/);
   });
 });

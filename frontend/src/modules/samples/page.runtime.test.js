@@ -50,6 +50,7 @@ describe("SamplesPage runtime", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     resetStorage();
   });
@@ -67,51 +68,35 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.get('[data-testid="samples-process-count"]').text()).toBe("4");
     expect(wrapper.get('[data-testid="samples-process-codes"]').element.value).toContain("SZH-2026-001-SP-001");
     expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
+    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).not.toContain("SZH-2026-001-TP-002");
   });
 
-  test("sample intake auto-generates code from selected task and submits into samples store", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-010", name: "任务A", sample_count: "2", status: "已受理" }]);
+  test("default tray draft starts with one tray and auto-adds trays when sample count exceeds the limit", async () => {
+    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "6" }]);
     setStorage(SAMPLES_KEY, []);
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    await wrapper.get('[data-testid="sample-intake-task"]').setValue("SZH-2026-010");
+    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="sample-intake-code"]').element.value).toBe("SZH-2026-010-SP-001");
-
-    await wrapper.get('[data-testid="sample-intake-submit"]').trigger("click");
-    await settle(wrapper);
-
-    const storedSamples = getStorage(SAMPLES_KEY);
-    expect(storedSamples).toHaveLength(1);
-    expect(storedSamples[0]).toEqual(
-      expect.objectContaining({
-        code: "SZH-2026-010-SP-001",
-        task_code: "SZH-2026-010",
-        status: "运输中",
-        flow_status: "运输中",
-      }),
-    );
+    const trays = wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]');
+    expect(trays).toHaveLength(2);
+    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
+    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-002");
   });
 
-  test("sample intake draft keeps button semantics and also persists a transit sample", async () => {
+  test("does not render the sample intake registration card", async () => {
     setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-011", name: "任务B", sample_count: "1" }]);
     setStorage(SAMPLES_KEY, []);
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    await wrapper.get('[data-testid="sample-intake-task"]').setValue("SZH-2026-011");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="sample-intake-draft"]').trigger("click");
-    await settle(wrapper);
-
-    const storedSamples = getStorage(SAMPLES_KEY);
-    expect(storedSamples).toHaveLength(1);
-    expect(storedSamples[0].code).toBe("SZH-2026-011-SP-001");
-    expect(storedSamples[0].status).toBe("运输中");
+    expect(wrapper.text()).not.toContain("样品登记");
+    expect(wrapper.find('[data-testid="sample-intake-task"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="sample-intake-submit"]').exists()).toBe(false);
   });
 
   test("confirming storage enables tray printing and persists sample trays", async () => {
@@ -137,6 +122,128 @@ describe("SamplesPage runtime", () => {
     expect(window.open).toHaveBeenCalledTimes(1);
   });
 
+  test("tray confirm store updates task arrival time through the dedicated tasks api", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 18, 18, 5, 6));
+    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-03-18T10:05:06.000Z");
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "1", arrival_at: "" }],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SAMPLES_KEY]: [],
+          }),
+        });
+      }
+      if (url === "/api/tasks/task-1" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => JSON.parse(options.body),
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
+    await settle(wrapper);
+
+    const updateTaskCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === "/api/tasks/task-1" && options?.method === "PUT",
+    );
+    expect(updateTaskCall).toBeTruthy();
+    expect(JSON.parse(updateTaskCall[1].body)).toEqual(
+      expect.objectContaining({
+        code: "SZH-2026-001",
+        arrival_at: "2026-03-18 18:05:06",
+      }),
+    );
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "mes:samples-updated" }));
+  });
+
+  test("batch intake updates task arrival time through the dedicated tasks api", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 2, 18, 18, 5, 6));
+    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-03-18T10:05:06.000Z");
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "2", arrival_at: "" }],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SAMPLES_KEY]: [{ id: "sample-1", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", status: "运输中", trays: [], history: [] }],
+          }),
+        });
+      }
+      if (url === "/api/tasks/task-1" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => JSON.parse(options.body),
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-flow-open-batch"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-flow-batch-location"]').setValue("接驳区");
+    await wrapper.get('[data-testid="samples-flow-batch-codes"]').setValue("SZH-2026-001-SP-001");
+    await wrapper.get('[data-testid="samples-flow-batch-submit"]').trigger("click");
+    await settle(wrapper);
+
+    const updateTaskCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === "/api/tasks/task-1" && options?.method === "PUT",
+    );
+    expect(updateTaskCall).toBeTruthy();
+    expect(JSON.parse(updateTaskCall[1].body)).toEqual(
+      expect.objectContaining({
+        code: "SZH-2026-001",
+        arrival_at: "2026-03-18 18:05:06",
+      }),
+    );
+
+    const storageWriteCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
+    );
+    expect(storageWriteCall).toBeTruthy();
+    expect(JSON.parse(storageWriteCall[1].body)).toEqual({
+      [SAMPLES_KEY]: expect.any(Array),
+    });
+  });
+
   test("adding a tray expands the tray list for the selected task", async () => {
     setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
     setStorage(SAMPLES_KEY, []);
@@ -147,13 +254,13 @@ describe("SamplesPage runtime", () => {
     await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
     await settle(wrapper);
 
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
+    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(1);
 
     await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(3);
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-003");
+    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
+    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-002");
   });
 
   test("print stays disabled before confirm and tray limit change rebalances trays", async () => {
@@ -187,16 +294,15 @@ describe("SamplesPage runtime", () => {
     await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(3);
+    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
 
     await wrapper.get('[data-testid="samples-process-delete-tray-1"]').trigger("click");
     await settle(wrapper);
 
     const trays = wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]');
-    expect(trays).toHaveLength(2);
+    expect(trays).toHaveLength(1);
     expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-002");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).not.toContain("SZH-2026-001-TP-003");
+    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).not.toContain("SZH-2026-001-TP-002");
   });
 
   test("confirming storage locks repartition controls and enables restore intake", async () => {
@@ -255,20 +361,46 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.get('[data-testid="samples-process-print"]').attributes("disabled")).toBeDefined();
   });
 
-  test("flow graph renders 11 fixed steps and highlights arrival after store and transit after restore", async () => {
+  test("restoring intake rebuilds tray draft from the default automatic allocation instead of keeping manual repartition", async () => {
     setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
     setStorage(SAMPLES_KEY, []);
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    expect(wrapper.findAll('[data-testid^="sample-flow-step-"]')).toHaveLength(11);
+    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
+
+    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-process-restore"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(1);
+    const preview = wrapper.get('[data-testid="samples-process-tray-preview"]').element.value;
+    expect(preview).toContain("SZH-2026-001-TP-001 | 4 / 5");
+    expect(preview).not.toContain("SZH-2026-001-TP-002");
+  });
+
+  test("flow graph renders 12 fixed steps and highlights arrival after store and transit after restore", async () => {
+    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
+    setStorage(SAMPLES_KEY, []);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="sample-flow-step-"]')).toHaveLength(12);
     expect(wrapper.get('[data-testid="sample-flow-step-sent_to_staging"]').text()).toBe("送至暂存间");
     expect(wrapper.get('[data-testid="sample-flow-step-arrived_staging"]').text()).toBe("已到达暂存间");
     expect(wrapper.get('[data-testid="sample-flow-step-sent_to_lab"]').text()).toBe("送至实验室");
     expect(wrapper.get('[data-testid="sample-flow-step-arrived_lab"]').text()).toBe("已到达实验室");
     expect(wrapper.get('[data-testid="sample-flow-step-fixture_install"]').text()).toBe("工装夹具安装");
     expect(wrapper.get('[data-testid="sample-flow-step-ready"]').text()).toBe("实验准备就绪");
+    expect(wrapper.get('[data-testid="sample-flow-step-running"]').text()).toBe("实验进行中");
     expect(wrapper.get('[data-testid="sample-flow-step-completed"]').text()).toBe("实验已完成");
     expect(wrapper.get('[data-testid="sample-flow-step-post_test_staging"]').text()).toBe("放置实验后暂存间");
 
@@ -454,6 +586,301 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.get('[data-testid="samples-tab-flow"]').classes()).not.toContain("active");
     expect(wrapper.find('[data-testid="samples-staging-panel"]').classes()).not.toContain("is-hidden");
     expect(wrapper.find('[data-testid="samples-flow-panel"]').classes()).toContain("is-hidden");
+  });
+
+  test("switches between page-level sample management and tray management views", async () => {
+    let storagePayload = {
+      [SAMPLES_KEY]: [
+        {
+          id: "sample-1",
+          code: "SZH-2026-001-SP-001",
+          task_code: "SZH-2026-001",
+          status: "到货",
+          flow_status: "到货",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+        },
+      ],
+    };
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => storagePayload,
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        storagePayload = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-page-tab-management"]').classes()).toContain("active");
+    expect(wrapper.find('[data-testid="samples-management-panel"]').classes()).not.toContain("is-hidden");
+    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).toContain("is-hidden");
+
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-page-tab-trays"]').classes()).toContain("active");
+    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).not.toContain("is-hidden");
+    expect(wrapper.find('[data-testid="samples-management-panel"]').classes()).toContain("is-hidden");
+    expect(wrapper.get('[data-testid="samples-trays-task-0"]').text()).toContain("SZH-2026-001");
+  });
+
+  test("tray management updates tray status inline", async () => {
+    let storagePayload = {
+      [SAMPLES_KEY]: [
+        {
+          id: "sample-1",
+          code: "SZH-2026-001-SP-001",
+          task_code: "SZH-2026-001",
+          status: "到货",
+          flow_status: "到货",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+        },
+        {
+          id: "sample-2",
+          code: "SZH-2026-001-SP-002",
+          task_code: "SZH-2026-001",
+          status: "到货",
+          flow_status: "到货",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+        },
+      ],
+    };
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => storagePayload,
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        storagePayload = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-page-tab-trays"]').classes()).toContain("active");
+    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).not.toContain("is-hidden");
+    expect(wrapper.get('[data-testid="samples-trays-task-0"]').text()).toContain("SZH-2026-001");
+    expect(wrapper.get('[data-testid="samples-trays-status-0"]').element.value).toBe("到货");
+
+    await wrapper.get('[data-testid="samples-trays-status-0"]').setValue("送至实验室");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-status-0"]').element.value).toBe("送至实验室");
+
+    const storageWriteCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
+    );
+    expect(storageWriteCall).toBeTruthy();
+    expect(JSON.parse(storageWriteCall[1].body)[SAMPLES_KEY]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "送至实验室",
+          trays: [expect.objectContaining({ tray_code: "SZH-2026-001-TP-001", status: "送至实验室" })],
+        }),
+      ]),
+    );
+  });
+
+  test("tray management flow tracks the selected tray and follows inline status changes", async () => {
+    let storagePayload = {
+      [SAMPLES_KEY]: [
+        {
+          id: "sample-1",
+          code: "SZH-2026-001-SP-001",
+          task_code: "SZH-2026-001",
+          status: "到货",
+          flow_status: "到货",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+        },
+        {
+          id: "sample-2",
+          code: "SZH-2026-001-SP-002",
+          task_code: "SZH-2026-001",
+          status: "实验准备就绪",
+          flow_status: "实验准备就绪",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    };
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => storagePayload,
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        storagePayload = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-workspace"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="samples-trays-flows"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="samples-trays-counter"]').text()).toContain("18/20");
+    expect(wrapper.get('[data-testid="samples-task-flow"]').classes()).toContain("sample-flow-horizontal");
+    expect(wrapper.get(".tray-management-filter").classes()).toContain("tray-management-filter-emphasis");
+    expect(wrapper.get('[data-testid="samples-trays-row-0"]').classes()).toContain("is-active");
+    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toContain("实验中");
+    expect(wrapper.get('[data-testid="samples-task-flow-step-running"]').classes()).toContain("current");
+    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-001");
+    expect(wrapper.get('[data-testid="samples-tray-flow-step-arrived"]').classes()).toContain("current");
+
+    await wrapper.get('[data-testid="samples-trays-row-1"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-row-1"]').classes()).toContain("is-active");
+    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-002");
+    expect(wrapper.get('[data-testid="samples-tray-flow-step-ready"]').classes()).toContain("current");
+    expect(wrapper.get('[data-testid="samples-tray-flow-step-arrived_lab"]').classes()).toContain("reached");
+
+    await wrapper.get('[data-testid="samples-trays-status-1"]').setValue("实验进行中");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-status-1"]').element.value).toBe("实验进行中");
+    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("实验进行中");
+    expect(wrapper.get('[data-testid="samples-tray-flow-step-running"]').classes()).toContain("current");
+  });
+
+  test("tray management supports filtering by task code and keeps multi-tray rows separate", async () => {
+    let storagePayload = {
+      [SAMPLES_KEY]: [
+        {
+          id: "sample-1",
+          code: "SZH-2026-001-SP-001",
+          task_code: "SZH-2026-001",
+          status: "到货",
+          flow_status: "到货",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+        },
+        {
+          id: "sample-2",
+          code: "SZH-2026-001-SP-002",
+          task_code: "SZH-2026-001",
+          status: "实验准备就绪",
+          flow_status: "实验准备就绪",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+        {
+          id: "sample-3",
+          code: "SZH-2026-002-SP-001",
+          task_code: "SZH-2026-002",
+          status: "运输中",
+          flow_status: "运输中",
+          history: [],
+          trays: [{ tray_code: "SZH-2026-002-TP-001", status: "运输中", quantity: 1 }],
+        },
+      ],
+    };
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            { id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" },
+            { id: "task-2", code: "SZH-2026-002", name: "任务B", test_type: "振动试验" },
+          ],
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => storagePayload,
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        storagePayload = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-workspace"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="samples-trays-flows"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="samples-trays-counter"]').text()).toContain("17/20");
+    expect(wrapper.get('[data-testid="samples-task-flow"]').classes()).toContain("sample-flow-horizontal");
+    expect(wrapper.get(".tray-management-filter").classes()).toContain("tray-management-filter-emphasis");
+    expect(wrapper.get('[data-testid="samples-trays-task-code-0"]').text()).toBe("SZH-2026-001");
+    expect(wrapper.get('[data-testid="samples-trays-task-code-1"]').text()).toBe("SZH-2026-001");
+    expect(wrapper.get('[data-testid="samples-trays-task-code-2"]').text()).toBe("SZH-2026-002");
+
+    await wrapper.get('[data-testid="samples-trays-task-filter"]').setValue("SZH-2026-001");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(2);
+    expect(wrapper.find('[data-testid="samples-trays-row-2"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="samples-trays-row-0"]').classes()).toContain("is-active");
+    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toContain("实验中");
+    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-001");
   });
 
   test("sample trace query renders summary and timeline from sample history and schedule events", async () => {
