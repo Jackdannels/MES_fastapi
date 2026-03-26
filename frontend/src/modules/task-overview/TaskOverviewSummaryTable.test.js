@@ -11,6 +11,8 @@ describe("TaskOverviewSummaryTable", () => {
         formatTraySummary: (row) => row.trays.map((tray) => tray.trayCode).join(" / "),
         row: {
           currentStatus: "进行中",
+          experimentCount: 2,
+          experimentSummary: "A实验 / B实验",
           plannedCount: 3,
           sampleCount: 2,
           scheduleCount: 1,
@@ -22,6 +24,8 @@ describe("TaskOverviewSummaryTable", () => {
     });
 
     expect(wrapper.text()).toContain("冲击试验");
+    expect(wrapper.text()).toContain("A实验 / B实验");
+    expect(wrapper.text()).toContain("2个");
     expect(wrapper.text()).toContain("进行中");
     expect(wrapper.text()).toContain("已排程");
     expect(wrapper.text()).toContain("2 / 3");

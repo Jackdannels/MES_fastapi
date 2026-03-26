@@ -8,6 +8,8 @@ class FakeTransferStorage:
             "mes.tasks": [],
             "mes.samples": [],
             "mes.schedules": [],
+            "mes.experiments": [],
+            "mes.experiment_trays": [],
             "mes.devices": [],
             "mes.streams": [],
             "mes.conflicts": [],
@@ -34,7 +36,7 @@ def create_payloads():
         "mes.tasks": [
             {
                 "id": "task-101",
-                "code": "JB-2026-101",
+                "code": "SYLU-2026-03-101",
                 "name": "连接器批次 A",
                 "test_type": "盐雾试验 / 振动试验",
                 "sample_count": 4,
@@ -43,7 +45,7 @@ def create_payloads():
             },
             {
                 "id": "task-102",
-                "code": "JB-2026-102",
+                "code": "SYLU-2026-03-102",
                 "name": "线束批次 E",
                 "test_type": "耐久试验 / 通电试验",
                 "sample_count": 2,
@@ -54,7 +56,7 @@ def create_payloads():
             },
             {
                 "id": "task-103",
-                "code": "JB-2026-103",
+                "code": "SYLU-2026-03-103",
                 "name": "实验中任务",
                 "test_type": "振动试验",
                 "sample_count": 1,
@@ -63,50 +65,77 @@ def create_payloads():
             },
         ],
         "mes.samples": [
-            {"id": "sample-1", "code": "JB-2026-101-SP-001", "task_code": "JB-2026-101", "status": "运输中", "flow_status": "运输中", "location": ""},
-            {"id": "sample-2", "code": "JB-2026-101-SP-002", "task_code": "JB-2026-101", "status": "运输中", "flow_status": "运输中", "location": ""},
-            {"id": "sample-3", "code": "JB-2026-101-SP-003", "task_code": "JB-2026-101", "status": "运输中", "flow_status": "运输中", "location": ""},
-            {"id": "sample-4", "code": "JB-2026-101-SP-004", "task_code": "JB-2026-101", "status": "运输中", "flow_status": "运输中", "location": ""},
+            {"id": "sample-1", "code": "SYLU-2026-03-101-SP-001", "task_code": "SYLU-2026-03-101", "status": "运输中", "flow_status": "运输中", "location": ""},
+            {"id": "sample-2", "code": "SYLU-2026-03-101-SP-002", "task_code": "SYLU-2026-03-101", "status": "运输中", "flow_status": "运输中", "location": ""},
+            {"id": "sample-3", "code": "SYLU-2026-03-101-SP-003", "task_code": "SYLU-2026-03-101", "status": "运输中", "flow_status": "运输中", "location": ""},
+            {"id": "sample-4", "code": "SYLU-2026-03-101-SP-004", "task_code": "SYLU-2026-03-101", "status": "运输中", "flow_status": "运输中", "location": ""},
             {
                 "id": "sample-5",
-                "code": "JB-2026-102-SP-001",
-                "task_code": "JB-2026-102",
+                "code": "SYLU-2026-03-102-SP-001",
+                "task_code": "SYLU-2026-03-102",
                 "status": "已入库",
                 "flow_status": "已入库",
                 "location": "接驳区",
                 "trays": [
                     {
                         "tray_id": 1001,
-                        "tray_code": "JB-2026-102-TP-001",
+                        "tray_code": "SYLU-2026-03-102-TP-001",
                         "quantity": 1,
                         "status": "已入库",
                         "barcode_id": 9001,
-                        "barcode_no": "JB-2026-102-TP-001",
-                        "barcode_content": "TRAY|TASK:JB-2026-102|TRAY:JB-2026-102-TP-001|LOAD:2",
+                        "barcode_no": "SYLU-2026-03-102-TP-001",
+                        "barcode_content": "TRAY|TASK:SYLU-2026-03-102|TRAY:SYLU-2026-03-102-TP-001|LOAD:2",
                     }
                 ],
             },
             {
                 "id": "sample-6",
-                "code": "JB-2026-102-SP-002",
-                "task_code": "JB-2026-102",
+                "code": "SYLU-2026-03-102-SP-002",
+                "task_code": "SYLU-2026-03-102",
                 "status": "已入库",
                 "flow_status": "已入库",
                 "location": "接驳区",
                 "trays": [
                     {
                         "tray_id": 1001,
-                        "tray_code": "JB-2026-102-TP-001",
+                        "tray_code": "SYLU-2026-03-102-TP-001",
                         "quantity": 1,
                         "status": "已入库",
                         "barcode_id": 9001,
-                        "barcode_no": "JB-2026-102-TP-001",
-                        "barcode_content": "TRAY|TASK:JB-2026-102|TRAY:JB-2026-102-TP-001|LOAD:2",
+                        "barcode_no": "SYLU-2026-03-102-TP-001",
+                        "barcode_content": "TRAY|TASK:SYLU-2026-03-102|TRAY:SYLU-2026-03-102-TP-001|LOAD:2",
                     }
                 ],
             },
         ],
         "mes.schedules": [],
+        "mes.experiments": [
+            {
+                "id": "experiment-101-a",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-A",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+                "status": "待排程",
+            },
+            {
+                "id": "experiment-101-b",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-B",
+                "experiment_name": "振动试验",
+                "required_device": "振动试验",
+                "status": "待排程",
+            },
+            {
+                "id": "experiment-101-c",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-C",
+                "experiment_name": "温度冲击试验",
+                "required_device": "温度冲击试验",
+                "status": "待排程",
+            },
+        ],
+        "mes.experiment_trays": [],
     }
 
 
@@ -129,8 +158,8 @@ def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(m
     assert response.status_code == 200
     payload = response.json()
     task_nos = [item["taskNo"] for item in payload["taskOverview"]]
-    assert task_nos == ["JB-2026-101", "JB-2026-102"]
-    assert "JB-2026-103" not in task_nos
+    assert task_nos == ["SYLU-2026-03-101", "SYLU-2026-03-102"]
+    assert "SYLU-2026-03-103" not in task_nos
     assert payload["pendingTaskCount"] == 1
     assert payload["storedTaskCount"] == 1
 
@@ -142,12 +171,12 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["task"]["taskNo"] == "JB-2026-101"
+    assert payload["task"]["taskNo"] == "SYLU-2026-03-101"
     assert payload["task"]["taskStatus"] == "未入库"
     assert payload["task"]["trayLimit"] == 4
     assert len(payload["assignedTrays"]) == 1
     assert len(payload["assignedTrays"]) > 0
-    assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "JB-2026-101-SP-001"
+    assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
     assert len(payload["trayInventory"]) == 19
 
 
@@ -164,6 +193,11 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
             }
             for tray in workspace["assignedTrays"]
         ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [1001]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [1001, 1002]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [1002]},
+        ],
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
@@ -172,7 +206,7 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
 
     assert allocated.status_code == 200
-    assert allocated.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleNo"] == "JB-2026-101-SP-001"
+    assert allocated.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
 
     assert printed.status_code == 200
     assert len(printed.json()["barcodes"]) > 0
@@ -185,7 +219,55 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert reloaded.status_code == 200
     assert reloaded.json()["workspace"]["task"]["taskStatus"] == "未入库"
     assert reloaded.json()["workspace"]["assignedTrays"][0]["barcode"] is None
+    assert reloaded.json()["workspace"]["assignedTrays"][0]["experimentLabels"] == []
+    assert all(item["assignedTrayCount"] == 0 for item in reloaded.json()["workspace"]["experiments"])
     assert storage.read("mes.tasks")[0]["transfer_status"] == "未入库"
+    assert storage.read("mes.experiment_trays") == []
+
+
+def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignments(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert workspace.status_code == 200
+    workspace_payload = workspace.json()
+    assert [item["experimentCode"] for item in workspace_payload["experiments"]] == ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B", "SYLU-2026-03-101-C"]
+    assert workspace_payload["assignedTrays"][0]["experimentLabels"] == []
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [1001]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [1001, 1002]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [1002]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert allocated.status_code == 200
+    allocated_payload = allocated.json()["workspace"]
+    assert allocated_payload["experiments"][0]["assignedTrayCount"] == 1
+    assert allocated_payload["experiments"][1]["assignedTrayCount"] == 2
+    assert allocated_payload["experiments"][2]["assignedTrayCount"] == 1
+    assert allocated_payload["assignedTrays"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
+    assert allocated_payload["assignedTrays"][1]["experimentLabels"] == ["振动试验", "温度冲击试验"]
+    assert storage.read("mes.experiment_trays") == [
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-A", "tray_code": "SYLU-2026-03-101-TP-001"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "tray_code": "SYLU-2026-03-101-TP-001"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "tray_code": "SYLU-2026-03-101-TP-002"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-C", "tray_code": "SYLU-2026-03-101-TP-002"},
+    ]
+
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+
+    assert printed.status_code == 200
+    assert printed.json()["barcodes"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
 
 
 def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monkeypatch):
@@ -217,10 +299,10 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
 
     samples = storage.read("mes.samples")
     legacy_assignments = {
-        "sample-1": "JB-2026-101-TP-002",
-        "sample-2": "JB-2026-101-TP-002",
-        "sample-3": "JB-2026-101-TP-003",
-        "sample-4": "JB-2026-101-TP-003",
+        "sample-1": "SYLU-2026-03-101-TP-002",
+        "sample-2": "SYLU-2026-03-101-TP-002",
+        "sample-3": "SYLU-2026-03-101-TP-003",
+        "sample-4": "SYLU-2026-03-101-TP-003",
     }
     for sample in samples:
         if sample["id"] not in legacy_assignments:
@@ -234,15 +316,15 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
             "status": "未入库",
             "barcode_id": 9000 + tray_serial,
             "barcode_no": tray_code,
-            "barcode_content": f"TRAY|TASK:JB-2026-101|TRAY:{tray_code}|LOAD:2",
+            "barcode_content": f"TRAY|TASK:SYLU-2026-03-101|TRAY:{tray_code}|LOAD:2",
         }]
         sample["history"] = [
             {"id": f"old-{sample['id']}-1", "time": "2026-03-20T08:00:00", "action": "样品分装托盘", "detail": tray_code},
-            {"id": f"old-{sample['id']}-2", "time": "2026-03-20T09:00:00", "action": "任务已确认入库", "detail": "JB-2026-101"},
+            {"id": f"old-{sample['id']}-2", "time": "2026-03-20T09:00:00", "action": "任务已确认入库", "detail": "SYLU-2026-03-101"},
         ]
     storage.write("mes.samples", samples)
     tasks = storage.read("mes.tasks")
-    tasks[0]["tray_codes"] = ["JB-2026-101-TP-002", "JB-2026-101-TP-003"]
+    tasks[0]["tray_codes"] = ["SYLU-2026-03-101-TP-002", "SYLU-2026-03-101-TP-003"]
     storage.write("mes.tasks", tasks)
 
     allocation = {
@@ -257,16 +339,16 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
 
     assert allocated.status_code == 200
     payload = allocated.json()
-    assert [tray["trayNo"] for tray in payload["workspace"]["assignedTrays"]] == ["JB-2026-101-TP-001", "JB-2026-101-TP-002"]
+    assert [tray["trayNo"] for tray in payload["workspace"]["assignedTrays"]] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
 
     updated_task = storage.read("mes.tasks")[0]
-    assert updated_task["tray_codes"] == ["JB-2026-101-TP-001", "JB-2026-101-TP-002"]
+    assert updated_task["tray_codes"] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
 
-    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "JB-2026-101"]
-    assert updated_samples[0]["trays"][0]["tray_code"] == "JB-2026-101-TP-001"
-    assert updated_samples[0]["history"][0]["detail"] == "JB-2026-101-TP-001"
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
+    assert updated_samples[0]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-001"
+    assert updated_samples[0]["history"][0]["detail"] == "SYLU-2026-03-101-TP-001"
     assert all(entry["action"] != "任务已确认入库" for entry in updated_samples[0]["history"])
-    assert all(entry["detail"] != "JB-2026-101-TP-003" for entry in updated_samples[2]["history"])
+    assert all(entry["detail"] != "SYLU-2026-03-101-TP-003" for entry in updated_samples[2]["history"])
 
 
 def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_barcodes(monkeypatch):
@@ -274,10 +356,10 @@ def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_b
 
     samples = storage.read("mes.samples")
     legacy_assignments = {
-        "sample-1": "JB-2026-101-TP-002",
-        "sample-2": "JB-2026-101-TP-002",
-        "sample-3": "JB-2026-101-TP-003",
-        "sample-4": "JB-2026-101-TP-003",
+        "sample-1": "SYLU-2026-03-101-TP-002",
+        "sample-2": "SYLU-2026-03-101-TP-002",
+        "sample-3": "SYLU-2026-03-101-TP-003",
+        "sample-4": "SYLU-2026-03-101-TP-003",
     }
     for sample in samples:
         if sample["id"] not in legacy_assignments:
@@ -297,19 +379,19 @@ def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_b
         }]
     storage.write("mes.samples", samples)
     tasks = storage.read("mes.tasks")
-    tasks[0]["tray_codes"] = ["JB-2026-101-TP-002", "JB-2026-101-TP-003"]
+    tasks[0]["tray_codes"] = ["SYLU-2026-03-101-TP-002", "SYLU-2026-03-101-TP-003"]
     storage.write("mes.tasks", tasks)
 
     response = client.get("/api/transfer-area/tasks/task-101/workspace")
 
     assert response.status_code == 200
     payload = response.json()
-    assert [tray["trayNo"] for tray in payload["assignedTrays"]] == ["JB-2026-101-TP-001", "JB-2026-101-TP-002"]
+    assert [tray["trayNo"] for tray in payload["assignedTrays"]] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
     updated_task = storage.read("mes.tasks")[0]
-    assert updated_task["tray_codes"] == ["JB-2026-101-TP-001", "JB-2026-101-TP-002"]
-    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "JB-2026-101"]
-    assert updated_samples[0]["trays"][0]["tray_code"] == "JB-2026-101-TP-001"
-    assert updated_samples[2]["trays"][0]["tray_code"] == "JB-2026-101-TP-002"
+    assert updated_task["tray_codes"] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
+    assert updated_samples[0]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-001"
+    assert updated_samples[2]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-002"
 
 
 def test_transfer_area_allocate_rejects_when_system_trays_are_insufficient(monkeypatch):

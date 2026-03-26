@@ -5,6 +5,7 @@ import {
   STATUS_SCHEDULED,
   STATUS_WAITING,
   buildConflictRows,
+  buildExperimentOptions,
   buildGanttRows,
   buildRetentionInternalRows,
   createScheduleRecord,
@@ -64,6 +65,99 @@ describe("schedulePageModel", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "冲击一室" }));
+  });
+
+  test("buildScheduleRows exposes experiment identifiers for multi-experiment scheduling", async () => {
+    const { buildScheduleRows } = await import("./model");
+    const rows = buildScheduleRows({
+      tasks: [{ code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          experiment_name: "四综合试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "四综合实验室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(rows[0]).toMatchObject({
+      taskCode: "SYLU-2026-03-006",
+      experimentCode: "SYLU-2026-03-006-A",
+      experimentLabel: "四综合试验",
+    });
+  });
+
+  test("buildExperimentOptions returns experiment-level options for the selected task", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-03-006",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          experiment_name: "高低温湿热试验",
+          required_device: "高温实验室",
+        },
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-B",
+          experiment_name: "振动试验",
+          required_device: "低温实验室",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "高温实验室",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(options).toEqual([
+      {
+        code: "SYLU-2026-03-006-B",
+        fullCode: "SYLU-2026-03-006-B",
+        label: "振动试验",
+        requiredDevice: "低温实验室",
+        taskCode: "SYLU-2026-03-006",
+      },
+    ]);
+  });
+
+  test("buildExperimentOptions synthesizes a default experiment for legacy tasks without experiment records", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-03-003",
+      experiments: [],
+      schedules: [],
+      tasks: [
+        {
+          code: "SYLU-2026-03-003",
+          test_type: "霉菌试验",
+        },
+      ],
+    });
+
+    expect(options).toEqual([
+      {
+        code: "SYLU-2026-03-003-A",
+        fullCode: "SYLU-2026-03-003-A",
+        label: "霉菌试验",
+        requiredDevice: "霉菌试验",
+        taskCode: "SYLU-2026-03-003",
+      },
+    ]);
   });
 
   test("createScheduleRecord rewrites retention entries when a retained task is sent to a lab", () => {
@@ -164,6 +258,7 @@ describe("schedulePageModel", () => {
     const result = createScheduleRecord({
       form: {
         device: "Lab-A",
+        experiment_code: "CJ-2026-001-A",
         planned_hours: "26.5",
         schedule_date: "2099-03-20",
         task_code: "CJ-2026-001",
@@ -176,6 +271,7 @@ describe("schedulePageModel", () => {
     });
 
     expect(result.error).toBeUndefined();
+    expect(result.schedules[0].experiment_code).toBe("CJ-2026-001-A");
     expect(result.schedules[0].planned_hours).toBe(26.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-21 10:30");
   });
@@ -184,6 +280,7 @@ describe("schedulePageModel", () => {
     const result = updateScheduleRecord({
       form: {
         device: "Lab-A",
+        experiment_code: "CJ-2026-001-A",
         id: "schedule-1",
         planned_hours: "1.5",
         schedule_date: "2099-03-20",
@@ -195,6 +292,7 @@ describe("schedulePageModel", () => {
         {
           id: "schedule-1",
           task_code: "CJ-2026-001",
+          experiment_code: "CJ-2026-001-A",
           device: "Lab-A",
           planned_hours: 26.5,
           start_at: "2099-03-20T08:00:00.000Z",
@@ -207,6 +305,7 @@ describe("schedulePageModel", () => {
     });
 
     expect(result.error).toBeUndefined();
+    expect(result.schedules[0].experiment_code).toBe("CJ-2026-001-A");
     expect(result.schedules[0].planned_hours).toBe(1.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
   });

@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from app.core.mysql_storage_backend import (
     STORAGE_MARKER,
+    MySQLConnectionSettings,
+    MySQLMesStorageBackend,
+    normalize_storage_payload,
+    build_experiment_insert_row,
+    build_experiment_tray_insert_row,
     build_sample_insert_row,
+    build_storage_experiment_item,
+    build_storage_experiment_tray_item,
     build_storage_sample_item,
     build_device_insert_row,
     build_schedule_insert_row,
@@ -64,6 +71,7 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
     storage_schedule = {
         "id": "schedule-1",
         "task_code": "ZD-2026-003",
+        "experiment_code": "ZD-2026-003-A",
         "device": "恒温恒湿间（暂存间）",
         "start_at": "2026-03-17T10:00:00Z",
         "end_at": "2026-03-17T10:00:00Z",
@@ -75,6 +83,7 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
 
     assert insert_row["schedule_no"] == "schedule-1"
     assert insert_row["schedule_type"] == STORAGE_MARKER
+    assert insert_row["experiment_no"] == "ZD-2026-003-A"
     assert insert_row["is_retention"] == 1
 
     storage_item = build_storage_schedule_item(
@@ -86,7 +95,69 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
 
     assert storage_item["id"] == "schedule-1"
     assert storage_item["device"] == "恒温恒湿间（暂存间）"
+    assert storage_item["experiment_code"] == "ZD-2026-003-A"
     assert storage_item["planned_hours"] == 0
+
+
+def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> None:
+    storage_experiment = {
+        "id": "experiment-1",
+        "task_code": "SZH-2026-006",
+        "experiment_code": "SZH-2026-006-A",
+        "experiment_name": "A实验",
+        "required_device": "四综合试验",
+        "priority": "高",
+        "planned_hours": 3.5,
+        "status": "待排程",
+        "created_at": "2026-03-17T09:30:00Z",
+        "updated_at": "2026-03-17T09:35:00Z",
+    }
+
+    insert_row = build_experiment_insert_row(storage_experiment)
+
+    assert insert_row["experiment_no"] == "SZH-2026-006-A"
+    assert insert_row["task_no"] == "SZH-2026-006"
+    assert insert_row["required_device"] == "四综合试验"
+
+    storage_item = build_storage_experiment_item(
+        {
+            **insert_row,
+            "experiment_id": 8,
+        }
+    )
+
+    assert storage_item["experiment_code"] == "SZH-2026-006-A"
+    assert storage_item["task_code"] == "SZH-2026-006"
+    assert storage_item["experiment_name"] == "A实验"
+    assert storage_item["status"] == "待排程"
+
+
+def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:
+    relation = {
+        "id": "rel-1",
+        "task_code": "SZH-2026-006",
+        "experiment_code": "SZH-2026-006-A",
+        "tray_code": "SZH-2026-006-TP-001",
+        "created_at": "2026-03-17T09:40:00Z",
+        "updated_at": "2026-03-17T09:41:00Z",
+    }
+
+    insert_row = build_experiment_tray_insert_row(relation)
+
+    assert insert_row["experiment_no"] == "SZH-2026-006-A"
+    assert insert_row["task_no"] == "SZH-2026-006"
+    assert insert_row["tray_no"] == "SZH-2026-006-TP-001"
+
+    storage_item = build_storage_experiment_tray_item(
+        {
+            **insert_row,
+            "relation_id": 11,
+        }
+    )
+
+    assert storage_item["experiment_code"] == "SZH-2026-006-A"
+    assert storage_item["task_code"] == "SZH-2026-006"
+    assert storage_item["tray_code"] == "SZH-2026-006-TP-001"
 
 
 def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> None:
@@ -249,3 +320,184 @@ def test_task_round_trip_includes_tray_codes_from_tray_rows() -> None:
     )
 
     assert storage_item["tray_codes"] == ["ZD-2026-003-TP-001", "ZD-2026-003-TP-002"]
+
+
+def test_normalize_storage_payload_migrates_legacy_relational_rows_to_sylu_identifiers() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "id": "task-1",
+                "code": "GDW-2024-005",
+                "name": "高低温湿热试验-批次E",
+                "test_type": "高低温湿热试验",
+                "created_at": "2026-03-05T09:00:00",
+            }
+        ],
+        "mes.samples": [
+            {
+                "id": "sample-1",
+                "code": "GDW-2024-005-SP-001",
+                "task_code": "GDW-2024-005",
+                "created_at": "2026-03-05T09:05:00",
+                "trays": [
+                    {
+                        "tray_code": "GDW-2024-005-TP-001",
+                        "sample_code": "GDW-2024-005-SP-001",
+                        "quantity": 1,
+                    }
+                ],
+            }
+        ],
+        "mes.schedules": [
+            {
+                "id": "schedule-1",
+                "task_code": "GDW-2024-005",
+                "experiment_code": "GDW-2024-005-A",
+                "device": "高低温实验室",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.experiment_trays": [
+            {
+                "task_code": "GDW-2024-005",
+                "experiment_code": "GDW-2024-005-A",
+                "tray_code": "GDW-2024-005-TP-001",
+            }
+        ],
+        "mes.streams": [{"id": "stream-1", "task_code": "GDW-2024-005"}],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    assert normalized["mes.tasks"][0]["experiment_codes"] == ["SYLU-2026-03-001-A", "SYLU-2026-03-001-B", "SYLU-2026-03-001-C"]
+    assert normalized["mes.samples"][0]["code"] == "SYLU-2026-03-001-SP-001"
+    assert normalized["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
+    assert normalized["mes.schedules"][0]["experiment_code"] == "SYLU-2026-03-001-A"
+    assert normalized["mes.experiment_trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
+    assert normalized["mes.streams"][0]["task_code"] == "SYLU-2026-03-001"
+    assert normalized["mes.experiments"][0]["experiment_name"] == "高低温湿热试验"
+    assert normalized["mes.experiments"][1]["experiment_name"] == "冲击试验"
+    assert normalized["mes.experiments"][2]["experiment_name"] == "振动试验"
+    assert normalized["mes.meta"]["schema_version"] == 2
+
+
+def test_experiment_and_schedule_rows_round_trip_with_migrated_sylu_codes() -> None:
+    normalized = normalize_storage_payload(
+        {
+            "mes.tasks": [
+                {
+                    "id": "task-1",
+                    "code": "SZH-2026-006",
+                    "name": "四综合任务",
+                    "test_type": "四综合试验",
+                    "created_at": "2026-03-17T09:00:00",
+                }
+            ],
+            "mes.experiments": [
+                {
+                    "id": "experiment-1",
+                    "task_code": "SZH-2026-006",
+                    "experiment_code": "SZH-2026-006-A",
+                    "experiment_name": "A实验",
+                    "required_device": "四综合试验",
+                    "status": "待排程",
+                }
+            ],
+            "mes.schedules": [
+                {
+                    "id": "schedule-1",
+                    "task_code": "SZH-2026-006",
+                    "experiment_code": "SZH-2026-006-A",
+                    "device": "四综合实验室",
+                    "start_at": "2026-03-20T08:00:00Z",
+                    "end_at": "2026-03-20T12:00:00Z",
+                    "status": "已排程",
+                }
+            ],
+            "mes.samples": [],
+            "mes.experiment_trays": [],
+            "mes.streams": [],
+        }
+    )
+
+    experiment_row = build_experiment_insert_row(normalized["mes.experiments"][0])
+    schedule_row = build_schedule_insert_row(normalized["mes.schedules"][0])
+    experiment_item = build_storage_experiment_item(experiment_row)
+    schedule_item = build_storage_schedule_item(schedule_row)
+
+    assert experiment_row["task_no"] == "SYLU-2026-03-001"
+    assert experiment_row["experiment_no"] == "SYLU-2026-03-001-A"
+    assert experiment_item["experiment_name"] == "四综合试验"
+    assert schedule_row["experiment_no"] == "SYLU-2026-03-001-A"
+    assert schedule_item["task_code"] == "SYLU-2026-03-001"
+    assert schedule_item["experiment_code"] == "SYLU-2026-03-001-A"
+
+
+class _DummySnapshotRepository:
+    def read_all(self):
+        return {}
+
+    def write_many(self, updates):
+        return None
+
+
+class _DummyCursor:
+    def execute(self, *args, **kwargs):
+        return None
+
+    def executemany(self, *args, **kwargs):
+        return None
+
+
+class _DummyConnection:
+    def cursor(self):
+        cursor = _DummyCursor()
+
+        class _CursorContext:
+            def __enter__(self_inner):
+                return cursor
+
+            def __exit__(self_inner, exc_type, exc, tb):
+                return False
+
+        return _CursorContext()
+
+    def commit(self):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    order = []
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: _DummyConnection())
+    monkeypatch.setattr(backend, "_replace_devices", lambda cursor, rows: order.append("devices"))
+    monkeypatch.setattr(backend, "_replace_tasks", lambda cursor, rows, prune=True: order.append(f"tasks:{prune}"))
+    monkeypatch.setattr(backend, "_replace_schedules", lambda cursor, rows: order.append("schedules"))
+    monkeypatch.setattr(backend, "_replace_streams", lambda cursor, rows: order.append("streams"))
+    monkeypatch.setattr(backend, "_replace_samples", lambda cursor, rows: order.append("samples"))
+    monkeypatch.setattr(backend, "_replace_experiments", lambda cursor, rows: order.append("experiments"))
+    monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
+
+    backend._write_many_internal(
+        {
+            "mes.tasks": [{"code": "SYLU-2026-03-001"}],
+            "mes.samples": [{"code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"}],
+            "mes.experiments": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
+            "mes.experiment_trays": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "tray_code": "SYLU-2026-03-001-TP-001"}],
+        }
+    )
+
+    assert order == ["tasks:False", "samples", "experiments", "experiment_trays", "tasks:True"]

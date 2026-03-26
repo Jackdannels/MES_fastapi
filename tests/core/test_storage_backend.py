@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from app.core.storage_backend import DatabaseStorageBackend, JsonFileStorage
 
@@ -115,3 +116,160 @@ def test_database_storage_backend_write_many_persists_snapshot_payloads() -> Non
     assert json.loads(repository.payloads["mes.devices"])[0]["code"] == "EQ-001"
     assert storage.read("mes.streams")[0]["status"] == "采集中"
     assert storage.read_all()["mes.conflicts"] == []
+
+
+def test_json_storage_initializes_experiment_collections_by_default(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+
+    storage = JsonFileStorage(path)
+    snapshot = storage.read_all()
+
+    assert snapshot["mes.experiments"] == []
+    assert snapshot["mes.experiment_trays"] == []
+
+
+def test_database_storage_bootstrap_persists_experiment_collections(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    seed_storage = JsonFileStorage(path)
+    seed_storage.write_many(
+        {
+            "mes.tasks": [{"id": "task-1", "code": "TASK-001", "name": "Task 1"}],
+            "mes.experiments": [{"id": "exp-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A"}],
+            "mes.experiment_trays": [{"id": "rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "tray_code": "TASK-001-TP-001"}],
+        }
+    )
+    repository = InMemorySnapshotRepository()
+
+    storage = DatabaseStorageBackend(repository, bootstrap_storage=seed_storage)
+    snapshot = storage.read_all()
+
+    assert snapshot["mes.experiments"] == [{"id": "exp-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A"}]
+    assert snapshot["mes.experiment_trays"] == [{"id": "rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "tray_code": "TASK-001-TP-001"}]
+    assert json.loads(repository.payloads["mes.experiments"])[0]["experiment_code"] == "TASK-001-A"
+
+
+def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [
+                    {
+                        "id": "task-1",
+                        "code": "GDW-2024-005",
+                        "name": "高低温湿热试验-批次E",
+                        "test_type": "高低温湿热试验",
+                        "required_device": "高低温湿热试验",
+                        "sample_count": 2,
+                        "arrival_at": "2026-03-11 23:31",
+                        "created_at": "2026-03-11T05:31:40.547Z",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "id": "schedule-1",
+                        "task_code": "GDW-2024-005",
+                        "experiment_code": "GDW-2024-005-A",
+                        "device": "高低温湿热一室",
+                        "start_at": "2026-03-12T08:00:00.000Z",
+                        "end_at": "2026-03-12T12:00:00.000Z",
+                        "status": "待排程",
+                    }
+                ],
+                "mes.samples": [
+                    {
+                        "id": "sample-1",
+                        "code": "GDW-2024-005-SP-001",
+                        "task_code": "GDW-2024-005",
+                        "created_at": "2026-03-11T05:31:59.908Z",
+                        "trays": [
+                            {
+                                "id": "tray-1",
+                                "tray_code": "GDW-2024-005-TP-001",
+                                "sample_code": "GDW-2024-005-SP-001",
+                                "quantity": 1,
+                            }
+                        ],
+                    }
+                ],
+                "mes.streams": [
+                    {
+                        "id": "stream-1",
+                        "task_code": "GDW-2024-005",
+                        "device": "高低温湿热一室",
+                        "status": "采集中",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    storage = JsonFileStorage(path)
+    snapshot = storage.read_all()
+
+    migrated_task_code = snapshot["mes.tasks"][0]["code"]
+    assert migrated_task_code == "SYLU-2026-03-001"
+    assert snapshot["mes.meta"]["schema_version"] == 2
+    assert snapshot["mes.samples"][0]["task_code"] == migrated_task_code
+    assert snapshot["mes.samples"][0]["code"] == "SYLU-2026-03-001-SP-001"
+    assert snapshot["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
+    assert snapshot["mes.samples"][0]["trays"][0]["sample_code"] == "SYLU-2026-03-001-SP-001"
+    assert snapshot["mes.schedules"][0]["task_code"] == migrated_task_code
+    assert snapshot["mes.schedules"][0]["experiment_code"] == "SYLU-2026-03-001-A"
+    assert snapshot["mes.streams"][0]["task_code"] == migrated_task_code
+
+    persisted = _read_store(path)
+    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    assert persisted["mes.meta"]["schema_version"] == 2
+
+
+def test_json_storage_backfills_historical_multi_experiment_tasks_and_is_idempotent(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [
+                    {
+                        "id": "task-1",
+                        "code": "GDW-2024-005",
+                        "name": "高低温湿热试验-批次E",
+                        "test_type": "高低温湿热试验",
+                        "required_device": "高低温湿热试验",
+                        "sample_count": 4,
+                        "arrival_at": "2026-03-11 23:31",
+                        "created_at": "2026-03-11T05:31:40.547Z",
+                    }
+                ],
+                "mes.samples": [],
+                "mes.schedules": [],
+                "mes.experiments": [],
+                "mes.experiment_trays": [],
+                "mes.streams": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    storage = JsonFileStorage(path)
+
+    first_snapshot = storage.read_all()
+    second_snapshot = storage.read_all()
+
+    assert first_snapshot["mes.tasks"][0]["code"] == second_snapshot["mes.tasks"][0]["code"]
+    assert first_snapshot["mes.tasks"][0]["experiment_count"] == 3
+    assert first_snapshot["mes.tasks"][0]["experiment_codes"] == [
+        "SYLU-2026-03-001-A",
+        "SYLU-2026-03-001-B",
+        "SYLU-2026-03-001-C",
+    ]
+    assert [item["experiment_code"] for item in first_snapshot["mes.experiments"]] == [
+        "SYLU-2026-03-001-A",
+        "SYLU-2026-03-001-B",
+        "SYLU-2026-03-001-C",
+    ]
+    assert len(first_snapshot["mes.experiments"]) == 3
+    assert all(re.match(r"^SYLU-2026-03-001-[A-Z]$", item["experiment_code"]) for item in first_snapshot["mes.experiments"])
+    assert all(item["experiment_name"] and item["experiment_name"] not in {"A实验", "B实验"} for item in first_snapshot["mes.experiments"])

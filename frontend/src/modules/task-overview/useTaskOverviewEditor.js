@@ -1,6 +1,7 @@
 // 封装任务总览卡片的内联编辑和删除行为。
 import { ref } from "vue";
 
+import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { deleteTask as deleteTaskByApi } from "@/lib/tasksApi";
 
@@ -18,6 +19,7 @@ const createEmptyEditForm = () => ({
   taskType: "",
   sampleCount: 0,
   sampleCodesText: "",
+  experiments: [],
 });
 
 // 样品数、托盘数等编辑输入统一归一化为非负整数。
@@ -27,6 +29,8 @@ const normalizeCount = (value) => {
 };
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
+const EXPERIMENT_TYPE_OPTIONS = Object.freeze(Object.keys(TEST_PREFIX_MAP));
+const DEFAULT_EXPERIMENT_COUNT = 3;
 
 // 样品编号文本支持按换行、空白和中英文分隔符拆分。
 const splitCodeText = (value) =>
@@ -46,6 +50,62 @@ const uniqueCodes = (codes) => {
     output.push(code);
   });
   return output;
+};
+
+const resolveExperimentType = ({ currentType = "", taskType = "", occupiedTypes = [] }) => {
+  const normalizedCurrentType = String(currentType || "").trim();
+  if (normalizedCurrentType) {
+    return normalizedCurrentType;
+  }
+  const normalizedTaskType = String(taskType || "").trim();
+  const excludedTypes = new Set(
+    [normalizedTaskType]
+      .concat(Array.isArray(occupiedTypes) ? occupiedTypes : [])
+      .map((type) => String(type || "").trim())
+      .filter(Boolean),
+  );
+  const nextType = EXPERIMENT_TYPE_OPTIONS.find((type) => !excludedTypes.has(type));
+  return nextType || EXPERIMENT_TYPE_OPTIONS[0] || normalizedTaskType;
+};
+
+const normalizeExperimentDraft = (taskCode, experiment, index = 0, existingExperiments = [], taskType = "") => {
+  const safeTaskCode = String(taskCode || "").trim();
+  const suffix = String.fromCharCode(65 + index);
+  const experimentCode = String(experiment?.experimentCode || "").trim() || `${safeTaskCode}-${suffix}`;
+  const requiredDevice = resolveExperimentType({
+    currentType: experiment?.requiredDevice || experiment?.required_device,
+    occupiedTypes: (Array.isArray(existingExperiments) ? existingExperiments : []).map((item) => item?.requiredDevice || item?.required_device),
+    taskType,
+  });
+  const explicitExperimentName = String(experiment?.experimentName || "").trim();
+  return {
+    experimentCode,
+    experimentName: explicitExperimentName || requiredDevice,
+    requiredDevice,
+    priority: String(experiment?.priority || "").trim(),
+    plannedHours: experiment?.plannedHours ?? experiment?.planned_hours ?? 0,
+  };
+};
+
+const buildDefaultExperiments = (taskCode, taskType) => {
+  if (!taskCode) {
+    return [];
+  }
+  const drafts = [];
+  for (let index = 0; index < DEFAULT_EXPERIMENT_COUNT; index += 1) {
+    drafts.push(
+      normalizeExperimentDraft(
+        taskCode,
+        {
+          experimentCode: `${taskCode}-${String.fromCharCode(65 + index)}`,
+        },
+        index,
+        drafts,
+        taskType,
+      ),
+    );
+  }
+  return drafts;
 };
 
 // 自动补号时会跳过已占用编号，保证生成结果不重复。
@@ -113,6 +173,11 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       taskType: String(row?.taskType || "").trim(),
       sampleCount: normalizeCount(row?.sampleCount),
       sampleCodesText: (Array.isArray(row?.sampleCodes) ? row.sampleCodes : []).join("\n"),
+      experiments: Array.isArray(row?.experiments) && row.experiments.length
+        ? row.experiments.map((experiment, index) =>
+            normalizeExperimentDraft(code, experiment, index, row.experiments.slice(0, index), row?.taskType)
+          )
+        : buildDefaultExperiments(code, row?.taskType),
     };
   };
 
@@ -230,11 +295,22 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const tasks = snapshot[STORAGE_KEYS.tasks];
       const samples = snapshot[STORAGE_KEYS.samples];
       const schedules = snapshot[STORAGE_KEYS.schedules];
+      const experiments = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       const taskIndex = tasks.findIndex((task) => String(task?.code || "").trim() === code);
       if (taskIndex < 0) {
         editError.value = `Task ${code} was not found.`;
         return;
       }
+
+      const normalizedExperiments = (
+        Array.isArray(editForm.value.experiments) && editForm.value.experiments.length
+          ? editForm.value.experiments
+          : buildDefaultExperiments(code, nextTaskType)
+      )
+        .map((experiment, index, experimentList) =>
+          normalizeExperimentDraft(code, experiment, index, experimentList.slice(0, index), nextTaskType)
+        )
+        .filter((experiment) => experiment.experimentCode);
 
       const inputCodes = uniqueCodes(splitCodeText(editForm.value.sampleCodesText));
       let desiredCount = normalizeCount(editForm.value.sampleCount);
@@ -315,6 +391,8 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
           name: nextTaskType,
           required_device: nextTaskType,
           sample_count: finalCodes.length,
+          experiment_count: normalizedExperiments.length,
+          experiment_codes: normalizedExperiments.map((experiment) => experiment.experimentCode),
           updated_at: now,
         };
       });
@@ -323,15 +401,34 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         .filter((sample) => String(sample?.task_code || "").trim() !== code)
         .concat(nextTaskSamples);
 
+      const nextExperiments = experiments
+        .filter((experiment) => String(experiment?.task_code || "").trim() !== code)
+        .concat(
+          normalizedExperiments.map((experiment, index) => ({
+            id: experiment.experimentCode || `experiment-${Date.now()}-${index}`,
+            task_code: code,
+            experiment_code: experiment.experimentCode,
+            experiment_name: experiment.experimentName,
+            required_device: experiment.requiredDevice || nextTaskType,
+            priority: experiment.priority,
+            planned_hours: experiment.plannedHours,
+            status: "待排程",
+            created_at: now,
+            updated_at: now,
+          }))
+        );
+
       // 保存成功后立即刷新总览卡片，避免页面还停留在旧聚合结果上。
       await persistSnapshot({
         [STORAGE_KEYS.tasks]: nextTasks,
+        [STORAGE_KEYS.experiments]: nextExperiments,
         [STORAGE_KEYS.samples]: nextSamples,
       });
 
       replaceOverview(nextTasks, nextSamples, schedules);
       editForm.value.sampleCount = finalCodes.length;
       editForm.value.sampleCodesText = finalCodes.join("\n");
+      editForm.value.experiments = normalizedExperiments;
       editMessage.value = `Task ${code} was updated.`;
     } finally {
       savingTaskCode.value = "";
@@ -345,13 +442,13 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
     }
 
     const snapshot = await loadSnapshot();
-    const tasks = snapshot[STORAGE_KEYS.tasks];
-    const samples = snapshot[STORAGE_KEYS.samples];
-    const schedules = snapshot[STORAGE_KEYS.schedules];
-    const streams = snapshot[STORAGE_KEYS.streams];
-    const taskExists = tasks.some((task) => String(task?.code || "").trim() === code);
-    if (!taskExists) {
-      editError.value = `Task ${code} was not found.`;
+      const tasks = snapshot[STORAGE_KEYS.tasks];
+      const samples = snapshot[STORAGE_KEYS.samples];
+      const schedules = snapshot[STORAGE_KEYS.schedules];
+      const streams = snapshot[STORAGE_KEYS.streams];
+      const taskExists = tasks.some((task) => String(task?.code || "").trim() === code);
+      if (!taskExists) {
+        editError.value = `Task ${code} was not found.`;
       editMessage.value = "";
       return;
     }
@@ -385,14 +482,20 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const samples = snapshot[STORAGE_KEYS.samples];
       const schedules = snapshot[STORAGE_KEYS.schedules];
       const streams = snapshot[STORAGE_KEYS.streams];
+      const experiments = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      const experimentTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       const nextTasks = tasks.filter((task) => String(task?.code || "").trim() !== code);
       const nextSamples = samples.filter((sample) => String(sample?.task_code || "").trim() !== code);
       const nextSchedules = schedules.filter((entry) => String(entry?.task_code || "").trim() !== code);
       const nextStreams = streams.filter((entry) => String(entry?.task_code || "").trim() !== code);
+      const nextExperiments = experiments.filter((entry) => String(entry?.task_code || "").trim() !== code);
+      const nextExperimentTrays = experimentTrays.filter((entry) => String(entry?.task_code || "").trim() !== code);
 
       await deleteTask(code);
       await persistSnapshot({
         [STORAGE_KEYS.tasks]: nextTasks,
+        [STORAGE_KEYS.experiments]: nextExperiments,
+        [STORAGE_KEYS.experiment_trays]: nextExperimentTrays,
         [STORAGE_KEYS.samples]: nextSamples,
         [STORAGE_KEYS.schedules]: nextSchedules,
         [STORAGE_KEYS.streams]: nextStreams,

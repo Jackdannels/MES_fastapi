@@ -143,46 +143,33 @@
       </template>
 
       <template v-else>
-        <section class="card transfer-detail-shell">
+        <section class="card transfer-detail-shell" @click="handleDetailShellClick">
           <div class="transfer-detail-shell__top">
             <button class="action-btn secondary" type="button" @click="backToOverview">返回总览</button>
             <div class="transfer-detail-shell__title">
               <h2>托盘分装与入库</h2>
-              <div class="muted">{{ currentTask?.taskNo || "--" }} | {{ currentTask?.experimentTypeText || currentTask?.taskType || "--" }}</div>
+              <div class="muted">{{ isExperimentMode ? `${currentExperimentName} 托盘选择模式` : "默认进入托盘编辑状态" }}</div>
             </div>
           </div>
 
           <section class="transfer-task-header">
             <div class="transfer-task-header__summary">
-              <div class="transfer-task-summary-card__label">任务基本信息</div>
-              <strong>{{ currentTask?.taskNo || "--" }}</strong>
-              <div class="transfer-task-header__name">{{ currentTask?.experimentTypeText || currentTask?.taskType || "--" }}</div>
+              <div class="transfer-task-summary-card__label">任务编号</div>
+              <strong data-testid="transfer-task-code" @click.stop="setAssignmentMode('task')">{{ currentTask?.taskNo || "--" }}</strong>
             </div>
-            <div class="transfer-task-header__meta">
-              <article class="transfer-task-meta-item">
-                <span>实验类型</span>
-                <strong>{{ currentTask?.experimentTypeText || currentTask?.taskType || "--" }}</strong>
-              </article>
-              <article class="transfer-task-meta-item">
-                <span>状态</span>
-                <strong>{{ currentTask?.taskStatus || "--" }}</strong>
-              </article>
-              <article class="transfer-task-meta-item">
-                <span>流程</span>
-                <strong>{{ currentTask?.taskProgress || "--" }}</strong>
-              </article>
-              <article class="transfer-task-meta-item">
-                <span>样品送达时间</span>
-                <strong>{{ currentTask?.receivedTime || "未送达" }}</strong>
-              </article>
-              <article class="transfer-task-meta-item">
-                <span>托盘数</span>
-                <strong>{{ assignedTrays.length }}</strong>
-              </article>
-              <article class="transfer-task-meta-item">
-                <span>已打印托盘</span>
-                <strong>{{ printedTrayCount }} / {{ loadedTrayCount }}</strong>
-              </article>
+            <div v-if="experiments.length" class="transfer-task-header__experiments">
+              <button
+                v-for="experiment in experiments"
+                :key="experiment.experimentCode"
+                class="transfer-task-experiment-pill"
+                :class="{ active: activeAssignmentMode === experiment.experimentCode }"
+                :data-testid="`transfer-experiment-tab-${experiment.experimentCode}`"
+                :title="experiment.experimentCode"
+                type="button"
+                @click.stop="setAssignmentMode(experiment.experimentCode)"
+              >
+                {{ experiment.experimentName }}
+              </button>
             </div>
           </section>
 
@@ -190,22 +177,24 @@
             <div class="transfer-panel-title transfer-panel-title--tray">
               <div>
                 <h3>托盘栏位</h3>
-                <div class="muted">点击样品后再点击托盘可移入；点击一个样品再点击另一个样品可交换位置。</div>
+                <div class="muted">
+                  {{ isExperimentMode ? `当前为 ${currentExperimentName} 托盘选择模式，只能选择托盘编号。` : "点击样品后再点击托盘可移入；点击一个样品再点击另一个样品可交换位置。" }}
+                </div>
               </div>
 
               <div class="transfer-tray-toolbar">
                 <div class="transfer-tray-limit-toolbar">
                   <span class="transfer-tray-limit-toolbar__label">统一上限</span>
                   <div class="transfer-tray-limit-stepper">
-                    <input data-testid="transfer-tray-limit-input" type="number" min="1" step="1" :value="trayLimit" @change="setTrayLimit($event.target.value)" />
-                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="isStoredTask" @click="decreaseTrayLimit">-</button>
-                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="isStoredTask" @click="increaseTrayLimit">+</button>
+                    <input data-testid="transfer-tray-limit-input" type="number" min="1" step="1" :disabled="taskEditingLocked" :value="trayLimit" @change="setTrayLimit($event.target.value)" />
+                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="decreaseTrayLimit">-</button>
+                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="increaseTrayLimit">+</button>
                   </div>
                 </div>
 
                 <div class="transfer-panel-title__actions">
                   <span class="transfer-count-chip">剩余空托盘 {{ remainingTrayCount }}</span>
-                  <button class="action-btn secondary transfer-use-tray-btn" type="button" :disabled="isStoredTask || remainingTrayCount <= 0 || trayCapacityExceeded" @click="addInventoryTray">新增托盘</button>
+                  <button class="action-btn secondary transfer-use-tray-btn" type="button" :disabled="taskEditingLocked || remainingTrayCount <= 0 || trayCapacityExceeded" @click="addInventoryTray">新增托盘</button>
                 </div>
               </div>
             </div>
@@ -214,7 +203,7 @@
               <button class="action-btn transfer-print-all-btn" type="button" :disabled="!canPrint || printingAllBarcodes" @click="printAllTrayBarcodes">
                 {{ printingAllBarcodes ? "生成中..." : `打印条形码（${loadedTrayCount}）` }}
               </button>
-              <button class="action-btn secondary" type="button" :disabled="isStoredTask || allocationSaved || trayCapacityExceeded" @click="persistAllocation()">保存托盘</button>
+              <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation" @click="persistAllocation()">保存托盘</button>
               <button class="action-btn" type="button" :disabled="!canConfirm" @click="confirmStorage">确认入库</button>
               <button class="action-btn secondary" type="button" :disabled="!selectedTaskId" @click="reloadWorkspace">重新入库</button>
             </div>
@@ -231,14 +220,37 @@
                 :key="tray.trayId"
                 class="sample-tray-card transfer-tray-card"
                 :data-testid="`transfer-tray-card-${index}`"
-                :class="{ 'is-active': index === activeTrayIndex, 'is-locked': isStoredTask }"
+                :class="{ 'is-active': index === activeTrayIndex, 'is-locked': taskEditingLocked, 'is-selected': isTraySelectedForCurrentExperiment(tray.trayNo) }"
                 @click="setActiveTray(index)"
                 @dragover.prevent="allowTrayDrag"
                 @drop.prevent="handleTrayDrop(index)"
               >
                 <div class="sample-tray-card-head">
                   <span>{{ tray.trayNo }}</span>
-                  <span>托盘 #{{ index + 1 }}</span>
+                  <button
+                    v-if="isExperimentMode"
+                    class="transfer-tray-select-toggle"
+                    :class="{ 'is-selected': isTraySelectedForCurrentExperiment(tray.trayNo) }"
+                    :data-testid="`transfer-tray-select-${index}`"
+                    :aria-pressed="isTraySelectedForCurrentExperiment(tray.trayNo) ? 'true' : 'false'"
+                    type="button"
+                    @click.stop="toggleExperimentTraySelection(index)"
+                  >
+                    <span class="transfer-tray-select-toggle__icon">{{ isTraySelectedForCurrentExperiment(tray.trayNo) ? "✓" : "" }}</span>
+                  </button>
+                </div>
+                <div class="transfer-tray-card__subhead-row">
+                  <div class="transfer-tray-card__subhead">托盘 #{{ index + 1 }}</div>
+                  <div v-if="tray.experimentLabels?.length" class="transfer-tray-experiment-tags">
+                    <span
+                      v-for="(label, labelIndex) in tray.experimentLabels"
+                      :key="`${tray.trayNo}-${label}`"
+                      class="transfer-tray-experiment-tag"
+                      :class="resolveExperimentTagTone(tray.experimentCodes?.[labelIndex] || label)"
+                    >
+                      {{ label }}
+                    </span>
+                  </div>
                 </div>
                 <div class="sample-tray-card-meta">当前样品 {{ tray.samples.length }} / {{ trayLimit }}</div>
                 <div class="sample-tray-card-meta">托盘状态 {{ tray.trayStatus || "已预分配" }}</div>
@@ -251,7 +263,7 @@
                     type="button"
                     class="sample-tray-sample-tag sample-tray-chip--with-status"
                     :class="{ 'is-selected': isSampleSelected(sample.sampleId) }"
-                    :draggable="!isStoredTask"
+                    :draggable="!taskEditingLocked"
                     @dragstart.stop="startDragging(sample.sampleId, index)"
                     @click.stop="selectTraySample(sample.sampleId, index)"
                   >
@@ -263,7 +275,7 @@
                 <div class="transfer-tray-card__footer">
                   <div class="transfer-tray-card__count">条码：{{ tray.barcode?.barcodeNo || "未打印" }}</div>
                   <div class="transfer-tray-card__actions">
-                    <button class="sample-tray-remove" type="button" :disabled="isStoredTask" @click.stop="removeTray(index)">删除托盘</button>
+                    <button class="sample-tray-remove" type="button" :disabled="taskEditingLocked" @click.stop="removeTray(index)">删除托盘</button>
                   </div>
                 </div>
               </div>
@@ -338,6 +350,9 @@ const taskOverview = ref([]);
 const selectedTaskId = ref(null);
 const currentTask = ref(null);
 const assignedTrays = ref([]);
+const experiments = ref([]);
+const activeAssignmentMode = ref("task");
+const draftExperimentTraySelections = ref({});
 const availableInventory = ref([]);
 const trayLimit = ref(4);
 const activeTrayIndex = ref(-1);
@@ -364,6 +379,12 @@ const normalizeTaskStatus = (status) => {
   if (text.includes(storedStatus)) return storedStatus;
   if (text.includes(pendingStatus)) return pendingStatus;
   return text;
+};
+
+const resolveExperimentTagTone = (value) => {
+  const text = String(value || "").trim();
+  const hash = Array.from(text).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return `transfer-tray-experiment-tag--tone-${(hash % 6) + 1}`;
 };
 
 const normalizeTaskRecord = (task) => ({
@@ -449,6 +470,10 @@ const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampl
 const loadedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0).length);
 const printedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0 && tray.barcode?.barcodeNo).length);
 const isStoredTask = computed(() => normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus);
+const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
+const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
+const currentExperimentName = computed(() => experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)?.experimentName || "实验");
+const taskEditingLocked = computed(() => isStoredTask.value || isExperimentMode.value);
 const hasTrayCapacityLimit = computed(() => currentTask.value?.maxAssignableTrayCount != null);
 const maxAssignableTrayCount = computed(() => {
   const parsed = Number.parseInt(currentTask.value?.maxAssignableTrayCount, 10);
@@ -471,7 +496,15 @@ const canPrint = computed(() => (
   && Boolean(currentTask.value?.receivedTime)
   && loadedTrayCount.value > 0
   && allocationSaved.value
+  && experiments.value.every((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0)
   && !trayCapacityExceeded.value
+));
+const canSaveAllocation = computed(() => (
+  Boolean(selectedTaskId.value)
+  && !isStoredTask.value
+  && !allocationSaved.value
+  && !trayCapacityExceeded.value
+  && experiments.value.every((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0)
 ));
 const canConfirm = computed(() => (
   Boolean(selectedTaskId.value)
@@ -498,6 +531,27 @@ const clearFilters = () => {
 };
 
 const currentTaskCode = computed(() => String(currentTask.value?.taskNo || "").trim());
+
+const rebuildTrayExperimentLabels = () => {
+  const experimentNameMap = Object.fromEntries(experiments.value.map((experiment) => [experiment.experimentCode, experiment.experimentName]));
+  assignedTrays.value = assignedTrays.value.map((tray) => {
+    const experimentCodes = Object.entries(draftExperimentTraySelections.value)
+      .filter(([, trayNos]) => Array.isArray(trayNos) && trayNos.includes(tray.trayNo))
+      .map(([experimentCode]) => experimentCode);
+    return {
+      ...tray,
+      experimentCodes,
+      experimentLabels: experimentCodes.map((experimentCode) => experimentNameMap[experimentCode] || experimentCode),
+    };
+  });
+};
+
+const clearExperimentAssignments = () => {
+  draftExperimentTraySelections.value = Object.fromEntries(
+    experiments.value.map((experiment) => [experiment.experimentCode, []]),
+  );
+  rebuildTrayExperimentLabels();
+};
 
 const traySerialFromCode = (trayCode) => {
   const text = String(trayCode || "").trim();
@@ -555,6 +609,7 @@ const createEditableTray = (trayRef, limit, samples = []) => {
 const refreshEditableTrayState = (message = "") => {
   assignedTrays.value = normalizeEditableTrays(assignedTrays.value, trayLimit.value);
   availableInventory.value = buildInventorySlots(availableInventory.value.length, trayLimit.value);
+  clearExperimentAssignments();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
   if (message) {
@@ -581,6 +636,7 @@ const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, me
   trayLimit.value = normalizedLimit;
   activeTrayIndex.value = assignedTrays.value.length ? 0 : -1;
   clearSelectedSample();
+  clearExperimentAssignments();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
   if (message) {
@@ -599,6 +655,10 @@ const resetInteractiveState = () => {
 
 const applyWorkspace = (workspace) => {
   currentTask.value = workspace?.task ? normalizeTaskRecord(workspace.task) : null;
+  experiments.value = Array.isArray(workspace?.experiments) ? workspace.experiments.map((experiment) => ({ ...experiment })) : [];
+  draftExperimentTraySelections.value = Object.fromEntries(
+    experiments.value.map((experiment) => [experiment.experimentCode, [...(experiment.assignedTrayNos || [])]]),
+  );
   trayLimit.value = workspace?.task?.trayLimit || 4;
   assignedTrays.value = (workspace?.assignedTrays || []).map((tray) => ({
     ...tray,
@@ -609,9 +669,13 @@ const applyWorkspace = (workspace) => {
         }))
       : [],
     trayStatus: normalizeTaskStatus(workspace?.task?.taskStatus) === storedStatus ? storedStatus : tray.trayStatus,
+    experimentLabels: Array.isArray(tray.experimentLabels) ? [...tray.experimentLabels] : [],
+    experimentCodes: Array.isArray(tray.experimentCodes) ? [...tray.experimentCodes] : [],
   }));
   availableInventory.value = normalizeInventoryRefs(workspace?.trayInventory || [], trayLimit.value);
   allocationSaved.value = Boolean(workspace?.allocationSaved);
+  activeAssignmentMode.value = "task";
+  rebuildTrayExperimentLabels();
   resetInteractiveState();
 };
 
@@ -685,9 +749,69 @@ const clearSelectedSample = () => {
 };
 
 const isSampleSelected = (sampleId) => selectedSampleId.value === sampleId;
+const isTraySelectedForCurrentExperiment = (trayNo) => (
+  isExperimentMode.value
+    && Array.isArray(draftExperimentTraySelections.value[currentExperimentCode.value])
+    && draftExperimentTraySelections.value[currentExperimentCode.value].includes(trayNo)
+);
 const normalizeTraySamples = (samples) => samples.slice().sort((a, b) => String(a.sampleNo || "").localeCompare(String(b.sampleNo || "")));
 
+const setAssignmentMode = (mode) => {
+  activeAssignmentMode.value = mode || "task";
+  clearSelectedSample();
+};
+
+const handleDetailShellClick = (event) => {
+  if (!isExperimentMode.value) {
+    return;
+  }
+  const target = event?.target;
+  if (!(target instanceof Element)) {
+    setAssignmentMode("task");
+    return;
+  }
+  if (
+    target.closest("button")
+    || target.closest("input")
+    || target.closest("select")
+    || target.closest("textarea")
+    || target.closest(".sample-tray-sample-tag")
+    || target.closest(".transfer-tray-card")
+    || target.closest(".transfer-detail-shell__top")
+  ) {
+    return;
+  }
+  setAssignmentMode("task");
+};
+
+const toggleExperimentTraySelection = (trayIndex) => {
+  if (!isExperimentMode.value) {
+    return;
+  }
+  const tray = assignedTrays.value[trayIndex];
+  if (!tray) {
+    return;
+  }
+  const current = new Set(draftExperimentTraySelections.value[currentExperimentCode.value] || []);
+  if (current.has(tray.trayNo)) {
+    current.delete(tray.trayNo);
+  } else {
+    current.add(tray.trayNo);
+  }
+  draftExperimentTraySelections.value = {
+    ...draftExperimentTraySelections.value,
+    [currentExperimentCode.value]: Array.from(current).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
+  };
+  rebuildTrayExperimentLabels();
+  allocationSaved.value = false;
+  activeTrayIndex.value = trayIndex;
+};
+
 const setActiveTray = (index) => {
+  if (isExperimentMode.value) {
+    toggleExperimentTraySelection(index);
+    return;
+  }
   if (selectedSampleId.value != null && selectedSampleTrayIndex.value >= 0 && selectedSampleTrayIndex.value !== index) {
     placeSelectedSampleToTray(index);
     return;
@@ -696,26 +820,26 @@ const setActiveTray = (index) => {
 };
 
 const setTrayLimit = (value) => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   const nextLimit = Math.max(1, Number.parseInt(value, 10) || 1);
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 
 const increaseTrayLimit = () => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   rebalanceTrayLayout({ limit: trayLimit.value + 1, message: `已按统一上限 ${trayLimit.value + 1} 重新分配托盘。` });
 };
 
 const decreaseTrayLimit = () => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   const nextLimit = Math.max(1, trayLimit.value - 1);
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 
-const allowTrayDrag = () => !isStoredTask.value;
+const allowTrayDrag = () => !taskEditingLocked.value;
 
 const startDragging = (sampleId, trayIndex) => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   draggingSampleId.value = sampleId;
   draggingFromTrayIndex.value = trayIndex;
   selectedSampleId.value = sampleId;
@@ -723,7 +847,7 @@ const startDragging = (sampleId, trayIndex) => {
 };
 
 const placeSelectedSampleToTray = (targetIndex) => {
-  if (isStoredTask.value || selectedSampleId.value == null || selectedSampleTrayIndex.value < 0) return;
+  if (taskEditingLocked.value || selectedSampleId.value == null || selectedSampleTrayIndex.value < 0) return;
   const sourceTray = assignedTrays.value[selectedSampleTrayIndex.value];
   const targetTray = assignedTrays.value[targetIndex];
   if (!sourceTray || !targetTray || sourceTray === targetTray) return;
@@ -741,7 +865,7 @@ const placeSelectedSampleToTray = (targetIndex) => {
 };
 
 const swapTraySamples = (sourceSampleId, sourceTrayIndex, targetSampleId, targetTrayIndex) => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   const sourceTray = assignedTrays.value[sourceTrayIndex];
   const targetTray = assignedTrays.value[targetTrayIndex];
   if (!sourceTray || !targetTray) return;
@@ -758,7 +882,7 @@ const swapTraySamples = (sourceSampleId, sourceTrayIndex, targetSampleId, target
 };
 
 const selectTraySample = (sampleId, trayIndex) => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   if (selectedSampleId.value == null) {
     selectedSampleId.value = sampleId;
     selectedSampleTrayIndex.value = trayIndex;
@@ -773,7 +897,7 @@ const selectTraySample = (sampleId, trayIndex) => {
 };
 
 const handleTrayDrop = (targetIndex) => {
-  if (isStoredTask.value || draggingSampleId.value == null || draggingFromTrayIndex.value < 0) return;
+  if (taskEditingLocked.value || draggingSampleId.value == null || draggingFromTrayIndex.value < 0) return;
   selectedSampleId.value = draggingSampleId.value;
   selectedSampleTrayIndex.value = draggingFromTrayIndex.value;
   placeSelectedSampleToTray(targetIndex);
@@ -782,7 +906,7 @@ const handleTrayDrop = (targetIndex) => {
 };
 
 const addInventoryTray = () => {
-  if (isStoredTask.value) return;
+  if (taskEditingLocked.value) return;
   if (trayCapacityExceeded.value) {
     feedback.value = trayCapacityWarning.value;
     return;
@@ -808,7 +932,7 @@ const addInventoryTray = () => {
 
 const removeTray = (index) => {
   const tray = assignedTrays.value[index];
-  if (!tray || isStoredTask.value) return;
+  if (!tray || taskEditingLocked.value) return;
   if (assignedTrays.value.length <= minimumTrayCount.value) {
     feedback.value = "当前托盘数量已是最小值，不能继续删除。";
     return;
@@ -825,6 +949,12 @@ const buildAllocationPayload = () => ({
   trays: assignedTrays.value.map((tray) => ({
     trayId: tray.trayId,
     sampleIds: tray.samples.map((sample) => sample.sampleId),
+  })),
+  experimentTrays: experiments.value.map((experiment) => ({
+    experimentCode: experiment.experimentCode,
+    trayIds: assignedTrays.value
+      .filter((tray) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).includes(tray.trayNo))
+      .map((tray) => tray.trayId),
   })),
 });
 

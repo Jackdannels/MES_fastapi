@@ -124,4 +124,77 @@ describe("storageApi", () => {
     expect(snapshot[STORAGE_KEYS.samples][0].history[0].detail).toBe("任务 T-1");
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.samples))[0].history[0].action).toBe("样品编号重排");
   });
+
+  test("migrates legacy local task-linked collections to SYLU codes and backfills historical experiments", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEYS.tasks,
+      JSON.stringify([
+        {
+          id: "task-1",
+          code: "GDW-2024-005",
+          name: "高低温湿热试验-批次E",
+          test_type: "高低温湿热试验",
+          created_at: "2026-03-05T09:00:00",
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      STORAGE_KEYS.samples,
+      JSON.stringify([
+        {
+          id: "sample-1",
+          code: "GDW-2024-005-SP-001",
+          task_code: "GDW-2024-005",
+          created_at: "2026-03-05T09:05:00",
+          trays: [{ tray_code: "GDW-2024-005-TP-001", sample_code: "GDW-2024-005-SP-001" }],
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      STORAGE_KEYS.schedules,
+      JSON.stringify([
+        {
+          id: "schedule-1",
+          task_code: "GDW-2024-005",
+          experiment_code: "GDW-2024-005-A",
+          device: "高低温实验室",
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      STORAGE_KEYS.streams,
+      JSON.stringify([{ id: "stream-1", task_code: "GDW-2024-005" }]),
+    );
+    window.localStorage.setItem(STORAGE_KEYS.experiments, JSON.stringify([]));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    const snapshot = await readStorageSnapshot([
+      STORAGE_KEYS.tasks,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.streams,
+    ]);
+
+    expect(snapshot[STORAGE_KEYS.tasks][0].code).toBe("SYLU-2026-03-001");
+    expect(snapshot[STORAGE_KEYS.samples][0].code).toBe("SYLU-2026-03-001-SP-001");
+    expect(snapshot[STORAGE_KEYS.samples][0].trays[0].tray_code).toBe("SYLU-2026-03-001-TP-001");
+    expect(snapshot[STORAGE_KEYS.schedules][0]).toMatchObject({
+      task_code: "SYLU-2026-03-001",
+      experiment_code: "SYLU-2026-03-001-A",
+    });
+    expect(snapshot[STORAGE_KEYS.streams][0].task_code).toBe("SYLU-2026-03-001");
+    expect(snapshot[STORAGE_KEYS.experiments]).toHaveLength(3);
+    expect(snapshot[STORAGE_KEYS.experiments].map((item) => item.experiment_code)).toEqual([
+      "SYLU-2026-03-001-A",
+      "SYLU-2026-03-001-B",
+      "SYLU-2026-03-001-C",
+    ]);
+    expect(snapshot[STORAGE_KEYS.experiments].map((item) => item.experiment_name)).toEqual([
+      "高低温湿热试验",
+      "冲击试验",
+      "振动试验",
+    ]);
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.tasks))[0].code).toBe("SYLU-2026-03-001");
+  });
 });

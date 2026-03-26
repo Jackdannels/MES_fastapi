@@ -8,6 +8,15 @@ const baseProps = {
   deleting: false,
   editError: "",
   editForm: {
+    experiments: [
+      {
+        experimentCode: "TASK-001-A",
+        experimentName: "A实验",
+        plannedHours: 2,
+        priority: "高",
+        requiredDevice: "冲击试验",
+      },
+    ],
     sampleCodesText: "TASK-001-SP-001",
     sampleCount: 1,
     taskType: "冲击试验",
@@ -74,6 +83,33 @@ describe("TaskOverviewEditorPanel", () => {
       [{ taskType: "振动试验" }],
       [{ sampleCount: 3 }],
       [{ sampleCodesText: "TASK-001-SP-010" }],
+    ]);
+  });
+
+  test("renders experiments and emits patches for editing experiment drafts", async () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: baseProps,
+    });
+
+    expect(wrapper.text()).toContain("实验列表");
+    expect(wrapper.text()).toContain("TASK-001-A");
+    expect(wrapper.text()).toContain("实验类型");
+
+    await wrapper.find('input[title="experiment-name-0"]').setValue("预处理实验");
+    await wrapper.find('select[title="experiment-type-0"]').setValue("振动试验");
+    await wrapper.find('button[title="add-experiment"]').trigger("click");
+    await wrapper.find('button[title="remove-experiment-0"]').trigger("click");
+
+    expect(wrapper.emitted("update-edit-form")).toEqual([
+      [{ experiments: [{ experimentCode: "TASK-001-A", experimentName: "预处理实验", plannedHours: 2, priority: "高", requiredDevice: "冲击试验" }] }],
+      [{ experiments: [{ experimentCode: "TASK-001-A", experimentName: "A实验", plannedHours: 2, priority: "高", requiredDevice: "振动试验" }] }],
+      [{
+        experiments: [
+          { experimentCode: "TASK-001-A", experimentName: "A实验", plannedHours: 2, priority: "高", requiredDevice: "冲击试验" },
+          { experimentCode: "TASK-001-B", experimentName: "B实验", plannedHours: 0, priority: "", requiredDevice: "振动试验" },
+        ],
+      }],
+      [{ experiments: [] }],
     ]);
   });
 });

@@ -34,9 +34,17 @@ class TrayAllocationPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ExperimentTrayAllocationPayload(BaseModel):
+    experiment_code: str = Field(alias="experimentCode")
+    tray_ids: list[int] = Field(default_factory=list, alias="trayIds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TaskAllocationRequest(BaseModel):
     tray_limit: int = Field(default=DEFAULT_TRAY_LIMIT, alias="trayLimit", ge=1, le=12)
     trays: list[TrayAllocationPayload] = Field(default_factory=list)
+    experiment_trays: list[ExperimentTrayAllocationPayload] = Field(default_factory=list, alias="experimentTrays")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -66,6 +74,8 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "tasks": [dict(item) for item in as_list(payload.get("mes.tasks")) if isinstance(item, dict)],
         "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
+        "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
+        "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
     }
 
 
@@ -76,6 +86,8 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.tasks": snapshot["tasks"],
             "mes.samples": snapshot["samples"],
             "mes.schedules": snapshot["schedules"],
+            "mes.experiments": snapshot["experiments"],
+            "mes.experiment_trays": snapshot["experiment_trays"],
         }
     )
 
@@ -354,6 +366,67 @@ def build_inventory_trays(assigned_trays: list[dict[str, Any]], capacity: int, a
     return trays
 
 
+def build_task_experiment_rows(
+    task: dict[str, Any],
+    experiments: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    task_code_value = task_code(task)
+    tray_map: dict[str, list[str]] = {}
+    for entry in experiment_trays:
+        if normalize_text(entry.get("task_code")) != task_code_value:
+            continue
+        experiment_code = normalize_text(entry.get("experiment_code"))
+        tray_code = normalize_text(entry.get("tray_code"))
+        if not experiment_code or not tray_code:
+            continue
+        tray_map.setdefault(experiment_code, [])
+        if tray_code not in tray_map[experiment_code]:
+            tray_map[experiment_code].append(tray_code)
+
+    rows = []
+    for experiment in experiments:
+        if normalize_text(experiment.get("task_code")) != task_code_value:
+            continue
+        experiment_code = normalize_text(experiment.get("experiment_code"))
+        assigned_tray_nos = sorted(tray_map.get(experiment_code, []), key=tray_serial_from_code)
+        rows.append(
+            {
+                "experimentCode": experiment_code,
+                "experimentName": normalize_text(experiment.get("experiment_name")),
+                "requiredDevice": normalize_text(experiment.get("required_device")),
+                "assignedTrayNos": assigned_tray_nos,
+                "assignedTrayCount": len(assigned_tray_nos),
+            }
+        )
+    return rows
+
+
+def build_tray_experiment_labels(
+    task: dict[str, Any],
+    experiments: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    experiment_name_map = {
+        normalize_text(experiment.get("experiment_code")): normalize_text(experiment.get("experiment_name"))
+        for experiment in experiments
+        if normalize_text(experiment.get("task_code")) == task_code(task)
+    }
+    tray_labels: dict[str, list[str]] = {}
+    for entry in experiment_trays:
+        if normalize_text(entry.get("task_code")) != task_code(task):
+            continue
+        tray_code = normalize_text(entry.get("tray_code"))
+        experiment_code = normalize_text(entry.get("experiment_code"))
+        if not tray_code or not experiment_code:
+            continue
+        tray_labels.setdefault(tray_code, [])
+        label = experiment_name_map.get(experiment_code) or experiment_code
+        if label not in tray_labels[tray_code]:
+            tray_labels[tray_code].append(label)
+    return tray_labels
+
+
 def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
     if transfer_status_for_task(task, task_samples) != TASK_STATUS_PENDING:
         return False
@@ -416,9 +489,29 @@ def task_progress(task: dict[str, Any], task_status: str, assigned_trays: list[d
     return "样品已送达，待打印条形码"
 
 
-def serialize_workspace(task: dict[str, Any], task_samples: list[dict[str, Any]], all_samples: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def serialize_workspace(
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+    all_samples: list[dict[str, Any]] | None = None,
+    experiments: list[dict[str, Any]] | None = None,
+    experiment_trays: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     current_task_status = transfer_status_for_task(task, task_samples)
     assigned_trays = build_assigned_trays(task, task_samples, current_task_status)
+    task_experiments = build_task_experiment_rows(task, experiments or [], experiment_trays or [])
+    tray_experiment_labels = build_tray_experiment_labels(task, experiments or [], experiment_trays or [])
+    assigned_trays = [
+        {
+            **tray,
+            "experimentLabels": tray_experiment_labels.get(tray["trayNo"], []),
+            "experimentCodes": [
+                experiment["experimentCode"]
+                for experiment in task_experiments
+                if tray["trayNo"] in experiment["assignedTrayNos"]
+            ],
+        }
+        for tray in assigned_trays
+    ]
     current_progress = task_progress(task, current_task_status, assigned_trays)
     printed_tray_count = sum(1 for tray in assigned_trays if tray["barcode"])
     global_samples = all_samples if all_samples is not None else task_samples
@@ -452,6 +545,7 @@ def serialize_workspace(task: dict[str, Any], task_samples: list[dict[str, Any]]
             "trayCapacityMessage": tray_capacity_message,
         },
         "assignedTrays": assigned_trays,
+        "experiments": task_experiments,
         "trayInventory": build_inventory_trays(assigned_trays, task_tray_limit(task), global_samples),
         "allocationSaved": has_saved_allocation(task_samples),
     }
@@ -485,7 +579,13 @@ def read_bootstrap() -> dict[str, Any]:
     overview = []
     for index, task in enumerate(visible_tasks, start=1):
         task_samples = samples_by_task.get(task_code(task), [])
-        workspace = serialize_workspace(task, task_samples, snapshot["samples"])
+        workspace = serialize_workspace(
+            task,
+            task_samples,
+            snapshot["samples"],
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+        )
         task_payload = workspace["task"]
         overview.append(
             {
@@ -518,7 +618,7 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     if repair_pending_tray_codes(task, task_samples):
         write_snapshot(snapshot)
-    return serialize_workspace(task, task_samples, snapshot["samples"])
+    return serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"])
 
 
 @router.post("/tasks/{task_id}/allocate")
@@ -545,12 +645,17 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
         clear_transfer_history(sample)
         sample["trays"] = []
     update_task_samples_for_pending(task, task_samples)
+    next_experiment_trays = [
+        entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     tray_codes = []
+    tray_code_by_id: dict[int, str] = {}
     for tray in request.trays:
         if len(tray.sample_ids) > request.tray_limit:
             raise HTTPException(status_code=400, detail="单托盘样品数量超过统一上限")
         _serial, tray_no = decode_tray_id(task_code(task), tray.tray_id)
+        tray_code_by_id[tray.tray_id] = tray_no
         if tray.sample_ids:
             tray_codes.append(tray_no)
         for sample_id in tray.sample_ids:
@@ -572,12 +677,33 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
             )
             append_history(sample_map[sample_id], "样品分装托盘", tray_no)
 
+    for selection in request.experiment_trays:
+        experiment_code = normalize_text(selection.experiment_code)
+        if not experiment_code:
+            continue
+        for tray_id in selection.tray_ids:
+          tray_no = tray_code_by_id.get(tray_id)
+          if not tray_no:
+              continue
+          next_experiment_trays.append(
+              {
+                  "task_code": task_code(task),
+                  "experiment_code": experiment_code,
+                  "tray_code": tray_no,
+              }
+          )
+
     task["tray_limit"] = request.tray_limit
     task["tray_codes"] = sorted(set(tray_codes))
     task["transfer_status"] = TASK_STATUS_PENDING
     task["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    snapshot["experiment_trays"] = next_experiment_trays
     write_snapshot(snapshot)
-    return {"ok": True, "message": "托盘分配已保存", "workspace": serialize_workspace(task, task_samples, snapshot["samples"])}
+    return {
+        "ok": True,
+        "message": "托盘分配已保存",
+        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+    }
 
 
 @router.post("/tasks/{task_id}/print-barcodes")
@@ -626,7 +752,11 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
             sample["trays"] = next_trays
 
     write_snapshot(snapshot)
-    return {"ok": True, "message": "条形码已生成", "barcodes": printed, "workspace": serialize_workspace(task, task_samples, snapshot["samples"])}
+    workspace = serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"])
+    tray_label_map = {tray["trayNo"]: tray.get("experimentLabels", []) for tray in workspace["assignedTrays"]}
+    for barcode in printed:
+        barcode["experimentLabels"] = tray_label_map.get(barcode["barcodeNo"], [])
+    return {"ok": True, "message": "条形码已生成", "barcodes": printed, "workspace": workspace}
 
 
 @router.post("/tasks/{task_id}/confirm-storage")
@@ -656,7 +786,11 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
         append_history(sample, "任务已确认入库", task_code(task))
 
     write_snapshot(snapshot)
-    return {"ok": True, "message": "任务已确认入库", "workspace": serialize_workspace(task, task_samples, snapshot["samples"])}
+    return {
+        "ok": True,
+        "message": "任务已确认入库",
+        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+    }
 
 
 @router.post("/tasks/{task_id}/reload")
@@ -664,6 +798,9 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    snapshot["experiment_trays"] = [
+        entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     task["transfer_status"] = TASK_STATUS_PENDING
     task["updated_at"] = datetime.now().isoformat(timespec="seconds")
@@ -688,4 +825,8 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
         append_history(sample, "任务重新入库", task_code(task))
 
     write_snapshot(snapshot)
-    return {"ok": True, "message": "任务已重新入库，已回到未入库列表", "workspace": serialize_workspace(task, task_samples, snapshot["samples"])}
+    return {
+        "ok": True,
+        "message": "任务已重新入库，已回到未入库列表",
+        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+    }

@@ -112,6 +112,52 @@ describe("useTaskOverviewEditor", () => {
     );
   });
 
+  test("saveEdit persists task experiments and updates task experiment summary fields", async () => {
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [
+        { code: "SZH-2026-006", test_type: "四综合试验", name: "四综合试验", required_device: "四综合试验", sample_count: 1, status: "待排程" },
+      ],
+      [STORAGE_KEYS.experiments]: [],
+      [STORAGE_KEYS.experiment_trays]: [],
+      [STORAGE_KEYS.samples]: [{ id: "sample-1", code: "SZH-2026-006-SP-001", task_code: "SZH-2026-006", trays: [] }],
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const { openEdit, editForm, saveEdit, persistSnapshot } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    openEdit({
+      taskCode: "SZH-2026-006",
+      taskType: "四综合试验",
+      sampleCount: 1,
+      sampleCodes: ["SZH-2026-006-SP-001"],
+      experiments: [],
+    });
+    editForm.value.experiments = [
+      { experimentCode: "SZH-2026-006-A", experimentName: "A实验", requiredDevice: "四综合试验", priority: "高", plannedHours: 3.5 },
+      { experimentCode: "SZH-2026-006-B", experimentName: "B实验", requiredDevice: "振动试验", priority: "中", plannedHours: 4 },
+    ];
+
+    await saveEdit("SZH-2026-006");
+
+    expect(persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [STORAGE_KEYS.tasks]: [
+          expect.objectContaining({
+            code: "SZH-2026-006",
+            experiment_count: 2,
+            experiment_codes: ["SZH-2026-006-A", "SZH-2026-006-B"],
+          }),
+        ],
+        [STORAGE_KEYS.experiments]: [
+          expect.objectContaining({ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验" }),
+          expect.objectContaining({ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验" }),
+        ],
+      })
+    );
+  });
+
   test("confirmDeleteTask removes task-linked tasks, samples, schedules, and streams after confirmation", async () => {
     // 删除确认不仅删任务本身，还要级联清理样品、排程和数据流。
     const snapshot = {
@@ -147,16 +193,48 @@ describe("useTaskOverviewEditor", () => {
 
     await confirmDeleteTask("TASK-001");
 
-    expect(persistSnapshot).toHaveBeenCalledWith({
-      [STORAGE_KEYS.tasks]: [{ code: "TASK-002", test_type: "B" }],
-      [STORAGE_KEYS.samples]: [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
-      [STORAGE_KEYS.schedules]: [{ id: "schedule-2", task_code: "TASK-002" }],
-      [STORAGE_KEYS.streams]: [{ id: "stream-2", task_code: "TASK-002" }],
-    });
+    expect(persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [STORAGE_KEYS.tasks]: [{ code: "TASK-002", test_type: "B" }],
+        [STORAGE_KEYS.samples]: [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
+        [STORAGE_KEYS.schedules]: [{ id: "schedule-2", task_code: "TASK-002" }],
+        [STORAGE_KEYS.streams]: [{ id: "stream-2", task_code: "TASK-002" }],
+      })
+    );
     expect(replaceOverview).toHaveBeenCalledWith(
       [{ code: "TASK-002", test_type: "B" }],
       [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
       [{ id: "schedule-2", task_code: "TASK-002" }]
+    );
+  });
+
+  test("confirmDeleteTask also removes task-linked experiments and experiment trays", async () => {
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [{ code: "TASK-001", test_type: "A" }, { code: "TASK-002", test_type: "B" }],
+      [STORAGE_KEYS.experiments]: [
+        { id: "exp-1", task_code: "TASK-001", experiment_code: "TASK-001-A" },
+        { id: "exp-2", task_code: "TASK-002", experiment_code: "TASK-002-A" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { id: "rel-1", task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
+        { id: "rel-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" },
+      ],
+      [STORAGE_KEYS.samples]: [],
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const { requestDeleteTask, confirmDeleteTask, persistSnapshot } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    await requestDeleteTask("TASK-001");
+    await confirmDeleteTask("TASK-001");
+
+    expect(persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [STORAGE_KEYS.experiments]: [{ id: "exp-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
+        [STORAGE_KEYS.experiment_trays]: [{ id: "rel-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" }],
+      })
     );
   });
 

@@ -10,6 +10,7 @@ const DEVICES_KEY = "mes.devices";
 const SAMPLES_KEY = "mes.samples";
 const SCHEDULES_KEY = "mes.schedules";
 const STREAMS_KEY = "mes.streams";
+const EXPERIMENTS_KEY = "mes.experiments";
 
 const PRIMARY_LAB = TEST_LABS[0];
 const SECONDARY_LAB = TEST_LABS[1];
@@ -73,14 +74,14 @@ describe("SchedulePage runtime", () => {
     const today = buildDateParts(0);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
-      { id: "task-2", code: "WDC-2026-001", name: "Task B", test_type: "UNKNOWN", status: STATUS_RETENTION },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-2", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_RETENTION },
     ]);
     setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
     setStorage(SCHEDULES_KEY, [
       {
         id: "schedule-retention-1",
-        task_code: "WDC-2026-001",
+        task_code: "SYLU-2026-01-002",
         device: RETENTION_DEVICE,
         start_at: today.isoMorningStart,
         end_at: today.isoMorningEnd,
@@ -90,8 +91,8 @@ describe("SchedulePage runtime", () => {
     setStorage(SAMPLES_KEY, [
       {
         id: "sample-1",
-        code: "WDC-2026-001-SP-001",
-        task_code: "WDC-2026-001",
+        code: "SYLU-2026-01-002-SP-001",
+        task_code: "SYLU-2026-01-002",
         location: RETENTION_DEVICE,
         retention_source: "intake",
         created_at: today.isoMorningStart,
@@ -102,20 +103,20 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll("#gantt-body tr").length).toBeGreaterThan(0);
-    expect(wrapper.get('select[name="task_code"]').text()).toContain("CJ-2026-001");
+    expect(wrapper.get('select[name="task_code"]').text()).toContain("SYLU-2026-01-001");
 
     await wrapper.get('[data-testid="schedule-tab-retention"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.findAll("#retention-internal-table tbody tr").length).toBe(1);
-    expect(wrapper.text()).toContain("WDC-2026-001");
+    expect(wrapper.text()).toContain("SYLU-2026-01-002");
   });
 
   test("creates, edits, and deletes a schedule from Vue state", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -128,7 +129,7 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="task_code"]').setValue("CJ-2026-001");
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
     await settle(wrapper);
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
@@ -160,11 +161,93 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(TASKS_KEY)[0].status).toBe(STATUS_WAITING);
   });
 
+  test("supports experiment-level scheduling selection and renders experiment labels", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-03-006-A",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        experiment_name: "四综合试验",
+        required_device: PRIMARY_LAB,
+      },
+      {
+        id: "SYLU-2026-03-006-B",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-B",
+        experiment_name: "振动试验",
+        required_device: SECONDARY_LAB,
+      },
+    ]);
+    setStorage(DEVICES_KEY, [
+      { code: PRIMARY_LAB, name: PRIMARY_LAB },
+      { code: SECONDARY_LAB, name: SECONDARY_LAB },
+    ]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+
+    expect(wrapper.get('select[name="experiment_code"]').text()).toContain("四综合试验");
+    expect(wrapper.get('select[name="experiment_code"]').text()).toContain("振动试验");
+
+    await wrapper.get('select[name="experiment_code"]').setValue("SYLU-2026-03-006-B");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("morning");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+    expect(getStorage(SCHEDULES_KEY)[0].experiment_code).toBe("SYLU-2026-03-006-B");
+    expect(wrapper.text()).toContain("振动试验");
+  });
+
+  test("migrates a legacy historical task into three explicit experiments after selecting the task", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-1",
+        code: "GDW-2024-005",
+        name: "高低温湿热试验-批次E",
+        test_type: "高低温湿热试验",
+        status: STATUS_WAITING,
+        created_at: "2026-03-05T09:00:00",
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, []);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-001");
+    await settle(wrapper);
+
+    const experimentSelect = wrapper.get('select[name="experiment_code"]');
+    expect(experimentSelect.text()).toContain("高低温湿热试验");
+    expect(experimentSelect.text()).toContain("冲击试验");
+    expect(experimentSelect.text()).toContain("振动试验");
+    expect(experimentSelect.element.value).toBe("SYLU-2026-03-001-A");
+  });
+
   test("links task selection to lab options and filters gantt rows by selected lab", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -174,7 +257,7 @@ describe("SchedulePage runtime", () => {
     setStorage(SCHEDULES_KEY, [
       {
         id: "schedule-1",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-01-001",
         device: PRIMARY_LAB,
         start_at: `${future.isoDate}T08:00:00.000Z`,
         end_at: `${future.isoDate}T10:00:00.000Z`,
@@ -182,7 +265,7 @@ describe("SchedulePage runtime", () => {
       },
       {
         id: "schedule-2",
-        task_code: "OTHER-001",
+        task_code: "SYLU-2026-01-099",
         device: TERTIARY_LAB,
         start_at: `${future.isoDate}T08:00:00.000Z`,
         end_at: `${future.isoDate}T10:00:00.000Z`,
@@ -195,7 +278,7 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="task_code"]').setValue("CJ-2026-001");
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
     await settle(wrapper);
 
     const deviceSelectText = wrapper.get('select[name="device"]').text();
@@ -213,8 +296,8 @@ describe("SchedulePage runtime", () => {
 
   test("resets selected lab when switching manual schedule task", async () => {
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
-      { id: "task-2", code: "WDC-2026-001", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-2", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -231,14 +314,14 @@ describe("SchedulePage runtime", () => {
     const taskSelect = wrapper.get('select[name="task_code"]');
     const deviceSelect = wrapper.get('select[name="device"]');
 
-    await taskSelect.setValue("WDC-2026-001");
+    await taskSelect.setValue("SYLU-2026-01-002");
     await settle(wrapper);
     await deviceSelect.setValue(PRIMARY_LAB);
     await settle(wrapper);
 
     expect(deviceSelect.element.value).toBe(PRIMARY_LAB);
 
-    await taskSelect.setValue("CJ-2026-001");
+    await taskSelect.setValue("SYLU-2026-01-001");
     await settle(wrapper);
 
     expect(deviceSelect.element.value).toBe("");
@@ -248,13 +331,13 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "WDC-2026-001", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING },
     ]);
     setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
     setStorage(SCHEDULES_KEY, [
       {
         id: "schedule-1",
-        task_code: "WDC-2026-001",
+        task_code: "SYLU-2026-01-002",
         device: PRIMARY_LAB,
         start_at: `${future.isoDate}T08:00:00.000Z`,
         end_at: `${future.isoDate}T10:00:00.000Z`,
@@ -267,7 +350,7 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="task_code"]').setValue("WDC-2026-001");
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-002");
     await settle(wrapper);
 
     await wrapper.get('select[name="device"]').setValue(RETENTION_DEVICE);
@@ -284,7 +367,7 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_WAITING },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -297,7 +380,7 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="task_code"]').setValue("CJ-2026-001");
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
     await settle(wrapper);
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
@@ -324,13 +407,13 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "CJ-2026-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_SCHEDULED },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_SCHEDULED },
     ]);
     setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
     setStorage(SCHEDULES_KEY, [
       {
         id: "schedule-1",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-01-001",
         device: PRIMARY_LAB,
         planned_hours: 80,
         start_at: `${future.isoDate}T08:00:00.000Z`,
@@ -346,7 +429,7 @@ describe("SchedulePage runtime", () => {
 
     const crossDaySegment = wrapper.get('[data-testid="gantt-segment-schedule-1"]');
     expect(Number(crossDaySegment.attributes("colspan"))).toBeGreaterThan(2);
-    expect(crossDaySegment.text()).toContain("CJ-2026-001");
+    expect(crossDaySegment.text()).toContain("SYLU-2026-01-001");
   });
 
   test("opens centered task detail modal from gantt segments and shows estimated completion time", async () => {
@@ -355,7 +438,7 @@ describe("SchedulePage runtime", () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-01-001",
         name: "Cross Day Task",
         test_type: "UNKNOWN",
         source: "内部新增",
@@ -367,7 +450,7 @@ describe("SchedulePage runtime", () => {
     setStorage(SCHEDULES_KEY, [
       {
         id: "schedule-1",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-01-001",
         device: PRIMARY_LAB,
         planned_hours: 26.5,
         start_at: `${future.isoDate}T08:00:00.000Z`,
@@ -388,7 +471,7 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
     expect(wrapper.text()).toContain("任务详情");
     expect(wrapper.text()).toContain("预计完成时间");
-    expect(wrapper.text()).toContain("CJ-2026-001");
+    expect(wrapper.text()).toContain("SYLU-2026-01-001");
   });
 
   test("auto-adjusts manual schedule slot to legal afternoon and next-day morning based on current time", async () => {

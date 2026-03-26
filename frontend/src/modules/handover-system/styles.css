@@ -209,8 +209,7 @@
 
 .transfer-table__main,
 .transfer-table__count,
-.transfer-task-header__summary strong,
-.transfer-task-meta-item strong {
+.transfer-task-header__summary strong {
   color: #10233f;
 }
 
@@ -272,14 +271,12 @@
 
 .transfer-task-header {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(480px, 1.1fr);
-  gap: 18px;
-  align-items: stretch;
+  gap: 14px;
 }
 
 .transfer-task-header__summary {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding: 12px 14px;
   border-radius: 16px;
   border: 1px solid rgba(191, 219, 254, 0.7);
@@ -288,6 +285,8 @@
 
 .transfer-task-header__summary strong {
   font-size: 28px;
+  width: fit-content;
+  cursor: pointer;
 }
 
 .transfer-task-summary-card__label {
@@ -295,36 +294,28 @@
   color: #64748b;
 }
 
-.transfer-task-header__name {
-  font-size: 18px;
-  color: #16304f;
-}
-
-.transfer-task-header__meta {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.transfer-task-header__experiments {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  align-content: start;
+  align-items: center;
 }
 
-.transfer-task-meta-item {
-  min-height: 76px;
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(203, 213, 225, 0.75);
-  background: rgba(248, 250, 252, 0.96);
+.transfer-task-experiment-pill {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(191, 219, 254, 0.85);
+  background: rgba(255, 255, 255, 0.96);
+  color: #1e3a5f;
+  font-size: 15px;
+  cursor: pointer;
 }
 
-.transfer-task-meta-item span {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.transfer-task-meta-item strong {
-  font-size: 16px;
-  line-height: 1.4;
+.transfer-task-experiment-pill.active {
+  border-color: rgba(14, 165, 233, 0.65);
+  background: rgba(224, 242, 254, 0.95);
+  color: #0369a1;
 }
 
 .transfer-tray-limit-toolbar {
@@ -406,6 +397,103 @@
   gap: 10px;
   font-size: 15px;
   font-weight: 700;
+}
+
+.transfer-tray-select-toggle {
+  width: 34px;
+  height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(255, 255, 255, 0.96);
+  color: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.transfer-tray-select-toggle.is-selected {
+  border-color: rgba(14, 165, 233, 0.8);
+  background: rgba(14, 165, 233, 0.16);
+  color: #0369a1;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.12);
+}
+
+.transfer-tray-select-toggle__icon {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.transfer-tray-card__subhead-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-tray-card__subhead {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.transfer-tray-experiment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.transfer-tray-experiment-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--tray-experiment-bg, rgba(14, 165, 233, 0.14));
+  border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
+  color: var(--tray-experiment-color, #075985);
+}
+
+.transfer-tray-experiment-tag--tone-1 {
+  --tray-experiment-bg: rgba(14, 165, 233, 0.14);
+  --tray-experiment-border: rgba(14, 165, 233, 0.45);
+  --tray-experiment-color: #075985;
+}
+
+.transfer-tray-experiment-tag--tone-2 {
+  --tray-experiment-bg: rgba(16, 185, 129, 0.14);
+  --tray-experiment-border: rgba(16, 185, 129, 0.4);
+  --tray-experiment-color: #047857;
+}
+
+.transfer-tray-experiment-tag--tone-3 {
+  --tray-experiment-bg: rgba(245, 158, 11, 0.16);
+  --tray-experiment-border: rgba(245, 158, 11, 0.44);
+  --tray-experiment-color: #b45309;
+}
+
+.transfer-tray-experiment-tag--tone-4 {
+  --tray-experiment-bg: rgba(244, 114, 182, 0.15);
+  --tray-experiment-border: rgba(236, 72, 153, 0.42);
+  --tray-experiment-color: #be185d;
+}
+
+.transfer-tray-experiment-tag--tone-5 {
+  --tray-experiment-bg: rgba(168, 85, 247, 0.16);
+  --tray-experiment-border: rgba(147, 51, 234, 0.44);
+  --tray-experiment-color: #7e22ce;
+}
+
+.transfer-tray-experiment-tag--tone-6 {
+  --tray-experiment-bg: rgba(239, 68, 68, 0.13);
+  --tray-experiment-border: rgba(239, 68, 68, 0.38);
+  --tray-experiment-color: #b91c1c;
 }
 
 .sample-tray-samples {
@@ -554,8 +642,7 @@
 @media (max-width: 1280px) {
   .transfer-overview-toolbar,
   .transfer-tray-list--two-columns,
-  .transfer-task-header,
-  .transfer-task-header__meta {
+  .transfer-task-header {
     grid-template-columns: 1fr;
   }
 
@@ -605,7 +692,8 @@
   .transfer-overview-status-actions,
   .transfer-empty-actions,
   .transfer-panel-title__actions,
-  .transfer-tray-card__actions {
+  .transfer-tray-card__actions,
+  .transfer-tray-card__subhead-row {
     flex-direction: column;
     align-items: stretch;
   }

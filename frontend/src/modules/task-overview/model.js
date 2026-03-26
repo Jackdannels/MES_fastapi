@@ -48,15 +48,33 @@ function normalizeQuantity(value) {
 // 构建任务视图模式下展示的任务卡片数据。
 function buildTaskRows({
   tasks,
+  experiments,
   samples,
   schedules,
   scheduledLabel,
   unscheduledLabel,
 }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
+  const experimentList = Array.isArray(experiments) ? experiments : [];
   const sampleList = Array.isArray(samples) ? samples : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const taskMap = new Map();
+  const experimentsByTaskCode = new Map();
+
+  experimentList.forEach((experiment) => {
+    const taskCode = normalizeText(experiment?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    const group = experimentsByTaskCode.get(taskCode) || [];
+    group.push({
+      experimentCode: normalizeText(experiment?.experiment_code),
+      experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
+      requiredDevice: normalizeText(experiment?.required_device),
+      status: normalizeText(experiment?.status),
+    });
+    experimentsByTaskCode.set(taskCode, group);
+  });
 
   // 先以任务为主表建初始行，样品和排程后续再补充到对应任务上。
   taskList.forEach((task) => {
@@ -64,6 +82,7 @@ function buildTaskRows({
     if (!code) {
       return;
     }
+    const taskExperiments = (experimentsByTaskCode.get(code) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode));
     taskMap.set(code, {
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
@@ -74,6 +93,8 @@ function buildTaskRows({
       trays: [],
       scheduleCount: 0,
       retentionCount: 0,
+      experiments: taskExperiments,
+      experimentCount: taskExperiments.length || Number.parseInt(task?.experiment_count, 10) || 0,
     });
   });
 
@@ -94,6 +115,8 @@ function buildTaskRows({
         trays: [],
         scheduleCount: 0,
         retentionCount: 0,
+        experiments: (experimentsByTaskCode.get(taskCode) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode)),
+        experimentCount: (experimentsByTaskCode.get(taskCode) || []).length,
       });
     }
     const row = taskMap.get(taskCode);
@@ -131,6 +154,8 @@ function buildTaskRows({
         trays: [],
         scheduleCount: 0,
         retentionCount: 0,
+        experiments: (experimentsByTaskCode.get(taskCode) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode)),
+        experimentCount: (experimentsByTaskCode.get(taskCode) || []).length,
       });
     }
     const row = taskMap.get(taskCode);
@@ -186,6 +211,10 @@ function buildTaskRows({
       );
       // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
       const currentStatus = aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
+      const experimentSummary = row.experiments
+        .map((experiment) => experiment.experimentName)
+        .filter(Boolean)
+        .join(" / ");
 
       return {
         ...row,
@@ -194,6 +223,8 @@ function buildTaskRows({
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,
         trays,
+        experimentCount: row.experimentCount,
+        experimentSummary,
       };
     })
     .sort((left, right) => compareText(left.taskCode, right.taskCode));

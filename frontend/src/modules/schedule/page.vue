@@ -34,6 +34,15 @@
           </select>
         </div>
         <div class="form-field">
+          <label>{{ uiText.experimentCode }}</label>
+          <select v-model="scheduleForm.experiment_code" name="experiment_code">
+            <option value="">{{ experimentOptions.length ? uiText.selectExperiment : uiText.selectTaskFirst }}</option>
+            <option v-for="option in experimentOptions" :key="option.code" :value="option.code" :title="option.fullCode || option.code">
+              {{ option.label }}
+            </option>
+          </select>
+        </div>
+        <div class="form-field">
           <label>{{ uiText.lab }}</label>
           <select v-model="scheduleForm.device" name="device">
             <option value="">{{ manualLabOptions.length ? uiText.selectLab : uiText.selectTaskFirst }}</option>
@@ -181,6 +190,7 @@
         <tr>
           <th>{{ uiText.index }}</th>
           <th>{{ uiText.task }}</th>
+          <th>{{ uiText.experimentCode }}</th>
           <th>{{ uiText.device }}</th>
           <th>{{ uiText.startTime }}</th>
           <th>{{ uiText.endTime }}</th>
@@ -190,11 +200,12 @@
       </thead>
       <tbody>
         <tr v-if="scheduleRows.length === 0">
-          <td class="muted" colspan="7">{{ uiText.noScheduleRecords }}</td>
+          <td class="muted" colspan="8">{{ uiText.noScheduleRecords }}</td>
         </tr>
         <tr v-for="(row, index) in scheduleRows" :key="row.id">
           <td>{{ index + 1 }}</td>
           <td>{{ row.taskCode }}</td>
+          <td>{{ row.experimentLabel || "-" }}</td>
           <td>{{ row.device }}</td>
           <td>{{ row.startAt }}</td>
           <td>{{ row.endAt }}</td>
@@ -261,6 +272,14 @@
         <input :value="selectedTaskDetail.name" type="text" readonly />
       </div>
       <div class="form-field">
+        <label>{{ uiText.experimentCode }}</label>
+        <input :value="selectedTaskDetail.experimentCode" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.experimentLabel }}</label>
+        <input :value="selectedTaskDetail.experimentLabel" type="text" readonly />
+      </div>
+      <div class="form-field">
         <label>{{ uiText.testType }}</label>
         <input :value="selectedTaskDetail.testType" type="text" readonly />
       </div>
@@ -300,6 +319,10 @@
       <div class="form-field">
         <label>{{ uiText.taskCode }}</label>
         <input v-model="editForm.task_code" type="text" name="task_code" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.experimentCode }}</label>
+        <input v-model="editForm.experiment_code" type="text" name="experiment_code" readonly />
       </div>
       <div class="form-field">
         <label>{{ uiText.lab }}</label>
@@ -371,6 +394,8 @@ const uiText = {
   editScheduleTitle: "排程编辑",
   endTime: "结束时间",
   estimatedCompletionTime: "预计完成时间",
+  experimentCode: "实验编号",
+  experimentLabel: "实验标签",
   ganttTitle: "设备空闲排程（上午/下午）",
   impact: "影响",
   index: "序号",
@@ -399,6 +424,7 @@ const uiText = {
   scheduleList: "排程清单",
   scheduleSearchPlaceholder: "筛选任务/设备/时间",
   selectAcceptedTask: "请选择已接收任务",
+  selectExperiment: "请选择实验编号",
   selectLab: "请选择实验室",
   selectTaskFirst: "请先选择任务",
   source: "任务来源",
@@ -425,6 +451,7 @@ const {
   currentTimeLabel,
   editForm,
   editWarning,
+  experimentOptions,
   ganttView,
   manualLabOptions,
   openScheduleDrawer,

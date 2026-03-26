@@ -53,6 +53,38 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows includes experiment counts and summary labels for multi-experiment tasks", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SZH-2026-006",
+          test_type: "四综合试验",
+          status: "待排程",
+          sample_count: 1,
+        },
+      ],
+      experiments: [
+        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验" },
+        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验" },
+      ],
+      samples: [{ task_code: "SZH-2026-006", code: "SZH-2026-006-SP-001", trays: [] }],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      taskCode: "SZH-2026-006",
+      experimentCount: 2,
+      experimentSummary: "A实验 / B实验",
+    });
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({ experimentCode: "SZH-2026-006-A", experimentName: "A实验" }),
+      expect.objectContaining({ experimentCode: "SZH-2026-006-B", experimentName: "B实验" }),
+    ]);
+  });
+
   test("buildTrayOverviewRows fills empty tray slots and uses latest schedule device", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-1", test_type: "Thermal" }],

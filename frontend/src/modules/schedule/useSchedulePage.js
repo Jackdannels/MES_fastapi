@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTabState } from "@/composables/useTabState";
 import {
   buildConflictRows,
+  buildExperimentOptions,
   buildGanttRows,
   buildLabOptions,
   buildManualTaskOptions,
@@ -32,6 +33,7 @@ function useSchedulePage() {
   const { activeTab, setActiveTab } = useTabState("unpacking");
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.devices,
+    STORAGE_KEYS.experiments,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.streams,
@@ -39,6 +41,7 @@ function useSchedulePage() {
   ]);
 
   const rawDevices = ref([]);
+  const rawExperiments = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
   const rawStreams = ref([]);
@@ -58,7 +61,17 @@ function useSchedulePage() {
   const taskOptions = computed(() =>
     buildManualTaskOptions({
       activeTab: activeTab.value,
+      experiments: rawExperiments.value,
       samples: rawSamples.value,
+      schedules: rawSchedules.value,
+      tasks: rawTasks.value,
+    }),
+  );
+
+  const experimentOptions = computed(() =>
+    buildExperimentOptions({
+      taskCode: scheduleForm.value.task_code,
+      experiments: rawExperiments.value,
       schedules: rawSchedules.value,
       tasks: rawTasks.value,
     }),
@@ -67,20 +80,29 @@ function useSchedulePage() {
   const selectedTaskOption = computed(
     () => taskOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.task_code)) || null,
   );
+  const selectedExperimentOption = computed(
+    () =>
+      experimentOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.experiment_code)) || null,
+  );
 
   // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
   const manualLabOptions = computed(() =>
     buildLabOptions({
       activeTab: activeTab.value,
       selectedDevice: normalizeText(scheduleForm.value.device),
-      testType: selectedTaskOption.value?.testType || "",
+      testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
     }),
   );
   const ganttFilterDevice = computed(() =>
     retentionSelected.value ? "" : normalizeText(scheduleForm.value.device),
   );
 
-  const scheduleRows = computed(() => buildScheduleRows({ schedules: rawSchedules.value, tasks: rawTasks.value, now: now.value }));
+  const scheduleRows = computed(() => buildScheduleRows({
+    experiments: rawExperiments.value,
+    schedules: rawSchedules.value,
+    tasks: rawTasks.value,
+    now: now.value,
+  }));
   const conflictRows = computed(() => buildConflictRows({ schedules: rawSchedules.value }));
   const retentionInternalRows = computed(() =>
     buildRetentionInternalRows({
@@ -119,6 +141,11 @@ function useSchedulePage() {
       code: normalizeText(schedule?.task_code),
       device: normalizeText(schedule?.device),
       estimatedEndAt: formatDateTime(schedule?.end_at),
+      experimentCode: normalizeText(schedule?.experiment_code),
+      experimentLabel:
+        normalizeText(
+          rawExperiments.value.find((entry) => normalizeText(entry?.experiment_code) === normalizeText(schedule?.experiment_code))?.experiment_name,
+        ) || "-",
       name: normalizeText(task?.name) || "-",
       plannedHours: normalizeText(schedule?.planned_hours) || "-",
       priority: normalizeText(task?.priority) || "-",
@@ -135,8 +162,8 @@ function useSchedulePage() {
       return scheduleRows.value;
     }
     return scheduleRows.value.filter((row) =>
-      // 排程表搜索覆盖任务号、实验室、时间段和状态四类文本。
-      [row.taskCode, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
+      // 排程表搜索覆盖任务号、实验号、实验室、时间段和状态文本。
+      [row.taskCode, row.experimentCode, row.experimentLabel, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
         normalizeText(value).includes(query),
       ),
     );
@@ -296,6 +323,7 @@ function useSchedulePage() {
   const loadSchedulePage = async () => {
     const snapshot = await loadSnapshot();
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
@@ -308,6 +336,7 @@ function useSchedulePage() {
     const validTask = taskOptions.value.some((option) => option.code === normalizeText(scheduleForm.value.task_code));
     if (!validTask) {
       scheduleForm.value.task_code = "";
+      scheduleForm.value.experiment_code = "";
       scheduleForm.value.device = "";
     }
     scheduleWarning.value = "";
@@ -315,6 +344,16 @@ function useSchedulePage() {
 
   watch(
     () => scheduleForm.value.task_code,
+    () => {
+      const firstExperimentCode = experimentOptions.value[0]?.code || "";
+      scheduleForm.value.experiment_code = firstExperimentCode;
+      scheduleForm.value.device = "";
+      scheduleWarning.value = "";
+    },
+  );
+
+  watch(
+    () => scheduleForm.value.experiment_code,
     () => {
       scheduleForm.value.device = "";
       scheduleWarning.value = "";
@@ -351,11 +390,17 @@ function useSchedulePage() {
   });
 
   const buildEditLabOptions = (selectedDevice, taskCode) => {
+    const schedule = rawSchedules.value.find((item) => normalizeText(item?.id) === normalizeText(editForm.value.id));
     const task = rawTasks.value.find((item) => normalizeText(item?.code) === normalizeText(taskCode));
+    const experiment = rawExperiments.value.find(
+      (item) =>
+        normalizeText(item?.task_code) === normalizeText(taskCode) &&
+        normalizeText(item?.experiment_code) === normalizeText(schedule?.experiment_code || editForm.value.experiment_code),
+    );
     return buildLabOptions({
       activeTab: "unpacking",
       selectedDevice,
-      testType: normalizeText(task?.test_type),
+      testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
     });
   };
 
@@ -369,6 +414,7 @@ function useSchedulePage() {
     currentTimeLabel,
     editForm,
     editWarning,
+    experimentOptions,
     ganttView,
     manualLabOptions,
     openTaskDetailModal,

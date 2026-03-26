@@ -17,6 +17,54 @@ const SLOT_RANGES = Object.freeze({
 // 排程模块的大部分判断都依赖稳定字符串，因此先做统一规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 
+const buildExperimentLabel = (experimentCode) => {
+  const code = normalizeText(experimentCode);
+  if (!code) {
+    return "";
+  }
+  const suffix = code.split("-").at(-1) || code;
+  return `${suffix}实验`;
+};
+
+const buildFallbackExperimentsForTask = (task) => {
+  const taskCode = normalizeText(task?.code);
+  if (!taskCode) {
+    return [];
+  }
+  const experimentName = normalizeText(task?.test_type) || normalizeText(task?.required_device) || buildExperimentLabel(taskCode);
+  const experimentCodes = Array.isArray(task?.experiment_codes)
+    ? task.experiment_codes.map((code) => normalizeText(code)).filter(Boolean)
+    : [];
+  const codes = experimentCodes.length > 0 ? experimentCodes : [`${taskCode}-A`];
+
+  return codes.map((experimentCode) => ({
+    experiment_code: experimentCode,
+    experiment_name: experimentName,
+    required_device: normalizeText(task?.test_type),
+    task_code: taskCode,
+  }));
+};
+
+const buildExperimentCandidates = ({ taskCode, experiments, tasks }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const experimentList = Array.isArray(experiments) ? experiments : [];
+  const explicitExperiments = experimentList.filter(
+    (experiment) =>
+      !normalizedTaskCode || normalizeText(experiment?.task_code) === normalizedTaskCode,
+  );
+  if (explicitExperiments.length > 0) {
+    return explicitExperiments;
+  }
+
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  if (normalizedTaskCode) {
+    const task = taskList.find((entry) => normalizeText(entry?.code) === normalizedTaskCode);
+    return task ? buildFallbackExperimentsForTask(task) : [];
+  }
+
+  return taskList.flatMap((task) => buildFallbackExperimentsForTask(task));
+};
+
 // 暂存间是特殊设备类型，很多冲突和状态判断都要排除它。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_KEYWORD);
 
@@ -174,6 +222,7 @@ function createManualScheduleForm(now = new Date()) {
     custom_end: "",
     custom_start: "",
     device: "",
+    experiment_code: "",
     planned_hours: 3.5,
     schedule_date: legalState.schedule_date,
     task_code: "",
@@ -186,6 +235,7 @@ function createScheduleEditForm() {
     custom_end: "",
     custom_start: "",
     device: "",
+    experiment_code: "",
     id: "",
     planned_hours: 3.5,
     schedule_date: "",
@@ -213,6 +263,7 @@ function buildScheduleEditForm(schedule) {
     custom_end: endTime,
     custom_start: startTime,
     device: normalizeText(schedule?.device),
+    experiment_code: normalizeText(schedule?.experiment_code),
     id: normalizeText(schedule?.id),
     planned_hours: parsePlannedHours(schedule?.planned_hours) || inferPlannedHours(startAt, endAt),
     schedule_date: startAt ? toLocalDateValue(startAt) : "",
@@ -353,13 +404,18 @@ const statusClass = (status) => {
 };
 
 // 构建看板页签使用的主排程表格行。
-function buildScheduleRows({ schedules, tasks, now = new Date() }) {
+function buildScheduleRows({ schedules, tasks, experiments, now = new Date() }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
+  const experimentList = Array.isArray(experiments) ? experiments : [];
+  const experimentNameByCode = new Map(
+    experimentList.map((experiment) => [normalizeText(experiment?.experiment_code), normalizeText(experiment?.experiment_name)]),
+  );
 
   return (Array.isArray(schedules) ? schedules : [])
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
+      const experimentCode = normalizeText(schedule?.experiment_code);
       const task = taskByCode.get(taskCode);
       // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
       const status = resolveTaskStatus(taskCode, schedules, now);
@@ -367,6 +423,8 @@ function buildScheduleRows({ schedules, tasks, now = new Date() }) {
       return {
         device: normalizeText(schedule?.device),
         endAt: formatDateTime(schedule?.end_at),
+        experimentCode,
+        experimentLabel: experimentNameByCode.get(experimentCode) || buildExperimentLabel(experimentCode),
         id: normalizeText(schedule?.id),
         rowStatus: status,
         rowStatusClass: statusClass(status),
@@ -616,7 +674,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 }
 
 // 生成手动排程表单使用的下拉选项。
-function buildManualTaskOptions({ tasks, samples, schedules, activeTab }) {
+function buildManualTaskOptions({ tasks, experiments, samples, schedules, activeTab }) {
   if (activeTab === "retention") {
     // 留样页签下，任务下拉来源于暂存中的内部任务。
     return buildRetentionInternalRows({ tasks, samples, schedules }).map((row) => ({
@@ -626,9 +684,24 @@ function buildManualTaskOptions({ tasks, samples, schedules, activeTab }) {
     }));
   }
 
-  // 正常排程页签只允许选择待排程任务。
+  const pendingExperimentTaskCodes = new Set(
+    buildExperimentOptions({ experiments, schedules, taskCode: "", tasks })
+      .map((option) => normalizeText(option.taskCode))
+      .filter(Boolean),
+  );
+
+  // 正常排程页签优先显示仍有未排实验的任务。
   return (Array.isArray(tasks) ? tasks : [])
-    .filter((task) => normalizeText(task?.status) === STATUS_WAITING)
+    .filter((task) => {
+      const taskCode = normalizeText(task?.code);
+      if (!taskCode) {
+        return false;
+      }
+      if (pendingExperimentTaskCodes.size > 0) {
+        return pendingExperimentTaskCodes.has(taskCode);
+      }
+      return normalizeText(task?.status) === STATUS_WAITING;
+    })
     .map((task) => ({
       code: normalizeText(task?.code),
       label: `${normalizeText(task?.code)}${normalizeText(task?.name) ? ` ${normalizeText(task?.name)}` : ""}`.trim(),
@@ -697,6 +770,28 @@ function syncTaskStatuses(tasks, schedules, now = new Date()) {
   }));
 }
 
+function buildExperimentOptions({ taskCode, experiments, schedules, tasks }) {
+  const scheduledExperimentCodes = new Set(
+    (Array.isArray(schedules) ? schedules : [])
+      .filter(
+        (schedule) =>
+          !isRetentionDevice(schedule?.device) &&
+          normalizeText(schedule?.experiment_code),
+      )
+      .map((schedule) => normalizeText(schedule?.experiment_code)),
+  );
+
+  return buildExperimentCandidates({ taskCode, experiments, tasks })
+    .filter((experiment) => !scheduledExperimentCodes.has(normalizeText(experiment?.experiment_code)))
+    .map((experiment) => ({
+      code: normalizeText(experiment?.experiment_code),
+      fullCode: normalizeText(experiment?.experiment_code),
+      label: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.required_device) || normalizeText(experiment?.experiment_code),
+      requiredDevice: normalizeText(experiment?.required_device),
+      taskCode: normalizeText(experiment?.task_code),
+    }));
+}
+
 function ensureStreamForSchedule(streams, schedule, now = new Date()) {
   const nextStreams = Array.isArray(streams) ? streams.map((stream) => ({ ...stream })) : [];
   const taskCode = normalizeText(schedule?.task_code);
@@ -757,12 +852,13 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
   }
 
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
-  const candidate = {
-    device,
-    end_at: resolved.endAt.toISOString(),
-    planned_hours: resolved.plannedHours,
-    start_at: resolved.startAt.toISOString(),
-    task_code: taskCode,
+      const candidate = {
+        device,
+        end_at: resolved.endAt.toISOString(),
+        experiment_code: normalizeText(form?.experiment_code),
+        planned_hours: resolved.plannedHours,
+        start_at: resolved.startAt.toISOString(),
+        task_code: taskCode,
   };
   const conflicts = findScheduleConflicts({ candidate, schedules: nextSchedules });
   if (conflicts.length > 0) {
@@ -781,9 +877,9 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
     retentionSchedule.status = STATUS_SCHEDULED;
   } else {
     // 否则新增一条排程记录，并根据设备类型设置初始状态。
-    nextSchedules.push({
-      id: createId("schedule"),
-      ...candidate,
+      nextSchedules.push({
+        id: createId("schedule"),
+        ...candidate,
       status: isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED,
     });
   }
@@ -818,6 +914,7 @@ function updateScheduleRecord({ form, tasks, schedules, streams, now = new Date(
   const candidate = {
     device,
     end_at: resolved.endAt.toISOString(),
+    experiment_code: normalizeText(form?.experiment_code),
     planned_hours: resolved.plannedHours,
     start_at: resolved.startAt.toISOString(),
     task_code: normalizeText(form?.task_code),
@@ -831,6 +928,7 @@ function updateScheduleRecord({ form, tasks, schedules, streams, now = new Date(
   target.device = device;
   target.start_at = candidate.start_at;
   target.end_at = candidate.end_at;
+  target.experiment_code = candidate.experiment_code;
   target.planned_hours = candidate.planned_hours;
   target.status = isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED;
 
@@ -861,6 +959,7 @@ export {
   STATUS_SCHEDULED,
   STATUS_WAITING,
   buildConflictRows,
+  buildExperimentOptions,
   buildGanttRows,
   buildLabOptions,
   buildManualTaskOptions,
