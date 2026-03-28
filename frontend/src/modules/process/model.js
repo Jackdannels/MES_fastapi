@@ -16,11 +16,9 @@ const PROCESS_LABS = [
 
 // 中文名称排序时统一使用简体中文排序规则。
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
-// “最近完成”窗口用于给刚结束的实验室保留短时可见性。
-const RECENT_COMPLETION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验中";
-const STATUS_COMPLETED = "实验完成";
+const STATUS_IDLE = "空闲";
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
@@ -44,6 +42,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
   const taskList = Array.isArray(tasks) ? tasks : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const taskMap = new Map();
+  const taskStatusMap = new Map();
 
   // 先把任务按任务号建索引，后续排程关联时可 O(1) 查找任务信息。
   taskList.forEach((task) => {
@@ -52,6 +51,13 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
       return;
     }
     taskMap.set(code, task);
+    taskStatusMap.set(
+      code,
+      aggregateTaskStatusFromSamples(
+        task,
+        sampleList.filter((sample) => String(sample?.task_code || "").trim() === code),
+      ),
+    );
   });
 
   return labList
@@ -61,10 +67,6 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
         .filter((entry) => String(entry?.device || "").trim() === lab.name)
         .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
 
-      if (labSchedules.length === 0) {
-        return null;
-      }
-
       // 优先找“当前正在执行”的排程，决定实验室是否处于实验中。
       const activeSchedule =
         labSchedules.find((entry) => {
@@ -72,6 +74,8 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
           const end = Date.parse(String(entry?.end_at || ""));
           return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
         }) || null;
+      const runningSchedule =
+        labSchedules.find((entry) => taskStatusMap.get(String(entry?.task_code || "").trim()) === STATUS_RUNNING) || null;
 
       // 没有进行中的情况下，展示最近的未来排程。
       const upcomingSchedule =
@@ -79,41 +83,20 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
           const start = Date.parse(String(entry?.start_at || ""));
           return Number.isFinite(start) && start > now;
         }) || null;
-
-      // 再没有未来排程时，保留一条最近 24 小时内结束的排程用于回看。
-      const recentCompletedSchedule =
-        [...labSchedules]
-          .sort((left, right) => Date.parse(String(right?.end_at || "")) - Date.parse(String(left?.end_at || "")))
-          .find((entry) => {
-            const end = Date.parse(String(entry?.end_at || ""));
-            return Number.isFinite(end) && now - end <= RECENT_COMPLETION_WINDOW_MS;
-          }) || null;
-
-      const nextSchedule = activeSchedule || upcomingSchedule || recentCompletedSchedule || null;
-
-      // 三种候选都没有时，这个实验室卡片不进入页面展示。
-      if (!nextSchedule) {
-        return null;
-      }
+      const nextSchedule = activeSchedule || runningSchedule || upcomingSchedule || null;
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
-      const aggregatedTaskStatus = aggregateTaskStatusFromSamples(
-        task,
-        sampleList.filter((sample) => String(sample?.task_code || "").trim() === taskCode),
-      );
+      const aggregatedTaskStatus = taskStatusMap.get(taskCode) || "";
       // 目标试验名称优先取任务配置，其次回退到实验室默认试验类型。
       const targetExperiment = String(task?.test_type || task?.name || lab.testType || "").trim() || "-";
 
-      let status = "空闲";
+      let status = STATUS_IDLE;
       let statusClass = "is-idle";
-      if (aggregatedTaskStatus === STATUS_RUNNING || activeSchedule) {
+      if (aggregatedTaskStatus === STATUS_RUNNING || activeSchedule || runningSchedule) {
         status = STATUS_RUNNING;
         statusClass = "is-running";
-      } else if (aggregatedTaskStatus === "实验已经完成") {
-        status = STATUS_COMPLETED;
-        statusClass = "is-completed";
-      } else if (nextSchedule) {
+      } else if (upcomingSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";
       }
@@ -123,6 +106,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
         scheduleTime: nextSchedule
           ? `${formatDateTime(nextSchedule.start_at)} - ${formatDateTime(nextSchedule.end_at)}`
           : "暂无排程",
+        hasTask: Boolean(taskCode),
         status,
         statusClass,
         targetExperiment: taskCode ? targetExperiment : "未分配",
@@ -130,7 +114,6 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
         testType: lab.testType,
       };
     })
-    .filter(Boolean)
     .sort((left, right) => compareText(left.name, right.name));
 };
 

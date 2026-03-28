@@ -9,13 +9,12 @@ const labs = [
 ];
 
 describe("processLabModel", () => {
-  test("buildProcessLabCards only keeps labs that are active or still relevant", () => {
+  test("buildProcessLabCards returns all formal labs and marks unscheduled labs idle", () => {
     const cards = buildProcessLabCards(
       [...labs, { name: "Thermal Impact Lab", testType: "Thermal Impact Test" }],
       [
         { code: "TASK-001", test_type: "Impact Test" },
         { code: "TASK-002", test_type: "Vibration Test" },
-        { code: "TASK-003", test_type: "Thermal Impact Test" },
       ],
       [
         {
@@ -40,7 +39,7 @@ describe("processLabModel", () => {
       Date.parse("2026-03-10T10:00:00Z")
     );
 
-    expect(cards).toHaveLength(2);
+    expect(cards).toHaveLength(4);
     expect(cards.find((card) => card.name === "Impact Lab 1")).toEqual(
       expect.objectContaining({
         status: "实验中",
@@ -57,32 +56,21 @@ describe("processLabModel", () => {
         targetExperiment: "Vibration Test",
       })
     );
-    expect(cards.find((card) => card.name === "Salt Spray Lab")).toBeUndefined();
-    expect(cards.find((card) => card.name === "Thermal Impact Lab")).toBeUndefined();
-  });
-
-  test("buildProcessLabCards keeps labs visible for 24 hours after completion", () => {
-    const cards = buildProcessLabCards(
-      [{ name: "Recent Lab", testType: "Impact Test" }],
-      [{ code: "TASK-RECENT", test_type: "Impact Test" }],
-      [
-        {
-          device: "Recent Lab",
-          end_at: "2026-03-10T08:30:00Z",
-          start_at: "2026-03-10T06:30:00Z",
-          task_code: "TASK-RECENT",
-        },
-      ],
-      Date.parse("2026-03-10T10:00:00Z")
-    );
-
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toEqual(
+    expect(cards.find((card) => card.name === "Salt Spray Lab")).toEqual(
       expect.objectContaining({
-        name: "Recent Lab",
-        status: "已排程",
-        statusClass: "is-scheduled",
-        taskCode: "TASK-RECENT",
+        name: "Salt Spray Lab",
+        status: "空闲",
+        statusClass: "is-idle",
+        taskCode: "-",
+        scheduleTime: "暂无排程",
+      })
+    );
+    expect(cards.find((card) => card.name === "Thermal Impact Lab")).toEqual(
+      expect.objectContaining({
+        name: "Thermal Impact Lab",
+        status: "空闲",
+        statusClass: "is-idle",
+        taskCode: "-",
       })
     );
   });

@@ -56,15 +56,19 @@ describe("useProcessLabs", () => {
     }));
     const navigate = vi.fn();
     const {
+      activeFilter,
       idleCount,
       labCards,
       loadLabStatus,
       loading,
       openTaskOverview,
+      overviewCount,
       runningCount,
       scheduledCount,
+      setActiveFilter,
       selectedTaskDetail,
       taskDrawerOpen,
+      visibleLabCards,
       closeTaskDrawer,
     } = useProcessLabs({
       autoLoad: false,
@@ -82,10 +86,28 @@ describe("useProcessLabs", () => {
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
     expect(loading.value).toBe(false);
-    expect(labCards.value).toHaveLength(2);
+    expect(activeFilter.value).toBe("overview");
+    expect(labCards.value).toHaveLength(3);
+    expect(overviewCount.value).toBe(3);
     expect(runningCount.value).toBe(1);
-    expect(scheduledCount.value).toBe(1);
-    expect(idleCount.value).toBe(0);
+    expect(scheduledCount.value).toBe(2);
+    expect(idleCount.value).toBe(1);
+    expect(visibleLabCards.value).toHaveLength(3);
+
+    setActiveFilter("idle");
+
+    expect(visibleLabCards.value).toEqual([
+      expect.objectContaining({
+        name: "Lab-C",
+        status: "空闲",
+        statusClass: "is-idle",
+      }),
+    ]);
+
+    setActiveFilter("scheduled");
+
+    expect(visibleLabCards.value).toHaveLength(2);
+    expect(visibleLabCards.value.map((lab) => lab.name)).toEqual(["Lab-A", "Lab-B"]);
 
     openTaskOverview(labCards.value[0]);
 
@@ -105,11 +127,176 @@ describe("useProcessLabs", () => {
       traySummary: "TRAY-001, TRAY-002, TRAY-003 +1",
     });
     expect(selectedTaskDetail.value.trayCodes).toEqual(["TRAY-001", "TRAY-002", "TRAY-003", "TRAY-004"]);
+    expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual([
+      "TRAY-001",
+      "TRAY-002",
+      "TRAY-003",
+      "TRAY-004",
+    ]);
 
     closeTaskDrawer();
 
     expect(taskDrawerOpen.value).toBe(false);
     expect(selectedTaskDetail.value).toBe(null);
+  });
+
+  test("starts only ready trays, persists updates, and reports started and remaining tray counts", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "Lab-A",
+          end_at: "2026-03-11T10:30:00Z",
+          start_at: "2026-03-11T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "已排程", test_type: "Impact Test" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          location: "Lab-A",
+          owner: "张三",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-READY-1", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+        {
+          code: "S-002",
+          task_code: "TASK-001",
+          location: "Lab-A",
+          owner: "李四",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-READY-2", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+        {
+          code: "S-003",
+          task_code: "TASK-001",
+          location: "Lab-A",
+          owner: "王五",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TRAY-WAIT", status: "已到达实验室", quantity: 1 }],
+          history: [],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, openTaskOverview, processActionMessage, selectedTaskDetail, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "Lab-A", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 2,
+      runningTrayCount: 0,
+      remainingTrayCount: 3,
+    });
+
+    openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual([
+      "TRAY-READY-1",
+      "TRAY-READY-2",
+      "TRAY-WAIT",
+    ]);
+
+    await startExperiment(labCards.value[0]);
+
+    expect(persistSnapshot).toHaveBeenCalledTimes(1);
+    const persisted = persistSnapshot.mock.calls[0][0];
+    expect(persisted["mes.tasks"]).toEqual([expect.objectContaining({ code: "TASK-001", status: "实验中" })]);
+    expect(persisted["mes.samples"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "S-001",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TRAY-READY-1", status: "实验进行中" })],
+        }),
+        expect.objectContaining({
+          code: "S-002",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TRAY-READY-2", status: "实验进行中" })],
+        }),
+        expect.objectContaining({
+          code: "S-003",
+          status: "已到达实验室",
+          trays: [expect.objectContaining({ tray_code: "TRAY-WAIT", status: "已到达实验室" })],
+        }),
+      ]),
+    );
+    expect(processActionMessage.value).toBe("当前开始进行2个托盘，剩余1个托盘。");
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+      runningTrayCount: 2,
+      remainingTrayCount: 1,
+    });
+    expect(selectedTaskDetail.value.runningTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-READY-1", "TRAY-READY-2"]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
+  });
+
+  test("disables start experiment when any tray is already running", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "Lab-A",
+          end_at: "2026-03-11T10:30:00Z",
+          start_at: "2026-03-11T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "实验中", test_type: "Impact Test" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          location: "Lab-A",
+          owner: "张三",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-RUNNING", status: "实验进行中", quantity: 1 }],
+          history: [],
+        },
+        {
+          code: "S-002",
+          task_code: "TASK-001",
+          location: "Lab-A",
+          owner: "李四",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-READY", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "Lab-A", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 1,
+      runningTrayCount: 1,
+      startDisabledReason: "当前批次实验未结束",
+    });
+
+    await startExperiment(labCards.value[0]);
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("keeps a lab card running when any tray is still in the active experiment chain", async () => {
@@ -221,8 +408,8 @@ describe("useProcessLabs", () => {
 
     expect(labCards.value[0]).toMatchObject({
       name: "Lab-A",
-      status: "实验完成",
-      statusClass: "is-completed",
+      status: "空闲",
+      statusClass: "is-idle",
     });
   });
 });
