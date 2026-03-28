@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildTaskEditForm, buildTaskMetrics, buildTaskRows, createTaskRecord, updateTaskRecord } from "./model";
+import { buildTaskCode, buildTaskEditForm, buildTaskMetrics, buildTaskRows, createTaskRecord, updateTaskRecord } from "./model";
 
 describe("tasks model", () => {
   test("marks a task as running when any tray is sent to the lab", () => {
@@ -284,5 +284,69 @@ describe("tasks model", () => {
 
     expect(rows[0].arrivalAt).toBe("2026-03-18 09:14:45");
     expect(buildTaskEditForm(rows[0]).arrival_at).toBe("2026-03-18T09:14:45");
+  });
+
+  test("buildTaskRows summarizes all experiment types for a task", () => {
+    const rows = buildTaskRows(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "三实验任务",
+          status: "待排程",
+          sample_count: 6,
+          test_type: "温度冲击",
+        },
+      ],
+      [],
+      [],
+      [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_type: "温度冲击" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_type: "振动" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_type: "盐雾" },
+      ],
+    );
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        experimentCount: 3,
+        experimentSummary: "温度冲击 / 振动 / 盐雾",
+        testType: "温度冲击 / 振动 / 盐雾",
+      }),
+    );
+  });
+
+  test("buildTaskCode generates the next monthly SYLU sequence", () => {
+    expect(
+      buildTaskCode(
+        "冲击试验",
+        [
+          { code: "SYLU-2026-03-001" },
+          { code: "SYLU-2026-03-003" },
+          { code: "SYLU-2026-02-007" },
+        ],
+        "2026-03-27T09:15:00",
+      ),
+    ).toBe("SYLU-2026-03-004");
+  });
+
+  test("createTaskRecord auto-generates a SYLU code when the form code is empty", () => {
+    const task = createTaskRecord(
+      {
+        code: "",
+        name: "冲击试验-批次A",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_type: "冲击试验",
+        due_at: "2026-03-18T12:30",
+      },
+      [
+        { code: "SYLU-2026-03-001" },
+        { code: "SYLU-2026-03-002" },
+      ],
+    );
+
+    expect(task.code).toBe("SYLU-2026-03-003");
   });
 });

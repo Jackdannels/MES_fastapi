@@ -20,6 +20,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_trays",
+    "mes.experiment_samples",
     "mes.samples",
     "mes.devices",
     "mes.streams",
@@ -184,8 +185,10 @@ def _resolve_experiment_count(task: dict[str, Any], explicit_count: int) -> int:
 def _build_experiment_types(task_type: str, count: int) -> list[str]:
     base_type = str(task_type or "").strip()
     types: list[str] = []
-    if base_type:
-        types.append(base_type)
+    for candidate in re.split(r"[/、,，;；]+", base_type):
+        normalized = candidate.strip()
+        if normalized and normalized not in types:
+            types.append(normalized)
     for experiment_type in EXPERIMENT_TYPE_OPTIONS:
         if len(types) >= count:
             break
@@ -196,12 +199,119 @@ def _build_experiment_types(task_type: str, count: int) -> list[str]:
     return types
 
 
+def _build_experiment_codes(task_code: str, count: int, seed_codes: list[str] | None = None) -> list[str]:
+    normalized_task_code = str(task_code or "").strip() or "TASK"
+    codes: list[str] = []
+    seen: set[str] = set()
+
+    for code in seed_codes or []:
+        normalized_code = str(code or "").strip()
+        if normalized_code and normalized_code not in seen:
+            codes.append(normalized_code)
+            seen.add(normalized_code)
+
+    suffix_index = 0
+    while len(codes) < count:
+        suffix = chr(65 + suffix_index)
+        suffix_index += 1
+        next_code = f"{normalized_task_code}-{suffix}"
+        if next_code in seen:
+            continue
+        codes.append(next_code)
+        seen.add(next_code)
+    return codes[:count]
+
+
+def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    normalized = dict(payload)
+    tasks = [dict(task) for task in (normalized.get("mes.tasks") if isinstance(normalized.get("mes.tasks"), list) else [])]
+    experiments = [dict(experiment) for experiment in (normalized.get("mes.experiments") if isinstance(normalized.get("mes.experiments"), list) else [])]
+    if not tasks:
+        return normalized, False
+
+    experiments_by_task: dict[str, list[dict[str, Any]]] = {}
+    for experiment in experiments:
+        task_code = str(experiment.get("task_code") or "").strip()
+        if not task_code:
+            continue
+        experiments_by_task.setdefault(task_code, []).append(experiment)
+
+    task_codes = {str(task.get("code") or "").strip() for task in tasks if str(task.get("code") or "").strip()}
+    next_experiments: list[dict[str, Any]] = [dict(experiment) for experiment in experiments if str(experiment.get("task_code") or "").strip() not in task_codes]
+    changed = False
+
+    for task in tasks:
+        task_code = str(task.get("code") or "").strip()
+        if not task_code:
+            continue
+        existing_list = list(experiments_by_task.get(task_code, []))
+        existing_codes = [
+            str(experiment.get("experiment_code") or "").strip()
+            for experiment in existing_list
+            if str(experiment.get("experiment_code") or "").strip()
+        ]
+        explicit_codes = [
+            str(code or "").strip()
+            for code in (task.get("experiment_codes") if isinstance(task.get("experiment_codes"), list) else [])
+            if str(code or "").strip()
+        ]
+        desired_count = _resolve_experiment_count(task, len(existing_list))
+        experiment_codes = _build_experiment_codes(task_code, desired_count, explicit_codes or existing_codes)
+        experiment_types = _build_experiment_types(
+            str(task.get("test_type") or task.get("required_device") or task.get("name") or "").strip(),
+            desired_count,
+        )
+        existing_by_code = {
+            str(experiment.get("experiment_code") or "").strip(): dict(experiment)
+            for experiment in existing_list
+        }
+
+        normalized_experiments: list[dict[str, Any]] = []
+        for index, experiment_code in enumerate(experiment_codes):
+            source = existing_by_code.get(experiment_code, {})
+            experiment_name = str(source.get("experiment_name") or "").strip()
+            required_device = str(source.get("required_device") or "").strip() or experiment_types[index]
+            if not experiment_name or re.fullmatch(r"[A-Z]实验", experiment_name):
+                experiment_name = required_device
+            normalized_experiments.append(
+                {
+                    **source,
+                    "id": str(source.get("id") or "").strip() or experiment_code,
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "experiment_name": experiment_name,
+                    "required_device": required_device,
+                    "priority": source.get("priority") if source.get("priority") is not None else task.get("priority", ""),
+                    "planned_hours": source.get("planned_hours", 0),
+                    "status": str(source.get("status") or task.get("status") or "待排程").strip(),
+                    "created_at": source.get("created_at") or task.get("created_at"),
+                    "updated_at": source.get("updated_at") or task.get("updated_at") or task.get("created_at"),
+                }
+            )
+
+        if task.get("experiment_codes") != experiment_codes:
+            task["experiment_codes"] = experiment_codes
+            changed = True
+        if task.get("experiment_count") != len(experiment_codes):
+            task["experiment_count"] = len(experiment_codes)
+            changed = True
+        if normalized_experiments != existing_list:
+            changed = True
+        next_experiments.extend(normalized_experiments)
+
+    if changed:
+        normalized["mes.tasks"] = tasks
+        normalized["mes.experiments"] = next_experiments
+    return normalized, changed
+
+
 def _migrate_payload_to_sylu(payload: Dict[str, Any]) -> Dict[str, Any]:
     tasks = [dict(task) for task in (payload.get("mes.tasks") if isinstance(payload.get("mes.tasks"), list) else [])]
     samples = [dict(sample) for sample in (payload.get("mes.samples") if isinstance(payload.get("mes.samples"), list) else [])]
     schedules = [dict(schedule) for schedule in (payload.get("mes.schedules") if isinstance(payload.get("mes.schedules"), list) else [])]
     experiments = [dict(experiment) for experiment in (payload.get("mes.experiments") if isinstance(payload.get("mes.experiments"), list) else [])]
     experiment_trays = [dict(relation) for relation in (payload.get("mes.experiment_trays") if isinstance(payload.get("mes.experiment_trays"), list) else [])]
+    experiment_samples = [dict(relation) for relation in (payload.get("mes.experiment_samples") if isinstance(payload.get("mes.experiment_samples"), list) else [])]
     streams = [dict(stream) for stream in (payload.get("mes.streams") if isinstance(payload.get("mes.streams"), list) else [])]
 
     legacy_codes = {str(task.get("code") or "").strip() for task in tasks if str(task.get("code") or "").strip()}
@@ -377,6 +487,18 @@ def _migrate_payload_to_sylu(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         relation["tray_code"] = tray_code_map.get(str(relation.get("tray_code") or "").strip(), str(relation.get("tray_code") or "").strip())
 
+    for relation in experiment_samples:
+        legacy_task_code = str(relation.get("task_code") or "").strip()
+        relation["task_code"] = task_code_map.get(legacy_task_code, legacy_task_code)
+        relation["experiment_code"] = experiment_code_map.get(
+            str(relation.get("experiment_code") or "").strip(),
+            str(relation.get("experiment_code") or "").strip(),
+        )
+        relation["sample_code"] = sample_code_map.get(
+            str(relation.get("sample_code") or "").strip(),
+            str(relation.get("sample_code") or "").strip(),
+        )
+
     for stream in streams:
         legacy_task_code = str(stream.get("task_code") or "").strip()
         stream["task_code"] = task_code_map.get(legacy_task_code, legacy_task_code)
@@ -394,6 +516,7 @@ def _migrate_payload_to_sylu(payload: Dict[str, Any]) -> Dict[str, Any]:
     migrated_payload["mes.schedules"] = _replace_strings(schedules, replacements)
     migrated_payload["mes.experiments"] = _replace_strings(migrated_experiments, replacements)
     migrated_payload["mes.experiment_trays"] = _replace_strings(experiment_trays, replacements)
+    migrated_payload["mes.experiment_samples"] = _replace_strings(experiment_samples, replacements)
     migrated_payload["mes.streams"] = _replace_strings(streams, replacements)
     migrated_payload[STORAGE_META_KEY] = {"schema_version": CURRENT_SCHEMA_VERSION}
     return migrated_payload
@@ -437,7 +560,15 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     elif normalized_meta.get("schema_version", 0) < CURRENT_SCHEMA_VERSION:
         normalized[STORAGE_META_KEY] = {"schema_version": CURRENT_SCHEMA_VERSION}
         changed = True
+    normalized, experiment_changed = _ensure_task_experiment_rows(normalized)
+    if experiment_changed:
+        changed = True
     return normalized, changed
+
+
+def normalize_storage_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    normalized, _changed = _normalize_payload(payload)
+    return normalized
 
 
 class StorageBackend:

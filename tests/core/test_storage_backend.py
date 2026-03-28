@@ -126,6 +126,7 @@ def test_json_storage_initializes_experiment_collections_by_default(tmp_path) ->
 
     assert snapshot["mes.experiments"] == []
     assert snapshot["mes.experiment_trays"] == []
+    assert snapshot["mes.experiment_samples"] == []
 
 
 def test_database_storage_bootstrap_persists_experiment_collections(tmp_path) -> None:
@@ -136,6 +137,7 @@ def test_database_storage_bootstrap_persists_experiment_collections(tmp_path) ->
             "mes.tasks": [{"id": "task-1", "code": "TASK-001", "name": "Task 1"}],
             "mes.experiments": [{"id": "exp-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A"}],
             "mes.experiment_trays": [{"id": "rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "tray_code": "TASK-001-TP-001"}],
+            "mes.experiment_samples": [{"id": "sample-rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "sample_code": "TASK-001-SP-001"}],
         }
     )
     repository = InMemorySnapshotRepository()
@@ -143,9 +145,11 @@ def test_database_storage_bootstrap_persists_experiment_collections(tmp_path) ->
     storage = DatabaseStorageBackend(repository, bootstrap_storage=seed_storage)
     snapshot = storage.read_all()
 
-    assert snapshot["mes.experiments"] == [{"id": "exp-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A"}]
+    assert [item["experiment_code"] for item in snapshot["mes.experiments"]] == ["TASK-001-A", "TASK-001-B", "TASK-001-C"]
     assert snapshot["mes.experiment_trays"] == [{"id": "rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "tray_code": "TASK-001-TP-001"}]
+    assert snapshot["mes.experiment_samples"] == [{"id": "sample-rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "sample_code": "TASK-001-SP-001"}]
     assert json.loads(repository.payloads["mes.experiments"])[0]["experiment_code"] == "TASK-001-A"
+    assert json.loads(repository.payloads["mes.experiment_samples"])[0]["sample_code"] == "TASK-001-SP-001"
 
 
 def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp_path) -> None:
@@ -273,3 +277,50 @@ def test_json_storage_backfills_historical_multi_experiment_tasks_and_is_idempot
     assert len(first_snapshot["mes.experiments"]) == 3
     assert all(re.match(r"^SYLU-2026-03-001-[A-Z]$", item["experiment_code"]) for item in first_snapshot["mes.experiments"])
     assert all(item["experiment_name"] and item["experiment_name"] not in {"A实验", "B实验"} for item in first_snapshot["mes.experiments"])
+
+
+def test_json_storage_backfills_three_experiments_for_existing_sylu_tasks_without_experiment_rows(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [
+                    {
+                        "id": "SYLU-2026-03-001",
+                        "code": "SYLU-2026-03-001",
+                        "name": "温度冲击试验",
+                        "test_type": "温度冲击试验",
+                        "required_device": "温度冲击试验",
+                        "sample_count": 6,
+                        "arrival_at": "2026-03-11 16:17",
+                        "created_at": "2026-03-11T06:17:03Z",
+                    }
+                ],
+                "mes.samples": [],
+                "mes.schedules": [],
+                "mes.experiments": [],
+                "mes.experiment_trays": [],
+                "mes.experiment_samples": [],
+                "mes.streams": [],
+                "mes.meta": {"schema_version": 2},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    storage = JsonFileStorage(path)
+
+    snapshot = storage.read_all()
+
+    assert snapshot["mes.tasks"][0]["experiment_count"] == 3
+    assert snapshot["mes.tasks"][0]["experiment_codes"] == [
+        "SYLU-2026-03-001-A",
+        "SYLU-2026-03-001-B",
+        "SYLU-2026-03-001-C",
+    ]
+    assert [item["experiment_code"] for item in snapshot["mes.experiments"]] == [
+        "SYLU-2026-03-001-A",
+        "SYLU-2026-03-001-B",
+        "SYLU-2026-03-001-C",
+    ]

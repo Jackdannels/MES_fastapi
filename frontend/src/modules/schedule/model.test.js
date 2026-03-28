@@ -190,6 +190,40 @@ describe("schedulePageModel", () => {
     expect(result.tasks[0].status).toBe("已排程");
   });
 
+  test("createScheduleRecord keeps experiment_code when rewriting a retention entry into a lab schedule", () => {
+    const result = createScheduleRecord({
+      form: {
+        device: "冲击一室",
+        experiment_code: "CJ-2026-001-B",
+        schedule_date: "2099-03-20",
+        task_code: "CJ-2026-001",
+        time_slot: "morning",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      schedules: [
+        {
+          id: "schedule-retention-1",
+          task_code: "CJ-2026-001",
+          experiment_code: "CJ-2026-001-A",
+          device: RETENTION_DEVICE,
+          start_at: "2099-03-19T08:00:00.000Z",
+          end_at: "2099-03-19T08:00:00.000Z",
+          status: "暂存间存放",
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "CJ-2026-001", status: "暂存间存放", test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules[0]).toEqual(
+      expect.objectContaining({
+        experiment_code: "CJ-2026-001-B",
+        id: "schedule-retention-1",
+      }),
+    );
+  });
+
   test("buildGanttRows and buildRetentionInternalRows preserve visible schedule board state", () => {
     // 同时覆盖正式排程看板与暂存面板，避免两套视图口径漂移。
     const gantt = buildGanttRows({

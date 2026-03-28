@@ -12,20 +12,19 @@ describe("TaskOverviewSummaryTable", () => {
         row: {
           currentStatus: "进行中",
           experimentCount: 2,
-          experimentSummary: "A实验 / B实验",
+          experimentSummary: "温度冲击 / 振动",
           plannedCount: 3,
           sampleCount: 2,
           scheduleCount: 1,
           scheduleLabel: "已排程",
-          taskType: "冲击试验",
           trays: [{ trayCode: "TP-001" }, { trayCode: "TP-002" }],
         },
       },
     });
 
-    expect(wrapper.text()).toContain("冲击试验");
-    expect(wrapper.text()).toContain("A实验 / B实验");
-    expect(wrapper.text()).toContain("2个");
+    expect(wrapper.text()).not.toContain("任务类型");
+    expect(wrapper.text()).toContain("温度冲击 / 振动");
+    expect(wrapper.text()).toContain("2");
     expect(wrapper.text()).toContain("进行中");
     expect(wrapper.text()).toContain("已排程");
     expect(wrapper.text()).toContain("2 / 3");

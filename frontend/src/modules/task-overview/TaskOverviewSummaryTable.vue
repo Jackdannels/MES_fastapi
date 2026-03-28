@@ -3,7 +3,6 @@
     <table class="table task-overview-summary-table">
       <thead>
         <tr>
-          <th>任务类型</th>
           <th>实验摘要</th>
           <th>实验数</th>
           <th>当前状态</th>
@@ -15,9 +14,8 @@
       </thead>
       <tbody>
         <tr>
-          <td><strong>{{ row.taskType || "-" }}</strong></td>
           <td>{{ row.experimentSummary || "-" }}</td>
-          <td>{{ row.experimentCount > 0 ? `${row.experimentCount}个` : "-" }}</td>
+          <td>{{ row.experimentCount > 0 ? row.experimentCount : "-" }}</td>
           <td>
             <span class="task-overview-status-chip">{{ row.currentStatus || "-" }}</span>
           </td>

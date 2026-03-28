@@ -21,9 +21,9 @@
   <section class="card section tasks-list-card">
     <h3>总任务清单</h3>
     <div class="toolbar">
-      <input v-model="query" class="search-input" id="task-list-search" placeholder="筛选任务编号/客户/设备" />
+      <input v-model="query" class="search-input" id="task-list-search" placeholder="筛选任务编号/实验摘要/样品编号" />
       <select v-model="filterTestType" class="search-input" id="task-list-filter-test-type">
-        <option value="">全部试验类型</option>
+        <option value="">全部实验类型</option>
         <option v-for="option in testTypeOptions" :key="option" :value="option">{{ option }}</option>
       </select>
       <select v-model="filterStatus" class="search-input" id="task-list-filter-status">
@@ -44,8 +44,7 @@
           <th data-sort @click="toggleSort('code')">任务编号</th>
           <th data-sort @click="toggleSort('source')">来源</th>
           <th data-sort @click="toggleSort('sampleCount')">样品</th>
-          <th data-sort @click="toggleSort('testType')">实验类型</th>
-          <th data-sort @click="toggleSort('requiredDevice')">设备要求</th>
+          <th data-sort @click="toggleSort('testType')">实验摘要</th>
           <th data-sort @click="toggleSort('dueAt')">期望完成</th>
           <th data-sort @click="toggleSort('displayStatus')">状态</th>
           <th>操作</th>
@@ -58,7 +57,6 @@
           <td>{{ row.source }}</td>
           <td>{{ row.sampleCount }}</td>
           <td>{{ row.testType }}</td>
-          <td><span class="pill">{{ row.requiredDevice || "-" }}</span></td>
           <td>{{ row.dueAt }}</td>
           <td><span :class="row.statusClass">{{ row.displayStatus }}</span></td>
           <td>
@@ -134,10 +132,6 @@
           <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
-          <label>必需设备/能力</label>
-          <input v-model="intakeForm.required_device" type="text" name="required_device" placeholder="例如：HPLC / ICP" />
-        </div>
-        <div class="form-field">
           <label>环境/特殊条件</label>
           <input v-model="intakeForm.conditions" type="text" name="conditions" placeholder="温湿度/避光等" />
         </div>
@@ -207,10 +201,6 @@
         <label>到样时间</label>
         <input v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
         <div class="helper">以样品管理确认入库时间为准，重新入库会覆盖</div>
-      </div>
-      <div class="form-field">
-        <label>必需设备/能力</label>
-        <input v-model="editForm.required_device" type="text" name="required_device" placeholder="例如：HPLC / ICP" />
       </div>
       <div class="form-field">
         <label>状态</label>

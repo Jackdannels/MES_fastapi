@@ -122,6 +122,24 @@ describe("taskOverviewModel", () => {
     });
   });
 
+  test("buildTrayOverviewRows ignores orphan tray rows whose task no longer exists", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "SYLU-2026-03-001", test_type: "温度冲击试验" }],
+      samples: [
+        { task_code: "CJ-2026-001", trays: [{ tray_code: "CJ-2026-001-TP-001" }] },
+        { task_code: "SYLU-2026-03-001", trays: [{ tray_code: "SYLU-2026-03-001-TP-001" }] },
+      ],
+      schedules: [],
+      totalSlots: 2,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0].trayCode).toBe("SYLU-2026-03-001-TP-001");
+    expect(rows[1].taskCode).toBe("-");
+  });
+
   test("buildTaskRows keeps retention-only tasks unscheduled", () => {
     const rows = buildTaskRows({
       tasks: [
@@ -153,6 +171,28 @@ describe("taskOverviewModel", () => {
       scheduleLabel: "未排程",
       taskCode: "WDC-2026-001",
     });
+  });
+
+  test("buildTaskRows ignores orphan sample-only legacy task codes when no task record exists", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-001",
+          test_type: "温度冲击试验",
+          status: "待排程",
+        },
+      ],
+      samples: [
+        { task_code: "SYLU-2026-03-001", code: "SYLU-2026-03-001-SP-001", trays: [] },
+        { task_code: "CJ-2026-001", code: "CJ-2026-001-SP-001", trays: [] },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].taskCode).toBe("SYLU-2026-03-001");
   });
 
   test("buildTaskRows prefers arrival_at over created_at for overview time", () => {

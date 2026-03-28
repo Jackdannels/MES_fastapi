@@ -36,24 +36,25 @@ function useTasksPage() {
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.streams,
+    STORAGE_KEYS.experiments,
   ]);
 
   const rawTasks = ref([]);
   const rawSchedules = ref([]);
   const rawSamples = ref([]);
   const rawStreams = ref([]);
+  const rawExperiments = ref([]);
   const intakeForm = ref(createTaskIntakeForm());
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
   const editWarning = ref("");
   const selectedTestType = ref("");
   const selectedStatus = ref("");
-  const intakeRequiredDeviceAutoValue = ref("");
 
   const intakeModal = useDialogState();
   const taskDrawer = useDialogState();
 
-  const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value));
+  const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
 
@@ -72,7 +73,7 @@ function useTasksPage() {
 
   const { currentPage, pageCount, query, sortDirection, sortKey, visibleRows } = useTableControls({
     rows: filteredRows,
-    searchFields: ["code", "name", "source", "requiredDevice", "testType", "displayStatus"],
+    searchFields: ["code", "name", "source", "experimentSummary", "testType", "displayStatus"],
     pageSize: 8,
   });
 
@@ -91,23 +92,18 @@ function useTasksPage() {
   };
 
   const syncIntakeDerivedFields = () => {
-    // 任务编号与推荐实验室都依赖试验类型，因此集中在这里联动。
-    const nextCode = buildTaskCode(intakeForm.value.test_type, rawTasks.value);
+    // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
+    const nextCode = buildTaskCode(
+      intakeForm.value.test_type,
+      rawTasks.value,
+      intakeForm.value.due_at || intakeForm.value.arrival_at || new Date(),
+    );
     intakeForm.value.code = nextCode;
-
-    if (
-      !normalizeText(intakeForm.value.required_device) ||
-      normalizeText(intakeForm.value.required_device) === normalizeText(intakeRequiredDeviceAutoValue.value)
-    ) {
-      intakeForm.value.required_device = intakeForm.value.test_type || "";
-      intakeRequiredDeviceAutoValue.value = intakeForm.value.test_type || "";
-    }
   };
 
   const resetIntakeForm = () => {
     intakeForm.value = createTaskIntakeForm();
     intakeWarning.value = "";
-    intakeRequiredDeviceAutoValue.value = "";
     syncIntakeDerivedFields();
   };
 
@@ -249,9 +245,10 @@ function useTasksPage() {
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
+    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
     if (taskDrawer.open.value) {
       const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
-      const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value).find(
+      const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value).find(
         (row) => normalizeText(row?.code) === selectedTaskCode,
       );
       if (selectedRow) {
@@ -266,6 +263,13 @@ function useTasksPage() {
 
   watch(
     () => intakeForm.value.test_type,
+    () => {
+      syncIntakeDerivedFields();
+    },
+  );
+
+  watch(
+    () => intakeForm.value.due_at,
     () => {
       syncIntakeDerivedFields();
     },

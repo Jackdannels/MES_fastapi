@@ -6,9 +6,11 @@ from app.core.mysql_storage_backend import (
     MySQLMesStorageBackend,
     normalize_storage_payload,
     build_experiment_insert_row,
+    build_experiment_sample_insert_row,
     build_experiment_tray_insert_row,
     build_sample_insert_row,
     build_storage_experiment_item,
+    build_storage_experiment_sample_item,
     build_storage_experiment_tray_item,
     build_storage_sample_item,
     build_device_insert_row,
@@ -158,6 +160,34 @@ def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:
     assert storage_item["experiment_code"] == "SZH-2026-006-A"
     assert storage_item["task_code"] == "SZH-2026-006"
     assert storage_item["tray_code"] == "SZH-2026-006-TP-001"
+
+
+def test_experiment_sample_mapping_round_trip_preserves_assignment_keys() -> None:
+    relation = {
+        "id": "rel-2",
+        "task_code": "SZH-2026-006",
+        "experiment_code": "SZH-2026-006-A",
+        "sample_code": "SZH-2026-006-SP-001",
+        "created_at": "2026-03-17T09:42:00Z",
+        "updated_at": "2026-03-17T09:43:00Z",
+    }
+
+    insert_row = build_experiment_sample_insert_row(relation)
+
+    assert insert_row["experiment_no"] == "SZH-2026-006-A"
+    assert insert_row["task_no"] == "SZH-2026-006"
+    assert insert_row["sample_no"] == "SZH-2026-006-SP-001"
+
+    storage_item = build_storage_experiment_sample_item(
+        {
+            **insert_row,
+            "relation_id": 12,
+        }
+    )
+
+    assert storage_item["experiment_code"] == "SZH-2026-006-A"
+    assert storage_item["task_code"] == "SZH-2026-006"
+    assert storage_item["sample_code"] == "SZH-2026-006-SP-001"
 
 
 def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> None:
@@ -320,6 +350,30 @@ def test_task_round_trip_includes_tray_codes_from_tray_rows() -> None:
     )
 
     assert storage_item["tray_codes"] == ["ZD-2026-003-TP-001", "ZD-2026-003-TP-002"]
+
+
+def test_build_storage_sample_item_recovers_task_code_from_sample_code_when_task_join_is_missing() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 99,
+            "sample_no": "SYLU-2026-03-001-SP-001",
+            "task_no": None,
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "",
+            "sample_status": "运输中",
+            "flow_status": "运输中",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-03-17 09:00:00",
+            "updated_at": "2026-03-17 09:00:00",
+        }
+    )
+
+    assert storage_item["task_code"] == "SYLU-2026-03-001"
 
 
 def test_normalize_storage_payload_migrates_legacy_relational_rows_to_sylu_identifiers() -> None:
@@ -490,6 +544,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
     monkeypatch.setattr(backend, "_replace_samples", lambda cursor, rows: order.append("samples"))
     monkeypatch.setattr(backend, "_replace_experiments", lambda cursor, rows: order.append("experiments"))
     monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
+    monkeypatch.setattr(backend, "_replace_experiment_samples", lambda cursor, rows: order.append("experiment_samples"))
 
     backend._write_many_internal(
         {
@@ -497,7 +552,8 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
             "mes.samples": [{"code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"}],
             "mes.experiments": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
             "mes.experiment_trays": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "tray_code": "SYLU-2026-03-001-TP-001"}],
+            "mes.experiment_samples": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "sample_code": "SYLU-2026-03-001-SP-001"}],
         }
     )
 
-    assert order == ["tasks:False", "samples", "experiments", "experiment_trays", "tasks:True"]
+    assert order == ["tasks:False", "samples", "experiments", "experiment_trays", "experiment_samples", "tasks:True"]

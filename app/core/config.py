@@ -1,5 +1,6 @@
 from typing import Optional
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = "mes_single_branch"
+    MYSQL_BOOTSTRAP_FROM_JSON: bool = True
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
@@ -31,6 +33,17 @@ class Settings(BaseSettings):
     DM_DATABASE: str = "MES"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def normalize_debug_aliases(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "production", "prod"}:
+                return False
+            if normalized in {"debug", "development", "dev"}:
+                return True
+        return value
 
 
 settings = Settings()

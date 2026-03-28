@@ -633,30 +633,6 @@
   overflow-x: auto;
 }
 
-.transfer-modal__meta-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.transfer-modal__meta {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.transfer-modal__meta > div + div {
-  margin-top: 6px;
-}
-
-.transfer-modal__tag-column {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  max-width: 38%;
-}
-
 .transfer-modal__actions {
   margin-top: 14px;
   display: flex;
@@ -676,8 +652,7 @@
   .transfer-tray-toolbar,
   .transfer-overview-pagination,
   .transfer-tray-card__footer,
-  .transfer-modal__head,
-  .transfer-modal__meta-row {
+  .transfer-modal__head {
     flex-direction: column;
     align-items: stretch;
   }

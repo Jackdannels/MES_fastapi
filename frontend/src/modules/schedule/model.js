@@ -873,6 +873,7 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
     retentionSchedule.device = device;
     retentionSchedule.start_at = candidate.start_at;
     retentionSchedule.end_at = candidate.end_at;
+    retentionSchedule.experiment_code = candidate.experiment_code;
     retentionSchedule.planned_hours = candidate.planned_hours;
     retentionSchedule.status = STATUS_SCHEDULED;
   } else {

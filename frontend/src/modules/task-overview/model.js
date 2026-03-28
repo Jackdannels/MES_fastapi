@@ -59,6 +59,7 @@ function buildTaskRows({
   const sampleList = Array.isArray(samples) ? samples : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const taskMap = new Map();
+  const knownTaskCodes = new Set();
   const experimentsByTaskCode = new Map();
 
   experimentList.forEach((experiment) => {
@@ -82,6 +83,7 @@ function buildTaskRows({
     if (!code) {
       return;
     }
+    knownTaskCodes.add(code);
     const taskExperiments = (experimentsByTaskCode.get(code) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode));
     taskMap.set(code, {
       taskCode: code,
@@ -101,23 +103,8 @@ function buildTaskRows({
   sampleList.forEach((sample) => {
     const taskCode = String(sample?.task_code || "").trim();
     const sampleCode = String(sample?.code || "").trim();
-    if (!taskCode || !sampleCode) {
+    if (!taskCode || !sampleCode || !knownTaskCodes.has(taskCode)) {
       return;
-    }
-    if (!taskMap.has(taskCode)) {
-      taskMap.set(taskCode, {
-        taskCode,
-        taskType: "",
-        taskStatus: "",
-        plannedCount: "",
-        timeValue: "",
-        sampleCodes: [],
-        trays: [],
-        scheduleCount: 0,
-        retentionCount: 0,
-        experiments: (experimentsByTaskCode.get(taskCode) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode)),
-        experimentCount: (experimentsByTaskCode.get(taskCode) || []).length,
-      });
     }
     const row = taskMap.get(taskCode);
     // 一个任务可能对应多个样品编码，后续会在输出阶段去重排序。
@@ -140,23 +127,8 @@ function buildTaskRows({
 
   scheduleList.forEach((entry) => {
     const taskCode = String(entry?.task_code || "").trim();
-    if (!taskCode) {
+    if (!taskCode || !knownTaskCodes.has(taskCode)) {
       return;
-    }
-    if (!taskMap.has(taskCode)) {
-      taskMap.set(taskCode, {
-        taskCode,
-        taskType: "",
-        taskStatus: "",
-        plannedCount: "",
-        timeValue: normalizeText(entry?.start_at || entry?.created_at),
-        sampleCodes: [],
-        trays: [],
-        scheduleCount: 0,
-        retentionCount: 0,
-        experiments: (experimentsByTaskCode.get(taskCode) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode)),
-        experimentCount: (experimentsByTaskCode.get(taskCode) || []).length,
-      });
     }
     const row = taskMap.get(taskCode);
     // 暂存间排程单独累计，正式实验排程累计到 scheduleCount。
@@ -276,7 +248,7 @@ function buildTrayOverviewRows({
   const trayMap = new Map();
   sampleList.forEach((sample) => {
     const taskCode = String(sample?.task_code || "").trim();
-    if (!taskCode) {
+    if (!taskCode || !taskTypeByCode.has(taskCode)) {
       return;
     }
     const targetExperiment = taskTypeByCode.get(taskCode) || "-";

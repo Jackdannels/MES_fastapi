@@ -10,6 +10,7 @@ class FakeTransferStorage:
             "mes.schedules": [],
             "mes.experiments": [],
             "mes.experiment_trays": [],
+            "mes.experiment_samples": [],
             "mes.devices": [],
             "mes.streams": [],
             "mes.conflicts": [],
@@ -136,6 +137,7 @@ def create_payloads():
             },
         ],
         "mes.experiment_trays": [],
+        "mes.experiment_samples": [],
     }
 
 
@@ -160,6 +162,7 @@ def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(m
     task_nos = [item["taskNo"] for item in payload["taskOverview"]]
     assert task_nos == ["SYLU-2026-03-101", "SYLU-2026-03-102"]
     assert "SYLU-2026-03-103" not in task_nos
+    assert payload["taskOverview"][0]["experimentTypeText"] == "盐雾试验 / 振动试验 / 温度冲击试验"
     assert payload["pendingTaskCount"] == 1
     assert payload["storedTaskCount"] == 1
 
@@ -172,12 +175,65 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
     assert response.status_code == 200
     payload = response.json()
     assert payload["task"]["taskNo"] == "SYLU-2026-03-101"
+    assert payload["task"]["experimentTypeText"] == "盐雾试验 / 振动试验 / 温度冲击试验"
     assert payload["task"]["taskStatus"] == "未入库"
     assert payload["task"]["trayLimit"] == 4
     assert len(payload["assignedTrays"]) == 1
     assert len(payload["assignedTrays"]) > 0
     assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
     assert len(payload["trayInventory"]) == 19
+
+
+def test_transfer_area_workspace_backfills_three_experiments_for_sylu_task_when_storage_has_none(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write("mes.experiments", [])
+
+    response = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["experimentCode"] for item in payload["experiments"]] == [
+        "SYLU-2026-03-101-A",
+        "SYLU-2026-03-101-B",
+        "SYLU-2026-03-101-C",
+    ]
+    assert len({item["experimentName"] for item in payload["experiments"]}) == 3
+
+
+def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.samples",
+        [sample for sample in storage.read("mes.samples") if sample["task_code"] != "SYLU-2026-03-101"],
+    )
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert bootstrap.status_code == 200
+    task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-101")
+    assert task_row["sampleCodes"] == [
+        "SYLU-2026-03-101-SP-001",
+        "SYLU-2026-03-101-SP-002",
+        "SYLU-2026-03-101-SP-003",
+        "SYLU-2026-03-101-SP-004",
+    ]
+
+    assert workspace.status_code == 200
+    assert [sample["sampleNo"] for sample in workspace.json()["assignedTrays"][0]["samples"]] == [
+        "SYLU-2026-03-101-SP-001",
+        "SYLU-2026-03-101-SP-002",
+        "SYLU-2026-03-101-SP-003",
+        "SYLU-2026-03-101-SP-004",
+    ]
+
+    stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
+    assert [sample["code"] for sample in stored_samples] == [
+        "SYLU-2026-03-101-SP-001",
+        "SYLU-2026-03-101-SP-002",
+        "SYLU-2026-03-101-SP-003",
+        "SYLU-2026-03-101-SP-004",
+    ]
 
 
 def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch):
@@ -222,7 +278,10 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert reloaded.json()["workspace"]["assignedTrays"][0]["experimentLabels"] == []
     assert all(item["assignedTrayCount"] == 0 for item in reloaded.json()["workspace"]["experiments"])
     assert storage.read("mes.tasks")[0]["transfer_status"] == "未入库"
+    assert storage.read("mes.tasks")[0]["tray_codes"] == []
     assert storage.read("mes.experiment_trays") == []
+    assert storage.read("mes.experiment_samples") == []
+    assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
 
 
 def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignments(monkeypatch):
@@ -257,11 +316,23 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
     assert allocated_payload["experiments"][2]["assignedTrayCount"] == 1
     assert allocated_payload["assignedTrays"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
     assert allocated_payload["assignedTrays"][1]["experimentLabels"] == ["振动试验", "温度冲击试验"]
+    assert allocated_payload["assignedTrays"][0]["samples"][0]["experimentCodes"] == ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B"]
+    assert allocated_payload["assignedTrays"][1]["samples"][0]["experimentCodes"] == ["SYLU-2026-03-101-B", "SYLU-2026-03-101-C"]
     assert storage.read("mes.experiment_trays") == [
         {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-A", "tray_code": "SYLU-2026-03-101-TP-001"},
         {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "tray_code": "SYLU-2026-03-101-TP-001"},
         {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "tray_code": "SYLU-2026-03-101-TP-002"},
         {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-C", "tray_code": "SYLU-2026-03-101-TP-002"},
+    ]
+    assert storage.read("mes.experiment_samples") == [
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-A", "sample_code": "SYLU-2026-03-101-SP-001"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-A", "sample_code": "SYLU-2026-03-101-SP-002"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "sample_code": "SYLU-2026-03-101-SP-001"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "sample_code": "SYLU-2026-03-101-SP-002"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "sample_code": "SYLU-2026-03-101-SP-003"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-B", "sample_code": "SYLU-2026-03-101-SP-004"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-C", "sample_code": "SYLU-2026-03-101-SP-003"},
+        {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-C", "sample_code": "SYLU-2026-03-101-SP-004"},
     ]
 
     printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})

@@ -41,6 +41,34 @@ describe("useTaskOverview helpers", () => {
     expect(filtered[0].taskCode).toBe("TASK-001");
   });
 
+  test("filters rows by experiment summary when task type is absent", () => {
+    const rows = [
+      {
+        currentStatus: "待排程",
+        experimentSummary: "温度冲击 / 振动 / 盐雾",
+        sampleCodes: [],
+        scheduleLabel: "未排程",
+        taskCode: "TASK-003",
+        taskType: "",
+        timeValue: "2026-03-08T10:00:00Z",
+        trays: [],
+      },
+    ];
+
+    const filtered = filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "振动",
+      rows,
+      testTypeFilter: "",
+      timeFilter: "all",
+      now: new Date("2026-03-10T12:00:00Z"),
+    });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].taskCode).toBe("TASK-003");
+  });
+
   test("builds overview metrics for task and tray modes", () => {
     const taskMetrics = buildOverviewMetrics({
       filteredRows: [{ scheduleCount: 1 }, { scheduleCount: 0 }],

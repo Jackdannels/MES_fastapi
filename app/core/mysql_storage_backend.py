@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timezone
 from threading import Lock
 from typing import Any, Dict, Iterable
@@ -18,13 +19,31 @@ from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotReposito
 STORAGE_MARKER = "FRONTEND_STORAGE"
 SAMPLE_META_PREFIX = f"{STORAGE_MARKER}:SAMPLE:"
 TRAY_META_PREFIX = f"{STORAGE_MARKER}:TRAY"
-RELATIONAL_STORAGE_KEYS = ("mes.tasks", "mes.schedules", "mes.devices", "mes.streams", "mes.samples", "mes.experiments", "mes.experiment_trays")
+RELATIONAL_STORAGE_KEYS = (
+    "mes.tasks",
+    "mes.schedules",
+    "mes.devices",
+    "mes.streams",
+    "mes.samples",
+    "mes.experiments",
+    "mes.experiment_trays",
+    "mes.experiment_samples",
+)
 SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", STORAGE_META_KEY)
 RETENTION_KEYWORD = "暂存间"
+SAMPLE_TASK_CODE_PATTERN = re.compile(r"^(?P<task_code>.+)-SP-\d+$")
 
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def derive_task_code_from_sample_code(sample_code: Any) -> str:
+    text = normalize_text(sample_code)
+    match = SAMPLE_TASK_CODE_PATTERN.match(text)
+    if not match:
+        return ""
+    return normalize_text(match.group("task_code"))
 
 
 def normalize_storage_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -299,6 +318,30 @@ def build_storage_experiment_tray_item(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def build_experiment_sample_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    return {
+        "experiment_no": normalize_text(relation.get("experiment_code")),
+        "task_no": normalize_text(relation.get("task_code")),
+        "sample_no": normalize_text(relation.get("sample_code")),
+        "created_at": parse_storage_datetime(relation.get("created_at")) or now_utc,
+        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_utc,
+    }
+
+
+def build_storage_experiment_sample_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": normalize_text(row.get("relation_id")) or (
+            f"{normalize_text(row.get('experiment_no'))}:{normalize_text(row.get('sample_no'))}"
+        ),
+        "task_code": normalize_text(row.get("task_no")),
+        "experiment_code": normalize_text(row.get("experiment_no")),
+        "sample_code": normalize_text(row.get("sample_no")),
+        "created_at": format_iso_storage_datetime(row.get("created_at")),
+        "updated_at": format_iso_storage_datetime(row.get("updated_at")),
+    }
+
+
 def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
     device = normalize_text(schedule.get("device"))
     return {
@@ -418,6 +461,7 @@ def build_storage_sample_item(
     event_rows: Iterable[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     meta = decode_sample_meta(row.get("remark"))
+    resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
     trays = [
         {
             "id": normalize_text(tray.get("tray_code") or tray.get("id")),
@@ -446,7 +490,7 @@ def build_storage_sample_item(
     return {
         "id": normalize_text(row.get("sample_no")),
         "code": normalize_text(row.get("sample_no")),
-        "task_code": normalize_text(row.get("task_no")),
+        "task_code": resolved_task_code,
         "sample_type": normalize_text(row.get("sample_type")),
         "batch_no": normalize_text(row.get("batch_no")),
         "arrival_at": format_display_storage_datetime(row.get("arrival_time")),
@@ -537,6 +581,22 @@ class MySQLMesStorageBackend(StorageBackend):
                       UNIQUE KEY uk_biz_experiment_tray_unique (experiment_no, tray_no),
                       KEY idx_biz_experiment_tray_task_no (task_no),
                       KEY idx_biz_experiment_tray_tray_no (tray_no)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS biz_experiment_sample (
+                      relation_id BIGINT NOT NULL AUTO_INCREMENT,
+                      experiment_no VARCHAR(50) NOT NULL,
+                      task_no VARCHAR(50) NOT NULL,
+                      sample_no VARCHAR(80) NOT NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (relation_id),
+                      UNIQUE KEY uk_biz_experiment_sample_unique (experiment_no, sample_no),
+                      KEY idx_biz_experiment_sample_task_no (task_no),
+                      KEY idx_biz_experiment_sample_sample_no (sample_no)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                     """
                 )
@@ -779,6 +839,23 @@ class MySQLMesStorageBackend(StorageBackend):
             """
             INSERT INTO biz_experiment_tray (experiment_no, task_no, tray_no, created_at, updated_at)
             VALUES (%(experiment_no)s, %(task_no)s, %(tray_no)s, %(created_at)s, %(updated_at)s)
+            """,
+            rows,
+        )
+
+    def _replace_experiment_samples(self, cursor, experiment_samples: list[dict[str, Any]]) -> None:
+        rows = [
+            build_experiment_sample_insert_row(relation)
+            for relation in experiment_samples
+            if normalize_text(relation.get("experiment_code")) and normalize_text(relation.get("sample_code"))
+        ]
+        cursor.execute("DELETE FROM biz_experiment_sample")
+        if not rows:
+            return
+        cursor.executemany(
+            """
+            INSERT INTO biz_experiment_sample (experiment_no, task_no, sample_no, created_at, updated_at)
+            VALUES (%(experiment_no)s, %(task_no)s, %(sample_no)s, %(created_at)s, %(updated_at)s)
             """,
             rows,
         )
@@ -1200,6 +1277,16 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         return [build_storage_experiment_tray_item(row) for row in cursor.fetchall()]
 
+    def _load_experiment_samples(self, cursor) -> list[dict[str, Any]]:
+        cursor.execute(
+            """
+            SELECT relation_id, experiment_no, task_no, sample_no, created_at, updated_at
+            FROM biz_experiment_sample
+            ORDER BY task_no ASC, experiment_no ASC, sample_no ASC
+            """
+        )
+        return [build_storage_experiment_sample_item(row) for row in cursor.fetchall()]
+
     def _load_devices(self, cursor) -> list[dict[str, Any]]:
         cursor.execute(
             """
@@ -1306,6 +1393,8 @@ class MySQLMesStorageBackend(StorageBackend):
                     self._replace_experiments(cursor, relational_updates["mes.experiments"] or [])
                 if "mes.experiment_trays" in relational_updates:
                     self._replace_experiment_trays(cursor, relational_updates["mes.experiment_trays"] or [])
+                if "mes.experiment_samples" in relational_updates:
+                    self._replace_experiment_samples(cursor, relational_updates["mes.experiment_samples"] or [])
                 if "mes.tasks" in relational_updates:
                     self._replace_tasks(cursor, relational_updates["mes.tasks"] or [], prune=True)
             connection.commit()
@@ -1328,6 +1417,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "mes.samples": self._load_samples(cursor),
                         "mes.experiments": self._load_experiments(cursor),
                         "mes.experiment_trays": self._load_experiment_trays(cursor),
+                        "mes.experiment_samples": self._load_experiment_samples(cursor),
                     }
             data.update(snapshot_values)
             for key in STORAGE_KEYS:
@@ -1360,6 +1450,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         return self._load_experiments(cursor)
                     if key == "mes.experiment_trays":
                         return self._load_experiment_trays(cursor)
+                    if key == "mes.experiment_samples":
+                        return self._load_experiment_samples(cursor)
             return []
 
     def write(self, key: str, value: Any) -> None:

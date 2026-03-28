@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.storage_backend import get_storage_backend
+from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -69,13 +69,14 @@ def now_text() -> str:
 
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
-    payload = storage.read_all()
+    payload = normalize_storage_payload(storage.read_all())
     return {
         "tasks": [dict(item) for item in as_list(payload.get("mes.tasks")) if isinstance(item, dict)],
         "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
+        "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
     }
 
 
@@ -88,6 +89,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.schedules": snapshot["schedules"],
             "mes.experiments": snapshot["experiments"],
             "mes.experiment_trays": snapshot["experiment_trays"],
+            "mes.experiment_samples": snapshot["experiment_samples"],
         }
     )
 
@@ -116,6 +118,14 @@ def sample_sort_key(sample: dict[str, Any]) -> tuple[str, str]:
     return (sample_code(sample), sample_key(sample))
 
 
+def parse_positive_int(value: Any) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
 def build_task_sample_map(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     result: dict[str, list[dict[str, Any]]] = {}
     for sample in samples:
@@ -123,6 +133,74 @@ def build_task_sample_map(samples: list[dict[str, Any]]) -> dict[str, list[dict[
     for entries in result.values():
         entries.sort(key=sample_sort_key)
     return result
+
+
+def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    task_code_value = task_code(task)
+    if not task_code_value:
+        return []
+    planned_count = parse_positive_int(task.get("sample_count"))
+    if planned_count <= 0:
+        return []
+
+    existing_codes = {sample_code(sample) for sample in task_samples if sample_code(sample)}
+    current_task_status = transfer_status_for_task(task, task_samples)
+    received_time = task_arrival_time(task)
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    if current_task_status == TASK_STATUS_STORED:
+        location = "接驳区"
+        status = TASK_STATUS_STORED
+        flow_status = TASK_STATUS_STORED
+    elif received_time:
+        location = "接驳区"
+        status = TASK_STATUS_PENDING
+        flow_status = "到货"
+    else:
+        location = ""
+        status = "运输中"
+        flow_status = "运输中"
+
+    generated = []
+    for index in range(1, planned_count + 1):
+        generated_code = f"{task_code_value}-SP-{index:03d}"
+        if generated_code in existing_codes:
+            continue
+        generated.append(
+            {
+                "id": generated_code,
+                "code": generated_code,
+                "task_code": task_code_value,
+                "sample_type": normalize_text(task.get("sample_type")),
+                "batch_no": "",
+                "arrival_at": received_time,
+                "quantity": "1",
+                "storage_condition": "",
+                "barcode": "",
+                "remark": "",
+                "location": location,
+                "owner": "",
+                "status": status,
+                "flow_status": flow_status,
+                "created_at": now_iso,
+                "updated_at": now_iso,
+                "trays": [],
+                "history": [],
+            }
+        )
+    return generated
+
+
+def ensure_task_samples(snapshot: dict[str, list[dict[str, Any]]], task: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    samples_by_task = build_task_sample_map(snapshot["samples"])
+    task_code_value = task_code(task)
+    task_samples = samples_by_task.get(task_code_value, [])
+    generated_samples = build_generated_task_samples(task, task_samples)
+    if not generated_samples:
+        return task_samples, False
+    snapshot["samples"].extend(generated_samples)
+    refreshed_samples = build_task_sample_map(snapshot["samples"]).get(task_code_value, [])
+    return refreshed_samples, True
 
 
 def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
@@ -234,17 +312,69 @@ def clear_transfer_history(sample: dict[str, Any]) -> None:
     ]
 
 
-def serialize_sample(sample: dict[str, Any], task_status: str) -> dict[str, Any]:
+def build_sample_experiment_map(
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+    experiment_samples: list[dict[str, Any]],
+) -> dict[str, list[str]]:
+    task_code_value = task_code(task)
+    sample_experiment_codes: dict[str, set[str]] = {}
+
+    for entry in experiment_samples:
+        if normalize_text(entry.get("task_code")) != task_code_value:
+            continue
+        sample_code_value = normalize_text(entry.get("sample_code"))
+        experiment_code_value = normalize_text(entry.get("experiment_code"))
+        if not sample_code_value or not experiment_code_value:
+            continue
+        sample_experiment_codes.setdefault(sample_code_value, set()).add(experiment_code_value)
+
+    tray_experiment_codes: dict[str, set[str]] = {}
+    for entry in experiment_trays:
+        if normalize_text(entry.get("task_code")) != task_code_value:
+            continue
+        tray_code_value = normalize_text(entry.get("tray_code"))
+        experiment_code_value = normalize_text(entry.get("experiment_code"))
+        if not tray_code_value or not experiment_code_value:
+            continue
+        tray_experiment_codes.setdefault(tray_code_value, set()).add(experiment_code_value)
+
+    for sample in task_samples:
+        sample_code_value = sample_code(sample)
+        if not sample_code_value:
+            continue
+        for tray in as_list(sample.get("trays")):
+            tray_code_value = normalize_text(tray.get("tray_code"))
+            if not tray_code_value:
+                continue
+            for experiment_code_value in tray_experiment_codes.get(tray_code_value, set()):
+                sample_experiment_codes.setdefault(sample_code_value, set()).add(experiment_code_value)
+
+    return {
+        sample_code_value: sorted(experiment_codes, key=lambda value: value)
+        for sample_code_value, experiment_codes in sample_experiment_codes.items()
+    }
+
+
+def serialize_sample(sample: dict[str, Any], task_status: str, experiment_codes: list[str] | None = None) -> dict[str, Any]:
     return {
         "sampleId": sample_key(sample),
         "sampleNo": sample_code(sample),
         "sampleStatus": TASK_STATUS_STORED if task_status == TASK_STATUS_STORED else TASK_STATUS_PENDING,
+        "experimentCodes": list(experiment_codes or []),
     }
 
 
-def build_assigned_trays(task: dict[str, Any], task_samples: list[dict[str, Any]], task_status: str) -> list[dict[str, Any]]:
+def build_assigned_trays(
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+    task_status: str,
+    sample_experiment_map: dict[str, list[str]] | None = None,
+) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
     ordered_codes: list[str] = []
+    normalized_sample_experiment_map = sample_experiment_map or {}
 
     for sample in task_samples:
         trays = as_list(sample.get("trays"))
@@ -283,7 +413,9 @@ def build_assigned_trays(task: dict[str, Any], task_samples: list[dict[str, Any]
                 "barcodeData": barcode["barcodeContent"] if barcode else None,
             }
             ordered_codes.append(tray_code_value)
-        grouped[tray_code_value]["samples"].append(serialize_sample(sample, task_status))
+        grouped[tray_code_value]["samples"].append(
+            serialize_sample(sample, task_status, normalized_sample_experiment_map.get(sample_code(sample), []))
+        )
 
     if grouped:
         trays = [grouped[tray_code] for tray_code in sorted(ordered_codes, key=tray_serial_from_code)]
@@ -300,7 +432,10 @@ def build_assigned_trays(task: dict[str, Any], task_samples: list[dict[str, Any]
     for index in range(tray_count):
         start = index * limit
         end = start + limit
-        tray_samples = [serialize_sample(sample, task_status) for sample in task_samples[start:end]]
+        tray_samples = [
+            serialize_sample(sample, task_status, normalized_sample_experiment_map.get(sample_code(sample), []))
+            for sample in task_samples[start:end]
+        ]
         tray_no = f"{task_code(task)}-TP-{index + 1:03d}"
         trays.append(
             {
@@ -427,6 +562,18 @@ def build_tray_experiment_labels(
     return tray_labels
 
 
+def build_experiment_summary(task: dict[str, Any], experiments: list[dict[str, Any]]) -> str:
+    task_code_value = task_code(task)
+    labels: list[str] = []
+    for experiment in experiments:
+        if normalize_text(experiment.get("task_code")) != task_code_value:
+            continue
+        label = normalize_text(experiment.get("experiment_name")) or normalize_text(experiment.get("required_device"))
+        if label and label not in labels:
+            labels.append(label)
+    return " / ".join(labels)
+
+
 def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
     if transfer_status_for_task(task, task_samples) != TASK_STATUS_PENDING:
         return False
@@ -495,10 +642,18 @@ def serialize_workspace(
     all_samples: list[dict[str, Any]] | None = None,
     experiments: list[dict[str, Any]] | None = None,
     experiment_trays: list[dict[str, Any]] | None = None,
+    experiment_samples: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current_task_status = transfer_status_for_task(task, task_samples)
-    assigned_trays = build_assigned_trays(task, task_samples, current_task_status)
+    sample_experiment_map = build_sample_experiment_map(
+        task,
+        task_samples,
+        experiment_trays or [],
+        experiment_samples or [],
+    )
+    assigned_trays = build_assigned_trays(task, task_samples, current_task_status, sample_experiment_map)
     task_experiments = build_task_experiment_rows(task, experiments or [], experiment_trays or [])
+    experiment_summary = build_experiment_summary(task, experiments or [])
     tray_experiment_labels = build_tray_experiment_labels(task, experiments or [], experiment_trays or [])
     assigned_trays = [
         {
@@ -529,7 +684,7 @@ def serialize_workspace(
             "taskNo": task_code(task),
             "taskName": normalize_text(task.get("name")),
             "taskType": normalize_text(task.get("test_type")),
-            "experimentTypeText": normalize_text(task.get("test_type")),
+            "experimentTypeText": experiment_summary or normalize_text(task.get("test_type")),
             "taskStatus": current_task_status,
             "taskProgress": current_progress,
             "receivedTime": task_arrival_time(task),
@@ -577,14 +732,17 @@ def read_bootstrap() -> dict[str, Any]:
     visible_tasks.sort(key=lambda item: task_code(item))
 
     overview = []
+    snapshot_changed = False
     for index, task in enumerate(visible_tasks, start=1):
-        task_samples = samples_by_task.get(task_code(task), [])
+        task_samples, changed = ensure_task_samples(snapshot, task)
+        snapshot_changed = snapshot_changed or changed
         workspace = serialize_workspace(
             task,
             task_samples,
             snapshot["samples"],
             snapshot["experiments"],
             snapshot["experiment_trays"],
+            snapshot["experiment_samples"],
         )
         task_payload = workspace["task"]
         overview.append(
@@ -604,6 +762,9 @@ def read_bootstrap() -> dict[str, Any]:
             }
         )
 
+    if snapshot_changed:
+        write_snapshot(snapshot)
+
     return {
         "taskOverview": overview,
         "pendingTaskCount": sum(1 for item in overview if item["taskStatus"] == TASK_STATUS_PENDING),
@@ -615,17 +776,26 @@ def read_bootstrap() -> dict[str, Any]:
 def read_task_workspace(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    task_samples, changed = ensure_task_samples(snapshot, task)
     if repair_pending_tray_codes(task, task_samples):
+        changed = True
+    if changed:
         write_snapshot(snapshot)
-    return serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"])
+    return serialize_workspace(
+        task,
+        task_samples,
+        snapshot["samples"],
+        snapshot["experiments"],
+        snapshot["experiment_trays"],
+        snapshot["experiment_samples"],
+    )
 
 
 @router.post("/tasks/{task_id}/allocate")
 def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...)) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    task_samples, _changed = ensure_task_samples(snapshot, task)
     sample_map = {sample_key(sample): sample for sample in task_samples}
     requested_ids = [sample_id for tray in request.trays for sample_id in tray.sample_ids]
     requested_tray_count = sum(1 for tray in request.trays if tray.sample_ids)
@@ -648,19 +818,25 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     next_experiment_trays = [
         entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
+    next_experiment_samples = [
+        entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     tray_codes = []
     tray_code_by_id: dict[int, str] = {}
+    tray_sample_codes_by_no: dict[str, list[str]] = {}
     for tray in request.trays:
         if len(tray.sample_ids) > request.tray_limit:
             raise HTTPException(status_code=400, detail="单托盘样品数量超过统一上限")
         _serial, tray_no = decode_tray_id(task_code(task), tray.tray_id)
         tray_code_by_id[tray.tray_id] = tray_no
+        tray_sample_codes_by_no[tray_no] = []
         if tray.sample_ids:
             tray_codes.append(tray_no)
         for sample_id in tray.sample_ids:
             if sample_id not in sample_map:
                 raise HTTPException(status_code=400, detail="存在不属于当前任务的样品")
+            tray_sample_codes_by_no[tray_no].append(sample_code(sample_map[sample_id]))
             sample_map[sample_id]["trays"].append(
                 {
                     "tray_id": tray.tray_id,
@@ -681,28 +857,50 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
         experiment_code = normalize_text(selection.experiment_code)
         if not experiment_code:
             continue
+        experiment_sample_codes: set[str] = set()
         for tray_id in selection.tray_ids:
-          tray_no = tray_code_by_id.get(tray_id)
-          if not tray_no:
-              continue
-          next_experiment_trays.append(
-              {
-                  "task_code": task_code(task),
-                  "experiment_code": experiment_code,
-                  "tray_code": tray_no,
-              }
-          )
+            tray_no = tray_code_by_id.get(tray_id)
+            if not tray_no:
+                continue
+            next_experiment_trays.append(
+                {
+                    "task_code": task_code(task),
+                    "experiment_code": experiment_code,
+                    "tray_code": tray_no,
+                }
+            )
+            experiment_sample_codes.update(
+                sample_code_value
+                for sample_code_value in tray_sample_codes_by_no.get(tray_no, [])
+                if sample_code_value
+            )
+        for sample_code_value in sorted(experiment_sample_codes):
+            next_experiment_samples.append(
+                {
+                    "task_code": task_code(task),
+                    "experiment_code": experiment_code,
+                    "sample_code": sample_code_value,
+                }
+            )
 
     task["tray_limit"] = request.tray_limit
     task["tray_codes"] = sorted(set(tray_codes))
     task["transfer_status"] = TASK_STATUS_PENDING
     task["updated_at"] = datetime.now().isoformat(timespec="seconds")
     snapshot["experiment_trays"] = next_experiment_trays
+    snapshot["experiment_samples"] = next_experiment_samples
     write_snapshot(snapshot)
     return {
         "ok": True,
         "message": "托盘分配已保存",
-        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+        "workspace": serialize_workspace(
+            task,
+            task_samples,
+            snapshot["samples"],
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+            snapshot["experiment_samples"],
+        ),
     }
 
 
@@ -710,7 +908,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
 def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(...)) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    task_samples, _changed = ensure_task_samples(snapshot, task)
     if not task_arrival_time(task):
         raise HTTPException(status_code=400, detail="样品尚未送达接驳区，不能打印条形码")
 
@@ -752,7 +950,14 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
             sample["trays"] = next_trays
 
     write_snapshot(snapshot)
-    workspace = serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"])
+    workspace = serialize_workspace(
+        task,
+        task_samples,
+        snapshot["samples"],
+        snapshot["experiments"],
+        snapshot["experiment_trays"],
+        snapshot["experiment_samples"],
+    )
     tray_label_map = {tray["trayNo"]: tray.get("experimentLabels", []) for tray in workspace["assignedTrays"]}
     for barcode in printed:
         barcode["experimentLabels"] = tray_label_map.get(barcode["barcodeNo"], [])
@@ -763,7 +968,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
 def confirm_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    task_samples, _changed = ensure_task_samples(snapshot, task)
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
 
     if not assigned_trays:
@@ -789,7 +994,14 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
     return {
         "ok": True,
         "message": "任务已确认入库",
-        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+        "workspace": serialize_workspace(
+            task,
+            task_samples,
+            snapshot["samples"],
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+            snapshot["experiment_samples"],
+        ),
     }
 
 
@@ -797,36 +1009,33 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
 def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    task_samples, _changed = ensure_task_samples(snapshot, task)
     snapshot["experiment_trays"] = [
         entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
+    snapshot["experiment_samples"] = [
+        entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     task["transfer_status"] = TASK_STATUS_PENDING
+    task["tray_codes"] = []
     task["updated_at"] = datetime.now().isoformat(timespec="seconds")
     update_task_samples_for_pending(task, task_samples)
 
     for sample in task_samples:
-        next_trays = []
-        for entry in as_list(sample.get("trays")):
-            normalized = dict(entry)
-            normalized.update(
-                {
-                    "status": TASK_STATUS_PENDING,
-                    "barcode_id": None,
-                    "barcode_no": None,
-                    "barcode_content": None,
-                    "barcode_type": None,
-                    "printed_at": None,
-                }
-            )
-            next_trays.append(normalized)
-        sample["trays"] = next_trays
+        sample["trays"] = []
         append_history(sample, "任务重新入库", task_code(task))
 
     write_snapshot(snapshot)
     return {
         "ok": True,
         "message": "任务已重新入库，已回到未入库列表",
-        "workspace": serialize_workspace(task, task_samples, snapshot["samples"], snapshot["experiments"], snapshot["experiment_trays"]),
+        "workspace": serialize_workspace(
+            task,
+            task_samples,
+            snapshot["samples"],
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+            snapshot["experiment_samples"],
+        ),
     }

@@ -150,7 +150,7 @@ const createStoredWorkspace = (printedWorkspace) => ({
 
 const createReloadedWorkspace = (workspacePayload) => ({
   ...workspacePayload,
-  allocationSaved: true,
+  allocationSaved: false,
   task: { ...workspacePayload.task, taskStatus: "未入库", taskProgress: "样品已送达，待打印条形码", printedTrayCount: 0 },
   experiments: Array.isArray(workspacePayload.experiments)
     ? workspacePayload.experiments.map((experiment) => ({
@@ -303,6 +303,11 @@ describe("TransferAreaPage runtime", () => {
 
     expect(wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").attributes("disabled")).toBeUndefined();
 
+    await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(1);
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').classes()).toContain("is-active");
+
     await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").trigger("click");
     await settle(wrapper);
 
@@ -318,6 +323,7 @@ describe("TransferAreaPage runtime", () => {
 
     expect(wrapper.text()).toContain("SYLU-2026-03-101-SP-001未入库");
     expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
+    expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(0);
 
     await wrapper.get(".transfer-detail-shell__top .action-btn.secondary").trigger("click");
     await settle(wrapper);
@@ -418,6 +424,171 @@ describe("TransferAreaPage runtime", () => {
 
     expect(printFrameDocumentWriteMock).toHaveBeenCalled();
     expect(printFramePrintMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("printed barcode document uses standard Code128 svg markup", async () => {
+    const originalCreateElement = document.createElement.bind(document);
+    const iframe = originalCreateElement("iframe");
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: {
+        open: vi.fn(),
+        write: printFrameDocumentWriteMock,
+        close: printFrameDocumentCloseMock,
+      },
+    });
+    Object.defineProperty(iframe, "contentWindow", {
+      configurable: true,
+      value: {
+        focus: printFrameFocusMock,
+        print: printFramePrintMock,
+      },
+    });
+    vi.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+      if (String(tagName).toLowerCase() === "iframe") {
+        return iframe;
+      }
+      return originalCreateElement(tagName, options);
+    });
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get(".transfer-print-all-btn").trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="barcode-modal-confirm-print"]').trigger("click");
+    await settle(wrapper);
+
+    const printedHtml = printFrameDocumentWriteMock.mock.calls.at(-1)?.[0] || "";
+
+    expect(printedHtml).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(printedHtml).toMatch(/<rect[^>]+width="4"/);
+    expect(printedHtml).toContain('aria-label="SYLU-2026-03-101-TP-001"');
+  });
+
+  test("barcode preview and print document keep experiment tag colors aligned with tray selection", async () => {
+    const originalCreateElement = document.createElement.bind(document);
+    const iframe = originalCreateElement("iframe");
+    Object.defineProperty(iframe, "contentDocument", {
+      configurable: true,
+      value: {
+        open: vi.fn(),
+        write: printFrameDocumentWriteMock,
+        close: printFrameDocumentCloseMock,
+      },
+    });
+    Object.defineProperty(iframe, "contentWindow", {
+      configurable: true,
+      value: {
+        focus: printFrameFocusMock,
+        print: printFramePrintMock,
+      },
+    });
+    vi.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+      if (String(tagName).toLowerCase() === "iframe") {
+        return iframe;
+      }
+      return originalCreateElement(tagName, options);
+    });
+
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithExperimentAssignments = {
+      ...createWorkspacePayload(),
+      allocationSaved: true,
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "温度冲击试验",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "冲击试验",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-C",
+          experimentName: "振动试验",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-002"],
+          assignedTrayCount: 1,
+        },
+      ],
+    };
+    const printedWorkspace = {
+      ...workspaceWithExperimentAssignments,
+      assignedTrays: workspaceWithExperimentAssignments.assignedTrays.map((tray, index) => ({
+        ...tray,
+        trayStatus: "待入库",
+        barcode: {
+          barcodeId: 980 + index,
+          objectId: tray.trayId,
+          barcodeNo: tray.trayNo,
+          barcodeContent: `TRAY|TASK:SYLU-2026-03-101|TRAY:${tray.trayNo}|LOAD:${tray.samples.length}`,
+        },
+      })),
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceWithExperimentAssignments };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ ok: true, message: "托盘分配已保存", workspace: workspaceWithExperimentAssignments }),
+          };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/print-barcodes")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              message: "条形码已生成",
+              barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
+              workspace: printedWorkspace,
+            }),
+          };
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    const trayTags = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".transfer-tray-experiment-tag");
+    expect(trayTags).toHaveLength(2);
+    const selectedTrayTagClass = trayTags[0].attributes("class");
+
+    await wrapper.get(".transfer-print-all-btn").trigger("click");
+    await settle(wrapper);
+
+    const modalTags = wrapper.get('[data-testid="barcode-modal"]').findAll(".transfer-tray-experiment-tag");
+    expect(modalTags[0].attributes("class")).toBe(selectedTrayTagClass);
+
+    await wrapper.get('[data-testid="barcode-modal-confirm-print"]').trigger("click");
+    await settle(wrapper);
+
+    const printedHtml = printFrameDocumentWriteMock.mock.calls.at(-1)?.[0] || "";
+    expect(printedHtml).toContain("温度冲击试验");
+    expect(printedHtml).toContain("--tray-experiment-color: #b91c1c;");
   });
 
   test("changing tray limit rebalances samples into the minimum tray count in sequence", async () => {
@@ -640,6 +811,7 @@ describe("TransferAreaPage runtime", () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspaceWithExperimentAssignments = {
       ...createWorkspacePayload(),
+      allocationSaved: true,
       experiments: [
         {
           experimentCode: "SYLU-2026-03-101-A",
@@ -708,6 +880,221 @@ describe("TransferAreaPage runtime", () => {
     const secondTrayTagClasses = wrapper.get('[data-testid="transfer-tray-card-1"]').findAll(".transfer-tray-experiment-tag").map((tag) => tag.attributes("class"));
     expect(secondTrayTagClasses).toHaveLength(2);
     expect(secondTrayTagClasses[0]).not.toBe(secondTrayTagClasses[1]);
+  });
+
+  test("adding a tray clears existing experiment assignments and labels", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithExperimentAssignments = {
+      ...createWorkspacePayload(),
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "温度冲击",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "振动",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-002"],
+          assignedTrayCount: 1,
+        },
+      ],
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceWithExperimentAssignments };
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("温度冲击");
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("振动");
+
+    await wrapper.get(".transfer-use-tray-btn").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(3);
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeDefined();
+  });
+
+  test("moving or deleting trays clears existing experiment assignments and labels", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithThreeTrays = {
+      ...createWorkspacePayload(),
+      allocationSaved: true,
+      trayInventory: [],
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "温度冲击",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "振动",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-002"],
+          assignedTrayCount: 1,
+        },
+      ],
+      assignedTrays: [
+        {
+          trayId: 201,
+          trayNo: "SYLU-2026-03-101-TP-001",
+          trayType: "标准托盘",
+          trayStatus: "已预分配",
+          capacity: 2,
+          samples: [
+            { sampleId: 1, sampleNo: "SYLU-2026-03-101-SP-001", sampleStatus: "未入库" },
+            { sampleId: 2, sampleNo: "SYLU-2026-03-101-SP-002", sampleStatus: "未入库" },
+          ],
+          experimentLabels: ["温度冲击"],
+          experimentCodes: ["SYLU-2026-03-101-A"],
+          barcode: null,
+          barcodeData: null,
+        },
+        {
+          trayId: 202,
+          trayNo: "SYLU-2026-03-101-TP-002",
+          trayType: "标准托盘",
+          trayStatus: "已预分配",
+          capacity: 2,
+          samples: [{ sampleId: 3, sampleNo: "SYLU-2026-03-101-SP-003", sampleStatus: "未入库" }],
+          experimentLabels: ["振动"],
+          experimentCodes: ["SYLU-2026-03-101-B"],
+          barcode: null,
+          barcodeData: null,
+        },
+        {
+          trayId: 203,
+          trayNo: "SYLU-2026-03-101-TP-003",
+          trayType: "标准托盘",
+          trayStatus: "已预分配",
+          capacity: 2,
+          samples: [{ sampleId: 4, sampleNo: "SYLU-2026-03-101-SP-004", sampleStatus: "未入库" }],
+          experimentLabels: [],
+          experimentCodes: [],
+          barcode: null,
+          barcodeData: null,
+        },
+      ],
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceWithThreeTrays };
+        }
+        throw new Error(`Unhandled fetch: ${url}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(2);
+
+    const tray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
+    await tray0Samples[0].trigger("click");
+    await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeDefined();
+
+    await wrapper.get(".sample-tray-remove").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
+  });
+
+  test("reload on a pending task resets tray allocation back to the initial unassigned workspace", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithExperimentAssignments = {
+      ...createWorkspacePayload(),
+      allocationSaved: true,
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "温度冲击",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "振动",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-002"],
+          assignedTrayCount: 1,
+        },
+      ],
+      assignedTrays: createWorkspacePayload().assignedTrays.map((tray, index) => ({
+        ...tray,
+        experimentLabels: index === 0 ? ["温度冲击"] : ["振动"],
+        experimentCodes: index === 0 ? ["SYLU-2026-03-101-A"] : ["SYLU-2026-03-101-B"],
+      })),
+    };
+    const reloadedWorkspace = createReloadedWorkspace(workspaceWithExperimentAssignments);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceWithExperimentAssignments };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          expect(options.method).toBe("POST");
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ ok: true, message: "任务已重新入库，已回到未入库列表", workspace: reloadedWorkspace }),
+          };
+        }
+        throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(2);
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
+    expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(0);
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-SP-001");
+    expect(wrapper.text()).toContain("任务已重新入库，已回到未入库列表");
   });
 
   test("stored tasks still allow printing while tray editing remains disabled", async () => {

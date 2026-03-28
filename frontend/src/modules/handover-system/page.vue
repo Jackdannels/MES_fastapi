@@ -309,8 +309,18 @@
             <strong>{{ item.barcodeNo }}</strong>
             <div v-if="item.barcodeSvg" class="transfer-modal__barcode" v-html="item.barcodeSvg"></div>
             <div>托盘：{{ item.trayNo }}</div>
-            <div>内容：{{ item.barcodeContent }}</div>
+            <div>样品数：{{ item.samples.length }}</div>
             <div>样品：{{ item.samples.join(" / ") || "-" }}</div>
+            <div v-if="item.experimentLabels?.length" class="transfer-modal__experiment-tags">
+              <span
+                v-for="(label, labelIndex) in item.experimentLabels"
+                :key="`${item.barcodeId}-${label}-${labelIndex}`"
+                class="transfer-tray-experiment-tag"
+                :class="resolveExperimentTagTone(item.experimentCodes?.[labelIndex] || label)"
+              >
+                {{ label }}
+              </span>
+            </div>
           </article>
         </div>
         <div class="transfer-modal__actions">
@@ -335,6 +345,7 @@ import { useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { buildCode128Svg } from "./barcode.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
@@ -373,6 +384,20 @@ const overviewPageSize = ref(3);
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
+const EXPERIMENT_TAG_TONES = [
+  { bg: "rgba(14, 165, 233, 0.14)", border: "rgba(14, 165, 233, 0.45)", color: "#075985" },
+  { bg: "rgba(16, 185, 129, 0.14)", border: "rgba(16, 185, 129, 0.4)", color: "#047857" },
+  { bg: "rgba(245, 158, 11, 0.16)", border: "rgba(245, 158, 11, 0.44)", color: "#b45309" },
+  { bg: "rgba(244, 114, 182, 0.15)", border: "rgba(236, 72, 153, 0.42)", color: "#be185d" },
+  { bg: "rgba(168, 85, 247, 0.16)", border: "rgba(147, 51, 234, 0.44)", color: "#7e22ce" },
+  { bg: "rgba(239, 68, 68, 0.13)", border: "rgba(239, 68, 68, 0.38)", color: "#b91c1c" },
+];
+const XML_ESCAPE_MAP = {
+  "&": "&amp;",
+  "\"": "&quot;",
+  "<": "&lt;",
+  ">": "&gt;",
+};
 
 const normalizeTaskStatus = (status) => {
   const text = String(status || "").trim();
@@ -381,10 +406,34 @@ const normalizeTaskStatus = (status) => {
   return text;
 };
 
-const resolveExperimentTagTone = (value) => {
+const encodeHtml = (value) => String(value || "").replace(/[&"<>]/g, (char) => XML_ESCAPE_MAP[char] || char);
+
+const resolveExperimentTagToneIndex = (value) => {
   const text = String(value || "").trim();
   const hash = Array.from(text).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return `transfer-tray-experiment-tag--tone-${(hash % 6) + 1}`;
+  return hash % EXPERIMENT_TAG_TONES.length;
+};
+
+const resolveExperimentTagTone = (value) => {
+  return `transfer-tray-experiment-tag--tone-${resolveExperimentTagToneIndex(value) + 1}`;
+};
+
+const buildExperimentTagPrintCss = () => EXPERIMENT_TAG_TONES.map((tone, index) => `
+          .transfer-tray-experiment-tag--tone-${index + 1} {
+            --tray-experiment-bg: ${tone.bg};
+            --tray-experiment-border: ${tone.border};
+            --tray-experiment-color: ${tone.color};
+          }
+`).join("");
+
+const buildPrintExperimentTags = (item) => {
+  const tags = (item.experimentLabels || []).map((label, index) => `
+        <span class="transfer-tray-experiment-tag ${resolveExperimentTagTone(item.experimentCodes?.[index] || label)}">${encodeHtml(label)}</span>
+      `).join("");
+  if (!tags) {
+    return "";
+  }
+  return `<div class="transfer-tray-experiment-tags print-experiment-tags">${tags}</div>`;
 };
 
 const normalizeTaskRecord = (task) => ({
@@ -444,11 +493,11 @@ const switchModule = async (targetModule) => {
   await router.push(resolveModuleHome(targetModule));
 };
 
-const taskTypeOptions = computed(() => [...new Set(taskOverview.value.map((task) => task.taskType).filter(Boolean))]);
+const taskTypeOptions = computed(() => [...new Set(taskOverview.value.map((task) => task.experimentTypeText || task.taskType).filter(Boolean))]);
 const filteredTaskOverview = computed(() => {
   const query = searchText.value.trim().toLowerCase();
   return taskOverview.value.filter((task) => {
-    const typeMatch = !taskTypeFilter.value || task.taskType === taskTypeFilter.value;
+    const typeMatch = !taskTypeFilter.value || (task.experimentTypeText || task.taskType) === taskTypeFilter.value;
     const statusMatch = !taskStatusFilter.value || normalizeTaskStatus(task.taskStatus) === taskStatusFilter.value;
     const searchTextPool = [
       task.taskNo,
@@ -959,22 +1008,7 @@ const buildAllocationPayload = () => ({
 });
 
 const buildBarcodeSvg = (value) => {
-  const text = String(value || "--");
-  const bars = Array.from(text).flatMap((char, index) => {
-    const code = char.charCodeAt(0) + index;
-    return code.toString(2).padStart(8, "0").split("").map((bit) => Number(bit));
-  });
-  const moduleWidth = 2;
-  const height = 72;
-  const quiet = 12;
-  const width = (bars.length + quiet * 2) * moduleWidth;
-  let cursor = quiet * moduleWidth;
-  const rects = bars.map((bit) => {
-    const rect = bit ? `<rect x="${cursor}" y="0" width="${moduleWidth}" height="${height}" fill="#0f172a" />` : "";
-    cursor += moduleWidth;
-    return rect;
-  }).join("");
-  return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" aria-label="${text}">${rects}</svg>`;
+  return buildCode128Svg(value, { height: 72, moduleWidth: 2, quietZone: 12 });
 };
 
 const persistAllocation = async (showMessage = true) => {
@@ -1008,12 +1042,13 @@ const buildPrintDocument = () => {
   const cards = barcodePreviewItems.value.map((item) => `
     <article class="print-card">
       <header>
-        <strong>${item.barcodeNo}</strong>
-        <span>${item.trayNo}</span>
+        <strong>${encodeHtml(item.barcodeNo)}</strong>
+        <span>${encodeHtml(item.trayNo)}</span>
       </header>
       <div class="print-barcode">${item.barcodeSvg || ""}</div>
-      <div class="print-meta">内容：${item.barcodeContent || "-"}</div>
-      <div class="print-meta">样品：${item.samples.join(" / ") || "-"}</div>
+      <div class="print-meta">内容：${encodeHtml(item.barcodeContent || "-")}</div>
+      <div class="print-meta">样品：${encodeHtml(item.samples.join(" / ") || "-")}</div>
+      ${buildPrintExperimentTags(item)}
     </article>
   `).join("");
 
@@ -1032,11 +1067,26 @@ const buildPrintDocument = () => {
           .print-card header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
           .print-barcode { margin: 12px 0; }
           .print-meta { margin-top: 6px; font-size: 14px; }
+          .print-experiment-tags { margin-top: 12px; justify-content: flex-start; }
+          .transfer-tray-experiment-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+          .transfer-tray-experiment-tag {
+            display: inline-flex;
+            align-items: center;
+            min-height: 30px;
+            padding: 0 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 700;
+            background: var(--tray-experiment-bg, rgba(14, 165, 233, 0.14));
+            border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
+            color: var(--tray-experiment-color, #075985);
+          }
+${buildExperimentTagPrintCss()}
         </style>
       </head>
       <body>
         <h1>接驳区条码打印</h1>
-        <p>${currentTask.value?.taskNo || "--"} | ${currentTask.value?.experimentTypeText || currentTask.value?.taskType || "--"}</p>
+        <p>${encodeHtml(currentTask.value?.taskNo || "--")} | ${encodeHtml(currentTask.value?.experimentTypeText || currentTask.value?.taskType || "--")}</p>
         <section class="print-grid">${cards}</section>
       </body>
     </html>
@@ -1124,6 +1174,8 @@ const printAllTrayBarcodes = async () => {
         ...barcode,
         trayNo: tray?.trayNo || "--",
         samples: tray?.samples?.map((sample) => sample.sampleNo) || [],
+        experimentLabels: Array.isArray(tray?.experimentLabels) ? [...tray.experimentLabels] : [],
+        experimentCodes: Array.isArray(tray?.experimentCodes) ? [...tray.experimentCodes] : [],
         barcodeSvg: buildBarcodeSvg(barcodeValue),
       };
     });
@@ -1164,20 +1216,13 @@ const reloadWorkspace = async () => {
   feedback.value = "";
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
-  if (normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus) {
-    const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
-    applyWorkspace(payload.workspace);
-    updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印条形码");
-    feedback.value = payload.message;
-    await loadBootstrap();
-    taskStatusFilter.value = pendingStatus;
-    return;
-  }
-  await loadWorkspace();
+  const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
+  applyWorkspace(payload.workspace);
+  activeTrayIndex.value = -1;
+  updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印条形码");
+  feedback.value = payload.message;
   await loadBootstrap();
-  if (normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus) {
-    taskStatusFilter.value = storedStatus;
-  }
+  taskStatusFilter.value = pendingStatus;
 };
 
 onMounted(loadBootstrap);

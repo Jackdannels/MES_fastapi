@@ -18,6 +18,7 @@ const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
 const RANDOM_PRIORITIES = ["高", "中", "低"];
+const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
 
 // 本地随机演示数据在候选数组中抽取一个元素。
 const randomFrom = (items) => items[Math.floor(Math.random() * items.length)] || "";
@@ -59,6 +60,21 @@ const resolveBuildTaskRowsArgs = (samplesOrNow, nowMaybe) => {
     };
   }
   return {
+    now: Number.isFinite(samplesOrNow) ? samplesOrNow : Date.now(),
+    samples: [],
+  };
+};
+
+const resolveBuildTaskRowCollections = (samplesOrNow, experimentsOrNow, nowMaybe) => {
+  if (Array.isArray(samplesOrNow)) {
+    return {
+      experiments: Array.isArray(experimentsOrNow) ? experimentsOrNow : [],
+      now: Number.isFinite(nowMaybe) ? nowMaybe : Date.now(),
+      samples: samplesOrNow,
+    };
+  }
+  return {
+    experiments: [],
     now: Number.isFinite(samplesOrNow) ? samplesOrNow : Date.now(),
     samples: [],
   };
@@ -230,17 +246,41 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
 }
 
 // 将存储中的任务和排程转换为任务页专用的表格行。
-function buildTaskRows(tasks, schedules, samplesOrNow, nowMaybe) {
-  const { samples, now } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
+function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMaybe) {
+  const { samples, experiments, now } = resolveBuildTaskRowCollections(samplesOrNow, experimentsOrNow, nowMaybe);
   const taskList = Array.isArray(tasks) ? tasks : [];
+  const experimentsByTaskCode = new Map();
+
+  (Array.isArray(experiments) ? experiments : []).forEach((experiment) => {
+    const taskCode = normalizeText(experiment?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    const current = experimentsByTaskCode.get(taskCode) || [];
+    const label =
+      normalizeText(experiment?.experiment_type) ||
+      normalizeText(experiment?.experiment_name) ||
+      normalizeText(experiment?.required_device);
+    if (label) {
+      current.push(label);
+    }
+    experimentsByTaskCode.set(taskCode, current);
+  });
+
   return taskList.map((task, index) => {
     // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
     const displayStatus = resolveTaskStatus(task, schedules, samples, now);
+    const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
+    const experimentTypes = Array.from(new Set((experimentsByTaskCode.get(taskCode) || []).filter(Boolean)));
+    const fallbackType = normalizeText(task?.test_type);
+    const experimentSummary = experimentTypes.join(" / ") || fallbackType;
+    const experimentCount = experimentTypes.length || Number.parseInt(task?.experiment_count, 10) || (experimentSummary ? 1 : 0);
+
     return {
       arrivalAt: formatDateTime(task?.arrival_at),
       attachment: normalizeText(task?.attachment),
       client: normalizeText(task?.client) || "内部部门",
-      code: normalizeText(task?.code) || `TASK-${index + 1}`,
+      code: taskCode,
       conditions: normalizeText(task?.conditions),
       contact: normalizeText(task?.contact),
       contactInfo: normalizeText(task?.contact_info),
@@ -252,12 +292,14 @@ function buildTaskRows(tasks, schedules, samplesOrNow, nowMaybe) {
       priority: normalizeText(task?.priority) || "中",
       remark: normalizeText(task?.remark),
       requiredDevice: normalizeText(task?.required_device) || "-",
+      experimentCount,
+      experimentSummary,
       sampleCount: normalizeText(task?.sample_count),
       sampleType: normalizeText(task?.sample_type),
       source: normalizeText(task?.source) || SOURCE_EXTERNAL,
       status: normalizeStatusLabel(task?.status) || STATUS_WAITING,
       statusClass: statusClass(displayStatus),
-      testType: normalizeText(task?.test_type),
+      testType: experimentSummary,
     };
   });
 }
@@ -293,31 +335,46 @@ function buildFilterOptions(rows) {
   };
 }
 
-// 基于试验类型和当年已有序号生成下一个任务编号。
-function buildTaskCode(testType, tasks, year = new Date().getFullYear()) {
-  const normalizedType = normalizeText(testType);
-  if (!normalizedType) {
+const resolveTaskCodeDate = (referenceValue) => {
+  const raw = normalizeText(referenceValue);
+  if (!raw) {
+    return new Date();
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date();
+  }
+  return parsed;
+};
+
+// 所有新任务统一按 SYLU-YYYY-MM-NNN 递增，不再按旧实验前缀分流。
+function buildTaskCode(testType, tasks, referenceValue = new Date()) {
+  if (!normalizeText(testType)) {
     return "";
   }
-  const prefix = TEST_PREFIX_MAP[normalizedType] || "TASK";
+  const codeDate = resolveTaskCodeDate(referenceValue);
+  const year = codeDate.getFullYear();
+  const month = String(codeDate.getMonth() + 1).padStart(2, "0");
   const taskList = Array.isArray(tasks) ? tasks : [];
-  const pattern = new RegExp(`^${prefix}-${year}-(\\d{3})$`);
   let maxSeq = 0;
 
-  // 仅统计同类型、同年份且符合命名规范的任务号，递增生成下一个序号。
+  // 同月任务共用一条主线编号，不再按实验类型拆前缀。
   taskList.forEach((task) => {
     const taskCode = normalizeText(task?.code);
-    const matched = taskCode.match(pattern);
+    const matched = taskCode.match(SYLU_TASK_CODE_PATTERN);
     if (!matched) {
       return;
     }
-    const parsed = Number.parseInt(matched[1], 10);
-    if (Number.isFinite(parsed)) {
-      maxSeq = Math.max(maxSeq, parsed);
+    if (matched[1] !== String(year) || matched[2] !== month) {
+      return;
+    }
+    const parsed = Number.parseInt(matched[3], 10);
+    if (Number.isFinite(parsed) && parsed > maxSeq) {
+      maxSeq = parsed;
     }
   });
 
-  return `${prefix}-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+  return `SYLU-${year}-${month}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
 
 // 通过表单工厂统一任务弹窗和抽屉的数据结构。
@@ -334,7 +391,6 @@ function createTaskIntakeForm() {
     name: "",
     priority: "高",
     remark: "",
-    required_device: "",
     sample_count: "",
     sample_type: "",
     source: SOURCE_INTERNAL,
@@ -367,7 +423,6 @@ function createRandomTaskIntakeForm(now = new Date()) {
     due_at: dueAt.toISOString().slice(0, 16),
     name: `${testType}-随机任务${suffix}`,
     priority: randomFrom(RANDOM_PRIORITIES),
-    required_device: testType,
     sample_count: sampleCount,
     sample_type: randomFrom(RANDOM_SAMPLE_TYPES),
     source,
@@ -384,7 +439,6 @@ function createTaskEditForm() {
     name: "",
     priority: "高",
     remark: "",
-    required_device: "",
     sample_count: "",
     sample_type: "",
     source: SOURCE_EXTERNAL,
@@ -403,7 +457,6 @@ function buildTaskEditForm(row = {}) {
     name: normalizeText(row?.name),
     priority: normalizeText(row?.priority) || "高",
     remark: normalizeText(row?.remark),
-    required_device: normalizeText(row?.requiredDevice ?? row?.required_device),
     sample_count: normalizeText(row?.sampleCount ?? row?.sample_count),
     sample_type: normalizeText(row?.sampleType ?? row?.sample_type),
     source: normalizeText(row?.source) || SOURCE_EXTERNAL,
@@ -415,7 +468,9 @@ function buildTaskEditForm(row = {}) {
 // 将新的受理表单转换为可持久化的任务记录。
 function createTaskRecord(form, tasks) {
   // 优先使用表单中已有任务号，否则按试验类型自动生成，再兜底为时间戳编号。
-  const taskCode = normalizeText(form?.code) || buildTaskCode(form?.test_type, tasks) || `TASK-${Date.now().toString().slice(-6)}`;
+  const taskCode = normalizeText(form?.code)
+    || buildTaskCode(form?.test_type, tasks, form?.due_at || form?.arrival_at || new Date())
+    || `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${Date.now().toString().slice(-3)}`;
   return {
     id: createId("task"),
     code: taskCode,
@@ -428,7 +483,7 @@ function createTaskRecord(form, tasks) {
     sample_count: normalizeText(form?.sample_count),
     sample_type: normalizeText(form?.sample_type),
     test_type: normalizeText(form?.test_type),
-    required_device: normalizeText(form?.required_device) || normalizeText(form?.test_type),
+    required_device: normalizeText(form?.test_type),
     due_at: fromDateTimeLocalValue(form?.due_at),
     arrival_at: "",
     conditions: normalizeText(form?.conditions),
@@ -456,7 +511,7 @@ function updateTaskRecord(tasks, editForm) {
     name: normalizeText(editForm?.name),
     priority: normalizeText(editForm?.priority),
     remark: normalizeText(editForm?.remark),
-    required_device: normalizeText(editForm?.required_device),
+    required_device: normalizeText(editForm?.test_type) || taskList[targetIndex].required_device,
     sample_count: normalizeText(editForm?.sample_count),
     sample_type: normalizeText(editForm?.sample_type),
     source: normalizeText(editForm?.source),

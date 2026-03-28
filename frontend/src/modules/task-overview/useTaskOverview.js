@@ -98,6 +98,7 @@ function filterTaskOverviewRows({
     }
     const text = [
       row?.taskCode,
+      row?.experimentSummary,
       row?.taskType,
       row?.currentStatus,
       row?.scheduleLabel,
@@ -158,6 +159,7 @@ function useTaskOverview() {
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.streams,
+    STORAGE_KEYS.experiments,
   ]);
 
   const loading = ref(false);
@@ -171,9 +173,10 @@ function useTaskOverview() {
   const testTypeFilter = ref("");
   const rows = ref([]);
 
-  const buildRows = (tasks, samples, schedules) =>
+  const buildRows = (tasks, samples, schedules, experiments) =>
     buildTaskRows({
       tasks,
+      experiments,
       samples,
       schedules,
       scheduledLabel: SCHEDULED_LABEL,
@@ -181,9 +184,10 @@ function useTaskOverview() {
     });
 
   // 托盘视图和任务视图共享同一份底层快照，但会产出不同结构。
-  const buildTrayOverviewRows = (tasks, samples, schedules) =>
+  const buildTrayOverviewRows = (tasks, samples, schedules, experiments) =>
     buildTrayOverviewRowsModel({
       tasks,
+      experiments,
       samples,
       schedules,
       totalSlots: SYSTEM_TRAY_TOTAL,
@@ -192,10 +196,10 @@ function useTaskOverview() {
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,
     });
 
-  const replaceOverview = (tasks, samples, schedules) => {
+  const replaceOverview = (tasks, samples, schedules, experiments) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
-    rows.value = buildRows(tasks, samples, schedules);
-    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules);
+    rows.value = buildRows(tasks, samples, schedules, experiments);
+    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments);
   };
 
   const {
@@ -229,7 +233,12 @@ function useTaskOverview() {
     loading.value = true;
     try {
       const snapshot = await loadSnapshot();
-      replaceOverview(snapshot[STORAGE_KEYS.tasks], snapshot[STORAGE_KEYS.samples], snapshot[STORAGE_KEYS.schedules]);
+      replaceOverview(
+        snapshot[STORAGE_KEYS.tasks],
+        snapshot[STORAGE_KEYS.samples],
+        snapshot[STORAGE_KEYS.schedules],
+        snapshot[STORAGE_KEYS.experiments],
+      );
     } finally {
       loading.value = false;
     }
@@ -252,7 +261,9 @@ function useTaskOverview() {
 
   const testTypeOptions = computed(() => {
     // 下拉项由预设试验类型和当前数据中的动态类型合并生成。
-    const dynamicTypes = rows.value.map((row) => String(row?.taskType || "").trim()).filter(Boolean);
+    const dynamicTypes = rows.value
+      .flatMap((row) => String(row?.experimentSummary || "").split("/").map((item) => item.trim()))
+      .filter(Boolean);
     return Array.from(new Set(TEST_TYPE_OPTIONS.concat(dynamicTypes))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
   });
 

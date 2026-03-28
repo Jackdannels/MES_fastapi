@@ -8,6 +8,7 @@ const TASKS_KEY = "mes.tasks";
 const SCHEDULES_KEY = "mes.schedules";
 const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";
+const EXPERIMENTS_KEY = "mes.experiments";
 
 let storageState = {};
 const routeState = reactive({ hash: "" });
@@ -100,7 +101,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("CJ-2026-001");
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(2);
 
-    await wrapper.get('input[placeholder="筛选任务编号/客户/设备"]').setValue("CJ-2026");
+    await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("CJ-2026");
 
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(1);
     expect(wrapper.text()).toContain("CJ-2026-001");
@@ -142,6 +143,11 @@ describe("TasksPage runtime", () => {
             [SCHEDULES_KEY]: [],
             [SAMPLES_KEY]: [],
             [STREAMS_KEY]: [],
+            [EXPERIMENTS_KEY]: [
+              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-A", experiment_type: "温度冲击" },
+              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-B", experiment_type: "振动" },
+              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-C", experiment_type: "盐雾" },
+            ],
           }),
         });
       }
@@ -153,6 +159,8 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("CJ-2026-099");
+    expect(wrapper.text()).toContain("温度冲击 / 振动 / 盐雾");
+    expect(wrapper.text()).not.toContain("设备要求");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/tasks",
       expect.objectContaining({
@@ -165,14 +173,13 @@ describe("TasksPage runtime", () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次A",
         source: "外部委托",
         priority: "高",
         sample_count: 12,
         sample_type: "结构件",
         test_type: "冲击试验",
-        required_device: "冲击试验",
         due_at: "2026-03-13 18:00",
         arrival_at: "2026-03-13 12:00",
         status: "待排程",
@@ -190,10 +197,10 @@ describe("TasksPage runtime", () => {
     await wrapper.get('select[name="test_type"]').setValue("冲击试验");
 
     const codeInput = wrapper.get('input[name="code"]');
-    const requiredDeviceInput = wrapper.get('input[name="required_device"]');
 
-    expect(codeInput.element.value).toBe("CJ-2026-002");
-    expect(requiredDeviceInput.element.value).toBe("冲击试验");
+    expect(codeInput.element.value).toBe("SYLU-2026-03-002");
+    expect(wrapper.find('input[name="required_device"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("必需设备/能力");
 
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次B");
     await wrapper.get('input[name="sample_count"]').setValue("3");
@@ -205,9 +212,8 @@ describe("TasksPage runtime", () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[0]).toEqual(
       expect.objectContaining({
-        code: "CJ-2026-002",
+        code: "SYLU-2026-03-002",
         name: "冲击试验-批次B",
-        required_device: "冲击试验",
       }),
     );
   });
@@ -322,17 +328,15 @@ describe("TasksPage runtime", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toEqual(
       expect.objectContaining({
-        code: expect.stringMatching(/^[A-Z]+-\d{4}-\d{3}$/),
+        code: expect.stringMatching(/^SYLU-\d{4}-\d{2}-\d{3}$/),
         name: expect.any(String),
         source: "内部新增",
         test_type: expect.any(String),
-        required_device: expect.any(String),
         status: expect.any(String),
       }),
     );
     expect(tasks[0].name.trim().length).toBeGreaterThan(0);
     expect(tasks[0].test_type.trim().length).toBeGreaterThan(0);
-    expect(tasks[0].required_device.trim().length).toBeGreaterThan(0);
   });
 
   test("deletes a task and cascades related schedules, samples, and streams", async () => {
@@ -362,6 +366,42 @@ describe("TasksPage runtime", () => {
     setStorage(STREAMS_KEY, [
       { id: "stream-1", task_code: "CJ-2026-001" },
     ]);
+
+    let deleted = false;
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === "/api/tasks" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => (deleted ? [] : getStorage(TASKS_KEY)),
+        });
+      }
+      if (url === "/api/tasks/task-1" && options.method === "DELETE") {
+        deleted = true;
+        return Promise.resolve({
+          ok: true,
+          status: 204,
+        });
+      }
+      if (url === "/api/storage" && options.method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ ok: true }),
+        });
+      }
+      if (url === "/api/storage" && !options.method) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SCHEDULES_KEY]: getStorage(SCHEDULES_KEY),
+            [SAMPLES_KEY]: getStorage(SAMPLES_KEY),
+            [STREAMS_KEY]: getStorage(STREAMS_KEY),
+            [EXPERIMENTS_KEY]: [],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
