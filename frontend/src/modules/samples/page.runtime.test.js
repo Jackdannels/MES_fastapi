@@ -1,11 +1,19 @@
-﻿import { mount } from "@vue/test-utils";
+import { mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import SamplesPage from "./page.vue";
 
-const TASKS_KEY = "mes.tasks";
-const SAMPLES_KEY = "mes.samples";
-const SCHEDULES_KEY = "mes.schedules";
+const { routerPush, routerReplace } = vi.hoisted(() => ({
+  routerPush: vi.fn(() => Promise.resolve()),
+  routerReplace: vi.fn(),
+}));
+
+vi.mock("vue-router", () => ({
+  useRouter: () => ({
+    push: routerPush,
+    replace: routerReplace,
+  }),
+}));
 
 let storageState = {};
 
@@ -14,17 +22,83 @@ const createStorageStub = () => ({
   setItem: (key, value) => {
     storageState[key] = String(value);
   },
+  removeItem: (key) => {
+    delete storageState[key];
+  },
 });
 
-const setStorage = (key, value) => {
-  window.localStorage.setItem(key, JSON.stringify(value));
-};
+const createBootstrapPayload = () => ({
+  taskOverview: [
+    {
+      taskId: 101,
+      seq: 1,
+      taskNo: "SYLU-2026-03-101",
+      taskName: "连接器批次 A",
+      sampleCount: 4,
+      taskType: "盐雾试验 / 振动试验",
+      experimentTypeText: "盐雾试验 / 振动试验",
+      receivedTime: "2026-03-21 10:20",
+      taskStatus: "未入库",
+      taskProgress: "样品已送达，待打印条形码",
+      sampleCodes: ["SYLU-2026-03-101-SP-001", "SYLU-2026-03-101-SP-002"],
+      sampleCodesText: "SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002",
+    },
+    {
+      taskId: 102,
+      seq: 2,
+      taskNo: "SYLU-2026-03-102",
+      taskName: "连接器批次 B",
+      sampleCount: 2,
+      taskType: "冲击试验 / 振动试验",
+      experimentTypeText: "冲击试验 / 振动试验",
+      receivedTime: "2026-03-19 09:10",
+      taskStatus: "已入库",
+      taskProgress: "已确认入库",
+      sampleCodes: ["SYLU-2026-03-102-SP-001", "SYLU-2026-03-102-SP-002"],
+      sampleCodesText: "SYLU-2026-03-102-SP-001 / SYLU-2026-03-102-SP-002",
+    },
+  ],
+  pendingTaskCount: 1,
+  storedTaskCount: 1,
+});
 
-const getStorage = (key) => JSON.parse(window.localStorage.getItem(key) || "[]");
-
-const resetStorage = () => {
-  storageState = {};
-};
+const createWorkspacePayload = () => ({
+  allocationSaved: false,
+  task: {
+    taskId: 101,
+    taskNo: "SYLU-2026-03-101",
+    taskName: "连接器批次 A",
+    taskType: "盐雾试验 / 振动试验",
+    experimentTypeText: "盐雾试验 / 振动试验",
+    taskStatus: "未入库",
+    taskProgress: "样品已送达，待打印条形码",
+    receivedTime: "2026-03-21 10:20",
+    trayLimit: 2,
+    printedTrayCount: 0,
+  },
+  experiments: [
+    { experimentCode: "SYLU-2026-03-101-A", experimentName: "盐雾试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+    { experimentCode: "SYLU-2026-03-101-B", experimentName: "振动试验", assignedTrayNos: ["SYLU-2026-03-101-TP-002"] },
+  ],
+  assignedTrays: [
+    {
+      trayId: 201,
+      trayNo: "SYLU-2026-03-101-TP-001",
+      trayType: "标准托盘",
+      trayStatus: "已预分配",
+      capacity: 2,
+      experimentLabels: ["盐雾试验"],
+      experimentCodes: ["SYLU-2026-03-101-A"],
+      samples: [
+        { sampleId: 1, sampleNo: "SYLU-2026-03-101-SP-001", sampleStatus: "未入库" },
+        { sampleId: 2, sampleNo: "SYLU-2026-03-101-SP-002", sampleStatus: "未入库" },
+      ],
+      barcode: null,
+      barcodeData: null,
+    },
+  ],
+  trayInventory: [{ trayId: 203, trayNo: "STOCK-TP-003", trayType: "标准托盘", capacity: 2, currentTaskId: null }],
+});
 
 const settle = async (wrapper) => {
   await Promise.resolve();
@@ -35,925 +109,113 @@ const settle = async (wrapper) => {
 
 describe("SamplesPage runtime", () => {
   beforeEach(() => {
-    resetStorage();
+    storageState = {};
     vi.stubGlobal("localStorage", createStorageStub());
-    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
-    vi.stubGlobal(
-      "open",
-      vi.fn(() => ({
-        document: { write: vi.fn(), close: vi.fn() },
-        focus: vi.fn(),
-        print: vi.fn(),
-        close: vi.fn(),
-      })),
-    );
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/storage")) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      if (url.includes("/api/tasks")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+    vi.stubGlobal("open", vi.fn(() => ({
+      document: { write: vi.fn(), close: vi.fn() },
+      focus: vi.fn(),
+      print: vi.fn(),
+      close: vi.fn(),
+    })));
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.unstubAllGlobals();
-    resetStorage();
+    storageState = {};
+    routerPush.mockReset();
+    routerReplace.mockReset();
   });
 
-  test("selecting a task populates sample count, sample codes, and tray preview from Vue state", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
+  test("renders pre-allocation workbench and keeps flow/staging panels while removing lifecycle trace", async () => {
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-process-count"]').text()).toBe("4");
-    expect(wrapper.get('[data-testid="samples-process-codes"]').element.value).toContain("SZH-2026-001-SP-001");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).not.toContain("SZH-2026-001-TP-002");
+    expect(wrapper.text()).toContain("样品预分装");
+    expect(wrapper.text()).toContain("样品流转与状态");
+    expect(wrapper.text()).toContain("暂存间派发");
+    expect(wrapper.text()).not.toContain("样品全生命周期追踪");
+    expect(wrapper.text()).toContain("SYLU-2026-03-101");
+    expect(wrapper.text()).not.toContain("SYLU-2026-03-102");
   });
 
-  test("default tray draft starts with one tray and auto-adds trays when sample count exceeds the limit", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "6" }]);
-    setStorage(SAMPLES_KEY, []);
-
+  test("pre-allocation detail hides confirm storage and uses reallocate label", async () => {
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
     await settle(wrapper);
 
-    const trays = wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]');
-    expect(trays).toHaveLength(2);
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-002");
+    expect(wrapper.text()).toContain("任务样品分配管理");
+    expect(wrapper.text()).not.toContain("确认入库");
+    expect(wrapper.text()).toContain("重新分配");
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').exists()).toBe(true);
   });
 
-  test("does not render the sample intake registration card", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-011", name: "任务B", sample_count: "1" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    expect(wrapper.text()).not.toContain("样品登记");
-    expect(wrapper.find('[data-testid="sample-intake-task"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="sample-intake-submit"]').exists()).toBe(false);
-  });
-
-  test("confirming storage enables tray printing and persists sample trays", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "2" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-
-    const storedSamples = getStorage(SAMPLES_KEY);
-    const storedTasks = getStorage(TASKS_KEY);
-    expect(storedSamples).toHaveLength(2);
-    expect(storedSamples[0].trays?.length).toBeGreaterThan(0);
-    expect(storedTasks[0].tray_codes).toEqual(["SZH-2026-001-TP-001"]);
-
-    const printButton = wrapper.get('[data-testid="samples-process-print"]');
-    expect(printButton.attributes("disabled")).toBeUndefined();
-
-    await printButton.trigger("click");
-    expect(window.open).toHaveBeenCalledTimes(1);
-  });
-
-  test("tray confirm store updates task arrival time through the dedicated tasks api", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 2, 18, 18, 5, 6));
-    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-03-18T10:05:06.000Z");
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "1", arrival_at: "" }],
-        });
+  test("samples flow task filter removes orphan legacy task codes that are no longer in the current task list", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
       }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/storage")) {
+        return {
           ok: true,
+          status: 200,
           json: async () => ({
-            [SAMPLES_KEY]: [],
+            "mes.samples": [
+              { id: "legacy-1", code: "CJ-2026-001-SP-001", task_code: "CJ-2026-001", location: "接驳区", status: "到货", trays: [] },
+              { id: "legacy-2", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", location: "接驳区", status: "到货", trays: [] },
+              { id: "current-1", code: "SYLU-2026-03-002-SP-001", task_code: "SYLU-2026-03-002", location: "接驳区", status: "到货", trays: [] },
+            ],
           }),
-        });
+        };
       }
-      if (url === "/api/tasks/task-1" && options.method === "PUT") {
-        return Promise.resolve({
+      if (url.includes("/api/tasks")) {
+        return {
           ok: true,
-          json: async () => JSON.parse(options.body),
-        });
+          status: 200,
+          json: async () => ([
+            { id: 1, code: "SYLU-2026-03-002", name: "当前任务", test_type: "振动试验", sample_count: 1 },
+            { id: 2, code: "SYLU-2026-03-003", name: "当前任务 B", test_type: "冲击试验", sample_count: 2 },
+          ]),
+        };
       }
-      if (url === "/api/storage" && options.method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-
-    const updateTaskCall = fetchMock.mock.calls.find(
-      ([url, options]) => url === "/api/tasks/task-1" && options?.method === "PUT",
-    );
-    expect(updateTaskCall).toBeTruthy();
-    expect(JSON.parse(updateTaskCall[1].body)).toEqual(
-      expect.objectContaining({
-        code: "SZH-2026-001",
-        arrival_at: "2026-03-18 18:05:06",
-      }),
-    );
-    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({ type: "mes:samples-updated" }));
-  });
-
-  test("batch intake updates task arrival time through the dedicated tasks api", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 2, 18, 18, 5, 6));
-    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-03-18T10:05:06.000Z");
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "2", arrival_at: "" }],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SAMPLES_KEY]: [{ id: "sample-1", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", status: "样品运输中", trays: [], history: [] }],
-          }),
-        });
-      }
-      if (url === "/api/tasks/task-1" && options.method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => JSON.parse(options.body),
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-flow-open-batch"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-flow-batch-location"]').setValue("接驳区");
-    await wrapper.get('[data-testid="samples-flow-batch-codes"]').setValue("SZH-2026-001-SP-001");
-    await wrapper.get('[data-testid="samples-flow-batch-submit"]').trigger("click");
-    await settle(wrapper);
-
-    const updateTaskCall = fetchMock.mock.calls.find(
-      ([url, options]) => url === "/api/tasks/task-1" && options?.method === "PUT",
-    );
-    expect(updateTaskCall).toBeTruthy();
-    expect(JSON.parse(updateTaskCall[1].body)).toEqual(
-      expect.objectContaining({
-        code: "SZH-2026-001",
-        arrival_at: "2026-03-18 18:05:06",
-      }),
-    );
-
-    const storageWriteCall = fetchMock.mock.calls.find(
-      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
-    );
-    expect(storageWriteCall).toBeTruthy();
-    expect(JSON.parse(storageWriteCall[1].body)).toEqual({
-      [SAMPLES_KEY]: expect.any(Array),
-    });
-  });
-
-  test("adding a tray expands the tray list for the selected task", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(1);
-
-    await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-002");
-  });
-
-  test("print stays disabled before confirm and tray limit change rebalances trays", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-process-print"]').attributes("disabled")).toBeDefined();
-
-    await wrapper.get('[data-testid="samples-process-tray-limit"]').setValue("1");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(4);
-  });
-
-  test("deleting a tray rebalances samples and renumbers tray sequence", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
-
-    await wrapper.get('[data-testid="samples-process-delete-tray-1"]').trigger("click");
-    await settle(wrapper);
-
-    const trays = wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]');
-    expect(trays).toHaveLength(1);
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).toContain("SZH-2026-001-TP-001");
-    expect(wrapper.get('[data-testid="samples-process-tray-preview"]').element.value).not.toContain("SZH-2026-001-TP-002");
-  });
-
-  test("confirming storage locks repartition controls and enables restore intake", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-process-store"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.get('[data-testid="samples-process-add-tray"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.get('[data-testid="samples-process-tray-limit"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.get('[data-testid="samples-process-restore"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain("当前状态：到货");
-  });
-
-  test("restoring intake unlocks tray editing and returns flow state to repartition", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-restore"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-process-store"]').attributes("disabled")).toBeUndefined();
-    expect(wrapper.get('[data-testid="samples-process-add-tray"]').attributes("disabled")).toBeUndefined();
-    expect(wrapper.get('[data-testid="samples-process-tray-limit"]').attributes("disabled")).toBeUndefined();
-    expect(wrapper.text()).toContain("当前状态：样品运输中");
-  });
-
-  test("restoring intake disables tray printing until storage is confirmed again", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-restore"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-process-print"]').attributes("disabled")).toBeDefined();
-  });
-
-  test("restoring intake rebuilds tray draft from the default automatic allocation instead of keeping manual repartition", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-add-tray"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(2);
-
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-restore"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('.sample-tray-card[data-testid^="samples-process-tray-"]')).toHaveLength(1);
-    const preview = wrapper.get('[data-testid="samples-process-tray-preview"]').element.value;
-    expect(preview).toContain("SZH-2026-001-TP-001 | 4 / 5");
-    expect(preview).not.toContain("SZH-2026-001-TP-002");
-  });
-
-  test("flow graph renders 12 fixed steps and highlights arrival after store and transit after restore", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "4" }]);
-    setStorage(SAMPLES_KEY, []);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    expect(wrapper.findAll('[data-testid^="sample-flow-step-"]')).toHaveLength(12);
-    expect(wrapper.get('[data-testid="sample-flow-step-sent_to_staging"]').text()).toBe("送至暂存间");
-    expect(wrapper.get('[data-testid="sample-flow-step-arrived_staging"]').text()).toBe("已到达暂存间");
-    expect(wrapper.get('[data-testid="sample-flow-step-sent_to_lab"]').text()).toBe("送至实验室");
-    expect(wrapper.get('[data-testid="sample-flow-step-arrived_lab"]').text()).toBe("已到达实验室");
-    expect(wrapper.get('[data-testid="sample-flow-step-fixture_install"]').text()).toBe("工装夹具安装");
-    expect(wrapper.get('[data-testid="sample-flow-step-ready"]').text()).toBe("实验准备就绪");
-    expect(wrapper.get('[data-testid="sample-flow-step-running"]').text()).toBe("实验进行中");
-    expect(wrapper.get('[data-testid="sample-flow-step-completed"]').text()).toBe("实验已完成");
-    expect(wrapper.get('[data-testid="sample-flow-step-post_test_staging"]').text()).toBe("放置实验后暂存间");
-
-    await wrapper.get('[data-testid="samples-process-task-select"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-process-store"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="sample-flow-step-arrived"]').classes()).toContain("current");
-    expect(wrapper.get('[data-testid="sample-flow-step-in_transit"]').classes()).toContain("reached");
-
-    await wrapper.get('[data-testid="samples-process-restore"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="sample-flow-step-in_transit"]').classes()).toContain("current");
-    expect(wrapper.get('[data-testid="sample-flow-step-arrived"]').classes()).not.toContain("current");
-  });
-
-  test("sample flow search and filters update rows from Vue state", async () => {
-    setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "2" },
-      { id: "task-2", code: "SZH-2026-002", name: "任务B", sample_count: "1" },
-    ]);
-    setStorage(SAMPLES_KEY, [
-        { id: "sample-1", code: "SP-001", task_code: "SZH-2026-001", location: "接驳区", owner: "张三", status: "到货", trays: [] },
-        { id: "sample-2", code: "SP-002", task_code: "SZH-2026-002", location: "振动一室", owner: "李四", status: "已到达实验室", trays: [] },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-flow-search"]').setValue("SP-001");
-    await settle(wrapper);
-
-    expect(wrapper.text()).toContain("SP-001");
-    expect(wrapper.text()).not.toContain("SP-002");
-
-    await wrapper.get('[data-testid="samples-flow-task-filter"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-flow-status-filter"]').setValue("到货");
-    await settle(wrapper);
-
-    const tableText = wrapper.get('[data-testid="samples-flow-panel"]').text();
-    expect(tableText).toContain("SP-001");
-    expect(tableText).not.toContain("SP-002");
-  });
-
-  test("batch intake updates sample rows and detail drawer saves edits", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "1" }]);
-    setStorage(SAMPLES_KEY, [
-      { id: "sample-1", code: "SP-001", task_code: "SZH-2026-001", location: "", owner: "", status: "样品运输中", history: [], trays: [] },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-flow-open-batch"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-flow-batch-location"]').setValue("接驳区");
-    await wrapper.get('[data-testid="samples-flow-batch-owner"]').setValue("王工");
-    await wrapper.get('[data-testid="samples-flow-batch-codes"]').setValue("SP-001");
-    await wrapper.get('[data-testid="samples-flow-batch-submit"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.text()).toContain("接驳区");
-    expect(wrapper.text()).toContain("王工");
-    expect(wrapper.text()).toContain("到货");
-
-    await wrapper.get('[data-testid="samples-flow-detail-0"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="samples-flow-detail-status"]').setValue("工装夹具安装");
-    await wrapper.get('[data-testid="samples-flow-detail-remark"]').setValue("进入实验前检查完成");
-    await wrapper.get('[data-testid="samples-flow-detail-save"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.text()).toContain("工装夹具安装");
-    const storedSamples = getStorage(SAMPLES_KEY);
-    expect(storedSamples[0].history[0].detail).toBe("进入实验前检查完成");
-  });
-
-  test("staging dispatch updates selected samples to target lab and arrived-lab status", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "2" }]);
-    setStorage(SAMPLES_KEY, [
-      {
-        id: "sample-1",
-        code: "SP-001",
-        task_code: "SZH-2026-001",
-        location: "恒温恒湿间（暂存间）",
-        owner: "张三",
-        status: "已到达暂存间",
-        flow_status: "已到达暂存间",
-        history: [],
-        trays: [],
-      },
-      {
-        id: "sample-2",
-        code: "SP-002",
-        task_code: "SZH-2026-001",
-        location: "恒温恒湿间（暂存间）",
-        owner: "李四",
-        status: "已到达暂存间",
-        flow_status: "已到达暂存间",
-        history: [],
-        trays: [],
-      },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-staging-select-0"]').setValue(true);
-    await wrapper.get('[data-testid="samples-staging-target-lab"]').setValue("振动一室");
-    await wrapper.get('[data-testid="samples-staging-owner"]').setValue("王工");
-    await wrapper.get('[data-testid="samples-staging-submit"]').trigger("click");
-    await settle(wrapper);
-
-    const storedSamples = getStorage(SAMPLES_KEY);
-    expect(storedSamples[0].location).toBe("振动一室");
-    expect(storedSamples[0].owner).toBe("王工");
-    expect(storedSamples[0].status).toBe("已到达实验室");
-    expect(storedSamples[0].flow_status).toBe("已到达实验室");
-    expect(storedSamples[0].history[0].action).toBe("暂存间派发");
-    expect(wrapper.text()).toContain("SP-002");
-  });
-
-  test("staging reset clears dispatch form inputs and row selections", async () => {
-    setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "1" }]);
-    setStorage(SAMPLES_KEY, [
-      {
-        id: "sample-1",
-        code: "SP-001",
-        task_code: "SZH-2026-001",
-        location: "恒温恒湿间（暂存间）",
-        owner: "张三",
-        status: "已到达暂存间",
-        history: [],
-        trays: [],
-      },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-staging-select-0"]').setValue(true);
-    await wrapper.get('[data-testid="samples-staging-codes"]').setValue("SP-001");
-    await wrapper.get('[data-testid="samples-staging-target-lab"]').setValue("振动一室");
-    await wrapper.get('[data-testid="samples-staging-owner"]').setValue("王工");
-    await wrapper.get('[data-testid="samples-staging-reset"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-staging-codes"]').element.value).toBe("");
-    expect(wrapper.get('[data-testid="samples-staging-target-lab"]').element.value).toBe("");
-    expect(wrapper.get('[data-testid="samples-staging-owner"]').element.value).toBe("");
-    expect(wrapper.get('[data-testid="samples-staging-select-0"]').element.checked).toBe(false);
-  });
-
-  test("switches between sample flow and staging tabs with Vue state", async () => {
-    setStorage(SAMPLES_KEY, [
-      {
-        id: "sample-1",
-        code: "SP-001",
-        task_code: "SZH-2026-001",
-        location: "恒温恒湿间（暂存间）",
-        owner: "张三",
-        status: "已到达暂存间",
-        flow_status: "已到达暂存间",
-        history: [],
-        trays: [],
-      },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-tab-flow"]').classes()).toContain("active");
-    expect(wrapper.find('[data-testid="samples-flow-panel"]').classes()).not.toContain("is-hidden");
-    expect(wrapper.find('[data-testid="samples-staging-panel"]').classes()).toContain("is-hidden");
-
-    await wrapper.get('[data-testid="samples-tab-staging"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-tab-staging"]').classes()).toContain("active");
-    expect(wrapper.get('[data-testid="samples-tab-flow"]').classes()).not.toContain("active");
-    expect(wrapper.find('[data-testid="samples-staging-panel"]').classes()).not.toContain("is-hidden");
-    expect(wrapper.find('[data-testid="samples-flow-panel"]').classes()).toContain("is-hidden");
-  });
-
-  test("switches between page-level sample management and tray management views", async () => {
-    let storagePayload = {
-      [SAMPLES_KEY]: [
-        {
-          id: "sample-1",
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
-          status: "到货",
-          flow_status: "到货",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
-        },
-      ],
-    };
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => storagePayload,
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        storagePayload = JSON.parse(options.body);
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-page-tab-management"]').classes()).toContain("active");
-    expect(wrapper.find('[data-testid="samples-management-panel"]').classes()).not.toContain("is-hidden");
-    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).toContain("is-hidden");
-
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-page-tab-trays"]').classes()).toContain("active");
-    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).not.toContain("is-hidden");
-    expect(wrapper.find('[data-testid="samples-management-panel"]').classes()).toContain("is-hidden");
-    expect(wrapper.get('[data-testid="samples-trays-task-0"]').text()).toContain("SZH-2026-001");
-  });
-
-  test("tray management updates tray status inline", async () => {
-    let storagePayload = {
-      [SAMPLES_KEY]: [
-        {
-          id: "sample-1",
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
-          status: "到货",
-          flow_status: "到货",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
-        },
-        {
-          id: "sample-2",
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
-          status: "到货",
-          flow_status: "到货",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
-        },
-      ],
-    };
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => storagePayload,
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        storagePayload = JSON.parse(options.body);
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-page-tab-trays"]').classes()).toContain("active");
-    expect(wrapper.find('[data-testid="tray-management-panel"]').classes()).not.toContain("is-hidden");
-    expect(wrapper.get('[data-testid="samples-trays-task-0"]').text()).toContain("SZH-2026-001");
-    expect(wrapper.get('[data-testid="samples-trays-status-0"]').element.value).toBe("到货");
-
-    await wrapper.get('[data-testid="samples-trays-status-0"]').setValue("送至实验室");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-trays-status-0"]').element.value).toBe("送至实验室");
-
-    const storageWriteCall = fetchMock.mock.calls.find(
-      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
-    );
-    expect(storageWriteCall).toBeTruthy();
-    expect(JSON.parse(storageWriteCall[1].body)[SAMPLES_KEY]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          status: "送至实验室",
-          trays: [expect.objectContaining({ tray_code: "SZH-2026-001-TP-001", status: "送至实验室" })],
-        }),
-      ]),
-    );
-  });
-
-  test("tray management flow tracks the selected tray and follows inline status changes", async () => {
-    let storagePayload = {
-      [SAMPLES_KEY]: [
-        {
-          id: "sample-1",
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
-          status: "到货",
-          flow_status: "到货",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
-        },
-        {
-          id: "sample-2",
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
-          status: "实验准备就绪",
-          flow_status: "实验准备就绪",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
-        },
-      ],
-    };
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [{ id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => storagePayload,
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        storagePayload = JSON.parse(options.body);
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-trays-workspace"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="samples-trays-flows"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="samples-trays-counter"]').text()).toContain("18/20");
-    expect(wrapper.get('[data-testid="samples-task-flow"]').classes()).toContain("sample-flow-horizontal");
-    expect(wrapper.get(".tray-management-filter").classes()).toContain("tray-management-filter-emphasis");
-    expect(wrapper.get('[data-testid="samples-trays-row-0"]').classes()).toContain("is-active");
-    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toContain("实验中");
-    expect(wrapper.get('[data-testid="samples-task-flow-step-running"]').classes()).toContain("current");
-    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-001");
-    expect(wrapper.get('[data-testid="samples-tray-flow-step-arrived"]').classes()).toContain("current");
-
-    await wrapper.get('[data-testid="samples-trays-row-1"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-trays-row-1"]').classes()).toContain("is-active");
-    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-002");
-    expect(wrapper.get('[data-testid="samples-tray-flow-step-ready"]').classes()).toContain("current");
-    expect(wrapper.get('[data-testid="samples-tray-flow-step-arrived_lab"]').classes()).toContain("reached");
-
-    await wrapper.get('[data-testid="samples-trays-status-1"]').setValue("实验进行中");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-trays-status-1"]').element.value).toBe("实验进行中");
-    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("实验进行中");
-    expect(wrapper.get('[data-testid="samples-tray-flow-step-running"]').classes()).toContain("current");
-  });
-
-  test("tray management supports filtering by task code and keeps multi-tray rows separate", async () => {
-    let storagePayload = {
-      [SAMPLES_KEY]: [
-        {
-          id: "sample-1",
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
-          status: "到货",
-          flow_status: "到货",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
-        },
-        {
-          id: "sample-2",
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
-          status: "实验准备就绪",
-          flow_status: "实验准备就绪",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
-        },
-        {
-          id: "sample-3",
-          code: "SZH-2026-002-SP-001",
-          task_code: "SZH-2026-002",
-          status: "样品运输中",
-          flow_status: "样品运输中",
-          history: [],
-          trays: [{ tray_code: "SZH-2026-002-TP-001", status: "样品运输中", quantity: 1 }],
-        },
-      ],
-    };
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [
-            { id: "task-1", code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" },
-            { id: "task-2", code: "SZH-2026-002", name: "任务B", test_type: "振动试验" },
-          ],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => storagePayload,
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        storagePayload = JSON.parse(options.body);
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="samples-trays-workspace"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="samples-trays-flows"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="samples-trays-counter"]').text()).toContain("17/20");
-    expect(wrapper.get('[data-testid="samples-task-flow"]').classes()).toContain("sample-flow-horizontal");
-    expect(wrapper.get(".tray-management-filter").classes()).toContain("tray-management-filter-emphasis");
-    expect(wrapper.get('[data-testid="samples-trays-task-code-0"]').text()).toBe("SZH-2026-001");
-    expect(wrapper.get('[data-testid="samples-trays-task-code-1"]').text()).toBe("SZH-2026-001");
-    expect(wrapper.get('[data-testid="samples-trays-task-code-2"]').text()).toBe("SZH-2026-002");
-
-    await wrapper.get('[data-testid="samples-trays-task-filter"]').setValue("SZH-2026-001");
-    await settle(wrapper);
-
-    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(2);
-    expect(wrapper.find('[data-testid="samples-trays-row-2"]').exists()).toBe(false);
-    expect(wrapper.get('[data-testid="samples-trays-row-0"]').classes()).toContain("is-active");
-    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toContain("实验中");
-    expect(wrapper.get('[data-testid="samples-tray-flow-status"]').text()).toContain("SZH-2026-001-TP-001");
-  });
-
-  test("sample trace query renders summary and timeline from sample history and schedule events", async () => {
-    setStorage(SAMPLES_KEY, [
-      {
-        id: "sample-1",
-        code: "SP-001",
-        task_code: "SZH-2026-020",
-        location: "接驳区",
-        owner: "张三",
-        status: "到货",
-        history: [
-          {
-            id: "evt-2",
-            time: "2026-03-16T10:00:00.000Z",
-            action: "送至暂存间",
-            location: "恒温恒湿间（暂存间）",
-            owner: "张三",
-            status: "送至暂存间",
-            detail: "",
-          },
-          {
-            id: "evt-1",
-            time: "2026-03-16T08:00:00.000Z",
-            action: "样品登记",
-            location: "接驳区",
-            owner: "张三",
-            status: "样品运输中",
-            detail: "",
-          },
-        ],
-      },
-    ]);
-    setStorage(SCHEDULES_KEY, [
-      {
-        id: "schedule-1",
-        task_code: "SZH-2026-020",
-        device: "振动一室",
-        start_at: "2026-03-17T01:00:00.000Z",
-        end_at: "2026-03-17T05:00:00.000Z",
-        status: "已排程",
-      },
-    ]);
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="sample-trace-task-code"]').setValue("SZH-2026-020");
-    await wrapper.get('[data-testid="sample-trace-run"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="sample-trace-summary-text"]').text()).toContain("试验序号 SZH-2026-020：样品 1 个，流转记录 4 条。");
-    const timelineText = wrapper.get('[data-testid="sample-trace-timeline-list"]').text();
-    expect(timelineText).toContain("SP-001 · 样品登记");
-    expect(timelineText).toContain("SP-001 · 送至暂存间");
-    expect(timelineText).toContain("SZH-2026-020 · 排程开始");
-    expect(timelineText).toContain("SZH-2026-020 · 排程结束");
-  });
-
-  test("sample trace reset clears query and restores default prompt", async () => {
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="sample-trace-task-code"]').setValue("SZH-2026-020");
-    await wrapper.get('[data-testid="sample-trace-run"]').trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="sample-trace-reset"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="sample-trace-task-code"]').element.value).toBe("");
-    expect(wrapper.get('[data-testid="sample-trace-summary-text"]').text()).toBe("请输入试验序号查询样品全生命周期。");
-    expect(wrapper.get('[data-testid="sample-trace-timeline-list"]').text()).toBe("");
+    const taskOptions = wrapper.get('[data-testid="samples-flow-task-filter"]').findAll("option").map((node) => node.text());
+    expect(taskOptions).toContain("SYLU-2026-03-002");
+    expect(taskOptions).not.toContain("SYLU-2026-03-003");
+    expect(taskOptions).not.toContain("CJ-2026-001");
+    expect(taskOptions).not.toContain("SZH-2026-001");
+    expect(wrapper.text()).not.toContain("CJ-2026-001-SP-001");
+    expect(wrapper.text()).not.toContain("SZH-2026-001-SP-001");
   });
 });

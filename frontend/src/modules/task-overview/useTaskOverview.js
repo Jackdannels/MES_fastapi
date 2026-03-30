@@ -102,6 +102,7 @@ function filterTaskOverviewRows({
       row?.taskType,
       row?.currentStatus,
       row?.scheduleLabel,
+      Array.isArray(row?.experiments) ? row.experiments.map((item) => `${item?.experimentName || ""} ${item?.displayStatus || ""}`).join(" ") : "",
       Array.isArray(row?.sampleCodes) ? row.sampleCodes.join(" ") : "",
       Array.isArray(row?.trays) ? row.trays.map((tray) => tray?.trayCode).join(" ") : "",
     ]

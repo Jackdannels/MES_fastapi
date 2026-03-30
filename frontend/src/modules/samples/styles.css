@@ -1,5 +1,9 @@
 /* 样品模块下收样、流转、托盘处理和追溯视图的页面样式。 */
 /* 主工作区采用左右双栏布局，右侧容纳追踪或辅助面板。 */
+.samples-management-panel > .transfer-area-screen {
+  margin-top: 12px;
+}
+
 .sample-process-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) clamp(520px, 35vw, 760px);

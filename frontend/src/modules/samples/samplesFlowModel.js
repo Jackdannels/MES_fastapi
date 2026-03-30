@@ -427,12 +427,7 @@ function buildSamplesFlowView(input = {}) {
   const startIndex = (currentPage - 1) * pageSize;
 
   const taskCodes = Array.from(
-    new Set(
-      tasks
-        .map((task) => normalizeText(task?.code))
-        .filter(Boolean)
-        .concat(samples.map((sample) => normalizeText(sample?.task_code)).filter(Boolean)),
-    ),
+    new Set(normalizedSamples.map((sample) => normalizeText(sample?.task_code)).filter(Boolean)),
   ).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
   const statusOptions = Array.from(new Set(normalizedSamples.map((sample) => normalizeText(sample?.status)).filter(Boolean))).sort(
     (left, right) => left.localeCompare(right, "zh-Hans-CN"),

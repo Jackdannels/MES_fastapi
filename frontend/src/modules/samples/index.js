@@ -9,7 +9,7 @@ export const route = {
   component: Page,
   meta: {
     title: "样品/托盘管理",
-    subtitle: "管理样品登记、托盘状态、到样确认、流转记录与样品追溯。",
+    subtitle: "管理样品预分装、托盘状态、流转记录与暂存间派发。",
     module: "central",
   },
 };

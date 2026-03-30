@@ -22,9 +22,7 @@
 
   <SamplesManagementPanel
     :hidden="activePageTab !== 'management'"
-    :sample-trace="sampleTrace"
     :samples-flow="samplesFlow"
-    :samples-process="samplesProcess"
   />
 
   <TrayManagementPanel :hidden="activePageTab !== 'trays'" :samples-flow="samplesFlow" />
@@ -36,45 +34,9 @@ import { reactive } from "vue";
 import { useTabState } from "@/composables/useTabState";
 import SamplesManagementPanel from "./SamplesManagementPanel.vue";
 import TrayManagementPanel from "./TrayManagementPanel.vue";
-import { useSampleTrace } from "./useSampleTrace";
 import { useSamplesFlow } from "./useSamplesFlow";
-import { useSamplesProcess } from "./useSamplesProcess";
 
 const { activeTab: activePageTab, setActiveTab: setActivePageTab } = useTabState("management");
-
-const {
-  form: sampleTraceForm,
-  resetTrace,
-  runTrace,
-  summaryText: sampleTraceSummaryText,
-  timelineItems: sampleTraceTimelineItems,
-} = useSampleTrace();
-
-const {
-  activeTrayIndex,
-  addTray,
-  canPrint,
-  confirmStore,
-  currentFlowStatus,
-  flowSteps,
-  handleTrayDrop,
-  moveToActiveTray,
-  printTrays,
-  restoreStore,
-  sampleCodesText,
-  selectTask,
-  selectProcessTray,
-  selectedTaskCode,
-  setActiveTray,
-  setTrayLimit,
-  storeLocked,
-  startDragging,
-  taskOptions,
-  trayDraft,
-  trayPreviewText,
-  warning,
-  removeTray,
-} = useSamplesProcess();
 
 const {
   batchForm: samplesFlowBatchForm,
@@ -122,40 +84,6 @@ const {
   warning: samplesFlowWarning,
   resetStaging,
 } = useSamplesFlow();
-
-const sampleTrace = reactive({
-  form: sampleTraceForm,
-  resetTrace,
-  runTrace,
-  summaryText: sampleTraceSummaryText,
-  timelineItems: sampleTraceTimelineItems,
-});
-
-const samplesProcess = reactive({
-  activeTrayIndex,
-  addTray,
-  canPrint,
-  confirmStore,
-  currentFlowStatus,
-  flowSteps,
-  handleTrayDrop,
-  moveToActiveTray,
-  printTrays,
-  removeTray,
-  restoreStore,
-  sampleCodesText,
-  selectTask,
-  selectProcessTray,
-  selectedTaskCode,
-  setActiveTray,
-  setTrayLimit,
-  startDragging,
-  storeLocked,
-  taskOptions,
-  trayDraft,
-  trayPreviewText,
-  warning,
-});
 
 const samplesFlow = reactive({
   batchForm: samplesFlowBatchForm,

@@ -64,11 +64,11 @@ describe("taskOverviewModel", () => {
         },
       ],
       experiments: [
-        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验" },
-        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验" },
+        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验", status: "待排程" },
+        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验", status: "实验已经完成" },
       ],
       samples: [{ task_code: "SZH-2026-006", code: "SZH-2026-006-SP-001", trays: [] }],
-      schedules: [],
+      schedules: [{ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", status: "已排程", device: "四综合实验室" }],
       scheduledLabel: "已排程",
       unscheduledLabel: "未排程",
     });
@@ -80,8 +80,8 @@ describe("taskOverviewModel", () => {
       experimentSummary: "A实验 / B实验",
     });
     expect(rows[0].experiments).toEqual([
-      expect.objectContaining({ experimentCode: "SZH-2026-006-A", experimentName: "A实验" }),
-      expect.objectContaining({ experimentCode: "SZH-2026-006-B", experimentName: "B实验" }),
+      expect.objectContaining({ experimentCode: "SZH-2026-006-A", experimentName: "A实验", displayStatus: "已排程" }),
+      expect.objectContaining({ experimentCode: "SZH-2026-006-B", experimentName: "B实验", displayStatus: "实验完成" }),
     ]);
   });
 

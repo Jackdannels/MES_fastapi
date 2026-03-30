@@ -275,7 +275,10 @@ describe("TransferAreaPage runtime", () => {
     await tray1Samples[0].trigger("click");
     await settle(wrapper);
 
-    const previewAfterSwap = wrapper.get('[data-testid="transfer-tray-preview"]').element.value;
+    const previewAfterSwap = wrapper.get('[data-testid="transfer-tray-preview"]').text();
+    const previewTrayCodes = wrapper.findAll('[data-testid="transfer-tray-preview"] .transfer-tray-preview__code').map((node) => node.text());
+    expect(previewTrayCodes).toContain("SYLU-2026-03-101-TP-001");
+    expect(previewTrayCodes).toContain("SYLU-2026-03-101-TP-002");
     expect(previewAfterSwap).toContain("SYLU-2026-03-101-TP-001 | 2 / 2 | SYLU-2026-03-101-SP-002 / SYLU-2026-03-101-SP-003");
     expect(previewAfterSwap).toContain("SYLU-2026-03-101-TP-002 | 2 / 2 | SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-004");
 
@@ -284,7 +287,30 @@ describe("TransferAreaPage runtime", () => {
     await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).toContain("SYLU-2026-03-101-TP-003 | 1 / 2 | SYLU-2026-03-101-SP-003");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-TP-003");
+  });
+
+  test("touch-first flow supports selecting a target tray before tapping a sample", async () => {
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get(".transfer-use-tray-btn").trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
+    await settle(wrapper);
+
+    const tray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
+    await tray0Samples[0].trigger("click");
+    await settle(wrapper);
+
+    const previewText = wrapper.get('[data-testid="transfer-tray-preview"]').text();
+    expect(previewText).toContain("SYLU-2026-03-101-TP-003");
+    expect(previewText).toContain("SYLU-2026-03-101-SP-001");
+    expect(previewText).toContain("SYLU-2026-03-101-TP-001");
+    expect(previewText).toContain("SYLU-2026-03-101-SP-002");
   });
 
   test("confirm storage marks samples stored and reload moves task back to pending list", async () => {
@@ -461,6 +487,9 @@ describe("TransferAreaPage runtime", () => {
 
     await wrapper.get(".transfer-print-all-btn").trigger("click");
     await settle(wrapper);
+
+    const previewSvgLabel = wrapper.get(".transfer-modal__barcode svg").attributes("aria-label");
+
     await wrapper.get('[data-testid="barcode-modal-confirm-print"]').trigger("click");
     await settle(wrapper);
 
@@ -468,7 +497,8 @@ describe("TransferAreaPage runtime", () => {
 
     expect(printedHtml).toContain('xmlns="http://www.w3.org/2000/svg"');
     expect(printedHtml).toMatch(/<rect[^>]+width="4"/);
-    expect(printedHtml).toContain('aria-label="SYLU-2026-03-101-TP-001"');
+    expect(previewSvgLabel).toBe("TRAY|TASK:SYLU-2026-03-101|TRAY:SYLU-2026-03-101-TP-001|LOAD:2");
+    expect(printedHtml).toContain('aria-label="TRAY|TASK:SYLU-2026-03-101|TRAY:SYLU-2026-03-101-TP-001|LOAD:2"');
   });
 
   test("barcode preview and print document keep experiment tag colors aligned with tray selection", async () => {
@@ -602,7 +632,7 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(1);
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).toContain(
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain(
       "SYLU-2026-03-101-TP-001 | 4 / 4 | SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002 / SYLU-2026-03-101-SP-003 / SYLU-2026-03-101-SP-004",
     );
   });
@@ -665,8 +695,8 @@ describe("TransferAreaPage runtime", () => {
     await wrapper.get('[data-testid="transfer-tray-limit-input"]').trigger("change");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).toContain("SYLU-2026-03-101-TP-001");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).not.toContain("SYLU-2026-03-101-TP-003");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-TP-001");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).not.toContain("SYLU-2026-03-101-TP-003");
   });
 
   test("deleting a non-empty tray rebalances samples instead of blocking deletion", async () => {
@@ -690,9 +720,9 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(2);
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).not.toContain("SYLU-2026-03-101-TP-003");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).toContain("SYLU-2026-03-101-SP-001");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').element.value).toContain("SYLU-2026-03-101-SP-004");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).not.toContain("SYLU-2026-03-101-TP-003");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-SP-001");
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-SP-004");
   });
 
   test("deleting when current tray count is already minimal shows a clear warning", async () => {

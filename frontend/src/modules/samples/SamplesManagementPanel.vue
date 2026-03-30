@@ -1,6 +1,6 @@
 <template>
   <div class="samples-management-panel" :class="{ 'is-hidden': hidden }" data-testid="samples-management-panel">
-    <SampleProcessPanel :samples-process="samplesProcess" />
+    <TransferWorkbench embedded mode="pre-allocation" :show-header="false" />
 
     <div class="tabs section">
       <button
@@ -224,38 +224,6 @@
       <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
     </section>
 
-    <section class="card section">
-      <h3>样品全生命周期追踪</h3>
-      <form>
-        <div class="form-grid">
-          <div class="form-field">
-            <label>试验序号</label>
-            <input
-              v-model="sampleTrace.form.task_code"
-              data-testid="sample-trace-task-code"
-              type="text"
-              name="task_code"
-              placeholder="例如：SZH-2024-003"
-            />
-          </div>
-        </div>
-        <div class="form-actions">
-          <a class="action-btn" href="#" data-testid="sample-trace-run" @click.prevent="sampleTrace.runTrace">查询</a>
-          <a class="action-btn secondary" href="#" data-testid="sample-trace-reset" @click.prevent="sampleTrace.resetTrace">清空</a>
-        </div>
-      </form>
-      <div class="muted" data-testid="sample-trace-summary-text">{{ sampleTrace.summaryText }}</div>
-      <div class="timeline" data-testid="sample-trace-timeline-list">
-        <div v-for="item in sampleTrace.timelineItems" :key="item.id" class="timeline-item">
-          <div class="timeline-dot"></div>
-          <div>
-            <div>{{ item.title }}</div>
-            <div class="muted">{{ item.meta }}</div>
-          </div>
-        </div>
-      </div>
-    </section>
-
     <AppModal :open="samplesFlow.batchModalOpen" title="批量入库" @close="samplesFlow.closeBatchModal">
       <div class="form-grid">
         <div class="form-field">
@@ -328,22 +296,14 @@ import { useTabState } from "@/composables/useTabState";
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
-import SampleProcessPanel from "./SampleProcessPanel.vue";
+import TransferWorkbench from "@/modules/transfer-workbench/TransferWorkbench.vue";
 
 defineProps({
   hidden: {
     type: Boolean,
     default: false,
   },
-  sampleTrace: {
-    type: Object,
-    required: true,
-  },
   samplesFlow: {
-    type: Object,
-    required: true,
-  },
-  samplesProcess: {
     type: Object,
     required: true,
   },

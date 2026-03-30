@@ -56,6 +56,24 @@ const parseCodeList = (value) =>
         .filter(Boolean),
     ),
   );
+
+const pruneSamplesForCurrentTasks = (samples, tasks) => {
+  const taskCodes = new Set(
+    (Array.isArray(tasks) ? tasks : [])
+      .map((task) => String(task?.code ?? "").trim())
+      .filter(Boolean),
+  );
+  const normalizedSamples = Array.isArray(samples) ? samples : [];
+  if (taskCodes.size === 0) {
+    return normalizedSamples;
+  }
+  return normalizedSamples.filter((sample) => {
+    const taskCode = String(sample?.task_code ?? "").trim();
+    return !taskCode || taskCodes.has(taskCode);
+  });
+};
+
+const samplesChanged = (left, right) => JSON.stringify(left) !== JSON.stringify(right);
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
@@ -156,10 +174,17 @@ function useSamplesFlow() {
     loading.value = true;
     const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
     rawTasks.value = Array.isArray(tasks) ? tasks : [];
-    rawSamples.value = normalizeSamplesSnapshot(
+    const normalizedSamples = normalizeSamplesSnapshot(
       Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
       DEFAULT_LABELS,
     );
+    const prunedSamples = pruneSamplesForCurrentTasks(normalizedSamples, rawTasks.value);
+    rawSamples.value = prunedSamples;
+    if (samplesChanged(prunedSamples, normalizedSamples)) {
+      await persistSnapshot({
+        [STORAGE_KEYS.samples]: prunedSamples,
+      });
+    }
     loading.value = false;
   };
 

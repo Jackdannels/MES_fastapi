@@ -46,6 +46,40 @@ function normalizeQuantity(value) {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
 }
 
+function parseTimeValue(value) {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : -1;
+}
+
+function upsertLatestSchedule(map, key, schedule) {
+  const normalizedKey = normalizeText(key);
+  if (!normalizedKey) {
+    return;
+  }
+  const current = map.get(normalizedKey);
+  if (!current || schedule.timestamp >= current.timestamp) {
+    map.set(normalizedKey, schedule);
+  }
+}
+
+function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSchedule, scheduleLabel }) {
+  const experimentStatus = normalizeStatus(experiment?.status);
+  if (experimentStatus && experimentStatus !== STATUS_WAITING) {
+    return experimentStatus;
+  }
+
+  const scheduleStatus = normalizeStatus(matchedSchedule?.status);
+  if (scheduleStatus && scheduleStatus !== STATUS_WAITING) {
+    return scheduleStatus;
+  }
+
+  if (matchedSchedule) {
+    return scheduleLabel;
+  }
+
+  return currentStatus || experimentStatus || STATUS_WAITING;
+}
+
 // 构建任务视图模式下展示的任务卡片数据。
 function buildTaskRows({
   tasks,
@@ -62,6 +96,7 @@ function buildTaskRows({
   const taskMap = new Map();
   const knownTaskCodes = new Set();
   const experimentsByTaskCode = new Map();
+  const formalScheduleByExperimentCode = new Map();
 
   experimentList.forEach((experiment) => {
     const taskCode = normalizeText(experiment?.task_code);
@@ -73,9 +108,21 @@ function buildTaskRows({
       experimentCode: normalizeText(experiment?.experiment_code),
       experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
-      status: normalizeText(experiment?.status),
+      status: normalizeStatus(experiment?.status),
     });
     experimentsByTaskCode.set(taskCode, group);
+  });
+
+  scheduleList.forEach((entry) => {
+    if (isRetentionDevice(entry?.device)) {
+      return;
+    }
+    const schedule = {
+      device: normalizeText(entry?.device),
+      status: normalizeStatus(entry?.status),
+      timestamp: parseTimeValue(entry?.start_at || entry?.created_at),
+    };
+    upsertLatestSchedule(formalScheduleByExperimentCode, entry?.experiment_code, schedule);
   });
 
   // 先以任务为主表建初始行，样品和排程后续再补充到对应任务上。
@@ -184,6 +231,15 @@ function buildTaskRows({
       );
       // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
       const currentStatus = aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
+      const experiments = row.experiments.map((experiment) => ({
+        ...experiment,
+        displayStatus: resolveExperimentDisplayStatus({
+          currentStatus,
+          experiment,
+          matchedSchedule: formalScheduleByExperimentCode.get(experiment.experimentCode),
+          scheduleLabel,
+        }),
+      }));
       const experimentSummary = row.experiments
         .map((experiment) => experiment.experimentName)
         .filter(Boolean)
@@ -196,6 +252,7 @@ function buildTaskRows({
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,
         trays,
+        experiments,
         experimentCount: row.experimentCount,
         experimentSummary,
       };
