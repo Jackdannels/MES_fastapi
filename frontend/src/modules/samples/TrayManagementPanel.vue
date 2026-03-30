@@ -197,7 +197,7 @@ watch(
 
 const selectedTray = computed(() => {
   const rows = filteredTrayRows.value;
-  return rows.find((row) => row.trayCode === selectedTrayCode.value) || rows[0] || { trayCode: "", status: "运输中" };
+  return rows.find((row) => row.trayCode === selectedTrayCode.value) || rows[0] || { trayCode: "", status: "样品运输中" };
 });
 
 const selectedTaskCodeForFlow = computed(() => normalizeText(selectedTray.value?.taskCode) || selectedTaskCode.value);

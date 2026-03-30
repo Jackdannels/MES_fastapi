@@ -35,7 +35,7 @@ describe("sampleTraceModel", () => {
               action: "样品登记",
               location: "接驳区",
               owner: "张三",
-              status: "运输中",
+              status: "样品运输中",
               detail: "",
             },
           ],
@@ -73,7 +73,7 @@ describe("sampleTraceModel", () => {
               action: "样品编号重排",
               location: "室外接驳区",
               owner: "",
-              status: "运输中",
+              status: "样品运输中",
               detail: "任务 SZH-2026-021；样品绑定任务",
             },
           ],
@@ -84,7 +84,7 @@ describe("sampleTraceModel", () => {
 
     expect(view.timelineItems[0].title).toBe("SP-002 · 样品编号重排");
     expect(view.timelineItems[0].meta).toContain("室外接驳区");
-    expect(view.timelineItems[0].meta).toContain("运输中");
+    expect(view.timelineItems[0].meta).toContain("样品运输中");
     expect(view.timelineItems[0].meta).toContain("任务 SZH-2026-021");
     expect(view.timelineItems[0].meta).toContain("样品绑定任务");
   });

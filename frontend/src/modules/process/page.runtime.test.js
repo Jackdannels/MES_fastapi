@@ -114,6 +114,7 @@ vi.mock("./useProcessLabs", async () => {
             flowStatus: "实验准备就绪",
             locationSummary: "冲击一室",
             ownerSummary: "王五",
+            sampleCodes: ["SP-003", "SP-004"],
             sampleCount: 2,
             sampleSummary: "SP-003、SP-004",
             status: "实验准备就绪",
@@ -123,6 +124,7 @@ vi.mock("./useProcessLabs", async () => {
             flowStatus: "已到达实验室",
             locationSummary: "冲击一室",
             ownerSummary: "赵六",
+            sampleCodes: ["SP-005"],
             sampleCount: 1,
             sampleSummary: "SP-005",
             status: "已到达实验室",
@@ -135,6 +137,7 @@ vi.mock("./useProcessLabs", async () => {
             flowStatus: "实验进行中",
             locationSummary: "冲击一室",
             ownerSummary: "张三",
+            sampleCodes: ["SP-001"],
             sampleCount: 1,
             sampleSummary: "SP-001",
             status: "实验进行中",
@@ -144,6 +147,7 @@ vi.mock("./useProcessLabs", async () => {
             flowStatus: "实验进行中",
             locationSummary: "冲击一室",
             ownerSummary: "李四",
+            sampleCodes: ["SP-002"],
             sampleCount: 1,
             sampleSummary: "SP-002",
             status: "实验进行中",
@@ -153,18 +157,21 @@ vi.mock("./useProcessLabs", async () => {
         scheduleTime: "03/10 09:30 - 03/10 10:30",
         selectedTrayCode: "TRAY-001",
         selectedTrayFlow: {
-          currentStatus: "当前托盘：TRAY-001 | 当前状态：实验进行中",
+          currentStatus: "当前托盘：TRAY-001 | 当前状态：已到达实验室",
           steps: [
-            { active: false, key: "arrived_lab", label: "已到达实验室", reached: true },
-            { active: false, key: "fixture_install", label: "工装夹具安装", reached: true },
-            { active: false, key: "ready", label: "实验准备就绪", reached: true },
-            { active: true, key: "running", label: "实验进行中", reached: false },
+            { active: false, key: "in_transit", label: "样品运输中", reached: true },
+            { active: false, key: "arrived", label: "到货", reached: true },
+            { active: false, key: "sent_to_staging", label: "送至暂存间", reached: true },
+            { active: false, key: "arrived_staging", label: "已到达暂存间", reached: true },
+            { active: false, key: "sent_to_lab", label: "送至实验室", reached: true },
+            { active: true, key: "arrived_lab", label: "已到达实验室", reached: false },
           ],
         },
         selectedTraySummary: {
-          flowStatus: "实验进行中",
+          flowStatus: "已到达实验室",
           locationSummary: "冲击一室",
           ownerSummary: "张三",
+          sampleCodes: ["SP-001"],
           sampleCount: 1,
           sampleSummary: "SP-001",
           status: "实验进行中",
@@ -225,17 +232,23 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.get(".process-task-code-headline").text()).toBe("CJ-2026-001");
     expect(wrapper.get(".process-task-name-subtitle").text()).toBe("冲击试验任务");
     expect(wrapper.text()).toContain("4");
-    expect(wrapper.text()).toContain("TRAY-001, TRAY-002, TRAY-003 +1");
+    expect(wrapper.text()).not.toContain("托盘摘要");
     expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(4);
-    expect(wrapper.get("[data-testid='process-selected-tray-summary']").text()).toContain("TRAY-001");
-    expect(wrapper.get("[data-testid='process-selected-tray-summary']").text()).toContain("样品编号");
-    expect(wrapper.get("[data-testid='process-selected-tray-summary']").text()).toContain("SP-001");
+    expect(wrapper.get(".process-task-tray-chip-list").classes()).toContain("is-single-column");
+    expect(wrapper.get(".process-task-tray-chip-list").classes()).toContain("is-dense");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("process-task-tray-chip-emphasis");
+    expect(wrapper.find("[data-testid='process-selected-tray-summary']").exists()).toBe(false);
     expect(wrapper.text()).toContain("当前实验托盘");
     expect(wrapper.text()).toContain("待下一轮托盘");
     expect(wrapper.text()).toContain("统一托盘流程图");
+    expect(wrapper.text()).toContain("样品编号");
+    expect(wrapper.text()).not.toContain("补充信息");
     expect(wrapper.text()).toContain("TRAY-001");
     expect(wrapper.text()).toContain("TRAY-003");
-    expect(wrapper.text()).toContain("当前托盘：TRAY-001 | 当前状态：实验进行中");
+    expect(wrapper.text()).toContain("当前托盘：TRAY-001 | 当前状态：已到达实验室");
+    expect(wrapper.get("[data-testid='process-selected-tray-sample-list']").text()).toContain("SP-001");
+    expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(1);
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-selected");
 
     await wrapper.get("[data-testid='process-tray-chip-TRAY-002']").trigger("click");
 

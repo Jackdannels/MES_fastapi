@@ -2,8 +2,9 @@
 import { computed, onMounted, ref } from "vue";
 
 import { PROCESS_LABS, buildProcessLabCards } from "./model";
+import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { buildTrayFlowView, resolveFlowStatusByLocation } from "@/modules/samples/samplesFlowModel";
+import { buildTrayFlowView, normalizeLifecycleStatus, resolveFlowStatusByLocation } from "@/modules/samples/samplesFlowModel";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 
@@ -40,6 +41,7 @@ const BATCH_SUFFIX_PATTERNS = [
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const API_BASE_URL = getFrontendApiBaseUrl();
 
 // 任务名称里如果带“批次 / batch”后缀，抽屉标题会裁掉这部分噪音。
 const sanitizeTaskDisplayName = (value, fallback = "-") => {
@@ -77,9 +79,31 @@ const summarizeUniqueTexts = (values, fallback = "-") => {
 // 加载快照数据，并输出实验室卡片及当前任务的抽屉详情。
 function useProcessLabs(options = {}) {
   const labs = Array.isArray(options.labs) ? options.labs : PROCESS_LABS;
-  const storage = options.storage || useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules, STORAGE_KEYS.samples]);
+  const storage =
+    options.storage ||
+    useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.experiment_trays]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
   const persistSnapshot = options.persistSnapshot || storage.persistSnapshot || (async () => {});
+  const loadTransferWorkspace =
+    options.loadTransferWorkspace ||
+    (async (taskCode) => {
+      const normalizedTaskCode = normalizeText(taskCode);
+      if (!normalizedTaskCode) {
+        return null;
+      }
+      try {
+        const response = await fetch(buildApiUrl(`/api/transfer-area/tasks/${encodeURIComponent(normalizedTaskCode)}/workspace`, API_BASE_URL), {
+          headers: { Accept: "application/json" },
+          credentials: "include",
+        });
+        if (!response.ok) {
+          return null;
+        }
+        return await response.json();
+      } catch {
+        return null;
+      }
+    });
   const autoLoad = options.autoLoad !== false;
   const now = options.now;
 
@@ -88,6 +112,8 @@ function useProcessLabs(options = {}) {
   const tasks = ref([]);
   const schedules = ref([]);
   const samples = ref([]);
+  const experimentTrays = ref([]);
+  const transferWorkspaceByTaskCode = ref({});
   const activeFilter = ref(PROCESS_FILTERS.overview);
   const processActionMessage = ref("");
   const selectedTaskDetail = ref(null);
@@ -95,22 +121,42 @@ function useProcessLabs(options = {}) {
   const selectedTrayCode = ref("");
   const taskDrawerOpen = ref(false);
 
-  const buildTraySummary = (taskCode, task) => {
-    const trayCodes = new Set();
+  const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
 
-    if (Array.isArray(task?.tray_codes)) {
-      task.tray_codes.forEach((code) => {
-        const normalized = String(code || "").trim();
+  const getTaskSamples = (taskCode) => samples.value.filter((sample) => normalizeText(sample?.task_code) === taskCode);
+  const getTransferWorkspace = (taskCode) => transferWorkspaceByTaskCode.value[taskCode] || null;
+
+  const collectTaskTrayCodes = (taskCode, task = null) => {
+    const trayCodes = new Set();
+    const matchedTask = task || findTaskByCode(taskCode);
+
+    if (Array.isArray(matchedTask?.tray_codes)) {
+      matchedTask.tray_codes.forEach((code) => {
+        const normalized = normalizeText(code);
         if (normalized) {
           trayCodes.add(normalized);
         }
       });
     }
 
-    samples.value.forEach((sample) => {
-      if (normalizeText(sample?.task_code) !== taskCode) {
+    experimentTrays.value.forEach((entry) => {
+      if (normalizeText(entry?.task_code) !== taskCode) {
         return;
       }
+      const normalized = normalizeText(entry?.tray_code);
+      if (normalized) {
+        trayCodes.add(normalized);
+      }
+    });
+
+    asArray(getTransferWorkspace(taskCode)?.assignedTrays).forEach((tray) => {
+      const normalized = normalizeText(tray?.trayNo);
+      if (normalized) {
+        trayCodes.add(normalized);
+      }
+    });
+
+    getTaskSamples(taskCode).forEach((sample) => {
       asArray(sample?.trays).forEach((tray) => {
         const normalized = normalizeText(tray?.tray_code);
         if (normalized) {
@@ -119,7 +165,26 @@ function useProcessLabs(options = {}) {
       });
     });
 
-    const ordered = Array.from(trayCodes).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+    return Array.from(trayCodes).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+  };
+
+  const buildTaskFallbackTrayContext = (taskCode) => {
+    const taskSamples = getTaskSamples(taskCode).slice().sort((left, right) => (
+      normalizeText(left?.code).localeCompare(normalizeText(right?.code), "zh-Hans-CN")
+    ));
+    const primarySample = taskSamples[0] || null;
+    const fallbackStatus = normalizeLifecycleStatus(primarySample?.location, normalizeText(primarySample?.status));
+
+    return {
+      flowStatus: resolveFlowStatusByLocation(primarySample?.location, fallbackStatus),
+      locationSummary: summarizeUniqueTexts(taskSamples.map((sample) => sample?.location)),
+      ownerSummary: summarizeUniqueTexts(taskSamples.map((sample) => sample?.owner)),
+      status: fallbackStatus,
+    };
+  };
+
+  const buildTraySummary = (taskCode, task) => {
+    const ordered = collectTaskTrayCodes(taskCode, task);
     const visible = ordered.slice(0, 3);
     const remaining = ordered.length - visible.length;
 
@@ -130,10 +195,23 @@ function useProcessLabs(options = {}) {
     };
   };
 
-  const buildTrayRows = (taskCode) => {
+  const buildTrayRows = (taskCode, task = null) => {
     const trayMap = new Map();
+    const fallbackContext = buildTaskFallbackTrayContext(taskCode);
+    const workspaceTrays = asArray(getTransferWorkspace(taskCode)?.assignedTrays);
 
-    samples.value.forEach((sample) => {
+    collectTaskTrayCodes(taskCode, task).forEach((trayCode) => {
+      trayMap.set(trayCode, {
+        flowStatuses: [],
+        locations: [],
+        owners: [],
+        sampleCodes: [],
+        status: "",
+        trayCode,
+      });
+    });
+
+    getTaskSamples(taskCode).forEach((sample) => {
       if (normalizeText(sample?.task_code) !== taskCode) {
         return;
       }
@@ -150,7 +228,7 @@ function useProcessLabs(options = {}) {
             locations: [],
             owners: [],
             sampleCodes: [],
-            status: normalizeText(tray?.status) || normalizeText(sample?.status),
+            status: normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)),
             trayCode,
           });
         }
@@ -161,25 +239,61 @@ function useProcessLabs(options = {}) {
           row.sampleCodes.push(sampleCode);
         }
         if (!row.status) {
-          row.status = normalizeText(tray?.status) || normalizeText(sample?.status);
+          row.status = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
         }
         row.locations.push(normalizeText(sample?.location));
         row.owners.push(normalizeText(sample?.owner));
-        row.flowStatuses.push(resolveFlowStatusByLocation(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)));
+        row.flowStatuses.push(
+          resolveFlowStatusByLocation(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)),
+        );
+      });
+    });
+
+    workspaceTrays.forEach((tray) => {
+      const trayCode = normalizeText(tray?.trayNo);
+      if (!trayCode) {
+        return;
+      }
+
+      if (!trayMap.has(trayCode)) {
+        trayMap.set(trayCode, {
+          flowStatuses: [],
+          locations: [],
+          owners: [],
+          sampleCodes: [],
+          status: "",
+          trayCode,
+        });
+      }
+
+      const row = trayMap.get(trayCode);
+      const traySamples = asArray(tray?.samples);
+      const fallbackStatus = normalizeLifecycleStatus("", normalizeText(tray?.trayStatus) || normalizeText(traySamples[0]?.sampleStatus));
+      if (!row.status && fallbackStatus) {
+        row.status = fallbackStatus;
+      }
+      if (row.flowStatuses.length === 0 && fallbackStatus) {
+        row.flowStatuses.push(resolveFlowStatusByLocation("", fallbackStatus));
+      }
+      traySamples.forEach((sample) => {
+        const sampleCode = normalizeText(sample?.sampleNo);
+        if (sampleCode && !row.sampleCodes.includes(sampleCode)) {
+          row.sampleCodes.push(sampleCode);
+        }
       });
     });
 
     return Array.from(trayMap.values())
       .map((row) => {
-        const status = normalizeText(row.status);
+        const status = normalizeText(row.status) || fallbackContext.status;
         const sampleCodes = row.sampleCodes.slice().sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
         return {
-          flowStatus: summarizeUniqueTexts(row.flowStatuses),
+          flowStatus: row.flowStatuses.length ? summarizeUniqueTexts(row.flowStatuses) : toText(fallbackContext.flowStatus),
           isCompleted: COMPLETED_TRAY_STATUSES.has(status),
           isReady: status === TRAY_STATUS_READY,
           isRunning: RUNNING_TRAY_STATUSES.has(status),
-          locationSummary: summarizeUniqueTexts(row.locations),
-          ownerSummary: summarizeUniqueTexts(row.owners),
+          locationSummary: summarizeUniqueTexts(row.locations, fallbackContext.locationSummary),
+          ownerSummary: summarizeUniqueTexts(row.owners, fallbackContext.ownerSummary),
           sampleCodes,
           sampleCount: sampleCodes.length,
           sampleSummary: sampleCodes.length ? sampleCodes.join("、") : "-",
@@ -220,7 +334,7 @@ function useProcessLabs(options = {}) {
     const schedule =
       relatedSchedules.find((entry) => normalizeText(entry?.task_code) === taskCode) || relatedSchedules[0] || null;
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task);
-    const trayRows = buildTrayRows(taskCode);
+    const trayRows = buildTrayRows(taskCode, task);
     const runningTrayRows = trayRows.filter((row) => row.isRunning);
     const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
@@ -251,7 +365,9 @@ function useProcessLabs(options = {}) {
       sampleCount: toCount(task?.sample_count),
       scheduleTime: toText(schedule ? `${lab?.scheduleTime || ""}` : lab?.scheduleTime),
       selectedTrayCode: activeTray?.trayCode || "",
-      selectedTrayFlow: activeTray ? buildTrayFlowView({ status: activeTray.status, trayCode: activeTray.trayCode }) : buildTrayFlowView(),
+      selectedTrayFlow: activeTray
+        ? buildTrayFlowView({ status: activeTray.flowStatus || activeTray.status, trayCode: activeTray.trayCode })
+        : buildTrayFlowView(),
       selectedTraySummary: activeTray,
       source: toText(task?.source),
       startDisabledReason: actionState.startDisabledReason,
@@ -292,6 +408,18 @@ function useProcessLabs(options = {}) {
     labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, samples.value, now).map(enrichLabCard);
   };
 
+  const ensureTaskWorkspaceLoaded = async (taskCode) => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    if (!normalizedTaskCode || Object.prototype.hasOwnProperty.call(transferWorkspaceByTaskCode.value, normalizedTaskCode)) {
+      return;
+    }
+    const workspace = await loadTransferWorkspace(normalizedTaskCode);
+    transferWorkspaceByTaskCode.value = {
+      ...transferWorkspaceByTaskCode.value,
+      [normalizedTaskCode]: workspace && typeof workspace === "object" ? workspace : null,
+    };
+  };
+
   const refreshSelectedTaskDetail = (preferredTrayCode = "") => {
     if (preferredTrayCode) {
       selectedTrayCode.value = preferredTrayCode;
@@ -313,6 +441,7 @@ function useProcessLabs(options = {}) {
       tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+      experimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       rebuildLabCards();
       if (taskDrawerOpen.value) {
         refreshSelectedTaskDetail(selectedTrayCode.value);
@@ -348,7 +477,7 @@ function useProcessLabs(options = {}) {
     activeFilter.value = value;
   };
 
-  const openTaskOverview = (lab) => {
+  const openTaskOverview = async (lab) => {
     if (!lab?.hasTask) {
       return;
     }
@@ -356,6 +485,12 @@ function useProcessLabs(options = {}) {
     selectedTrayCode.value = "";
     refreshSelectedTaskDetail("");
     taskDrawerOpen.value = true;
+
+    const taskCode = normalizeText(lab?.taskCode);
+    if (!selectedTaskDetail.value?.trayCount) {
+      await ensureTaskWorkspaceLoaded(taskCode);
+      refreshSelectedTaskDetail(selectedTrayCode.value);
+    }
   };
 
   const selectTaskTray = (trayCode) => {

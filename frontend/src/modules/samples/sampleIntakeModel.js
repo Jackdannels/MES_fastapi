@@ -1,5 +1,5 @@
 // 提供样品收样子视图所需的表单工厂和持久化辅助函数。
-const STATUS_TRANSIT = "运输中";
+const STATUS_TRANSIT = "样品运输中";
 const STATUS_WAITING = "待排程";
 
 // 样品登记涉及的字段都统一先做文本和数组规范化。

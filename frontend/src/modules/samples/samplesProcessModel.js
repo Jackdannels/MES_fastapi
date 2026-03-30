@@ -72,7 +72,7 @@ const collectTaskTrayStatuses = (taskCode, samples) => {
       return;
     }
 
-    const sampleStatus = normalizeText(sample?.status);
+    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     const sampleTrays = asArray(sample?.trays);
     if (sampleTrays.length === 0) {
       if (sampleStatus) {
@@ -83,7 +83,7 @@ const collectTaskTrayStatuses = (taskCode, samples) => {
 
     sampleTrays.forEach((tray, index) => {
       const trayCode = normalizeText(tray?.tray_code) || `${code}-tray-${index + 1}`;
-      const trayStatus = normalizeText(tray?.status) || sampleStatus;
+      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
       if (trayStatus) {
         trayStatusMap.set(trayCode, trayStatus);
       }
@@ -521,7 +521,7 @@ function confirmSampleTaskStore({ taskCode, tasks, samples, trayDraft, labels = 
     sample.updated_at = now;
     sample.trays = assignedTrays
       .filter((tray) => tray.samples.includes(sampleCode))
-      .map((tray, index) => {
+      .map((tray) => {
         const existing = asArray(sample.trays).find((entry) => normalizeText(entry?.tray_code) === tray.trayCode) || {};
         return {
           id: normalizeText(existing.id) || createId("tray", now),
@@ -677,3 +677,4 @@ export {
   selectTaskProcessDraft,
   submitTrayOutbound,
 };
+import { normalizeLifecycleStatus } from "./samplesFlowModel";

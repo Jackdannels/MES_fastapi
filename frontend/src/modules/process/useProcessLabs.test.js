@@ -412,4 +412,189 @@ describe("useProcessLabs", () => {
       statusClass: "is-idle",
     });
   });
+
+  test("builds tray flow from shared flow status instead of raw tray status", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "接样实验室",
+          end_at: "2026-03-10T10:30:00Z",
+          start_at: "2026-03-10T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", name: "Task A", test_type: "Impact Test" }],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          location: "接驳区",
+          owner: "张三",
+          status: "已入库",
+          trays: [{ tray_code: "TRAY-001", status: "已入库", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "接样实验室", testType: "Impact Test" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-10T10:00:00Z"),
+    });
+
+    await loadLabStatus();
+    openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value.selectedTraySummary).toMatchObject({
+      flowStatus: "到货",
+      status: "到货",
+      trayCode: "TRAY-001",
+    });
+    expect(selectedTaskDetail.value.selectedTrayFlow.currentStatus).toBe("当前托盘：TRAY-001 | 当前状态：到货");
+    expect(selectedTaskDetail.value.selectedTrayFlow.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "arrived", active: true, label: "到货" }),
+        expect.objectContaining({ key: "in_transit", reached: true, label: "样品运输中" }),
+      ]),
+    );
+  });
+
+  test("falls back to experiment tray relations when samples do not carry tray bindings", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-03-29T11:30:00Z",
+          start_at: "2026-03-29T08:00:00Z",
+          task_code: "SYLU-2026-03-001",
+        },
+      ],
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-001",
+          name: "温度冲击试验",
+          sample_count: 6,
+          status: "已排程",
+          test_type: "温度冲击试验",
+        },
+      ],
+      "mes.experiment_trays": [
+        { id: "rel-1", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-001" },
+        { id: "rel-2", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-002" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          location: "接驳区",
+          status: "样品运输中",
+          task_code: "SYLU-2026-03-001",
+        },
+        {
+          code: "SYLU-2026-03-001-SP-002",
+          location: "接驳区",
+          status: "样品运输中",
+          task_code: "SYLU-2026-03-001",
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "冲击一室", testType: "温度冲击试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-29T09:00:00Z"),
+    });
+
+    await loadLabStatus();
+    openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value).toMatchObject({
+      trayCount: 2,
+      traySummary: "SYLU-2026-03-001-TP-001, SYLU-2026-03-001-TP-002",
+    });
+    expect(selectedTaskDetail.value.trayRows.map((row) => row.trayCode)).toEqual([
+      "SYLU-2026-03-001-TP-001",
+      "SYLU-2026-03-001-TP-002",
+    ]);
+    expect(selectedTaskDetail.value.selectedTraySummary).toMatchObject({
+      flowStatus: "样品运输中",
+      status: "样品运输中",
+      trayCode: "SYLU-2026-03-001-TP-001",
+    });
+  });
+
+  test("falls back to transfer workspace trays when storage snapshots do not yet carry tray relations", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "振动一室",
+          end_at: "2026-03-29T11:30:00Z",
+          start_at: "2026-03-29T08:00:00Z",
+          task_code: "SYLU-2026-03-001",
+        },
+      ],
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-001",
+          name: "温度冲击试验",
+          sample_count: 6,
+          status: "已排程",
+          test_type: "温度冲击试验",
+          tray_codes: [],
+        },
+      ],
+      "mes.experiment_trays": [],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          location: "接驳区",
+          status: "样品运输中",
+          task_code: "SYLU-2026-03-001",
+          trays: [],
+        },
+      ],
+    }));
+    const loadTransferWorkspace = vi.fn(async () => ({
+      assignedTrays: [
+        {
+          trayNo: "SYLU-2026-03-001-TP-001",
+          trayStatus: "已预分配",
+          samples: [
+            { sampleNo: "SYLU-2026-03-001-SP-001", sampleStatus: "未入库" },
+            { sampleNo: "SYLU-2026-03-001-SP-002", sampleStatus: "未入库" },
+          ],
+        },
+        {
+          trayNo: "SYLU-2026-03-001-TP-002",
+          trayStatus: "已预分配",
+          samples: [
+            { sampleNo: "SYLU-2026-03-001-SP-003", sampleStatus: "未入库" },
+          ],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "振动一室", testType: "振动试验" }],
+      loadSnapshot,
+      loadTransferWorkspace,
+      now: Date.parse("2026-03-29T09:00:00Z"),
+    });
+
+    await loadLabStatus();
+    await openTaskOverview(labCards.value[0]);
+
+    expect(loadTransferWorkspace).toHaveBeenCalledWith("SYLU-2026-03-001");
+    expect(selectedTaskDetail.value).toMatchObject({
+      trayCount: 2,
+      traySummary: "SYLU-2026-03-001-TP-001, SYLU-2026-03-001-TP-002",
+    });
+    expect(selectedTaskDetail.value.trayRows.map((row) => row.trayCode)).toEqual([
+      "SYLU-2026-03-001-TP-001",
+      "SYLU-2026-03-001-TP-002",
+    ]);
+    expect(selectedTaskDetail.value.selectedTraySummary).toMatchObject({
+      sampleSummary: "SYLU-2026-03-001-SP-001、SYLU-2026-03-001-SP-002",
+      trayCode: "SYLU-2026-03-001-TP-001",
+    });
+  });
 });

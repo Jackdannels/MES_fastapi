@@ -26,7 +26,7 @@ const TEST_LABS = new Set([
 const TEST_LAB_OPTIONS = Array.from(TEST_LABS).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
 
 const SAMPLE_FLOW_STEPS = [
-  { key: "in_transit", label: "\u8FD0\u8F93\u4E2D" },
+  { key: "in_transit", label: "\u6837\u54C1\u8FD0\u8F93\u4E2D" },
   { key: "arrived", label: "\u5230\u8D27" },
   { key: "sent_to_staging", label: "\u9001\u81F3\u6682\u5B58\u95F4" },
   { key: "arrived_staging", label: "\u5DF2\u5230\u8FBE\u6682\u5B58\u95F4" },
@@ -50,14 +50,90 @@ const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
 // 样品流转涉及大量字符串比较，统一先做基础规范化。
 const normalizeText = (value) => String(value ?? "").trim();
 
-// 托盘状态与样品状态保持同一套业务标签，避免两边出现分叉。
-const syncTrayStatusToSampleStatus = (status) => normalizeText(status);
-
 // 允许通过覆盖 labels 复用同一套状态推导逻辑。
 const normalizeLabels = (labels = {}) => ({
   ...DEFAULT_LABELS,
   ...(labels && typeof labels === "object" ? labels : {}),
 });
+
+const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS) => {
+  const normalizedLabels = normalizeLabels(labels);
+  const normalizedLocation = normalizeText(location);
+  const currentStatus = normalizeText(status);
+  const preRetentionLocation = normalizeText(
+    normalizedLabels.preRetentionLocation || normalizedLabels.retentionLocation,
+  );
+  const postRetentionLocation = normalizeText(normalizedLabels.postRetentionLocation);
+  const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
+  const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
+
+  if (FLOW_STATUS_LABELS.has(currentStatus)) {
+    return currentStatus === "运输中" ? "样品运输中" : currentStatus;
+  }
+  if (currentStatus === "运输中") {
+    return "样品运输中";
+  }
+  if (currentStatus === "厂家收回" || currentStatus === "已处置") {
+    return "厂家收回";
+  }
+  if (currentStatus === "放置暂存间") {
+    return "放置实验后暂存间";
+  }
+  if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === normalizedLabels.sampleStored) {
+    return isPostRetention ? "放置实验后暂存间" : isPreRetention ? "已到达暂存间" : "到货";
+  }
+  if (currentStatus === "实验完成" || currentStatus === "实验已完成") {
+    return "实验已完成";
+  }
+  if (currentStatus === "实验进行中" || currentStatus === "实验中") {
+    return "实验进行中";
+  }
+  if (currentStatus === "实验准备就绪" || currentStatus === normalizedLabels.sampleTesting) {
+    return "实验准备就绪";
+  }
+  if (isPostRetention) {
+    return "放置实验后暂存间";
+  }
+  if (isPreRetention) {
+    return "已到达暂存间";
+  }
+  if (TEST_LABS.has(normalizedLocation)) {
+    return "已到达实验室";
+  }
+  if (
+    normalizedLocation &&
+    (normalizedLocation === normalizeText(normalizedLabels.unpackingLocation) ||
+      normalizedLocation === normalizeText(normalizedLabels.intakeLocation))
+  ) {
+    return "到货";
+  }
+  return SAMPLE_FLOW_STEPS[0].label;
+};
+
+const normalizeSampleRecord = (sample, labels = DEFAULT_LABELS) => {
+  const record = sample && typeof sample === "object" ? { ...sample } : {};
+  const normalizedStatus = normalizeLifecycleStatus(record.location, record.status, labels);
+  const trays = Array.isArray(record.trays)
+    ? record.trays.map((tray) => ({
+        ...tray,
+        status: normalizeLifecycleStatus(record.location, normalizeText(tray?.status) || normalizedStatus, labels),
+      }))
+    : [];
+
+  return {
+    ...record,
+    flow_status: normalizedStatus,
+    status: normalizedStatus,
+    trays,
+  };
+};
+
+const normalizeSamplesSnapshot = (samples, labels = DEFAULT_LABELS) =>
+  (Array.isArray(samples) ? samples : []).map((sample) => normalizeSampleRecord(sample, labels));
+
+// 托盘状态与样品状态保持同一套规范流程标签。
+const syncTrayStatusToSampleStatus = (status, location = "", labels = DEFAULT_LABELS) =>
+  normalizeLifecycleStatus(location, status, labels);
 
 // 批量创建样品和历史记录时使用轻量级随机 ID。
 const generateId = (prefix) => {
@@ -132,6 +208,7 @@ function buildSamplesTrayOverviewView(input = {}) {
     const sampleCode = normalizeText(sample?.code);
     const taskCode = normalizeText(sample?.task_code);
     const task = taskMap.get(taskCode) || { code: taskCode, name: "", testType: "" };
+    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     getSampleTrayList(sample).forEach((tray) => {
       const trayCode = normalizeText(tray?.tray_code);
       if (!trayCode) {
@@ -143,7 +220,7 @@ function buildSamplesTrayOverviewView(input = {}) {
           taskCode,
           taskName: task.name,
           testType: task.testType,
-          status: normalizeText(tray?.status) || normalizeText(sample?.status),
+          status: normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus),
           sampleCodes: [],
         });
       }
@@ -152,7 +229,7 @@ function buildSamplesTrayOverviewView(input = {}) {
         row.sampleCodes.push(sampleCode);
       }
       if (!row.status) {
-        row.status = normalizeText(tray?.status) || normalizeText(sample?.status);
+        row.status = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
       }
     });
   });
@@ -181,7 +258,7 @@ function buildSamplesTrayOverviewView(input = {}) {
 
 function buildTrayFlowView(input = {}) {
   const trayCode = normalizeText(input.trayCode);
-  const status = normalizeText(input.status) || SAMPLE_FLOW_STEPS[0].label;
+  const status = normalizeLifecycleStatus(input.location, input.status) || SAMPLE_FLOW_STEPS[0].label;
   const currentKey = FLOW_STEP_KEY_BY_LABEL.get(status) || SAMPLE_FLOW_STEPS[0].key;
   const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;
 
@@ -223,61 +300,8 @@ const resolveSampleStatus = (location, labels = DEFAULT_LABELS) => {
   return "\u8FD0\u8F93\u4E2D";
 };
 
-const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LABELS) => {
-  const normalizedLabels = normalizeLabels(labels);
-  const normalizedLocation = normalizeText(location);
-  const currentStatus = normalizeText(status);
-  const preRetentionLocation = normalizeText(
-    normalizedLabels.preRetentionLocation || normalizedLabels.retentionLocation,
-  );
-  const postRetentionLocation = normalizeText(normalizedLabels.postRetentionLocation);
-  const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
-  const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
-
-  // 已经是完整流转状态文案时，直接原样透传。
-  if (FLOW_STATUS_LABELS.has(currentStatus)) {
-    return currentStatus;
-  }
-  if (currentStatus === "\u5382\u5BB6\u6536\u56DE" || currentStatus === "\u5DF2\u5904\u7F6E") {
-    return "\u5382\u5BB6\u6536\u56DE";
-  }
-  if (currentStatus === "\u653E\u7F6E\u6682\u5B58\u95F4") {
-    return "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4";
-  }
-  if (
-    currentStatus === "\u5165\u5E93" ||
-    currentStatus === "\u5DF2\u5165\u5E93" ||
-    currentStatus === normalizedLabels.sampleStored
-  ) {
-    return isPostRetention ? "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4" : isPreRetention ? "\u5DF2\u5230\u8FBE\u6682\u5B58\u95F4" : "\u5230\u8D27";
-  }
-  if (currentStatus === "\u5B9E\u9A8C\u5B8C\u6210" || currentStatus === "\u5B9E\u9A8C\u5DF2\u5B8C\u6210") {
-    return "\u5B9E\u9A8C\u5DF2\u5B8C\u6210";
-  }
-  if (currentStatus === "\u5B9E\u9A8C\u8FDB\u884C\u4E2D" || currentStatus === "\u5B9E\u9A8C\u4E2D") {
-    return "\u5B9E\u9A8C\u8FDB\u884C\u4E2D";
-  }
-  if (currentStatus === "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA" || currentStatus === normalizedLabels.sampleTesting) {
-    return "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA";
-  }
-  if (isPostRetention) {
-    return "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4";
-  }
-  if (isPreRetention) {
-    return "\u5DF2\u5230\u8FBE\u6682\u5B58\u95F4";
-  }
-  if (TEST_LABS.has(normalizedLocation)) {
-    return "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4";
-  }
-  if (
-    normalizedLocation &&
-    (normalizedLocation === normalizeText(normalizedLabels.unpackingLocation) ||
-      normalizedLocation === normalizeText(normalizedLabels.intakeLocation))
-  ) {
-    return "\u5230\u8D27";
-  }
-  return "\u8FD0\u8F93\u4E2D";
-};
+const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LABELS) =>
+  normalizeLifecycleStatus(location, status, labels);
 
 const appendSampleHistory = (sample, action, detail = "", now = new Date().toISOString()) => {
   const history = Array.isArray(sample.history) ? sample.history.slice() : [];
@@ -319,7 +343,7 @@ const resolveStatusClass = (status) => {
   ) {
     return "status completed";
   }
-  if (normalized === "\u8FD0\u8F93\u4E2D" || normalized === "\u5230\u8D27") {
+  if (normalized === "\u6837\u54C1\u8FD0\u8F93\u4E2D" || normalized === "\u8FD0\u8F93\u4E2D" || normalized === "\u5230\u8D27") {
     return "status accepted";
   }
   return "status";
@@ -348,7 +372,8 @@ function buildSamplesFlowView(input = {}) {
   const selectedTaskCode = normalizeText(filters.taskCode);
   const selectedStatus = normalizeText(filters.status);
 
-  const rows = samples
+  const normalizedSamples = samples.map((sample) => normalizeSampleRecord(sample));
+  const rows = normalizedSamples
     .filter((sample) => {
       // 列表筛选同时支持任务号、状态和自由关键词。
       if (selectedTaskCode && normalizeText(sample.task_code) !== selectedTaskCode) {
@@ -409,9 +434,9 @@ function buildSamplesFlowView(input = {}) {
         .concat(samples.map((sample) => normalizeText(sample?.task_code)).filter(Boolean)),
     ),
   ).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
-  const statusOptions = Array.from(
-    new Set(samples.map((sample) => normalizeText(sample?.status)).filter(Boolean)),
-  ).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+  const statusOptions = Array.from(new Set(normalizedSamples.map((sample) => normalizeText(sample?.status)).filter(Boolean))).sort(
+    (left, right) => left.localeCompare(right, "zh-Hans-CN"),
+  );
 
   return {
     currentPage,
@@ -455,8 +480,8 @@ function submitSamplesBatchIntake(input = {}) {
       // 已存在样品按“更新位置与状态”处理，不重复生成记录。
       existing.location = targetLocation;
       existing.owner = normalizeText(payload.owner) || existing.owner || "";
-      existing.status = nextStatus;
-      existing.flow_status = resolveFlowStatusByLocation(targetLocation, nextStatus, labels);
+      existing.status = normalizeLifecycleStatus(targetLocation, nextStatus, labels);
+      existing.flow_status = existing.status;
       existing.updated_at = now;
       existing.history = appendSampleHistory(existing, "\u6279\u91CF\u5165\u5E93", "", now);
       return;
@@ -469,8 +494,8 @@ function submitSamplesBatchIntake(input = {}) {
       task_code: "",
       location: targetLocation,
       owner: normalizeText(payload.owner),
-      status: nextStatus,
-      flow_status: resolveFlowStatusByLocation(targetLocation, nextStatus, labels),
+      status: normalizeLifecycleStatus(targetLocation, nextStatus, labels),
+      flow_status: normalizeLifecycleStatus(targetLocation, nextStatus, labels),
       created_at: now,
       updated_at: now,
       trays: [],
@@ -480,7 +505,7 @@ function submitSamplesBatchIntake(input = {}) {
     samples.unshift(created);
   });
 
-  return { error: "", samples };
+  return { error: "", samples: normalizeSamplesSnapshot(samples, labels) };
 }
 
 // 更新单个样品可编辑的明细字段及其派生状态。
@@ -496,8 +521,8 @@ function updateSampleDetail(input = {}) {
   const now = input.now || new Date().toISOString();
 
   // 明细抽屉只允许改状态与备注，流转状态由位置和状态共同派生。
-  sample.status = nextStatus;
-  sample.flow_status = resolveFlowStatusByLocation(sample.location, nextStatus, labels);
+  sample.status = normalizeLifecycleStatus(sample.location, nextStatus, labels);
+  sample.flow_status = sample.status;
   sample.updated_at = now;
   sample.history = appendSampleHistory(sample, "\u6837\u54C1\u8BE6\u60C5\u66F4\u65B0", nextRemark, now);
 
@@ -506,7 +531,6 @@ function updateSampleDetail(input = {}) {
 
 function updateTrayStatus(input = {}) {
   const trayCode = normalizeText(input.trayCode);
-  const nextStatus = syncTrayStatusToSampleStatus(input.status);
   const labels = normalizeLabels(input.labels);
   const now = input.now || new Date().toISOString();
   const samples = Array.isArray(input.samples)
@@ -517,7 +541,7 @@ function updateTrayStatus(input = {}) {
       }))
     : [];
 
-  if (!trayCode || !nextStatus) {
+  if (!trayCode || !normalizeText(input.status)) {
     return { error: "请选择托盘和目标状态。", samples };
   }
 
@@ -527,6 +551,7 @@ function updateTrayStatus(input = {}) {
     if (matchingTrays.length === 0) {
       return;
     }
+    const nextStatus = syncTrayStatusToSampleStatus(input.status, sample.location, labels);
     sample.trays = sample.trays.map((tray) =>
       normalizeText(tray?.tray_code) === trayCode
         ? {
@@ -537,7 +562,7 @@ function updateTrayStatus(input = {}) {
         : tray,
     );
     sample.status = nextStatus;
-    sample.flow_status = resolveFlowStatusByLocation(sample.location, nextStatus, labels);
+    sample.flow_status = nextStatus;
     sample.updated_at = now;
     sample.history = appendSampleHistory(sample, "托盘状态更新", `${trayCode} -> ${nextStatus}`, now);
     updatedCount += 1;
@@ -560,11 +585,11 @@ function buildSamplesStagingView(input = {}) {
   const selectedSet = new Set(selectedCodes);
   const preRetentionLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation);
 
-  const rows = samples
+  const normalizedSamples = normalizeSamplesSnapshot(samples, labels);
+  const rows = normalizedSamples
     .filter((sample) => {
       // 暂存派发面板只展示当前仍停留在前置暂存间的样品。
       const location = normalizeText(sample?.location);
-      const status = normalizeText(sample?.status);
       if (location !== preRetentionLocation) {
         return false;
       }
@@ -643,8 +668,8 @@ function dispatchStagingSamples(input = {}) {
     // 只有当前位于暂存间的样品才允许派发到正式实验室。
     sample.location = targetLab;
     sample.owner = owner || normalizeText(sample.owner);
-    sample.status = "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4";
-    sample.flow_status = resolveFlowStatusByLocation(targetLab, sample.status, labels);
+    sample.status = normalizeLifecycleStatus(targetLab, "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4", labels);
+    sample.flow_status = sample.status;
     sample.updated_at = now;
     sample.history = appendSampleHistory(sample, "暂存间派发", "", now);
     dispatchedCodes.push(code);
@@ -675,6 +700,9 @@ export {
   buildSamplesStagingView,
   dispatchStagingSamples,
   getSampleTrayList,
+  normalizeLifecycleStatus,
+  normalizeSampleRecord,
+  normalizeSamplesSnapshot,
   resolveFlowStatusByLocation,
   submitSamplesBatchIntake,
   syncTrayStatusToSampleStatus,

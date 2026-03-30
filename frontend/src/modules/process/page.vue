@@ -128,32 +128,18 @@
                   <strong>{{ selectedTaskDetail?.trayCount ?? 0 }}</strong>
                 </div>
               </div>
-              <div class="process-task-inline-field">
-                <span>托盘摘要</span>
-                <strong>{{ selectedTaskDetail?.traySummary || "未分配托盘" }}</strong>
-              </div>
               <div
-                v-if="selectedTaskDetail?.selectedTraySummary"
-                class="process-task-selected-tray"
-                data-testid="process-selected-tray-summary"
+                v-if="selectedTaskDetail?.trayCodes?.length"
+                class="process-task-tray-chip-list"
+                :class="{
+                  'is-dense': selectedTaskDetail.trayCodes.length >= 3,
+                  'is-single-column': true,
+                }"
               >
-                <div class="process-task-selected-tray-head">
-                  <div>
-                    <span>当前托盘</span>
-                    <strong>{{ selectedTaskDetail.selectedTraySummary.trayCode }}</strong>
-                  </div>
-                  <span class="process-task-selected-tray-status">{{ selectedTaskDetail.selectedTraySummary.status || "-" }}</span>
-                </div>
-                <div class="process-task-selected-tray-body">
-                  <span>样品编号</span>
-                  <strong>{{ selectedTaskDetail.selectedTraySummary.sampleSummary || "-" }}</strong>
-                </div>
-              </div>
-              <div v-if="selectedTaskDetail?.trayCodes?.length" class="process-task-tray-chip-list">
                 <button
                   v-for="trayCode in selectedTaskDetail.trayCodes"
                   :key="trayCode"
-                  class="process-task-tray-chip"
+                  class="process-task-tray-chip process-task-tray-chip-emphasis"
                   :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === trayCode }"
                   type="button"
                   :data-testid="`process-tray-chip-${trayCode}`"
@@ -165,24 +151,24 @@
             </section>
 
             <section class="process-task-summary-card">
-              <div class="process-task-summary-title">补充信息</div>
-              <div class="process-task-detail-list">
-                <div class="process-task-detail-row">
-                  <span>来源</span>
-                  <strong>{{ selectedTaskDetail?.source || "-" }}</strong>
+              <div class="process-task-summary-title">样品编号</div>
+              <div
+                v-if="selectedTaskDetail?.selectedTraySummary?.sampleCodes?.length"
+                class="process-task-sample-code-list"
+                data-testid="process-selected-tray-sample-list"
+              >
+                <div
+                  v-for="sampleCode in selectedTaskDetail.selectedTraySummary.sampleCodes"
+                  :key="sampleCode"
+                  class="process-task-sample-code-row"
+                  :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
+                >
+                  {{ sampleCode }}
                 </div>
-                <div class="process-task-detail-row">
-                  <span>优先级</span>
-                  <strong>{{ selectedTaskDetail?.priority || "-" }}</strong>
-                </div>
-                <div class="process-task-detail-row">
-                  <span>设备要求</span>
-                  <strong>{{ selectedTaskDetail?.requiredDevice || "-" }}</strong>
-                </div>
-                <div class="process-task-detail-row">
-                  <span>期望完成</span>
-                  <strong>{{ selectedTaskDetail?.dueAt || "-" }}</strong>
-                </div>
+              </div>
+              <div v-else class="muted">当前托盘暂无样品编号。</div>
+              <div class="process-task-sample-hint" v-if="selectedTaskDetail?.selectedTraySummary?.trayCode">
+                当前托盘：{{ selectedTaskDetail.selectedTraySummary.trayCode }}
               </div>
             </section>
           </div>
@@ -413,90 +399,96 @@ const summaryItems = computed(() => [
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
-.process-task-selected-tray {
-  margin-top: 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(56, 189, 248, 0.24);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(255, 255, 255, 0.96));
-  padding: 14px;
-}
-
-.process-task-selected-tray-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.process-task-selected-tray-head > div {
-  min-width: 0;
-  flex: 1;
-}
-
-.process-task-selected-tray-head span,
-.process-task-selected-tray-body span {
-  display: block;
-  font-size: 12px;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-}
-
-.process-task-selected-tray-head strong,
-.process-task-selected-tray-body strong {
-  display: block;
-  margin-top: 6px;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.process-task-selected-tray-head strong {
-  white-space: nowrap;
-}
-
-.process-task-selected-tray-status {
-  flex-shrink: 0;
-  padding: 5px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.28);
-  background: rgba(255, 255, 255, 0.82);
-}
-
-.process-task-selected-tray-body {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid rgba(15, 23, 42, 0.08);
-}
-
 .process-task-tray-chip-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.process-task-tray-chip-list.is-single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.process-task-tray-chip-list.is-dense {
   gap: 8px;
-  margin-top: 12px;
 }
 
 .process-task-tray-chip {
   appearance: none;
   cursor: pointer;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  padding: 7px 12px;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 18px;
   border-radius: 999px;
   border: 1px solid rgba(56, 189, 248, 0.35);
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(59, 130, 246, 0.08));
+  background: linear-gradient(135deg, rgba(226, 232, 240, 0.92), rgba(241, 245, 249, 0.98));
   color: var(--text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.process-task-tray-chip:hover {
+  border-color: rgba(14, 116, 144, 0.38);
+  background: linear-gradient(135deg, rgba(186, 230, 253, 0.78), rgba(224, 242, 254, 0.92));
+}
+
+.process-task-tray-chip-emphasis {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.process-task-tray-chip-list.is-dense .process-task-tray-chip {
+  min-height: 42px;
+  padding: 8px 14px;
+  font-size: 14px;
 }
 
 .process-task-tray-chip.is-selected {
-  border-color: rgba(14, 116, 144, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(14, 116, 144, 0.12);
+  border-color: rgba(14, 116, 144, 0.9);
+  background: linear-gradient(135deg, rgba(14, 116, 144, 0.94), rgba(3, 105, 161, 0.86));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 8px 18px rgba(14, 116, 144, 0.18);
+  color: #f8fafc;
+  transform: translateY(-1px);
 }
 
 .process-task-detail-list {
   display: grid;
   gap: 10px;
+}
+
+.process-task-sample-code-list {
+  display: grid;
+  gap: 8px;
+}
+
+.process-task-sample-code-row {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.process-task-sample-hint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .process-task-detail-row {

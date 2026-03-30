@@ -112,8 +112,10 @@ describe("SamplesPage runtime", () => {
     await settle(wrapper);
 
     const storedSamples = getStorage(SAMPLES_KEY);
+    const storedTasks = getStorage(TASKS_KEY);
     expect(storedSamples).toHaveLength(2);
     expect(storedSamples[0].trays?.length).toBeGreaterThan(0);
+    expect(storedTasks[0].tray_codes).toEqual(["SZH-2026-001-TP-001"]);
 
     const printButton = wrapper.get('[data-testid="samples-process-print"]');
     expect(printButton.attributes("disabled")).toBeUndefined();
@@ -194,7 +196,7 @@ describe("SamplesPage runtime", () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            [SAMPLES_KEY]: [{ id: "sample-1", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", status: "运输中", trays: [], history: [] }],
+            [SAMPLES_KEY]: [{ id: "sample-1", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", status: "样品运输中", trays: [], history: [] }],
           }),
         });
       }
@@ -341,7 +343,7 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.get('[data-testid="samples-process-store"]').attributes("disabled")).toBeUndefined();
     expect(wrapper.get('[data-testid="samples-process-add-tray"]').attributes("disabled")).toBeUndefined();
     expect(wrapper.get('[data-testid="samples-process-tray-limit"]').attributes("disabled")).toBeUndefined();
-    expect(wrapper.text()).toContain("当前状态：运输中");
+    expect(wrapper.text()).toContain("当前状态：样品运输中");
   });
 
   test("restoring intake disables tray printing until storage is confirmed again", async () => {
@@ -451,7 +453,7 @@ describe("SamplesPage runtime", () => {
   test("batch intake updates sample rows and detail drawer saves edits", async () => {
     setStorage(TASKS_KEY, [{ id: "task-1", code: "SZH-2026-001", name: "任务A", sample_count: "1" }]);
     setStorage(SAMPLES_KEY, [
-      { id: "sample-1", code: "SP-001", task_code: "SZH-2026-001", location: "", owner: "", status: "运输中", history: [], trays: [] },
+      { id: "sample-1", code: "SP-001", task_code: "SZH-2026-001", location: "", owner: "", status: "样品运输中", history: [], trays: [] },
     ]);
 
     const wrapper = mount(SamplesPage);
@@ -824,10 +826,10 @@ describe("SamplesPage runtime", () => {
           id: "sample-3",
           code: "SZH-2026-002-SP-001",
           task_code: "SZH-2026-002",
-          status: "运输中",
-          flow_status: "运输中",
+          status: "样品运输中",
+          flow_status: "样品运输中",
           history: [],
-          trays: [{ tray_code: "SZH-2026-002-TP-001", status: "运输中", quantity: 1 }],
+          trays: [{ tray_code: "SZH-2026-002-TP-001", status: "样品运输中", quantity: 1 }],
         },
       ],
     };
@@ -908,7 +910,7 @@ describe("SamplesPage runtime", () => {
             action: "样品登记",
             location: "接驳区",
             owner: "张三",
-            status: "运输中",
+            status: "样品运输中",
             detail: "",
           },
         ],

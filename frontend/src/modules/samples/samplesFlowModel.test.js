@@ -29,7 +29,7 @@ describe("samplesFlowModel", () => {
 
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
-      "运输中",
+      "样品运输中",
       "到货",
       "送至暂存间",
       "已到达暂存间",
@@ -45,9 +45,9 @@ describe("samplesFlowModel", () => {
   });
 
   test("syncTrayStatusToSampleStatus maps tray status directly to the same sample status label", () => {
-    expect(syncTrayStatusToSampleStatus("运输中")).toBe("运输中");
+    expect(syncTrayStatusToSampleStatus("运输中")).toBe("样品运输中");
     expect(syncTrayStatusToSampleStatus("实验进行中")).toBe("实验进行中");
-    expect(syncTrayStatusToSampleStatus("未知状态")).toBe("未知状态");
+    expect(syncTrayStatusToSampleStatus("未知状态")).toBe("样品运输中");
   });
 
   test("buildSamplesFlowView filters sorts and paginates samples", () => {
@@ -176,7 +176,7 @@ describe("samplesFlowModel", () => {
         taskCode: "SZH-2026-002",
         taskName: "任务B",
         testType: "振动试验",
-        status: "运输中",
+        status: "样品运输中",
         sampleCount: 1,
         sampleCodes: ["SZH-2026-002-SP-001"],
       }),

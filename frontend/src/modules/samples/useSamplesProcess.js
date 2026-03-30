@@ -42,7 +42,7 @@ const buildTrayPreviewText = (trayDraft) =>
     })
     .join("\n");
 
-const buildInitialPrintPayload = (taskCode, tasks, trayDraft) => {
+const buildInitialPrintPayload = (taskCode, tasks) => {
   const task = (Array.isArray(tasks) ? tasks : []).find((item) => normalizeText(item?.code) === normalizeText(taskCode));
   const taskTrayCodes = Array.isArray(task?.tray_codes) ? task.tray_codes : [];
   return buildTrayPrintPayload({ taskCode, trayCodes: taskTrayCodes });
@@ -105,7 +105,7 @@ function useSamplesProcess() {
   );
   const currentFlowStatus = computed(() => {
     const currentStep = FLOW_STEPS.find((step) => step.key === currentFlowKey.value);
-    return `当前状态：${currentStep?.label || "运输中"}`;
+    return `当前状态：${currentStep?.label || "样品运输中"}`;
   });
 
   const rebuildDraft = (taskCode) => {
@@ -480,7 +480,7 @@ function useSamplesProcess() {
               if (document.readyState === "complete") run();
               else window.addEventListener("load", run, { once: true });
             })();
-          <\/script>
+          </scr${""}ipt>
         </body>
       </html>
     `);

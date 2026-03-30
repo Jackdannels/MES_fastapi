@@ -1,5 +1,6 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
@@ -158,7 +159,7 @@ const collectTaskTrayStatuses = (taskCode, samples) => {
       return;
     }
 
-    const sampleStatus = normalizeText(sample?.status);
+    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     const sampleTrays = Array.isArray(sample?.trays) ? sample.trays : [];
     if (sampleTrays.length === 0) {
       if (sampleStatus) {
@@ -169,7 +170,7 @@ const collectTaskTrayStatuses = (taskCode, samples) => {
 
     sampleTrays.forEach((tray, index) => {
       const trayCode = normalizeText(tray?.tray_code) || `${normalizedTaskCode}-tray-${index + 1}`;
-      const trayStatus = normalizeText(tray?.status) || sampleStatus;
+      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
       if (trayStatus) {
         trayStatusMap.set(trayCode, trayStatus);
       }
@@ -630,8 +631,8 @@ function syncTaskSamples(samples, task, previousTaskCode = "") {
       task_code: taskCode,
       location: "",
       owner: "",
-      status: "运输中",
-      flow_status: "运输中",
+      status: "样品运输中",
+      flow_status: "样品运输中",
       created_at: new Date().toISOString(),
     });
   });

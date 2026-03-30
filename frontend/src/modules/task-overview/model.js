@@ -1,4 +1,5 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
@@ -118,7 +119,7 @@ function buildTaskRows({
         row.trays.push({
           trayCode,
           sampleCode,
-          status: normalizeStatus(tray?.status || sample?.status),
+          status: normalizeLifecycleStatus(sample?.location, tray?.status || sample?.status),
           quantity: normalizeQuantity(tray?.quantity),
         });
       });
@@ -155,7 +156,7 @@ function buildTaskRows({
           trayMap.set(tray.trayCode, {
             trayCode: tray.trayCode,
             sampleCodes: [],
-            status: normalizeStatus(tray.status),
+            status: normalizeLifecycleStatus("", tray.status),
             totalQuantity: 0,
           });
         }

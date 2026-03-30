@@ -375,8 +375,8 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
           task_code: code,
           location: "",
           owner: "",
-          status: "运输中",
-          flow_status: "运输中",
+          status: "样品运输中",
+          flow_status: "样品运输中",
           created_at: now,
         };
       });

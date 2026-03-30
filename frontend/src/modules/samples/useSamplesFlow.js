@@ -12,6 +12,7 @@ import {
   buildSamplesTrayOverviewView,
   buildSamplesStagingView,
   dispatchStagingSamples,
+  normalizeSamplesSnapshot,
   submitSamplesBatchIntake,
   TRAY_STATUS_OPTIONS,
   updateTrayStatus,
@@ -155,7 +156,10 @@ function useSamplesFlow() {
     loading.value = true;
     const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
     rawTasks.value = Array.isArray(tasks) ? tasks : [];
-    rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+    rawSamples.value = normalizeSamplesSnapshot(
+      Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
+      DEFAULT_LABELS,
+    );
     loading.value = false;
   };
 

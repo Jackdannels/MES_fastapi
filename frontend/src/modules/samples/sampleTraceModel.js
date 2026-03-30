@@ -1,4 +1,6 @@
 // 根据样品历史和相关排程记录构建任务级追溯时间线。
+import { normalizeLifecycleStatus } from "./samplesFlowModel";
+
 const DEFAULT_SUMMARY = "请输入试验序号查询样品全生命周期。";
 const STATUS_RETENTION = "暂存间存放";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
@@ -22,7 +24,7 @@ const buildSampleEvents = (sample) => {
       action: normalizeText(event?.action),
       location: normalizeText(event?.location),
       owner: normalizeText(event?.owner),
-      status: normalizeStatus(event?.status),
+      status: normalizeLifecycleStatus(event?.location, event?.status),
       detail: normalizeText(event?.detail),
     }));
   }
@@ -32,7 +34,7 @@ const buildSampleEvents = (sample) => {
       action: "样品登记",
       location: normalizeText(sample?.location),
       owner: normalizeText(sample?.owner),
-      status: normalizeStatus(sample?.status),
+      status: normalizeLifecycleStatus(sample?.location, sample?.status),
       detail: "",
     },
   ];
