@@ -207,6 +207,35 @@ describe("TransferWorkbench runtime", () => {
     switchSessionModuleMock.mockClear();
   });
 
+  test("handover mode renders top nav actions and switches between overview and dispatch work views", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    const actionTexts = wrapper.findAll(".transfer-system-actions .action-btn").map((button) => button.text());
+    expect(actionTexts).toEqual(["任务总览", "样品出库", "退出登录"]);
+    expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
+    expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("总任务清单");
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="handover-nav-dispatch"]').classes()).toContain("is-active");
+    expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("请扫描托盘条码");
+
+    await wrapper.get('[data-testid="handover-nav-overview"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
+    expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("总任务清单");
+  });
+
   test("pre-allocation mode uses clickable filter cards and hides confirm storage", async () => {
     const wrapper = mount(TransferWorkbench, {
       props: {

@@ -7,12 +7,44 @@
         <p class="subtitle transfer-system-subtitle">{{ modeConfig.headerSubtitle }}</p>
       </div>
       <div class="header-actions transfer-system-actions">
+        <button
+          class="action-btn secondary"
+          :class="{ 'is-active': activeWorkbenchView === 'overview' }"
+          data-testid="handover-nav-overview"
+          type="button"
+          @click="setActiveWorkbenchView('overview')"
+        >
+          任务总览
+        </button>
+        <button
+          class="action-btn secondary"
+          :class="{ 'is-active': activeWorkbenchView === 'dispatch' }"
+          data-testid="handover-nav-dispatch"
+          type="button"
+          @click="setActiveWorkbenchView('dispatch')"
+        >
+          样品出库
+        </button>
         <button class="action-btn secondary" data-testid="handover-logout" type="button" @click="handleLogout">退出登录</button>
       </div>
     </header>
 
     <div class="transfer-area-shell" :class="{ 'is-embedded': embedded }">
-      <template v-if="viewMode === 'overview'">
+      <template v-if="showDispatchPanel">
+        <section class="card transfer-overview-shell" data-testid="transfer-dispatch-panel">
+          <div class="transfer-overview-title-row">
+            <h2 class="transfer-overview-page-title">样品出库</h2>
+          </div>
+          <div class="transfer-overview-shell__head">
+            <div>
+              <h2>托盘扫码出库</h2>
+              <div class="muted">请扫描托盘条码，系统将自动匹配目标实验室或暂存间。</div>
+            </div>
+          </div>
+        </section>
+      </template>
+
+      <template v-else-if="viewMode === 'overview'">
         <section class="card transfer-overview-shell">
           <div class="transfer-overview-title-row">
             <h2
@@ -411,6 +443,7 @@ const pendingStatus = "未入库";
 const storedStatus = "已入库";
 const TASK_TRAY_CODE_PATTERN = /-TP-(\d+)$/;
 
+const activeWorkbenchView = ref("overview");
 const viewMode = ref("overview");
 const searchText = ref("");
 const taskTypeFilter = ref("");
@@ -584,6 +617,7 @@ const switchModule = async (targetModule) => {
 
 const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
 const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
+const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
 const taskTypeOptions = computed(() => [...new Set(taskOverview.value.map((task) => task.experimentTypeText || task.taskType).filter(Boolean))]);
 const filteredTaskOverview = computed(() => {
   const query = searchText.value.trim().toLowerCase();
@@ -903,6 +937,13 @@ const openTask = async (task) => {
 const setTaskStatusFilter = (status) => {
   taskStatusFilter.value = status;
   taskPage.value = 1;
+};
+
+const setActiveWorkbenchView = (nextView) => {
+  if (props.mode !== "handover") {
+    return;
+  }
+  activeWorkbenchView.value = nextView === "dispatch" ? "dispatch" : "overview";
 };
 
 const reloadBootstrap = async () => {
