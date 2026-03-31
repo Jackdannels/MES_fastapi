@@ -156,6 +156,66 @@ const createStoredWorkspace = () => ({
   trayInventory: [],
 });
 
+const createDispatchLookupPayload = () => ({
+  tray: {
+    trayNo: "SYLU-2026-03-102-TP-001",
+    trayStatus: "已入库",
+    taskNo: "SYLU-2026-03-102",
+    taskName: "连接器批次 B",
+    sampleCount: 2,
+    experimentLabels: ["通电试验", "耐久试验"],
+    experimentCodes: ["SYLU-2026-03-102-B", "SYLU-2026-03-102-A"],
+  },
+  destinations: [
+    {
+      targetType: "staging",
+      targetName: "恒温恒湿间（暂存间）",
+      experimentCode: "",
+      experimentName: "暂存间",
+      scheduled: true,
+      preferred: false,
+      scheduleStartAt: "",
+      scheduleEndAt: "",
+    },
+    {
+      targetType: "lab",
+      targetName: "振动一室",
+      experimentCode: "SYLU-2026-03-102-B",
+      experimentName: "通电试验",
+      scheduled: true,
+      preferred: true,
+      scheduleStartAt: "2026-03-20T09:00:00",
+      scheduleEndAt: "2026-03-20T12:00:00",
+    },
+    {
+      targetType: "lab",
+      targetName: "冲击一室",
+      experimentCode: "SYLU-2026-03-102-A",
+      experimentName: "耐久试验",
+      scheduled: true,
+      preferred: false,
+      scheduleStartAt: "2026-03-20T14:00:00",
+      scheduleEndAt: "2026-03-20T16:00:00",
+    },
+  ],
+});
+
+const createDispatchPostedPayload = () => ({
+  ok: true,
+  message: "SYLU-2026-03-102-TP-001已标记为送至实验室",
+  affectedSampleCount: 2,
+  tray: {
+    trayNo: "SYLU-2026-03-102-TP-001",
+    trayStatus: "送至实验室",
+    taskNo: "SYLU-2026-03-102",
+    taskName: "连接器批次 B",
+    sampleCount: 2,
+    experimentLabels: ["通电试验", "耐久试验"],
+    experimentCodes: ["SYLU-2026-03-102-B", "SYLU-2026-03-102-A"],
+  },
+  destinations: createDispatchLookupPayload().destinations,
+});
+
 const settle = async (wrapper) => {
   await Promise.resolve();
   await Promise.resolve();
@@ -168,6 +228,7 @@ describe("TransferWorkbench runtime", () => {
     const bootstrapPayload = createBootstrapPayload();
     const pendingWorkspace = createWorkspacePayload();
     const storedWorkspace = createStoredWorkspace();
+    let dispatchLookupPayload = createDispatchLookupPayload();
     const fetchStub = vi.fn(async (input, options = {}) => {
       const url = String(input);
       if (url.includes("/api/transfer-area/bootstrap")) {
@@ -187,6 +248,13 @@ describe("TransferWorkbench runtime", () => {
       }
       if (url.includes("/api/transfer-area/tasks/101/print-barcodes") || url.includes("/api/transfer-area/tasks/102/print-barcodes")) {
         return { ok: true, status: 200, json: async () => ({ ok: true, message: "条形码已生成", barcodes: [], workspace: pendingWorkspace }) };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+        return { ok: true, status: 200, json: async () => dispatchLookupPayload };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && options.method === "POST") {
+        dispatchLookupPayload = createDispatchPostedPayload();
+        return { ok: true, status: 200, json: async () => dispatchLookupPayload };
       }
       throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
     });
@@ -234,6 +302,34 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("总任务清单");
+  });
+
+  test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001");
+    expect(wrapper.text()).toContain("恒温恒湿间（暂存间）");
+    expect(wrapper.text()).toContain("振动一室");
+    expect(wrapper.text()).toContain("优先送达");
+
+    await wrapper.get('[data-testid="transfer-dispatch-destination-1"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
+    expect(wrapper.text()).toContain("当前状态：送至实验室");
   });
 
   test("pre-allocation mode uses clickable filter cards and hides confirm storage", async () => {

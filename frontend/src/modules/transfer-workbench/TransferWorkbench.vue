@@ -31,17 +31,7 @@
 
     <div class="transfer-area-shell" :class="{ 'is-embedded': embedded }">
       <template v-if="showDispatchPanel">
-        <section class="card transfer-overview-shell" data-testid="transfer-dispatch-panel">
-          <div class="transfer-overview-title-row">
-            <h2 class="transfer-overview-page-title">样品出库</h2>
-          </div>
-          <div class="transfer-overview-shell__head">
-            <div>
-              <h2>托盘扫码出库</h2>
-              <div class="muted">请扫描托盘条码，系统将自动匹配目标实验室或暂存间。</div>
-            </div>
-          </div>
-        </section>
+        <TransferDispatchPanel :dispatch-state="transferDispatch" />
       </template>
 
       <template v-else-if="viewMode === 'overview'">
@@ -421,6 +411,8 @@ import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildCode128Svg } from "../handover-system/barcode.js";
+import TransferDispatchPanel from "./TransferDispatchPanel.vue";
+import { useTransferDispatch } from "./useTransferDispatch";
 
 const props = defineProps({
   embedded: {
@@ -476,6 +468,7 @@ const overviewPageSize = ref(3);
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
+const transferDispatch = useTransferDispatch();
 const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
