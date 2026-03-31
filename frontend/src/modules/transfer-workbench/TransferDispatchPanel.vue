@@ -37,38 +37,95 @@
     </div>
 
     <section v-if="dispatchState.state.tray" class="card section" data-testid="transfer-dispatch-result">
-      <div class="transfer-overview-shell__head">
-        <div>
-          <h3>{{ dispatchState.state.tray.trayNo }}</h3>
-          <div class="muted">当前状态：{{ dispatchState.state.tray.trayStatus || "未知" }}</div>
+      <article class="transfer-dispatch-summary-card" data-testid="transfer-dispatch-tray-summary">
+        <div class="transfer-dispatch-summary-card__top">
+          <div>
+            <h3>{{ dispatchState.state.tray.trayNo }}</h3>
+            <div class="muted">当前状态：{{ dispatchState.state.tray.trayStatus || "未知" }}</div>
+          </div>
+          <div class="transfer-dispatch-summary-card__meta">
+            <span class="transfer-dispatch-summary-card__type">托盘摘要</span>
+            <span class="transfer-dispatch-summary-card__count">样品数 {{ dispatchState.state.tray.sampleCount }}</span>
+          </div>
         </div>
-        <div class="muted">任务 {{ dispatchState.state.tray.taskNo }} | 样品数 {{ dispatchState.state.tray.sampleCount }}</div>
-      </div>
 
-      <div v-if="dispatchState.state.tray.experimentLabels?.length" class="transfer-tray-experiment-tags">
-        <span
-          v-for="(label, index) in dispatchState.state.tray.experimentLabels"
-          :key="`${dispatchState.state.tray.trayNo}-${label}-${index}`"
-          class="transfer-tray-experiment-tag transfer-tray-experiment-tag--tone-1"
-        >
-          {{ label }}
-        </span>
-      </div>
+        <div v-if="dispatchState.state.tray.experimentLabels?.length" class="transfer-tray-experiment-tags">
+          <span
+            v-for="(label, index) in dispatchState.state.tray.experimentLabels"
+            :key="`${dispatchState.state.tray.trayNo}-${label}-${index}`"
+            class="transfer-tray-experiment-tag transfer-tray-experiment-tag--tone-1"
+          >
+            {{ label }}
+          </span>
+        </div>
 
-      <div class="form-actions">
-        <button
+        <div class="transfer-dispatch-summary-card__body">
+          <div class="transfer-dispatch-summary-row">
+            <span class="transfer-dispatch-summary-row__label">任务编号</span>
+            <strong>{{ dispatchState.state.tray.taskNo }}</strong>
+          </div>
+          <div class="transfer-dispatch-summary-row">
+            <span class="transfer-dispatch-summary-row__label">任务名称</span>
+            <strong>{{ dispatchState.state.tray.taskName || "未命名任务" }}</strong>
+          </div>
+          <div class="transfer-dispatch-summary-row">
+            <span class="transfer-dispatch-summary-row__label">关联实验</span>
+            <strong>{{ joinExperimentLabels(dispatchState.state.tray.experimentLabels) }}</strong>
+          </div>
+        </div>
+      </article>
+
+      <div class="transfer-dispatch-destination-grid" data-testid="transfer-dispatch-destination-grid">
+        <article
           v-for="(destination, index) in dispatchState.state.destinations"
           :key="`${destination.targetType}-${destination.targetName}-${destination.experimentCode || index}`"
-          class="action-btn secondary"
-          :class="{ 'is-active': destination.preferred }"
-          :data-testid="`transfer-dispatch-destination-${index}`"
-          :disabled="!dispatchState.canSelectDestination(destination)"
-          type="button"
-          @click="dispatchState.submitDestination(destination)"
+          class="transfer-dispatch-destination-card"
+          :class="resolveDestinationCardClass(destination)"
+          :data-testid="`transfer-dispatch-destination-card-${index}`"
         >
-          {{ destination.targetName }}
-          <span v-if="destination.preferred"> · 优先送达</span>
-        </button>
+          <div class="transfer-dispatch-destination-card__top">
+            <div>
+              <h4 class="transfer-dispatch-destination-card__name">{{ destination.targetName }}</h4>
+              <div class="transfer-dispatch-destination-card__type">{{ resolveDestinationTypeLabel(destination) }}</div>
+            </div>
+            <span
+              class="transfer-dispatch-destination-card__status"
+              :data-testid="`transfer-dispatch-destination-badge-${index}`"
+            >
+              {{ resolveDestinationStatusLabel(destination) }}
+            </span>
+          </div>
+
+          <div class="transfer-dispatch-destination-card__body">
+            <div class="transfer-dispatch-destination-card__row">
+              <span>对应实验</span>
+              <strong>{{ destination.experimentName || "暂存间" }}</strong>
+            </div>
+            <div class="transfer-dispatch-destination-card__row">
+              <span>任务编号</span>
+              <strong>{{ dispatchState.state.tray.taskNo }}</strong>
+            </div>
+            <div class="transfer-dispatch-destination-card__row">
+              <span>排程时间</span>
+              <strong>{{ formatScheduleRange(destination) }}</strong>
+            </div>
+          </div>
+
+          <button
+            class="action-btn secondary transfer-dispatch-destination-card__action"
+            :class="{ 'is-active': destination.preferred }"
+            :data-testid="`transfer-dispatch-destination-${index}`"
+            :disabled="!dispatchState.canSelectDestination(destination)"
+            type="button"
+            @click="dispatchState.submitDestination(destination)"
+          >
+            {{ dispatchState.state.submitting ? "提交中..." : "送往此处" }}
+          </button>
+
+          <div class="transfer-dispatch-destination-card__hint">
+            {{ resolveDestinationHint(destination) }}
+          </div>
+        </article>
       </div>
     </section>
   </section>
@@ -81,4 +138,263 @@ defineProps({
     required: true,
   },
 });
+
+const joinExperimentLabels = (labels) => {
+  if (!Array.isArray(labels) || !labels.length) {
+    return "暂无关联实验";
+  }
+  return labels.join(" / ");
+};
+
+const resolveDestinationTypeLabel = (destination) => (destination?.targetType === "staging" ? "暂存间" : "实验室");
+
+const resolveDestinationStatusLabel = (destination) => {
+  if (destination?.preferred) {
+    return "优先送达";
+  }
+  if (destination?.scheduled) {
+    return "可送达";
+  }
+  return "待排程";
+};
+
+const resolveDestinationCardClass = (destination) => {
+  if (destination?.targetType === "staging") {
+    return "is-staging";
+  }
+  if (!destination?.scheduled) {
+    return "is-idle";
+  }
+  if (destination?.preferred) {
+    return "is-running";
+  }
+  return "is-scheduled";
+};
+
+const normalizeScheduleText = (value) => {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+
+  const [datePart = "", timePart = ""] = text.replace("T", " ").split(" ");
+  const dateBits = datePart.split("-");
+  const shortDate = dateBits.length === 3 ? `${dateBits[1]}/${dateBits[2]}` : datePart;
+  const shortTime = timePart ? timePart.slice(0, 5) : "";
+  return shortTime ? `${shortDate} ${shortTime}` : shortDate;
+};
+
+const formatScheduleRange = (destination) => {
+  if (!destination?.scheduled) {
+    return "暂无排程";
+  }
+
+  const startText = normalizeScheduleText(destination.scheduleStartAt);
+  const endText = normalizeScheduleText(destination.scheduleEndAt);
+  if (startText && endText) {
+    return `${startText} - ${endText}`;
+  }
+  return startText || endText || "暂无排程";
+};
+
+const resolveDestinationHint = (destination) => {
+  if (destination?.targetType === "staging") {
+    return "允许先送暂存间，后续再转正式实验室。";
+  }
+  if (!destination?.scheduled) {
+    return "当前实验尚未排程，暂不能直接送达。";
+  }
+  return "当前托盘可直接送往该实验室。";
+};
 </script>
+
+<style scoped>
+.transfer-dispatch-summary-card,
+.transfer-dispatch-destination-card {
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+}
+
+.transfer-dispatch-summary-card {
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.transfer-dispatch-summary-card__top,
+.transfer-dispatch-summary-card__meta,
+.transfer-dispatch-destination-card__top,
+.transfer-dispatch-destination-card__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-dispatch-summary-card__top h3 {
+  margin: 0;
+  font-size: 22px;
+  color: #10233f;
+}
+
+.transfer-dispatch-summary-card__meta {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.transfer-dispatch-summary-card__type,
+.transfer-dispatch-summary-card__count,
+.transfer-dispatch-destination-card__status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(241, 245, 249, 0.95);
+  color: #334155;
+}
+
+.transfer-dispatch-summary-card__count {
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(219, 234, 254, 0.45);
+  color: #1d4ed8;
+}
+
+.transfer-dispatch-summary-card__body,
+.transfer-dispatch-destination-card__body {
+  display: grid;
+  gap: 10px;
+}
+
+.transfer-dispatch-summary-row__label,
+.transfer-dispatch-destination-card__row span,
+.transfer-dispatch-destination-card__type,
+.transfer-dispatch-destination-card__hint {
+  color: #64748b;
+}
+
+.transfer-dispatch-summary-row {
+  display: grid;
+  gap: 4px;
+}
+
+.transfer-dispatch-summary-row strong,
+.transfer-dispatch-destination-card__row strong,
+.transfer-dispatch-destination-card__name {
+  color: #10233f;
+}
+
+.transfer-dispatch-destination-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.transfer-dispatch-destination-card {
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+  min-height: 248px;
+}
+
+.transfer-dispatch-destination-card.is-running {
+  border-color: rgba(34, 197, 94, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
+}
+
+.transfer-dispatch-destination-card.is-scheduled,
+.transfer-dispatch-destination-card.is-staging {
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+
+.transfer-dispatch-destination-card.is-staging {
+  border-color: rgba(245, 158, 11, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.12);
+}
+
+.transfer-dispatch-destination-card.is-idle {
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+.transfer-dispatch-destination-card.is-running .transfer-dispatch-destination-card__status {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(187, 247, 208, 0.55);
+  color: #166534;
+}
+
+.transfer-dispatch-destination-card.is-scheduled .transfer-dispatch-destination-card__status {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(191, 219, 254, 0.5);
+  color: #1d4ed8;
+}
+
+.transfer-dispatch-destination-card.is-staging .transfer-dispatch-destination-card__status {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(254, 243, 199, 0.72);
+  color: #b45309;
+}
+
+.transfer-dispatch-destination-card.is-idle .transfer-dispatch-destination-card__status {
+  border-color: rgba(148, 163, 184, 0.4);
+  background: rgba(226, 232, 240, 0.7);
+  color: #475569;
+}
+
+.transfer-dispatch-destination-card__name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.transfer-dispatch-destination-card__type {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.transfer-dispatch-destination-card__row {
+  align-items: baseline;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(203, 213, 225, 0.85);
+}
+
+.transfer-dispatch-destination-card__row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.transfer-dispatch-destination-card__action {
+  width: 100%;
+  justify-content: center;
+}
+
+.transfer-dispatch-destination-card__hint {
+  font-size: 13px;
+}
+
+@media (max-width: 1280px) {
+  .transfer-dispatch-destination-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .transfer-dispatch-summary-card__top,
+  .transfer-dispatch-destination-card__top,
+  .transfer-dispatch-destination-card__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .transfer-dispatch-summary-card__meta {
+    align-items: flex-start;
+  }
+
+  .transfer-dispatch-destination-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

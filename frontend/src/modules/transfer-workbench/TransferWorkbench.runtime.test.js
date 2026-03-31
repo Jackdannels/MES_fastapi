@@ -321,6 +321,12 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001");
+    expect(wrapper.get('[data-testid="transfer-dispatch-tray-summary"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-grid"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-0"]').text()).toContain("暂存间");
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-1"]').text()).toContain("振动一室");
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-1"]').text()).toContain("通电试验");
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-badge-1"]').text()).toBe("优先送达");
     expect(wrapper.text()).toContain("恒温恒湿间（暂存间）");
     expect(wrapper.text()).toContain("振动一室");
     expect(wrapper.text()).toContain("优先送达");
