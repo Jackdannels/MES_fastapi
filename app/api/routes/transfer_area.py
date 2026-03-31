@@ -25,6 +25,7 @@ STOCK_TRAY_ID_BASE = 2000
 TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
 STOCK_TRAY_CODE_PATTERN = re.compile(r"^STOCK-TP-(\d+)$")
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
+STAGING_LOCATION = "恒温恒湿间（暂存间）"
 
 
 class TrayAllocationPayload(BaseModel):
@@ -65,6 +66,16 @@ def as_list(value: Any) -> list[Any]:
 
 def now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def parse_datetime_value(value: Any) -> datetime | None:
+    text = normalize_text(value)
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
@@ -714,6 +725,113 @@ def find_task(snapshot: dict[str, list[dict[str, Any]]], task_id: str) -> dict[s
     raise HTTPException(status_code=404, detail="未找到任务")
 
 
+def find_tray_samples(snapshot: dict[str, list[dict[str, Any]]], tray_code_value: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    normalized_tray_code = normalize_text(tray_code_value)
+    matched_samples = [
+        sample
+        for sample in snapshot["samples"]
+        if any(normalize_text(entry.get("tray_code")) == normalized_tray_code for entry in as_list(sample.get("trays")))
+    ]
+    if not matched_samples:
+        raise HTTPException(status_code=404, detail="未找到托盘")
+
+    task_codes = {sample_task_code(sample) for sample in matched_samples if sample_task_code(sample)}
+    if len(task_codes) != 1:
+        raise HTTPException(status_code=400, detail="托盘关联任务异常")
+    return find_task(snapshot, next(iter(task_codes))), matched_samples
+
+
+def build_tray_dispatch_destinations(
+    task: dict[str, Any],
+    tray: dict[str, Any],
+    experiments: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    task_experiments = [
+        row for row in build_task_experiment_rows(task, experiments, experiment_trays)
+        if tray["trayNo"] in row["assignedTrayNos"]
+    ]
+    scheduled_candidates = []
+    unscheduled_candidates = []
+
+    for experiment in task_experiments:
+        matching_schedules = [
+            entry for entry in schedules
+            if normalize_text(entry.get("task_code")) == task_code(task)
+            and normalize_text(entry.get("experiment_code")) == experiment["experimentCode"]
+            and normalize_text(entry.get("device"))
+        ]
+        matching_schedules.sort(
+            key=lambda item: (
+                parse_datetime_value(item.get("start_at")) or datetime.max,
+                normalize_text(item.get("device")),
+            )
+        )
+
+        if matching_schedules:
+            schedule = matching_schedules[0]
+            scheduled_candidates.append(
+                {
+                    "targetType": "lab",
+                    "targetName": normalize_text(schedule.get("device")),
+                    "experimentCode": experiment["experimentCode"],
+                    "experimentName": experiment["experimentName"],
+                    "scheduled": True,
+                    "preferred": False,
+                    "scheduleStartAt": normalize_text(schedule.get("start_at")),
+                    "scheduleEndAt": normalize_text(schedule.get("end_at")),
+                }
+            )
+            continue
+
+        experiment_label = normalize_text(experiment.get("experimentName")) or normalize_text(experiment.get("requiredDevice"))
+        unscheduled_candidates.append(
+            {
+                "targetType": "lab",
+                "targetName": f"{experiment_label}（待排程）",
+                "experimentCode": experiment["experimentCode"],
+                "experimentName": experiment["experimentName"],
+                "scheduled": False,
+                "preferred": False,
+                "scheduleStartAt": "",
+                "scheduleEndAt": "",
+            }
+        )
+
+    scheduled_candidates.sort(
+        key=lambda item: (
+            parse_datetime_value(item.get("scheduleStartAt")) or datetime.max,
+            normalize_text(item.get("targetName")),
+        )
+    )
+    if len(scheduled_candidates) >= 1:
+        earliest = parse_datetime_value(scheduled_candidates[0].get("scheduleStartAt"))
+        if earliest is not None:
+            earliest_count = sum(
+                1
+                for item in scheduled_candidates
+                if parse_datetime_value(item.get("scheduleStartAt")) == earliest
+            )
+            if earliest_count == 1:
+                scheduled_candidates[0]["preferred"] = True
+
+    return [
+        {
+            "targetType": "staging",
+            "targetName": STAGING_LOCATION,
+            "experimentCode": "",
+            "experimentName": "暂存间",
+            "scheduled": True,
+            "preferred": False,
+            "scheduleStartAt": "",
+            "scheduleEndAt": "",
+        },
+        *scheduled_candidates,
+        *unscheduled_candidates,
+    ]
+
+
 def update_task_samples_for_pending(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:
     location = "接驳区" if task_arrival_time(task) else ""
     status = TASK_STATUS_PENDING if task_arrival_time(task) else "运输中"
@@ -789,6 +907,45 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
         snapshot["experiment_trays"],
         snapshot["experiment_samples"],
     )
+
+
+@router.get("/trays/{tray_code}/dispatch")
+def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
+    snapshot = read_snapshot()
+    task, tray_samples = find_tray_samples(snapshot, tray_code)
+    workspace = serialize_workspace(
+        task,
+        tray_samples,
+        snapshot["samples"],
+        snapshot["experiments"],
+        snapshot["experiment_trays"],
+        snapshot["experiment_samples"],
+    )
+    tray = next(
+        (item for item in workspace["assignedTrays"] if normalize_text(item.get("trayNo")) == normalize_text(tray_code)),
+        None,
+    )
+    if tray is None:
+        raise HTTPException(status_code=404, detail="未找到托盘")
+
+    return {
+        "tray": {
+            "trayNo": tray["trayNo"],
+            "trayStatus": normalize_text(tray.get("trayStatus")),
+            "taskNo": task_code(task),
+            "taskName": normalize_text(task.get("name")),
+            "sampleCount": len(tray.get("samples") or []),
+            "experimentLabels": list(tray.get("experimentLabels") or []),
+            "experimentCodes": list(tray.get("experimentCodes") or []),
+        },
+        "destinations": build_tray_dispatch_destinations(
+            task,
+            tray,
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+            snapshot["schedules"],
+        ),
+    }
 
 
 @router.post("/tasks/{task_id}/allocate")

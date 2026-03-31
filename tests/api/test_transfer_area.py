@@ -152,6 +152,38 @@ def build_client(monkeypatch):
     return TestClient(app), storage
 
 
+def seed_task_102_dispatch_data(storage, schedules):
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": "experiment-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "experiment_name": "耐久试验",
+                "required_device": "耐久试验",
+                "status": "已排程",
+            },
+            {
+                "id": "experiment-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "experiment_name": "通电试验",
+                "required_device": "通电试验",
+                "status": "已排程",
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_trays",
+        [
+            {"task_code": "SYLU-2026-03-102", "experiment_code": "SYLU-2026-03-102-A", "tray_code": "SYLU-2026-03-102-TP-001"},
+            {"task_code": "SYLU-2026-03-102", "experiment_code": "SYLU-2026-03-102-B", "tray_code": "SYLU-2026-03-102-TP-001"},
+        ],
+    )
+    storage.write("mes.schedules", schedules)
+
+
 def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(monkeypatch):
     client, _storage = build_client(monkeypatch)
 
@@ -182,6 +214,67 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
     assert len(payload["assignedTrays"]) > 0
     assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
     assert len(payload["trayInventory"]) == 19
+
+
+def test_transfer_area_dispatch_lookup_returns_staging_and_sorted_lab_candidates(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+            {
+                "id": "schedule-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "device": "冲击一室",
+                "start_at": "2026-03-20T14:00:00",
+                "end_at": "2026-03-20T16:00:00",
+            },
+        ],
+    )
+
+    response = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["tray"]["trayNo"] == "SYLU-2026-03-102-TP-001"
+    assert payload["tray"]["taskNo"] == "SYLU-2026-03-102"
+    assert payload["tray"]["sampleCount"] == 2
+    assert [item["targetName"] for item in payload["destinations"]] == [
+        "恒温恒湿间（暂存间）",
+        "振动一室",
+        "冲击一室",
+    ]
+    assert payload["destinations"][0]["targetType"] == "staging"
+    assert payload["destinations"][1]["preferred"] is True
+    assert payload["destinations"][1]["experimentCode"] == "SYLU-2026-03-102-B"
+    assert payload["destinations"][2]["preferred"] is False
+
+
+def test_transfer_area_dispatch_lookup_keeps_unscheduled_experiments_pending(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+
+    response = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["targetName"] for item in payload["destinations"]] == [
+        "恒温恒湿间（暂存间）",
+        "耐久试验（待排程）",
+        "通电试验（待排程）",
+    ]
+    assert payload["destinations"][1]["preferred"] is False
+    assert payload["destinations"][1]["scheduled"] is False
+    assert payload["destinations"][2]["preferred"] is False
+    assert payload["destinations"][2]["scheduled"] is False
 
 
 def test_transfer_area_workspace_backfills_three_experiments_for_sylu_task_when_storage_has_none(monkeypatch):
