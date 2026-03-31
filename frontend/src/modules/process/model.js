@@ -34,8 +34,24 @@ const formatDateTime = (value) => {
   return `${month}/${day} ${hours}:${minutes}`;
 };
 
+const resolveScheduledExperimentLabel = ({ experiments, fallback, schedule, taskCode }) => {
+  const normalizedExperimentCode = String(schedule?.experiment_code || "").trim();
+  const experimentList = Array.isArray(experiments) ? experiments : [];
+  const matchedExperiment = experimentList.find(
+    (experiment) =>
+      String(experiment?.task_code || "").trim() === String(taskCode || "").trim()
+      && String(experiment?.experiment_code || "").trim() === normalizedExperimentCode
+  );
+  const experimentName = String(matchedExperiment?.experiment_name || "").trim();
+  if (experimentName) {
+    return experimentName;
+  }
+  const fallbackText = String(fallback || "").trim();
+  return fallbackText || "-";
+};
+
 // 构建过程管控页展示的实验室卡片集合。
-const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) => {
+const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = []) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
   const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
   const labList = Array.isArray(labs) ? labs : [];
@@ -89,7 +105,12 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe) =>
       const task = taskMap.get(taskCode);
       const aggregatedTaskStatus = taskStatusMap.get(taskCode) || "";
       // 目标试验名称优先取任务配置，其次回退到实验室默认试验类型。
-      const targetExperiment = String(task?.test_type || task?.name || lab.testType || "").trim() || "-";
+      const targetExperiment = resolveScheduledExperimentLabel({
+        experiments,
+        fallback: String(task?.test_type || task?.name || lab.testType || "").trim(),
+        schedule: nextSchedule,
+        taskCode,
+      });
 
       let status = STATUS_IDLE;
       let statusClass = "is-idle";

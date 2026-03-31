@@ -11,6 +11,7 @@ describe("useProcessLabs", () => {
         {
           device: "Lab-A",
           end_at: "2026-03-10T10:30:00Z",
+          experiment_code: "TASK-001-B",
           start_at: "2026-03-10T09:30:00Z",
           task_code: "TASK-001",
         },
@@ -36,6 +37,10 @@ describe("useProcessLabs", () => {
           code: "TASK-002",
           test_type: "Vibration Test",
         },
+      ],
+      "mes.experiments": [
+        { experiment_code: "TASK-001-A", experiment_name: "Impact Test", task_code: "TASK-001" },
+        { experiment_code: "TASK-001-B", experiment_name: "Thermal Cycle Test", task_code: "TASK-001" },
       ],
       "mes.samples": [
         {
@@ -122,7 +127,7 @@ describe("useProcessLabs", () => {
       sampleCount: 12,
       source: "External",
       status: "Running",
-      testType: "Impact Test",
+      testType: "Thermal Cycle Test",
       trayCount: 4,
       traySummary: "TRAY-001, TRAY-002, TRAY-003 +1",
     });
@@ -596,5 +601,112 @@ describe("useProcessLabs", () => {
       sampleSummary: "SYLU-2026-03-001-SP-001、SYLU-2026-03-001-SP-002",
       trayCode: "SYLU-2026-03-001-TP-001",
     });
+  });
+
+  test("scopes task detail trays and samples to the scheduled experiment when experiment tray mappings exist", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-04-01T15:30:00Z",
+          experiment_code: "SYLU-2026-03-001-A",
+          start_at: "2026-04-01T12:00:00Z",
+          task_code: "SYLU-2026-03-001",
+        },
+      ],
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-001",
+          name: "演示任务001",
+          sample_count: 6,
+          status: "已排程",
+          test_type: "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+        },
+      ],
+      "mes.experiment_trays": [
+        { id: "rel-1", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-001" },
+        { id: "rel-2", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-002" },
+        { id: "rel-3", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", tray_code: "SYLU-2026-03-001-TP-003" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          location: "接驳区",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-001-SP-002",
+          location: "接驳区",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-001-SP-003",
+          location: "接驳区",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-001-SP-004",
+          location: "接驳区",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-001-SP-005",
+          location: "接驳区",
+          status: "到货",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-003", status: "到货", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-001-SP-006",
+          location: "接驳区",
+          status: "到货",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-003", status: "到货", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "冲击一室", testType: "温度冲击试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-04-01T13:00:00Z"),
+    });
+
+    await loadLabStatus();
+    openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value).toMatchObject({
+      sampleCount: 4,
+      selectedTrayCode: "SYLU-2026-03-001-TP-001",
+      trayCount: 2,
+      traySummary: "SYLU-2026-03-001-TP-001, SYLU-2026-03-001-TP-002",
+    });
+    expect(selectedTaskDetail.value.trayCodes).toEqual([
+      "SYLU-2026-03-001-TP-001",
+      "SYLU-2026-03-001-TP-002",
+    ]);
+    expect(selectedTaskDetail.value.runningTrayRows.map((row) => row.trayCode)).toEqual(["SYLU-2026-03-001-TP-001"]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["SYLU-2026-03-001-TP-002"]);
+    expect(selectedTaskDetail.value.selectedTraySummary.sampleCodes).toEqual([
+      "SYLU-2026-03-001-SP-001",
+      "SYLU-2026-03-001-SP-002",
+    ]);
+    expect(selectedTaskDetail.value.runningTrayRows[0].sampleCodes).toEqual([
+      "SYLU-2026-03-001-SP-001",
+      "SYLU-2026-03-001-SP-002",
+    ]);
+    expect(selectedTaskDetail.value.remainingTrayRows[0].sampleCodes).toEqual([
+      "SYLU-2026-03-001-SP-003",
+      "SYLU-2026-03-001-SP-004",
+    ]);
+    expect(selectedTaskDetail.value.trayCodes).not.toContain("SYLU-2026-03-001-TP-003");
   });
 });

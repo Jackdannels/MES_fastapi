@@ -272,6 +272,20 @@ function buildScheduleEditForm(schedule) {
   };
 }
 
+function buildScheduleRescheduleForm(schedule) {
+  const editForm = buildScheduleEditForm(schedule);
+  return {
+    custom_end: editForm.custom_end,
+    custom_start: editForm.custom_start,
+    device: editForm.device,
+    experiment_code: editForm.experiment_code,
+    planned_hours: editForm.planned_hours,
+    schedule_date: editForm.schedule_date,
+    task_code: editForm.task_code,
+    time_slot: editForm.time_slot,
+  };
+}
+
 // 解析手动排程操作实际使用的开始和结束时间。
 function resolveScheduleTimes(form, now = new Date()) {
   const dateValue = normalizeText(form?.schedule_date);
@@ -402,6 +416,197 @@ const statusClass = (status) => {
   }
   return "status";
 };
+
+const sortTextList = (values) =>
+  Array.from(new Set((Array.isArray(values) ? values : []).map((value) => normalizeText(value)).filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right, "zh-Hans-CN"),
+  );
+
+const buildExperimentNameMap = (experiments) =>
+  new Map(
+    (Array.isArray(experiments) ? experiments : []).map((experiment) => [
+      normalizeText(experiment?.experiment_code),
+      normalizeText(experiment?.experiment_name),
+    ]),
+  );
+
+const buildExperimentTrayMap = (experimentTrays) => {
+  const trayMap = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
+    const taskCode = normalizeText(entry?.task_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    const trayCode = normalizeText(entry?.tray_code);
+    if (!taskCode || !experimentCode || !trayCode) {
+      return;
+    }
+    const key = `${taskCode}::${experimentCode}`;
+    const trays = trayMap.get(key) || [];
+    trays.push(trayCode);
+    trayMap.set(key, trays);
+  });
+  return trayMap;
+};
+
+const taskHasSavedTrayPlan = ({ task, samples, experimentTrays }) => {
+  const taskCode = normalizeText(task?.code);
+  if (!taskCode) {
+    return false;
+  }
+
+  const taskTrayCodes = Array.isArray(task?.tray_codes)
+    ? task.tray_codes.map((trayCode) => normalizeText(trayCode)).filter(Boolean)
+    : [];
+  if (taskTrayCodes.length > 0) {
+    return true;
+  }
+
+  const sampleHasTray = (Array.isArray(samples) ? samples : []).some((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    const trays = Array.isArray(sample?.trays)
+      ? sample.trays.map((trayCode) => normalizeText(trayCode)).filter(Boolean)
+      : [];
+    return trays.length > 0;
+  });
+  if (sampleHasTray) {
+    return true;
+  }
+
+  return (Array.isArray(experimentTrays) ? experimentTrays : []).some(
+    (entry) =>
+      normalizeText(entry?.task_code) === taskCode &&
+      normalizeText(entry?.tray_code),
+  );
+};
+
+const formatTraySummary = (trayNos) => {
+  const trays = sortTextList(trayNos);
+  return trays.length > 0 ? trays.join(" / ") : "未记录托盘";
+};
+
+const formatOverlapRange = (startAt, endAt) => {
+  const start = parseDate(startAt);
+  const end = parseDate(endAt);
+  if (!start || !end) {
+    return "-";
+  }
+  return `${formatDateTime(start)} - ${formatDateTime(end)}`;
+};
+
+function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, experiments, experimentTrays }) {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const selectedExperimentCode = normalizeText(experimentCode);
+  if (!normalizedTaskCode) {
+    return [];
+  }
+
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayMap = buildExperimentTrayMap(experimentTrays);
+
+  return (Array.isArray(schedules) ? schedules : [])
+    .filter((schedule) => {
+      if (normalizeText(schedule?.task_code) !== normalizedTaskCode) {
+        return false;
+      }
+      if (isRetentionDevice(schedule?.device)) {
+        return false;
+      }
+      if (normalizeText(schedule?.experiment_code) === selectedExperimentCode) {
+        return false;
+      }
+      return true;
+    })
+    .map((schedule) => {
+      const overlayExperimentCode = normalizeText(schedule?.experiment_code);
+      const trayNos = sortTextList(trayMap.get(`${normalizedTaskCode}::${overlayExperimentCode}`) || []);
+      const startAt = parseDate(schedule?.start_at);
+      return {
+        device: normalizeText(schedule?.device),
+        endAt: normalizeText(schedule?.end_at),
+        experimentCode: overlayExperimentCode,
+        experimentLabel: experimentNameByCode.get(overlayExperimentCode) || buildExperimentLabel(overlayExperimentCode),
+        scheduleId: normalizeText(schedule?.id),
+        startAt: normalizeText(schedule?.start_at),
+        taskCode: normalizedTaskCode,
+        timeLabel: formatOverlapRange(schedule?.start_at, schedule?.end_at),
+        trayNos,
+        traySummary: formatTraySummary(trayNos),
+        sortTime: startAt?.getTime() || Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .sort((left, right) => left.sortTime - right.sortTime)
+    .map(({ sortTime, ...overlay }) => overlay);
+}
+
+function analyzeTaskTrayConflict({ candidate, schedules, experiments, experimentTrays }) {
+  const candidateTaskCode = normalizeText(candidate?.task_code);
+  const candidateExperimentCode = normalizeText(candidate?.experiment_code);
+  const candidateStart = parseDate(candidate?.start_at);
+  const candidateEnd = parseDate(candidate?.end_at);
+  if (!candidateTaskCode || !candidateExperimentCode || !candidateStart || !candidateEnd) {
+    return null;
+  }
+
+  const trayMap = buildExperimentTrayMap(experimentTrays);
+  const candidateTrayNos = sortTextList(trayMap.get(`${candidateTaskCode}::${candidateExperimentCode}`) || []);
+  if (candidateTrayNos.length === 0) {
+    return null;
+  }
+
+  const candidateTraySet = new Set(candidateTrayNos);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const conflictSchedules = (Array.isArray(schedules) ? schedules : [])
+    .filter((schedule) => {
+      if (normalizeText(schedule?.task_code) !== candidateTaskCode) {
+        return false;
+      }
+      if (isRetentionDevice(schedule?.device)) {
+        return false;
+      }
+      if (normalizeText(schedule?.experiment_code) === candidateExperimentCode) {
+        return false;
+      }
+      const scheduleStart = parseDate(schedule?.start_at);
+      const scheduleEnd = parseDate(schedule?.end_at);
+      return scheduleStart && scheduleEnd && overlaps(candidateStart, candidateEnd, scheduleStart, scheduleEnd);
+    })
+    .map((schedule) => {
+      const scheduleExperimentCode = normalizeText(schedule?.experiment_code);
+      const trayNos = sortTextList(trayMap.get(`${candidateTaskCode}::${scheduleExperimentCode}`) || []);
+      const overlapTrayNos = trayNos.filter((trayNo) => candidateTraySet.has(trayNo));
+      if (overlapTrayNos.length === 0) {
+        return null;
+      }
+      const overlapStart = new Date(Math.max(candidateStart.getTime(), parseDate(schedule?.start_at)?.getTime() || 0));
+      const overlapEnd = new Date(Math.min(candidateEnd.getTime(), parseDate(schedule?.end_at)?.getTime() || 0));
+      return {
+        device: normalizeText(schedule?.device),
+        experimentCode: scheduleExperimentCode,
+        experimentLabel: experimentNameByCode.get(scheduleExperimentCode) || buildExperimentLabel(scheduleExperimentCode),
+        overlapRange: formatOverlapRange(overlapStart, overlapEnd),
+        scheduleId: normalizeText(schedule?.id),
+        trayNos,
+        traySummary: formatTraySummary(trayNos),
+      };
+    })
+    .filter(Boolean);
+
+  if (conflictSchedules.length === 0) {
+    return null;
+  }
+
+  const conflictTrayNos = sortTextList(conflictSchedules.flatMap((schedule) => schedule.trayNos.filter((trayNo) => candidateTraySet.has(trayNo))));
+  return {
+    candidateExperimentCode,
+    candidateExperimentLabel: experimentNameByCode.get(candidateExperimentCode) || buildExperimentLabel(candidateExperimentCode),
+    candidateTrayNos,
+    conflictSchedules,
+    conflictTrayNos,
+    level: candidateTrayNos.every((trayNo) => conflictTrayNos.includes(trayNo)) ? "full" : "partial",
+    taskCode: candidateTaskCode,
+  };
+}
 
 // 构建看板页签使用的主排程表格行。
 function buildScheduleRows({ schedules, tasks, experiments, now = new Date() }) {
@@ -674,7 +879,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 }
 
 // 生成手动排程表单使用的下拉选项。
-function buildManualTaskOptions({ tasks, experiments, samples, schedules, activeTab }) {
+function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, schedules, activeTab }) {
   if (activeTab === "retention") {
     // 留样页签下，任务下拉来源于暂存中的内部任务。
     return buildRetentionInternalRows({ tasks, samples, schedules }).map((row) => ({
@@ -695,6 +900,9 @@ function buildManualTaskOptions({ tasks, experiments, samples, schedules, active
     .filter((task) => {
       const taskCode = normalizeText(task?.code);
       if (!taskCode) {
+        return false;
+      }
+      if (!taskHasSavedTrayPlan({ experimentTrays, samples, task })) {
         return false;
       }
       if (pendingExperimentTaskCodes.size > 0) {
@@ -959,6 +1167,7 @@ export {
   STATUS_RUNNING,
   STATUS_SCHEDULED,
   STATUS_WAITING,
+  analyzeTaskTrayConflict,
   buildConflictRows,
   buildExperimentOptions,
   buildGanttRows,
@@ -966,7 +1175,9 @@ export {
   buildManualTaskOptions,
   buildRetentionInternalRows,
   buildScheduleEditForm,
+  buildScheduleRescheduleForm,
   buildScheduleRows,
+  buildTaskScheduledOverlays,
   buildSummaryCards,
   createManualScheduleForm,
   createScheduleRecord,

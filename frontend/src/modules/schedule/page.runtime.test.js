@@ -11,6 +11,7 @@ const SAMPLES_KEY = "mes.samples";
 const SCHEDULES_KEY = "mes.schedules";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
+const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 
 const PRIMARY_LAB = TEST_LABS[0];
 const SECONDARY_LAB = TEST_LABS[1];
@@ -74,7 +75,7 @@ describe("SchedulePage runtime", () => {
     const today = buildDateParts(0);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
       { id: "task-2", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_RETENTION },
     ]);
     setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
@@ -116,7 +117,7 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -165,7 +166,7 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING, tray_codes: ["SYLU-2026-03-006-TP-002"] },
     ]);
     setStorage(EXPERIMENTS_KEY, [
       {
@@ -211,6 +212,205 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
     expect(getStorage(SCHEDULES_KEY)[0].experiment_code).toBe("SYLU-2026-03-006-B");
     expect(wrapper.text()).toContain("振动试验");
+  });
+
+  test("shows current task scheduled overlays in the gantt section when scheduling another experiment", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-03-006-A",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        experiment_name: "冲击试验",
+        required_device: PRIMARY_LAB,
+      },
+      {
+        id: "SYLU-2026-03-006-B",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-B",
+        experiment_name: "振动试验",
+        required_device: SECONDARY_LAB,
+      },
+    ]);
+    setStorage(EXPERIMENT_TRAYS_KEY, [
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-003" },
+    ]);
+    setStorage(DEVICES_KEY, [
+      { code: PRIMARY_LAB, name: PRIMARY_LAB },
+      { code: SECONDARY_LAB, name: SECONDARY_LAB },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T04:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+    await wrapper.get('select[name="experiment_code"]').setValue("SYLU-2026-03-006-B");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("当前任务已排程");
+    expect(wrapper.text()).toContain("冲击试验");
+    expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-001");
+  });
+
+  test("shows a partial conflict modal and does not persist when scheduling is canceled", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-03-006-A",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        experiment_name: "冲击试验",
+        required_device: PRIMARY_LAB,
+      },
+      {
+        id: "SYLU-2026-03-006-B",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-B",
+        experiment_name: "振动试验",
+        required_device: SECONDARY_LAB,
+      },
+    ]);
+    setStorage(EXPERIMENT_TRAYS_KEY, [
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-002" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-003" },
+    ]);
+    setStorage(DEVICES_KEY, [
+      { code: PRIMARY_LAB, name: PRIMARY_LAB },
+      { code: SECONDARY_LAB, name: SECONDARY_LAB },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T04:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+    await wrapper.get('select[name="experiment_code"]').setValue("SYLU-2026-03-006-B");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("morning");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("部分冲突提示");
+    expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-002");
+    expect(wrapper.get('[data-testid="schedule-conflict-cancel"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="schedule-conflict-cancel"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).not.toContain("部分冲突提示");
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+  });
+
+  test("shows a full conflict modal and persists after confirmation", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-03-006", name: "四综合任务", test_type: "四综合试验", status: STATUS_WAITING },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-03-006-A",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        experiment_name: "冲击试验",
+        required_device: PRIMARY_LAB,
+      },
+      {
+        id: "SYLU-2026-03-006-C",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-C",
+        experiment_name: "温度冲击试验",
+        required_device: SECONDARY_LAB,
+      },
+    ]);
+    setStorage(EXPERIMENT_TRAYS_KEY, [
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-001" },
+      { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-002" },
+    ]);
+    setStorage(DEVICES_KEY, [
+      { code: PRIMARY_LAB, name: PRIMARY_LAB },
+      { code: SECONDARY_LAB, name: SECONDARY_LAB },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T04:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+    await wrapper.get('select[name="experiment_code"]').setValue("SYLU-2026-03-006-C");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("morning");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("完全冲突提示");
+    expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-001");
+    expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-002");
+
+    await wrapper.get('[data-testid="schedule-conflict-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).not.toContain("完全冲突提示");
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(2);
+    expect(getStorage(SCHEDULES_KEY)[1].experiment_code).toBe("SYLU-2026-03-006-C");
   });
 
   test("migrates a legacy historical task into three explicit experiments after selecting the task", async () => {
@@ -296,8 +496,8 @@ describe("SchedulePage runtime", () => {
 
   test("resets selected lab when switching manual schedule task", async () => {
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
-      { id: "task-2", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+      { id: "task-2", code: "SYLU-2026-01-002", name: "Task B", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-002-TP-001"] },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -367,7 +567,7 @@ describe("SchedulePage runtime", () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-01-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -472,6 +672,87 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.text()).toContain("任务详情");
     expect(wrapper.text()).toContain("预计完成时间");
     expect(wrapper.text()).toContain("SYLU-2026-01-001");
+  });
+
+  test("shows delete actions in task detail and can delete then backfill the top form for re-scheduling", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-1",
+        code: "SYLU-2026-01-001",
+        name: "Cross Day Task",
+        test_type: "UNKNOWN",
+        source: "内部新增",
+        priority: "高",
+        status: STATUS_SCHEDULED,
+        tray_codes: ["SYLU-2026-01-001-TP-001"],
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-01-001-A",
+        task_code: "SYLU-2026-01-001",
+        experiment_code: "SYLU-2026-01-001-A",
+        experiment_name: "冲击试验",
+        required_device: PRIMARY_LAB,
+      },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-01-001",
+        experiment_code: "SYLU-2026-01-001-A",
+        device: PRIMARY_LAB,
+        planned_hours: 4,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T04:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="gantt-segment-schedule-1"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-detail-delete"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="task-detail-reschedule"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="task-detail-reschedule"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(0);
+    expect(wrapper.find(".modal.is-open").exists()).toBe(false);
+    expect(wrapper.get('select[name="task_code"]').element.value).toBe("SYLU-2026-01-001");
+    expect(wrapper.get('select[name="experiment_code"]').element.value).toBe("SYLU-2026-01-001-A");
+    expect(wrapper.get('select[name="device"]').element.value).toBe(PRIMARY_LAB);
+  });
+
+  test("only shows tasks with saved tray plans in the unpacking schedule task selector", async () => {
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-001", name: "已预接驳任务", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+      { id: "task-2", code: "SYLU-2026-01-002", name: "未预接驳任务", test_type: "UNKNOWN", status: STATUS_WAITING },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "SYLU-2026-01-001-A", task_code: "SYLU-2026-01-001", experiment_code: "SYLU-2026-01-001-A", experiment_name: "冲击试验", required_device: PRIMARY_LAB },
+      { id: "SYLU-2026-01-002-A", task_code: "SYLU-2026-01-002", experiment_code: "SYLU-2026-01-002-A", experiment_name: "振动试验", required_device: SECONDARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const taskSelectText = wrapper.get('select[name="task_code"]').text();
+    expect(taskSelectText).toContain("SYLU-2026-01-001");
+    expect(taskSelectText).not.toContain("SYLU-2026-01-002");
   });
 
   test("auto-adjusts manual schedule slot to legal afternoon and next-day morning based on current time", async () => {

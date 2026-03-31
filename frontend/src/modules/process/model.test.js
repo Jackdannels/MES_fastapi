@@ -81,4 +81,40 @@ describe("processLabModel", () => {
     );
     expect(buildTaskOverviewPath({ taskCode: "-", testType: "" })).toBe("/task-overview");
   });
+
+  test("buildProcessLabCards prefers the scheduled experiment label over task test_type", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Thermal Lab", testType: "高低温湿热试验" }],
+      [
+        {
+          code: "TASK-001",
+          test_type: "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+        },
+      ],
+      [
+        {
+          device: "Thermal Lab",
+          end_at: "2026-04-01T15:30:00Z",
+          experiment_code: "TASK-001-B",
+          start_at: "2026-04-01T12:00:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      [
+        { task_code: "TASK-001", status: "已排程" },
+      ],
+      Date.parse("2026-04-01T13:00:00Z"),
+      [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "温度冲击试验" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", experiment_name: "高低温湿热试验" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-C", experiment_name: "盐雾试验" },
+      ]
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        targetExperiment: "高低温湿热试验",
+      })
+    );
+  });
 });

@@ -641,6 +641,12 @@ class MySQLMesStorageBackend(StorageBackend):
                 task_count = int(cursor.fetchone()["total"])
                 cursor.execute("SELECT COUNT(*) AS total FROM biz_schedule WHERE schedule_type = %s", (STORAGE_MARKER,))
                 schedule_count = int(cursor.fetchone()["total"])
+                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment")
+                experiment_count = int(cursor.fetchone()["total"])
+                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment_tray")
+                experiment_tray_count = int(cursor.fetchone()["total"])
+                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment_sample")
+                experiment_sample_count = int(cursor.fetchone()["total"])
                 cursor.execute("SELECT COUNT(*) AS total FROM md_equipment WHERE manufacturer = %s", (STORAGE_MARKER,))
                 device_count = int(cursor.fetchone()["total"])
                 cursor.execute("SELECT COUNT(*) AS total FROM biz_data_stream WHERE remark = %s", (STORAGE_MARKER,))
@@ -653,6 +659,9 @@ class MySQLMesStorageBackend(StorageBackend):
             "mes.devices": device_count,
             "mes.streams": stream_count,
             "mes.samples": sample_count,
+            "mes.experiments": experiment_count,
+            "mes.experiment_trays": experiment_tray_count,
+            "mes.experiment_samples": experiment_sample_count,
         }
 
     def _ensure_bootstrapped(self) -> None:
@@ -675,15 +684,31 @@ class MySQLMesStorageBackend(StorageBackend):
             self._write_many_internal(merged_payload)
             return
 
-        if counts["mes.samples"] == 0:
-            raw_sample_payload = snapshot_payloads.get("mes.samples")
-            if normalize_text(raw_sample_payload):
-                try:
-                    pending_updates["mes.samples"] = json.loads(raw_sample_payload)
-                except json.JSONDecodeError:
+        if counts.get("mes.tasks", 0) == 0:
+            pending_updates.update(
+                {
+                    key: self._bootstrap_storage.read(key)
+                    for key in RELATIONAL_STORAGE_KEYS
+                }
+            )
+            if pending_updates:
+                self._write_many_internal(pending_updates)
+            return
+
+        for key in RELATIONAL_STORAGE_KEYS:
+            if counts.get(key, 0) > 0:
+                continue
+            if key == "mes.samples":
+                raw_sample_payload = snapshot_payloads.get("mes.samples")
+                if normalize_text(raw_sample_payload):
+                    try:
+                        pending_updates["mes.samples"] = json.loads(raw_sample_payload)
+                    except json.JSONDecodeError:
+                        pending_updates["mes.samples"] = self._bootstrap_storage.read("mes.samples")
+                else:
                     pending_updates["mes.samples"] = self._bootstrap_storage.read("mes.samples")
-            else:
-                pending_updates["mes.samples"] = self._bootstrap_storage.read("mes.samples")
+                continue
+            pending_updates[key] = self._bootstrap_storage.read(key)
 
         if pending_updates:
             self._write_many_internal(pending_updates)
@@ -1470,4 +1495,4 @@ class MySQLMesStorageBackend(StorageBackend):
             }
             if not normalized_updates:
                 return
-            self._write_many_internal(normalize_storage_payload(normalized_updates))
+            self._write_many_internal(normalized_updates)

@@ -1,13 +1,17 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  analyzeTaskTrayConflict,
   RETENTION_DEVICE,
   STATUS_SCHEDULED,
   STATUS_WAITING,
   buildConflictRows,
   buildExperimentOptions,
   buildGanttRows,
+  buildManualTaskOptions,
   buildRetentionInternalRows,
+  buildScheduleRescheduleForm,
+  buildTaskScheduledOverlays,
   createScheduleRecord,
   formatDateTime,
   resolveRetentionTimeState,
@@ -158,6 +162,242 @@ describe("schedulePageModel", () => {
         taskCode: "SYLU-2026-03-003",
       },
     ]);
+  });
+
+  test("buildManualTaskOptions only keeps unpacking tasks that already have a saved tray plan", () => {
+    const options = buildManualTaskOptions({
+      activeTab: "unpacking",
+      experiments: [
+        { task_code: "SYLU-2026-03-010", experiment_code: "SYLU-2026-03-010-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-011", experiment_code: "SYLU-2026-03-011-A", experiment_name: "振动试验" },
+        { task_code: "SYLU-2026-03-012", experiment_code: "SYLU-2026-03-012-A", experiment_name: "温度冲击试验" },
+        { task_code: "SYLU-2026-03-013", experiment_code: "SYLU-2026-03-013-A", experiment_name: "盐雾试验" },
+      ],
+      experimentTrays: [{ task_code: "SYLU-2026-03-012", experiment_code: "SYLU-2026-03-012-A", tray_code: "SYLU-2026-03-012-TP-001" }],
+      samples: [
+        { task_code: "SYLU-2026-03-011", code: "SYLU-2026-03-011-SP-001", trays: ["SYLU-2026-03-011-TP-001"] },
+      ],
+      schedules: [],
+      tasks: [
+        { code: "SYLU-2026-03-010", name: "任务一", tray_codes: ["SYLU-2026-03-010-TP-001"] },
+        { code: "SYLU-2026-03-011", name: "任务二" },
+        { code: "SYLU-2026-03-012", name: "任务三" },
+        { code: "SYLU-2026-03-013", name: "任务四", status: STATUS_WAITING },
+      ],
+    });
+
+    expect(options.map((option) => option.code)).toEqual([
+      "SYLU-2026-03-010",
+      "SYLU-2026-03-011",
+      "SYLU-2026-03-012",
+    ]);
+  });
+
+  test("buildScheduleRescheduleForm maps a stored schedule back into the top scheduling form", () => {
+    expect(
+      buildScheduleRescheduleForm({
+        device: "振动一室",
+        experiment_code: "SYLU-2026-03-008-B",
+        planned_hours: 3.5,
+        start_at: "2026-03-31T00:00:00.000Z",
+        end_at: "2026-03-31T03:30:00.000Z",
+        task_code: "SYLU-2026-03-008",
+      }),
+    ).toEqual({
+      custom_end: "11:30",
+      custom_start: "08:00",
+      device: "振动一室",
+      experiment_code: "SYLU-2026-03-008-B",
+      planned_hours: 3.5,
+      schedule_date: "2026-03-31",
+      task_code: "SYLU-2026-03-008",
+      time_slot: "morning",
+    });
+
+    expect(
+      buildScheduleRescheduleForm({
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-03-008-C",
+        planned_hours: 2.5,
+        start_at: "2026-03-31T01:15:00.000Z",
+        end_at: "2026-03-31T03:45:00.000Z",
+        task_code: "SYLU-2026-03-008",
+      }),
+    ).toEqual({
+      custom_end: "11:45",
+      custom_start: "09:15",
+      device: "冲击一室",
+      experiment_code: "SYLU-2026-03-008-C",
+      planned_hours: 2.5,
+      schedule_date: "2026-03-31",
+      task_code: "SYLU-2026-03-008",
+      time_slot: "custom",
+    });
+  });
+
+  test("buildTaskScheduledOverlays returns other formal schedules for the selected task", () => {
+    const overlays = buildTaskScheduledOverlays({
+      experimentCode: "SYLU-2026-03-006-B",
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-003" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-B",
+          device: "振动一室",
+          start_at: "2099-03-21T12:00:00.000Z",
+          end_at: "2099-03-21T18:00:00.000Z",
+        },
+        {
+          id: "schedule-retention-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-C",
+          device: RETENTION_DEVICE,
+          start_at: "2099-03-22T08:00:00.000Z",
+          end_at: "2099-03-22T08:00:00.000Z",
+        },
+      ],
+      taskCode: "SYLU-2026-03-006",
+    });
+
+    expect(overlays).toEqual([
+      expect.objectContaining({
+        device: "冲击一室",
+        experimentCode: "SYLU-2026-03-006-A",
+        experimentLabel: "冲击试验",
+        scheduleId: "schedule-1",
+        trayNos: ["SYLU-2026-03-006-TP-001", "SYLU-2026-03-006-TP-002"],
+        traySummary: "SYLU-2026-03-006-TP-001 / SYLU-2026-03-006-TP-002",
+      }),
+    ]);
+  });
+
+  test("analyzeTaskTrayConflict reports a partial conflict when only some trays overlap", () => {
+    const result = analyzeTaskTrayConflict({
+      candidate: {
+        end_at: "2099-03-20T11:00:00.000Z",
+        experiment_code: "SYLU-2026-03-006-B",
+        start_at: "2099-03-20T09:00:00.000Z",
+        task_code: "SYLU-2026-03-006",
+      },
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-002" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-003" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        level: "partial",
+        conflictTrayNos: ["SYLU-2026-03-006-TP-002"],
+      }),
+    );
+    expect(result?.conflictSchedules).toEqual([
+      expect.objectContaining({
+        experimentLabel: "冲击试验",
+        trayNos: ["SYLU-2026-03-006-TP-001", "SYLU-2026-03-006-TP-002"],
+      }),
+    ]);
+  });
+
+  test("analyzeTaskTrayConflict reports a full conflict when all trays overlap", () => {
+    const result = analyzeTaskTrayConflict({
+      candidate: {
+        end_at: "2099-03-20T11:00:00.000Z",
+        experiment_code: "SYLU-2026-03-006-C",
+        start_at: "2099-03-20T09:00:00.000Z",
+        task_code: "SYLU-2026-03-006",
+      },
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-002" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-002" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", experiment_name: "温度冲击试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        level: "full",
+        conflictTrayNos: ["SYLU-2026-03-006-TP-001", "SYLU-2026-03-006-TP-002"],
+      }),
+    );
+  });
+
+  test("analyzeTaskTrayConflict ignores historical schedules that do not have tray relations", () => {
+    const result = analyzeTaskTrayConflict({
+      candidate: {
+        end_at: "2099-03-20T11:00:00.000Z",
+        experiment_code: "SYLU-2026-03-006-B",
+        start_at: "2099-03-20T09:00:00.000Z",
+        task_code: "SYLU-2026-03-006",
+      },
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-002" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toBe(null);
   });
 
   test("createScheduleRecord rewrites retention entries when a retained task is sent to a lab", () => {

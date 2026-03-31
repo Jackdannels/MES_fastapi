@@ -99,3 +99,23 @@ python scripts\trial_run.py --port 8021
 - `session_status_code` 为 `200`
 - `logout_status_code` 为 `204`
 - `post_logout_session_status_code` 为 `401`
+
+## 演示数据整库重置
+
+如需清空当前业务演示数据并重新生成一套干净基线，可执行：
+
+```powershell
+cd c:\Users\12051\Desktop\MES_fastapi
+python scripts\reset_demo_data.py
+```
+
+该操作是破坏性的，会删除当前任务、样品、实验、排程、托盘分配、冲突记录，并重新生成：
+
+- `SYLU-2026-03-001` 到 `SYLU-2026-03-020` 共 20 个任务
+- `001-010` 为 `外部委托`
+- `011-020` 为 `内部新增`
+- 每个任务 3 个随机试验
+- 每个任务样品数大于 4
+- 所有任务初始状态统一为全新任务状态
+
+设备定义会保留，不会随这次重置被删除。

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data, run_demo_reset
 from app.core.storage_backend import DatabaseStorageBackend, JsonFileStorage
 
 
@@ -150,6 +151,96 @@ def test_database_storage_bootstrap_persists_experiment_collections(tmp_path) ->
     assert snapshot["mes.experiment_samples"] == [{"id": "sample-rel-1", "task_code": "TASK-001", "experiment_code": "TASK-001-A", "sample_code": "TASK-001-SP-001"}]
     assert json.loads(repository.payloads["mes.experiments"])[0]["experiment_code"] == "TASK-001-A"
     assert json.loads(repository.payloads["mes.experiment_samples"])[0]["sample_code"] == "TASK-001-SP-001"
+
+
+def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() -> None:
+    snapshot = build_demo_reset_snapshot()
+
+    tasks = snapshot["mes.tasks"]
+    samples = snapshot["mes.samples"]
+    experiments = snapshot["mes.experiments"]
+
+    assert len(tasks) == 20
+    assert [task["code"] for task in tasks] == [f"SYLU-2026-03-{index:03d}" for index in range(1, 21)]
+    assert all(task["source"] == "外部委托" for task in tasks[:10])
+    assert all(task["source"] == "内部新增" for task in tasks[10:])
+    assert all(task["status"] == "待排程" for task in tasks)
+
+    assert len(experiments) == 60
+    experiments_by_task = {}
+    for experiment in experiments:
+        experiments_by_task.setdefault(experiment["task_code"], []).append(experiment)
+    assert set(experiments_by_task) == {task["code"] for task in tasks}
+    assert all(len(task_experiments) == 3 for task_experiments in experiments_by_task.values())
+    assert all(len({item["experiment_name"] for item in task_experiments}) == 3 for task_experiments in experiments_by_task.values())
+
+    samples_by_task = {}
+    for sample in samples:
+        samples_by_task.setdefault(sample["task_code"], []).append(sample)
+        assert sample["status"] == "运输中"
+        assert sample["flow_status"] == "运输中"
+    assert set(samples_by_task) == {task["code"] for task in tasks}
+    assert all(len(task_samples) > 4 for task_samples in samples_by_task.values())
+
+    for task in tasks:
+        assert re.fullmatch(r"SYLU-2026-03-\d{3}", task["code"])
+        assert task["experiment_count"] == 3
+        assert len(task["experiment_codes"]) == 3
+        assert task["sample_count"].isdigit()
+        assert int(task["sample_count"]) > 4
+        assert len(samples_by_task[task["code"]]) == int(task["sample_count"])
+
+    assert snapshot["mes.schedules"] == []
+    assert snapshot["mes.experiment_trays"] == []
+    assert snapshot["mes.experiment_samples"] == []
+    assert snapshot["mes.streams"] == []
+    assert snapshot["mes.conflicts"] == []
+
+
+def test_reset_demo_data_rewrites_store_with_fresh_tasks_and_preserves_devices(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    seed_storage = JsonFileStorage(path)
+    seed_storage.write_many(
+        {
+            "mes.tasks": [{"id": "legacy-task", "code": "SYLU-2026-03-999", "name": "旧任务", "status": "已排程"}],
+            "mes.samples": [{"id": "legacy-sample", "code": "SYLU-2026-03-999-SP-001", "task_code": "SYLU-2026-03-999", "status": "已入库"}],
+            "mes.experiments": [{"id": "legacy-exp", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
+            "mes.schedules": [{"id": "legacy-schedule", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
+            "mes.experiment_trays": [{"id": "legacy-rel", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
+            "mes.experiment_samples": [{"id": "legacy-sample-rel", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
+            "mes.streams": [{"id": "legacy-stream", "task_code": "SYLU-2026-03-999", "status": "采集中"}],
+            "mes.conflicts": [{"id": "legacy-conflict", "task_code": "SYLU-2026-03-999"}],
+            "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+        }
+    )
+    repository = InMemorySnapshotRepository()
+    storage = DatabaseStorageBackend(repository, bootstrap_storage=seed_storage)
+
+    snapshot = reset_demo_data(storage, store_path=path)
+    persisted = _read_store(path)
+
+    assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert len(snapshot["mes.tasks"]) == 20
+    assert snapshot["mes.schedules"] == []
+    assert snapshot["mes.experiment_trays"] == []
+    assert snapshot["mes.experiment_samples"] == []
+    assert snapshot["mes.streams"] == []
+    assert snapshot["mes.conflicts"] == []
+    assert len(persisted["mes.tasks"]) == 20
+    assert persisted["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+
+
+def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    storage = DatabaseStorageBackend(InMemorySnapshotRepository(), bootstrap_storage=JsonFileStorage(path))
+
+    summary = run_demo_reset(storage, store_path=path)
+
+    assert summary["task_count"] == 20
+    assert summary["experiment_count"] == 60
+    assert summary["sample_count"] > 100
+    assert summary["store_path"] == str(path)
 
 
 def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp_path) -> None:

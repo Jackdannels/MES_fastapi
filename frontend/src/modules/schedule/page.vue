@@ -120,6 +120,27 @@
 
   <section class="card section">
     <h3>{{ uiText.ganttTitle }}</h3>
+    <div v-if="taskScheduledOverlays.length" class="schedule-task-overlays" data-testid="schedule-task-overlays">
+      <div class="schedule-task-overlays__title">{{ uiText.currentTaskScheduledTitle }}</div>
+      <div class="schedule-task-overlays__list">
+        <article
+          v-for="overlay in taskScheduledOverlays"
+          :key="overlay.scheduleId"
+          class="schedule-task-overlay-card"
+          :data-testid="`schedule-task-overlay-${overlay.scheduleId}`"
+        >
+          <div class="schedule-task-overlay-card__head">
+            <strong>{{ overlay.experimentLabel }}</strong>
+            <span>{{ overlay.device }}</span>
+          </div>
+          <div class="schedule-task-overlay-card__meta">{{ overlay.timeLabel }}</div>
+          <div class="schedule-task-overlay-card__chips">
+            <span v-for="trayNo in overlay.trayNos" :key="trayNo" class="schedule-task-overlay-chip">{{ trayNo }}</span>
+            <span v-if="overlay.trayNos.length === 0" class="schedule-task-overlay-chip is-muted">{{ uiText.noTraySummary }}</span>
+          </div>
+        </article>
+      </div>
+    </div>
     <div class="gantt-wrap">
       <table class="gantt" id="gantt-table">
         <thead>
@@ -312,6 +333,79 @@
         <input :value="selectedTaskDetail.estimatedEndAt" type="text" readonly />
       </div>
     </div>
+    <template #footer>
+      <button
+        v-if="selectedTaskDetail"
+        class="action-btn secondary"
+        type="button"
+        data-testid="task-detail-delete"
+        @click="removeTaskDetailSchedule"
+      >
+        {{ uiText.deleteSchedule }}
+      </button>
+      <button
+        v-if="selectedTaskDetail"
+        class="action-btn"
+        type="button"
+        data-testid="task-detail-reschedule"
+        @click="rescheduleFromTaskDetail"
+      >
+        {{ uiText.deleteThenReschedule }}
+      </button>
+    </template>
+  </AppModal>
+
+  <AppModal
+    :open="scheduleConflictOpen"
+    :title="scheduleConflictDetail?.level === 'full' ? uiText.fullConflictTitle : uiText.partialConflictTitle"
+    @close="cancelScheduleConflict"
+  >
+    <div
+      v-if="scheduleConflictDetail"
+      class="schedule-conflict-panel"
+      :class="scheduleConflictDetail.level === 'full' ? 'is-full' : 'is-partial'"
+      data-testid="schedule-conflict-modal"
+    >
+      <div class="schedule-conflict-panel__summary">
+        <strong>{{ scheduleConflictDetail.level === "full" ? uiText.fullConflictTitle : uiText.partialConflictTitle }}</strong>
+        <span>{{ uiText.conflictTaskLabel }}{{ scheduleConflictDetail.taskCode }}</span>
+        <span>{{ uiText.conflictCandidateLabel }}{{ scheduleConflictDetail.candidateExperimentLabel }}</span>
+      </div>
+      <div class="schedule-conflict-panel__tray-block">
+        <div class="schedule-conflict-panel__label">{{ uiText.conflictTrayLabel }}</div>
+        <div class="schedule-conflict-panel__chips">
+          <span v-for="trayNo in scheduleConflictDetail.conflictTrayNos" :key="trayNo" class="schedule-conflict-chip">
+            {{ trayNo }}
+          </span>
+        </div>
+      </div>
+      <div class="schedule-conflict-panel__list">
+        <article
+          v-for="conflict in scheduleConflictDetail.conflictSchedules"
+          :key="conflict.scheduleId"
+          class="schedule-conflict-row"
+        >
+          <div class="schedule-conflict-row__head">
+            <strong>{{ conflict.experimentLabel }}</strong>
+            <span>{{ conflict.device }}</span>
+          </div>
+          <div class="schedule-conflict-row__meta">{{ conflict.overlapRange }}</div>
+          <div class="schedule-conflict-panel__chips">
+            <span v-for="trayNo in conflict.trayNos" :key="`${conflict.scheduleId}-${trayNo}`" class="schedule-conflict-chip is-related">
+              {{ trayNo }}
+            </span>
+          </div>
+        </article>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" type="button" data-testid="schedule-conflict-cancel" @click="cancelScheduleConflict">
+        {{ uiText.cancelConflictSchedule }}
+      </button>
+      <button class="action-btn" type="button" data-testid="schedule-conflict-confirm" @click="confirmScheduleConflict">
+        {{ uiText.confirmConflictSchedule }}
+      </button>
+    </template>
   </AppModal>
 
   <AppDrawer :open="scheduleDrawerOpen" :title="uiText.editScheduleTitle" @close="closeScheduleDrawer">
@@ -379,15 +473,22 @@ const uiText = {
   actions: "操作",
   afternoonShort: "下午 12:00-18:00",
   afternoonSlot: "下午（12:00-18:00）",
+  cancelConflictSchedule: "取消排程",
   changeRequest: "变更申请",
   clear: "清空",
   conflictAlert: "冲突提醒",
+  conflictCandidateLabel: "当前实验：",
   conflictList: "待解决冲突",
   conflictSearchPlaceholder: "筛选任务/设备/冲突类型",
+  conflictTaskLabel: "当前任务：",
+  conflictTrayLabel: "冲突托盘",
   conflictType: "冲突类型",
   confirmSchedule: "确认排程",
+  confirmConflictSchedule: "确认排程",
   currentTime: "当前时间",
+  currentTaskScheduledTitle: "当前任务已排程",
   customSlot: "自定义",
+  deleteThenReschedule: "删除后重新排程",
   deleteSchedule: "删除排程",
   device: "设备",
   edit: "编辑",
@@ -396,6 +497,7 @@ const uiText = {
   estimatedCompletionTime: "预计完成时间",
   experimentCode: "实验编号",
   experimentLabel: "实验标签",
+  fullConflictTitle: "完全冲突提示",
   ganttTitle: "设备空闲排程（上午/下午）",
   impact: "影响",
   index: "序号",
@@ -411,8 +513,10 @@ const uiText = {
   noDevices: "暂无设备",
   noRetentionTasks: "暂无暂存间待分配任务",
   noScheduleRecords: "暂无排程记录",
+  noTraySummary: "未记录托盘",
   pending: "待处理",
   pendingAllocation: "待分配",
+  partialConflictTitle: "部分冲突提示",
   plannedHours: "预计实验时长（小时）",
   priority: "优先级",
   retentionInternalHint: "仅显示未分配实验室的任务",
@@ -444,8 +548,10 @@ const uiText = {
 const {
   activeTab,
   buildEditLabOptions,
+  cancelScheduleConflict,
   closeScheduleDrawer,
   closeTaskDetailModal,
+  confirmScheduleConflict,
   conflictRows,
   conflictSearch,
   currentTimeLabel,
@@ -457,10 +563,14 @@ const {
   openScheduleDrawer,
   openTaskDetailModal,
   removeSchedule,
+  removeTaskDetailSchedule,
   retentionInternalRows,
+  rescheduleFromTaskDetail,
   selectedTaskDetail,
   retentionSelected,
   saveSchedule,
+  scheduleConflictDetail,
+  scheduleConflictOpen,
   taskDetailModalOpen,
   scheduleDrawerOpen,
   scheduleForm,
@@ -472,6 +582,7 @@ const {
   submitSchedule,
   summaryCards,
   taskOptions,
+  taskScheduledOverlays,
   resetScheduleForm,
 } = useSchedulePage();
 </script>

@@ -23,6 +23,7 @@ from app.core.mysql_storage_backend import (
     build_stream_insert_row,
     build_task_insert_row,
 )
+from app.core.demo_data_reset import reset_demo_data
 
 
 def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
@@ -496,6 +497,17 @@ class _DummySnapshotRepository:
         return None
 
 
+class _DummyBootstrapStorage:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def read_all(self):
+        return self._payload
+
+    def read(self, key):
+        return self._payload.get(key, [])
+
+
 class _DummyCursor:
     def execute(self, *args, **kwargs):
         return None
@@ -557,3 +569,115 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
     )
 
     assert order == ["tasks:False", "samples", "experiments", "experiment_trays", "experiment_samples", "tasks:True"]
+
+
+def test_write_many_does_not_clear_unrelated_experiment_tray_assignments(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    writes = {}
+    monkeypatch.setattr(backend, "_write_many_internal", lambda updates: writes.update(updates))
+
+    backend.write_many(
+        {
+            "mes.samples": [
+                {
+                    "code": "SYLU-2026-03-006-SP-001",
+                    "task_code": "SYLU-2026-03-006",
+                    "status": "已分配",
+                }
+            ]
+        }
+    )
+
+    assert list(writes.keys()) == ["mes.samples"]
+    assert writes["mes.samples"] == [
+        {
+            "code": "SYLU-2026-03-006-SP-001",
+            "task_code": "SYLU-2026-03-006",
+            "status": "已分配",
+        }
+    ]
+
+
+def test_ensure_bootstrapped_imports_missing_tasks_even_when_mysql_already_has_samples(monkeypatch) -> None:
+    bootstrap_payload = normalize_storage_payload(
+        {
+            "mes.tasks": [{"code": "SYLU-2026-03-101", "name": "接驳任务", "sample_count": 2, "arrival_at": "2026-03-21 10:20"}],
+            "mes.samples": [
+                {"code": "SYLU-2026-03-101-SP-001", "task_code": "SYLU-2026-03-101", "status": "未入库", "trays": []},
+                {"code": "SYLU-2026-03-101-SP-002", "task_code": "SYLU-2026-03-101", "status": "未入库", "trays": []},
+            ],
+            "mes.experiments": [{"experiment_code": "SYLU-2026-03-101-A", "task_code": "SYLU-2026-03-101", "experiment_name": "盐雾试验"}],
+            "mes.experiment_trays": [],
+            "mes.experiment_samples": [],
+            "mes.schedules": [],
+            "mes.devices": [],
+            "mes.streams": [],
+        }
+    )
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+        bootstrap_storage=_DummyBootstrapStorage(bootstrap_payload),
+    )
+
+    writes = {}
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(
+        backend,
+        "_managed_counts",
+        lambda: {
+            "mes.tasks": 0,
+            "mes.schedules": 0,
+            "mes.devices": 0,
+            "mes.streams": 0,
+            "mes.samples": 2,
+            "mes.experiments": 0,
+            "mes.experiment_trays": 0,
+            "mes.experiment_samples": 0,
+        },
+    )
+    monkeypatch.setattr(backend, "_write_many_internal", lambda updates: writes.update(updates))
+
+    backend._ensure_bootstrapped()
+
+    assert writes["mes.tasks"] == bootstrap_payload["mes.tasks"]
+    assert writes["mes.experiments"] == bootstrap_payload["mes.experiments"]
+    assert writes["mes.samples"] == bootstrap_payload["mes.samples"]
+
+
+def test_reset_demo_data_preserves_devices_when_writing_mysql_backend(monkeypatch, tmp_path) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    existing_snapshot = normalize_storage_payload(
+        {
+            "mes.tasks": [{"code": "SYLU-2026-03-999", "name": "旧任务"}],
+            "mes.samples": [{"code": "SYLU-2026-03-999-SP-001", "task_code": "SYLU-2026-03-999"}],
+            "mes.experiments": [{"experiment_code": "SYLU-2026-03-999-A", "task_code": "SYLU-2026-03-999"}],
+            "mes.schedules": [{"id": "legacy-schedule", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
+            "mes.experiment_trays": [{"task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
+            "mes.experiment_samples": [{"task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
+            "mes.streams": [{"task_code": "SYLU-2026-03-999", "status": "采集中"}],
+            "mes.conflicts": [{"id": "legacy-conflict", "task_code": "SYLU-2026-03-999"}],
+            "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+        }
+    )
+    writes = {}
+
+    monkeypatch.setattr(backend, "read_all", lambda: existing_snapshot)
+    monkeypatch.setattr(backend, "write_many", lambda updates: writes.update(updates))
+
+    snapshot = reset_demo_data(backend, store_path=tmp_path / "mes_store.json")
+
+    assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert len(writes["mes.tasks"]) == 20
+    assert writes["mes.schedules"] == []
+    assert writes["mes.experiment_trays"] == []
+    assert writes["mes.experiment_samples"] == []

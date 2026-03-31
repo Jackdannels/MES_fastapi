@@ -1,10 +1,11 @@
 // 负责排程表单、看板状态、甘特行数据和持久化流程。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTabState } from "@/composables/useTabState";
 import {
+  analyzeTaskTrayConflict,
   buildConflictRows,
   buildExperimentOptions,
   buildGanttRows,
@@ -12,8 +13,10 @@ import {
   buildManualTaskOptions,
   buildRetentionInternalRows,
   buildScheduleEditForm,
+  buildScheduleRescheduleForm,
   buildScheduleRows,
   buildSummaryCards,
+  buildTaskScheduledOverlays,
   createManualScheduleForm,
   createScheduleEditForm,
   createScheduleRecord,
@@ -24,6 +27,7 @@ import {
   isManualScheduleSelectionLegal,
   resolveLegalManualScheduleState,
   resolveRetentionTimeState,
+  resolveScheduleTimes,
   updateScheduleRecord,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -34,6 +38,7 @@ function useSchedulePage() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.streams,
@@ -42,6 +47,7 @@ function useSchedulePage() {
 
   const rawDevices = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
   const rawStreams = ref([]);
@@ -56,12 +62,16 @@ function useSchedulePage() {
 
   const scheduleDrawer = useDialogState();
   const taskDetailModal = useDialogState();
+  const scheduleConflictModal = useDialogState();
+  const pendingScheduleDraft = ref(null);
+  const scheduleFormWatchSuspended = ref(false);
   let clockTimer = null;
 
   const taskOptions = computed(() =>
     buildManualTaskOptions({
       activeTab: activeTab.value,
       experiments: rawExperiments.value,
+      experimentTrays: rawExperimentTrays.value,
       samples: rawSamples.value,
       schedules: rawSchedules.value,
       tasks: rawTasks.value,
@@ -120,6 +130,15 @@ function useSchedulePage() {
       schedules: rawSchedules.value,
     }),
   );
+  const taskScheduledOverlays = computed(() =>
+    buildTaskScheduledOverlays({
+      experimentCode: scheduleForm.value.experiment_code,
+      experimentTrays: rawExperimentTrays.value,
+      experiments: rawExperiments.value,
+      schedules: rawSchedules.value,
+      taskCode: scheduleForm.value.task_code,
+    }),
+  );
   const summaryCards = computed(() => buildSummaryCards({ now: now.value, schedules: rawSchedules.value }));
   const currentTimeLabel = computed(() => formatDateTime(now.value));
   const retentionSelected = computed(() => isRetentionDevice(scheduleForm.value.device));
@@ -150,6 +169,7 @@ function useSchedulePage() {
       plannedHours: normalizeText(schedule?.planned_hours) || "-",
       priority: normalizeText(task?.priority) || "-",
       source: normalizeText(task?.source) || "-",
+      scheduleId: normalizeText(schedule?.id),
       startAt: formatDateTime(schedule?.start_at),
       status: normalizeText(task?.status) || normalizeText(schedule?.status) || "-",
       testType: normalizeText(task?.test_type) || "-",
@@ -200,6 +220,31 @@ function useSchedulePage() {
     scheduleWarning.value = "";
   };
 
+  const replaceScheduleForm = async (nextForm) => {
+    scheduleFormWatchSuspended.value = true;
+    scheduleForm.value = nextForm;
+    await nextTick();
+    scheduleFormWatchSuspended.value = false;
+  };
+
+  const resetScheduleFormForTask = async ({ taskCode, schedules }) => {
+    const baseForm = createManualScheduleForm(now.value);
+    const nextExperimentCode =
+      buildExperimentOptions({
+        taskCode,
+        experiments: rawExperiments.value,
+        schedules,
+        tasks: rawTasks.value,
+      })[0]?.code || "";
+
+    await replaceScheduleForm({
+      ...baseForm,
+      experiment_code: nextExperimentCode,
+      task_code: taskCode,
+    });
+    scheduleWarning.value = "";
+  };
+
   const syncManualScheduleLegality = () => {
     // 固定时段如果已经落到非法时间片，会自动纠正到最近合法时段。
     if (retentionSelected.value || normalizeText(scheduleForm.value.time_slot) === "custom") {
@@ -230,6 +275,30 @@ function useSchedulePage() {
   };
 
   const submitSchedule = async () => {
+    const candidate = {
+      device: normalizeText(scheduleForm.value.device),
+      experiment_code: normalizeText(scheduleForm.value.experiment_code),
+      task_code: normalizeText(scheduleForm.value.task_code),
+    };
+    const resolved = resolveScheduleTimes(scheduleForm.value, now.value);
+    if (!resolved.error) {
+      candidate.start_at = resolved.startAt.toISOString();
+      candidate.end_at = resolved.endAt.toISOString();
+      candidate.planned_hours = resolved.plannedHours;
+      const taskConflict = analyzeTaskTrayConflict({
+        candidate,
+        experimentTrays: rawExperimentTrays.value,
+        experiments: rawExperiments.value,
+        schedules: rawSchedules.value,
+      });
+      if (taskConflict) {
+        pendingScheduleDraft.value = { ...scheduleForm.value };
+        scheduleConflictModal.openWith(taskConflict);
+        scheduleWarning.value = "";
+        return;
+      }
+    }
+
     const result = createScheduleRecord({
       form: scheduleForm.value,
       now: now.value,
@@ -249,7 +318,50 @@ function useSchedulePage() {
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
     });
-    resetScheduleForm();
+    await resetScheduleFormForTask({
+      schedules: result.schedules,
+      taskCode: normalizeText(scheduleForm.value.task_code),
+    });
+  };
+
+  const confirmScheduleConflict = async () => {
+    const draft = pendingScheduleDraft.value;
+    if (!draft) {
+      scheduleConflictModal.close();
+      return;
+    }
+
+    const result = createScheduleRecord({
+      form: draft,
+      now: now.value,
+      schedules: rawSchedules.value,
+      streams: rawStreams.value,
+      tasks: rawTasks.value,
+    });
+    if (result.error) {
+      scheduleWarning.value = result.error;
+      scheduleConflictModal.close();
+      pendingScheduleDraft.value = null;
+      return;
+    }
+
+    scheduleWarning.value = "";
+    await persistAll({
+      [STORAGE_KEYS.schedules]: result.schedules,
+      [STORAGE_KEYS.streams]: result.streams,
+      [STORAGE_KEYS.tasks]: result.tasks,
+    });
+    pendingScheduleDraft.value = null;
+    scheduleConflictModal.close();
+    await resetScheduleFormForTask({
+      schedules: result.schedules,
+      taskCode: normalizeText(draft.task_code),
+    });
+  };
+
+  const cancelScheduleConflict = () => {
+    pendingScheduleDraft.value = null;
+    scheduleConflictModal.close();
   };
 
   const openScheduleDrawer = (scheduleId) => {
@@ -320,10 +432,57 @@ function useSchedulePage() {
     closeScheduleDrawer();
   };
 
+  const removeTaskDetailSchedule = async () => {
+    const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
+    if (!scheduleId) {
+      closeTaskDetailModal();
+      return;
+    }
+    const result = deleteScheduleRecord({
+      now: now.value,
+      scheduleId,
+      schedules: rawSchedules.value,
+      streams: rawStreams.value,
+      tasks: rawTasks.value,
+    });
+    await persistAll({
+      [STORAGE_KEYS.schedules]: result.schedules,
+      [STORAGE_KEYS.streams]: result.streams,
+      [STORAGE_KEYS.tasks]: result.tasks,
+    });
+    closeTaskDetailModal();
+  };
+
+  const rescheduleFromTaskDetail = async () => {
+    const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
+    const schedule = rawSchedules.value.find((entry) => normalizeText(entry?.id) === scheduleId);
+    if (!schedule) {
+      closeTaskDetailModal();
+      return;
+    }
+
+    const result = deleteScheduleRecord({
+      now: now.value,
+      scheduleId,
+      schedules: rawSchedules.value,
+      streams: rawStreams.value,
+      tasks: rawTasks.value,
+    });
+    await persistAll({
+      [STORAGE_KEYS.schedules]: result.schedules,
+      [STORAGE_KEYS.streams]: result.streams,
+      [STORAGE_KEYS.tasks]: result.tasks,
+    });
+    await replaceScheduleForm(buildScheduleRescheduleForm(schedule));
+    scheduleWarning.value = "";
+    closeTaskDetailModal();
+  };
+
   const loadSchedulePage = async () => {
     const snapshot = await loadSnapshot();
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
     rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
@@ -345,6 +504,9 @@ function useSchedulePage() {
   watch(
     () => scheduleForm.value.task_code,
     () => {
+      if (scheduleFormWatchSuspended.value) {
+        return;
+      }
       const firstExperimentCode = experimentOptions.value[0]?.code || "";
       scheduleForm.value.experiment_code = firstExperimentCode;
       scheduleForm.value.device = "";
@@ -355,6 +517,9 @@ function useSchedulePage() {
   watch(
     () => scheduleForm.value.experiment_code,
     () => {
+      if (scheduleFormWatchSuspended.value) {
+        return;
+      }
       scheduleForm.value.device = "";
       scheduleWarning.value = "";
     },
@@ -407,8 +572,10 @@ function useSchedulePage() {
   return {
     buildEditLabOptions,
     activeTab,
+    cancelScheduleConflict,
     closeScheduleDrawer,
     closeTaskDetailModal,
+    confirmScheduleConflict,
     conflictRows: filteredConflictRows,
     conflictSearch,
     currentTimeLabel,
@@ -420,12 +587,17 @@ function useSchedulePage() {
     openTaskDetailModal,
     openScheduleDrawer,
     removeSchedule,
+    removeTaskDetailSchedule,
     retentionInternalRows,
     retentionSelected,
+    rescheduleFromTaskDetail,
     saveSchedule,
+    scheduleConflictDetail: scheduleConflictModal.payload,
+    scheduleConflictOpen: scheduleConflictModal.open,
     scheduleDrawerOpen: scheduleDrawer.open,
     selectedTaskDetail,
     taskDetailModalOpen: taskDetailModal.open,
+    taskScheduledOverlays,
     scheduleForm,
     scheduleRows: filteredScheduleRows,
     scheduleSearch,
