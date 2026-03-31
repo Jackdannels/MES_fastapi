@@ -384,6 +384,15 @@ describe("TransferAreaPage runtime", () => {
     expect(logoutSessionMock).not.toHaveBeenCalled();
   });
 
+  test("renders handover top nav buttons before the logout action", async () => {
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+
+    const actionTexts = wrapper.findAll(".transfer-system-actions .action-btn").map((button) => button.text());
+
+    expect(actionTexts).toEqual(["任务总览", "样品出库", "退出登录"]);
+  });
+
   test("switches modules from the exit dialog without logging out", async () => {
     const wrapper = mount(TransferAreaPage);
     await settle(wrapper);

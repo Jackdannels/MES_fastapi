@@ -7,12 +7,34 @@
         <p class="subtitle transfer-system-subtitle">{{ modeConfig.headerSubtitle }}</p>
       </div>
       <div class="header-actions transfer-system-actions">
+        <button
+          class="action-btn secondary"
+          :class="{ 'is-active': activeWorkbenchView === 'overview' }"
+          data-testid="handover-nav-overview"
+          type="button"
+          @click="setActiveWorkbenchView('overview')"
+        >
+          任务总览
+        </button>
+        <button
+          class="action-btn secondary"
+          :class="{ 'is-active': activeWorkbenchView === 'dispatch' }"
+          data-testid="handover-nav-dispatch"
+          type="button"
+          @click="setActiveWorkbenchView('dispatch')"
+        >
+          样品出库
+        </button>
         <button class="action-btn secondary" data-testid="handover-logout" type="button" @click="handleLogout">退出登录</button>
       </div>
     </header>
 
     <div class="transfer-area-shell" :class="{ 'is-embedded': embedded }">
-      <template v-if="viewMode === 'overview'">
+      <template v-if="showDispatchPanel">
+        <TransferDispatchPanel :dispatch-state="transferDispatch" />
+      </template>
+
+      <template v-else-if="viewMode === 'overview'">
         <section class="card transfer-overview-shell">
           <div class="transfer-overview-title-row">
             <h2
@@ -389,6 +411,8 @@ import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildCode128Svg } from "../handover-system/barcode.js";
+import TransferDispatchPanel from "./TransferDispatchPanel.vue";
+import { useTransferDispatch } from "./useTransferDispatch";
 
 const props = defineProps({
   embedded: {
@@ -411,6 +435,7 @@ const pendingStatus = "未入库";
 const storedStatus = "已入库";
 const TASK_TRAY_CODE_PATTERN = /-TP-(\d+)$/;
 
+const activeWorkbenchView = ref("overview");
 const viewMode = ref("overview");
 const searchText = ref("");
 const taskTypeFilter = ref("");
@@ -443,6 +468,7 @@ const overviewPageSize = ref(3);
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
+const transferDispatch = useTransferDispatch();
 const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
@@ -584,6 +610,7 @@ const switchModule = async (targetModule) => {
 
 const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
 const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
+const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
 const taskTypeOptions = computed(() => [...new Set(taskOverview.value.map((task) => task.experimentTypeText || task.taskType).filter(Boolean))]);
 const filteredTaskOverview = computed(() => {
   const query = searchText.value.trim().toLowerCase();
@@ -903,6 +930,13 @@ const openTask = async (task) => {
 const setTaskStatusFilter = (status) => {
   taskStatusFilter.value = status;
   taskPage.value = 1;
+};
+
+const setActiveWorkbenchView = (nextView) => {
+  if (props.mode !== "handover") {
+    return;
+  }
+  activeWorkbenchView.value = nextView === "dispatch" ? "dispatch" : "overview";
 };
 
 const reloadBootstrap = async () => {
