@@ -34,15 +34,17 @@ describe("storageApi", () => {
         json: async () => ({
           [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
           [STORAGE_KEYS.schedules]: [{ task_code: "T-1" }],
+          [STORAGE_KEYS.staging_events]: [{ tray_code: "T-1-TP-001", action: "stock_in" }],
         }),
       })
     );
 
-    const snapshot = await readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules]);
+    const snapshot = await readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules, STORAGE_KEYS.staging_events]);
 
     expect(snapshot).toEqual({
       [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
       [STORAGE_KEYS.schedules]: [{ task_code: "T-1" }],
+      [STORAGE_KEYS.staging_events]: [{ tray_code: "T-1-TP-001", action: "stock_in" }],
     });
   });
 

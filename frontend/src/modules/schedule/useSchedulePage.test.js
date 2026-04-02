@@ -247,4 +247,19 @@ describe("useSchedulePage", () => {
     );
     expect(wrapper.vm.experimentOptions.map((option) => option.code)).toContain("SYLU-2026-03-006-A");
   });
+
+  test("uses the selected task code to scope the gantt view instead of the currently selected device", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+
+    expect(wrapper.vm.ganttView.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室"]);
+
+    wrapper.vm.scheduleForm.device = "冲击一室";
+    await settle(wrapper);
+
+    expect(wrapper.vm.ganttView.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室"]);
+  });
 });

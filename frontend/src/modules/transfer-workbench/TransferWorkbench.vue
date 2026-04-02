@@ -284,6 +284,7 @@
                     :class="{ 'is-selected': isTraySelectedForCurrentExperiment(tray.trayNo) }"
                     :data-testid="`transfer-tray-select-${index}`"
                     :aria-pressed="isTraySelectedForCurrentExperiment(tray.trayNo) ? 'true' : 'false'"
+                    :disabled="allocationReadOnly"
                     type="button"
                     @click.stop="toggleExperimentTraySelection(index)"
                   >
@@ -640,7 +641,8 @@ const isStoredTask = computed(() => normalizeTaskStatus(currentTask.value?.taskS
 const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
 const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
 const currentExperimentName = computed(() => experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)?.experimentName || "实验");
-const taskEditingLocked = computed(() => isStoredTask.value || isExperimentMode.value);
+const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
+const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
 const canDragSamples = computed(() => props.mode === "pre-allocation" && !taskEditingLocked.value);
 const hasTrayCapacityLimit = computed(() => currentTask.value?.maxAssignableTrayCount != null);
 const maxAssignableTrayCount = computed(() => {
@@ -706,6 +708,12 @@ const selectedSampleLabel = computed(() => {
 });
 const quickMoveTrayLabel = computed(() => assignedTrays.value[armedTrayIndex.value]?.trayNo || "");
 const trayInteractionHint = computed(() => {
+  if (isStoredTask.value) {
+    return "已入库任务仅支持查看与打印。";
+  }
+  if (allocationSaved.value) {
+    return `当前托盘方案已保存，点击${modeConfig.value.resetActionLabel}后才能继续调整。`;
+  }
   if (isExperimentMode.value) {
     return `当前为 ${currentExperimentName.value} 托盘选择模式，只能选择托盘编号。`;
   }
@@ -995,7 +1003,7 @@ const handleDetailShellClick = (event) => {
 };
 
 const toggleExperimentTraySelection = (trayIndex) => {
-  if (!isExperimentMode.value) {
+  if (!isExperimentMode.value || allocationReadOnly.value) {
     return;
   }
   const tray = assignedTrays.value[trayIndex];

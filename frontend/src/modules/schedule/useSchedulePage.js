@@ -103,9 +103,6 @@ function useSchedulePage() {
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
     }),
   );
-  const ganttFilterDevice = computed(() =>
-    retentionSelected.value ? "" : normalizeText(scheduleForm.value.device),
-  );
 
   const scheduleRows = computed(() => buildScheduleRows({
     experiments: rawExperiments.value,
@@ -125,9 +122,11 @@ function useSchedulePage() {
   const ganttView = computed(() =>
     buildGanttRows({
       devices: rawDevices.value,
-      filterDevice: ganttFilterDevice.value,
+      experiments: rawExperiments.value,
       now: now.value,
       schedules: rawSchedules.value,
+      selectedTaskCode: retentionSelected.value ? "" : normalizeText(scheduleForm.value.task_code),
+      tasks: rawTasks.value,
     }),
   );
   const taskScheduledOverlays = computed(() =>

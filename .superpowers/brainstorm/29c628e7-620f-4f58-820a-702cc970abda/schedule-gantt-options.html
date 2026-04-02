@@ -1,0 +1,127 @@
+<h2>排程看板改动方案</h2>
+<p class="subtitle">重点比较任务筛选范围、颜色规则、以及同半天单元格内的双任务显示方式</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 A: 任务限定实验室 + 双行堆叠</div>
+        <div class="mockup-body">
+          <div class="label">推荐</div>
+          <div style="display:grid;gap:10px">
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">冲击一室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:6px;text-align:center;font-size:11px;font-weight:700;line-height:1.25;">
+                  <div>003</div>
+                  <div>021</div>
+                </div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">振动一室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div class="placeholder">空闲</div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">盐雾试验室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 A</h3>
+      <p>选中任务后，只保留该任务涉及到的实验室行。同一任务固定同色；同半天最多显示两行，超过两条则显示前两条并追加 <code>+N</code>。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 B: 任务限定实验室 + 胶囊标签</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px">
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">冲击一室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div style="border:1px solid #2563eb;background:#eff6ff;border-radius:10px;padding:5px 6px;text-align:center;font-size:10px;line-height:1.2;">
+                  <span style="display:inline-block;background:#dbeafe;border-radius:999px;padding:2px 6px;margin:1px;">003</span>
+                  <span style="display:inline-block;background:#fee2e2;border-radius:999px;padding:2px 6px;margin:1px;">021</span>
+                </div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 B</h3>
+      <p>信息密度更高，但在现有单元格宽度下可读性偏弱，任务编号较长时更容易拥挤。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">方案 C: 保留全部实验室 + 任务高亮</div>
+        <div class="mockup-body">
+          <div style="display:grid;gap:10px">
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">冲击一室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div class="placeholder">空闲</div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">四综合实验室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div style="border:1px dashed #cbd5e1;background:#f8fafc;border-radius:10px;padding:8px;text-align:center;font-size:12px;color:#94a3b8;">其他任务</div>
+                <div class="placeholder">空闲</div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center">
+              <div class="mock-sidebar">盐雾试验室</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                <div class="placeholder">空闲</div>
+                <div class="placeholder">空闲</div>
+                <div style="border:1px solid #2563eb;background:#dbeafe;border-radius:10px;padding:8px;text-align:center;font-size:12px;font-weight:700;">003</div>
+                <div class="placeholder">空闲</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 C</h3>
+      <p>改动最小，但不符合“不要显示全部实验室”的目标，筛选后的信息焦点也不够强。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>我的建议</h3>
+  <p>采用 <strong>方案 A</strong>。它最贴合你的三条要求：任务视角筛选实验室、任务级颜色统一、同半天单元格支持双行压缩显示且不改单元格尺寸。</p>
+</div>

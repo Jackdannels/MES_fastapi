@@ -443,11 +443,15 @@ describe("SchedulePage runtime", () => {
     expect(experimentSelect.element.value).toBe("SYLU-2026-03-001-A");
   });
 
-  test("links task selection to lab options and filters gantt rows by selected lab", async () => {
+  test("links task selection to lab options and keeps gantt scoped to task labs after a device is selected", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
-      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "exp-1", task_code: "SYLU-2026-01-001", experiment_code: "SYLU-2026-01-001-A", experiment_name: "冲击试验", required_device: PRIMARY_LAB },
+      { id: "exp-2", task_code: "SYLU-2026-01-001", experiment_code: "SYLU-2026-01-001-B", experiment_name: "冲击试验-备用", required_device: SECONDARY_LAB },
     ]);
     setStorage(DEVICES_KEY, [
       { code: PRIMARY_LAB, name: PRIMARY_LAB },
@@ -483,15 +487,183 @@ describe("SchedulePage runtime", () => {
 
     const deviceSelectText = wrapper.get('select[name="device"]').text();
     expect(deviceSelectText).toContain(PRIMARY_LAB);
-    expect(deviceSelectText).toContain(SECONDARY_LAB);
-    expect(deviceSelectText).toContain(TERTIARY_LAB);
+    expect(deviceSelectText).not.toContain(SECONDARY_LAB);
+    expect(deviceSelectText).not.toContain(TERTIARY_LAB);
 
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await settle(wrapper);
 
     const ganttRows = wrapper.findAll("#gantt-body tr");
-    expect(ganttRows).toHaveLength(1);
+    expect(ganttRows).toHaveLength(2);
     expect(ganttRows[0].text()).toContain(PRIMARY_LAB);
+    expect(ganttRows[1].text()).toContain(SECONDARY_LAB);
+  });
+
+  test("filters gantt rows to the selected task labs", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-03-006", name: "Task A", test_type: "冲击试验", status: STATUS_WAITING, tray_codes: ["SYLU-2026-03-006-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "exp-1", task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验", required_device: PRIMARY_LAB },
+      { id: "exp-2", task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "冲击试验-备用", required_device: SECONDARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [
+      { code: PRIMARY_LAB, name: PRIMARY_LAB },
+      { code: SECONDARY_LAB, name: SECONDARY_LAB },
+      { code: TERTIARY_LAB, name: TERTIARY_LAB },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "OTHER-001",
+        device: TERTIARY_LAB,
+        start_at: `${future.isoDate}T08:00:00.000Z`,
+        end_at: `${future.isoDate}T10:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+
+    const ganttRows = wrapper.findAll("#gantt-body tr");
+    expect(ganttRows).toHaveLength(2);
+    expect(ganttRows[0].text()).toContain(PRIMARY_LAB);
+    expect(ganttRows[1].text()).toContain(SECONDARY_LAB);
+  });
+
+  test("renders stacked task codes inside one half-day gantt cell", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "TASK-001", name: "Task 1", test_type: "冲击试验", status: STATUS_SCHEDULED },
+      { id: "task-2", code: "TASK-002", name: "Task 2", test_type: "冲击试验", status: STATUS_SCHEDULED },
+      { id: "task-3", code: "TASK-003", name: "Task 3", test_type: "冲击试验", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T01:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-2",
+        task_code: "TASK-002",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T01:30:00.000Z`,
+        end_at: `${future.isoDate}T02:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-3",
+        task_code: "TASK-003",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T02:30:00.000Z`,
+        end_at: `${future.isoDate}T03:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const stackedCell = wrapper.get('[data-testid="gantt-segment-stack-冲击一室-' + future.isoDate + '-am"]');
+    expect(stackedCell.text()).toContain("TASK-001");
+    expect(stackedCell.text()).toContain("TASK-002");
+    expect(stackedCell.text()).toContain("+1");
+  });
+
+  test("renders exactly two tasks in one half-day gantt cell as a split layout with hover details", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "TASK-001", name: "Task 1", test_type: "冲击试验", status: STATUS_SCHEDULED },
+      { id: "task-2", code: "TASK-002", name: "Task 2", test_type: "冲击试验", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "TASK-001-A", task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "A实验", required_device: PRIMARY_LAB },
+      { id: "TASK-002-B", task_code: "TASK-002", experiment_code: "TASK-002-B", experiment_name: "B实验", required_device: PRIMARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T01:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-2",
+        task_code: "TASK-002",
+        experiment_code: "TASK-002-B",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T01:30:00.000Z`,
+        end_at: `${future.isoDate}T03:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const splitCell = wrapper.get(`[data-testid="gantt-segment-split-${PRIMARY_LAB}-${future.isoDate}-am"]`);
+    expect(splitCell.text()).toContain("TASK-001");
+    expect(splitCell.text()).toContain("TASK-002");
+    expect(splitCell.find(".gantt-slot--split").exists()).toBe(true);
+    const title = splitCell.get("button").attributes("title");
+    expect(title).toContain("TASK-001 / A实验");
+    expect(title).toContain("TASK-002 / B实验");
+    expect(title).toContain("08:00");
+    expect(title).toContain("11:00");
+  });
+
+  test("hides completed experiments from the gantt once their end time has passed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2099-03-20T08:00:00"));
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "TASK-001", name: "Task 1", test_type: "冲击试验", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: PRIMARY_LAB,
+        start_at: "2099-03-19T00:00:00.000Z",
+        end_at: "2099-03-19T02:00:00.000Z",
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="gantt-segment-schedule-1"]').exists()).toBe(false);
+    expect(wrapper.get("#gantt-body tr").text()).toContain("空闲");
+
+    vi.useRealTimers();
   });
 
   test("resets selected lab when switching manual schedule task", async () => {

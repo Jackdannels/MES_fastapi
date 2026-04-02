@@ -29,7 +29,7 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
-SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", STORAGE_META_KEY)
+SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", "mes.staging_events", STORAGE_META_KEY)
 RETENTION_KEYWORD = "暂存间"
 SAMPLE_TASK_CODE_PATTERN = re.compile(r"^(?P<task_code>.+)-SP-\d+$")
 

@@ -681,15 +681,23 @@ describe("TransferAreaPage runtime", () => {
       ],
       trayInventory: [{ trayId: 203, trayNo: "STOCK-TP-004", trayType: "标准托盘", capacity: 2, currentTaskId: null }],
     };
+    const editableWorkspace = {
+      ...savedWorkspace,
+      allocationSaved: false,
+    };
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input) => {
+      vi.fn(async (input, options = {}) => {
         const url = String(input);
         if (url.includes("/api/transfer-area/bootstrap")) {
           return { ok: true, status: 200, json: async () => bootstrapPayload };
         }
         if (url.includes("/api/transfer-area/tasks/101/workspace")) {
           return { ok: true, status: 200, json: async () => savedWorkspace };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          expect(options.method).toBe("POST");
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新入库", workspace: editableWorkspace }) };
         }
         throw new Error(`Unhandled fetch: ${url}`);
       }),
@@ -698,6 +706,9 @@ describe("TransferAreaPage runtime", () => {
     const wrapper = mount(TransferAreaPage);
     await settle(wrapper);
     await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
     await settle(wrapper);
 
     await wrapper.get('[data-testid="transfer-tray-limit-input"]').setValue("4");
@@ -866,10 +877,14 @@ describe("TransferAreaPage runtime", () => {
         },
       ],
     };
+    const editableWorkspace = {
+      ...workspaceWithExperimentAssignments,
+      allocationSaved: false,
+    };
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input) => {
+      vi.fn(async (input, options = {}) => {
         const url = String(input);
         if (url.includes("/api/transfer-area/bootstrap")) {
           return { ok: true, status: 200, json: async () => bootstrapPayload };
@@ -879,6 +894,10 @@ describe("TransferAreaPage runtime", () => {
         }
         if (url.includes("/api/transfer-area/tasks/101/allocate")) {
           return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: workspaceWithExperimentAssignments }) };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          expect(options.method).toBe("POST");
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新入库", workspace: editableWorkspace }) };
         }
         throw new Error(`Unhandled fetch: ${url}`);
       }),
@@ -911,7 +930,18 @@ describe("TransferAreaPage runtime", () => {
     await secondToggle.trigger("click");
     await settle(wrapper);
 
-    expect(secondToggle.classes()).toContain("is-selected");
+    expect(wrapper.get('[data-testid="transfer-tray-select-1"]').classes()).not.toContain("is-selected");
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
+    await settle(wrapper);
+
+    const unlockedSecondToggle = wrapper.get('[data-testid="transfer-tray-select-1"]');
+    await unlockedSecondToggle.trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-tray-select-1"]').classes()).toContain("is-selected");
 
     await wrapper.get('[data-testid="transfer-task-code"]').trigger("click");
     await settle(wrapper);
@@ -1033,16 +1063,24 @@ describe("TransferAreaPage runtime", () => {
         },
       ],
     };
+    const reloadedWorkspace = {
+      ...workspaceWithThreeTrays,
+      allocationSaved: false,
+    };
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input) => {
+      vi.fn(async (input, options = {}) => {
         const url = String(input);
         if (url.includes("/api/transfer-area/bootstrap")) {
           return { ok: true, status: 200, json: async () => bootstrapPayload };
         }
         if (url.includes("/api/transfer-area/tasks/101/workspace")) {
           return { ok: true, status: 200, json: async () => workspaceWithThreeTrays };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          expect(options.method).toBe("POST");
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新入库", workspace: reloadedWorkspace }) };
         }
         throw new Error(`Unhandled fetch: ${url}`);
       }),
@@ -1057,6 +1095,17 @@ describe("TransferAreaPage runtime", () => {
 
     const tray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
     await tray0Samples[0].trigger("click");
+    await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(2);
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+
+    const editableTray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
+    await editableTray0Samples[0].trigger("click");
     await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
     await settle(wrapper);
 
@@ -1180,6 +1229,103 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(printFramePrintMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("handover allocation becomes read-only after saving until re-entry is clicked", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const editableWorkspace = {
+      ...createWorkspacePayload(),
+      assignedTrays: [
+        {
+          ...createWorkspacePayload().assignedTrays[0],
+        },
+        {
+          ...createWorkspacePayload().assignedTrays[1],
+        },
+        {
+          trayId: 203,
+          trayNo: "SYLU-2026-03-101-TP-003",
+          trayType: "标准托盘",
+          trayStatus: "已预分配",
+          capacity: 2,
+          samples: [],
+          barcode: null,
+          barcodeData: null,
+        },
+      ],
+      trayInventory: [{ trayId: 204, trayNo: "STOCK-TP-004", trayType: "标准托盘", capacity: 2, currentTaskId: null }],
+    };
+    const savedWorkspace = {
+      ...editableWorkspace,
+      allocationSaved: true,
+    };
+    const reloadedWorkspace = {
+      ...editableWorkspace,
+      allocationSaved: false,
+    };
+    let workspaceState = editableWorkspace;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceState };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+          expect(options.method).toBe("POST");
+          workspaceState = savedWorkspace;
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }) };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          expect(options.method).toBe("POST");
+          workspaceState = reloadedWorkspace;
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新入库", workspace: reloadedWorkspace }) };
+        }
+        throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(3);
+    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(false);
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("暂无样品");
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(true);
+
+    const previewBeforeLockedMove = wrapper.get('[data-testid="transfer-tray-preview"]').text();
+    const tray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
+    await tray0Samples[0].trigger("click");
+    await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toBe(previewBeforeLockedMove);
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("暂无样品");
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(false);
+
+    await wrapper.get(".transfer-use-tray-btn").trigger("click");
+    await settle(wrapper);
+
+    const unlockedTray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
+    await unlockedTray0Samples[0].trigger("click");
+    await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("SYLU-2026-03-101-SP-001");
   });
 
   test("detail footer action uses the renamed re-entry label", async () => {

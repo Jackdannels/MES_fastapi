@@ -422,6 +422,132 @@ const sortTextList = (values) =>
     left.localeCompare(right, "zh-Hans-CN"),
   );
 
+const DEFAULT_TASK_COLOR = "#1d4ed8";
+
+const resolveLabCandidates = (value) => {
+  const normalizedValue = normalizeText(value);
+  if (!normalizedValue) {
+    return [];
+  }
+  if (TEST_LABS.includes(normalizedValue)) {
+    return [normalizedValue];
+  }
+  return getLabsForTestType(normalizedValue).filter((lab) => !isRetentionDevice(lab));
+};
+
+const hashText = (value) => {
+  const text = normalizeText(value);
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+};
+
+const resolveTaskColor = (taskCode) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  if (!normalizedTaskCode) {
+    return DEFAULT_TASK_COLOR;
+  }
+  const hash = hashText(normalizedTaskCode);
+  const hue = (hash * 137) % 360;
+  const saturation = 74 + (hash % 8);
+  const lightness = 36 + ((hash >>> 3) % 7);
+  return `hsl(${hue} ${saturation}% ${lightness}%)`;
+};
+
+const buildSelectedTaskLabSet = ({ selectedTaskCode, experiments, schedules, tasks }) => {
+  const normalizedTaskCode = normalizeText(selectedTaskCode);
+  if (!normalizedTaskCode) {
+    return null;
+  }
+
+  const labs = new Set();
+  buildExperimentCandidates({ taskCode: normalizedTaskCode, experiments, tasks }).forEach((experiment) => {
+    resolveLabCandidates(experiment?.required_device).forEach((lab) => labs.add(lab));
+  });
+
+  (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
+    if (normalizeText(schedule?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+    const device = normalizeText(schedule?.device);
+    if (device && !isRetentionDevice(device)) {
+      labs.add(device);
+    }
+  });
+
+  return labs;
+};
+
+const hasScheduleOverlap = (schedules) => {
+  const sortedSchedules = [...(Array.isArray(schedules) ? schedules : [])].sort((left, right) => {
+    const leftTime = parseDate(left?.start_at)?.getTime() || 0;
+    const rightTime = parseDate(right?.start_at)?.getTime() || 0;
+    return leftTime - rightTime;
+  });
+
+  for (let index = 1; index < sortedSchedules.length; index += 1) {
+    const previousEnd = parseDate(sortedSchedules[index - 1]?.end_at);
+    const currentStart = parseDate(sortedSchedules[index]?.start_at);
+    if (previousEnd && currentStart && previousEnd > currentStart) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const buildSlotTaskItems = ({ matchedSchedules, now, experimentNameByCode }) => {
+  const sortedSchedules = [...matchedSchedules].sort((left, right) => {
+    const leftTime = parseDate(left?.start_at)?.getTime() || 0;
+    const rightTime = parseDate(right?.start_at)?.getTime() || 0;
+    return leftTime - rightTime;
+  });
+
+  const items = [];
+  const byTaskCode = new Map();
+
+  sortedSchedules.forEach((schedule) => {
+    const taskCode = normalizeText(schedule?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    const current = byTaskCode.get(taskCode);
+    const startAt = parseDate(schedule?.start_at);
+    const endAt = parseDate(schedule?.end_at);
+    const stateMeta = getSlotState({ startAt, endAt, now });
+    if (!current) {
+      const experimentCode = normalizeText(schedule?.experiment_code);
+      const experimentLabel = experimentNameByCode?.get(experimentCode) || buildExperimentLabel(experimentCode);
+      const timeRange = formatScheduleWindow(schedule?.start_at, schedule?.end_at);
+      const nextItem = {
+        color: resolveTaskColor(taskCode),
+        experimentLabel,
+        scheduleIds: [normalizeText(schedule?.id)].filter(Boolean),
+        state: stateMeta.state,
+        taskCode,
+        timeRange,
+        title: `${taskCode} / ${experimentLabel || "-"} / ${timeRange}`.trim(),
+      };
+      byTaskCode.set(taskCode, nextItem);
+      items.push(nextItem);
+      return;
+    }
+
+    const scheduleId = normalizeText(schedule?.id);
+    if (scheduleId && !current.scheduleIds.includes(scheduleId)) {
+      current.scheduleIds.push(scheduleId);
+    }
+    if (current.state !== "running" && stateMeta.state === "running") {
+      current.state = "running";
+    } else if (current.state === "completed" && stateMeta.state === "busy") {
+      current.state = "busy";
+    }
+  });
+
+  return items;
+};
+
 const buildExperimentNameMap = (experiments) =>
   new Map(
     (Array.isArray(experiments) ? experiments : []).map((experiment) => [
@@ -429,6 +555,12 @@ const buildExperimentNameMap = (experiments) =>
       normalizeText(experiment?.experiment_name),
     ]),
   );
+
+const formatScheduleWindow = (startAt, endAt) => {
+  const startLabel = formatDateTime(startAt);
+  const endLabel = formatDateTime(endAt);
+  return startLabel && endLabel ? `${startLabel} - ${endLabel}` : "";
+};
 
 const buildExperimentTrayMap = (experimentTrays) => {
   const trayMap = new Map();
@@ -691,10 +823,18 @@ function buildConflictRows({ schedules }) {
 }
 
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
-function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", startDate = new Date(), now = new Date() }) {
-  const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter(
-    (schedule) => !isRetentionDevice(schedule?.device),
-  );
+function buildGanttRows({ schedules, devices, experiments = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+  const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
+    if (isRetentionDevice(schedule?.device)) {
+      return false;
+    }
+    if (normalizeText(schedule?.status) === STATUS_COMPLETED) {
+      return false;
+    }
+    const endAt = parseDate(schedule?.end_at);
+    return !endAt || endAt >= now;
+  });
+  const experimentNameByCode = buildExperimentNameMap(experiments);
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
   // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。
   const latestVisibleEnd = visibleSchedules.reduce((latest, schedule) => {
@@ -727,9 +867,17 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
     .filter(Boolean)
     .filter((device) => !isRetentionDevice(device));
 
-  const deviceCodes = normalizeText(filterDevice)
-    ? baseDeviceCodes.filter((device) => normalizeText(device) === normalizeText(filterDevice))
-    : baseDeviceCodes;
+  const selectedTaskLabs = buildSelectedTaskLabSet({
+    experiments,
+    schedules: visibleSchedules,
+    selectedTaskCode,
+    tasks,
+  });
+  const deviceCodes = selectedTaskLabs && selectedTaskLabs.size > 0
+    ? baseDeviceCodes.filter((device) => selectedTaskLabs.has(device))
+    : normalizeText(filterDevice)
+      ? baseDeviceCodes.filter((device) => normalizeText(device) === normalizeText(filterDevice))
+      : baseDeviceCodes;
 
   const rows = deviceCodes.map((device) => {
     const deviceSchedules = visibleSchedules.filter((schedule) => normalizeText(schedule?.device) === device);
@@ -752,8 +900,11 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
           return {
             className: "gantt-slot idle",
             date: day.key,
+            displayMode: "idle",
+            items: [],
             key: slotKey,
             label: "空闲",
+            overflowCount: 0,
             scheduleId: "",
             segment,
             state: "idle",
@@ -761,17 +912,55 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
           };
         }
 
-        if (matched.length > 1) {
-          // 同一半天命中多条排程时直接标记为冲突槽位。
+        if (hasScheduleOverlap(matched)) {
+          // 同一半天命中多条且真实时间重叠时，仍按冲突槽位处理。
           return {
             className: "gantt-slot conflict",
             date: day.key,
+            displayMode: "conflict",
+            items: [],
             key: slotKey,
             label: `${normalizeText(matched[0]?.task_code)} +${matched.length - 1}`,
+            overflowCount: 0,
             scheduleId: normalizeText(matched[0]?.id),
             segment,
             state: "conflict",
             title: "冲突",
+          };
+        }
+
+        const items = buildSlotTaskItems({ matchedSchedules: matched, now, experimentNameByCode });
+        const slotTitle = items.map((item, index) => `${index >= 2 ? "隐藏: " : ""}${item.title}`).join("\n");
+        if (items.length === 2) {
+          return {
+            className: "gantt-slot busy gantt-slot--split",
+            date: day.key,
+            displayMode: "split",
+            items,
+            key: slotKey,
+            label: items[0]?.taskCode || "",
+            overflowCount: 0,
+            scheduleId: "",
+            segment,
+            stackKey: slotKey,
+            state: "split",
+            title: slotTitle,
+          };
+        }
+        if (items.length > 1) {
+          return {
+            className: "gantt-slot busy gantt-slot--stacked",
+            date: day.key,
+            displayMode: "stacked",
+            items: items.slice(0, 2),
+            key: slotKey,
+            label: items[0]?.taskCode || "",
+            overflowCount: Math.max(0, items.length - 2),
+            scheduleId: "",
+            segment,
+            stackKey: slotKey,
+            state: "stacked",
+            title: slotTitle,
           };
         }
 
@@ -782,12 +971,17 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
         return {
           className: stateMeta.className,
           date: day.key,
+          displayMode: "single",
+          items,
           key: slotKey,
           label: normalizeText(schedule?.task_code),
+          overflowCount: 0,
           scheduleId: normalizeText(schedule?.id),
           segment,
+          stackKey: slotKey,
           state: stateMeta.state,
-          title: `${normalizeText(schedule?.task_code)} ${formatDateTime(schedule?.start_at)}-${formatDateTime(schedule?.end_at)}`.trim(),
+          taskColor: items[0]?.color || resolveTaskColor(schedule?.task_code),
+          title: items[0]?.title || `${normalizeText(schedule?.task_code)} ${formatDateTime(schedule?.start_at)}-${formatDateTime(schedule?.end_at)}`.trim(),
         };
       }),
     );
@@ -797,22 +991,27 @@ function buildGanttRows({ schedules, devices, days = 3, filterDevice = "", start
       // 连续同态槽位在这里折叠成 colspan 段，减少甘特图重复单元格。
       const signature = slot.state === "idle"
         ? "idle"
-        : slot.state === "conflict"
+        : slot.state === "conflict" || slot.state === "stacked" || slot.state === "split"
           ? `${slot.state}:${slot.key}`
           : `${slot.scheduleId}:${slot.className}`;
       const previous = segments[segments.length - 1];
-      if (previous && previous.signature == signature && slot.state !== "conflict") {
+      if (previous && previous.signature == signature && slot.state !== "conflict" && slot.state !== "stacked" && slot.state !== "split") {
         previous.colspan += 1;
         return;
       }
       segments.push({
         className: slot.className,
         colspan: 1,
+        displayMode: slot.displayMode,
+        items: slot.items,
         key: `${slot.key}-segment`,
         label: slot.label,
+        overflowCount: slot.overflowCount,
         scheduleId: slot.scheduleId,
         signature,
+        stackKey: slot.stackKey || slot.key,
         state: slot.state,
+        taskColor: slot.taskColor || slot.items?.[0]?.color || "",
         title: slot.title,
       });
     });
@@ -918,7 +1117,7 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
 }
 
 function buildLabOptions({ testType, activeTab, selectedDevice = "" }) {
-  let labs = normalizeText(testType) ? getLabsForTestType(normalizeText(testType)) : [];
+  let labs = normalizeText(testType) ? resolveLabCandidates(normalizeText(testType)) : [];
   // 普通排程允许把暂存间作为一个可选去向，留样页签则反过来排除它。
   if (activeTab !== "retention" && !labs.includes(RETENTION_DEVICE)) {
     labs = [...labs, RETENTION_DEVICE];

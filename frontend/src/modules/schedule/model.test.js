@@ -519,6 +519,201 @@ describe("schedulePageModel", () => {
     expect(gantt.rows[0].slots.some((slot) => slot.className.includes("busy"))).toBe(true);
   });
 
+  test("buildGanttRows scopes rows to the selected task labs", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "振动一室" }, { code: "盐雾试验室" }, { code: "四综合实验室" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", required_device: "冲击一室" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", required_device: "振动试验" },
+      ],
+      schedules: [
+        { id: "schedule-1", task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+        { id: "schedule-2", task_code: "OTHER-001", experiment_code: "OTHER-001-A", device: "四综合实验室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+      ],
+      selectedTaskCode: "SYLU-2026-03-006",
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      tasks: [{ code: "SYLU-2026-03-006", test_type: "冲击试验" }],
+    });
+
+    expect(gantt.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室", "振动二室"]);
+  });
+
+  test("buildGanttRows keeps one stable color per task across labs", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "振动一室" }],
+      schedules: [
+        { id: "schedule-1", task_code: "SYLU-2026-03-006", device: "冲击一室", start_at: "2099-03-20T00:00:00.000Z", end_at: "2099-03-20T02:00:00.000Z" },
+        { id: "schedule-2", task_code: "SYLU-2026-03-006", device: "振动一室", start_at: "2099-03-20T00:00:00.000Z", end_at: "2099-03-20T02:00:00.000Z" },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    const firstColor = gantt.rows.find((row) => row.device === "冲击一室")?.slots.find((slot) => slot.items?.[0])?.items[0].color;
+    const secondColor = gantt.rows.find((row) => row.device === "振动一室")?.slots.find((slot) => slot.items?.[0])?.items[0].color;
+
+    expect(firstColor).toBeTruthy();
+    expect(secondColor).toBe(firstColor);
+  });
+
+  test("buildGanttRows spreads task colors across many tasks to reduce visual collisions", () => {
+    const devices = Array.from({ length: 12 }, (_, index) => ({ code: `实验室-${index + 1}` }));
+    const schedules = Array.from({ length: 12 }, (_, index) => ({
+      id: `schedule-${index + 1}`,
+      task_code: `SYLU-2026-03-${String(index + 1).padStart(3, "0")}`,
+      device: `实验室-${index + 1}`,
+      start_at: "2099-03-20T00:00:00.000Z",
+      end_at: "2099-03-20T02:00:00.000Z",
+    }));
+
+    const gantt = buildGanttRows({
+      devices,
+      schedules,
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    const distinctColors = new Set(
+      gantt.rows
+        .map((row) => row.slots.find((slot) => slot.items?.[0])?.items?.[0]?.color)
+        .filter(Boolean),
+    );
+
+    expect(distinctColors.size).toBeGreaterThanOrEqual(10);
+  });
+
+  test("buildGanttRows splits two non-overlapping tasks across one half-day cell", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      schedules: [
+        { id: "schedule-1", task_code: "TASK-001", device: "冲击一室", start_at: "2099-03-20T00:00:00.000Z", end_at: "2099-03-20T02:00:00.000Z" },
+        { id: "schedule-2", task_code: "TASK-002", device: "冲击一室", start_at: "2099-03-20T02:30:00.000Z", end_at: "2099-03-20T03:30:00.000Z" },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows[0].slots[0]).toEqual(
+      expect.objectContaining({
+        displayMode: "split",
+        overflowCount: 0,
+        state: "split",
+      }),
+    );
+    expect(gantt.rows[0].slots[0].items.map((item) => item.taskCode)).toEqual(["TASK-001", "TASK-002"]);
+  });
+
+  test("buildGanttRows truncates stacked cells after two tasks and reports overflow", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      schedules: [
+        { id: "schedule-1", task_code: "TASK-001", device: "冲击一室", start_at: "2099-03-20T00:00:00.000Z", end_at: "2099-03-20T01:00:00.000Z" },
+        { id: "schedule-2", task_code: "TASK-002", device: "冲击一室", start_at: "2099-03-20T01:30:00.000Z", end_at: "2099-03-20T02:00:00.000Z" },
+        { id: "schedule-3", task_code: "TASK-003", device: "冲击一室", start_at: "2099-03-20T02:30:00.000Z", end_at: "2099-03-20T03:30:00.000Z" },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows[0].slots[0]).toEqual(
+      expect.objectContaining({
+        displayMode: "stacked",
+        overflowCount: 1,
+      }),
+    );
+    expect(gantt.rows[0].slots[0].items.map((item) => item.taskCode)).toEqual(["TASK-001", "TASK-002"]);
+  });
+
+  test("buildGanttRows marks exactly two non-overlapping tasks as split instead of stacked", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T01:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "TASK-002",
+          experiment_code: "TASK-002-B",
+          device: "冲击一室",
+          start_at: "2099-03-20T01:30:00.000Z",
+          end_at: "2099-03-20T03:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows[0].slots[0]).toEqual(
+      expect.objectContaining({
+        displayMode: "split",
+        overflowCount: 0,
+        state: "split",
+      }),
+    );
+  });
+
+  test("buildGanttRows includes all experiment labels and time ranges in split cell hover text", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      experiments: [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "A实验" },
+        { task_code: "TASK-002", experiment_code: "TASK-002-B", experiment_name: "B实验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T01:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "TASK-002",
+          experiment_code: "TASK-002-B",
+          device: "冲击一室",
+          start_at: "2099-03-20T01:30:00.000Z",
+          end_at: "2099-03-20T03:00:00.000Z",
+        },
+        {
+          id: "schedule-3",
+          task_code: "TASK-003",
+          experiment_code: "TASK-003-C",
+          device: "冲击一室",
+          start_at: "2099-03-20T03:15:00.000Z",
+          end_at: "2099-03-20T03:45:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows[0].slots[0].title).toContain("TASK-001 / A实验 / 2099-03-20 08:00 - 2099-03-20 09:00");
+    expect(gantt.rows[0].slots[0].title).toContain("TASK-002 / B实验 / 2099-03-20 09:30 - 2099-03-20 11:00");
+    expect(gantt.rows[0].slots[0].title).toContain("隐藏:");
+  });
+
+  test("buildGanttRows hides completed experiments after their end time has passed", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-19T00:00:00.000Z",
+          end_at: "2099-03-19T02:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-19T00:00:00.000Z"),
+      now: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows[0].slots.every((slot) => slot.state === "idle")).toBe(true);
+  });
+
   test("resolveRetentionTimeState snaps retention scheduling to now", () => {
     const result = resolveRetentionTimeState(new Date(2099, 2, 20, 9, 15, 0));
 

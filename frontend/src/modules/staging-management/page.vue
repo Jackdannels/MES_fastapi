@@ -1,31 +1,87 @@
 <template>
   <div class="staging-management-page">
-    <Teleport v-if="canTeleportOverviewAction" to=".header-actions">
-      <button
-        ref="overviewHeaderActionRef"
-        class="action-btn secondary zancun-header-action-button"
-        data-testid="zancun-open-overview"
-        type="button"
-        @click="openOverviewModal"
-      >
-        查看暂存信息清单
-      </button>
-    </Teleport>
-
     <section class="grid cols-3 stagger">
-      <div v-for="metric in metrics" :key="metric.label" class="card">
+      <button
+        v-for="metric in metrics"
+        :key="metric.label"
+        :class="['card', 'zancun-metric-card', { 'is-active': activeMetricMode === metric.mode }]"
+        :data-testid="metric.testId"
+        type="button"
+        @click="selectMetricMode(metric.mode)"
+      >
         <div class="muted">{{ metric.label }}</div>
         <div class="kpi">{{ metric.value }}</div>
         <div v-if="metric.caption" class="muted">{{ metric.caption }}</div>
-      </div>
+      </button>
     </section>
 
     <section class="card section zancun-actions-card">
       <div class="zancun-actions-header">
-        <div>
+        <div class="zancun-actions-header__main">
           <h3>暂存间控制台</h3>
+          <div class="zancun-current-view" data-testid="zancun-current-view">
+            <span class="zancun-current-view__label">当前查看</span>
+            <strong class="zancun-current-view__value">{{ activeMetricLabel }}</strong>
+          </div>
         </div>
         <span class="pill">标准流程</span>
+      </div>
+
+      <div class="zancun-console-panel">
+        <div class="toolbar zancun-console-toolbar">
+          <input
+            v-model="overviewQuery"
+            class="search-input"
+            data-testid="zancun-console-search"
+            placeholder="筛选任务编号/托盘编号/责任人"
+          />
+          <div class="zancun-console-pagination">
+            <button
+              class="action-btn secondary"
+              data-testid="zancun-console-prev-page"
+              type="button"
+              :disabled="overviewCurrentPage <= 1"
+              @click="setOverviewPage(overviewCurrentPage - 1)"
+            >
+              上一页
+            </button>
+            <span class="muted">第 {{ overviewCurrentPage }} / {{ overviewPageCount }} 页</span>
+            <button
+              class="action-btn secondary"
+              data-testid="zancun-console-next-page"
+              type="button"
+              :disabled="overviewCurrentPage >= overviewPageCount"
+              @click="setOverviewPage(overviewCurrentPage + 1)"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+
+        <div class="zancun-console-list">
+          <div
+            v-for="(row, index) in traySlots"
+            :key="row?.id || `empty-${index}`"
+            class="zancun-console-slot"
+            :data-testid="`zancun-console-slot-${index}`"
+          >
+            <template v-if="row">
+              <div class="zancun-console-slot__main">
+                <strong>{{ row.trayCode }}</strong>
+                <span class="muted">{{ row.taskCode }}</span>
+              </div>
+              <div class="zancun-console-slot__meta">
+                <span>{{ row.sampleType }}</span>
+                <span>数量 {{ row.quantity }}</span>
+                <span>{{ row.location }}</span>
+                <span :class="row.statusClass">{{ row.status }}</span>
+              </div>
+            </template>
+            <template v-else>
+              <div class="zancun-console-slot__empty muted">当前页暂无更多托盘</div>
+            </template>
+          </div>
+        </div>
       </div>
 
       <div class="zancun-actions-grid">
@@ -40,117 +96,6 @@
         </article>
       </div>
     </section>
-
-    <AppModal :open="overviewModalOpen" data-testid="zancun-overview-modal" title="暂存信息总览清单" @close="closeOverviewModal">
-      <div class="zancun-overview-card">
-        <div class="toolbar zancun-overview-toolbar">
-          <input
-            v-model="overviewQuery"
-            class="search-input"
-            data-testid="zancun-overview-search"
-            placeholder="筛选任务编号/托盘编号/责任人"
-          />
-          <select v-model="overviewSampleType" class="search-input" data-testid="zancun-overview-type-filter">
-            <option value="">全部样品类型</option>
-            <option v-for="option in overviewSampleTypeOptions" :key="option" :value="option">
-              {{ option }}
-            </option>
-          </select>
-          <select v-model="overviewStatus" class="search-input" data-testid="zancun-overview-status-filter">
-            <option value="">全部状态</option>
-            <option v-for="option in overviewStatusOptions" :key="option" :value="option">
-              {{ option }}
-            </option>
-          </select>
-          <AppPagination
-            v-if="overviewPageCount > 1"
-            data-testid="zancun-overview-pagination"
-            :current-page="overviewCurrentPage"
-            :page-count="overviewPageCount"
-            @change="setOverviewPage"
-          />
-        </div>
-        <table class="table" data-testid="zancun-overview-table">
-          <thead>
-            <tr>
-              <th>序号</th>
-              <th
-                data-sort
-                :data-sort-dir="overviewSortKey === 'taskCode' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('taskCode')"
-              >
-                任务编号
-              </th>
-              <th
-                data-sort
-                data-testid="zancun-overview-sort-tray"
-                :data-sort-dir="overviewSortKey === 'trayCode' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('trayCode')"
-              >
-                托盘编号
-              </th>
-              <th>来源</th>
-              <th
-                data-sort
-                :data-sort-dir="overviewSortKey === 'sampleType' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('sampleType')"
-              >
-                样品类型
-              </th>
-              <th
-                data-sort
-                data-testid="zancun-overview-sort-quantity"
-                :data-sort-dir="overviewSortKey === 'quantity' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('quantity')"
-              >
-                数量
-              </th>
-              <th>当前位置</th>
-              <th
-                data-sort
-                data-testid="zancun-overview-sort-stock-in"
-                :data-sort-dir="overviewSortKey === 'stockInAt' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('stockInAt')"
-              >
-                入库时间
-              </th>
-              <th
-                data-sort
-                :data-sort-dir="overviewSortKey === 'status' ? overviewSortDirection : ''"
-                @click="toggleOverviewSort('status')"
-              >
-                状态
-              </th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="overviewRows.length === 0">
-              <td colspan="10" class="muted">暂无暂存信息</td>
-            </tr>
-            <tr v-for="(row, index) in overviewRows" :key="row.id">
-              <td>{{ (overviewCurrentPage - 1) * overviewPageSize + index + 1 }}</td>
-              <td>{{ row.taskCode }}</td>
-              <td :data-testid="`zancun-overview-row-tray-${index}`">{{ row.trayCode }}</td>
-              <td>{{ row.source }}</td>
-              <td><span class="pill">{{ row.sampleType }}</span></td>
-              <td>{{ row.quantity }}</td>
-              <td>{{ row.location }}</td>
-              <td>{{ row.stockInAtDisplay }}</td>
-              <td><span :class="row.statusClass">{{ row.status }}</span></td>
-              <td>
-                <button class="action-link" type="button">查看</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <template #footer>
-        <button class="action-btn secondary" data-testid="zancun-overview-close" type="button" @click="closeOverviewModal">
-          关闭清单
-        </button>
-      </template>
-    </AppModal>
 
     <AppModal
       :open="scanModalOpen"
@@ -168,6 +113,7 @@
         <div class="form-field">
           <label>托盘编号</label>
           <input
+            ref="scanInputRef"
             v-model="scanForm.code"
             data-testid="zancun-scan-code"
             type="text"
@@ -243,103 +189,97 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 
 import AppModal from "@/components/shared/AppModal.vue";
-import AppPagination from "@/components/shared/AppPagination.vue";
+import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   applyZancunInventoryAction,
   buildZancunMetrics,
   buildZancunOverviewView,
+  buildZancunRowsFromSnapshot,
   buildZancunScanDetail,
-  createZancunOverviewRows,
 } from "./model";
 
-const overviewSourceRows = ref(createZancunOverviewRows());
+const snapshot = ref({
+  [STORAGE_KEYS.tasks]: [],
+  [STORAGE_KEYS.samples]: [],
+  [STORAGE_KEYS.staging_events]: [],
+});
 const overviewQuery = ref("");
-const overviewSampleType = ref("");
-const overviewStatus = ref("");
-const overviewSortKey = ref("stockInAt");
-const overviewSortDirection = ref("desc");
+const activeMetricMode = ref("all");
 const overviewCurrentPage = ref(1);
-const overviewPageSize = 6;
+const overviewPageSize = 5;
+const scanInputRef = ref(null);
+
+const nowValue = () => new Date().toISOString();
+
+const overviewSourceRows = computed(() =>
+  buildZancunRowsFromSnapshot(snapshot.value, {
+    now: nowValue(),
+  }),
+);
 
 const overviewView = computed(() =>
   buildZancunOverviewView({
     filters: {
+      metricMode: activeMetricMode.value,
       query: overviewQuery.value,
-      sampleType: overviewSampleType.value,
-      status: overviewStatus.value,
     },
     page: overviewCurrentPage.value,
     pageSize: overviewPageSize,
     rows: overviewSourceRows.value,
     sort: {
-      direction: overviewSortDirection.value,
-      key: overviewSortKey.value,
+      direction: "asc",
+      key: "trayCode",
     },
   }),
 );
 
 const metrics = computed(() => {
-  const summary = buildZancunMetrics(overviewSourceRows.value);
+  const summary = buildZancunMetrics({
+    now: nowValue(),
+    rows: overviewSourceRows.value,
+    stagingEvents: snapshot.value[STORAGE_KEYS.staging_events],
+  });
   return [
     {
       caption: "",
       label: "暂存间中样品数量",
+      mode: "active",
+      testId: "zancun-metric-active",
       value: String(summary.totalQuantity),
     },
     {
       caption: "",
-      label: "今日待入库",
-      value: String(summary.pendingStockInCount),
+      label: "今日已入库",
+      mode: "stockedInToday",
+      testId: "zancun-metric-stocked-in",
+      value: String(summary.stockedInTodayCount),
     },
     {
       caption: "",
-      label: "今日待出库",
-      value: String(summary.pendingStockOutCount),
+      label: "今日已出库",
+      mode: "stockedOutToday",
+      testId: "zancun-metric-stocked-out",
+      value: String(summary.stockedOutTodayCount),
     },
   ];
 });
 
+const activeMetricLabel = computed(() => {
+  const matchedMetric = metrics.value.find((metric) => metric.mode === activeMetricMode.value);
+  if (matchedMetric) {
+    return matchedMetric.label;
+  }
+  return "全部托盘";
+});
+
 const overviewRows = computed(() => overviewView.value.rows);
 const overviewPageCount = computed(() => overviewView.value.pageCount);
-const overviewSampleTypeOptions = computed(() => overviewView.value.sampleTypeOptions);
-const overviewStatusOptions = computed(() => overviewView.value.statusOptions);
-const overviewModalOpen = ref(false);
-const canTeleportOverviewAction = ref(false);
-const overviewHeaderActionRef = ref(null);
+const traySlots = computed(() =>
+  Array.from({ length: overviewPageSize }, (_, index) => overviewRows.value[index] || null),
+);
 
-const moveOverviewActionNextToRefresh = async () => {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  const headerActions = document.querySelector(".header-actions");
-  if (!headerActions) {
-    return;
-  }
-
-  canTeleportOverviewAction.value = true;
-  await nextTick();
-
-  const overviewButton = overviewHeaderActionRef.value;
-  if (!overviewButton) {
-    return;
-  }
-
-  const refreshButton = Array.from(headerActions.querySelectorAll("button.action-btn")).find((button) =>
-    String(button.textContent ?? "").includes("刷新"),
-  );
-
-  if (refreshButton?.nextSibling) {
-    headerActions.insertBefore(overviewButton, refreshButton.nextSibling);
-    return;
-  }
-
-  if (refreshButton) {
-    headerActions.appendChild(overviewButton);
-  }
-};
-
-watch([overviewQuery, overviewSampleType, overviewStatus], () => {
+watch([overviewQuery, activeMetricMode], () => {
   overviewCurrentPage.value = 1;
 });
 
@@ -356,29 +296,8 @@ const setOverviewPage = (page) => {
   overviewCurrentPage.value = page;
 };
 
-const toggleOverviewSort = (key) => {
-  const normalized = String(key ?? "").trim();
-  if (!normalized) {
-    return;
-  }
-
-  if (overviewSortKey.value === normalized) {
-    overviewSortDirection.value = overviewSortDirection.value === "asc" ? "desc" : "asc";
-    overviewCurrentPage.value = 1;
-    return;
-  }
-
-  overviewSortKey.value = normalized;
-  overviewSortDirection.value = normalized === "stockInAt" ? "desc" : "asc";
-  overviewCurrentPage.value = 1;
-};
-
-const openOverviewModal = () => {
-  overviewModalOpen.value = true;
-};
-
-const closeOverviewModal = () => {
-  overviewModalOpen.value = false;
+const selectMetricMode = (mode) => {
+  activeMetricMode.value = String(mode || "").trim() || "all";
 };
 
 const scanModalOpen = ref(false);
@@ -423,11 +342,30 @@ const resetDetail = () => {
   activeDetail.trayCode = "";
 };
 
-const openScanModal = (mode) => {
+const loadSnapshot = async () => {
+  const nextSnapshot = await readStorageSnapshot([
+    STORAGE_KEYS.tasks,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.staging_events,
+  ]);
+  snapshot.value = {
+    [STORAGE_KEYS.tasks]: nextSnapshot[STORAGE_KEYS.tasks] || [],
+    [STORAGE_KEYS.samples]: nextSnapshot[STORAGE_KEYS.samples] || [],
+    [STORAGE_KEYS.staging_events]: nextSnapshot[STORAGE_KEYS.staging_events] || [],
+  };
+};
+
+const focusScanInput = async () => {
+  await nextTick();
+  scanInputRef.value?.focus?.();
+};
+
+const openScanModal = async (mode) => {
   activeScanMode.value = mode === "stockOut" ? "stockOut" : "stockIn";
   scanWarning.value = "";
   resetScanForm();
   scanModalOpen.value = true;
+  await focusScanInput();
 };
 
 const cancelScan = () => {
@@ -454,6 +392,11 @@ const completeScan = () => {
   }
 
   const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value);
+  if (!detail.found) {
+    scanWarning.value = activeScanMode.value === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。";
+    return;
+  }
+
   cancelScan();
   openDetailModal(detail, activeScanMode.value);
 };
@@ -462,17 +405,21 @@ const cancelDetailAction = () => {
   closeDetailModal();
 };
 
-const confirmDetailAction = () => {
+const confirmDetailAction = async () => {
   const result = applyZancunInventoryAction({
+    now: nowValue(),
     payload: {
       code: activeDetail.trayCode,
       mode: activeDetailMode.value,
     },
-    rows: overviewSourceRows.value,
+    snapshot: snapshot.value,
   });
 
   if (!result.error) {
-    overviewSourceRows.value = result.rows;
+    snapshot.value = result.snapshot;
+    await writeStorageUpdates({
+      [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
+    });
   }
 
   closeDetailModal();
@@ -483,7 +430,7 @@ const actions = [
     buttonClass: "action-btn secondary zancun-action-button zancun-action-button--stock-in",
     buttonText: "扫码入库",
     cardClass: "zancun-action-item--stock-in",
-    onClick: () => openScanModal("stockIn"),
+    onClick: () => void openScanModal("stockIn"),
     statusClass: "status running",
     tag: "入库",
     testId: "zancun-stock-in",
@@ -493,7 +440,7 @@ const actions = [
     buttonClass: "action-btn danger zancun-action-button zancun-action-button--stock-out",
     buttonText: "扫码出库",
     cardClass: "zancun-action-item--stock-out",
-    onClick: () => openScanModal("stockOut"),
+    onClick: () => void openScanModal("stockOut"),
     statusClass: "status warn",
     tag: "出库",
     testId: "zancun-stock-out",
@@ -502,6 +449,6 @@ const actions = [
 ];
 
 onMounted(() => {
-  void moveOverviewActionNextToRefresh();
+  void loadSnapshot();
 });
 </script>

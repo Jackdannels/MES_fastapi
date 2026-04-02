@@ -313,6 +313,12 @@
   color: #1e3a8a;
 }
 
+.gantt-slot.busy:not(.gantt-slot--stacked):not(.gantt-slot--split) {
+  background: var(--gantt-task-color, #2563eb);
+  border-color: var(--gantt-task-color, #2563eb);
+  color: #fff;
+}
+
 .gantt-slot.busy.running {
   background: rgba(187, 247, 208, 0.8);
   border-color: rgba(34, 197, 94, 0.58);
@@ -349,10 +355,90 @@
   font-size: 11px;
 }
 
+.gantt-slot--stacked {
+  padding: 0;
+}
+
+.gantt-slot--split {
+  padding: 0;
+}
+
+.gantt-slot-content {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  gap: 0;
+  justify-items: stretch;
+  align-items: stretch;
+}
+
+.gantt-slot--split .gantt-slot-content {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+}
+
+.gantt-slot--split .gantt-task-item {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gantt-task-color, #2563eb);
+  color: #fff;
+  border-color: var(--gantt-task-color, rgba(37, 99, 235, 0.45));
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.gantt-task-item,
+.gantt-task-overflow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border-radius: 0;
+  padding: 1px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.gantt-task-item {
+  border: 1px solid var(--gantt-task-color, rgba(37, 99, 235, 0.4));
+  background: var(--gantt-task-color, #2563eb);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.gantt-task-overflow {
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  background: rgba(100, 116, 139, 0.88);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
 /* 聚焦与 hover 态用于辅助当前排程定位。 */
 .gantt-slot.focus {
-  outline: 2px solid rgba(244, 63, 94, 0.8);
-  box-shadow: 0 0 0 2px rgba(244, 63, 94, 0.25);
+  outline: 2px solid rgba(255, 255, 255, 0.82);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.28);
+}
+
+.gantt-slot:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.82);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.28);
+}
+
+.gantt-slot:focus {
+  outline: none;
 }
 
 .gantt tbody tr:nth-child(even) td {
@@ -373,18 +459,25 @@
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy {
-  background: rgba(191, 219, 254, 0.82);
-  border-color: rgba(37, 99, 235, 0.5);
+  border-color: rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy:not(.gantt-slot--stacked):not(.gantt-slot--split) {
+  background: var(--gantt-task-color, #2563eb);
+  color: #fff;
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy.running {
-  background: rgba(187, 247, 208, 0.86);
-  border-color: rgba(34, 197, 94, 0.6);
+  background: rgba(187, 247, 208, 0.8);
+  border-color: rgba(34, 197, 94, 0.58);
+  color: #166534;
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy.completed {
-  background: rgba(226, 232, 240, 0.94);
-  border-color: rgba(100, 116, 139, 0.5);
+  background: rgba(226, 232, 240, 0.9);
+  border-color: rgba(100, 116, 139, 0.45);
+  color: #334155;
 }
 
 /* 小屏下先压缩头部，再让行结构改成单列。 */

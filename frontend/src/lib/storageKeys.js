@@ -5,6 +5,7 @@ const STORAGE_KEYS = {
   experiment_trays: "mes.experiment_trays",
   experiment_samples: "mes.experiment_samples",
   samples: "mes.samples",
+  staging_events: "mes.staging_events",
   devices: "mes.devices",
   streams: "mes.streams",
   conflicts: "mes.conflicts",
