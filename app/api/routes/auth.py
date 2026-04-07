@@ -13,6 +13,7 @@ from app.api.auth_session import (
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+VALID_AUTH_MODULES = {"central", "handover", "visual", "staging", "laboratory"}
 
 
 class LoginRequest(BaseModel):
@@ -55,7 +56,7 @@ def login(payload: LoginRequest, response: Response):
     if payload.username != settings.DEMO_USER or payload.password != settings.DEMO_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    module = payload.module if payload.module in {"central", "handover", "visual", "staging"} else "central"
+    module = payload.module if payload.module in VALID_AUTH_MODULES else "central"
     session = build_auth_session(username=payload.username, module=module)
     set_auth_cookie(response, session)
     return session
@@ -104,7 +105,7 @@ def switch_module(payload: SwitchModuleRequest, request: Request, response: Resp
             vary_cookie=True,
         )
 
-    module = payload.module if payload.module in {"central", "handover", "visual", "staging"} else ""
+    module = payload.module if payload.module in VALID_AUTH_MODULES else ""
     if not module:
         raise HTTPException(status_code=400, detail="Invalid module")
 

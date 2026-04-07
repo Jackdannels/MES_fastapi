@@ -19,8 +19,10 @@ const dataPagePath = resolve(process.cwd(), "src/modules/data/page.vue");
 const systemPagePath = resolve(process.cwd(), "src/modules/system/page.vue");
 const visualizationStylesPath = resolve(process.cwd(), "src/modules/visualization/styles.css");
 const stagingManagementStylesPath = resolve(process.cwd(), "src/modules/staging-management/styles.css");
+const laboratoryStylesPath = resolve(process.cwd(), "src/modules/laboratory/styles.css");
 const visualizationPagePath = resolve(process.cwd(), "src/modules/visualization/page.vue");
 const stagingManagementPagePath = resolve(process.cwd(), "src/modules/staging-management/page.vue");
+const laboratoryPagePath = resolve(process.cwd(), "src/modules/laboratory/page.vue");
 
 describe("module style structure", () => {
   test("login, dashboard, task overview, process, and schedule styles live in their module files", () => {
@@ -50,19 +52,21 @@ describe("module style structure", () => {
     expect(sharedComponentsCssSource).not.toContain(".retention-age");
   });
 
-  test("central, visualization, and staging pages own their page-shell classes", () => {
+  test("central, visualization, staging, and laboratory pages own their page-shell classes", () => {
     const tasksStylesSource = readFileSync(tasksStylesPath, "utf8");
     const devicesStylesSource = readFileSync(devicesStylesPath, "utf8");
     const dataStylesSource = readFileSync(dataStylesPath, "utf8");
     const systemStylesSource = readFileSync(systemStylesPath, "utf8");
     const visualizationStylesSource = readFileSync(visualizationStylesPath, "utf8");
     const stagingManagementStylesSource = readFileSync(stagingManagementStylesPath, "utf8");
+    const laboratoryStylesSource = readFileSync(laboratoryStylesPath, "utf8");
     const tasksPageSource = readFileSync(tasksPagePath, "utf8");
     const devicesPageSource = readFileSync(devicesPagePath, "utf8");
     const dataPageSource = readFileSync(dataPagePath, "utf8");
     const systemPageSource = readFileSync(systemPagePath, "utf8");
     const visualizationPageSource = readFileSync(visualizationPagePath, "utf8");
     const stagingManagementPageSource = readFileSync(stagingManagementPagePath, "utf8");
+    const laboratoryPageSource = readFileSync(laboratoryPagePath, "utf8");
 
     expect(tasksStylesSource).toContain(".tasks-page");
     expect(devicesStylesSource).toContain(".devices-page");
@@ -70,6 +74,10 @@ describe("module style structure", () => {
     expect(systemStylesSource).toContain(".system-page");
     expect(visualizationStylesSource).toContain(".visualization-page");
     expect(stagingManagementStylesSource).toContain(".staging-management-page");
+    expect(laboratoryStylesSource).toContain(".laboratory-page");
+    expect(laboratoryStylesSource).toContain(".laboratory-task-list-modal .modal-content");
+    expect(laboratoryStylesSource).toContain(".laboratory-task-list-card th");
+    expect(laboratoryStylesSource).toContain("white-space: nowrap");
 
     expect(tasksPageSource).toContain('class="tasks-page"');
     expect(devicesPageSource).toContain('class="devices-page"');
@@ -77,6 +85,8 @@ describe("module style structure", () => {
     expect(systemPageSource).toContain('class="system-page"');
     expect(visualizationPageSource).toContain('class="visualization-page"');
     expect(stagingManagementPageSource).toContain('class="staging-management-page"');
+    expect(laboratoryPageSource).toContain('class="laboratory-page"');
+    expect(laboratoryPageSource).toContain('class="laboratory-task-list-modal"');
 
     expect(tasksStylesSource).not.toContain("Reserved for");
     expect(devicesStylesSource).not.toContain("Reserved for");
@@ -84,6 +94,7 @@ describe("module style structure", () => {
     expect(systemStylesSource).not.toContain("Reserved for");
     expect(visualizationStylesSource).not.toContain("Reserved for");
     expect(stagingManagementStylesSource).not.toContain("Reserved for");
+    expect(laboratoryStylesSource).not.toContain("Reserved for");
   });
 
   test("central pages define local section classes for their main layouts", () => {

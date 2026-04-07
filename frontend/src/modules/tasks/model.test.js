@@ -5,53 +5,53 @@ import { buildTaskCode, buildTaskEditForm, buildTaskMetrics, buildTaskRows, crea
 describe("tasks model", () => {
   test("marks a task as running when any tray is sent to the lab", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
-      [],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "送至实验室",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "送至实验室", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "送至实验室", quantity: 1 }],
         },
       ],
     );
 
     expect(rows[0]).toEqual(
       expect.objectContaining({
-        code: "CJ-2026-001",
-        displayStatus: "实验中",
+        code: "SYLU-2026-03-001",
+        displayStatus: "已排程",
       }),
     );
   });
 
-  test("marks a task as running when any tray enters fixture installation", () => {
+  test("keeps a task scheduled when trays are only in fixture installation", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
-      [],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "工装夹具安装",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "工装夹具安装", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "工装夹具安装", quantity: 1 }],
         },
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("实验中");
+    expect(rows[0].displayStatus).toBe("已排程");
   });
 
   test("marks a task as running when any tray enters in-progress status", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
       [],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "实验进行中",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验进行中", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验进行中", quantity: 1 }],
         },
       ],
     );
@@ -59,45 +59,45 @@ describe("tasks model", () => {
     expect(rows[0].displayStatus).toBe("实验中");
   });
 
-  test("keeps a task running when one tray is complete and another tray is still active", () => {
+  test("keeps a task scheduled when one tray is complete and another tray is only ready", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
-      [],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "实验已完成",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验已完成", quantity: 1 }],
         },
         {
-          code: "CJ-2026-001-SP-002",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
           status: "实验准备就绪",
-          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "实验准备就绪", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "实验准备就绪", quantity: 1 }],
         },
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("实验中");
+    expect(rows[0].displayStatus).toBe("已排程");
   });
 
   test("marks a task completed only when all trays are in complete or post-complete states", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
       [],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "实验已完成",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验已完成", quantity: 1 }],
         },
         {
-          code: "CJ-2026-001-SP-002",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
           status: "厂家收回",
-          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "厂家收回", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "厂家收回", quantity: 1 }],
         },
       ],
     );
@@ -107,20 +107,20 @@ describe("tasks model", () => {
 
   test("marks a task as returned only when all trays are returned to the manufacturer", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "实验已经完成" }],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "实验已经完成" }],
       [],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "厂家收回",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "厂家收回", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "厂家收回", quantity: 1 }],
         },
         {
-          code: "CJ-2026-001-SP-002",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
           status: "厂家收回",
-          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "厂家收回", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "厂家收回", quantity: 1 }],
         },
       ],
     );
@@ -130,14 +130,14 @@ describe("tasks model", () => {
 
   test("keeps a task waiting when trays are only staged in the temporary room before experiment", () => {
     const rows = buildTaskRows(
-      [{ id: "task-1", code: "CJ-2026-001", name: "冲击试验", status: "待排程" }],
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
       [],
       [
         {
-          code: "CJ-2026-001-SP-001",
-          task_code: "CJ-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "已到达暂存间",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "已到达暂存间", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "已到达暂存间", quantity: 1 }],
         },
       ],
     );
@@ -150,7 +150,7 @@ describe("tasks model", () => {
       [
         {
           id: "task-1",
-          code: "GDW-2024-005",
+          code: "SYLU-2026-04-105",
           name: "高低温湿热试验",
           source: "外部委托",
           status: "待排程",
@@ -160,7 +160,7 @@ describe("tasks model", () => {
       [
         {
           id: "schedule-retention-1",
-          task_code: "GDW-2024-005",
+          task_code: "SYLU-2026-04-105",
           device: "恒温恒湿间（暂存间）",
           start_at: "2026-03-11T09:31:00.000Z",
           end_at: "2026-03-17T09:31:00.000Z",
@@ -172,7 +172,7 @@ describe("tasks model", () => {
 
     expect(rows[0]).toEqual(
       expect.objectContaining({
-        code: "GDW-2024-005",
+        code: "SYLU-2026-04-105",
         displayStatus: "待排程",
       }),
     );
@@ -191,7 +191,7 @@ describe("tasks model", () => {
       [
         {
           id: "task-1",
-          code: "WDC-2026-001",
+          code: "SYLU-2026-04-107",
           name: "温度冲击试验",
           source: "外部委托",
           status: "待排程",
@@ -201,7 +201,7 @@ describe("tasks model", () => {
       [
         {
           id: "schedule-retention-1",
-          task_code: "WDC-2026-001",
+          task_code: "SYLU-2026-04-107",
           device: "恒温恒湿间（暂存间）",
           start_at: "2026-03-11T06:45:13.827Z",
           end_at: "2026-03-11T06:45:13.827Z",
@@ -213,7 +213,7 @@ describe("tasks model", () => {
 
     expect(rows[0]).toEqual(
       expect.objectContaining({
-        code: "WDC-2026-001",
+        code: "SYLU-2026-04-107",
         displayStatus: "待排程",
       }),
     );
@@ -230,7 +230,7 @@ describe("tasks model", () => {
   test("createTaskRecord leaves arrival_at empty until samples are confirmed into storage", () => {
     const task = createTaskRecord(
       {
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次A",
         source: "内部新增",
         sample_count: "2",
@@ -250,7 +250,7 @@ describe("tasks model", () => {
       [
         {
           id: "task-1",
-          code: "CJ-2026-001",
+          code: "SYLU-2026-03-001",
           name: "冲击试验-批次A",
           arrival_at: "2026-03-18 08:00",
           status: "待排程",
@@ -258,7 +258,7 @@ describe("tasks model", () => {
       ],
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次B",
         arrival_at: "2026-03-18T13:45",
         status: "待排程",
@@ -273,7 +273,7 @@ describe("tasks model", () => {
       [
         {
           id: "task-1",
-          code: "CJ-2026-001",
+          code: "SYLU-2026-03-001",
           name: "冲击试验-批次A",
           arrival_at: "2026-03-18 09:14:45",
           status: "待排程",
@@ -350,3 +350,5 @@ describe("tasks model", () => {
     expect(task.code).toBe("SYLU-2026-03-003");
   });
 });
+
+

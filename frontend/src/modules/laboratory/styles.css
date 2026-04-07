@@ -1,0 +1,440 @@
+.laboratory-page {
+  display: grid;
+  gap: 22px;
+}
+
+.laboratory-header-action-button {
+  white-space: nowrap;
+}
+
+.laboratory-summary-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.laboratory-control-card {
+  display: grid;
+  gap: 16px;
+}
+
+.laboratory-control-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.laboratory-control-header h3,
+.laboratory-progress-panel h4,
+.laboratory-compare-head h4 {
+  margin: 0;
+}
+
+.laboratory-control-header p {
+  margin: 6px 0 0;
+}
+
+.laboratory-actions-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.laboratory-action-item {
+  display: grid;
+  gap: 12px;
+  min-height: 146px;
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98));
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+}
+
+.laboratory-action-item.is-locked {
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+.laboratory-action-item--tasks {
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.laboratory-action-item--compare {
+  border-color: rgba(14, 165, 233, 0.22);
+}
+
+.laboratory-action-item--install {
+  border-color: rgba(16, 185, 129, 0.22);
+}
+
+.laboratory-action-item--ready {
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.laboratory-action-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.laboratory-action-copy h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.laboratory-action-button {
+  width: 100%;
+  min-height: 46px;
+}
+
+.laboratory-progress-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.laboratory-flow-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.laboratory-flow-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.94);
+}
+
+.laboratory-flow-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.laboratory-flow-card__head--stacked {
+  display: grid;
+  gap: 12px;
+}
+
+.laboratory-flow-card__title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.laboratory-flow-status {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.laboratory-flow-note {
+  font-size: 13px;
+}
+
+.laboratory-flow-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.laboratory-flow-steps--tray {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.laboratory-flow-steps li {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  min-height: 76px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.laboratory-flow-steps li.is-reached {
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(220, 252, 231, 0.82);
+  color: #166534;
+}
+
+.laboratory-flow-steps li.is-active {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(224, 242, 254, 0.92);
+  color: #0f172a;
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.12);
+}
+
+.laboratory-tray-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.laboratory-tray-tab {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: rgba(255, 255, 255, 0.96);
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.laboratory-tray-tab.is-active {
+  border-color: rgba(2, 132, 199, 0.45);
+  background: rgba(186, 230, 253, 0.88);
+  color: #075985;
+}
+
+.laboratory-recent-tasks {
+  display: grid;
+  gap: 12px;
+}
+
+.laboratory-recent-tasks__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.laboratory-recent-tasks__header h4 {
+  margin: 0;
+}
+
+.laboratory-recent-tasks__list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.laboratory-recent-task {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  min-height: 142px;
+  padding: 20px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.94);
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.laboratory-recent-task.is-current {
+  border-color: rgba(14, 165, 233, 0.42);
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.12);
+}
+
+.laboratory-recent-task__head {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 36px;
+  width: 100%;
+}
+
+.laboratory-recent-task__head .pill {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.laboratory-recent-task__code {
+  font-size: 29px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+}
+
+.laboratory-recent-task__experiment {
+  font-size: 18px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.laboratory-recent-task__time {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.laboratory-modal-body {
+  display: grid;
+  gap: 16px;
+}
+
+.laboratory-schedule-card,
+.laboratory-task-list-card {
+  overflow: hidden;
+}
+
+.laboratory-task-list-modal .modal-content {
+  width: min(1500px, 98vw);
+  max-height: min(88vh, 980px);
+  padding: 24px 28px;
+}
+
+.laboratory-task-list-modal .laboratory-modal-body {
+  max-height: calc(min(88vh, 980px) - 140px);
+}
+
+.laboratory-task-list-card {
+  table-layout: auto;
+}
+
+.laboratory-task-list-card th,
+.laboratory-task-list-card td {
+  white-space: nowrap;
+}
+
+.laboratory-task-list-card tbody td {
+  vertical-align: middle;
+  font-size: 17px;
+}
+
+.laboratory-task-list-row {
+  transition: background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.laboratory-task-list-row td {
+  padding-top: 22px;
+  padding-bottom: 22px;
+}
+
+.laboratory-task-list-card thead th {
+  font-size: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.laboratory-task-list-row.is-current {
+  background: rgba(224, 242, 254, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.32);
+}
+
+.laboratory-task-list-row.is-pending {
+  background: rgba(255, 247, 237, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.28);
+}
+
+.laboratory-compare-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(186, 230, 253, 0.2), rgba(224, 231, 255, 0.2));
+  border: 1px solid rgba(56, 189, 248, 0.24);
+}
+
+.laboratory-checklist-card {
+  display: grid;
+  gap: 10px;
+}
+
+.laboratory-checklist-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(248, 250, 252, 0.95);
+}
+
+.laboratory-prompt-card {
+  padding-top: 4px;
+}
+
+.laboratory-task-tray-list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.laboratory-task-tray-row {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.laboratory-tray-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  background: rgba(219, 234, 254, 0.84);
+  color: #1d4ed8;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.laboratory-compare-scan {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.laboratory-compare-feedback {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.laboratory-compare-feedback.is-success {
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(220, 252, 231, 0.88);
+  color: #166534;
+}
+
+.laboratory-compare-feedback.is-error {
+  border-color: rgba(239, 68, 68, 0.32);
+  background: rgba(254, 226, 226, 0.9);
+  color: #b91c1c;
+}
+
+@media (max-width: 900px) {
+  .laboratory-control-header {
+    flex-direction: column;
+  }
+
+  .laboratory-flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .laboratory-flow-steps,
+  .laboratory-flow-steps--tray {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .laboratory-recent-tasks__header,
+  .laboratory-compare-scan {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+}

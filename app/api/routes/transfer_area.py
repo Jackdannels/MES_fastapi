@@ -38,6 +38,14 @@ TRAY_OUTBOUND_STATUSES = {
     "放置实验后暂存间",
     "厂家收回",
 }
+STARTED_EXPERIMENT_TRAY_STATUSES = (
+    "实验进行中",
+    "实验中",
+    "实验已完成",
+    "实验已经完成",
+    "放置实验后暂存间",
+    "厂家收回",
+)
 
 
 class TrayAllocationPayload(BaseModel):
@@ -243,8 +251,38 @@ def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) ->
         ]
     )
     if any(keyword in status_text for keyword in EXCLUDED_TASK_STATUS_KEYWORDS):
-        return False
+        return transfer_status_for_task(task, task_samples) == TASK_STATUS_STORED
     return bool(task_samples) or bool(normalize_text(task.get("sample_count")))
+
+
+def started_experiment_status_for_task(task_samples: list[dict[str, Any]]) -> str:
+    matched_statuses: list[str] = []
+    for sample in task_samples:
+        sample_status = normalize_text(sample.get("status"))
+        if sample_status in STARTED_EXPERIMENT_TRAY_STATUSES:
+            matched_statuses.append(sample_status)
+        for entry in as_list(sample.get("trays")):
+            tray_status = normalize_text(entry.get("status"))
+            if tray_status in STARTED_EXPERIMENT_TRAY_STATUSES:
+                matched_statuses.append(tray_status)
+
+    priority = {
+        "实验进行中": 0,
+        "实验中": 0,
+        "实验已完成": 1,
+        "实验已经完成": 1,
+        "放置实验后暂存间": 2,
+        "厂家收回": 3,
+    }
+    normalized_statuses = sorted(
+        {status for status in matched_statuses if status},
+        key=lambda status: (priority.get(status, 99), status),
+    )
+    return normalized_statuses[0] if normalized_statuses else ""
+
+
+def reload_block_reason(task_samples: list[dict[str, Any]]) -> str:
+    return "该任务已有托盘开始实验，不能重新入库。" if started_experiment_status_for_task(task_samples) else ""
 
 
 def transfer_status_for_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> str:
@@ -314,7 +352,7 @@ def build_barcode_payload(tray_code_value: str, sample_count: int, barcode_id: i
     return {
         "barcodeId": barcode_id or max(9000, 9000 + tray_serial_from_code(tray_code_value)),
         "barcodeNo": tray_code_value,
-        "barcodeContent": f"TRAY|TRAY:{tray_code_value}|LOAD:{sample_count}",
+        "barcodeContent": tray_code_value,
     }
 
 
@@ -453,7 +491,7 @@ def build_assigned_trays(
         for tray in trays:
             tray["loadQty"] = len(tray["samples"])
             if tray["barcode"]:
-                tray["barcode"]["barcodeContent"] = f"TRAY|TASK:{task_code(task)}|TRAY:{tray['trayNo']}|LOAD:{tray['loadQty']}"
+                tray["barcode"]["barcodeContent"] = tray["trayNo"]
                 tray["barcodeData"] = tray["barcode"]["barcodeContent"]
         return trays
 
@@ -656,7 +694,10 @@ def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str,
     return True
 
 
-def task_progress(task: dict[str, Any], task_status: str, assigned_trays: list[dict[str, Any]]) -> str:
+def task_progress(task: dict[str, Any], task_status: str, assigned_trays: list[dict[str, Any]], task_samples: list[dict[str, Any]]) -> str:
+    started_status = started_experiment_status_for_task(task_samples)
+    if started_status:
+        return started_status
     if task_status == TASK_STATUS_STORED:
         return "已确认入库"
     if not task_arrival_time(task):
@@ -698,12 +739,13 @@ def serialize_workspace(
         }
         for tray in assigned_trays
     ]
-    current_progress = task_progress(task, current_task_status, assigned_trays)
+    current_progress = task_progress(task, current_task_status, assigned_trays, task_samples)
     printed_tray_count = sum(1 for tray in assigned_trays if tray["barcode"])
     global_samples = all_samples if all_samples is not None else task_samples
     max_assignable_count = max_assignable_tray_count(global_samples, task_samples)
     required_tray_count = sum(1 for tray in assigned_trays if tray["samples"])
     tray_capacity_exceeded = required_tray_count > max_assignable_count
+    current_reload_block_reason = reload_block_reason(task_samples)
     tray_capacity_message = (
         f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。"
         if tray_capacity_exceeded
@@ -729,6 +771,8 @@ def serialize_workspace(
             "requiredTrayCount": required_tray_count,
             "trayCapacityExceeded": tray_capacity_exceeded,
             "trayCapacityMessage": tray_capacity_message,
+            "reloadBlocked": bool(current_reload_block_reason),
+            "reloadBlockedReason": current_reload_block_reason,
         },
         "assignedTrays": assigned_trays,
         "experiments": task_experiments,
@@ -1271,6 +1315,9 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
+    current_reload_block_reason = reload_block_reason(task_samples)
+    if current_reload_block_reason:
+        raise HTTPException(status_code=400, detail=current_reload_block_reason)
     snapshot["experiment_trays"] = [
         entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]

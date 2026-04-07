@@ -11,6 +11,7 @@ import dataModule from "./data";
 import systemModule from "./system";
 import visualizationModule from "./visualization";
 import stagingManagementModule from "./staging-management";
+import laboratoryModule from "./laboratory";
 
 // 所有模块定义集中注册在这里，供路由和导航统一消费。
 export const MODULES = [
@@ -27,6 +28,7 @@ export const MODULES = [
   systemModule,
   visualizationModule,
   stagingManagementModule,
+  laboratoryModule,
 ];
 
 // 路由表直接从模块定义中提取，避免单独维护第二份配置。

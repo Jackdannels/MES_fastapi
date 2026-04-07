@@ -22,6 +22,7 @@
 
 - 仅当存在 `实验准备就绪` 托盘且不存在 `实验进行中` 托盘时允许开始实验
 - 点击 `开始实验` 后仅当前准备就绪托盘转为 `实验进行中`
+- 点击 `开始实验` 后当前实验排程的 `start_at/end_at` 同步重算
 - 成功提示输出“当前开始进行 x 个托盘，剩余 x 个托盘”
 - 当前存在 `实验进行中` 托盘时按钮禁用状态和原因正确
 
@@ -37,7 +38,7 @@ Expected: `FAIL`
 
 - 聚合任务下托盘行
 - 派生 `canStartExperiment`、当前批次托盘与剩余托盘
-- 实现 `startExperiment(lab)` 并写回 `mes.samples` / `mes.tasks`
+- 实现 `startExperiment(lab)` 并写回 `mes.samples` / `mes.tasks` / `mes.schedules`
 
 - [ ] **Step 4: 跑测试确认转绿**
 

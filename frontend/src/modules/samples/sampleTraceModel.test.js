@@ -16,11 +16,11 @@ describe("sampleTraceModel", () => {
 
   test("builds sorted timeline items from sample history and schedule events", () => {
     const view = buildSampleTraceView({
-      taskCode: "SZH-2026-020",
+      taskCode: "SYLU-2026-03-020",
       samples: [
         {
           code: "SP-001",
-          task_code: "SZH-2026-020",
+          task_code: "SYLU-2026-03-020",
           history: [
             {
               time: "2026-03-16T10:00:00.000Z",
@@ -43,7 +43,7 @@ describe("sampleTraceModel", () => {
       ],
       schedules: [
         {
-          task_code: "SZH-2026-020",
+          task_code: "SYLU-2026-03-020",
           device: "振动一室",
           start_at: "2026-03-17T01:00:00.000Z",
           end_at: "2026-03-17T05:00:00.000Z",
@@ -52,21 +52,21 @@ describe("sampleTraceModel", () => {
       ],
     });
 
-    expect(view.summaryText).toBe("试验序号 SZH-2026-020：样品 1 个，流转记录 4 条。");
+    expect(view.summaryText).toBe("试验序号 SYLU-2026-03-020：样品 1 个，流转记录 4 条。");
     expect(view.timelineItems).toHaveLength(4);
     expect(view.timelineItems[0].title).toBe("SP-001 · 样品登记");
     expect(view.timelineItems[1].title).toBe("SP-001 · 送至暂存间");
-    expect(view.timelineItems[2].title).toBe("SZH-2026-020 · 排程开始");
-    expect(view.timelineItems[3].title).toBe("SZH-2026-020 · 排程结束");
+    expect(view.timelineItems[2].title).toBe("SYLU-2026-03-020 · 排程开始");
+    expect(view.timelineItems[3].title).toBe("SYLU-2026-03-020 · 排程结束");
   });
 
   test("renders normalized history text directly from stored sample data", () => {
     const view = buildSampleTraceView({
-      taskCode: "SZH-2026-021",
+      taskCode: "SYLU-2026-03-021",
       samples: [
         {
           code: "SP-002",
-          task_code: "SZH-2026-021",
+          task_code: "SYLU-2026-03-021",
           history: [
             {
               time: "2026-03-16T08:00:00.000Z",
@@ -74,7 +74,7 @@ describe("sampleTraceModel", () => {
               location: "室外接驳区",
               owner: "",
               status: "样品运输中",
-              detail: "任务 SZH-2026-021；样品绑定任务",
+              detail: "任务 SYLU-2026-03-021；样品绑定任务",
             },
           ],
         },
@@ -85,7 +85,7 @@ describe("sampleTraceModel", () => {
     expect(view.timelineItems[0].title).toBe("SP-002 · 样品编号重排");
     expect(view.timelineItems[0].meta).toContain("室外接驳区");
     expect(view.timelineItems[0].meta).toContain("样品运输中");
-    expect(view.timelineItems[0].meta).toContain("任务 SZH-2026-021");
+    expect(view.timelineItems[0].meta).toContain("任务 SYLU-2026-03-021");
     expect(view.timelineItems[0].meta).toContain("样品绑定任务");
   });
 });

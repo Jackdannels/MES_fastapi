@@ -28,7 +28,7 @@
         <textarea
           :value="editForm.sampleCodesText"
           class="search-input task-overview-editor-textarea"
-          placeholder="例如：CJ-2026-007-SP-001"
+          placeholder="例如：SYLU-2026-03-007-SP-001"
           @input="updateEditForm('sampleCodesText', $event.target.value)"
         ></textarea>
       </label>

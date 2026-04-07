@@ -46,7 +46,7 @@ vi.mock("./useProcessLabs", async () => {
       status: "实验中",
       statusClass: "is-running",
       targetExperiment: "冲击试验",
-      taskCode: "CJ-2026-001",
+      taskCode: "SYLU-2026-03-001",
       testType: "冲击试验",
     },
     {
@@ -102,7 +102,7 @@ vi.mock("./useProcessLabs", async () => {
       ),
       selectedTaskDetail: ref({
         canStartExperiment: false,
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         completedTrayRows: [],
         displayName: "冲击试验任务",
         labName: "冲击一室",
@@ -216,7 +216,7 @@ describe("ProcessPage runtime", () => {
     expect(mocks.openTaskOverview).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "冲击一室",
-        taskCode: "CJ-2026-001",
+        taskCode: "SYLU-2026-03-001",
       })
     );
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
@@ -226,10 +226,10 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.find(".process-task-drawer-side").exists()).toBe(true);
     expect(wrapper.text()).toContain("任务摘要");
     expect(wrapper.text()).toContain("试验任务详情");
-    expect(wrapper.text()).toContain("CJ-2026-001");
+    expect(wrapper.text()).toContain("SYLU-2026-03-001");
     expect(wrapper.text()).toContain("冲击试验任务");
     expect(wrapper.text()).not.toContain("批次A");
-    expect(wrapper.get(".process-task-code-headline").text()).toBe("CJ-2026-001");
+    expect(wrapper.get(".process-task-code-headline").text()).toBe("SYLU-2026-03-001");
     expect(wrapper.get(".process-task-name-subtitle").text()).toBe("冲击试验任务");
     expect(wrapper.text()).toContain("4");
     expect(wrapper.text()).not.toContain("托盘摘要");
@@ -264,7 +264,7 @@ describe("ProcessPage runtime", () => {
     expect(mocks.startExperiment).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "冲击一室",
-        taskCode: "CJ-2026-001",
+        taskCode: "SYLU-2026-03-001",
       })
     );
 

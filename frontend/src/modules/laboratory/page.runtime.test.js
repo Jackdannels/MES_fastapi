@@ -1,0 +1,336 @@
+import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+import LaboratoryPage from "./page.vue";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+
+let wrapper;
+let pageHeader;
+let headerActions;
+let snapshotState;
+const toDisplayedTime = (value) => {
+  const date = new Date(value);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+const toDisplayedDateTime = (value) => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${toDisplayedTime(value)}`;
+};
+
+const createSnapshot = () => ({
+  [STORAGE_KEYS.tasks]: [
+    { code: "SYLU-2026-04-101", name: "盐雾连接器", test_type: "盐雾试验" },
+    { code: "SYLU-2026-04-201", name: "盐雾壳体", test_type: "盐雾试验" },
+    { code: "SYLU-2026-04-301", name: "复合环境任务", test_type: "高低温湿热试验 / 盐雾试验" },
+    { code: "SYLU-2026-04-102", name: "振动连接器", test_type: "振动试验" },
+  ],
+  [STORAGE_KEYS.experiments]: [
+    { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", experiment_name: "盐雾试验-A" },
+    { task_code: "SYLU-2026-04-201", experiment_code: "SYLU-2026-04-201-A", experiment_name: "盐雾试验-B" },
+    { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", experiment_name: "高低温湿热试验" },
+    { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", experiment_name: "盐雾试验" },
+    { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", experiment_name: "振动试验" },
+  ],
+  [STORAGE_KEYS.experiment_trays]: [
+    { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-002" },
+    { task_code: "SYLU-2026-04-201", experiment_code: "SYLU-2026-04-201-A", tray_code: "TP-101" },
+    { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", tray_code: "TP-301" },
+    { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", tray_code: "TP-301" },
+  ],
+  [STORAGE_KEYS.samples]: [
+    {
+      code: "SYLU-2026-04-101-SP-001",
+      location: "盐雾试验室",
+      owner: "王工",
+      status: "已到达实验室",
+      task_code: "SYLU-2026-04-101",
+      trays: [
+        { quantity: 2, status: "到货", tray_code: "TP-001" },
+        { quantity: 2, status: "到货", tray_code: "TP-002" },
+      ],
+    },
+    {
+      code: "SYLU-2026-04-201-SP-001",
+      location: "盐雾试验室",
+      owner: "李工",
+      status: "已到达实验室",
+      task_code: "SYLU-2026-04-201",
+      trays: [{ quantity: 1, tray_code: "TP-101" }],
+    },
+    {
+      code: "SYLU-2026-04-301-SP-001",
+      location: "接驳区",
+      owner: "赵工",
+      status: "送至实验室",
+      task_code: "SYLU-2026-04-301",
+      trays: [{ quantity: 1, tray_code: "TP-301" }],
+    },
+  ],
+  [STORAGE_KEYS.schedules]: [
+    {
+      id: "schedule-1",
+      task_code: "SYLU-2026-04-101",
+      experiment_code: "SYLU-2026-04-101-A",
+      device: "盐雾试验室",
+      start_at: "2026-04-02T09:30:00.000Z",
+      end_at: "2026-04-02T11:00:00.000Z",
+    },
+    {
+      id: "schedule-3",
+      task_code: "SYLU-2026-04-201",
+      experiment_code: "SYLU-2026-04-201-A",
+      device: "盐雾试验室",
+      start_at: "2026-04-02T12:00:00.000Z",
+      end_at: "2026-04-02T13:00:00.000Z",
+    },
+    {
+      id: "schedule-2",
+      task_code: "SYLU-2026-04-102",
+      experiment_code: "SYLU-2026-04-102-A",
+      device: "振动一室",
+      start_at: "2026-04-02T09:30:00.000Z",
+      end_at: "2026-04-02T11:00:00.000Z",
+    },
+    {
+      id: "schedule-4",
+      task_code: "SYLU-2026-04-301",
+      experiment_code: "SYLU-2026-04-301-A",
+      device: "高低温湿热一室",
+      start_at: "2026-04-02T10:30:00.000Z",
+      end_at: "2026-04-02T12:00:00.000Z",
+    },
+    {
+      id: "schedule-5",
+      task_code: "SYLU-2026-04-301",
+      experiment_code: "SYLU-2026-04-301-B",
+      device: "盐雾试验室",
+      start_at: "2026-04-02T12:30:00.000Z",
+      end_at: "2026-04-02T14:00:00.000Z",
+    },
+  ],
+});
+
+const mountPage = async () => {
+  pageHeader = document.createElement("header");
+  pageHeader.className = "page-header";
+  pageHeader.innerHTML = `
+    <div>
+      <div class="eyebrow">盐雾试验室操作台</div>
+      <h1>盐雾试验室操作台</h1>
+      <p class="subtitle">查看盐雾试验室当前任务与实验准备流程。</p>
+    </div>
+    <div class="header-actions">
+      <button class="action-btn secondary" type="button">刷新</button>
+      <button class="action-btn secondary" type="button">退出登录</button>
+    </div>
+  `;
+  document.body.appendChild(pageHeader);
+  headerActions = pageHeader.querySelector(".header-actions");
+
+  wrapper = mount(LaboratoryPage, { attachTo: document.body });
+  await Promise.resolve();
+  await Promise.resolve();
+  await nextTick();
+  await nextTick();
+  return wrapper;
+};
+
+describe("LaboratoryPage runtime", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T10:00:00.000Z"));
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+    snapshotState = createSnapshot();
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/storage")) {
+        if ((options.method || "GET") === "PUT") {
+          const payload = JSON.parse(String(options.body || "{}"));
+          snapshotState = {
+            ...snapshotState,
+            ...payload,
+          };
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
+        }
+        return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+  });
+
+  afterEach(() => {
+    wrapper?.unmount();
+    wrapper = undefined;
+    pageHeader?.remove();
+    pageHeader = undefined;
+    headerActions = undefined;
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  test("renders the salt-spray laboratory console and excludes other laboratory tasks", async () => {
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("盐雾试验室操作台");
+    expect(mounted.text()).toContain("今日实验排程数量");
+    expect(mounted.text()).toContain("SYLU-2026-04-101");
+    expect(mounted.text()).toContain("盐雾试验-A");
+    expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T09:30:00.000Z"));
+    expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T11:00:00.000Z"));
+    expect(mounted.text()).not.toContain("SYLU-2026-04-102");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
+  });
+
+  test("teleports the schedule button and opens the salt-spray schedule modal", async () => {
+    const mounted = await mountPage();
+
+    const scheduleButton = document.body.querySelector('[data-testid="laboratory-open-schedule"]');
+    expect(scheduleButton).not.toBeNull();
+
+    const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
+    expect(headerButtons).toContain("查看排程");
+    expect(headerButtons).toContain("刷新");
+    expect(headerButtons).toContain("退出登录");
+
+    scheduleButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-schedule-modal"].is-open').exists()).toBe(true);
+    expect(mounted.text()).toContain("SYLU-2026-04-101");
+    expect(mounted.text()).not.toContain("SYLU-2026-04-102");
+  });
+
+  test("shows detailed task rows, allows selecting the next task, and updates the current task after confirmation", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+
+    expect(mounted.find('[data-testid="laboratory-task-list-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-101"]').classes()).toContain("is-current");
+    expect(mounted.text()).toContain("TP-001");
+    expect(mounted.text()).toContain("TP-002");
+    expect(mounted.text()).toContain("TP-101");
+    expect(mounted.text()).toContain(toDisplayedTime("2026-04-02T12:00:00.000Z"));
+    expect(mounted.text()).toContain(toDisplayedTime("2026-04-02T13:00:00.000Z"));
+
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-pending");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+
+    expect(mounted.text()).toContain("SYLU-2026-04-201 / 盐雾试验-B");
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-current");
+  });
+
+  test("compares trays against the current task and shows green/red feedback", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeDefined();
+
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-101");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对不正确");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("当前任务并非优先所选任务");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("盐雾试验室");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("error");
+
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("success");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("compare feedback lists all allowed laboratories when another tray belongs to multiple experiments", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-301");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("当前任务并非优先所选任务");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("高低温湿热一室");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("盐雾试验室");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("error");
+  });
+
+  test("persists compare, install, and ready steps into sample tray statuses and keeps progress after remount", async () => {
+    let mounted = await mountPage();
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "已到达实验室", tray_code: "TP-001" })]),
+    }));
+    expect(mounted.text()).toContain("当前任务已完成任务比对，待样品安装");
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "工装夹具安装",
+      status: "工装夹具安装",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
+    }));
+    expect(mounted.text()).toContain("当前任务已完成样品安装，待实验确认");
+
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "实验准备就绪",
+      status: "实验准备就绪",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-001" })]),
+    }));
+    expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
+    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(3);
+
+    mounted.unmount();
+    wrapper = undefined;
+
+    mounted = await mountPage();
+    expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
+  });
+
+  test("renders dual flow panels and allows switching trays within the current experiment", async () => {
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-task-flow"]').text()).toContain("任务流程图");
+    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toContain("已排程");
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("托盘流程图");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-001");
+
+    await mounted.get('[data-testid="laboratory-tray-tab-TP-002"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-002");
+    expect(mounted.get('[data-testid="laboratory-tray-tab-TP-002"]').classes()).toContain("is-active");
+  });
+});

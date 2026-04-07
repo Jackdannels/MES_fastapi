@@ -1,5 +1,4 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { migrateStorageSnapshot } from "./storageMigration.js";
 import { STORAGE_KEYS } from "./storageKeys";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
@@ -37,7 +36,6 @@ function writeLocalArray(key, value) {
 async function readStorageSnapshot(keys) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
   let snapshot = Object.fromEntries(requestedKeys.map((key) => [key, readLocalArray(key)]));
-  snapshot = migrateStorageSnapshot(snapshot);
 
   try {
     const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
@@ -53,7 +51,6 @@ async function readStorageSnapshot(keys) {
         snapshot[key] = payload[key];
       }
     });
-    snapshot = migrateStorageSnapshot(snapshot);
   } catch {
     // Keep local fallback when remote storage is unavailable.
   }
@@ -67,7 +64,7 @@ async function readStorageSnapshot(keys) {
 
 async function writeStorageUpdates(updates) {
   const rawPayload = updates && typeof updates === "object" ? updates : {};
-  const payload = migrateStorageSnapshot(Object.fromEntries(Object.entries(rawPayload)));
+  const payload = Object.fromEntries(Object.entries(rawPayload));
   Object.entries(payload).forEach(([key, value]) => {
     writeLocalArray(key, value);
   });

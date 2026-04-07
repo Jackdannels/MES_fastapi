@@ -30,6 +30,14 @@ const baseProps = {
 };
 
 describe("TaskOverviewEditorPanel", () => {
+  test("uses the current SYLU sample-code placeholder format", () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: baseProps,
+    });
+
+    expect(wrapper.get("textarea").attributes("placeholder")).toBe("例如：SYLU-2026-03-007-SP-001");
+  });
+
   test("emits save, generate, delete, and cancel actions", async () => {
     const wrapper = mount(TaskOverviewEditorPanel, {
       props: baseProps,

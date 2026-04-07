@@ -413,11 +413,11 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(SCHEDULES_KEY)[1].experiment_code).toBe("SYLU-2026-03-006-C");
   });
 
-  test("migrates a legacy historical task into three explicit experiments after selecting the task", async () => {
+  test("uses the task experiment type when no explicit experiment rows exist", async () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "GDW-2024-005",
+        code: "SYLU-2026-04-105",
         name: "高低温湿热试验-批次E",
         test_type: "高低温湿热试验",
         status: STATUS_WAITING,
@@ -433,14 +433,14 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-001");
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-04-105");
     await settle(wrapper);
 
     const experimentSelect = wrapper.get('select[name="experiment_code"]');
     expect(experimentSelect.text()).toContain("高低温湿热试验");
-    expect(experimentSelect.text()).toContain("冲击试验");
-    expect(experimentSelect.text()).toContain("振动试验");
-    expect(experimentSelect.element.value).toBe("SYLU-2026-03-001-A");
+    expect(experimentSelect.text()).not.toContain("冲击试验");
+    expect(experimentSelect.text()).not.toContain("振动试验");
+    expect(experimentSelect.element.value).toBe("SYLU-2026-04-105-A");
   });
 
   test("links task selection to lab options and keeps gantt scoped to task labs after a device is selected", async () => {
@@ -979,3 +979,4 @@ describe("SchedulePage runtime", () => {
     expect(ganttHeaderText).toContain("下午 12:00-18:00");
   });
 });
+

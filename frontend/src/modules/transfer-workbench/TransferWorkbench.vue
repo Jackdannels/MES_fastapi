@@ -374,8 +374,8 @@
             <div v-if="item.barcodeSvg" class="transfer-modal__barcode" v-html="item.barcodeSvg"></div>
             <div>托盘：{{ item.trayNo }}</div>
             <div>样品数：{{ item.samples.length }}</div>
-            <div>内容：{{ item.barcodeContent || item.barcodeValue || "-" }}</div>
-            <div>样品：{{ item.samples.join(" / ") || "-" }}</div>
+            <div>内容：{{ item.summaryText || "-" }}</div>
+            <div>样品编号：{{ item.sampleText || "-" }}</div>
             <div v-if="item.experimentLabels?.length" class="transfer-modal__experiment-tags">
               <span
                 v-for="(label, labelIndex) in item.experimentLabels"
@@ -684,8 +684,19 @@ const canConfirm = computed(() => (
   && !isStoredTask.value
   && !trayCapacityExceeded.value
 ));
+const reloadBlockedReason = computed(() => {
+  if (!currentTask.value?.reloadBlocked) {
+    return "";
+  }
+  return props.mode === "pre-allocation"
+    ? "该任务已有托盘开始实验，不能重新分配。"
+    : "该任务已有托盘开始实验，不能重新入库。";
+});
 const canResetWorkspace = computed(() => {
   if (!selectedTaskId.value) {
+    return false;
+  }
+  if (reloadBlockedReason.value) {
     return false;
   }
   if (props.mode === "pre-allocation") {
@@ -708,6 +719,9 @@ const selectedSampleLabel = computed(() => {
 });
 const quickMoveTrayLabel = computed(() => assignedTrays.value[armedTrayIndex.value]?.trayNo || "");
 const trayInteractionHint = computed(() => {
+  if (reloadBlockedReason.value) {
+    return `${reloadBlockedReason.value} 当前仅支持查看与打印。`;
+  }
   if (isStoredTask.value) {
     return "已入库任务仅支持查看与打印。";
   }
@@ -1192,10 +1206,10 @@ const buildBarcodeSvg = (value) => {
 };
 
 const resolveBarcodeValue = (barcode, tray) => String(
-  barcode?.barcodeContent
-  || barcode?.barcodeNo
-  || tray?.barcode?.barcodeContent
+  barcode?.barcodeNo
+  || barcode?.barcodeContent
   || tray?.barcode?.barcodeNo
+  || tray?.barcode?.barcodeContent
   || tray?.trayNo
   || "--",
 ).trim() || "--";
@@ -1234,6 +1248,8 @@ const closeBarcodeModal = () => {
   barcodeModalVisible.value = false;
 };
 
+const buildBarcodeSummaryText = (taskNo, sampleCount) => `任务编号：${taskNo || "--"} | 样品数量：${sampleCount ?? 0}`;
+
 const buildPrintDocument = () => {
   const cards = barcodePreviewItems.value.map((item) => `
     <article class="print-card">
@@ -1242,8 +1258,8 @@ const buildPrintDocument = () => {
         <span>${encodeHtml(item.trayNo)}</span>
       </header>
       <div class="print-barcode">${item.barcodeSvg || ""}</div>
-      <div class="print-meta">内容：${encodeHtml(item.barcodeContent || item.barcodeValue || "-")}</div>
-      <div class="print-meta">样品：${encodeHtml(item.samples.join(" / ") || "-")}</div>
+      <div class="print-meta">内容：${encodeHtml(item.summaryText || "-")}</div>
+      <div class="print-meta">样品编号：${encodeHtml(item.sampleText || "-")}</div>
       ${buildPrintExperimentTags(item)}
     </article>
   `).join("");
@@ -1372,6 +1388,8 @@ const printAllTrayBarcodes = async () => {
         barcodeValue,
         trayNo: tray?.trayNo || "--",
         samples: tray?.samples?.map((sample) => sample.sampleNo) || [],
+        summaryText: buildBarcodeSummaryText(currentTask.value?.taskNo, tray?.samples?.length || 0),
+        sampleText: tray?.samples?.map((sample) => sample.sampleNo).join(" / ") || "-",
         experimentLabels: Array.isArray(tray?.experimentLabels) ? [...tray.experimentLabels] : [],
         experimentCodes: Array.isArray(tray?.experimentCodes) ? [...tray.experimentCodes] : [],
         barcodeSvg: buildBarcodeSvg(barcodeValue),

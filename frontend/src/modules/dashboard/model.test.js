@@ -7,7 +7,7 @@ describe("dashboard model", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [
         {
-          code: "GDW-2024-005",
+          code: "SYLU-2026-04-105",
           source: "外部委托",
           status: "待排程",
         },
@@ -15,7 +15,7 @@ describe("dashboard model", () => {
       schedules: [
         {
           id: "schedule-retention-1",
-          task_code: "GDW-2024-005",
+          task_code: "SYLU-2026-04-105",
           device: "恒温恒湿间（暂存间）",
           start_at: "2026-03-11T09:31:00.000Z",
           end_at: "2026-03-17T09:31:00.000Z",
@@ -31,7 +31,7 @@ describe("dashboard model", () => {
     expect(viewModel.summaryCards.unscheduledCount).toBe("1（暂存间存放1）");
     expect(viewModel.taskRows[0]).toEqual(
       expect.objectContaining({
-        code: "GDW-2024-005",
+        code: "SYLU-2026-04-105",
         status: "待排程",
       }),
     );
@@ -41,7 +41,7 @@ describe("dashboard model", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [
         {
-          code: "WDC-2026-001",
+          code: "SYLU-2026-04-107",
           source: "外部委托",
           status: "厂家收回",
         },
@@ -49,7 +49,7 @@ describe("dashboard model", () => {
       schedules: [
         {
           id: "schedule-retention-1",
-          task_code: "WDC-2026-001",
+          task_code: "SYLU-2026-04-107",
           device: "恒温恒湿间（暂存间）",
           start_at: "2026-03-11T06:45:13.827Z",
           end_at: "2026-03-11T06:45:13.827Z",
@@ -65,7 +65,7 @@ describe("dashboard model", () => {
     expect(viewModel.summaryCards.unscheduledCount).toBe("1（暂存间存放1）");
     expect(viewModel.taskRows[0]).toEqual(
       expect.objectContaining({
-        code: "WDC-2026-001",
+        code: "SYLU-2026-04-107",
         status: "待排程",
       }),
     );
@@ -95,3 +95,5 @@ describe("dashboard model", () => {
     );
   });
 });
+
+

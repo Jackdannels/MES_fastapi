@@ -132,7 +132,7 @@ const createPrintedWorkspace = (workspacePayload) => ({
       barcodeId: 901 + index,
       objectId: tray.trayId,
       barcodeNo: tray.trayNo,
-      barcodeContent: `TRAY|TASK:SYLU-2026-03-101|TRAY:${tray.trayNo}|LOAD:${tray.samples.length}`,
+      barcodeContent: tray.trayNo,
     },
   })),
 });
@@ -506,8 +506,10 @@ describe("TransferAreaPage runtime", () => {
 
     expect(printedHtml).toContain('xmlns="http://www.w3.org/2000/svg"');
     expect(printedHtml).toMatch(/<rect[^>]+width="4"/);
-    expect(previewSvgLabel).toBe("TRAY|TASK:SYLU-2026-03-101|TRAY:SYLU-2026-03-101-TP-001|LOAD:2");
-    expect(printedHtml).toContain('aria-label="TRAY|TASK:SYLU-2026-03-101|TRAY:SYLU-2026-03-101-TP-001|LOAD:2"');
+    expect(previewSvgLabel).toBe("SYLU-2026-03-101-TP-001");
+    expect(printedHtml).toContain('aria-label="SYLU-2026-03-101-TP-001"');
+    expect(printedHtml).toContain("任务编号：SYLU-2026-03-101 | 样品数量：2");
+    expect(printedHtml).toContain("样品编号：SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002");
   });
 
   test("barcode preview and print document keep experiment tag colors aligned with tray selection", async () => {
@@ -565,12 +567,12 @@ describe("TransferAreaPage runtime", () => {
       assignedTrays: workspaceWithExperimentAssignments.assignedTrays.map((tray, index) => ({
         ...tray,
         trayStatus: "待入库",
-        barcode: {
-          barcodeId: 980 + index,
-          objectId: tray.trayId,
-          barcodeNo: tray.trayNo,
-          barcodeContent: `TRAY|TASK:SYLU-2026-03-101|TRAY:${tray.trayNo}|LOAD:${tray.samples.length}`,
-        },
+          barcode: {
+            barcodeId: 980 + index,
+            objectId: tray.trayId,
+            barcodeNo: tray.trayNo,
+            barcodeContent: tray.trayNo,
+          },
       })),
     };
 

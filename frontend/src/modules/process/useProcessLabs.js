@@ -76,6 +76,25 @@ const summarizeUniqueTexts = (values, fallback = "-") => {
   return unique.length ? unique.join("、") : fallback;
 };
 
+const parseScheduleTime = (value) => {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const resolveScheduleDurationHours = (schedule) => {
+  const plannedHours = Number(schedule?.planned_hours);
+  if (Number.isFinite(plannedHours) && plannedHours > 0) {
+    return plannedHours;
+  }
+
+  const startAt = parseScheduleTime(schedule?.start_at);
+  const endAt = parseScheduleTime(schedule?.end_at);
+  if (!Number.isFinite(startAt) || !Number.isFinite(endAt) || endAt <= startAt) {
+    return 0;
+  }
+  return (endAt - startAt) / (60 * 60 * 1000);
+};
+
 // 加载快照数据，并输出实验室卡片及当前任务的抽屉详情。
 function useProcessLabs(options = {}) {
   const labs = Array.isArray(options.labs) ? options.labs : PROCESS_LABS;
@@ -381,6 +400,30 @@ function useProcessLabs(options = {}) {
     };
   };
 
+  const resolveScheduledRecordForLab = (lab, taskCode, currentTime) => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    const normalizedLabName = normalizeText(lab?.name);
+    const relatedSchedules = schedules.value
+      .filter(
+        (entry) =>
+          normalizeText(entry?.device) === normalizedLabName
+          && normalizeText(entry?.task_code) === normalizedTaskCode,
+      )
+      .sort((left, right) => parseScheduleTime(right?.start_at) - parseScheduleTime(left?.start_at));
+
+    const activeSchedule = relatedSchedules.find((entry) => {
+      const startAt = parseScheduleTime(entry?.start_at);
+      const endAt = parseScheduleTime(entry?.end_at);
+      return Number.isFinite(startAt) && Number.isFinite(endAt) && startAt <= currentTime && endAt >= currentTime;
+    });
+    if (activeSchedule) {
+      return activeSchedule;
+    }
+
+    const futureSchedule = relatedSchedules.find((entry) => parseScheduleTime(entry?.start_at) > currentTime);
+    return futureSchedule || relatedSchedules[0] || null;
+  };
+
   const buildTaskDetail = (lab) => {
     const taskCode = toText(lab?.taskCode, "");
     const labName = toText(lab?.name);
@@ -579,6 +622,8 @@ function useProcessLabs(options = {}) {
     const startedTrayCodes = new Set(actionState.readyTrayCodes);
     const startedTrayText = actionState.readyTrayCodes.join("、");
     const timestamp = new Date().toISOString();
+    const currentTime = Date.parse(timestamp);
+    const targetSchedule = resolveScheduledRecordForLab(lab, taskCode, currentTime);
     const nextSamples = samples.value.map((sample) => {
       if (normalizeText(sample?.task_code) !== taskCode) {
         return sample;
@@ -629,13 +674,29 @@ function useProcessLabs(options = {}) {
           }
         : task,
     );
+    const nextSchedules = schedules.value.map((schedule) => {
+      if (normalizeText(schedule?.id) !== normalizeText(targetSchedule?.id)) {
+        return schedule;
+      }
+
+      const durationHours = resolveScheduleDurationHours(schedule);
+      const endTime = durationHours > 0 ? new Date(currentTime + durationHours * 60 * 60 * 1000).toISOString() : timestamp;
+      return {
+        ...schedule,
+        end_at: endTime,
+        start_at: timestamp,
+        updated_at: timestamp,
+      };
+    });
 
     await persistSnapshot({
       [STORAGE_KEYS.samples]: nextSamples,
+      [STORAGE_KEYS.schedules]: nextSchedules,
       [STORAGE_KEYS.tasks]: nextTasks,
     });
 
     samples.value = nextSamples;
+    schedules.value = nextSchedules;
     tasks.value = nextTasks;
     rebuildLabCards();
     processActionMessage.value = `当前开始进行${actionState.readyTrayCount}个托盘，剩余${buildStartExperimentState(buildTrayRows(taskCode)).remainingTrayCount}个托盘。`;

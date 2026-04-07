@@ -57,31 +57,31 @@ describe("taskOverviewModel", () => {
     const rows = buildTaskRows({
       tasks: [
         {
-          code: "SZH-2026-006",
+          code: "SYLU-2026-03-006",
           test_type: "四综合试验",
           status: "待排程",
           sample_count: 1,
         },
       ],
       experiments: [
-        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验", status: "待排程" },
-        { task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验", status: "实验已经完成" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验", status: "待排程" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "B实验", status: "实验已经完成" },
       ],
-      samples: [{ task_code: "SZH-2026-006", code: "SZH-2026-006-SP-001", trays: [] }],
-      schedules: [{ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", status: "已排程", device: "四综合实验室" }],
+      samples: [{ task_code: "SYLU-2026-03-006", code: "SYLU-2026-03-006-SP-001", trays: [] }],
+      schedules: [{ task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", status: "已排程", device: "四综合实验室" }],
       scheduledLabel: "已排程",
       unscheduledLabel: "未排程",
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      taskCode: "SZH-2026-006",
+      taskCode: "SYLU-2026-03-006",
       experimentCount: 2,
       experimentSummary: "A实验 / B实验",
     });
     expect(rows[0].experiments).toEqual([
-      expect.objectContaining({ experimentCode: "SZH-2026-006-A", experimentName: "A实验", displayStatus: "已排程" }),
-      expect.objectContaining({ experimentCode: "SZH-2026-006-B", experimentName: "B实验", displayStatus: "实验完成" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-A", experimentName: "A实验", displayStatus: "已排程" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-B", experimentName: "B实验", displayStatus: "实验完成" }),
     ]);
   });
 
@@ -126,7 +126,7 @@ describe("taskOverviewModel", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "SYLU-2026-03-001", test_type: "温度冲击试验" }],
       samples: [
-        { task_code: "CJ-2026-001", trays: [{ tray_code: "CJ-2026-001-TP-001" }] },
+        { task_code: "SYLU-2026-04-101", trays: [{ tray_code: "SYLU-2026-04-101-TP-001" }] },
         { task_code: "SYLU-2026-03-001", trays: [{ tray_code: "SYLU-2026-03-001-TP-001" }] },
       ],
       schedules: [],
@@ -144,7 +144,7 @@ describe("taskOverviewModel", () => {
     const rows = buildTaskRows({
       tasks: [
         {
-          code: "WDC-2026-001",
+          code: "SYLU-2026-04-107",
           test_type: "温度冲击试验",
           status: "暂存间排放",
           sample_count: 1,
@@ -154,7 +154,7 @@ describe("taskOverviewModel", () => {
       samples: [],
       schedules: [
         {
-          task_code: "WDC-2026-001",
+          task_code: "SYLU-2026-04-107",
           device: "恒温恒湿间（暂存间）",
           status: "已排程",
           start_at: "2026-03-10T09:00:00Z",
@@ -169,7 +169,7 @@ describe("taskOverviewModel", () => {
       currentStatus: "待排程",
       scheduleCount: 0,
       scheduleLabel: "未排程",
-      taskCode: "WDC-2026-001",
+      taskCode: "SYLU-2026-04-107",
     });
   });
 
@@ -184,7 +184,7 @@ describe("taskOverviewModel", () => {
       ],
       samples: [
         { task_code: "SYLU-2026-03-001", code: "SYLU-2026-03-001-SP-001", trays: [] },
-        { task_code: "CJ-2026-001", code: "CJ-2026-001-SP-001", trays: [] },
+        { task_code: "SYLU-2026-04-101", code: "SYLU-2026-04-101-SP-001", trays: [] },
       ],
       schedules: [],
       scheduledLabel: "已排程",
@@ -199,7 +199,7 @@ describe("taskOverviewModel", () => {
     const rows = buildTaskRows({
       tasks: [
         {
-          code: "CJ-2026-001",
+          code: "SYLU-2026-03-001",
           test_type: "冲击试验",
           created_at: "2026-03-10T08:00:00Z",
           arrival_at: "2026-03-18 09:14",
@@ -214,15 +214,15 @@ describe("taskOverviewModel", () => {
     expect(rows[0].timeValue).toBe("2026-03-18 09:14");
   });
 
-  test("buildTaskRows marks overview rows running when any tray is in the active experiment chain", () => {
+  test("buildTaskRows keeps overview rows scheduled until a tray explicitly enters the running state", () => {
     const rows = buildTaskRows({
-      tasks: [{ code: "CJ-2026-001", test_type: "冲击试验", status: "待排程" }],
+      tasks: [{ code: "SYLU-2026-03-001", test_type: "冲击试验", status: "待排程" }],
       samples: [
         {
-          task_code: "CJ-2026-001",
-          code: "CJ-2026-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-SP-001",
           status: "已到达实验室",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "已到达实验室", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "已到达实验室", quantity: 1 }],
         },
       ],
       schedules: [],
@@ -230,24 +230,24 @@ describe("taskOverviewModel", () => {
       unscheduledLabel: "未排程",
     });
 
-    expect(rows[0].currentStatus).toBe("实验中");
+    expect(rows[0].currentStatus).toBe("待排程");
   });
 
   test("buildTaskRows keeps overview rows incomplete until every tray reaches a post-complete state", () => {
     const rows = buildTaskRows({
-      tasks: [{ code: "CJ-2026-001", test_type: "冲击试验", status: "待排程" }],
+      tasks: [{ code: "SYLU-2026-03-001", test_type: "冲击试验", status: "待排程" }],
       samples: [
         {
-          task_code: "CJ-2026-001",
-          code: "CJ-2026-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-SP-001",
           status: "实验已完成",
-          trays: [{ tray_code: "CJ-2026-001-TP-001", status: "实验已完成", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "实验已完成", quantity: 1 }],
         },
         {
-          task_code: "CJ-2026-001",
-          code: "CJ-2026-001-SP-002",
+          task_code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-SP-002",
           status: "放置实验后暂存间",
-          trays: [{ tray_code: "CJ-2026-001-TP-002", status: "放置实验后暂存间", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "放置实验后暂存间", quantity: 1 }],
         },
       ],
       schedules: [],
@@ -258,3 +258,5 @@ describe("taskOverviewModel", () => {
     expect(rows[0].currentStatus).toBe("实验完成");
   });
 });
+
+

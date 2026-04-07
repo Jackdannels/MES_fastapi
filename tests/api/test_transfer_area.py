@@ -85,7 +85,7 @@ def create_payloads():
                         "status": "已入库",
                         "barcode_id": 9001,
                         "barcode_no": "SYLU-2026-03-102-TP-001",
-                        "barcode_content": "TRAY|TASK:SYLU-2026-03-102|TRAY:SYLU-2026-03-102-TP-001|LOAD:2",
+                        "barcode_content": "SYLU-2026-03-102-TP-001",
                     }
                 ],
             },
@@ -104,7 +104,7 @@ def create_payloads():
                         "status": "已入库",
                         "barcode_id": 9001,
                         "barcode_no": "SYLU-2026-03-102-TP-001",
-                        "barcode_content": "TRAY|TASK:SYLU-2026-03-102|TRAY:SYLU-2026-03-102-TP-001|LOAD:2",
+                        "barcode_content": "SYLU-2026-03-102-TP-001",
                     }
                 ],
             },
@@ -508,6 +508,8 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
 
     assert printed.status_code == 200
     assert printed.json()["barcodes"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
+    assert printed.json()["barcodes"][0]["barcodeNo"] == "SYLU-2026-03-101-TP-001"
+    assert printed.json()["barcodes"][0]["barcodeContent"] == "SYLU-2026-03-101-TP-001"
 
 
 def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monkeypatch):
@@ -534,6 +536,46 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
     assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "已入库"
 
 
+def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    tasks = storage.read("mes.tasks")
+    tasks[1]["status"] = "实验中"
+    storage.write("mes.tasks", tasks)
+
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "实验进行中"
+        sample["flow_status"] = "实验进行中"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "实验进行中",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+    reloaded = client.post("/api/transfer-area/tasks/task-102/reload")
+
+    assert bootstrap.status_code == 200
+    task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-102")
+    assert task_row["taskStatus"] == "已入库"
+    assert task_row["taskProgress"] == "实验进行中"
+
+    assert workspace.status_code == 200
+    assert workspace.json()["task"]["taskStatus"] == "已入库"
+    assert workspace.json()["task"]["taskProgress"] == "实验进行中"
+    assert workspace.json()["task"]["reloadBlocked"] is True
+    assert workspace.json()["task"]["reloadBlockedReason"] == "该任务已有托盘开始实验，不能重新入库。"
+
+    assert reloaded.status_code == 400
+    assert reloaded.json()["detail"] == "该任务已有托盘开始实验，不能重新入库。"
+
+
 def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_codes(monkeypatch):
     client, storage = build_client(monkeypatch)
 
@@ -556,7 +598,7 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
             "status": "未入库",
             "barcode_id": 9000 + tray_serial,
             "barcode_no": tray_code,
-            "barcode_content": f"TRAY|TASK:SYLU-2026-03-101|TRAY:{tray_code}|LOAD:2",
+            "barcode_content": tray_code,
         }]
         sample["history"] = [
             {"id": f"old-{sample['id']}-1", "time": "2026-03-20T08:00:00", "action": "样品分装托盘", "detail": tray_code},

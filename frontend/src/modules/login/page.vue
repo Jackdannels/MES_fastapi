@@ -19,6 +19,7 @@
             <option value="handover">接驳区系统</option>
             <option value="visual">可视化管理</option>
             <option value="staging">暂存间系统</option>
+            <option value="laboratory">盐雾试验室操作台</option>
           </select>
         </label>
         <button class="action-btn login-submit" type="submit" :disabled="submitting">

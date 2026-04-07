@@ -16,11 +16,11 @@ import {
 describe("samplesFlowModel", () => {
   test("buildTrayFlowView highlights the current tray status in the canonical tray flow", () => {
     const view = buildTrayFlowView({
-      trayCode: "SZH-2026-001-TP-001",
+      trayCode: "SYLU-2026-03-001-TP-001",
       status: "实验进行中",
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SZH-2026-001-TP-001 | 当前状态：实验进行中");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-001 | 当前状态：实验进行中");
     expect(view.steps).toHaveLength(12);
     expect(view.steps.find((step) => step.key === "running")).toEqual(expect.objectContaining({ active: true }));
     expect(view.steps.find((step) => step.key === "ready")).toEqual(expect.objectContaining({ reached: true }));
@@ -138,24 +138,24 @@ describe("samplesFlowModel", () => {
   test("buildSamplesTrayOverviewView aggregates trays across samples and exposes task context", () => {
     const view = buildSamplesTrayOverviewView({
       tasks: [
-        { code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" },
-        { code: "SZH-2026-002", name: "任务B", test_type: "振动试验" },
+        { code: "SYLU-2026-03-001", name: "任务A", test_type: "冲击试验" },
+        { code: "SYLU-2026-03-002", name: "任务B", test_type: "振动试验" },
       ],
       samples: [
         {
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "到货", quantity: 1 }],
         },
         {
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "到货", quantity: 1 }],
         },
         {
-          code: "SZH-2026-002-SP-001",
-          task_code: "SZH-2026-002",
-          trays: [{ tray_code: "SZH-2026-002-TP-001", status: "运输中", quantity: 1 }],
+          code: "SYLU-2026-03-002-SP-001",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "运输中", quantity: 1 }],
         },
       ],
       query: "",
@@ -163,42 +163,42 @@ describe("samplesFlowModel", () => {
 
     expect(view.rows).toEqual([
       expect.objectContaining({
-        trayCode: "SZH-2026-001-TP-001",
-        taskCode: "SZH-2026-001",
+        trayCode: "SYLU-2026-03-001-TP-001",
+        taskCode: "SYLU-2026-03-001",
         taskName: "任务A",
         testType: "冲击试验",
         status: "到货",
         sampleCount: 2,
-        sampleCodes: ["SZH-2026-001-SP-001", "SZH-2026-001-SP-002"],
+        sampleCodes: ["SYLU-2026-03-001-SP-001", "SYLU-2026-03-001-SP-002"],
       }),
       expect.objectContaining({
-        trayCode: "SZH-2026-002-TP-001",
-        taskCode: "SZH-2026-002",
+        trayCode: "SYLU-2026-03-002-TP-001",
+        taskCode: "SYLU-2026-03-002",
         taskName: "任务B",
         testType: "振动试验",
         status: "样品运输中",
         sampleCount: 1,
-        sampleCodes: ["SZH-2026-002-SP-001"],
+        sampleCodes: ["SYLU-2026-03-002-SP-001"],
       }),
     ]);
   });
 
   test("buildSamplesTrayOverviewView only keeps the latest active tray for each sample", () => {
     const view = buildSamplesTrayOverviewView({
-      tasks: [{ code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
+      tasks: [{ code: "SYLU-2026-03-001", name: "任务A", test_type: "冲击试验" }],
       samples: [
         {
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           trays: [
             {
-              tray_code: "SZH-2026-001-TP-021",
+              tray_code: "SYLU-2026-03-001-TP-021",
               status: "到货",
               quantity: 1,
               updated_at: "2026-03-20T08:00:00.000Z",
             },
             {
-              tray_code: "SZH-2026-001-TP-001",
+              tray_code: "SYLU-2026-03-001-TP-001",
               status: "送至实验室",
               quantity: 1,
               updated_at: "2026-03-21T08:00:00.000Z",
@@ -206,11 +206,11 @@ describe("samplesFlowModel", () => {
           ],
         },
         {
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
           trays: [
             {
-              tray_code: "SZH-2026-001-TP-002",
+              tray_code: "SYLU-2026-03-001-TP-002",
               status: "送至实验室",
               quantity: 1,
               updated_at: "2026-03-21T08:30:00.000Z",
@@ -222,34 +222,34 @@ describe("samplesFlowModel", () => {
     });
 
     expect(view.rows).toHaveLength(2);
-    expect(view.rows.map((row) => row.trayCode)).toEqual(["SZH-2026-001-TP-001", "SZH-2026-001-TP-002"]);
-    expect(view.rows.find((row) => row.trayCode === "SZH-2026-001-TP-021")).toBeUndefined();
+    expect(view.rows.map((row) => row.trayCode)).toEqual(["SYLU-2026-03-001-TP-001", "SYLU-2026-03-001-TP-002"]);
+    expect(view.rows.find((row) => row.trayCode === "SYLU-2026-03-001-TP-021")).toBeUndefined();
   });
 
   test("updateTrayStatus synchronizes tray status to all samples assigned to the tray", () => {
     const result = updateTrayStatus({
-      tasks: [{ code: "SZH-2026-001", name: "任务A", test_type: "冲击试验" }],
+      tasks: [{ code: "SYLU-2026-03-001", name: "任务A", test_type: "冲击试验" }],
       samples: [
         {
           id: "sample-1",
-          code: "SZH-2026-001-SP-001",
-          task_code: "SZH-2026-001",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
           status: "到货",
           flow_status: "到货",
           history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "到货", quantity: 1 }],
         },
         {
           id: "sample-2",
-          code: "SZH-2026-001-SP-002",
-          task_code: "SZH-2026-001",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
           status: "到货",
           flow_status: "到货",
           history: [],
-          trays: [{ tray_code: "SZH-2026-001-TP-001", status: "到货", quantity: 1 }],
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "到货", quantity: 1 }],
         },
       ],
-      trayCode: "SZH-2026-001-TP-001",
+      trayCode: "SYLU-2026-03-001-TP-001",
       status: "送至实验室",
       now: "2026-03-18T12:00:00.000Z",
     });

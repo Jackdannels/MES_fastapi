@@ -27,14 +27,14 @@ describe("tasksApi", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => [{ code: "CJ-2026-001" }],
+        json: async () => [{ code: "SYLU-2026-03-001" }],
       }),
     );
 
     const tasks = await readTasks();
 
-    expect(tasks).toEqual([{ code: "CJ-2026-001" }]);
-    expect(JSON.parse(window.localStorage.getItem("mes.tasks"))).toEqual([{ code: "CJ-2026-001" }]);
+    expect(tasks).toEqual([{ code: "SYLU-2026-03-001" }]);
+    expect(JSON.parse(window.localStorage.getItem("mes.tasks"))).toEqual([{ code: "SYLU-2026-03-001" }]);
   });
 
   test("falls back to local task cache when the tasks endpoint is unavailable", async () => {
@@ -51,23 +51,23 @@ describe("tasksApi", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ code: "CJ-2026-002" }),
+        json: async () => ({ code: "SYLU-2026-03-002" }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ code: "CJ-2026-003" }),
+        json: async () => ({ code: "SYLU-2026-03-003" }),
       })
       .mockResolvedValueOnce({
         ok: true,
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    const created = await createTask({ code: "CJ-2026-002" });
-    const updated = await updateTask("CJ-2026-002", { code: "CJ-2026-003" });
-    await deleteTask("CJ-2026-003");
+    const created = await createTask({ code: "SYLU-2026-03-002" });
+    const updated = await updateTask("SYLU-2026-03-002", { code: "SYLU-2026-03-003" });
+    await deleteTask("SYLU-2026-03-003");
 
-    expect(created).toEqual({ code: "CJ-2026-002" });
-    expect(updated).toEqual({ code: "CJ-2026-003" });
+    expect(created).toEqual({ code: "SYLU-2026-03-002" });
+    expect(updated).toEqual({ code: "SYLU-2026-03-003" });
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/tasks",
@@ -77,14 +77,14 @@ describe("tasksApi", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/tasks/CJ-2026-002",
+      "/api/tasks/SYLU-2026-03-002",
       expect.objectContaining({
         method: "PUT",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/tasks/CJ-2026-003",
+      "/api/tasks/SYLU-2026-03-003",
       expect.objectContaining({
         method: "DELETE",
         credentials: "include",

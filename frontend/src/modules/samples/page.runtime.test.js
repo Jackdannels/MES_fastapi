@@ -275,8 +275,8 @@ describe("SamplesPage runtime", () => {
           status: 200,
           json: async () => ({
             "mes.samples": [
-              { id: "legacy-1", code: "CJ-2026-001-SP-001", task_code: "CJ-2026-001", location: "接驳区", status: "到货", trays: [] },
-              { id: "legacy-2", code: "SZH-2026-001-SP-001", task_code: "SZH-2026-001", location: "接驳区", status: "到货", trays: [] },
+              { id: "legacy-1", code: "SYLU-2026-04-101-SP-001", task_code: "SYLU-2026-04-101", location: "接驳区", status: "到货", trays: [] },
+              { id: "legacy-2", code: "SYLU-2026-04-102-SP-001", task_code: "SYLU-2026-04-102", location: "接驳区", status: "到货", trays: [] },
               { id: "current-1", code: "SYLU-2026-03-002-SP-001", task_code: "SYLU-2026-03-002", location: "接驳区", status: "到货", trays: [] },
             ],
           }),
@@ -301,9 +301,10 @@ describe("SamplesPage runtime", () => {
     const taskOptions = wrapper.get('[data-testid="samples-flow-task-filter"]').findAll("option").map((node) => node.text());
     expect(taskOptions).toContain("SYLU-2026-03-002");
     expect(taskOptions).not.toContain("SYLU-2026-03-003");
-    expect(taskOptions).not.toContain("CJ-2026-001");
-    expect(taskOptions).not.toContain("SZH-2026-001");
-    expect(wrapper.text()).not.toContain("CJ-2026-001-SP-001");
-    expect(wrapper.text()).not.toContain("SZH-2026-001-SP-001");
+    expect(taskOptions).not.toContain("SYLU-2026-04-101");
+    expect(taskOptions).not.toContain("SYLU-2026-04-102");
+    expect(wrapper.text()).not.toContain("SYLU-2026-04-101-SP-001");
+    expect(wrapper.text()).not.toContain("SYLU-2026-04-102-SP-001");
   });
 });
+

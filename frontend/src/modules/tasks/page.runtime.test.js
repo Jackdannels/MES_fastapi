@@ -64,7 +64,7 @@ describe("TasksPage runtime", () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次A",
         source: "外部委托",
         priority: "高",
@@ -79,7 +79,7 @@ describe("TasksPage runtime", () => {
       },
       {
         id: "task-2",
-        code: "MJ-2026-001",
+        code: "SYLU-2026-03-002",
         name: "霉菌试验",
         source: "内部新增",
         priority: "中",
@@ -98,13 +98,13 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("CJ-2026-001");
+    expect(wrapper.text()).toContain("SYLU-2026-03-001");
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(2);
 
-    await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("CJ-2026");
+    await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("SYLU-2026-03-001");
 
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(1);
-    expect(wrapper.text()).toContain("CJ-2026-001");
+    expect(wrapper.text()).toContain("SYLU-2026-03-001");
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
 
@@ -120,7 +120,7 @@ describe("TasksPage runtime", () => {
           json: async () => [
             {
               id: "task-remote-1",
-              code: "CJ-2026-099",
+              code: "SYLU-2026-03-099",
               name: "远程冲击试验",
               source: "外部委托",
               priority: "高",
@@ -144,9 +144,9 @@ describe("TasksPage runtime", () => {
             [SAMPLES_KEY]: [],
             [STREAMS_KEY]: [],
             [EXPERIMENTS_KEY]: [
-              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-A", experiment_type: "温度冲击" },
-              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-B", experiment_type: "振动" },
-              { task_code: "CJ-2026-099", experiment_code: "CJ-2026-099-C", experiment_type: "盐雾" },
+              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-A", experiment_type: "温度冲击" },
+              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-B", experiment_type: "振动" },
+              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-C", experiment_type: "盐雾" },
             ],
           }),
         });
@@ -158,7 +158,7 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("CJ-2026-099");
+    expect(wrapper.text()).toContain("SYLU-2026-03-099");
     expect(wrapper.text()).toContain("温度冲击 / 振动 / 盐雾");
     expect(wrapper.text()).not.toContain("设备要求");
     expect(fetchMock).toHaveBeenCalledWith(
@@ -198,7 +198,7 @@ describe("TasksPage runtime", () => {
 
     const codeInput = wrapper.get('input[name="code"]');
 
-    expect(codeInput.element.value).toBe("SYLU-2026-03-002");
+    expect(codeInput.element.value).toBe("SYLU-2026-04-001");
     expect(wrapper.find('input[name="required_device"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("必需设备/能力");
 
@@ -212,7 +212,7 @@ describe("TasksPage runtime", () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[0]).toEqual(
       expect.objectContaining({
-        code: "SYLU-2026-03-002",
+        code: "SYLU-2026-04-001",
         name: "冲击试验-批次B",
       }),
     );
@@ -222,7 +222,7 @@ describe("TasksPage runtime", () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次A",
         source: "外部委托",
         priority: "高",
@@ -343,7 +343,7 @@ describe("TasksPage runtime", () => {
     setStorage(TASKS_KEY, [
       {
         id: "task-1",
-        code: "CJ-2026-001",
+        code: "SYLU-2026-03-001",
         name: "冲击试验-批次A",
         source: "外部委托",
         priority: "高",
@@ -358,13 +358,13 @@ describe("TasksPage runtime", () => {
       },
     ]);
     setStorage(SCHEDULES_KEY, [
-      { id: "schedule-1", task_code: "CJ-2026-001", device: "冲击一室", start_at: "2026-03-13 12:00", end_at: "2026-03-13 14:00" },
+      { id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2026-03-13 12:00", end_at: "2026-03-13 14:00" },
     ]);
     setStorage(SAMPLES_KEY, [
-      { id: "sample-1", code: "CJ-2026-001-SP-001", task_code: "CJ-2026-001" },
+      { id: "sample-1", code: "SYLU-2026-03-001-SP-001", task_code: "SYLU-2026-03-001" },
     ]);
     setStorage(STREAMS_KEY, [
-      { id: "stream-1", task_code: "CJ-2026-001" },
+      { id: "stream-1", task_code: "SYLU-2026-03-001" },
     ]);
 
     let deleted = false;
@@ -456,7 +456,7 @@ describe("TasksPage runtime", () => {
               ? [
                   {
                     id: "task-1",
-                    code: "CJ-2026-001",
+                    code: "SYLU-2026-03-001",
                     name: "冲击试验-批次A",
                     source: "外部委托",
                     priority: "高",
@@ -472,7 +472,7 @@ describe("TasksPage runtime", () => {
               : [
                   {
                     id: "task-1",
-                    code: "CJ-2026-001",
+                    code: "SYLU-2026-03-001",
                     name: "冲击试验-批次A",
                     source: "外部委托",
                     priority: "高",

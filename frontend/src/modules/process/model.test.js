@@ -42,8 +42,8 @@ describe("processLabModel", () => {
     expect(cards).toHaveLength(4);
     expect(cards.find((card) => card.name === "Impact Lab 1")).toEqual(
       expect.objectContaining({
-        status: "实验中",
-        statusClass: "is-running",
+        status: "已排程",
+        statusClass: "is-scheduled",
         taskCode: "TASK-001",
         targetExperiment: "Impact Test",
       })

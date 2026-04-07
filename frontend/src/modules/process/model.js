@@ -83,7 +83,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
         .filter((entry) => String(entry?.device || "").trim() === lab.name)
         .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
 
-      // 优先找“当前正在执行”的排程，决定实验室是否处于实验中。
+      // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
       const activeSchedule =
         labSchedules.find((entry) => {
           const start = Date.parse(String(entry?.start_at || ""));
@@ -114,10 +114,10 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
 
       let status = STATUS_IDLE;
       let statusClass = "is-idle";
-      if (aggregatedTaskStatus === STATUS_RUNNING || activeSchedule || runningSchedule) {
+      if (aggregatedTaskStatus === STATUS_RUNNING || runningSchedule) {
         status = STATUS_RUNNING;
         statusClass = "is-running";
-      } else if (upcomingSchedule) {
+      } else if (activeSchedule || upcomingSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";
       }

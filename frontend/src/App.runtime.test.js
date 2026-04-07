@@ -33,6 +33,7 @@ vi.mock("@/auth", () => ({
     handover: "/handover-system",
     visual: "/visualization",
     staging: "/staging-management",
+    laboratory: "/laboratory",
   })[moduleKey] || "/",
   readAuthSession: () => ({ module: "central" }),
   switchSessionModule: switchSessionModuleMock,
@@ -106,6 +107,22 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).toContain("暂存间系统");
     expect(wrapper.text()).toContain("退出登录");
     expect(wrapper.text()).not.toContain("实验室中控管理");
+    expect(wrapper.text()).not.toContain("中控中心");
+    expect(wrapper.text()).not.toContain("新建任务");
+    expect(wrapper.text()).not.toContain("查看排程");
+  });
+
+  test("renders laboratory routes in the standalone module shell", async () => {
+    reactiveRoute.meta = { module: "laboratory", title: "盐雾试验室操作台", subtitle: "查看盐雾试验室当前任务与实验准备流程。" };
+    reactiveRoute.name = "laboratory";
+    reactiveRoute.path = "/laboratory";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
+    expect(wrapper.text()).toContain("盐雾试验室操作台");
+    expect(wrapper.text()).toContain("退出登录");
     expect(wrapper.text()).not.toContain("中控中心");
     expect(wrapper.text()).not.toContain("新建任务");
     expect(wrapper.text()).not.toContain("查看排程");

@@ -25,11 +25,11 @@ def _legacy_sample_payload() -> list[dict]:
     return [
         {
             "code": "SP-001",
-            "task_code": "SZH-2026-021",
+            "task_code": "SYLU-2026-04-121",
             "history": [
                 {
                     "action": "鏍峰搧缂栧彿閲嶆帓",
-                    "detail": "浠诲姟 SZH-2026-021；鏍峰搧缁戝畾浠诲姟",
+                    "detail": "浠诲姟 SYLU-2026-04-121；鏍峰搧缁戝畾浠诲姟",
                     "location": "瀹ゅ鎺ラ┏鍖",
                     "owner": "",
                     "status": "杩愯緭涓",
@@ -52,7 +52,7 @@ def test_read_sanitizes_legacy_sample_text_and_rewrites_file(tmp_path) -> None:
     samples = storage.read("mes.samples")
 
     assert samples[0]["history"][0]["action"] == "样品编号重排"
-    assert samples[0]["history"][0]["detail"] == "任务 SZH-2026-021；样品绑定任务"
+    assert samples[0]["history"][0]["detail"] == "任务 SYLU-2026-04-121；样品绑定任务"
     assert samples[0]["history"][0]["location"] == "室外接驳区"
     assert samples[0]["history"][0]["status"] == "运输中"
 
@@ -68,7 +68,7 @@ def test_write_sanitizes_legacy_sample_text_before_persisting(tmp_path) -> None:
 
     persisted = _read_store(path)
     assert persisted["mes.samples"][0]["history"][0]["action"] == "样品编号重排"
-    assert persisted["mes.samples"][0]["history"][0]["detail"] == "任务 SZH-2026-021；样品绑定任务"
+    assert persisted["mes.samples"][0]["history"][0]["detail"] == "任务 SYLU-2026-04-121；样品绑定任务"
 
 
 def test_write_many_sanitizes_legacy_sample_text_before_persisting(tmp_path) -> None:
@@ -100,7 +100,7 @@ def test_database_storage_backend_bootstraps_from_seed_storage_and_normalizes_sa
     assert snapshot["mes.tasks"][0]["code"] == "TASK-001"
     assert snapshot["mes.samples"][0]["history"][0]["action"] == "样品编号重排"
     assert json.loads(repository.payloads["mes.tasks"])[0]["code"] == "TASK-001"
-    assert json.loads(repository.payloads["mes.samples"])[0]["history"][0]["detail"] == "任务 SZH-2026-021；样品绑定任务"
+    assert json.loads(repository.payloads["mes.samples"])[0]["history"][0]["detail"] == "任务 SYLU-2026-04-121；样品绑定任务"
 
 
 def test_database_storage_backend_write_many_persists_snapshot_payloads() -> None:
@@ -243,7 +243,7 @@ def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
     assert summary["store_path"] == str(path)
 
 
-def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp_path) -> None:
+def test_json_storage_preserves_existing_task_codes_without_auto_migration(tmp_path) -> None:
     path = tmp_path / "mes_store.json"
     path.write_text(
         json.dumps(
@@ -251,7 +251,7 @@ def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp
                 "mes.tasks": [
                     {
                         "id": "task-1",
-                        "code": "GDW-2024-005",
+                        "code": "SYLU-2026-04-105",
                         "name": "高低温湿热试验-批次E",
                         "test_type": "高低温湿热试验",
                         "required_device": "高低温湿热试验",
@@ -263,8 +263,8 @@ def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp
                 "mes.schedules": [
                     {
                         "id": "schedule-1",
-                        "task_code": "GDW-2024-005",
-                        "experiment_code": "GDW-2024-005-A",
+                        "task_code": "SYLU-2026-04-105",
+                        "experiment_code": "SYLU-2026-04-105-A",
                         "device": "高低温湿热一室",
                         "start_at": "2026-03-12T08:00:00.000Z",
                         "end_at": "2026-03-12T12:00:00.000Z",
@@ -274,14 +274,14 @@ def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp
                 "mes.samples": [
                     {
                         "id": "sample-1",
-                        "code": "GDW-2024-005-SP-001",
-                        "task_code": "GDW-2024-005",
+                        "code": "SYLU-2026-04-105-SP-001",
+                        "task_code": "SYLU-2026-04-105",
                         "created_at": "2026-03-11T05:31:59.908Z",
                         "trays": [
                             {
                                 "id": "tray-1",
-                                "tray_code": "GDW-2024-005-TP-001",
-                                "sample_code": "GDW-2024-005-SP-001",
+                                "tray_code": "SYLU-2026-04-105-TP-001",
+                                "sample_code": "SYLU-2026-04-105-SP-001",
                                 "quantity": 1,
                             }
                         ],
@@ -290,7 +290,7 @@ def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp
                 "mes.streams": [
                     {
                         "id": "stream-1",
-                        "task_code": "GDW-2024-005",
+                        "task_code": "SYLU-2026-04-105",
                         "device": "高低温湿热一室",
                         "status": "采集中",
                     }
@@ -304,23 +304,23 @@ def test_json_storage_migrates_legacy_task_codes_and_related_records_to_sylu(tmp
     storage = JsonFileStorage(path)
     snapshot = storage.read_all()
 
-    migrated_task_code = snapshot["mes.tasks"][0]["code"]
-    assert migrated_task_code == "SYLU-2026-03-001"
+    preserved_task_code = snapshot["mes.tasks"][0]["code"]
+    assert preserved_task_code == "SYLU-2026-04-105"
     assert snapshot["mes.meta"]["schema_version"] == 2
-    assert snapshot["mes.samples"][0]["task_code"] == migrated_task_code
-    assert snapshot["mes.samples"][0]["code"] == "SYLU-2026-03-001-SP-001"
-    assert snapshot["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
-    assert snapshot["mes.samples"][0]["trays"][0]["sample_code"] == "SYLU-2026-03-001-SP-001"
-    assert snapshot["mes.schedules"][0]["task_code"] == migrated_task_code
-    assert snapshot["mes.schedules"][0]["experiment_code"] == "SYLU-2026-03-001-A"
-    assert snapshot["mes.streams"][0]["task_code"] == migrated_task_code
+    assert snapshot["mes.samples"][0]["task_code"] == preserved_task_code
+    assert snapshot["mes.samples"][0]["code"] == "SYLU-2026-04-105-SP-001"
+    assert snapshot["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-04-105-TP-001"
+    assert snapshot["mes.samples"][0]["trays"][0]["sample_code"] == "SYLU-2026-04-105-SP-001"
+    assert snapshot["mes.schedules"][0]["task_code"] == preserved_task_code
+    assert snapshot["mes.schedules"][0]["experiment_code"] == "SYLU-2026-04-105-A"
+    assert snapshot["mes.streams"][0]["task_code"] == preserved_task_code
 
     persisted = _read_store(path)
-    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-04-105"
     assert persisted["mes.meta"]["schema_version"] == 2
 
 
-def test_json_storage_backfills_historical_multi_experiment_tasks_and_is_idempotent(tmp_path) -> None:
+def test_json_storage_backfills_three_experiments_without_renaming_existing_task_codes(tmp_path) -> None:
     path = tmp_path / "mes_store.json"
     path.write_text(
         json.dumps(
@@ -328,7 +328,7 @@ def test_json_storage_backfills_historical_multi_experiment_tasks_and_is_idempot
                 "mes.tasks": [
                     {
                         "id": "task-1",
-                        "code": "GDW-2024-005",
+                        "code": "SYLU-2026-04-105",
                         "name": "高低温湿热试验-批次E",
                         "test_type": "高低温湿热试验",
                         "required_device": "高低温湿热试验",
@@ -353,20 +353,20 @@ def test_json_storage_backfills_historical_multi_experiment_tasks_and_is_idempot
     first_snapshot = storage.read_all()
     second_snapshot = storage.read_all()
 
-    assert first_snapshot["mes.tasks"][0]["code"] == second_snapshot["mes.tasks"][0]["code"]
+    assert first_snapshot["mes.tasks"][0]["code"] == second_snapshot["mes.tasks"][0]["code"] == "SYLU-2026-04-105"
     assert first_snapshot["mes.tasks"][0]["experiment_count"] == 3
     assert first_snapshot["mes.tasks"][0]["experiment_codes"] == [
-        "SYLU-2026-03-001-A",
-        "SYLU-2026-03-001-B",
-        "SYLU-2026-03-001-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
     assert [item["experiment_code"] for item in first_snapshot["mes.experiments"]] == [
-        "SYLU-2026-03-001-A",
-        "SYLU-2026-03-001-B",
-        "SYLU-2026-03-001-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
     assert len(first_snapshot["mes.experiments"]) == 3
-    assert all(re.match(r"^SYLU-2026-03-001-[A-Z]$", item["experiment_code"]) for item in first_snapshot["mes.experiments"])
+    assert all(re.match(r"^SYLU-2026-04-105-[A-Z]$", item["experiment_code"]) for item in first_snapshot["mes.experiments"])
     assert all(item["experiment_name"] and item["experiment_name"] not in {"A实验", "B实验"} for item in first_snapshot["mes.experiments"])
 
 
@@ -415,3 +415,4 @@ def test_json_storage_backfills_three_experiments_for_existing_sylu_tasks_withou
         "SYLU-2026-03-001-B",
         "SYLU-2026-03-001-C",
     ]
+

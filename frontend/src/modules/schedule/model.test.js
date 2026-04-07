@@ -14,6 +14,7 @@ import {
   buildTaskScheduledOverlays,
   createScheduleRecord,
   formatDateTime,
+  resolveTaskStatus,
   resolveRetentionTimeState,
   resolveScheduleTimes,
   updateScheduleRecord,
@@ -41,7 +42,7 @@ describe("schedulePageModel", () => {
       schedules: [
         {
           id: "schedule-1",
-          task_code: "CJ-2026-001",
+          task_code: "SYLU-2026-03-001",
           device: "冲击一室",
           start_at: "2099-03-18T00:00:00.000Z",
           end_at: "2099-03-18T05:00:00.000Z",
@@ -61,14 +62,32 @@ describe("schedulePageModel", () => {
   test("buildConflictRows finds overlaps on the same non-retention device", () => {
     const rows = buildConflictRows({
       schedules: [
-        { id: "schedule-1", task_code: "CJ-2026-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
-        { id: "schedule-2", task_code: "CJ-2026-002", device: "冲击一室", start_at: "2099-03-20T09:00:00.000Z", end_at: "2099-03-20T11:00:00.000Z" },
-        { id: "schedule-3", task_code: "CJ-2026-003", device: RETENTION_DEVICE, start_at: "2099-03-20T09:00:00.000Z", end_at: "2099-03-20T11:00:00.000Z" },
+        { id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+        { id: "schedule-2", task_code: "SYLU-2026-03-002", device: "冲击一室", start_at: "2099-03-20T09:00:00.000Z", end_at: "2099-03-20T11:00:00.000Z" },
+        { id: "schedule-3", task_code: "SYLU-2026-03-003", device: RETENTION_DEVICE, start_at: "2099-03-20T09:00:00.000Z", end_at: "2099-03-20T11:00:00.000Z" },
       ],
     });
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "冲击一室" }));
+  });
+
+  test("resolveTaskStatus keeps an active schedule as scheduled until the experiment is explicitly started", () => {
+    expect(
+      resolveTaskStatus(
+        "SYLU-2026-03-001",
+        [
+          {
+            id: "schedule-1",
+            task_code: "SYLU-2026-03-001",
+            device: "冲击一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+          },
+        ],
+        new Date("2099-03-20T09:00:00.000Z"),
+      ),
+    ).toBe(STATUS_SCHEDULED);
   });
 
   test("buildScheduleRows exposes experiment identifiers for multi-experiment scheduling", async () => {
@@ -406,14 +425,14 @@ describe("schedulePageModel", () => {
       form: {
         device: "冲击一室",
         schedule_date: "2099-03-20",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-03-001",
         time_slot: "morning",
       },
       now: new Date("2099-03-10T08:00:00.000Z"),
       schedules: [
         {
           id: "schedule-retention-1",
-          task_code: "CJ-2026-001",
+          task_code: "SYLU-2026-03-001",
           device: RETENTION_DEVICE,
           start_at: "2099-03-19T08:00:00.000Z",
           end_at: "2099-03-19T08:00:00.000Z",
@@ -421,7 +440,7 @@ describe("schedulePageModel", () => {
         },
       ],
       streams: [],
-      tasks: [{ code: "CJ-2026-001", status: "暂存间存放", test_type: "冲击试验" }],
+      tasks: [{ code: "SYLU-2026-03-001", status: "暂存间存放", test_type: "冲击试验" }],
     });
 
     expect(result.error).toBeUndefined();
@@ -434,17 +453,17 @@ describe("schedulePageModel", () => {
     const result = createScheduleRecord({
       form: {
         device: "冲击一室",
-        experiment_code: "CJ-2026-001-B",
+        experiment_code: "SYLU-2026-03-001-B",
         schedule_date: "2099-03-20",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-03-001",
         time_slot: "morning",
       },
       now: new Date("2099-03-10T08:00:00.000Z"),
       schedules: [
         {
           id: "schedule-retention-1",
-          task_code: "CJ-2026-001",
-          experiment_code: "CJ-2026-001-A",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
           device: RETENTION_DEVICE,
           start_at: "2099-03-19T08:00:00.000Z",
           end_at: "2099-03-19T08:00:00.000Z",
@@ -452,13 +471,13 @@ describe("schedulePageModel", () => {
         },
       ],
       streams: [],
-      tasks: [{ code: "CJ-2026-001", status: "暂存间存放", test_type: "冲击试验" }],
+      tasks: [{ code: "SYLU-2026-03-001", status: "暂存间存放", test_type: "冲击试验" }],
     });
 
     expect(result.error).toBeUndefined();
     expect(result.schedules[0]).toEqual(
       expect.objectContaining({
-        experiment_code: "CJ-2026-001-B",
+        experiment_code: "SYLU-2026-03-001-B",
         id: "schedule-retention-1",
       }),
     );
@@ -468,35 +487,35 @@ describe("schedulePageModel", () => {
     // 同时覆盖正式排程看板与暂存面板，避免两套视图口径漂移。
     const gantt = buildGanttRows({
       devices: [{ code: "冲击一室" }],
-      schedules: [{ id: "schedule-1", task_code: "CJ-2026-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
+      schedules: [{ id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
       startDate: new Date("2099-03-20T00:00:00.000Z"),
     });
     const retentionRows = buildRetentionInternalRows({
-      tasks: [{ code: "WDC-2026-001", name: "温度冲击-批次B", test_type: "温度冲击试验" }],
+      tasks: [{ code: "SYLU-2026-04-107", name: "温度冲击-批次B", test_type: "温度冲击试验" }],
       schedules: [
         {
           id: "schedule-retention-1",
-          task_code: "WDC-2026-001",
+          task_code: "SYLU-2026-04-107",
           device: RETENTION_DEVICE,
           start_at: "2099-03-20T07:30:00.000Z",
           end_at: "2099-03-20T07:30:00.000Z",
           status: "暂存间存放",
         },
       ],
-      samples: [{ task_code: "WDC-2026-001", location: RETENTION_DEVICE, created_at: "2099-03-20T07:30:00.000Z" }],
+      samples: [{ task_code: "SYLU-2026-04-107", location: RETENTION_DEVICE, created_at: "2099-03-20T07:30:00.000Z" }],
       now: new Date("2099-03-20T12:30:00.000Z"),
     });
 
-    expect(gantt.rows[0].slots.some((slot) => slot.label === "CJ-2026-001")).toBe(true);
+    expect(gantt.rows[0].slots.some((slot) => slot.label === "SYLU-2026-03-001")).toBe(true);
     expect(retentionRows).toHaveLength(1);
-    expect(retentionRows[0]).toEqual(expect.objectContaining({ code: "WDC-2026-001", testType: "温度冲击试验" }));
+    expect(retentionRows[0]).toEqual(expect.objectContaining({ code: "SYLU-2026-04-107", testType: "温度冲击试验" }));
   });
 
   test("buildRetentionInternalRows excludes legacy sample-only rows without a retention schedule", () => {
     const retentionRows = buildRetentionInternalRows({
-      tasks: [{ code: "GDW-2024-005", name: "高低温湿热试验-批次E", test_type: "高低温湿热试验", status: "待排程" }],
+      tasks: [{ code: "SYLU-2026-04-105", name: "高低温湿热试验-批次E", test_type: "高低温湿热试验", status: "待排程" }],
       schedules: [],
-      samples: [{ task_code: "GDW-2024-005", location: RETENTION_DEVICE, created_at: "2099-03-20T07:30:00.000Z" }],
+      samples: [{ task_code: "SYLU-2026-04-105", location: RETENTION_DEVICE, created_at: "2099-03-20T07:30:00.000Z" }],
       now: new Date("2099-03-20T12:30:00.000Z"),
     });
 
@@ -508,8 +527,8 @@ describe("schedulePageModel", () => {
       devices: [{ code: "冲击一室" }, { code: "盐雾试验室" }],
       filterDevice: "冲击一室",
       schedules: [
-        { id: "schedule-1", task_code: "CJ-2026-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
-        { id: "schedule-2", task_code: "YW-2026-001", device: "盐雾试验室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+        { id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+        { id: "schedule-2", task_code: "SYLU-2026-04-108", device: "盐雾试验室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
       ],
       startDate: new Date("2099-03-20T00:00:00.000Z"),
     });
@@ -727,20 +746,20 @@ describe("schedulePageModel", () => {
     const result = createScheduleRecord({
       form: {
         device: "Lab-A",
-        experiment_code: "CJ-2026-001-A",
+        experiment_code: "SYLU-2026-03-001-A",
         planned_hours: "26.5",
         schedule_date: "2099-03-20",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-03-001",
         time_slot: "morning",
       },
       now: new Date("2099-03-10T08:00:00.000Z"),
       schedules: [],
       streams: [],
-      tasks: [{ code: "CJ-2026-001", status: STATUS_WAITING, test_type: "UNKNOWN" }],
+      tasks: [{ code: "SYLU-2026-03-001", status: STATUS_WAITING, test_type: "UNKNOWN" }],
     });
 
     expect(result.error).toBeUndefined();
-    expect(result.schedules[0].experiment_code).toBe("CJ-2026-001-A");
+    expect(result.schedules[0].experiment_code).toBe("SYLU-2026-03-001-A");
     expect(result.schedules[0].planned_hours).toBe(26.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-21 10:30");
   });
@@ -749,19 +768,19 @@ describe("schedulePageModel", () => {
     const result = updateScheduleRecord({
       form: {
         device: "Lab-A",
-        experiment_code: "CJ-2026-001-A",
+        experiment_code: "SYLU-2026-03-001-A",
         id: "schedule-1",
         planned_hours: "1.5",
         schedule_date: "2099-03-20",
-        task_code: "CJ-2026-001",
+        task_code: "SYLU-2026-03-001",
         time_slot: "morning",
       },
       now: new Date("2099-03-10T08:00:00.000Z"),
       schedules: [
         {
           id: "schedule-1",
-          task_code: "CJ-2026-001",
-          experiment_code: "CJ-2026-001-A",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
           device: "Lab-A",
           planned_hours: 26.5,
           start_at: "2099-03-20T08:00:00.000Z",
@@ -770,11 +789,11 @@ describe("schedulePageModel", () => {
         },
       ],
       streams: [],
-      tasks: [{ code: "CJ-2026-001", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
+      tasks: [{ code: "SYLU-2026-03-001", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
     });
 
     expect(result.error).toBeUndefined();
-    expect(result.schedules[0].experiment_code).toBe("CJ-2026-001-A");
+    expect(result.schedules[0].experiment_code).toBe("SYLU-2026-03-001-A");
     expect(result.schedules[0].planned_hours).toBe(1.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
   });
@@ -786,7 +805,7 @@ describe("schedulePageModel", () => {
       schedules: [
         {
           id: "schedule-1",
-          task_code: "CJ-2026-001",
+          task_code: "SYLU-2026-03-001",
           device: "Lab-A",
           planned_hours: 80,
           start_at: "2099-03-20T08:00:00.000Z",
@@ -803,7 +822,7 @@ describe("schedulePageModel", () => {
       expect.arrayContaining([
         expect.objectContaining({
           colspan: expect.any(Number),
-          label: "CJ-2026-001",
+          label: "SYLU-2026-03-001",
           scheduleId: "schedule-1",
           state: "busy",
         }),
@@ -836,3 +855,5 @@ describe("schedulePageModel", () => {
     expect(result.time_slot).toBe("morning");
   });
 });
+
+

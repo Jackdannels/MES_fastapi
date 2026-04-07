@@ -53,8 +53,8 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
         monkeypatch,
         tasks=[
             {
-                "id": "CJ-2026-001",
-                "code": "CJ-2026-001",
+                "id": "SYLU-2026-03-001",
+                "code": "SYLU-2026-03-001",
                 "name": "冲击试验-批次A",
                 "status": "待排程",
             }
@@ -65,36 +65,36 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     created = client.post(
         "/api/tasks",
         json={
-            "id": "MJ-2026-001",
-            "code": "MJ-2026-001",
+            "id": "SYLU-2026-03-002",
+            "code": "SYLU-2026-03-002",
             "name": "霉菌试验",
             "status": "待排程",
         },
     )
     updated = client.put(
-        "/api/tasks/MJ-2026-001",
+        "/api/tasks/SYLU-2026-03-002",
         json={
-            "id": "MJ-2026-001",
-            "code": "MJ-2026-002",
+            "id": "SYLU-2026-03-002",
+            "code": "SYLU-2026-03-003",
             "name": "霉菌试验-改",
             "status": "已排程",
         },
     )
-    deleted = client.delete("/api/tasks/CJ-2026-001")
+    deleted = client.delete("/api/tasks/SYLU-2026-03-001")
     remaining = client.get("/api/tasks")
 
     assert listed.status_code == 200
-    assert listed.json()[0]["code"] == "CJ-2026-001"
+    assert listed.json()[0]["code"] == "SYLU-2026-03-001"
     assert created.status_code == 201
-    assert created.json()["code"] == "MJ-2026-001"
+    assert created.json()["code"] == "SYLU-2026-03-002"
     assert created.json()["experiment_count"] == 3
     assert len(created.json()["experiment_codes"]) == 3
     assert updated.status_code == 200
-    assert updated.json()["code"] == "MJ-2026-002"
+    assert updated.json()["code"] == "SYLU-2026-03-003"
     assert updated.json()["status"] == "已排程"
     assert updated.json()["experiment_count"] == 3
     assert deleted.status_code == 204
-    assert [item["code"] for item in remaining.json()] == ["MJ-2026-002"]
+    assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-003"]
     assert remaining.json()[0]["experiment_count"] == 3
     assert len(remaining.json()[0]["experiment_codes"]) == 3
 
@@ -105,8 +105,8 @@ def test_create_task_generates_three_distinct_experiments_and_persists_relation_
     created = client.post(
         "/api/tasks",
         json={
-            "id": "GDW-2024-005",
-            "code": "GDW-2024-005",
+            "id": "SYLU-2026-04-105",
+            "code": "SYLU-2026-04-105",
             "name": "高低温湿热试验-批次E",
             "test_type": "高低温湿热试验",
             "required_device": "高低温湿热试验",
@@ -119,22 +119,22 @@ def test_create_task_generates_three_distinct_experiments_and_persists_relation_
     assert created.status_code == 201
     assert created.json()["experiment_count"] == 3
     assert created.json()["experiment_codes"] == [
-        "GDW-2024-005-A",
-        "GDW-2024-005-B",
-        "GDW-2024-005-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
     assert [item["experiment_code"] for item in storage.read("mes.experiments")] == [
-        "GDW-2024-005-A",
-        "GDW-2024-005-B",
-        "GDW-2024-005-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
     assert [item["experiment_name"] for item in storage.read("mes.experiments")][0] == "高低温湿热试验"
     assert len({item["experiment_name"] for item in storage.read("mes.experiments")}) == 3
     assert storage.read("mes.tasks")[0]["experiment_count"] == 3
     assert storage.read("mes.tasks")[0]["experiment_codes"] == [
-        "GDW-2024-005-A",
-        "GDW-2024-005-B",
-        "GDW-2024-005-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
 
 
@@ -180,21 +180,21 @@ def test_update_task_keeps_experiment_metadata_in_sync(monkeypatch):
         monkeypatch,
         tasks=[
             {
-                "id": "GDW-2024-005",
-                "code": "GDW-2024-005",
+                "id": "SYLU-2026-04-105",
+                "code": "SYLU-2026-04-105",
                 "name": "高低温湿热试验-批次E",
                 "test_type": "高低温湿热试验",
                 "required_device": "高低温湿热试验",
                 "status": "待排程",
                 "experiment_count": 1,
-                "experiment_codes": ["GDW-2024-005-A"],
+                "experiment_codes": ["SYLU-2026-04-105-A"],
             }
         ],
         experiments=[
             {
-                "id": "GDW-2024-005-A",
-                "task_code": "GDW-2024-005",
-                "experiment_code": "GDW-2024-005-A",
+                "id": "SYLU-2026-04-105-A",
+                "task_code": "SYLU-2026-04-105",
+                "experiment_code": "SYLU-2026-04-105-A",
                 "experiment_name": "高低温湿热试验",
                 "required_device": "高低温湿热试验",
             }
@@ -202,16 +202,16 @@ def test_update_task_keeps_experiment_metadata_in_sync(monkeypatch):
     )
 
     updated = client.put(
-        "/api/tasks/GDW-2024-005",
+        "/api/tasks/SYLU-2026-04-105",
         json={
-            "id": "GDW-2024-005",
-            "code": "GDW-2024-005",
+            "id": "SYLU-2026-04-105",
+            "code": "SYLU-2026-04-105",
             "name": "高低温湿热试验-批次E",
             "test_type": "高低温湿热试验",
             "required_device": "高低温湿热试验",
             "status": "已排程",
             "experiment_count": 3,
-            "experiment_codes": ["GDW-2024-005-A", "GDW-2024-005-B", "GDW-2024-005-C"],
+            "experiment_codes": ["SYLU-2026-04-105-A", "SYLU-2026-04-105-B", "SYLU-2026-04-105-C"],
         },
     )
 
@@ -219,17 +219,17 @@ def test_update_task_keeps_experiment_metadata_in_sync(monkeypatch):
 
     assert updated.status_code == 200
     assert updated.json()["experiment_count"] == 3
-    assert updated.json()["experiment_codes"] == ["GDW-2024-005-A", "GDW-2024-005-B", "GDW-2024-005-C"]
+    assert updated.json()["experiment_codes"] == ["SYLU-2026-04-105-A", "SYLU-2026-04-105-B", "SYLU-2026-04-105-C"]
     assert [item["experiment_code"] for item in storage.read("mes.experiments")] == [
-        "GDW-2024-005-A",
-        "GDW-2024-005-B",
-        "GDW-2024-005-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
     assert storage.read("mes.tasks")[0]["experiment_count"] == 3
     assert storage.read("mes.tasks")[0]["experiment_codes"] == [
-        "GDW-2024-005-A",
-        "GDW-2024-005-B",
-        "GDW-2024-005-C",
+        "SYLU-2026-04-105-A",
+        "SYLU-2026-04-105-B",
+        "SYLU-2026-04-105-C",
     ]
 
 
@@ -252,44 +252,45 @@ def test_delete_task_also_removes_related_records(monkeypatch):
     client = build_client(
         monkeypatch,
         tasks=[
-            {"id": "CJ-2026-001", "code": "CJ-2026-001", "name": "冲击试验-批次A"},
-            {"id": "MJ-2026-001", "code": "MJ-2026-001", "name": "霉菌试验"},
+            {"id": "SYLU-2026-03-001", "code": "SYLU-2026-03-001", "name": "冲击试验-批次A"},
+            {"id": "SYLU-2026-03-002", "code": "SYLU-2026-03-002", "name": "霉菌试验"},
         ],
         schedules=[
-            {"id": "SCH-1", "task_code": "CJ-2026-001"},
-            {"id": "SCH-2", "task_code": "MJ-2026-001"},
+            {"id": "SCH-1", "task_code": "SYLU-2026-03-001"},
+            {"id": "SCH-2", "task_code": "SYLU-2026-03-002"},
         ],
         samples=[
-            {"id": "CJ-2026-001-SP-001", "code": "CJ-2026-001-SP-001", "task_code": "CJ-2026-001"},
-            {"id": "MJ-2026-001-SP-001", "code": "MJ-2026-001-SP-001", "task_code": "MJ-2026-001"},
+            {"id": "SYLU-2026-03-001-SP-001", "code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"},
+            {"id": "SYLU-2026-03-002-SP-001", "code": "SYLU-2026-03-002-SP-001", "task_code": "SYLU-2026-03-002"},
         ],
         streams=[
-            {"id": "STREAM-1", "task_code": "CJ-2026-001"},
-            {"id": "STREAM-2", "task_code": "MJ-2026-001"},
+            {"id": "STREAM-1", "task_code": "SYLU-2026-03-001"},
+            {"id": "STREAM-2", "task_code": "SYLU-2026-03-002"},
         ],
         experiments=[
-            {"id": "EXP-1", "task_code": "CJ-2026-001", "experiment_code": "CJ-2026-001-A"},
-            {"id": "EXP-2", "task_code": "MJ-2026-001", "experiment_code": "MJ-2026-001-A"},
+            {"id": "EXP-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A"},
+            {"id": "EXP-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A"},
         ],
         experiment_trays=[
-            {"id": "REL-1", "task_code": "CJ-2026-001", "experiment_code": "CJ-2026-001-A", "tray_code": "CJ-2026-001-TP-001"},
-            {"id": "REL-2", "task_code": "MJ-2026-001", "experiment_code": "MJ-2026-001-A", "tray_code": "MJ-2026-001-TP-001"},
+            {"id": "REL-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "tray_code": "SYLU-2026-03-001-TP-001"},
+            {"id": "REL-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "tray_code": "SYLU-2026-03-002-TP-001"},
         ],
         experiment_samples=[
-            {"id": "EXS-1", "task_code": "CJ-2026-001", "experiment_code": "CJ-2026-001-A", "sample_code": "CJ-2026-001-SP-001"},
-            {"id": "EXS-2", "task_code": "MJ-2026-001", "experiment_code": "MJ-2026-001-A", "sample_code": "MJ-2026-001-SP-001"},
+            {"id": "EXS-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "sample_code": "SYLU-2026-03-001-SP-001"},
+            {"id": "EXS-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "sample_code": "SYLU-2026-03-002-SP-001"},
         ],
     )
 
-    deleted = client.delete("/api/tasks/CJ-2026-001")
+    deleted = client.delete("/api/tasks/SYLU-2026-03-001")
     remaining = client.get("/api/tasks")
     storage = client.app.state.storage
 
     assert deleted.status_code == 204
-    assert [item["code"] for item in remaining.json()] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.schedules")] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.samples")] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.streams")] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.experiments")] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.experiment_trays")] == ["MJ-2026-001"]
-    assert [item["task_code"] for item in storage.read("mes.experiment_samples")] == ["MJ-2026-001"]
+    assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.schedules")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.samples")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.streams")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.experiments")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.experiment_trays")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.experiment_samples")] == ["SYLU-2026-03-002"]
+

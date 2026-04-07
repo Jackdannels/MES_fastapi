@@ -94,7 +94,7 @@ describe("useProcessLabs", () => {
     expect(activeFilter.value).toBe("overview");
     expect(labCards.value).toHaveLength(3);
     expect(overviewCount.value).toBe(3);
-    expect(runningCount.value).toBe(1);
+    expect(runningCount.value).toBe(0);
     expect(scheduledCount.value).toBe(2);
     expect(idleCount.value).toBe(1);
     expect(visibleLabCards.value).toHaveLength(3);
@@ -147,11 +147,16 @@ describe("useProcessLabs", () => {
   });
 
   test("starts only ready trays, persists updates, and reports started and remaining tray counts", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-11T08:00:00Z"));
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
         {
+          id: "schedule-1",
           device: "Lab-A",
           end_at: "2026-03-11T10:30:00Z",
+          experiment_code: "TASK-001-A",
+          planned_hours: 2,
           start_at: "2026-03-11T09:30:00Z",
           task_code: "TASK-001",
         },
@@ -219,6 +224,13 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).toHaveBeenCalledTimes(1);
     const persisted = persistSnapshot.mock.calls[0][0];
     expect(persisted["mes.tasks"]).toEqual([expect.objectContaining({ code: "TASK-001", status: "实验中" })]);
+    expect(persisted["mes.schedules"]).toEqual([
+      expect.objectContaining({
+        id: "schedule-1",
+        start_at: "2026-03-11T08:00:00.000Z",
+        end_at: "2026-03-11T10:00:00.000Z",
+      }),
+    ]);
     expect(persisted["mes.samples"]).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -247,6 +259,7 @@ describe("useProcessLabs", () => {
     });
     expect(selectedTaskDetail.value.runningTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-READY-1", "TRAY-READY-2"]);
     expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
+    vi.useRealTimers();
   });
 
   test("disables start experiment when any tray is already running", async () => {
@@ -304,7 +317,7 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
-  test("keeps a lab card running when any tray is still in the active experiment chain", async () => {
+  test("keeps a lab card scheduled when trays are only ready but not explicitly started", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
         {
@@ -335,8 +348,8 @@ describe("useProcessLabs", () => {
 
     expect(labCards.value[0]).toMatchObject({
       name: "Lab-A",
-      status: "实验中",
-      statusClass: "is-running",
+      status: "已排程",
+      statusClass: "is-scheduled",
     });
   });
 

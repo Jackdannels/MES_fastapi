@@ -357,23 +357,35 @@ function resolveScheduleTimes(form, now = new Date()) {
 }
 
 // 推导看板行和留样视图共用的任务状态。
-function resolveTaskStatus(taskCode, schedules, now = new Date()) {
+function resolveTaskStatus(taskOrTaskCode, schedules, now = new Date()) {
+  const taskCode =
+    typeof taskOrTaskCode === "object" && taskOrTaskCode !== null
+      ? normalizeText(taskOrTaskCode?.code)
+      : normalizeText(taskOrTaskCode);
+  const rawStatus =
+    typeof taskOrTaskCode === "object" && taskOrTaskCode !== null
+      ? normalizeText(taskOrTaskCode?.status)
+      : "";
   const related = (Array.isArray(schedules) ? schedules : []).filter(
-    (schedule) => normalizeText(schedule?.task_code) === normalizeText(taskCode),
+    (schedule) => normalizeText(schedule?.task_code) === taskCode,
   );
+
+  if (rawStatus === STATUS_RUNNING) {
+    return STATUS_RUNNING;
+  }
 
   const labSchedules = related.filter((schedule) => !isRetentionDevice(schedule?.device));
   const retentionSchedules = related.filter((schedule) => isRetentionDevice(schedule?.device));
   const currentTime = now.getTime();
 
-  // 优先判断是否有正在执行的正式实验。
+  // 当前时间命中排程窗口也只能说明任务已进入排程窗口，不能自动说明已经开始实验。
   const activeLab = labSchedules.find((schedule) => {
     const start = parseDate(schedule?.start_at);
     const end = parseDate(schedule?.end_at);
     return start && end && start.getTime() <= currentTime && end.getTime() >= currentTime;
   });
   if (activeLab) {
-    return STATUS_RUNNING;
+    return STATUS_SCHEDULED;
   }
 
   // 其次判断是否存在未来或尚未结束的正式实验排程。
@@ -755,7 +767,7 @@ function buildScheduleRows({ schedules, tasks, experiments, now = new Date() }) 
       const experimentCode = normalizeText(schedule?.experiment_code);
       const task = taskByCode.get(taskCode);
       // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
-      const status = resolveTaskStatus(taskCode, schedules, now);
+      const status = resolveTaskStatus(task || taskCode, schedules, now);
 
       return {
         device: normalizeText(schedule?.device),
@@ -1173,7 +1185,7 @@ function syncTaskStatuses(tasks, schedules, now = new Date()) {
   return (Array.isArray(tasks) ? tasks : []).map((task) => ({
     ...task,
     // 任务状态完全以当前排程快照重新计算，避免手工维护多处状态。
-    status: resolveTaskStatus(task?.code, schedules, now),
+    status: resolveTaskStatus(task, schedules, now),
   }));
 }
 

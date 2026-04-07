@@ -19,6 +19,7 @@ SPA_ROUTES = (
     "/system",
     "/visualization",
     "/staging-management",
+    "/laboratory",
 )
 
 

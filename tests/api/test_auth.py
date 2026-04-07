@@ -68,6 +68,16 @@ def test_login_accepts_handover_module(client):
     assert response.json()["module"] == "handover"
 
 
+def test_login_accepts_laboratory_module(client):
+    response = client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "laboratory"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["module"] == "laboratory"
+
+
 def test_login_sets_secure_cookie_when_debug_is_disabled(client, monkeypatch):
     monkeypatch.setattr(settings, "DEBUG", False)
     monkeypatch.setattr(settings, "SESSION_COOKIE_SECURE", None, raising=False)
@@ -142,6 +152,21 @@ def test_switch_module_updates_the_current_auth_session(client):
     assert response.headers["cache-control"] == "no-store"
     assert session_response.status_code == 200
     assert session_response.json()["module"] == "visual"
+
+
+def test_switch_module_accepts_laboratory(client):
+    client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "central"},
+    )
+
+    response = client.post("/auth/switch-module", json={"module": "laboratory"})
+    session_response = client.get("/auth/session")
+
+    assert response.status_code == 200
+    assert response.json()["module"] == "laboratory"
+    assert session_response.status_code == 200
+    assert session_response.json()["module"] == "laboratory"
 
 
 def test_switch_module_requires_an_authenticated_session(client):

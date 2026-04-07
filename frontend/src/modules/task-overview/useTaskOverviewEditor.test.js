@@ -115,11 +115,11 @@ describe("useTaskOverviewEditor", () => {
   test("saveEdit persists task experiments and updates task experiment summary fields", async () => {
     const snapshot = {
       [STORAGE_KEYS.tasks]: [
-        { code: "SZH-2026-006", test_type: "四综合试验", name: "四综合试验", required_device: "四综合试验", sample_count: 1, status: "待排程" },
+        { code: "SYLU-2026-03-006", test_type: "四综合试验", name: "四综合试验", required_device: "四综合试验", sample_count: 1, status: "待排程" },
       ],
       [STORAGE_KEYS.experiments]: [],
       [STORAGE_KEYS.experiment_trays]: [],
-      [STORAGE_KEYS.samples]: [{ id: "sample-1", code: "SZH-2026-006-SP-001", task_code: "SZH-2026-006", trays: [] }],
+      [STORAGE_KEYS.samples]: [{ id: "sample-1", code: "SYLU-2026-03-006-SP-001", task_code: "SYLU-2026-03-006", trays: [] }],
       [STORAGE_KEYS.schedules]: [],
       [STORAGE_KEYS.streams]: [],
     };
@@ -128,31 +128,31 @@ describe("useTaskOverviewEditor", () => {
     });
 
     openEdit({
-      taskCode: "SZH-2026-006",
+      taskCode: "SYLU-2026-03-006",
       taskType: "四综合试验",
       sampleCount: 1,
-      sampleCodes: ["SZH-2026-006-SP-001"],
+      sampleCodes: ["SYLU-2026-03-006-SP-001"],
       experiments: [],
     });
     editForm.value.experiments = [
-      { experimentCode: "SZH-2026-006-A", experimentName: "A实验", requiredDevice: "四综合试验", priority: "高", plannedHours: 3.5 },
-      { experimentCode: "SZH-2026-006-B", experimentName: "B实验", requiredDevice: "振动试验", priority: "中", plannedHours: 4 },
+      { experimentCode: "SYLU-2026-03-006-A", experimentName: "A实验", requiredDevice: "四综合试验", priority: "高", plannedHours: 3.5 },
+      { experimentCode: "SYLU-2026-03-006-B", experimentName: "B实验", requiredDevice: "振动试验", priority: "中", plannedHours: 4 },
     ];
 
-    await saveEdit("SZH-2026-006");
+    await saveEdit("SYLU-2026-03-006");
 
     expect(persistSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         [STORAGE_KEYS.tasks]: [
           expect.objectContaining({
-            code: "SZH-2026-006",
+            code: "SYLU-2026-03-006",
             experiment_count: 2,
-            experiment_codes: ["SZH-2026-006-A", "SZH-2026-006-B"],
+            experiment_codes: ["SYLU-2026-03-006-A", "SYLU-2026-03-006-B"],
           }),
         ],
         [STORAGE_KEYS.experiments]: [
-          expect.objectContaining({ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-A", experiment_name: "A实验" }),
-          expect.objectContaining({ task_code: "SZH-2026-006", experiment_code: "SZH-2026-006-B", experiment_name: "B实验" }),
+          expect.objectContaining({ task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验" }),
+          expect.objectContaining({ task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "B实验" }),
         ],
       })
     );

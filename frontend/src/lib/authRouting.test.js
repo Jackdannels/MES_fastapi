@@ -62,6 +62,17 @@ describe("authRouting", () => {
     ).resolves.toBe(true);
   });
 
+  test("redirects authenticated laboratory users away from the login page to /laboratory", async () => {
+    await expect(
+      buildRouteAccessDecision({
+        session: { logged_at: "2026-03-11T00:00:00Z", module: "laboratory", username: "admin" },
+        to: {
+          meta: { layout: "auth" },
+        },
+      }),
+    ).resolves.toBe("/laboratory");
+  });
+
   test("hydrates session through the provided getter when session is omitted", async () => {
     await expect(
       buildRouteAccessDecision({

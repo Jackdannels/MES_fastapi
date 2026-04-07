@@ -69,6 +69,7 @@ MODULES = (
     AppModule(key="system", spa_routes=("/system",)),
     AppModule(key="visualization", spa_routes=("/visualization",)),
     AppModule(key="staging-management", spa_routes=("/staging-management",)),
+    AppModule(key="laboratory", spa_routes=("/laboratory",)),
 )
 
 
@@ -94,6 +95,7 @@ def get_spa_routes() -> tuple[str, ...]:
         "system",
         "visualization",
         "staging-management",
+        "laboratory",
     )
     ordered_modules = {module.key: module for module in MODULES}
     return tuple(route for key in ordered_keys for route in ordered_modules[key].spa_routes)

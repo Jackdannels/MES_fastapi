@@ -13,7 +13,7 @@ const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
 const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
-const ACTIVE_TRAY_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", STATUS_RUNNING]);
+const ACTIVE_TRAY_STATUSES = new Set(["实验进行中", STATUS_RUNNING]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
@@ -210,24 +210,15 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
   if (aggregatedStatus) {
     return aggregatedStatus;
   }
+  const rawStatus = normalizeStatusLabel(task?.status);
+  if (rawStatus === STATUS_RUNNING) {
+    return STATUS_RUNNING;
+  }
   const relatedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (schedule) => normalizeText(schedule?.task_code) === taskCode,
   );
 
-  // 优先识别“当前正在正式实验室执行”的任务。
-  const activeSchedule = relatedSchedules.find((schedule) => {
-    if (isRetentionDevice(schedule?.device)) {
-      return false;
-    }
-    const start = parseTime(schedule?.start_at);
-    const end = parseTime(schedule?.end_at);
-    return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
-  });
-  if (activeSchedule) {
-    return STATUS_RUNNING;
-  }
-
-  // 其次识别是否已经进入正式排程。
+  // 正式实验室排程只能说明“已排程”，不能自动说明“实验中”。
   const scheduledEntry = relatedSchedules.find((schedule) => !isRetentionDevice(schedule?.device));
   if (scheduledEntry) {
     return STATUS_SCHEDULED;
@@ -238,8 +229,6 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
   if (retentionEntry) {
     return STATUS_WAITING;
   }
-
-  const rawStatus = normalizeStatusLabel(task?.status);
   if (rawStatus === "已受理") {
     return STATUS_WAITING;
   }

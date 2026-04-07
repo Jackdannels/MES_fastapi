@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Lock tray allocation editing after save in both pre-allocation and handover workbenches until the operator explicitly resets the workspace.
+**Goal:** Lock tray allocation editing after save in both pre-allocation and handover workbenches until the operator explicitly resets the workspace, while permanently blocking reset for tasks whose trays have already entered experiment execution.
 
-**Architecture:** Extend the shared transfer workbench lock model so `allocationSaved` becomes a first-class readonly condition. Cover the behavior with runtime tests in the two pages that embed the shared workbench.
+**Architecture:** Extend the shared transfer workbench lock model so `allocationSaved` becomes a first-class readonly condition, then add a backend-derived permanent lock for stored tasks with started experiment trays. The frontend consumes the new metadata from `/api/transfer-area/bootstrap` and `/workspace`, while `/reload` enforces the same rule server-side.
 
-**Tech Stack:** Vue 3, Vue Test Utils, Vitest
+**Tech Stack:** Vue 3, Vue Test Utils, Vitest, FastAPI, Pytest
 
 ---
 
@@ -55,3 +55,28 @@
 - [ ] **Step 1: Run `npm run test:run -- src/modules/samples/page.runtime.test.js src/modules/handover-system/page.runtime.test.js`**
 - [ ] **Step 2: Run `npm run test:run -- src/modules/transfer-workbench/TransferWorkbench.vue` only if a dedicated runtime suite exists; otherwise skip**
 - [ ] **Step 3: Record the verification command and outcome**
+
+## Chunk 4: Started-Experiment Reset Lock
+
+### Task 5: Add backend regression coverage for started stored tasks
+
+**Files:**
+- Modify: `tests/api/test_transfer_area.py`
+
+- [ ] **Step 1: Write the failing test**
+- [ ] **Step 2: Run `.\.venv\Scripts\python.exe -m pytest tests/api/test_transfer_area.py -k "keeps_started_stored_tasks_visible_and_rejects_reload" -q` and verify it fails**
+- [ ] **Step 3: Assert the task stays visible in bootstrap/workspace and `/reload` returns 400 once any tray enters experiment execution**
+- [ ] **Step 4: Re-run the targeted test and verify it passes**
+
+### Task 6: Surface and enforce the permanent reload lock
+
+**Files:**
+- Modify: `app/api/routes/transfer_area.py`
+- Modify: `frontend/src/modules/transfer-workbench/TransferWorkbench.vue`
+- Test: `frontend/src/modules/transfer-workbench/TransferWorkbench.runtime.test.js`
+
+- [ ] **Step 1: Derive a started-experiment lock from existing task/sample/tray statuses**
+- [ ] **Step 2: Keep stored started tasks visible in bootstrap and workspace responses**
+- [ ] **Step 3: Return task-level lock metadata and reject `/reload` with a clear message**
+- [ ] **Step 4: Make the shared workbench consume that metadata, keep printing available, and disable `重新分配 / 重新入库` with a visible reason**
+- [ ] **Step 5: Run `npm run test:run -- src/modules/transfer-workbench/TransferWorkbench.runtime.test.js -t "started stored tasks stay visible and block re-entry in pre-allocation mode"` and verify it passes**

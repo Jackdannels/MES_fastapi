@@ -33,6 +33,9 @@
 成功后提示：
 
 - `当前开始进行 {本次启动托盘数} 个托盘，剩余 {剩余托盘数} 个托盘。`
+- 当前实验排程的 `start_at` 立即改成点击 `开始实验` 的时刻
+- 当前实验排程的 `end_at` 按 `开始时间 + planned_hours` 重算
+- 如果该排程没有 `planned_hours`，则回退使用原 `end_at - start_at` 的持续时长
 
 其中：
 
@@ -63,7 +66,7 @@
 
 - `frontend/src/modules/process/useProcessLabs.js`
   - 负责托盘级状态聚合、开始实验动作、成功提示与抽屉托盘选择状态
-  - 通过 `persistSnapshot()` 写回更新后的 `mes.samples` 与 `mes.tasks`
+  - 通过 `persistSnapshot()` 写回更新后的 `mes.samples`、`mes.tasks` 与 `mes.schedules`
 - `frontend/src/modules/process/page.vue`
   - 卡片底部增加 `开始实验`
   - 抽屉内增加托盘批次区与托盘流程图区

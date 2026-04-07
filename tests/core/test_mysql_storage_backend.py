@@ -29,7 +29,7 @@ from app.core.demo_data_reset import reset_demo_data
 def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     storage_task = {
         "id": "task-1",
-        "code": "ZD-2026-003",
+        "code": "SYLU-2026-04-103",
         "name": "振动试验任务",
         "source": "内部新增",
         "client": "内部部门",
@@ -51,7 +51,7 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
 
     insert_row = build_task_insert_row(storage_task)
 
-    assert insert_row["task_no"] == "ZD-2026-003"
+    assert insert_row["task_no"] == "SYLU-2026-04-103"
     assert insert_row["source_system"] == STORAGE_MARKER
     assert insert_row["priority"] == 3
     assert insert_row["sample_count"] == 3
@@ -64,7 +64,7 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
         }
     )
 
-    assert storage_item["id"] == "ZD-2026-003"
+    assert storage_item["id"] == "SYLU-2026-04-103"
     assert storage_item["priority"] == "高"
     assert storage_item["contact_info"] == "13800000001"
     assert storage_item["due_at"] == "2026-03-18 10:00"
@@ -73,8 +73,8 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
 def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
     storage_schedule = {
         "id": "schedule-1",
-        "task_code": "ZD-2026-003",
-        "experiment_code": "ZD-2026-003-A",
+        "task_code": "SYLU-2026-04-103",
+        "experiment_code": "SYLU-2026-04-103-A",
         "device": "恒温恒湿间（暂存间）",
         "start_at": "2026-03-17T10:00:00Z",
         "end_at": "2026-03-17T10:00:00Z",
@@ -86,7 +86,7 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
 
     assert insert_row["schedule_no"] == "schedule-1"
     assert insert_row["schedule_type"] == STORAGE_MARKER
-    assert insert_row["experiment_no"] == "ZD-2026-003-A"
+    assert insert_row["experiment_no"] == "SYLU-2026-04-103-A"
     assert insert_row["is_retention"] == 1
 
     storage_item = build_storage_schedule_item(
@@ -98,15 +98,15 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
 
     assert storage_item["id"] == "schedule-1"
     assert storage_item["device"] == "恒温恒湿间（暂存间）"
-    assert storage_item["experiment_code"] == "ZD-2026-003-A"
+    assert storage_item["experiment_code"] == "SYLU-2026-04-103-A"
     assert storage_item["planned_hours"] == 0
 
 
 def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> None:
     storage_experiment = {
         "id": "experiment-1",
-        "task_code": "SZH-2026-006",
-        "experiment_code": "SZH-2026-006-A",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-A",
         "experiment_name": "A实验",
         "required_device": "四综合试验",
         "priority": "高",
@@ -118,8 +118,8 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
 
     insert_row = build_experiment_insert_row(storage_experiment)
 
-    assert insert_row["experiment_no"] == "SZH-2026-006-A"
-    assert insert_row["task_no"] == "SZH-2026-006"
+    assert insert_row["experiment_no"] == "SYLU-2026-04-106-A"
+    assert insert_row["task_no"] == "SYLU-2026-04-106"
     assert insert_row["required_device"] == "四综合试验"
 
     storage_item = build_storage_experiment_item(
@@ -129,8 +129,8 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
         }
     )
 
-    assert storage_item["experiment_code"] == "SZH-2026-006-A"
-    assert storage_item["task_code"] == "SZH-2026-006"
+    assert storage_item["experiment_code"] == "SYLU-2026-04-106-A"
+    assert storage_item["task_code"] == "SYLU-2026-04-106"
     assert storage_item["experiment_name"] == "A实验"
     assert storage_item["status"] == "待排程"
 
@@ -138,18 +138,18 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
 def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:
     relation = {
         "id": "rel-1",
-        "task_code": "SZH-2026-006",
-        "experiment_code": "SZH-2026-006-A",
-        "tray_code": "SZH-2026-006-TP-001",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-A",
+        "tray_code": "SYLU-2026-04-106-TP-001",
         "created_at": "2026-03-17T09:40:00Z",
         "updated_at": "2026-03-17T09:41:00Z",
     }
 
     insert_row = build_experiment_tray_insert_row(relation)
 
-    assert insert_row["experiment_no"] == "SZH-2026-006-A"
-    assert insert_row["task_no"] == "SZH-2026-006"
-    assert insert_row["tray_no"] == "SZH-2026-006-TP-001"
+    assert insert_row["experiment_no"] == "SYLU-2026-04-106-A"
+    assert insert_row["task_no"] == "SYLU-2026-04-106"
+    assert insert_row["tray_no"] == "SYLU-2026-04-106-TP-001"
 
     storage_item = build_storage_experiment_tray_item(
         {
@@ -158,26 +158,26 @@ def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:
         }
     )
 
-    assert storage_item["experiment_code"] == "SZH-2026-006-A"
-    assert storage_item["task_code"] == "SZH-2026-006"
-    assert storage_item["tray_code"] == "SZH-2026-006-TP-001"
+    assert storage_item["experiment_code"] == "SYLU-2026-04-106-A"
+    assert storage_item["task_code"] == "SYLU-2026-04-106"
+    assert storage_item["tray_code"] == "SYLU-2026-04-106-TP-001"
 
 
 def test_experiment_sample_mapping_round_trip_preserves_assignment_keys() -> None:
     relation = {
         "id": "rel-2",
-        "task_code": "SZH-2026-006",
-        "experiment_code": "SZH-2026-006-A",
-        "sample_code": "SZH-2026-006-SP-001",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-A",
+        "sample_code": "SYLU-2026-04-106-SP-001",
         "created_at": "2026-03-17T09:42:00Z",
         "updated_at": "2026-03-17T09:43:00Z",
     }
 
     insert_row = build_experiment_sample_insert_row(relation)
 
-    assert insert_row["experiment_no"] == "SZH-2026-006-A"
-    assert insert_row["task_no"] == "SZH-2026-006"
-    assert insert_row["sample_no"] == "SZH-2026-006-SP-001"
+    assert insert_row["experiment_no"] == "SYLU-2026-04-106-A"
+    assert insert_row["task_no"] == "SYLU-2026-04-106"
+    assert insert_row["sample_no"] == "SYLU-2026-04-106-SP-001"
 
     storage_item = build_storage_experiment_sample_item(
         {
@@ -186,9 +186,9 @@ def test_experiment_sample_mapping_round_trip_preserves_assignment_keys() -> Non
         }
     )
 
-    assert storage_item["experiment_code"] == "SZH-2026-006-A"
-    assert storage_item["task_code"] == "SZH-2026-006"
-    assert storage_item["sample_code"] == "SZH-2026-006-SP-001"
+    assert storage_item["experiment_code"] == "SYLU-2026-04-106-A"
+    assert storage_item["task_code"] == "SYLU-2026-04-106"
+    assert storage_item["sample_code"] == "SYLU-2026-04-106-SP-001"
 
 
 def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> None:
@@ -225,7 +225,7 @@ def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> Non
 def test_stream_mapping_round_trip_formats_quality_and_reported_flag() -> None:
     storage_stream = {
         "id": "stream-1",
-        "task_code": "ZD-2026-003",
+        "task_code": "SYLU-2026-04-103",
         "device": "振动一室",
         "last_packet": "2026-03-17 10:15",
         "quality": "98.5%",
@@ -254,8 +254,8 @@ def test_stream_mapping_round_trip_formats_quality_and_reported_flag() -> None:
 def test_sample_mapping_round_trip_preserves_owner_remark_history_and_trays() -> None:
     storage_sample = {
         "id": "sample-1",
-        "code": "ZD-2026-003-SP-001",
-        "task_code": "ZD-2026-003",
+        "code": "SYLU-2026-04-103-SP-001",
+        "task_code": "SYLU-2026-04-103",
         "sample_type": "结构件",
         "batch_no": "BATCH-01",
         "arrival_at": "2026-03-17 09:30",
@@ -272,8 +272,8 @@ def test_sample_mapping_round_trip_preserves_owner_remark_history_and_trays() ->
         "trays": [
             {
                 "id": "tray-row-1",
-                "tray_code": "ZD-2026-003-TP-001",
-                "sample_code": "ZD-2026-003-SP-001",
+                "tray_code": "SYLU-2026-04-103-TP-001",
+                "sample_code": "SYLU-2026-04-103-SP-001",
                 "quantity": 1,
                 "created_at": "2026-03-17T09:40:00Z",
                 "updated_at": "2026-03-17T09:40:00Z",
@@ -294,41 +294,41 @@ def test_sample_mapping_round_trip_preserves_owner_remark_history_and_trays() ->
 
     insert_row = build_sample_insert_row(storage_sample)
 
-    assert insert_row["sample_no"] == "ZD-2026-003-SP-001"
+    assert insert_row["sample_no"] == "SYLU-2026-04-103-SP-001"
     assert insert_row["sample_status"] == "到货"
     assert insert_row["quantity"] == 2
-    assert insert_row["task_no"] == "ZD-2026-003"
+    assert insert_row["task_no"] == "SYLU-2026-04-103"
     assert STORAGE_MARKER in insert_row["remark"]
 
     storage_item = build_storage_sample_item(
         {
             **insert_row,
             "sample_id": 7,
-            "sample_name": "ZD-2026-003-SP-001",
+            "sample_name": "SYLU-2026-04-103-SP-001",
         },
         tray_rows=storage_sample["trays"],
         event_rows=storage_sample["history"],
     )
 
-    assert storage_item["id"] == "ZD-2026-003-SP-001"
+    assert storage_item["id"] == "SYLU-2026-04-103-SP-001"
     assert storage_item["owner"] == "张三"
     assert storage_item["remark"] == "样品备注"
-    assert storage_item["trays"][0]["tray_code"] == "ZD-2026-003-TP-001"
+    assert storage_item["trays"][0]["tray_code"] == "SYLU-2026-04-103-TP-001"
     assert storage_item["history"][0]["action"] == "样品登记"
     assert storage_item["history"][0]["detail"] == "登记完成"
 
 
 def test_task_round_trip_includes_tray_codes_from_tray_rows() -> None:
     tray_rows = [
-        {"task_no": "ZD-2026-003", "tray_no": "ZD-2026-003-TP-002"},
-        {"task_no": "ZD-2026-003", "tray_no": "ZD-2026-003-TP-001"},
+        {"task_no": "SYLU-2026-04-103", "tray_no": "SYLU-2026-04-103-TP-002"},
+        {"task_no": "SYLU-2026-04-103", "tray_no": "SYLU-2026-04-103-TP-001"},
         {"task_no": "OTHER", "tray_no": "OTHER-TP-001"},
     ]
 
     tray_map = build_storage_task_tray_codes(tray_rows)
     storage_item = build_storage_task_item(
         {
-            "task_no": "ZD-2026-003",
+            "task_no": "SYLU-2026-04-103",
             "task_name": "振动试验任务",
             "task_source_type": "内部新增",
             "client_name": "内部部门",
@@ -347,10 +347,10 @@ def test_task_round_trip_includes_tray_codes_from_tray_rows() -> None:
             "task_status": "待排程",
             "created_at": "2026-03-17 09:00:00",
         },
-        tray_codes=tray_map.get("ZD-2026-003"),
+        tray_codes=tray_map.get("SYLU-2026-04-103"),
     )
 
-    assert storage_item["tray_codes"] == ["ZD-2026-003-TP-001", "ZD-2026-003-TP-002"]
+    assert storage_item["tray_codes"] == ["SYLU-2026-04-103-TP-001", "SYLU-2026-04-103-TP-002"]
 
 
 def test_build_storage_sample_item_recovers_task_code_from_sample_code_when_task_join_is_missing() -> None:
@@ -377,12 +377,12 @@ def test_build_storage_sample_item_recovers_task_code_from_sample_code_when_task
     assert storage_item["task_code"] == "SYLU-2026-03-001"
 
 
-def test_normalize_storage_payload_migrates_legacy_relational_rows_to_sylu_identifiers() -> None:
+def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_migration() -> None:
     payload = {
         "mes.tasks": [
             {
                 "id": "task-1",
-                "code": "GDW-2024-005",
+                "code": "SYLU-2026-04-105",
                 "name": "高低温湿热试验-批次E",
                 "test_type": "高低温湿热试验",
                 "created_at": "2026-03-05T09:00:00",
@@ -391,13 +391,13 @@ def test_normalize_storage_payload_migrates_legacy_relational_rows_to_sylu_ident
         "mes.samples": [
             {
                 "id": "sample-1",
-                "code": "GDW-2024-005-SP-001",
-                "task_code": "GDW-2024-005",
+                "code": "SYLU-2026-04-105-SP-001",
+                "task_code": "SYLU-2026-04-105",
                 "created_at": "2026-03-05T09:05:00",
                 "trays": [
                     {
-                        "tray_code": "GDW-2024-005-TP-001",
-                        "sample_code": "GDW-2024-005-SP-001",
+                        "tray_code": "SYLU-2026-04-105-TP-001",
+                        "sample_code": "SYLU-2026-04-105-SP-001",
                         "quantity": 1,
                     }
                 ],
@@ -406,44 +406,44 @@ def test_normalize_storage_payload_migrates_legacy_relational_rows_to_sylu_ident
         "mes.schedules": [
             {
                 "id": "schedule-1",
-                "task_code": "GDW-2024-005",
-                "experiment_code": "GDW-2024-005-A",
+                "task_code": "SYLU-2026-04-105",
+                "experiment_code": "SYLU-2026-04-105-A",
                 "device": "高低温实验室",
             }
         ],
         "mes.experiments": [],
         "mes.experiment_trays": [
             {
-                "task_code": "GDW-2024-005",
-                "experiment_code": "GDW-2024-005-A",
-                "tray_code": "GDW-2024-005-TP-001",
+                "task_code": "SYLU-2026-04-105",
+                "experiment_code": "SYLU-2026-04-105-A",
+                "tray_code": "SYLU-2026-04-105-TP-001",
             }
         ],
-        "mes.streams": [{"id": "stream-1", "task_code": "GDW-2024-005"}],
+        "mes.streams": [{"id": "stream-1", "task_code": "SYLU-2026-04-105"}],
     }
 
     normalized = normalize_storage_payload(payload)
 
-    assert normalized["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
-    assert normalized["mes.tasks"][0]["experiment_codes"] == ["SYLU-2026-03-001-A", "SYLU-2026-03-001-B", "SYLU-2026-03-001-C"]
-    assert normalized["mes.samples"][0]["code"] == "SYLU-2026-03-001-SP-001"
-    assert normalized["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
-    assert normalized["mes.schedules"][0]["experiment_code"] == "SYLU-2026-03-001-A"
-    assert normalized["mes.experiment_trays"][0]["tray_code"] == "SYLU-2026-03-001-TP-001"
-    assert normalized["mes.streams"][0]["task_code"] == "SYLU-2026-03-001"
+    assert normalized["mes.tasks"][0]["code"] == "SYLU-2026-04-105"
+    assert normalized["mes.tasks"][0]["experiment_codes"] == ["SYLU-2026-04-105-A", "SYLU-2026-04-105-B", "SYLU-2026-04-105-C"]
+    assert normalized["mes.samples"][0]["code"] == "SYLU-2026-04-105-SP-001"
+    assert normalized["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-04-105-TP-001"
+    assert normalized["mes.schedules"][0]["experiment_code"] == "SYLU-2026-04-105-A"
+    assert normalized["mes.experiment_trays"][0]["tray_code"] == "SYLU-2026-04-105-TP-001"
+    assert normalized["mes.streams"][0]["task_code"] == "SYLU-2026-04-105"
     assert normalized["mes.experiments"][0]["experiment_name"] == "高低温湿热试验"
     assert normalized["mes.experiments"][1]["experiment_name"] == "冲击试验"
     assert normalized["mes.experiments"][2]["experiment_name"] == "振动试验"
     assert normalized["mes.meta"]["schema_version"] == 2
 
 
-def test_experiment_and_schedule_rows_round_trip_with_migrated_sylu_codes() -> None:
+def test_experiment_and_schedule_rows_round_trip_with_existing_task_codes() -> None:
     normalized = normalize_storage_payload(
         {
             "mes.tasks": [
                 {
                     "id": "task-1",
-                    "code": "SZH-2026-006",
+                    "code": "SYLU-2026-04-106",
                     "name": "四综合任务",
                     "test_type": "四综合试验",
                     "created_at": "2026-03-17T09:00:00",
@@ -452,8 +452,8 @@ def test_experiment_and_schedule_rows_round_trip_with_migrated_sylu_codes() -> N
             "mes.experiments": [
                 {
                     "id": "experiment-1",
-                    "task_code": "SZH-2026-006",
-                    "experiment_code": "SZH-2026-006-A",
+                    "task_code": "SYLU-2026-04-106",
+                    "experiment_code": "SYLU-2026-04-106-A",
                     "experiment_name": "A实验",
                     "required_device": "四综合试验",
                     "status": "待排程",
@@ -462,8 +462,8 @@ def test_experiment_and_schedule_rows_round_trip_with_migrated_sylu_codes() -> N
             "mes.schedules": [
                 {
                     "id": "schedule-1",
-                    "task_code": "SZH-2026-006",
-                    "experiment_code": "SZH-2026-006-A",
+                    "task_code": "SYLU-2026-04-106",
+                    "experiment_code": "SYLU-2026-04-106-A",
                     "device": "四综合实验室",
                     "start_at": "2026-03-20T08:00:00Z",
                     "end_at": "2026-03-20T12:00:00Z",
@@ -481,12 +481,12 @@ def test_experiment_and_schedule_rows_round_trip_with_migrated_sylu_codes() -> N
     experiment_item = build_storage_experiment_item(experiment_row)
     schedule_item = build_storage_schedule_item(schedule_row)
 
-    assert experiment_row["task_no"] == "SYLU-2026-03-001"
-    assert experiment_row["experiment_no"] == "SYLU-2026-03-001-A"
+    assert experiment_row["task_no"] == "SYLU-2026-04-106"
+    assert experiment_row["experiment_no"] == "SYLU-2026-04-106-A"
     assert experiment_item["experiment_name"] == "四综合试验"
-    assert schedule_row["experiment_no"] == "SYLU-2026-03-001-A"
-    assert schedule_item["task_code"] == "SYLU-2026-03-001"
-    assert schedule_item["experiment_code"] == "SYLU-2026-03-001-A"
+    assert schedule_row["experiment_no"] == "SYLU-2026-04-106-A"
+    assert schedule_item["task_code"] == "SYLU-2026-04-106"
+    assert schedule_item["experiment_code"] == "SYLU-2026-04-106-A"
 
 
 class _DummySnapshotRepository:
@@ -681,3 +681,4 @@ def test_reset_demo_data_preserves_devices_when_writing_mysql_backend(monkeypatc
     assert writes["mes.schedules"] == []
     assert writes["mes.experiment_trays"] == []
     assert writes["mes.experiment_samples"] == []
+

@@ -224,4 +224,8 @@ describe("auth", () => {
   test("resolveModuleHome maps the staging module to its dedicated page", () => {
     expect(resolveModuleHome("staging")).toBe("/staging-management");
   });
+
+  test("resolveModuleHome maps the laboratory module to its dedicated page", () => {
+    expect(resolveModuleHome("laboratory")).toBe("/laboratory");
+  });
 });
