@@ -536,6 +536,41 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
     assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "已入库"
 
 
+def test_transfer_area_allows_second_tray_dispatch_when_transfer_flag_is_missing_but_task_was_already_stored(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert allocated.status_code == 200
+    assert confirmed.status_code == 200
+
+    tasks = storage.read("mes.tasks")
+    tasks[0]["transfer_status"] = ""
+    storage.write("mes.tasks", tasks)
+
+    first = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-101-TP-001/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+    second = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-101-TP-002/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["tray"]["trayNo"] == "SYLU-2026-03-101-TP-002"
+
+
 def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(monkeypatch):
     client, storage = build_client(monkeypatch)
 

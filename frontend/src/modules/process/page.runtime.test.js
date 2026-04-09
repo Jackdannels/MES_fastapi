@@ -7,18 +7,27 @@ const mocks = vi.hoisted(() => ({
   activeFilter: null,
   allLabs: null,
   closeTaskDrawer: vi.fn(),
+  closeStartExperimentModal: vi.fn(),
+  confirmStartExperiment: vi.fn(),
+  currentStartableTrayRows: null,
   openTaskOverview: vi.fn(),
+  openStartExperimentModal: vi.fn(),
   processActionMessage: null,
   reset() {
     if (mocks.activeFilter) {
       mocks.activeFilter.value = "overview";
     }
     mocks.closeTaskDrawer.mockClear();
+    mocks.closeStartExperimentModal.mockClear();
+    mocks.confirmStartExperiment.mockClear();
     mocks.openTaskOverview.mockClear();
+    mocks.openStartExperimentModal.mockClear();
     mocks.selectTaskTray.mockClear();
+    mocks.setSelectedTaskForLab.mockClear();
     mocks.startExperiment.mockClear();
   },
   selectTaskTray: vi.fn(),
+  setSelectedTaskForLab: vi.fn(),
   setActiveFilter(value) {
     if (mocks.activeFilter) {
       mocks.activeFilter.value = value;
@@ -66,7 +75,15 @@ vi.mock("./useProcessLabs", async () => {
     },
   ]);
   mocks.processActionMessage = ref("当前开始进行2个托盘，剩余1个托盘。");
+  mocks.currentStartableTrayRows = ref([
+    {
+      sampleCodes: ["SP-003", "SP-004"],
+      status: "实验准备就绪",
+      trayCode: "TRAY-003",
+    },
+  ]);
   mocks.taskDrawerOpen = ref(true);
+  const startExperimentModalOpen = ref(false);
   mocks.visibleLabCards = computed(() => {
     if (mocks.activeFilter.value === "running") {
       return mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running");
@@ -90,10 +107,17 @@ vi.mock("./useProcessLabs", async () => {
     useProcessLabs: () => ({
       activeFilter: mocks.activeFilter,
       closeTaskDrawer: mocks.closeTaskDrawer,
+      closeStartExperimentModal: mocks.closeStartExperimentModal,
+      confirmStartExperiment: mocks.confirmStartExperiment,
+      currentStartableTrayRows: mocks.currentStartableTrayRows,
       idleCount: computed(() => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-idle").length),
       labCards: mocks.allLabs,
       loading: ref(false),
       openTaskOverview: mocks.openTaskOverview,
+      openStartExperimentModal: (...args) => {
+        startExperimentModalOpen.value = true;
+        return mocks.openStartExperimentModal(...args);
+      },
       overviewCount: computed(() => mocks.allLabs.value.length),
       processActionMessage: mocks.processActionMessage,
       runningCount: computed(() => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running").length),
@@ -101,6 +125,18 @@ vi.mock("./useProcessLabs", async () => {
         () => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running" || lab.statusClass === "is-scheduled").length
       ),
       selectedTaskDetail: ref({
+        availableTasks: [
+          {
+            experimentName: "冲击试验",
+            scheduleTime: "03/10 09:30 - 03/10 10:30",
+            taskCode: "SYLU-2026-03-001",
+          },
+          {
+            experimentName: "冲击试验",
+            scheduleTime: "03/11 09:30 - 03/11 10:30",
+            taskCode: "SYLU-2026-03-002",
+          },
+        ],
         canStartExperiment: false,
         code: "SYLU-2026-03-001",
         completedTrayRows: [],
@@ -185,9 +221,15 @@ vi.mock("./useProcessLabs", async () => {
         trayRows: [],
         traySummary: "TRAY-001, TRAY-002, TRAY-003 +1",
       }),
+      startExperimentTaskDetail: ref({
+        code: "SYLU-2026-03-001",
+        targetExperiment: "冲击试验",
+      }),
       selectTaskTray: mocks.selectTaskTray,
+      setSelectedTaskForLab: mocks.setSelectedTaskForLab,
       setActiveFilter: mocks.setActiveFilter,
       startExperiment: mocks.startExperiment,
+      startExperimentModalOpen,
       taskDrawerOpen: mocks.taskDrawerOpen,
       visibleLabCards: mocks.visibleLabCards,
     }),
@@ -261,7 +303,7 @@ describe("ProcessPage runtime", () => {
 
     await wrapper.get("[data-testid='process-start-button-冲击一室']").trigger("click");
 
-    expect(mocks.startExperiment).toHaveBeenCalledWith(
+    expect(mocks.openStartExperimentModal).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "冲击一室",
         taskCode: "SYLU-2026-03-001",
@@ -284,5 +326,26 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.get(".process-lab-name").text()).toBe("盐雾试验室");
     expect(wrapper.get("[data-testid='process-task-button-盐雾试验室']").attributes("disabled")).toBeDefined();
     expect(wrapper.get("[data-testid='process-start-button-盐雾试验室']").attributes("disabled")).toBeDefined();
+  });
+
+  test("opens the start experiment modal and supports switching the current lab task from the task drawer", async () => {
+    mocks.reset();
+    const wrapper = mount(ProcessPage);
+
+    await wrapper.get("[data-testid='process-start-button-冲击一室']").trigger("click");
+
+    expect(mocks.openStartExperimentModal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "冲击一室",
+        taskCode: "SYLU-2026-03-001",
+      })
+    );
+    expect(wrapper.text()).toContain("开始实验确认");
+    expect(wrapper.text()).toContain("TRAY-003");
+    expect(wrapper.text()).toContain("SP-003");
+
+    await wrapper.get("[data-testid='process-switch-task-SYLU-2026-03-002']").trigger("click");
+
+    expect(mocks.setSelectedTaskForLab).toHaveBeenCalledWith("冲击一室", "SYLU-2026-03-002");
   });
 });

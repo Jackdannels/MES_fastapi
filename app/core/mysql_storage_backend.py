@@ -212,6 +212,8 @@ def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
         "priority": parse_priority_value(task.get("priority")),
         "sample_count": parse_int_value(task.get("sample_count")),
         "task_status": normalize_text(task.get("status")),
+        "transfer_status": normalize_text(task.get("transfer_status")),
+        "tray_limit": parse_int_value(task.get("tray_limit")),
         "arrival_time": parse_storage_datetime(task.get("arrival_at")),
         "due_time": parse_storage_datetime(task.get("due_at")),
         "required_device": normalize_text(task.get("required_device")),
@@ -258,6 +260,8 @@ def build_storage_task_item(row: Dict[str, Any], tray_codes: Iterable[str] | Non
         "attachment": normalize_text(row.get("attachment_path")),
         "remark": normalize_text(row.get("remark")),
         "status": normalize_text(row.get("task_status")),
+        "transfer_status": normalize_text(row.get("transfer_status")),
+        "tray_limit": row.get("tray_limit"),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "tray_codes": [normalize_text(code) for code in (tray_codes or []) if normalize_text(code)],
     }
@@ -545,6 +549,12 @@ class MySQLMesStorageBackend(StorageBackend):
             return
         with self._connect() as connection:
             with connection.cursor() as cursor:
+                cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'transfer_status'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_task ADD COLUMN transfer_status VARCHAR(30) NULL AFTER task_status")
+                cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'tray_limit'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_task ADD COLUMN tray_limit INT NULL AFTER sample_count")
                 cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'experiment_no'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_schedule ADD COLUMN experiment_no VARCHAR(50) NULL AFTER task_no")
@@ -751,11 +761,11 @@ class MySQLMesStorageBackend(StorageBackend):
             """
             INSERT INTO biz_task (
               task_no, task_source_type, source_system, task_name, client_name, contact_name, contact_phone,
-              task_type, sample_type, priority, sample_count, task_status, arrival_time, due_time,
+              task_type, sample_type, priority, sample_count, tray_limit, task_status, transfer_status, arrival_time, due_time,
               required_device, conditions_text, attachment_path, remark, created_at, updated_at
             ) VALUES (
               %(task_no)s, %(task_source_type)s, %(source_system)s, %(task_name)s, %(client_name)s, %(contact_name)s, %(contact_phone)s,
-              %(task_type)s, %(sample_type)s, %(priority)s, %(sample_count)s, %(task_status)s, %(arrival_time)s, %(due_time)s,
+              %(task_type)s, %(sample_type)s, %(priority)s, %(sample_count)s, %(tray_limit)s, %(task_status)s, %(transfer_status)s, %(arrival_time)s, %(due_time)s,
               %(required_device)s, %(conditions_text)s, %(attachment_path)s, %(remark)s, %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
@@ -769,7 +779,9 @@ class MySQLMesStorageBackend(StorageBackend):
               sample_type = VALUES(sample_type),
               priority = VALUES(priority),
               sample_count = VALUES(sample_count),
+              tray_limit = VALUES(tray_limit),
               task_status = VALUES(task_status),
+              transfer_status = VALUES(transfer_status),
               arrival_time = VALUES(arrival_time),
               due_time = VALUES(due_time),
               required_device = VALUES(required_device),
@@ -1258,8 +1270,8 @@ class MySQLMesStorageBackend(StorageBackend):
         cursor.execute(
             """
             SELECT task_no, task_name, task_source_type, client_name, contact_name, contact_phone,
-                   priority, sample_count, sample_type, task_type, required_device, due_time,
-                   arrival_time, conditions_text, attachment_path, remark, task_status, created_at
+                   priority, sample_count, tray_limit, sample_type, task_type, required_device, due_time,
+                   arrival_time, conditions_text, attachment_path, remark, task_status, transfer_status, created_at
             FROM biz_task
             WHERE source_system = %s
             ORDER BY created_at DESC, task_no DESC

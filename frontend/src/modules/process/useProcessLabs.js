@@ -5,6 +5,7 @@ import { PROCESS_LABS, buildProcessLabCards } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTrayFlowView, normalizeLifecycleStatus, resolveFlowStatusByLocation } from "@/modules/samples/samplesFlowModel";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 
@@ -144,10 +145,21 @@ function useProcessLabs(options = {}) {
   const processActionMessage = ref("");
   const selectedTaskDetail = ref(null);
   const selectedTaskLabName = ref("");
+  const selectedTaskCodeByLab = ref({});
   const selectedTrayCode = ref("");
+  const startExperimentLabName = ref("");
+  const startExperimentModalOpen = ref(false);
+  const startExperimentTaskDetail = ref(null);
   const taskDrawerOpen = ref(false);
 
   const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
+  const currentTimeValue = () => (Number.isFinite(now) ? now : Date.now());
+  const getLabSchedules = (labName) =>
+    schedules.value
+      .filter((entry) => normalizeText(entry?.device) === normalizeText(labName))
+      .sort((left, right) => parseScheduleTime(left?.start_at) - parseScheduleTime(right?.start_at));
+  const resolveSelectedTaskCodeForLab = (labName, fallback = "") =>
+    normalizeText(selectedTaskCodeByLab.value[normalizeText(labName)]) || normalizeText(fallback);
 
   const getTaskSamples = (taskCode) => samples.value.filter((sample) => normalizeText(sample?.task_code) === taskCode);
   const getTransferWorkspace = (taskCode) => transferWorkspaceByTaskCode.value[taskCode] || null;
@@ -164,6 +176,24 @@ function useProcessLabs(options = {}) {
         && normalizeText(entry?.experiment_code) === normalizedExperimentCode
     );
     return normalizeText(matchedExperiment?.experiment_name);
+  };
+  const buildAvailableTasksForLab = (labName) => {
+    const rows = [];
+    const seen = new Set();
+    getLabSchedules(labName).forEach((schedule) => {
+      const taskCode = normalizeText(schedule?.task_code);
+      if (!taskCode || seen.has(taskCode)) {
+        return;
+      }
+      seen.add(taskCode);
+      rows.push({
+        experimentCode: normalizeText(schedule?.experiment_code),
+        experimentName: getScheduledExperimentName(taskCode, normalizeText(schedule?.experiment_code)),
+        scheduleTime: `${toText(schedule?.start_at)} - ${toText(schedule?.end_at)}`,
+        taskCode,
+      });
+    });
+    return rows;
   };
   const collectExperimentTrayCodes = (taskCode, experimentCode) => {
     const normalizedTaskCode = normalizeText(taskCode);
@@ -400,16 +430,18 @@ function useProcessLabs(options = {}) {
     };
   };
 
-  const resolveScheduledRecordForLab = (lab, taskCode, currentTime) => {
+  const resolveScheduledRecordForLab = (lab, taskCode, currentTime, experimentCode = "") => {
     const normalizedTaskCode = normalizeText(taskCode);
     const normalizedLabName = normalizeText(lab?.name);
+    const normalizedExperimentCode = normalizeText(experimentCode);
     const relatedSchedules = schedules.value
       .filter(
         (entry) =>
           normalizeText(entry?.device) === normalizedLabName
-          && normalizeText(entry?.task_code) === normalizedTaskCode,
+          && normalizeText(entry?.task_code) === normalizedTaskCode
+          && (!normalizedExperimentCode || normalizeText(entry?.experiment_code) === normalizedExperimentCode),
       )
-      .sort((left, right) => parseScheduleTime(right?.start_at) - parseScheduleTime(left?.start_at));
+      .sort((left, right) => parseScheduleTime(left?.start_at) - parseScheduleTime(right?.start_at));
 
     const activeSchedule = relatedSchedules.find((entry) => {
       const startAt = parseScheduleTime(entry?.start_at);
@@ -421,7 +453,7 @@ function useProcessLabs(options = {}) {
     }
 
     const futureSchedule = relatedSchedules.find((entry) => parseScheduleTime(entry?.start_at) > currentTime);
-    return futureSchedule || relatedSchedules[0] || null;
+    return futureSchedule || relatedSchedules[relatedSchedules.length - 1] || null;
   };
 
   const buildTaskDetail = (lab) => {
@@ -441,6 +473,7 @@ function useProcessLabs(options = {}) {
     const hasScopedExperimentTrays = collectExperimentTrayCodes(taskCode, activeExperimentCode).length > 0;
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task, activeExperimentCode);
     const trayRows = buildTrayRows(taskCode, task, activeExperimentCode);
+    const readyTrayRows = trayRows.filter((row) => row.isReady);
     const runningTrayRows = trayRows.filter((row) => row.isRunning);
     const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
@@ -473,10 +506,23 @@ function useProcessLabs(options = {}) {
       scheduleTime: toText(schedule ? `${lab?.scheduleTime || ""}` : lab?.scheduleTime),
       selectedTrayCode: activeTray?.trayCode || "",
       selectedTrayFlow: activeTray
-        ? buildTrayFlowView({ status: activeTray.flowStatus || activeTray.status, trayCode: activeTray.trayCode })
+        ? buildTrayFlowView({
+            currentExperimentCode: activeExperimentCode,
+            experimentTrays: experimentTrays.value,
+            experiments: experiments.value,
+            location: activeTray.locationSummary,
+            samples: samples.value,
+            schedules: schedules.value,
+            status: activeTray.flowStatus || activeTray.status,
+            taskCode,
+            trayCode: activeTray.trayCode,
+          })
         : buildTrayFlowView(),
       selectedTraySummary: activeTray,
+      activeExperimentCode,
+      availableTasks: buildAvailableTasksForLab(labName),
       source: toText(task?.source),
+      readyTrayRows,
       startDisabledReason: actionState.startDisabledReason,
       status: toText(task?.status, toText(lab?.status)),
       targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(lab?.targetExperiment))),
@@ -489,9 +535,18 @@ function useProcessLabs(options = {}) {
   };
 
   const enrichLabCard = (lab) => {
-    if (!lab?.hasTask) {
+    const selectedTaskCode = resolveSelectedTaskCodeForLab(lab?.name, lab?.taskCode);
+    const sourceSchedules = selectedTaskCode
+      ? schedules.value.filter(
+          (entry) =>
+            normalizeText(entry?.device) === normalizeText(lab?.name) && normalizeText(entry?.task_code) === selectedTaskCode,
+        )
+      : schedules.value;
+    const scopedLab = buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value)[0] || lab;
+
+    if (!scopedLab?.hasTask) {
       return {
-        ...lab,
+        ...scopedLab,
         canStartExperiment: false,
         readyTrayCount: 0,
         remainingTrayCount: 0,
@@ -500,19 +555,25 @@ function useProcessLabs(options = {}) {
       };
     }
 
-    const actionState = buildStartExperimentState(buildTrayRows(normalizeText(lab.taskCode)));
+    const taskCode = normalizeText(scopedLab.taskCode);
+    const task = findTaskByCode(taskCode);
+    const schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue());
+    const activeExperimentCode = normalizeText(schedule?.experiment_code);
+    const actionState = buildStartExperimentState(buildTrayRows(taskCode, task, activeExperimentCode));
+    const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     return {
-      ...lab,
+      ...scopedLab,
       canStartExperiment: actionState.canStartExperiment,
       readyTrayCount: actionState.readyTrayCount,
       remainingTrayCount: actionState.remainingTrayCount,
       runningTrayCount: actionState.runningTrayCount,
       startDisabledReason: actionState.startDisabledReason,
+      targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
     };
   };
 
   const rebuildLabCards = () => {
-    labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, samples.value, now, experiments.value).map(enrichLabCard);
+    labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, samples.value, currentTimeValue(), experiments.value).map(enrichLabCard);
   };
 
   const ensureTaskWorkspaceLoaded = async (taskCode) => {
@@ -541,6 +602,15 @@ function useProcessLabs(options = {}) {
     selectedTrayCode.value = selectedTaskDetail.value?.selectedTrayCode || "";
   };
 
+  const refreshStartExperimentTaskDetail = () => {
+    const lab = labCards.value.find((item) => normalizeText(item?.name) === startExperimentLabName.value) || null;
+    if (!lab?.hasTask) {
+      startExperimentTaskDetail.value = null;
+      return;
+    }
+    startExperimentTaskDetail.value = buildTaskDetail(lab);
+  };
+
   const loadLabStatus = async () => {
     loading.value = true;
     try {
@@ -553,6 +623,9 @@ function useProcessLabs(options = {}) {
       rebuildLabCards();
       if (taskDrawerOpen.value) {
         refreshSelectedTaskDetail(selectedTrayCode.value);
+      }
+      if (startExperimentModalOpen.value) {
+        refreshStartExperimentTaskDetail();
       }
     } finally {
       loading.value = false;
@@ -608,13 +681,54 @@ function useProcessLabs(options = {}) {
     refreshSelectedTaskDetail(normalizeText(trayCode));
   };
 
-  const startExperiment = async (lab) => {
+  const setSelectedTaskForLab = (labName, taskCode) => {
+    const normalizedLabName = normalizeText(labName);
+    const normalizedTaskCode = normalizeText(taskCode);
+    selectedTaskCodeByLab.value = {
+      ...selectedTaskCodeByLab.value,
+      [normalizedLabName]: normalizedTaskCode,
+    };
+    rebuildLabCards();
+    if (selectedTaskLabName.value === normalizedLabName) {
+      selectedTrayCode.value = "";
+      refreshSelectedTaskDetail("");
+    }
+    if (startExperimentLabName.value === normalizedLabName) {
+      refreshStartExperimentTaskDetail();
+    }
+  };
+
+  const openStartExperimentModal = async (lab) => {
     if (!lab?.hasTask) {
       return;
     }
+    startExperimentLabName.value = normalizeText(lab?.name);
+    refreshStartExperimentTaskDetail();
 
     const taskCode = normalizeText(lab?.taskCode);
-    const actionState = buildStartExperimentState(buildTrayRows(taskCode));
+    if (!startExperimentTaskDetail.value?.trayCount) {
+      await ensureTaskWorkspaceLoaded(taskCode);
+      refreshStartExperimentTaskDetail();
+    }
+    if (!startExperimentTaskDetail.value?.canStartExperiment) {
+      return;
+    }
+    startExperimentModalOpen.value = true;
+  };
+
+  const startExperiment = async (lab) => {
+    const activeLab =
+      labCards.value.find((item) => normalizeText(item?.name) === normalizeText(lab?.name || startExperimentLabName.value)) || lab;
+    if (!activeLab?.hasTask) {
+      return;
+    }
+
+    const detail =
+      startExperimentModalOpen.value && startExperimentTaskDetail.value && normalizeText(startExperimentTaskDetail.value.labName) === normalizeText(activeLab?.name)
+        ? startExperimentTaskDetail.value
+        : buildTaskDetail(activeLab);
+    const taskCode = normalizeText(detail?.code);
+    const actionState = buildStartExperimentState(detail?.trayRows);
     if (!actionState.canStartExperiment) {
       return;
     }
@@ -623,7 +737,8 @@ function useProcessLabs(options = {}) {
     const startedTrayText = actionState.readyTrayCodes.join("、");
     const timestamp = new Date().toISOString();
     const currentTime = Date.parse(timestamp);
-    const targetSchedule = resolveScheduledRecordForLab(lab, taskCode, currentTime);
+    const targetSchedule = resolveScheduledRecordForLab(activeLab, taskCode, currentTime, detail?.activeExperimentCode);
+    const startedExperimentName = detail?.targetExperiment || detail?.testType || "";
     const nextSamples = samples.value.map((sample) => {
       if (normalizeText(sample?.task_code) !== taskCode) {
         return sample;
@@ -656,7 +771,7 @@ function useProcessLabs(options = {}) {
             status: nextStatus,
           },
           "开始实验",
-          `托盘：${startedTrayText}`,
+          `${taskCode} / ${startedExperimentName || "-"} / ${nextStatus} / 托盘：${startedTrayText}`,
           timestamp,
         ),
         status: nextStatus,
@@ -698,12 +813,32 @@ function useProcessLabs(options = {}) {
     samples.value = nextSamples;
     schedules.value = nextSchedules;
     tasks.value = nextTasks;
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    }
     rebuildLabCards();
-    processActionMessage.value = `当前开始进行${actionState.readyTrayCount}个托盘，剩余${buildStartExperimentState(buildTrayRows(taskCode)).remainingTrayCount}个托盘。`;
+    processActionMessage.value = `当前开始进行${actionState.readyTrayCount}个托盘，剩余${buildStartExperimentState(buildTaskDetail(activeLab).trayRows).remainingTrayCount}个托盘。`;
+    startExperimentModalOpen.value = false;
+    startExperimentTaskDetail.value = null;
+    startExperimentLabName.value = "";
 
-    if (taskDrawerOpen.value && normalizeText(lab?.name) === selectedTaskLabName.value) {
+    if (taskDrawerOpen.value && normalizeText(activeLab?.name) === selectedTaskLabName.value) {
       refreshSelectedTaskDetail("");
     }
+  };
+
+  const closeStartExperimentModal = () => {
+    startExperimentModalOpen.value = false;
+    startExperimentTaskDetail.value = null;
+    startExperimentLabName.value = "";
+  };
+
+  const confirmStartExperiment = async () => {
+    const lab = labCards.value.find((item) => normalizeText(item?.name) === startExperimentLabName.value) || null;
+    if (!lab) {
+      return;
+    }
+    await startExperiment(lab);
   };
 
   const closeTaskDrawer = () => {
@@ -720,19 +855,26 @@ function useProcessLabs(options = {}) {
   return {
     activeFilter,
     closeTaskDrawer,
+    closeStartExperimentModal,
+    confirmStartExperiment,
+    currentStartableTrayRows: computed(() => asArray(startExperimentTaskDetail.value?.readyTrayRows)),
     idleCount,
     labCards,
     loadLabStatus,
     loading,
     openTaskOverview,
+    openStartExperimentModal,
     overviewCount,
     processActionMessage,
     runningCount,
     scheduledCount,
     selectedTaskDetail,
+    startExperimentTaskDetail,
     selectTaskTray,
+    setSelectedTaskForLab,
     setActiveFilter,
     startExperiment,
+    startExperimentModalOpen,
     taskDrawerOpen,
     visibleLabCards,
   };

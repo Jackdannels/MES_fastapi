@@ -123,7 +123,9 @@ function useSchedulePage() {
     buildGanttRows({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
+      experimentTrays: rawExperimentTrays.value,
       now: now.value,
+      samples: rawSamples.value,
       schedules: rawSchedules.value,
       selectedTaskCode: retentionSelected.value ? "" : normalizeText(scheduleForm.value.task_code),
       tasks: rawTasks.value,

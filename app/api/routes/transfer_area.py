@@ -46,6 +46,11 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "放置实验后暂存间",
     "厂家收回",
 )
+STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
+    TASK_STATUS_STORED,
+    *TRAY_OUTBOUND_STATUSES,
+    *STARTED_EXPERIMENT_TRAY_STATUSES,
+}
 
 
 class TrayAllocationPayload(BaseModel):
@@ -293,6 +298,21 @@ def transfer_status_for_task(task: dict[str, Any], task_samples: list[dict[str, 
         return TASK_STATUS_PENDING
 
     if task_samples and all(normalize_text(sample.get("status")) == TASK_STATUS_STORED for sample in task_samples):
+        return TASK_STATUS_STORED
+    if task_samples and all(
+        (
+            normalize_text(sample.get("status")) in STORED_OR_DISPATCHED_SAMPLE_STATUSES
+            or (
+                as_list(sample.get("trays"))
+                and all(
+                    normalize_text(entry.get("status")) in STORED_OR_DISPATCHED_SAMPLE_STATUSES
+                    for entry in as_list(sample.get("trays"))
+                    if normalize_text(entry.get("status"))
+                )
+            )
+        )
+        for sample in task_samples
+    ):
         return TASK_STATUS_STORED
     return TASK_STATUS_PENDING
 

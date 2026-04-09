@@ -329,8 +329,14 @@ function buildSaltSprayLaboratoryView({
     : STATUS_WAITING;
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus);
   const selectedTrayFlow = buildTrayFlowView({
+    currentExperimentCode: normalizeText(currentTask?.experimentCode),
+    experimentTrays,
+    experiments,
     location: normalizeText(currentTask?.device) || labName,
+    samples,
+    schedules,
     status: normalizeText(selectedTrayRow?.displayStatus) || normalizeText(selectedTrayRow?.trayStatus),
+    taskCode: normalizeText(currentTask?.taskCode),
     trayCode: normalizeText(selectedTrayRow?.trayCode),
   });
 

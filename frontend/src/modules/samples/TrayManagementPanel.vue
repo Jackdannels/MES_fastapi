@@ -237,6 +237,13 @@ const selectedTaskFlow = computed(() => {
 
 const selectedTrayFlow = computed(() =>
   buildTrayFlowView({
+    currentExperimentCode: "",
+    experimentTrays: props.samplesFlow.rawExperimentTrays,
+    experiments: props.samplesFlow.rawExperiments,
+    location: selectedTray.value?.status === "已到达暂存间" ? "恒温恒湿间（暂存间）" : "",
+    samples: props.samplesFlow.rawSamples,
+    schedules: props.samplesFlow.rawSchedules,
+    taskCode: selectedTray.value?.taskCode,
     trayCode: selectedTray.value?.trayCode,
     status: selectedTray.value?.status,
   }),

@@ -713,7 +713,7 @@ describe("schedulePageModel", () => {
     expect(gantt.rows[0].slots[0].title).toContain("隐藏:");
   });
 
-  test("buildGanttRows hides completed experiments after their end time has passed", () => {
+  test("buildGanttRows keeps unstarted schedules visible even after their planned end time has passed", () => {
     const gantt = buildGanttRows({
       devices: [{ code: "冲击一室" }],
       schedules: [
@@ -730,7 +730,53 @@ describe("schedulePageModel", () => {
       now: new Date("2099-03-20T00:00:00.000Z"),
     });
 
-    expect(gantt.rows[0].slots.every((slot) => slot.state === "idle")).toBe(true);
+    expect(gantt.rows[0].slots.some((slot) => slot.scheduleId === "schedule-1")).toBe(true);
+    expect(gantt.rows[0].slots.some((slot) => slot.state !== "idle")).toBe(true);
+  });
+
+  test("buildGanttRows keeps the board visible after one experiment has formally started", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "振动一室" }],
+      experimentTrays: [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-001-SP-001",
+          task_code: "TASK-001",
+          status: "实验进行中",
+          location: "冲击一室",
+          trays: [{ tray_code: "TASK-001-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "TASK-002",
+          experiment_code: "TASK-002-A",
+          device: "振动一室",
+          start_at: "2099-03-20T12:00:00.000Z",
+          end_at: "2099-03-20T15:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      now: new Date("2099-03-20T09:00:00.000Z"),
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    const vibrationRow = gantt.rows.find((row) => row.device === "振动一室");
+    expect(impactRow).toBeTruthy();
+    expect(vibrationRow).toBeTruthy();
+    expect(impactRow?.slots.some((slot) => slot.scheduleId === "schedule-1" && slot.state === "running")).toBe(true);
+    expect(vibrationRow?.slots.some((slot) => slot.scheduleId === "schedule-2")).toBe(true);
   });
 
   test("resolveRetentionTimeState snaps retention scheduling to now", () => {

@@ -27,6 +27,131 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.key === "completed")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView collapses completed experiments and expands only the current unfinished experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-001",
+      experimentFlow: [
+        {
+          code: "A",
+          name: "A实验",
+          state: "completed",
+        },
+        {
+          code: "B",
+          name: "B实验",
+          state: "current",
+          routeStatus: "实验准备就绪",
+        },
+        {
+          code: "C",
+          name: "C实验",
+          state: "pending",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-001 | 当前状态：实验准备就绪");
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "到货",
+      "A实验已完成",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "比对确认",
+      "工装夹具安装",
+      "实验准备就绪",
+      "B实验进行中",
+      "C实验未完成",
+    ]);
+    expect(view.steps.find((step) => step.label === "A实验已完成")).toEqual(expect.objectContaining({ reached: true }));
+    expect(view.steps.find((step) => step.label === "实验准备就绪")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "B实验进行中")).toEqual(expect.objectContaining({ active: false, reached: false }));
+    expect(view.steps.find((step) => step.label === "C实验未完成")).toEqual(expect.objectContaining({ active: false, reached: false }));
+  });
+
+  test("buildTrayFlowView keeps only the last experiment path once all experiments are completed", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-001",
+      experimentFlow: [
+        {
+          code: "A",
+          name: "A实验",
+          state: "completed",
+        },
+        {
+          code: "B",
+          name: "B实验",
+          state: "completed",
+        },
+        {
+          code: "C",
+          name: "C实验",
+          state: "completed",
+          routeStatus: "实验已完成",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-001 | 当前状态：C实验已完成");
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "到货",
+      "A实验已完成",
+      "B实验已完成",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "比对确认",
+      "工装夹具安装",
+      "实验准备就绪",
+      "C实验已完成",
+    ]);
+    expect(view.steps.find((step) => step.label === "C实验已完成")).toEqual(expect.objectContaining({ active: true }));
+  });
+
+  test("buildTrayFlowView adapts to out-of-order experiment completion but resumes the first unfinished scheduled experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-001",
+      experimentFlow: [
+        {
+          code: "B",
+          name: "B实验",
+          state: "completed",
+        },
+        {
+          code: "A",
+          name: "A实验",
+          state: "current",
+          routeStatus: "到货",
+        },
+        {
+          code: "C",
+          name: "C实验",
+          state: "pending",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-001 | 当前状态：到货");
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "到货",
+      "B实验已完成",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "比对确认",
+      "工装夹具安装",
+      "实验准备就绪",
+      "A实验进行中",
+      "C实验未完成",
+    ]);
+    expect(view.steps.find((step) => step.label === "到货")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "B实验已完成")).toEqual(expect.objectContaining({ reached: true }));
+    expect(view.steps.find((step) => step.label === "A实验进行中")).toEqual(expect.objectContaining({ active: false, reached: false }));
+  });
+
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
       "样品运输中",
@@ -224,6 +349,44 @@ describe("samplesFlowModel", () => {
     expect(view.rows).toHaveLength(2);
     expect(view.rows.map((row) => row.trayCode)).toEqual(["SYLU-2026-03-001-TP-001", "SYLU-2026-03-001-TP-002"]);
     expect(view.rows.find((row) => row.trayCode === "SYLU-2026-03-001-TP-021")).toBeUndefined();
+  });
+
+  test("buildSamplesTrayOverviewView keeps the furthest tray status when one tray is bound to multiple experiments", () => {
+    const view = buildSamplesTrayOverviewView({
+      tasks: [{ code: "SYLU-2026-03-001", name: "任务A", test_type: "盐雾试验 / 高低温湿热试验" }],
+      samples: [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          location: "盐雾试验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-03-001-TP-001",
+              status: "实验进行中",
+              quantity: 1,
+              experiment_code: "SYLU-2026-03-001-B",
+              updated_at: "2026-04-08T08:00:00.000Z",
+            },
+            {
+              tray_code: "SYLU-2026-03-001-TP-001",
+              status: "已到达实验室",
+              quantity: 1,
+              experiment_code: "SYLU-2026-03-001-A",
+              updated_at: "2026-04-08T09:00:00.000Z",
+            },
+          ],
+        },
+      ],
+      query: "",
+    });
+
+    expect(view.rows).toEqual([
+      expect.objectContaining({
+        trayCode: "SYLU-2026-03-001-TP-001",
+        status: "实验进行中",
+        sampleCodes: ["SYLU-2026-03-001-SP-001"],
+      }),
+    ]);
   });
 
   test("updateTrayStatus synchronizes tray status to all samples assigned to the tray", () => {

@@ -258,6 +258,60 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.currentStatus).toContain("TP-SALT-2");
   });
 
+  test("buildSaltSprayLaboratoryView compresses completed experiments for a shared tray across three experiments", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-501" },
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-B", tray_code: "TP-501" },
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-C", tray_code: "TP-501" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", experiment_name: "A实验" },
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-B", experiment_name: "B实验" },
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-C", experiment_name: "C实验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-501",
+          location: "盐雾试验室",
+          owner: "赵工",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-501" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-501",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-B",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T11:00:00.000Z",
+          end_at: "2026-04-02T13:00:00.000Z",
+        },
+      ],
+      selectedTrayCode: "TP-501",
+      tasks: [
+        { code: "SYLU-2026-04-501", name: "三实验任务", test_type: "A / B / C" },
+      ],
+    });
+
+    expect(view.selectedTrayFlow.steps.map((step) => step.label)).toEqual([
+      "到货",
+      "A实验已完成",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "比对确认",
+      "工装夹具安装",
+      "实验准备就绪",
+      "B实验进行中",
+      "C实验未完成",
+    ]);
+  });
+
   test("validateLaboratoryTrayScan rejects trays from another scheduled task and returns guidance", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [

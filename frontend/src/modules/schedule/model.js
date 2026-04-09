@@ -9,6 +9,8 @@ const STATUS_RETENTION = "暂存间存放";
 const STREAMING_STATUS = "Streaming";
 const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
 const RETENTION_KEYWORD = "暂存间";
+const STARTED_TRAY_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 const SLOT_RANGES = Object.freeze({
   morning: { start: "08:00", end: "12:00", label: "上午 08:00-12:00" },
   afternoon: { start: "12:00", end: "18:00", label: "下午 12:00-18:00" },
@@ -145,14 +147,17 @@ const inferPlannedHours = (startAt, endAt) => {
 };
 
 // 甘特图里的时间段会根据当前时刻区分为进行中、已完成或忙碌。
-const getSlotState = ({ startAt, endAt, now }) => {
-  if (startAt && endAt) {
+const getSlotState = ({ startAt, endAt, now, started = false, completed = false }) => {
+  if (completed && startAt && endAt) {
     if (endAt < now) {
       return { state: "completed", className: "gantt-slot busy completed" };
     }
     if (startAt <= now && endAt >= now) {
       return { state: "running", className: "gantt-slot busy running" };
     }
+  }
+  if (started) {
+    return { state: "running", className: "gantt-slot busy running" };
   }
   return { state: "busy", className: "gantt-slot busy" };
 };
@@ -591,6 +596,49 @@ const buildExperimentTrayMap = (experimentTrays) => {
   return trayMap;
 };
 
+const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  const scopedTrayCodes = new Set(experimentTrayMap.get(`${taskCode}::${experimentCode}`) || []);
+  const statuses = [];
+
+  (Array.isArray(samples) ? samples : []).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return;
+    }
+
+    const trays = Array.isArray(sample?.trays) ? sample.trays : [];
+    if (trays.length === 0 && scopedTrayCodes.size === 0) {
+      const sampleStatus = normalizeText(sample?.status);
+      if (sampleStatus) {
+        statuses.push(sampleStatus);
+      }
+      return;
+    }
+
+    trays.forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (scopedTrayCodes.size > 0 && !scopedTrayCodes.has(trayCode)) {
+        return;
+      }
+      const trayStatus = normalizeText(tray?.status) || normalizeText(sample?.status);
+      if (trayStatus) {
+        statuses.push(trayStatus);
+      }
+    });
+  });
+
+  return statuses;
+};
+
+const resolveScheduleLifecycleState = ({ schedule, samples, experimentTrayMap }) => {
+  const trayStatuses = collectScheduleTrayStatuses({ schedule, samples, experimentTrayMap });
+  return {
+    completed: trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status)),
+    started: trayStatuses.some((status) => STARTED_TRAY_STATUSES.has(status)),
+  };
+};
+
 const taskHasSavedTrayPlan = ({ task, samples, experimentTrays }) => {
   const taskCode = normalizeText(task?.code);
   if (!taskCode) {
@@ -835,15 +883,20 @@ function buildConflictRows({ schedules }) {
 }
 
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
-function buildGanttRows({ schedules, devices, experiments = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+function buildGanttRows({ schedules, devices, experiments = [], experimentTrays = [], samples = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
     }
-    if (normalizeText(schedule?.status) === STATUS_COMPLETED) {
-      return false;
-    }
+    const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
     const endAt = parseDate(schedule?.end_at);
+    if (!lifecycleState.started) {
+      return true;
+    }
+    if (!lifecycleState.completed) {
+      return true;
+    }
     return !endAt || endAt >= now;
   });
   const experimentNameByCode = buildExperimentNameMap(experiments);
@@ -979,7 +1032,8 @@ function buildGanttRows({ schedules, devices, experiments = [], tasks = [], days
         const schedule = matched[0];
         const startAt = parseDate(schedule?.start_at);
         const endAt = parseDate(schedule?.end_at);
-        const stateMeta = getSlotState({ startAt, endAt, now });
+        const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
+        const stateMeta = getSlotState({ completed: lifecycleState.completed, endAt, now, startAt, started: lifecycleState.started });
         return {
           className: stateMeta.className,
           date: day.key,

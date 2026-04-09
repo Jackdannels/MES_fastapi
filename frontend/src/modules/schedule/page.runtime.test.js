@@ -635,7 +635,7 @@ describe("SchedulePage runtime", () => {
     expect(title).toContain("11:00");
   });
 
-  test("hides completed experiments from the gantt once their end time has passed", async () => {
+  test("keeps unstarted gantt schedules visible after their planned end time has passed", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2099-03-20T08:00:00"));
 
@@ -649,8 +649,8 @@ describe("SchedulePage runtime", () => {
         task_code: "TASK-001",
         experiment_code: "TASK-001-A",
         device: PRIMARY_LAB,
-        start_at: "2099-03-19T00:00:00.000Z",
-        end_at: "2099-03-19T02:00:00.000Z",
+        start_at: "2099-03-20T00:00:00.000Z",
+        end_at: "2099-03-20T02:00:00.000Z",
         status: STATUS_SCHEDULED,
       },
     ]);
@@ -660,8 +660,8 @@ describe("SchedulePage runtime", () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);
 
-    expect(wrapper.find('[data-testid="gantt-segment-schedule-1"]').exists()).toBe(false);
-    expect(wrapper.get("#gantt-body tr").text()).toContain("空闲");
+    expect(wrapper.find('[data-testid="gantt-segment-schedule-1"]').exists()).toBe(true);
+    expect(wrapper.get("#gantt-body tr").text()).toContain("TASK-001");
 
     vi.useRealTimers();
   });

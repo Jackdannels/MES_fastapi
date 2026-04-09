@@ -76,10 +76,18 @@ const pruneSamplesForCurrentTasks = (samples, tasks) => {
 const samplesChanged = (left, right) => JSON.stringify(left) !== JSON.stringify(right);
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
+  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.schedules,
+  ]);
 
   const rawTasks = ref([]);
   const rawSamples = ref([]);
+  const rawExperiments = ref([]);
+  const rawExperimentTrays = ref([]);
+  const rawSchedules = ref([]);
   const loading = ref(false);
   const warning = ref("");
 
@@ -178,6 +186,9 @@ function useSamplesFlow() {
       Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
       DEFAULT_LABELS,
     );
+    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     const prunedSamples = pruneSamplesForCurrentTasks(normalizedSamples, rawTasks.value);
     rawSamples.value = prunedSamples;
     if (samplesChanged(prunedSamples, normalizedSamples)) {
@@ -466,6 +477,9 @@ function useSamplesFlow() {
     pageCount,
     query,
     rawSamples,
+    rawExperiments,
+    rawExperimentTrays,
+    rawSchedules,
     rawTasks,
     sampleRows,
     saveDetail,

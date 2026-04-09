@@ -42,6 +42,12 @@ const SAMPLE_FLOW_STEPS = [
 
 const FLOW_STEP_KEY_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step) => [step.label, step.key]));
 const FLOW_STEP_INDEX_BY_KEY = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.key, index]));
+const EXPERIMENT_FLOW_STATUS_LABELS = {
+  pending: "未完成",
+  running: "进行中",
+  completed: "已完成",
+};
+const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "比对确认", "工装夹具安装", "实验准备就绪"];
 
 const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
@@ -160,13 +166,252 @@ const parseTimeValue = (value) => {
   const timestamp = Date.parse(String(value ?? ""));
   return Number.isFinite(timestamp) ? timestamp : 0;
 };
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
+const buildExperimentRouteSteps = () => MULTI_EXPERIMENT_ROUTE_STEPS.slice();
+
+const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], experimentTrays = [], schedules = [] }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode) {
+    return [];
+  }
+
+  const trayExperimentCodes = new Set(
+    (Array.isArray(experimentTrays) ? experimentTrays : [])
+      .filter(
+        (entry) =>
+          normalizeText(entry?.task_code) === normalizedTaskCode && normalizeText(entry?.tray_code) === normalizedTrayCode,
+      )
+      .map((entry) => normalizeText(entry?.experiment_code))
+      .filter(Boolean),
+  );
+
+  const scheduleMap = new Map(
+    (Array.isArray(schedules) ? schedules : [])
+      .filter((schedule) => normalizeText(schedule?.task_code) === normalizedTaskCode)
+      .map((schedule) => [normalizeText(schedule?.experiment_code), parseTimeValue(schedule?.start_at)]),
+  );
+
+  return (Array.isArray(experiments) ? experiments : [])
+    .filter((experiment) => {
+      if (normalizeText(experiment?.task_code) !== normalizedTaskCode) {
+        return false;
+      }
+      const experimentCode = normalizeText(experiment?.experiment_code);
+      return trayExperimentCodes.size === 0 || trayExperimentCodes.has(experimentCode);
+    })
+    .slice()
+    .sort((left, right) => {
+      const leftCode = normalizeText(left?.experiment_code);
+      const rightCode = normalizeText(right?.experiment_code);
+      const leftStart = scheduleMap.get(leftCode);
+      const rightStart = scheduleMap.get(rightCode);
+      if (Number.isFinite(leftStart) && Number.isFinite(rightStart) && leftStart !== rightStart) {
+        return leftStart - rightStart;
+      }
+      return leftCode.localeCompare(rightCode, "zh-Hans-CN");
+    })
+    .map((experiment, index) => ({
+      code: normalizeText(experiment?.experiment_code),
+      name:
+        normalizeText(experiment?.experiment_name)
+        || normalizeText(experiment?.name)
+        || `${index + 1}实验`,
+    }));
+};
+
+const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const eventMap = new Map();
+
+  (Array.isArray(samples) ? samples : []).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+    const touchesTray = getSampleTrayList(sample).some((tray) => normalizeText(tray?.tray_code) === normalizedTrayCode);
+    if (!touchesTray) {
+      return;
+    }
+
+    (Array.isArray(sample?.history) ? sample.history : []).forEach((entry) => {
+      const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
+      if (!parsed) {
+        return;
+      }
+      const currentTime = parseTimeValue(entry?.time);
+      const existingEvent = eventMap.get(parsed.experimentName);
+      if (!existingEvent || currentTime >= existingEvent.time) {
+        eventMap.set(parsed.experimentName, {
+          ...parsed,
+          time: currentTime,
+        });
+      }
+    });
+  });
+
+  return eventMap;
+};
+
+const buildTrayExperimentFlow = (input = {}) => {
+  const taskCode = normalizeText(input.taskCode);
+  const trayCode = normalizeText(input.trayCode);
+  const orderedExperiments = buildOrderedTrayExperiments({
+    taskCode,
+    trayCode,
+    experiments: input.experiments,
+    experimentTrays: input.experimentTrays,
+    schedules: input.schedules,
+  });
+  if (orderedExperiments.length <= 1) {
+    return [];
+  }
+
+  const normalizedStatus = normalizeLifecycleStatus(input.location, input.status);
+  const explicitExperimentCode = normalizeText(input.currentExperimentCode);
+  const explicitIndex = explicitExperimentCode
+    ? orderedExperiments.findIndex((experiment) => experiment.code === explicitExperimentCode)
+    : -1;
+  const experimentEventMap = resolveLatestExperimentEventMap({
+    taskCode,
+    trayCode,
+    samples: input.samples,
+  });
+  const completedExperiments = orderedExperiments
+    .map((experiment) => {
+      const event = experimentEventMap.get(experiment.name);
+      if (!event || event.status !== "实验已完成") {
+        return null;
+      }
+      return {
+        code: experiment.code,
+        name: experiment.name,
+        state: "completed",
+        completedAt: event.time,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.completedAt - right.completedAt);
+  if (completedExperiments.length === 0 && explicitIndex > 0) {
+    completedExperiments.push(
+      ...orderedExperiments.slice(0, explicitIndex).map((experiment, index) => ({
+        code: experiment.code,
+        name: experiment.name,
+        state: "completed",
+        completedAt: index,
+      })),
+    );
+  }
+  const completedCodeSet = new Set(completedExperiments.map((experiment) => experiment.code));
+  const currentExperiment =
+    orderedExperiments.find((experiment) => !completedCodeSet.has(experiment.code)) || null;
+
+  const pendingExperiments = orderedExperiments
+    .filter(
+      (experiment) =>
+        experiment.code !== normalizeText(currentExperiment?.code) && !completedCodeSet.has(experiment.code),
+    )
+    .map((experiment) => ({
+      code: experiment.code,
+      name: experiment.name,
+      state: "pending",
+    }));
+
+  if (!currentExperiment) {
+    return completedExperiments.map((experiment, index) => ({
+      code: experiment.code,
+      name: experiment.name,
+      state: "completed",
+      routeSteps: index === completedExperiments.length - 1 ? buildExperimentRouteSteps() : [],
+      routeStatus: index === completedExperiments.length - 1 ? "实验已完成" : "",
+    }));
+  }
+
+  const currentEventStatus = experimentEventMap.get(currentExperiment.name)?.status;
+  const routeStatus =
+    currentEventStatus
+    || (explicitExperimentCode && explicitExperimentCode === currentExperiment.code ? normalizedStatus : "到货");
+
+  return [
+    ...completedExperiments.map((experiment) => ({
+      code: experiment.code,
+      name: experiment.name,
+      state: "completed",
+    })),
+    {
+      code: currentExperiment.code,
+      name: currentExperiment.name,
+      state: "current",
+      routeSteps: buildExperimentRouteSteps(),
+      routeStatus,
+    },
+    ...pendingExperiments,
+  ];
+};
+
+const resolveFlowStatusRank = (location, status, labels = DEFAULT_LABELS) => {
+  const normalizedStatus = normalizeLifecycleStatus(location, status, labels);
+  const key = FLOW_STEP_KEY_BY_LABEL.get(normalizedStatus);
+  return FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
+};
+
+const mergeTrayEntriesByCode = (trays, sample, labels = DEFAULT_LABELS) => {
+  const mergedByCode = new Map();
+  const sourceTrays = Array.isArray(trays) ? trays : [];
+
+  sourceTrays.forEach((tray) => {
+    const trayCode = normalizeText(tray?.tray_code);
+    if (!trayCode) {
+      return;
+    }
+
+    const candidate = { ...tray };
+    const existing = mergedByCode.get(trayCode);
+    if (!existing) {
+      mergedByCode.set(trayCode, candidate);
+      return;
+    }
+
+    const existingRank = resolveFlowStatusRank(sample?.location, existing?.status, labels);
+    const candidateRank = resolveFlowStatusRank(sample?.location, candidate?.status, labels);
+    if (candidateRank > existingRank) {
+      mergedByCode.set(trayCode, {
+        ...existing,
+        ...candidate,
+      });
+      return;
+    }
+
+    if (candidateRank === existingRank && parseTimeValue(candidate?.updated_at) > parseTimeValue(existing?.updated_at)) {
+      mergedByCode.set(trayCode, {
+        ...existing,
+        ...candidate,
+      });
+    }
+  });
+
+  return Array.from(mergedByCode.values());
+};
 
 const getSampleTrayList = (sample) => {
   if (!sample || !Array.isArray(sample.trays)) {
     return [];
   }
   const sampleCode = normalizeText(sample.code);
-  const validTrays = sample.trays.filter((tray) => {
+  const validTrays = mergeTrayEntriesByCode(sample.trays, sample).filter((tray) => {
     // 只保留与当前样品编码匹配且数量有效的托盘条目。
     if (!tray) {
       return false;
@@ -257,7 +502,127 @@ function buildSamplesTrayOverviewView(input = {}) {
 }
 
 function buildTrayFlowView(input = {}) {
+  const experimentFlow = Array.isArray(input.experimentFlow) && input.experimentFlow.length > 0
+    ? input.experimentFlow
+    : buildTrayExperimentFlow(input);
   const trayCode = normalizeText(input.trayCode);
+  if (experimentFlow.length > 0) {
+    const currentExperimentIndex = experimentFlow.findIndex((item) => normalizeText(item?.state) === "current");
+    const activeExperiment = currentExperimentIndex >= 0 ? experimentFlow[currentExperimentIndex] : null;
+    const completedExperiments = experimentFlow.filter((item) => normalizeText(item?.state) === "completed");
+    const pendingExperiments = experimentFlow.filter((item) => normalizeText(item?.state) === "pending");
+    const steps = [];
+
+    const pushStep = (step) => {
+      steps.push({
+        active: false,
+        reached: false,
+        ...step,
+      });
+      return steps.length - 1;
+    };
+
+    const arrivalIndex = pushStep({ key: "arrival", label: "到货" });
+
+    let currentStatus = "到货";
+    let activeIndex = arrivalIndex;
+
+    if (activeExperiment) {
+      completedExperiments.forEach((experiment, index) => {
+        const name = normalizeText(experiment?.name) || `实验${index + 1}`;
+        pushStep({
+          key: `experiment-completed-${index}`,
+          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
+          reached: true,
+        });
+      });
+      const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
+        ? activeExperiment.routeSteps.filter(Boolean)
+        : buildExperimentRouteSteps();
+      const normalizedRouteStatus = normalizeLifecycleStatus(input.location, activeExperiment?.routeStatus || input.status);
+      const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
+      const routeIndexes = routeSteps.map((label, index) =>
+        pushStep({
+          key: `route-${currentExperimentIndex}-${index}`,
+          label,
+        }),
+      );
+      const experimentName = normalizeText(activeExperiment?.name) || `实验${currentExperimentIndex + 1}`;
+      const currentExperimentIndexInSteps = pushStep({
+        key: `experiment-current-${currentExperimentIndex}`,
+        label: `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`,
+      });
+
+      pendingExperiments.forEach((experiment, index) => {
+        const name = normalizeText(experiment?.name) || `实验${index + 1}`;
+        pushStep({
+          key: `experiment-pending-${index}`,
+          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
+        });
+      });
+
+      if (routeStatusIndex >= 0) {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = routeIndexes[routeStatusIndex];
+        routeIndexes.forEach((stepIndex, index) => {
+          if (index < routeStatusIndex) {
+            steps[stepIndex].reached = true;
+          }
+        });
+      } else if (normalizedRouteStatus === "实验进行中" || normalizedRouteStatus === "实验中") {
+        currentStatus = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`;
+        activeIndex = currentExperimentIndexInSteps;
+        routeIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+      } else {
+        currentStatus = normalizedRouteStatus || "到货";
+        activeIndex = arrivalIndex;
+      }
+    } else {
+      const completedMilestones = completedExperiments.slice(0, -1);
+      completedMilestones.forEach((experiment, index) => {
+        const name = normalizeText(experiment?.name) || `实验${index + 1}`;
+        pushStep({
+          key: `experiment-completed-${index}`,
+          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
+          reached: true,
+        });
+      });
+      const lastExperiment = completedExperiments.at(-1);
+      const routeSteps = Array.isArray(lastExperiment?.routeSteps) && lastExperiment.routeSteps.length > 0
+        ? lastExperiment.routeSteps.filter(Boolean)
+        : buildExperimentRouteSteps();
+      routeSteps.forEach((label, index) => {
+        pushStep({
+          key: `route-final-${index}`,
+          label,
+          reached: true,
+        });
+      });
+      const experimentName = normalizeText(lastExperiment?.name) || `实验${completedExperiments.length}`;
+      const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+      activeIndex = pushStep({
+        key: "experiment-final-completed",
+        label: completedLabel,
+      });
+      currentStatus = completedLabel;
+    }
+
+    steps[arrivalIndex].active = activeIndex === arrivalIndex;
+    steps[arrivalIndex].reached = activeIndex !== arrivalIndex;
+    if (steps[activeIndex]) {
+      steps[activeIndex].active = true;
+    }
+
+    return {
+      trayCode,
+      status: currentStatus,
+      currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${currentStatus}` : `当前状态：${currentStatus}`,
+      steps,
+    };
+  }
+
   const status = normalizeLifecycleStatus(input.location, input.status) || SAMPLE_FLOW_STEPS[0].label;
   const currentKey = FLOW_STEP_KEY_BY_LABEL.get(status) || SAMPLE_FLOW_STEPS[0].key;
   const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;

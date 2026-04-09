@@ -46,6 +46,8 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
         "attachment": "/tmp/task.pdf",
         "remark": "任务备注",
         "status": "待排程",
+        "transfer_status": "已入库",
+        "tray_limit": 2,
         "created_at": "2026-03-17T09:00:00",
     }
 
@@ -61,6 +63,8 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
             **insert_row,
             "task_id": 12,
             "created_at": insert_row["created_at"],
+            "transfer_status": "已入库",
+            "tray_limit": 2,
         }
     )
 
@@ -68,6 +72,8 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     assert storage_item["priority"] == "高"
     assert storage_item["contact_info"] == "13800000001"
     assert storage_item["due_at"] == "2026-03-18 10:00"
+    assert storage_item["transfer_status"] == "已入库"
+    assert storage_item["tray_limit"] == 2
 
 
 def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
