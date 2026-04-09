@@ -472,6 +472,7 @@ def build_storage_sample_item(
             "tray_code": normalize_text(tray.get("tray_code")),
             "sample_code": normalize_text(tray.get("sample_code") or row.get("sample_no")),
             "quantity": 0 if tray.get("quantity") in (None, "") else int(tray.get("quantity")),
+            "status": normalize_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status")),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
         }
@@ -1014,6 +1015,11 @@ class MySQLMesStorageBackend(StorageBackend):
         else:
             cursor.execute("DELETE FROM biz_sample WHERE remark LIKE %s", (f"{SAMPLE_META_PREFIX}%",))
 
+        sample_status_by_code = {
+            normalize_text(sample.get("code")): normalize_text(sample.get("status"))
+            for sample in managed_samples
+            if normalize_text(sample.get("code"))
+        }
         tray_defs: Dict[str, dict[str, Any]] = {}
         tray_order_by_sample: Dict[str, list[str]] = {}
         for sample in managed_samples:
@@ -1031,7 +1037,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "capacity": None,
                         "load_qty": 0,
                         "tray_status": "ACTIVE",
-                        "test_state": normalize_text(sample.get("status")),
+                        "test_state": normalize_text(tray.get("status")) or normalize_text(sample.get("status")),
                         "bind_time": parse_storage_datetime(tray.get("created_at")) or parse_storage_datetime(sample.get("updated_at")),
                         "remark": TRAY_META_PREFIX,
                         "samples": [],
@@ -1194,7 +1200,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "position_no": f"P{index:02d}",
                         "quantity": quantity,
                         "bind_time": parse_storage_datetime(tray_payload.get("created_at")) or parse_storage_datetime(tray_payload.get("updated_at")),
-                        "status": "ACTIVE",
+                        "status": normalize_text(tray_payload.get("status")) or sample_status_by_code.get(sample_code) or "ACTIVE",
                         "created_at": parse_storage_datetime(tray_payload.get("created_at")),
                         "updated_at": parse_storage_datetime(tray_payload.get("updated_at")),
                     }
@@ -1372,7 +1378,8 @@ class MySQLMesStorageBackend(StorageBackend):
 
         cursor.execute(
             f"""
-            SELECT ti.sample_id, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.created_at, ti.updated_at
+            SELECT ti.sample_id, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.status,
+                   tr.test_state, tr.tray_status, ti.created_at, ti.updated_at
             FROM biz_tray_item ti
             JOIN biz_tray tr ON tr.tray_id = ti.tray_id
             JOIN biz_sample s ON s.sample_id = ti.sample_id

@@ -383,6 +383,102 @@ def test_build_storage_sample_item_recovers_task_code_from_sample_code_when_task
     assert storage_item["task_code"] == "SYLU-2026-03-001"
 
 
+def test_build_storage_sample_item_preserves_tray_status() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 101,
+            "sample_no": "SYLU-2026-03-002-SP-005",
+            "task_no": "SYLU-2026-03-002",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "盐雾试验室",
+            "sample_status": "实验进行中",
+            "flow_status": "实验进行中",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-03-17 09:00:00",
+            "updated_at": "2026-03-17 09:00:00",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-03-002-TP-002",
+                "tray_code": "SYLU-2026-03-002-TP-002",
+                "sample_code": "SYLU-2026-03-002-SP-005",
+                "quantity": 1,
+                "status": "实验进行中",
+                "created_at": "2026-03-17 09:00:00",
+                "updated_at": "2026-03-17 09:00:00",
+            }
+        ],
+    )
+
+    assert storage_item["trays"][0]["status"] == "实验进行中"
+
+
+def test_replace_samples_persists_real_tray_item_status() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 1, "task_no": "SYLU-2026-03-002"}]
+            elif "SELECT sample_id, sample_no, task_id FROM biz_sample" in statement:
+                self._result = [{"sample_id": 11, "sample_no": "SYLU-2026-03-002-SP-005", "task_id": 1}]
+            elif "SELECT tray_id, tray_no FROM biz_tray" in statement:
+                self._result = [{"tray_id": 21, "tray_no": "SYLU-2026-03-002-TP-002"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_samples(
+        cursor,
+        [
+            {
+                "code": "SYLU-2026-03-002-SP-005",
+                "task_code": "SYLU-2026-03-002",
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "盐雾试验室",
+                "updated_at": "2026-04-09T10:22:30Z",
+                "trays": [
+                    {
+                        "tray_code": "SYLU-2026-03-002-TP-002",
+                        "sample_code": "SYLU-2026-03-002-SP-005",
+                        "quantity": 1,
+                        "status": "实验进行中",
+                        "updated_at": "2026-04-09T10:22:30Z",
+                    }
+                ],
+                "history": [],
+            }
+        ],
+    )
+
+    tray_item_call = next(
+        rows
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_tray_item" in sql
+    )
+    assert tray_item_call[0]["status"] == "实验进行中"
+
+
 def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_migration() -> None:
     payload = {
         "mes.tasks": [

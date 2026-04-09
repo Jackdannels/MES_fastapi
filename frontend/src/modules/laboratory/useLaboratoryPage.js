@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -16,6 +16,8 @@ import {
   getLaboratoryActionState,
   validateLaboratoryTrayScan,
 } from "./model";
+
+const RUNNING_MODAL_RESTORE_MS = 10_000;
 
 function useLaboratoryPage(options = {}) {
   const now = options.now;
@@ -50,12 +52,17 @@ function useLaboratoryPage(options = {}) {
   const installModalOpen = ref(false);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
+  const completePromptVisible = ref(false);
+  const runningModalVisible = ref(false);
+  const tickNow = ref(now || new Date());
+  let tickTimer = null;
+  let runningModalRestoreTimer = null;
 
   const view = computed(() =>
     buildSaltSprayLaboratoryView({
       experiments: experiments.value,
       experimentTrays: experimentTrays.value,
-      now: now || new Date(),
+      now: tickNow.value,
       samples: samples.value,
       selectedTaskCode: selectedTaskCode.value,
       selectedTrayCode: selectedTrayCode.value,
@@ -70,8 +77,48 @@ function useLaboratoryPage(options = {}) {
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
   const actionState = computed(() => getLaboratoryActionState(workflow.value));
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value));
+  const runningExperiment = computed(() => view.value.runningExperiment);
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = computed(() => typeof document !== "undefined" && Boolean(document.querySelector(".header-actions")));
+  const runningInteractionLocked = computed(() => runningExperiment.value.active);
+
+  const clearRunningModalRestoreTimer = () => {
+    if (runningModalRestoreTimer && typeof window !== "undefined") {
+      window.clearTimeout(runningModalRestoreTimer);
+      runningModalRestoreTimer = null;
+    }
+  };
+
+  const showRunningModal = () => {
+    runningModalVisible.value = true;
+    clearRunningModalRestoreTimer();
+  };
+
+  const scheduleRunningModalRestore = () => {
+    clearRunningModalRestoreTimer();
+    if (!runningExperiment.value.active || runningModalVisible.value || typeof window === "undefined") {
+      return;
+    }
+    runningModalRestoreTimer = window.setTimeout(() => {
+      runningModalVisible.value = true;
+      runningModalRestoreTimer = null;
+    }, RUNNING_MODAL_RESTORE_MS);
+  };
+
+  const hideRunningModal = () => {
+    if (!runningExperiment.value.active) {
+      return;
+    }
+    runningModalVisible.value = false;
+    scheduleRunningModalRestore();
+  };
+
+  const handleRunningModalActivity = () => {
+    if (!runningExperiment.value.active || runningModalVisible.value) {
+      return;
+    }
+    scheduleRunningModalRestore();
+  };
 
   watch(
     () => view.value.currentExperimentTrayRows,
@@ -87,6 +134,30 @@ function useLaboratoryPage(options = {}) {
       }
     },
     { deep: true, immediate: true },
+  );
+
+  watch(
+    () => runningExperiment.value.active,
+    (active) => {
+      if (active) {
+        showRunningModal();
+        return;
+      }
+      runningModalVisible.value = false;
+      completePromptVisible.value = false;
+      clearRunningModalRestoreTimer();
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => runningExperiment.value.remainingSeconds,
+    (remainingSeconds) => {
+      if (!runningExperiment.value.active || remainingSeconds > 0) {
+        return;
+      }
+      completePromptVisible.value = true;
+    },
   );
 
   const resetCompareState = () => {
@@ -110,10 +181,38 @@ function useLaboratoryPage(options = {}) {
   };
 
   onMounted(() => {
+    if (typeof window !== "undefined") {
+      tickTimer = window.setInterval(() => {
+        tickNow.value = now || new Date();
+      }, 1000);
+      window.addEventListener("pointerdown", handleRunningModalActivity, true);
+      window.addEventListener("mousemove", handleRunningModalActivity, true);
+      window.addEventListener("wheel", handleRunningModalActivity, true);
+      window.addEventListener("touchstart", handleRunningModalActivity, true);
+      window.addEventListener("keydown", handleRunningModalActivity, true);
+    }
     void load();
   });
 
+  onBeforeUnmount(() => {
+    if (tickTimer && typeof window !== "undefined") {
+      window.clearInterval(tickTimer);
+      tickTimer = null;
+    }
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pointerdown", handleRunningModalActivity, true);
+      window.removeEventListener("mousemove", handleRunningModalActivity, true);
+      window.removeEventListener("wheel", handleRunningModalActivity, true);
+      window.removeEventListener("touchstart", handleRunningModalActivity, true);
+      window.removeEventListener("keydown", handleRunningModalActivity, true);
+    }
+    clearRunningModalRestoreTimer();
+  });
+
   const openScheduleBoard = () => {
+    if (runningInteractionLocked.value) {
+      return;
+    }
     scheduleModalOpen.value = true;
   };
   const closeScheduleBoard = () => {
@@ -127,6 +226,9 @@ function useLaboratoryPage(options = {}) {
     taskListModalOpen.value = false;
   };
   const openCompare = () => {
+    if (runningInteractionLocked.value) {
+      return;
+    }
     resetCompareState();
     compareModalOpen.value = true;
   };
@@ -171,6 +273,9 @@ function useLaboratoryPage(options = {}) {
     compareScanCode.value = "";
   };
   const openInstall = () => {
+    if (runningInteractionLocked.value) {
+      return;
+    }
     installModalOpen.value = true;
   };
   const closeInstall = () => {
@@ -181,6 +286,9 @@ function useLaboratoryPage(options = {}) {
     installModalOpen.value = false;
   };
   const openReady = () => {
+    if (runningInteractionLocked.value) {
+      return;
+    }
     readyModalOpen.value = true;
   };
   const closeReady = () => {
@@ -194,8 +302,41 @@ function useLaboratoryPage(options = {}) {
   const closeConfirmed = () => {
     confirmedModalOpen.value = false;
   };
+  const openCompleteConfirm = () => {
+    if (!runningExperiment.value?.active) {
+      return;
+    }
+    completePromptVisible.value = true;
+  };
+  const closeCompleteConfirm = () => {
+    completePromptVisible.value = false;
+  };
+  const confirmCompleteExperiment = async () => {
+    if (!runningExperiment.value?.active) {
+      return;
+    }
+    const nextSamples = applyLaboratoryTaskStep({
+      currentTask: {
+        ...currentTask.value,
+        trayCodes: runningExperiment.value.trayCodes,
+      },
+      historyAction: "实验完成",
+      nextStatus: "实验已完成",
+      now: new Date().toISOString(),
+      samples: samples.value,
+    });
+    samples.value = nextSamples;
+    await persistSnapshot({
+      [STORAGE_KEYS.samples]: nextSamples,
+    });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    }
+    completePromptVisible.value = false;
+    clearRunningModalRestoreTimer();
+  };
   const confirmCurrentTask = () => {
-    if (!pendingTaskCode.value) {
+    if (!pendingTaskCode.value || runningInteractionLocked.value) {
       return;
     }
     selectedTaskCode.value = pendingTaskCode.value;
@@ -207,35 +348,44 @@ function useLaboratoryPage(options = {}) {
     actionState,
     canTeleportScheduleAction,
     checklist,
+    closeCompleteConfirm,
     compareFeedback,
     closeCompare,
     closeConfirmed,
     closeInstall,
     closeReady,
     closeScheduleBoard,
-    closeTaskList,
-    compareScanCode,
-    compareModalOpen,
-    confirmCurrentTask,
-    confirmCompare,
+      closeTaskList,
+      compareScanCode,
+      compareModalOpen,
+      completePromptVisible,
+      confirmCurrentTask,
+      confirmCompare,
+    confirmCompleteExperiment,
     confirmInstall,
     confirmReady,
     confirmedModalOpen,
+    hideRunningModal,
     installModalOpen,
     loading,
     canCompleteCompare,
+    runningInteractionLocked,
     currentTask,
     openCompare,
+    openCompleteConfirm,
     openInstall,
     openReady,
     openScheduleBoard,
     openTaskList,
+    showRunningModal,
     currentTaskFlow: computed(() => view.value.currentTaskFlow),
     currentExperimentTrayRows: computed(() => view.value.currentExperimentTrayRows),
     pendingTaskCode,
     progressMessage,
     readyModalOpen,
     recentTasks: computed(() => view.value.scheduleRows),
+    runningExperiment,
+    runningModalVisible,
     scheduleModalOpen,
     scheduleRows: computed(() => view.value.scheduleRows),
     setPendingTaskCode: (taskCode) => {

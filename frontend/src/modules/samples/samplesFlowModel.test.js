@@ -152,6 +152,63 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "A实验进行中")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView uses the real tray status for the current experiment even without an explicit experiment code", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-002-TP-002",
+      taskCode: "SYLU-2026-03-002",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          experiment_name: "高低温湿热试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          start_at: "2026-04-09T08:00:00",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          start_at: "2026-04-09T14:00:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-002-SP-005",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-002", status: "送至实验室", quantity: 1 }],
+          history: [],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-002-TP-002 | 当前状态：送至实验室");
+    expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
       "样品运输中",
@@ -217,6 +274,7 @@ describe("samplesFlowModel", () => {
         location: "接驳区",
         owner: "王工",
         history: [],
+        trays: [{ tray_code: "TP-001", status: "到货", quantity: 1 }],
       },
       payload: { status: "工装夹具安装", remark: "进入实验前检查完成" },
       now: "2026-03-13T10:00:00.000Z",
@@ -224,6 +282,7 @@ describe("samplesFlowModel", () => {
 
     expect(result.sample.status).toBe("工装夹具安装");
     expect(result.sample.flow_status).toBe("工装夹具安装");
+    expect(result.sample.trays[0].status).toBe("工装夹具安装");
     expect(result.sample.history[0].detail).toBe("进入实验前检查完成");
   });
 
@@ -245,7 +304,15 @@ describe("samplesFlowModel", () => {
   test("dispatchStagingSamples moves staging samples to target lab and appends history", () => {
     const result = dispatchStagingSamples({
       samples: [
-        { code: "SP-001", task_code: "SZH-1", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", owner: "张三", history: [] },
+        {
+          code: "SP-001",
+          task_code: "SZH-1",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          owner: "张三",
+          history: [],
+          trays: [{ tray_code: "TP-001", status: "已到达暂存间", quantity: 1 }],
+        },
       ],
       payload: { targetLab: "振动一室", owner: "王工", codes: "" },
       selectedCodes: ["SP-001"],
@@ -257,6 +324,7 @@ describe("samplesFlowModel", () => {
     expect(result.samples[0].owner).toBe("王工");
     expect(result.samples[0].status).toBe("已到达实验室");
     expect(result.samples[0].flow_status).toBe("已到达实验室");
+    expect(result.samples[0].trays[0].status).toBe("已到达实验室");
     expect(result.samples[0].history[0].action).toBe("暂存间派发");
   });
 

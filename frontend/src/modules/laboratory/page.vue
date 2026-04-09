@@ -2,9 +2,19 @@
   <div class="laboratory-page">
     <Teleport v-if="canTeleportScheduleAction" to=".header-actions">
       <button
-        class="action-btn secondary laboratory-header-action-button"
+        v-if="runningExperiment.active"
+        class="action-btn secondary laboratory-header-action-button laboratory-header-action-button--overview"
+        data-testid="laboratory-open-overview"
+        type="button"
+        @click="showRunningModal"
+      >
+        总览
+      </button>
+      <button
+        class="action-btn secondary laboratory-header-action-button laboratory-header-action-button--schedule"
         data-testid="laboratory-open-schedule"
         type="button"
+        :disabled="runningInteractionLocked"
         @click="openScheduleBoard"
       >
         查看排程
@@ -51,7 +61,7 @@
             class="action-btn laboratory-action-button"
             data-testid="laboratory-compare"
             type="button"
-            :disabled="!actionState.canCompare"
+            :disabled="runningInteractionLocked || !actionState.canCompare"
             @click="openCompare"
           >
             比对任务
@@ -67,7 +77,7 @@
             class="action-btn laboratory-action-button"
             data-testid="laboratory-install"
             type="button"
-            :disabled="!actionState.canInstallSample"
+            :disabled="runningInteractionLocked || !actionState.canInstallSample"
             @click="openInstall"
           >
             安装样品
@@ -83,7 +93,7 @@
             class="action-btn laboratory-action-button"
             data-testid="laboratory-ready"
             type="button"
-            :disabled="!actionState.canMarkReady"
+            :disabled="runningInteractionLocked || !actionState.canMarkReady"
             @click="openReady"
           >
             确认准备就绪
@@ -246,6 +256,7 @@
                   class="action-btn secondary"
                   :data-testid="`laboratory-select-task-${row.taskCode}`"
                   type="button"
+                  :disabled="runningInteractionLocked"
                   @click="setPendingTaskCode(row.taskCode)"
                 >
                   {{ pendingTaskCode === row.taskCode ? "已选中" : "选择任务" }}
@@ -256,7 +267,15 @@
         </table>
       </div>
       <template #footer>
-        <button class="action-btn" data-testid="laboratory-confirm-current-task" type="button" @click="confirmCurrentTask">确认当前任务</button>
+        <button
+          class="action-btn"
+          data-testid="laboratory-confirm-current-task"
+          type="button"
+          :disabled="runningInteractionLocked"
+          @click="confirmCurrentTask"
+        >
+          确认当前任务
+        </button>
       </template>
     </AppModal>
 
@@ -323,6 +342,58 @@
         <button class="action-btn" type="button" @click="closeConfirmed">关闭</button>
       </template>
     </AppModal>
+
+    <Teleport v-if="runningExperiment.active && runningModalVisible" to="body">
+      <div class="laboratory-running-overlay" data-testid="laboratory-running-overlay">
+        <div class="laboratory-running-overlay__backdrop" data-testid="laboratory-running-backdrop" @click="hideRunningModal"></div>
+        <div class="laboratory-running-overlay__content laboratory-running-modal" data-testid="laboratory-running-modal">
+          <div class="laboratory-running-modal__head">
+            <div>
+              <div class="muted">当前进行实验</div>
+              <h4>{{ runningExperiment.taskCode }} / {{ runningExperiment.experimentName }}</h4>
+            </div>
+            <span class="pill">实验中</span>
+          </div>
+          <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningExperiment.countdownLabel }}</div>
+          <div class="laboratory-running-times muted">
+            <span>开始：{{ runningExperiment.startDateTimeLabel }}</span>
+            <span>预计完成：{{ runningExperiment.endDateTimeLabel }}</span>
+          </div>
+          <div class="laboratory-running-grid">
+            <div>
+              <strong>运行托盘</strong>
+              <div class="laboratory-running-tags">
+                <span v-for="trayCode in runningExperiment.trayCodes" :key="`running-tray-${trayCode}`" class="laboratory-tray-chip">{{ trayCode }}</span>
+              </div>
+            </div>
+            <div>
+              <strong>对应样品</strong>
+              <div class="laboratory-running-tags">
+                <span v-for="sampleCode in runningExperiment.sampleCodes" :key="`running-sample-${sampleCode}`" class="laboratory-tray-chip">{{ sampleCode }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="laboratory-running-modal__hint muted">
+            <span>点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。</span>
+            <span v-if="runningExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
+          </div>
+          <div v-if="completePromptVisible" class="laboratory-running-complete-prompt" data-testid="laboratory-complete-prompt">
+            <p><strong>任务编号</strong> {{ runningExperiment.taskCode }}</p>
+            <p><strong>实验名称</strong> {{ runningExperiment.experimentName }}</p>
+            <p><strong>托盘</strong> {{ runningExperiment.trayCodes.join("、") || "-" }}</p>
+            <p><strong>样品</strong> {{ runningExperiment.sampleCodes.join("、") || "-" }}</p>
+            <p>确认后将把当前盐雾实验更新为实验已完成。</p>
+            <div class="laboratory-running-complete-prompt__actions">
+              <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
+              <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">确认实验完成</button>
+            </div>
+          </div>
+          <div class="laboratory-running-actions">
+            <button v-if="!completePromptVisible" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">实验完成</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -337,6 +408,7 @@ const {
   canTeleportScheduleAction,
   canCompleteCompare,
   checklist,
+  closeCompleteConfirm,
   compareFeedback,
   compareScanCode,
   closeCompare,
@@ -346,15 +418,19 @@ const {
   closeScheduleBoard,
   closeTaskList,
   compareModalOpen,
+  completePromptVisible,
   confirmCurrentTask,
   confirmCompare,
+  confirmCompleteExperiment,
   confirmInstall,
   confirmReady,
   confirmedModalOpen,
   currentExperimentTrayRows,
   currentTask,
   currentTaskFlow,
+  hideRunningModal,
   installModalOpen,
+  openCompleteConfirm,
   openCompare,
   openInstall,
   openReady,
@@ -364,12 +440,16 @@ const {
   progressMessage,
   readyModalOpen,
   recentTasks,
+  runningExperiment,
+  runningInteractionLocked,
+  runningModalVisible,
   scheduleModalOpen,
   scheduleRows,
   selectedTrayFlow,
   selectedTrayRow,
   setPendingTaskCode,
   setSelectedTrayCode,
+  showRunningModal,
   summary,
   submitCompareScan,
   taskListModalOpen,

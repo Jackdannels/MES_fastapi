@@ -124,7 +124,7 @@ const mountPage = async () => {
     </div>
     <div class="header-actions">
       <button class="action-btn secondary" type="button">刷新</button>
-      <button class="action-btn secondary" type="button">退出登录</button>
+      <button class="action-btn secondary" data-testid="app-logout" type="button">退出登录</button>
     </div>
   `;
   document.body.appendChild(pageHeader);
@@ -332,5 +332,276 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-002");
     expect(mounted.get('[data-testid="laboratory-tray-tab-TP-002"]').classes()).toContain("is-active");
+  });
+
+  test("shows a floating running modal, allows temporary hide, and restores it from the overview button", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-101-SP-002",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-002" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+    const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
+    const findRunningBackdrop = () => document.body.querySelector('[data-testid="laboratory-running-backdrop"]');
+
+    expect(document.body.querySelector('[data-testid="laboratory-open-overview"]')).not.toBeNull();
+    expect(document.body.querySelectorAll(".modal.is-open")).toHaveLength(0);
+    expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
+    expect(findRunningModal()?.textContent || "").toContain("TP-001");
+    expect(findRunningModal()?.textContent || "").toContain("TP-002");
+    expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101-SP-001");
+    expect((document.body.querySelector('[data-testid="laboratory-running-countdown"]')?.textContent || "")).toContain("01:00:00");
+    expect(document.body.querySelector('[data-testid="laboratory-open-schedule"]')?.getAttribute("disabled")).not.toBeNull();
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-view-tasks"]').attributes("disabled")).toBeUndefined();
+
+    findRunningBackdrop()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(findRunningModal()).toBeNull();
+
+    document.body.querySelector('[data-testid="laboratory-open-overview"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(findRunningModal()).not.toBeNull();
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
+    expect(findRunningModal()?.textContent || "").toContain("确认后将把当前盐雾实验更新为实验已完成");
+    expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
+    expect(findRunningModal()?.textContent || "").toContain("TP-001");
+  });
+
+  test("shows the completion prompt inside the overview modal when the running countdown reaches zero", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:00:01.000Z",
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    expect(mounted.find('[data-testid="laboratory-complete-confirm-modal"].is-open').exists()).toBe(false);
+
+    vi.advanceTimersByTime(2000);
+    await nextTick();
+    await nextTick();
+
+    expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("确认后将把当前盐雾实验更新为实验已完成");
+  });
+
+  test("does not force the overview modal back open when the experiment becomes overdue while the modal is hidden", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:00:01.000Z",
+      },
+    ];
+
+    await mountPage();
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+
+    vi.advanceTimersByTime(2_000);
+    await nextTick();
+    await nextTick();
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+  });
+
+  test("restores the running modal after 10 seconds of inactivity when it was hidden", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+    const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(findRunningModal()).toBeNull();
+
+    vi.advanceTimersByTime(10_000);
+    await nextTick();
+    await nextTick();
+
+    expect(findRunningModal()).not.toBeNull();
+  });
+
+  test("does not restore the running modal while pointer activity continues during the 10-second idle window", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+
+    await mountPage();
+    const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(findRunningModal()).toBeNull();
+
+    vi.advanceTimersByTime(9_000);
+    window.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    await nextTick();
+
+    vi.advanceTimersByTime(1_500);
+    await nextTick();
+    await nextTick();
+
+    expect(findRunningModal()).toBeNull();
+
+    vi.advanceTimersByTime(10_000);
+    await nextTick();
+    await nextTick();
+
+    expect(findRunningModal()).not.toBeNull();
+  });
+
+  test("completes only the current salt spray experiment trays and hides the running modal after confirmation", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.tasks] = [
+      { code: "SYLU-2026-04-301", name: "复合环境任务", test_type: "高低温湿热试验 / 盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiments] = [
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", experiment_name: "高低温湿热试验" },
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", experiment_name: "盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", tray_code: "TP-301-A" },
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", tray_code: "TP-301-B" },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-salt",
+        task_code: "SYLU-2026-04-301",
+        experiment_code: "SYLU-2026-04-301-B",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:30:00.000Z",
+        end_at: "2026-04-02T11:00:00.000Z",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-301-SP-001",
+        location: "高低温湿热一室",
+        owner: "赵工",
+        status: "已到达实验室",
+        flow_status: "已到达实验室",
+        task_code: "SYLU-2026-04-301",
+        trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-301-A" }],
+      },
+      {
+        code: "SYLU-2026-04-301-SP-002",
+        location: "盐雾试验室",
+        owner: "赵工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-301",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-301-B" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+    const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SYLU-2026-04-301-SP-001",
+          status: "已到达实验室",
+          trays: [expect.objectContaining({ tray_code: "TP-301-A", status: "已到达实验室" })],
+        }),
+        expect.objectContaining({
+          code: "SYLU-2026-04-301-SP-002",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [expect.objectContaining({ tray_code: "TP-301-B", status: "实验已完成" })],
+        }),
+      ]),
+    );
+    expect(findRunningModal()).toBeNull();
+    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
   });
 });

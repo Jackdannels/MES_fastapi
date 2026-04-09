@@ -55,6 +55,7 @@ const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
 
 // 样品流转涉及大量字符串比较，统一先做基础规范化。
 const normalizeText = (value) => String(value ?? "").trim();
+const asArray = (value) => (Array.isArray(value) ? value : []);
 
 // 允许通过覆盖 labels 复用同一套状态推导逻辑。
 const normalizeLabels = (labels = {}) => ({
@@ -343,7 +344,7 @@ const buildTrayExperimentFlow = (input = {}) => {
   const currentEventStatus = experimentEventMap.get(currentExperiment.name)?.status;
   const routeStatus =
     currentEventStatus
-    || (explicitExperimentCode && explicitExperimentCode === currentExperiment.code ? normalizedStatus : "到货");
+    || normalizedStatus;
 
   return [
     ...completedExperiments.map((experiment) => ({
@@ -683,6 +684,70 @@ const appendSampleHistory = (sample, action, detail = "", now = new Date().toISO
   return history;
 };
 
+const cloneSampleCollection = (samples) =>
+  Array.isArray(samples)
+    ? samples.map((sample) => ({
+        ...sample,
+        history: Array.isArray(sample?.history) ? sample.history.slice() : [],
+        trays: Array.isArray(sample?.trays) ? sample.trays.map((tray) => ({ ...tray })) : [],
+      }))
+    : [];
+
+const synchronizeSamplesForTrayCodes = (input = {}) => {
+  const labels = normalizeLabels(input.labels);
+  const samples = cloneSampleCollection(input.samples);
+  const trayCodes = new Set(asArray(input.trayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
+  const nextStatus = normalizeText(input.status);
+  const now = input.now || new Date().toISOString();
+  const nextLocation = normalizeText(input.location);
+  const nextOwner = normalizeText(input.owner);
+  const historyAction = normalizeText(input.historyAction);
+  const historyDetail = normalizeText(input.historyDetail);
+
+  if (trayCodes.size === 0 || !nextStatus) {
+    return { samples, updatedCount: 0 };
+  }
+
+  let updatedCount = 0;
+  samples.forEach((sample) => {
+    const hasMatchingTray = getSampleTrayList(sample).some((tray) => trayCodes.has(normalizeText(tray?.tray_code)));
+    if (!hasMatchingTray) {
+      return;
+    }
+
+    sample.trays = asArray(sample.trays).map((tray) =>
+      trayCodes.has(normalizeText(tray?.tray_code))
+        ? {
+            ...tray,
+            status: nextStatus,
+            updated_at: now,
+          }
+        : tray,
+    );
+
+    if (nextLocation) {
+      sample.location = nextLocation;
+    }
+    if (nextOwner) {
+      sample.owner = nextOwner;
+    }
+    sample.status = normalizeLifecycleStatus(sample.location, nextStatus, labels);
+    sample.flow_status = sample.status;
+    sample.updated_at = now;
+    if (historyAction) {
+      sample.history = appendSampleHistory(
+        { ...sample, status: sample.status },
+        historyAction,
+        historyDetail,
+        now,
+      );
+    }
+    updatedCount += 1;
+  });
+
+  return { samples, updatedCount };
+};
+
 const resolveStatusClass = (status) => {
   const normalized = normalizeText(status);
   if (
@@ -879,6 +944,20 @@ function updateSampleDetail(input = {}) {
   const nextStatus = normalizeText(payload.status) || normalizeText(sample.status);
   const nextRemark = normalizeText(payload.remark);
   const now = input.now || new Date().toISOString();
+  const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
+
+  if (trayCodes.length > 0) {
+    const result = synchronizeSamplesForTrayCodes({
+      historyAction: "\u6837\u54C1\u8BE6\u60C5\u66F4\u65B0",
+      historyDetail: nextRemark,
+      labels,
+      now,
+      samples: [sample],
+      status: nextStatus,
+      trayCodes,
+    });
+    return { error: "", sample: result.samples[0] || sample };
+  }
 
   // 明细抽屉只允许改状态与备注，流转状态由位置和状态共同派生。
   sample.status = normalizeLifecycleStatus(sample.location, nextStatus, labels);
@@ -893,44 +972,26 @@ function updateTrayStatus(input = {}) {
   const trayCode = normalizeText(input.trayCode);
   const labels = normalizeLabels(input.labels);
   const now = input.now || new Date().toISOString();
-  const samples = Array.isArray(input.samples)
-    ? input.samples.map((sample) => ({
-        ...sample,
-        history: Array.isArray(sample?.history) ? sample.history.slice() : [],
-        trays: Array.isArray(sample?.trays) ? sample.trays.map((tray) => ({ ...tray })) : [],
-      }))
-    : [];
+  const samples = cloneSampleCollection(input.samples);
 
   if (!trayCode || !normalizeText(input.status)) {
     return { error: "请选择托盘和目标状态。", samples };
   }
 
-  let updatedCount = 0;
-  samples.forEach((sample) => {
-    const matchingTrays = getSampleTrayList(sample).filter((tray) => normalizeText(tray?.tray_code) === trayCode);
-    if (matchingTrays.length === 0) {
-      return;
-    }
-    const nextStatus = syncTrayStatusToSampleStatus(input.status, sample.location, labels);
-    sample.trays = sample.trays.map((tray) =>
-      normalizeText(tray?.tray_code) === trayCode
-        ? {
-            ...tray,
-            status: nextStatus,
-            updated_at: now,
-          }
-        : tray,
-    );
-    sample.status = nextStatus;
-    sample.flow_status = nextStatus;
-    sample.updated_at = now;
-    sample.history = appendSampleHistory(sample, "托盘状态更新", `${trayCode} -> ${nextStatus}`, now);
-    updatedCount += 1;
+  const nextStatus = syncTrayStatusToSampleStatus(input.status, "", labels);
+  const result = synchronizeSamplesForTrayCodes({
+    historyAction: "托盘状态更新",
+    historyDetail: `${trayCode} -> ${nextStatus}`,
+    labels,
+    now,
+    samples,
+    status: nextStatus,
+    trayCodes: [trayCode],
   });
 
   return {
-    error: updatedCount > 0 ? "" : `未找到托盘 ${trayCode}。`,
-    samples,
+    error: result.updatedCount > 0 ? "" : `未找到托盘 ${trayCode}。`,
+    samples: result.samples,
   };
 }
 
@@ -986,13 +1047,7 @@ function buildSamplesStagingView(input = {}) {
 // 将选中的暂存样品派发到目标实验室和责任人。
 function dispatchStagingSamples(input = {}) {
   const labels = normalizeLabels(input.labels);
-  const samples = Array.isArray(input.samples)
-    ? input.samples.map((sample) => ({
-        ...sample,
-        history: Array.isArray(sample?.history) ? sample.history.slice() : [],
-        trays: Array.isArray(sample?.trays) ? sample.trays.slice() : [],
-      }))
-    : [];
+  let samples = cloneSampleCollection(input.samples);
   const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
   const selectedCodes = Array.isArray(input.selectedCodes) ? input.selectedCodes : [];
   const targetLab = normalizeText(payload.targetLab);
@@ -1013,6 +1068,7 @@ function dispatchStagingSamples(input = {}) {
   const notStaging = [];
   const dispatchedCodes = [];
   const now = input.now || new Date().toISOString();
+  const trayCodesToSync = new Set();
 
   codes.forEach((code) => {
     const sample = samples.find((item) => normalizeText(item?.code) === code);
@@ -1026,6 +1082,12 @@ function dispatchStagingSamples(input = {}) {
     }
 
     // 只有当前位于暂存间的样品才允许派发到正式实验室。
+    getSampleTrayList(sample).forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (trayCode) {
+        trayCodesToSync.add(trayCode);
+      }
+    });
     sample.location = targetLab;
     sample.owner = owner || normalizeText(sample.owner);
     sample.status = normalizeLifecycleStatus(targetLab, "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4", labels);
@@ -1034,6 +1096,20 @@ function dispatchStagingSamples(input = {}) {
     sample.history = appendSampleHistory(sample, "暂存间派发", "", now);
     dispatchedCodes.push(code);
   });
+
+  if (trayCodesToSync.size > 0) {
+    const synced = synchronizeSamplesForTrayCodes({
+      historyAction: "",
+      labels,
+      location: targetLab,
+      now,
+      owner,
+      samples,
+      status: "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4",
+      trayCodes: Array.from(trayCodesToSync),
+    });
+    samples = synced.samples;
+  }
 
   const warnings = [];
   if (missing.length) {
@@ -1064,6 +1140,7 @@ export {
   normalizeSampleRecord,
   normalizeSamplesSnapshot,
   resolveFlowStatusByLocation,
+  synchronizeSamplesForTrayCodes,
   submitSamplesBatchIntake,
   syncTrayStatusToSampleStatus,
   TRAY_STATUS_OPTIONS,

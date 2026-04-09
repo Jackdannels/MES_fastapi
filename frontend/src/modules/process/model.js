@@ -19,6 +19,9 @@ const compareText = (left, right) => String(left || "").localeCompare(String(rig
 const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验中";
 const STATUS_IDLE = "空闲";
+const RUNNING_SAMPLE_STATUSES = new Set(["实验进行中", STATUS_RUNNING]);
+const normalizeText = (value) => String(value || "").trim();
+const asArray = (value) => (Array.isArray(value) ? value : []);
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
@@ -51,7 +54,41 @@ const resolveScheduledExperimentLabel = ({ experiments, fallback, schedule, task
 };
 
 // 构建过程管控页展示的实验室卡片集合。
-const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = []) => {
+const experimentHasRunningTrays = ({ schedule, experimentTrays, samples }) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  const labName = normalizeText(schedule?.device);
+  if (!taskCode) {
+    return false;
+  }
+
+  const scopedTrayCodes = new Set(
+    asArray(experimentTrays)
+      .filter(
+        (entry) =>
+          normalizeText(entry?.task_code) === taskCode
+          && normalizeText(entry?.experiment_code) === experimentCode
+      )
+      .map((entry) => normalizeText(entry?.tray_code))
+      .filter(Boolean)
+  );
+
+  if (!scopedTrayCodes.size) {
+    return false;
+  }
+
+  return asArray(samples).some((sample) =>
+    normalizeText(sample?.task_code) === taskCode
+    && (!labName || !normalizeText(sample?.location) || normalizeText(sample?.location) === labName)
+    && asArray(sample?.trays).some(
+      (tray) =>
+        scopedTrayCodes.has(normalizeText(tray?.tray_code))
+        && RUNNING_SAMPLE_STATUSES.has(normalizeText(tray?.status) || normalizeText(sample?.status))
+    )
+  );
+};
+
+const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = [], experimentTrays = []) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
   const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
   const labList = Array.isArray(labs) ? labs : [];
@@ -91,7 +128,16 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
           return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
         }) || null;
       const runningSchedule =
-        labSchedules.find((entry) => taskStatusMap.get(String(entry?.task_code || "").trim()) === STATUS_RUNNING) || null;
+        labSchedules.find((entry) => {
+          if (experimentHasRunningTrays({ experimentTrays, samples: sampleList, schedule: entry })) {
+            return true;
+          }
+          const experimentCode = normalizeText(entry?.experiment_code);
+          if (experimentCode) {
+            return false;
+          }
+          return taskStatusMap.get(normalizeText(entry?.task_code)) === STATUS_RUNNING;
+        }) || null;
 
       // 没有进行中的情况下，展示最近的未来排程。
       const upcomingSchedule =
@@ -114,7 +160,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
 
       let status = STATUS_IDLE;
       let statusClass = "is-idle";
-      if (aggregatedTaskStatus === STATUS_RUNNING || runningSchedule) {
+      if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === STATUS_RUNNING)) {
         status = STATUS_RUNNING;
         statusClass = "is-running";
       } else if (activeSchedule || upcomingSchedule) {

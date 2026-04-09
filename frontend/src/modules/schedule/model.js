@@ -1156,8 +1156,19 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
   }
 
   const pendingExperimentTaskCodes = new Set(
-    buildExperimentOptions({ experiments, schedules, taskCode: "", tasks })
-      .map((option) => normalizeText(option.taskCode))
+    (Array.isArray(tasks) ? tasks : [])
+      .map((task) => normalizeText(task?.code))
+      .filter((taskCode) =>
+        Boolean(
+          taskCode &&
+            buildExperimentOptions({
+              experiments,
+              schedules,
+              taskCode,
+              tasks,
+            }).length > 0,
+        ),
+      )
       .filter(Boolean),
   );
 

@@ -1,6 +1,7 @@
 import { reactive } from "vue";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
@@ -90,6 +91,7 @@ function useTransferDispatch() {
       state.tray = payload?.tray || state.tray;
       state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : state.destinations;
       state.feedback = normalizeText(payload?.message) || "托盘出库状态已更新。";
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     } catch (error) {
       state.feedback = error instanceof Error ? error.message : "托盘出库失败，请重试。";
     } finally {

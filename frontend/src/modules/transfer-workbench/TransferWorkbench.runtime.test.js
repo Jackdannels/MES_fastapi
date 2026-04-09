@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TransferWorkbench from "./TransferWorkbench.vue";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 const {
   routerPush,
@@ -343,6 +344,7 @@ describe("TransferWorkbench runtime", () => {
   });
 
   test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     const wrapper = mount(TransferWorkbench, {
       props: {
         mode: "handover",
@@ -374,6 +376,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
     expect(wrapper.text()).toContain("当前状态：送至实验室");
+    expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
   });
 
   test("pre-allocation mode uses clickable filter cards and hides confirm storage", async () => {

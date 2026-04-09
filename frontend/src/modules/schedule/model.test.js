@@ -274,6 +274,25 @@ describe("schedulePageModel", () => {
     ]);
   });
 
+  test("buildManualTaskOptions keeps tray-assigned tasks visible when another task already occupies the same experiment label", () => {
+    const options = buildManualTaskOptions({
+      activeTab: "unpacking",
+      experiments: [
+        { task_code: "SYLU-2026-03-020", experiment_code: "SYLU-2026-03-020-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-021", experiment_code: "SYLU-2026-03-021-A", experiment_name: "冲击试验" },
+      ],
+      experimentTrays: [],
+      samples: [],
+      schedules: [],
+      tasks: [
+        { code: "SYLU-2026-03-020", name: "无托盘任务" },
+        { code: "SYLU-2026-03-021", name: "已分配托盘任务", tray_codes: ["SYLU-2026-03-021-TP-001"] },
+      ],
+    });
+
+    expect(options.map((option) => option.code)).toEqual(["SYLU-2026-03-021"]);
+  });
+
   test("buildScheduleRescheduleForm maps a stored schedule back into the top scheduling form", () => {
     expect(
       buildScheduleRescheduleForm({

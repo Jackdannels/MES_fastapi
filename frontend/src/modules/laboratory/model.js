@@ -1,4 +1,4 @@
-import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
+import { buildTrayFlowView, synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
 import {
   resolveTaskStatus,
   STATUS_COMPLETED,
@@ -59,6 +59,14 @@ const formatDateTime = (value) => {
   }
   const date = new Date(time);
   return `${formatDateKey(date)} ${formatTime(date)}`;
+};
+
+const formatDuration = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Number(totalSeconds) || 0);
+  const hours = String(Math.floor(safeSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((safeSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(Math.floor(safeSeconds % 60)).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
 };
 
 const uniqueValues = (values = []) => {
@@ -154,6 +162,51 @@ const buildLaboratoryTaskFlow = (status = STATUS_WAITING) => {
       active: index === activeIndex,
       reached: index <= activeIndex,
     })),
+  };
+};
+
+const buildRunningExperimentView = ({ currentTask, now }) => {
+  const runningTrayRows = asArray(currentTask?.trayRows).filter((row) => normalizeText(row?.trayStatus) === "实验进行中");
+  if (!currentTask || !runningTrayRows.length) {
+    return {
+      active: false,
+      countdownLabel: "",
+      endDateTimeLabel: "-",
+      endTime: null,
+      experimentName: "",
+      overdue: false,
+      overdueLabel: "",
+      remainingSeconds: 0,
+      sampleCodes: [],
+      startDateTimeLabel: "-",
+      startTime: null,
+      taskCode: "",
+      trayCodes: [],
+      trayRows: [],
+    };
+  }
+
+  const nowTime = now instanceof Date ? now.getTime() : toTime(now);
+  const startTime = toTime(currentTask?.startAt);
+  const endTime = toTime(currentTask?.endAt);
+  const remainingSeconds = Number.isFinite(endTime) && Number.isFinite(nowTime) ? Math.floor((endTime - nowTime) / 1000) : 0;
+  const overdueSeconds = remainingSeconds < 0 ? Math.abs(remainingSeconds) : 0;
+
+  return {
+    active: true,
+    countdownLabel: remainingSeconds >= 0 ? formatDuration(remainingSeconds) : `已超时 ${formatDuration(overdueSeconds)}`,
+    endDateTimeLabel: formatDateTime(currentTask?.endAt),
+    endTime,
+    experimentName: normalizeText(currentTask?.experimentName),
+    overdue: remainingSeconds < 0,
+    overdueLabel: overdueSeconds ? formatDuration(overdueSeconds) : "",
+    remainingSeconds,
+    sampleCodes: uniqueValues(runningTrayRows.flatMap((row) => asArray(row?.sampleCodes))),
+    startDateTimeLabel: formatDateTime(currentTask?.startAt),
+    startTime,
+    taskCode: normalizeText(currentTask?.taskCode),
+    trayCodes: runningTrayRows.map((row) => row.trayCode),
+    trayRows: runningTrayRows,
   };
 };
 
@@ -339,6 +392,10 @@ function buildSaltSprayLaboratoryView({
     taskCode: normalizeText(currentTask?.taskCode),
     trayCode: normalizeText(selectedTrayRow?.trayCode),
   });
+  const runningExperiment = buildRunningExperimentView({
+    currentTask,
+    now: now instanceof Date ? now : new Date(nowTime || Date.now()),
+  });
 
   return {
     allScheduleRows,
@@ -348,6 +405,7 @@ function buildSaltSprayLaboratoryView({
     currentExperimentTrayRows,
     defaultTask,
     labName,
+    runningExperiment,
     scheduleRows,
     selectedTrayFlow,
     selectedTrayRow,
@@ -460,40 +518,18 @@ function applyLaboratoryTaskStep({
   const trayCodeSet = new Set(asArray(currentTask.trayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
   const taskCode = normalizeText(currentTask.taskCode);
   const detail = `${taskCode} / ${normalizeText(currentTask.experimentName) || "-"} / ${normalizedStatus}`;
-
-  return asArray(samples).map((sample) => {
-    if (normalizeText(sample?.task_code) !== taskCode) {
-      return sample;
-    }
-
-    let matchedTray = false;
-    const nextTrays = asArray(sample?.trays).map((tray) => {
-      const trayCode = normalizeText(tray?.tray_code);
-      if (trayCodeSet.size > 0 && !trayCodeSet.has(trayCode)) {
-        return tray;
-      }
-      matchedTray = true;
-      return {
-        ...tray,
-        status: normalizedStatus,
-        updated_at: now,
-      };
-    });
-
-    if (!matchedTray && trayCodeSet.size > 0) {
-      return sample;
-    }
-
-    return {
-      ...sample,
-      flow_status: normalizedStatus,
-      history: buildLaboratoryHistoryEntry(sample, historyAction, normalizedStatus, detail, now),
-      location: normalizeText(currentTask.device) || SALT_SPRAY_LAB,
-      status: normalizedStatus,
-      trays: nextTrays,
-      updated_at: now,
-    };
-  });
+  const scopedSamples = asArray(samples).filter((sample) => normalizeText(sample?.task_code) === taskCode);
+  const syncedSamples = synchronizeSamplesForTrayCodes({
+    historyAction,
+    historyDetail: detail,
+    location: normalizeText(currentTask.device) || SALT_SPRAY_LAB,
+    now,
+    samples: scopedSamples,
+    status: normalizedStatus,
+    trayCodes: Array.from(trayCodeSet),
+  }).samples;
+  const syncedByCode = new Map(syncedSamples.map((sample) => [normalizeText(sample?.code), sample]));
+  return asArray(samples).map((sample) => syncedByCode.get(normalizeText(sample?.code)) || sample);
 }
 
 function buildLaboratoryChecklist(task) {
@@ -574,6 +610,7 @@ export {
   buildLaboratoryChecklist,
   buildLaboratoryTaskFlow,
   buildLaboratoryProgressMessage,
+  buildRunningExperimentView,
   buildLaboratorySummary,
   buildLaboratoryWorkflowFromTask,
   buildSaltSprayLaboratoryView,

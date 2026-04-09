@@ -312,6 +312,63 @@ describe("laboratory model", () => {
     ]);
   });
 
+  test("buildSaltSprayLaboratoryView exposes running experiment countdown data for the current salt spray task", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-601", experiment_code: "SYLU-2026-04-601-A", tray_code: "TP-601" },
+        { task_code: "SYLU-2026-04-601", experiment_code: "SYLU-2026-04-601-A", tray_code: "TP-602" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-601", experiment_code: "SYLU-2026-04-601-A", experiment_name: "盐雾试验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-601-1",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "实验进行中",
+          task_code: "SYLU-2026-04-601",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-601" }],
+        },
+        {
+          code: "SP-601-2",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "实验进行中",
+          task_code: "SYLU-2026-04-601",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-602" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-601",
+          task_code: "SYLU-2026-04-601",
+          experiment_code: "SYLU-2026-04-601-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-04-601", name: "盐雾运行任务", test_type: "盐雾试验" }],
+    });
+
+    expect(view.runningExperiment).toEqual(
+      expect.objectContaining({
+        active: true,
+        taskCode: "SYLU-2026-04-601",
+        experimentName: "盐雾试验",
+        trayCodes: ["TP-601", "TP-602"],
+        sampleCodes: ["SP-601-1", "SP-601-2"],
+        countdownLabel: "01:00:00",
+        startDateTimeLabel: toDisplayedDateTime("2026-04-02T09:30:00.000Z"),
+        endDateTimeLabel: toDisplayedDateTime("2026-04-02T11:00:00.000Z"),
+      }),
+    );
+    expect(view.runningExperiment.remainingSeconds).toBe(3600);
+    expect(view.runningExperiment.overdue).toBe(false);
+  });
+
   test("validateLaboratoryTrayScan rejects trays from another scheduled task and returns guidance", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [

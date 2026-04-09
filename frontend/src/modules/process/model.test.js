@@ -117,4 +117,147 @@ describe("processLabModel", () => {
       })
     );
   });
+
+  test("buildProcessLabCards scopes running state to the scheduled experiment instead of the whole task", () => {
+    const cards = buildProcessLabCards(
+      [
+        { name: "Salt Lab", testType: "盐雾试验" },
+        { name: "Thermal Lab", testType: "高低温湿热试验" },
+      ],
+      [{ code: "TASK-001", test_type: "盐雾试验 / 高低温湿热试验" }],
+      [
+        {
+          device: "Salt Lab",
+          end_at: "2026-04-09T21:35:00Z",
+          experiment_code: "TASK-001-A",
+          start_at: "2026-04-09T18:05:00Z",
+          task_code: "TASK-001",
+        },
+        {
+          device: "Thermal Lab",
+          end_at: "2026-04-10T15:30:00Z",
+          experiment_code: "TASK-001-B",
+          start_at: "2026-04-10T12:00:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      [
+        {
+          code: "TASK-001-SP-001",
+          task_code: "TASK-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "TASK-001-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "TASK-001-SP-002",
+          task_code: "TASK-001",
+          status: "到货",
+          trays: [{ tray_code: "TASK-001-TP-002", status: "到货", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T18:30:00Z"),
+      [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "盐雾试验" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", experiment_name: "高低温湿热试验" },
+      ],
+      [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TASK-001-TP-002" },
+      ]
+    );
+
+    expect(cards.find((card) => card.name === "Salt Lab")).toEqual(
+      expect.objectContaining({
+        status: "实验中",
+        statusClass: "is-running",
+      })
+    );
+    expect(cards.find((card) => card.name === "Thermal Lab")).toEqual(
+      expect.objectContaining({
+        status: "已排程",
+        statusClass: "is-scheduled",
+      })
+    );
+  });
+
+  test("buildProcessLabCards does not mark future labs running when shared trays are still located in the current lab", () => {
+    const cards = buildProcessLabCards(
+      [
+        { name: "盐雾试验室", testType: "盐雾试验" },
+        { name: "高低温湿热一室", testType: "高低温湿热试验" },
+        { name: "振动一室", testType: "振动试验" },
+      ],
+      [{ code: "SYLU-2026-03-002", test_type: "盐雾试验 / 高低温湿热试验 / 振动试验" }],
+      [
+        {
+          device: "盐雾试验室",
+          end_at: "2026-04-09T13:35:38Z",
+          experiment_code: "SYLU-2026-03-002-A",
+          start_at: "2026-04-09T10:05:38Z",
+          task_code: "SYLU-2026-03-002",
+        },
+        {
+          device: "高低温湿热一室",
+          end_at: "2026-04-10T07:30:00Z",
+          experiment_code: "SYLU-2026-03-002-B",
+          start_at: "2026-04-10T04:00:00Z",
+          task_code: "SYLU-2026-03-002",
+        },
+        {
+          device: "振动一室",
+          end_at: "2026-04-10T07:30:00Z",
+          experiment_code: "SYLU-2026-03-002-C",
+          start_at: "2026-04-10T04:00:00Z",
+          task_code: "SYLU-2026-03-002",
+        },
+      ],
+      [
+        {
+          code: "SYLU-2026-03-002-SP-001",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-002-SP-005",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-002", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T18:30:00Z"),
+      [
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-B", experiment_name: "高低温湿热试验" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-C", experiment_name: "振动试验" },
+      ],
+      [
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", tray_code: "SYLU-2026-03-002-TP-001" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", tray_code: "SYLU-2026-03-002-TP-002" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-B", tray_code: "SYLU-2026-03-002-TP-002" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-C", tray_code: "SYLU-2026-03-002-TP-001" },
+      ]
+    );
+
+    expect(cards.find((card) => card.name === "盐雾试验室")).toEqual(
+      expect.objectContaining({
+        status: "实验中",
+        statusClass: "is-running",
+      })
+    );
+    expect(cards.find((card) => card.name === "高低温湿热一室")).toEqual(
+      expect.objectContaining({
+        status: "已排程",
+        statusClass: "is-scheduled",
+      })
+    );
+    expect(cards.find((card) => card.name === "振动一室")).toEqual(
+      expect.objectContaining({
+        status: "已排程",
+        statusClass: "is-scheduled",
+      })
+    );
+  });
 });

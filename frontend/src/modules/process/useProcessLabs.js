@@ -4,7 +4,12 @@ import { computed, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { buildTrayFlowView, normalizeLifecycleStatus, resolveFlowStatusByLocation } from "@/modules/samples/samplesFlowModel";
+import {
+  buildTrayFlowView,
+  normalizeLifecycleStatus,
+  resolveFlowStatusByLocation,
+  synchronizeSamplesForTrayCodes,
+} from "@/modules/samples/samplesFlowModel";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
@@ -81,6 +86,25 @@ const parseScheduleTime = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
+
+const normalizeLocationList = (locations) =>
+  Array.from(new Set(asArray(locations).map(normalizeText).filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right, "zh-Hans-CN"),
+  );
+
+const trayBelongsToLab = (trayRow, labName) => {
+  const normalizedLabName = normalizeText(labName);
+  if (!normalizedLabName) {
+    return false;
+  }
+  const locationNames = normalizeLocationList(trayRow?.locationNames);
+  if (locationNames.length === 0) {
+    return false;
+  }
+  return locationNames.includes(normalizedLabName);
+};
+
+const trayHasUnknownLocation = (trayRow) => normalizeLocationList(trayRow?.locationNames).length === 0;
 
 const resolveScheduleDurationHours = (schedule) => {
   const plannedHours = Number(schedule?.planned_hours);
@@ -401,6 +425,7 @@ function useProcessLabs(options = {}) {
           isCompleted: COMPLETED_TRAY_STATUSES.has(status),
           isReady: status === TRAY_STATUS_READY,
           isRunning: RUNNING_TRAY_STATUSES.has(status),
+          locationNames: normalizeLocationList(row.locations),
           locationSummary: summarizeUniqueTexts(row.locations, fallbackContext.locationSummary),
           ownerSummary: summarizeUniqueTexts(row.owners, fallbackContext.ownerSummary),
           sampleCodes,
@@ -413,10 +438,13 @@ function useProcessLabs(options = {}) {
       .sort((left, right) => left.trayCode.localeCompare(right.trayCode, "zh-Hans-CN"));
   };
 
-  const buildStartExperimentState = (trayRows) => {
+  const buildStartExperimentState = (trayRows, options = {}) => {
     const rows = asArray(trayRows);
-    const readyTrayRows = rows.filter((row) => row.isReady);
-    const runningTrayRows = rows.filter((row) => row.isRunning);
+    const normalizedLabName = normalizeText(options.labName);
+    const matchesLab = (row) =>
+      !normalizedLabName || trayBelongsToLab(row, normalizedLabName) || trayHasUnknownLocation(row);
+    const readyTrayRows = rows.filter((row) => row.isReady && matchesLab(row));
+    const runningTrayRows = rows.filter((row) => row.isRunning && matchesLab(row));
     const remainingTrayRows = rows.filter((row) => !row.isRunning && !row.isCompleted);
 
     return {
@@ -477,7 +505,7 @@ function useProcessLabs(options = {}) {
     const runningTrayRows = trayRows.filter((row) => row.isRunning);
     const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
-    const actionState = buildStartExperimentState(trayRows);
+    const actionState = buildStartExperimentState(trayRows, { labName });
     const activeTray =
       trayRows.find((row) => row.trayCode === selectedTrayCode.value) ||
       runningTrayRows[0] ||
@@ -542,7 +570,9 @@ function useProcessLabs(options = {}) {
             normalizeText(entry?.device) === normalizeText(lab?.name) && normalizeText(entry?.task_code) === selectedTaskCode,
         )
       : schedules.value;
-    const scopedLab = buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value)[0] || lab;
+    const scopedLab =
+      buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value)[0]
+      || lab;
 
     if (!scopedLab?.hasTask) {
       return {
@@ -559,8 +589,12 @@ function useProcessLabs(options = {}) {
     const task = findTaskByCode(taskCode);
     const schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue());
     const activeExperimentCode = normalizeText(schedule?.experiment_code);
-    const actionState = buildStartExperimentState(buildTrayRows(taskCode, task, activeExperimentCode));
+    const scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
+    const actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
+    const hasScheduledTask = Boolean(scopedLab?.hasTask);
+    const status = actionState.runningTrayCount > 0 ? "实验中" : hasScheduledTask ? "已排程" : "空闲";
+    const statusClass = actionState.runningTrayCount > 0 ? "is-running" : hasScheduledTask ? "is-scheduled" : "is-idle";
     return {
       ...scopedLab,
       canStartExperiment: actionState.canStartExperiment,
@@ -568,12 +602,22 @@ function useProcessLabs(options = {}) {
       remainingTrayCount: actionState.remainingTrayCount,
       runningTrayCount: actionState.runningTrayCount,
       startDisabledReason: actionState.startDisabledReason,
+      status,
+      statusClass,
       targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
     };
   };
 
   const rebuildLabCards = () => {
-    labCards.value = buildProcessLabCards(labs, tasks.value, schedules.value, samples.value, currentTimeValue(), experiments.value).map(enrichLabCard);
+    labCards.value = buildProcessLabCards(
+      labs,
+      tasks.value,
+      schedules.value,
+      samples.value,
+      currentTimeValue(),
+      experiments.value,
+      experimentTrays.value,
+    ).map(enrichLabCard);
   };
 
   const ensureTaskWorkspaceLoaded = async (taskCode) => {
@@ -739,46 +783,15 @@ function useProcessLabs(options = {}) {
     const currentTime = Date.parse(timestamp);
     const targetSchedule = resolveScheduledRecordForLab(activeLab, taskCode, currentTime, detail?.activeExperimentCode);
     const startedExperimentName = detail?.targetExperiment || detail?.testType || "";
-    const nextSamples = samples.value.map((sample) => {
-      if (normalizeText(sample?.task_code) !== taskCode) {
-        return sample;
-      }
-
-      let hasStartedTray = false;
-      const nextTrays = asArray(sample?.trays).map((tray) => {
-        if (!startedTrayCodes.has(normalizeText(tray?.tray_code)) || normalizeText(tray?.status) !== TRAY_STATUS_READY) {
-          return tray;
-        }
-        hasStartedTray = true;
-        return {
-          ...tray,
-          status: TRAY_STATUS_RUNNING,
-          updated_at: timestamp,
-        };
-      });
-
-      if (!hasStartedTray) {
-        return sample;
-      }
-
-      const nextStatus = TRAY_STATUS_RUNNING;
-      return {
-        ...sample,
-        flow_status: resolveFlowStatusByLocation(sample?.location, nextStatus),
-        history: appendSampleHistory(
-          {
-            ...sample,
-            status: nextStatus,
-          },
-          "开始实验",
-          `${taskCode} / ${startedExperimentName || "-"} / ${nextStatus} / 托盘：${startedTrayText}`,
-          timestamp,
-        ),
-        status: nextStatus,
-        trays: nextTrays,
-        updated_at: timestamp,
-      };
-    });
+    const nextSamples = synchronizeSamplesForTrayCodes({
+      historyAction: "开始实验",
+      historyDetail: `${taskCode} / ${startedExperimentName || "-"} / ${TRAY_STATUS_RUNNING} / 托盘：${startedTrayText}`,
+      location: normalizeText(activeLab?.name),
+      now: timestamp,
+      samples: samples.value,
+      status: TRAY_STATUS_RUNNING,
+      trayCodes: Array.from(startedTrayCodes),
+    }).samples;
 
     const nextTasks = tasks.value.map((task) =>
       normalizeText(task?.code) === taskCode

@@ -959,6 +959,28 @@ describe("SchedulePage runtime", () => {
     expect(taskSelectText).not.toContain("SYLU-2026-01-002");
   });
 
+  test("keeps tray-assigned tasks visible in the selector when another task shares the same experiment label", async () => {
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-010", name: "无托盘任务", test_type: "UNKNOWN", status: STATUS_WAITING },
+      { id: "task-2", code: "SYLU-2026-01-011", name: "已分配托盘任务", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-011-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "SYLU-2026-01-010-A", task_code: "SYLU-2026-01-010", experiment_code: "SYLU-2026-01-010-A", experiment_name: "冲击试验", required_device: PRIMARY_LAB },
+      { id: "SYLU-2026-01-011-A", task_code: "SYLU-2026-01-011", experiment_code: "SYLU-2026-01-011-A", experiment_name: "冲击试验", required_device: PRIMARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const taskSelectText = wrapper.get('select[name="task_code"]').text();
+    expect(taskSelectText).toContain("SYLU-2026-01-011");
+    expect(taskSelectText).not.toContain("SYLU-2026-01-010");
+  });
+
   test("auto-adjusts manual schedule slot to legal afternoon and next-day morning based on current time", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2099-03-20T11:59:00"));
