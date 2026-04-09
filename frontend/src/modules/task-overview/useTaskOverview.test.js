@@ -69,6 +69,44 @@ describe("useTaskOverview helpers", () => {
     expect(filtered[0].taskCode).toBe("TASK-003");
   });
 
+  test("filters rows by atomic experiment type when the task summary contains multiple experiment types", () => {
+    const rows = [
+      {
+        currentStatus: "待排程",
+        experimentSummary: "盐雾试验 / 冲击试验 / 霉菌试验",
+        sampleCodes: [],
+        scheduleLabel: "未排程",
+        taskCode: "TASK-004",
+        taskType: "盐雾试验 / 冲击试验 / 霉菌试验",
+        timeValue: "2026-03-08T10:00:00Z",
+        trays: [],
+      },
+      {
+        currentStatus: "待排程",
+        experimentSummary: "高低温湿热试验 / 四综合试验",
+        sampleCodes: [],
+        scheduleLabel: "未排程",
+        taskCode: "TASK-005",
+        taskType: "高低温湿热试验 / 四综合试验",
+        timeValue: "2026-03-08T12:00:00Z",
+        trays: [],
+      },
+    ];
+
+    const filtered = filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "",
+      rows,
+      testTypeFilter: "冲击试验",
+      timeFilter: "all",
+      now: new Date("2026-03-10T12:00:00Z"),
+    });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].taskCode).toBe("TASK-004");
+  });
+
   test("builds overview metrics for task and tray modes", () => {
     const taskMetrics = buildOverviewMetrics({
       filteredRows: [{ scheduleCount: 1 }, { scheduleCount: 0 }],

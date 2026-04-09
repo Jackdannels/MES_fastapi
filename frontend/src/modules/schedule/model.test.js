@@ -183,6 +183,68 @@ describe("schedulePageModel", () => {
     ]);
   });
 
+  test("buildExperimentOptions splits legacy combined task types into atomic experiment-type options", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-03-003",
+      experiments: [],
+      schedules: [],
+      tasks: [
+        {
+          code: "SYLU-2026-03-003",
+          test_type: "冲击试验 / 盐雾试验 / 冲击试验",
+          experiment_codes: ["SYLU-2026-03-003-A", "SYLU-2026-03-003-B", "SYLU-2026-03-003-C"],
+        },
+      ],
+    });
+
+    expect(options).toEqual([
+      {
+        code: "SYLU-2026-03-003-A",
+        fullCode: "SYLU-2026-03-003-A",
+        label: "冲击试验",
+        requiredDevice: "冲击试验",
+        taskCode: "SYLU-2026-03-003",
+      },
+      {
+        code: "SYLU-2026-03-003-B",
+        fullCode: "SYLU-2026-03-003-B",
+        label: "盐雾试验",
+        requiredDevice: "盐雾试验",
+        taskCode: "SYLU-2026-03-003",
+      },
+    ]);
+  });
+
+  test("buildExperimentOptions hides duplicate experiment types for the selected task", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-03-006",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-B",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-C",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+        },
+      ],
+      schedules: [],
+      tasks: [],
+    });
+
+    expect(options.map((option) => option.label)).toEqual(["盐雾试验", "冲击试验"]);
+  });
+
   test("buildManualTaskOptions only keeps unpacking tasks that already have a saved tray plan", () => {
     const options = buildManualTaskOptions({
       activeTab: "unpacking",

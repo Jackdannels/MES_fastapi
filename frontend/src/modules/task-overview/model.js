@@ -1,4 +1,5 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
@@ -240,10 +241,10 @@ function buildTaskRows({
           scheduleLabel,
         }),
       }));
-      const experimentSummary = row.experiments
-        .map((experiment) => experiment.experimentName)
-        .filter(Boolean)
-        .join(" / ");
+      const experimentSummary =
+        row.experiments.length > 0
+          ? buildExperimentTypeSummary(row.experiments.map((experiment) => experiment.experimentName))
+          : buildExperimentTypeSummary(row.taskType);
 
       return {
         ...row,
@@ -251,6 +252,7 @@ function buildTaskRows({
         scheduleLabel,
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,
+        taskType: buildExperimentTypeSummary(row.taskType),
         trays,
         experiments,
         experimentCount: row.experimentCount,

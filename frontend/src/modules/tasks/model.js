@@ -1,5 +1,6 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 const SOURCE_EXTERNAL = "外部委托";
@@ -261,10 +262,13 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
     // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
     const displayStatus = resolveTaskStatus(task, schedules, samples, now);
     const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
-    const experimentTypes = Array.from(new Set((experimentsByTaskCode.get(taskCode) || []).filter(Boolean)));
+    const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
     const fallbackType = normalizeText(task?.test_type);
-    const experimentSummary = experimentTypes.join(" / ") || fallbackType;
-    const experimentCount = experimentTypes.length || Number.parseInt(task?.experiment_count, 10) || (experimentSummary ? 1 : 0);
+    const experimentSummary = buildExperimentTypeSummary(experimentTypes, fallbackType);
+    const experimentCount =
+      collectExperimentTypes(experimentTypes, fallbackType).length ||
+      Number.parseInt(task?.experiment_count, 10) ||
+      (experimentSummary ? 1 : 0);
 
     return {
       arrivalAt: formatDateTime(task?.arrival_at),
@@ -318,10 +322,8 @@ function buildFilterOptions(rows) {
   return {
     // 状态筛选仅基于当前可见行生成，保证筛选器与列表同步。
     statusOptions: Array.from(new Set(rowList.map((row) => row.displayStatus).filter(Boolean))),
-    // 试验类型既保留预设映射，也兼容列表里已经存在的自定义类型。
-    testTypeOptions: Array.from(new Set(Object.keys(TEST_PREFIX_MAP).concat(rowList.map((row) => row.testType).filter(Boolean)))).sort(
-      (left, right) => left.localeCompare(right, "zh-Hans-CN"),
-    ),
+    // 试验类型选项只展示当前数据中存在的原子实验类型，组合串会先拆分去重。
+    testTypeOptions: buildExperimentTypeOptions(rowList.map((row) => row.testType)),
   };
 }
 

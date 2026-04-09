@@ -411,6 +411,7 @@ import { useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { buildCode128Svg } from "../handover-system/barcode.js";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";
@@ -612,11 +613,13 @@ const switchModule = async (targetModule) => {
 const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
 const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
 const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
-const taskTypeOptions = computed(() => [...new Set(taskOverview.value.map((task) => task.experimentTypeText || task.taskType).filter(Boolean))]);
+const taskTypeOptions = computed(() =>
+  buildExperimentTypeOptions(taskOverview.value.map((task) => task.experimentTypeText || task.taskType)),
+);
 const filteredTaskOverview = computed(() => {
   const query = searchText.value.trim().toLowerCase();
   return taskOverview.value.filter((task) => {
-    const typeMatch = !taskTypeFilter.value || (task.experimentTypeText || task.taskType) === taskTypeFilter.value;
+    const typeMatch = matchesExperimentTypeFilter(taskTypeFilter.value, task.experimentTypeText, task.taskType);
     const statusMatch = !taskStatusFilter.value || normalizeTaskStatus(task.taskStatus) === taskStatusFilter.value;
     const searchTextPool = [
       task.taskNo,

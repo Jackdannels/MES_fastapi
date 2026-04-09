@@ -85,6 +85,29 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows removes duplicate experiment types from overview summaries", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-006",
+          test_type: "盐雾试验 / 冲击试验 / 盐雾试验",
+          status: "待排程",
+          sample_count: 1,
+        },
+      ],
+      experiments: [],
+      samples: [{ task_code: "SYLU-2026-03-006", code: "SYLU-2026-03-006-SP-001", trays: [] }],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0]).toMatchObject({
+      taskType: "盐雾试验 / 冲击试验",
+      experimentSummary: "盐雾试验 / 冲击试验",
+    });
+  });
+
   test("buildTrayOverviewRows fills empty tray slots and uses latest schedule device", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-1", test_type: "Thermal" }],

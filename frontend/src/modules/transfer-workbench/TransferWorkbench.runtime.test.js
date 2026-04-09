@@ -413,6 +413,36 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("overview task type filter shows only atomic experiment types and matches tasks containing the selected type", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    const filter = wrapper.find(".transfer-overview-select");
+    const optionTexts = filter.findAll("option").map((node) => node.text());
+    expect(optionTexts).toContain("盐雾试验");
+    expect(optionTexts).toContain("冲击试验");
+    expect(optionTexts).toContain("振动试验");
+    expect(optionTexts).not.toContain("盐雾试验 / 振动试验");
+    expect(optionTexts).not.toContain("冲击试验 / 振动试验");
+
+    await wrapper.get('[data-testid="transfer-filter-all"]').trigger("click");
+    await settle(wrapper);
+
+    await filter.setValue("振动试验");
+    await settle(wrapper);
+
+    const taskRows = wrapper.findAll('[data-testid^="transfer-task-row-"]');
+    expect(taskRows).toHaveLength(2);
+    expect(taskRows[0].text()).toContain("SYLU-2026-03-101");
+    expect(taskRows[1].text()).toContain("SYLU-2026-03-102");
+  });
+
   test("barcode preview uses the tray number as the real barcode value and compact summary copy", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();

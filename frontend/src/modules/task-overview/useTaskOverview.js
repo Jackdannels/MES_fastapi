@@ -3,13 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
 
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
-const TEST_TYPE_OPTIONS = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"];
 const SCHEDULED_LABEL = "已排程";
 const UNSCHEDULED_LABEL = "未排程";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
@@ -87,7 +87,7 @@ function filterTaskOverviewRows({
 
   return rowList.filter((row) => {
     // 关键词搜索覆盖任务号、类型、状态、样品号和托盘号。
-    if (selectedType && (row?.taskType || "") !== selectedType) {
+    if (!matchesExperimentTypeFilter(selectedType, row?.taskType, row?.experimentSummary)) {
       return false;
     }
     if (!matchTime(row)) {
@@ -261,11 +261,8 @@ function useTaskOverview() {
   );
 
   const testTypeOptions = computed(() => {
-    // 下拉项由预设试验类型和当前数据中的动态类型合并生成。
-    const dynamicTypes = rows.value
-      .flatMap((row) => String(row?.experimentSummary || "").split("/").map((item) => item.trim()))
-      .filter(Boolean);
-    return Array.from(new Set(TEST_TYPE_OPTIONS.concat(dynamicTypes))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+    // 下拉项统一只展示当前数据中存在的原子实验类型。
+    return buildExperimentTypeOptions(rows.value.map((row) => row?.experimentSummary || row?.taskType));
   });
 
   const taskTypeEditOptions = computed(() => testTypeOptions.value);

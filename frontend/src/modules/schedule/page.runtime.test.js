@@ -214,6 +214,38 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.text()).toContain("振动试验");
   });
 
+  test("shows only atomic experiment types in the manual scheduling selector for legacy combined task types", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-006",
+        name: "组合实验任务",
+        test_type: "冲击试验 / 盐雾试验 / 冲击试验",
+        status: STATUS_WAITING,
+        experiment_codes: ["SYLU-2026-03-006-A", "SYLU-2026-03-006-B", "SYLU-2026-03-006-C"],
+        tray_codes: ["SYLU-2026-03-006-TP-001"],
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, []);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("实验类型");
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-03-006");
+    await settle(wrapper);
+
+    const experimentSelect = wrapper.get('select[name="experiment_code"]');
+    expect(experimentSelect.text()).toContain("冲击试验");
+    expect(experimentSelect.text()).toContain("盐雾试验");
+    expect(experimentSelect.text()).not.toContain("冲击试验 / 盐雾试验 / 冲击试验");
+  });
+
   test("shows current task scheduled overlays in the gantt section when scheduling another experiment", async () => {
     const future = buildDateParts(2);
 

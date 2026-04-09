@@ -1,5 +1,6 @@
 // 提供排程页所需的表单、看板行、甘特数据和增删改辅助函数。
 import { getLabsForTestType, TEST_LABS } from "@/lib/labs.js";
+import { buildExperimentTypeOptions, collectExperimentTypes } from "@/lib/experimentTypes";
 
 const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
@@ -33,16 +34,16 @@ const buildFallbackExperimentsForTask = (task) => {
   if (!taskCode) {
     return [];
   }
-  const experimentName = normalizeText(task?.test_type) || normalizeText(task?.required_device) || buildExperimentLabel(taskCode);
+  const experimentTypes = collectExperimentTypes(task?.test_type, task?.required_device);
   const experimentCodes = Array.isArray(task?.experiment_codes)
     ? task.experiment_codes.map((code) => normalizeText(code)).filter(Boolean)
     : [];
   const codes = experimentCodes.length > 0 ? experimentCodes : [`${taskCode}-A`];
 
-  return codes.map((experimentCode) => ({
+  return codes.map((experimentCode, index) => ({
     experiment_code: experimentCode,
-    experiment_name: experimentName,
-    required_device: normalizeText(task?.test_type),
+    experiment_name: experimentTypes[index] || experimentTypes[0] || buildExperimentLabel(experimentCode),
+    required_device: experimentTypes[index] || experimentTypes[0] || "",
     task_code: taskCode,
   }));
 };
@@ -1254,15 +1255,24 @@ function buildExperimentOptions({ taskCode, experiments, schedules, tasks }) {
       .map((schedule) => normalizeText(schedule?.experiment_code)),
   );
 
+  const seenLabels = new Set();
   return buildExperimentCandidates({ taskCode, experiments, tasks })
     .filter((experiment) => !scheduledExperimentCodes.has(normalizeText(experiment?.experiment_code)))
     .map((experiment) => ({
       code: normalizeText(experiment?.experiment_code),
       fullCode: normalizeText(experiment?.experiment_code),
       label: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.required_device) || normalizeText(experiment?.experiment_code),
-      requiredDevice: normalizeText(experiment?.required_device),
+      requiredDevice: normalizeText(experiment?.required_device) || normalizeText(experiment?.experiment_name),
       taskCode: normalizeText(experiment?.task_code),
-    }));
+    }))
+    .filter((option) => {
+      const label = normalizeText(option.label);
+      if (!label || seenLabels.has(label)) {
+        return false;
+      }
+      seenLabels.add(label);
+      return true;
+    });
 }
 
 function ensureStreamForSchedule(streams, schedule, now = new Date()) {

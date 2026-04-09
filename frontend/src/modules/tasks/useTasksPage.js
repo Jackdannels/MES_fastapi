@@ -5,6 +5,7 @@ import { useRoute } from "vue-router";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
+import { matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { createTask, deleteTask as deleteTaskByApi, readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
@@ -61,7 +62,7 @@ function useTasksPage() {
   const filteredRows = computed(() =>
     allRows.value.filter((row) => {
       // 两个下拉筛选先于表格搜索执行，缩小后续搜索数据集。
-      if (selectedTestType.value && row.testType !== selectedTestType.value) {
+      if (!matchesExperimentTypeFilter(selectedTestType.value, row.testType, row.experimentSummary)) {
         return false;
       }
       if (selectedStatus.value && row.displayStatus !== selectedStatus.value) {

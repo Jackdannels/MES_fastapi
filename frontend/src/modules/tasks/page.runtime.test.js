@@ -112,6 +112,64 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("任务详情");
   });
 
+  test("filters by atomic experiment type while hiding combined summaries from the filter dropdown", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-001",
+        name: "多实验任务",
+        source: "外部委托",
+        priority: "高",
+        sample_count: 12,
+        sample_type: "结构件",
+        test_type: "冲击试验 / 盐雾试验 / 冲击试验",
+        required_device: "冲击试验",
+        due_at: "2026-03-13 18:00",
+        arrival_at: "2026-03-13 12:00",
+        status: "待排程",
+        created_at: "2026-03-13T08:00:00.000Z",
+      },
+      {
+        id: "task-2",
+        code: "SYLU-2026-03-002",
+        name: "霉菌任务",
+        source: "内部新增",
+        priority: "中",
+        sample_count: 4,
+        sample_type: "粉末",
+        test_type: "霉菌试验",
+        required_device: "霉菌试验",
+        due_at: "2026-03-14 10:00",
+        arrival_at: "2026-03-13 09:00",
+        status: "待排程",
+        created_at: "2026-03-13T09:00:00.000Z",
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_type: "冲击试验" },
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_type: "盐雾试验" },
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_type: "冲击试验" },
+      { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", experiment_type: "霉菌试验" },
+    ]);
+    setStorage(SCHEDULES_KEY, []);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const filterSelect = wrapper.get("#task-list-filter-test-type");
+    expect(filterSelect.text()).toContain("冲击试验");
+    expect(filterSelect.text()).toContain("盐雾试验");
+    expect(filterSelect.text()).not.toContain("冲击试验 / 盐雾试验 / 冲击试验");
+
+    await filterSelect.setValue("冲击试验");
+    await settle(wrapper);
+
+    const rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text()).toContain("SYLU-2026-03-001");
+    expect(rows[0].text()).not.toContain("SYLU-2026-03-002");
+  });
+
   test("loads tasks from the dedicated tasks api while reading related collections from storage snapshot", async () => {
     const fetchMock = vi.fn((url) => {
       if (url === "/api/tasks") {

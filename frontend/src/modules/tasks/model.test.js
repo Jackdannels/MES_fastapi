@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import { buildTaskCode, buildTaskEditForm, buildTaskMetrics, buildTaskRows, createTaskRecord, updateTaskRecord } from "./model";
+import {
+  buildFilterOptions,
+  buildTaskCode,
+  buildTaskEditForm,
+  buildTaskMetrics,
+  buildTaskRows,
+  createTaskRecord,
+  updateTaskRecord,
+} from "./model";
 
 describe("tasks model", () => {
   test("marks a task as running when any tray is sent to the lab", () => {
@@ -314,6 +322,52 @@ describe("tasks model", () => {
         testType: "温度冲击 / 振动 / 盐雾",
       }),
     );
+  });
+
+  test("buildTaskRows removes duplicate experiment types from legacy task summaries", () => {
+    const rows = buildTaskRows(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "重复实验任务",
+          status: "待排程",
+          sample_count: 6,
+          test_type: "冲击试验 / 盐雾试验 / 冲击试验",
+        },
+      ],
+      [],
+      [],
+      [],
+    );
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        experimentCount: 2,
+        experimentSummary: "冲击试验 / 盐雾试验",
+        testType: "冲击试验 / 盐雾试验",
+      }),
+    );
+  });
+
+  test("buildFilterOptions exposes only atomic experiment types sorted without combined summaries", () => {
+    const options = buildFilterOptions([
+      {
+        testType: "冲击试验 / 盐雾试验 / 冲击试验",
+      },
+      {
+        testType: "高低温湿热试验 / 霉菌试验",
+      },
+    ]);
+
+    expect(options.testTypeOptions).toEqual([
+      "冲击试验",
+      "高低温湿热试验",
+      "霉菌试验",
+      "盐雾试验",
+    ]);
+    expect(options.testTypeOptions).not.toContain("冲击试验 / 盐雾试验 / 冲击试验");
+    expect(options.testTypeOptions).not.toContain("高低温湿热试验 / 霉菌试验");
   });
 
   test("buildTaskCode generates the next monthly SYLU sequence", () => {
