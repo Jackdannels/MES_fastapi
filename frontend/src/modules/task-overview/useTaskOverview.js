@@ -100,6 +100,7 @@ function filterTaskOverviewRows({
       row?.taskCode,
       row?.experimentSummary,
       row?.taskType,
+      row?.currentStatusLabel,
       row?.currentStatus,
       row?.scheduleLabel,
       Array.isArray(row?.experiments) ? row.experiments.map((item) => `${item?.experimentName || ""} ${item?.displayStatus || ""}`).join(" ") : "",

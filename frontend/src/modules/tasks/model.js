@@ -16,6 +16,7 @@ const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
 const ACTIVE_TRAY_STATUSES = new Set(["实验进行中", STATUS_RUNNING]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", STATUS_COMPLETED]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
@@ -203,6 +204,64 @@ const aggregateTaskStatusFromSamples = (task, samples) => {
   return "";
 };
 
+const buildTaskExperimentProgress = (taskCode, experiments) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const matchedExperiments = (Array.isArray(experiments) ? experiments : []).filter(
+    (experiment) => normalizeText(experiment?.task_code) === normalizedTaskCode,
+  );
+  const totalCount = matchedExperiments.length;
+  const completedCount = matchedExperiments.filter((experiment) =>
+    COMPLETED_EXPERIMENT_STATUSES.has(normalizeStatusLabel(experiment?.status)),
+  ).length;
+
+  return {
+    completedCount,
+    hasPartialCompletion: totalCount > 0 && completedCount > 0 && completedCount < totalCount,
+    isFullyCompleted: totalCount > 0 && completedCount === totalCount,
+    totalCount,
+  };
+};
+
+const buildTaskStatusLabel = (status, experimentProgress) => {
+  const normalizedStatus = normalizeText(status);
+  if (normalizedStatus !== STATUS_RUNNING) {
+    return normalizedStatus;
+  }
+  if (!experimentProgress?.hasPartialCompletion) {
+    return normalizedStatus;
+  }
+  return `${STATUS_RUNNING}（已完成${experimentProgress.completedCount}个实验）`;
+};
+
+const resolveTaskDisplayStatus = (task, schedules, samples, experiments, now) => {
+  const experimentProgress = buildTaskExperimentProgress(task?.code, experiments);
+  const aggregatedStatus = aggregateTaskStatusFromSamples(task, samples);
+  if (aggregatedStatus === STATUS_RETENTION) {
+    return {
+      displayStatus: STATUS_RETENTION,
+      experimentProgress,
+    };
+  }
+  if (experimentProgress.hasPartialCompletion) {
+    return {
+      displayStatus: STATUS_RUNNING,
+      experimentProgress,
+    };
+  }
+  if (aggregatedStatus) {
+    return {
+      displayStatus: aggregatedStatus,
+      experimentProgress,
+    };
+  }
+
+  const displayStatus = resolveTaskStatus(task, schedules, samples, now);
+  return {
+    displayStatus,
+    experimentProgress,
+  };
+};
+
 // 根据当前排程时间推导任务表格中显示的任务状态。
 function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
   const { samples, now } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
@@ -260,7 +319,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
 
   return taskList.map((task, index) => {
     // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
-    const displayStatus = resolveTaskStatus(task, schedules, samples, now);
+    const { displayStatus, experimentProgress } = resolveTaskDisplayStatus(task, schedules, samples, experiments, now);
     const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
     const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
     const fallbackType = normalizeText(task?.test_type);
@@ -280,6 +339,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       contactInfo: normalizeText(task?.contact_info),
       createdAt: normalizeText(task?.created_at),
       displayStatus,
+      displayStatusLabel: buildTaskStatusLabel(displayStatus, experimentProgress),
       dueAt: formatDateTime(task?.due_at),
       id: normalizeText(task?.id) || `task-${index + 1}`,
       name: normalizeText(task?.name),
@@ -642,8 +702,10 @@ export {
   buildFilterOptions,
   buildTaskCode,
   buildTaskEditForm,
+  buildTaskExperimentProgress,
   buildTaskMetrics,
   buildTaskRows,
+  buildTaskStatusLabel,
   createTaskEditForm,
   createTaskIntakeForm,
   createRandomTaskIntakeForm,

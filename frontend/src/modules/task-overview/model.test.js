@@ -336,6 +336,37 @@ describe("taskOverviewModel", () => {
       }),
     ]);
   });
+
+  test("buildTaskRows keeps partially completed tasks in running state with a completed-count label", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-03-013", test_type: "振动试验", status: "待排程" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-013",
+          experiment_code: "SYLU-2026-03-013-A",
+          experiment_name: "振动试验A",
+          status: "实验已经完成",
+        },
+        {
+          task_code: "SYLU-2026-03-013",
+          experiment_code: "SYLU-2026-03-013-B",
+          experiment_name: "振动试验B",
+          status: "待排程",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        currentStatus: "实验中",
+        currentStatusLabel: "实验中（已完成1个实验）",
+      }),
+    );
+  });
 });
 
 

@@ -108,4 +108,30 @@ describe("TaskOverviewSummaryTable", () => {
     expect(statusChip.classes()).not.toContain("is-overdue");
     expect(statusChip.classes()).not.toContain("is-overdue-highlight");
   });
+
+  test("renders the task status label when the row carries a partial-completion suffix", () => {
+    const wrapper = mount(TaskOverviewSummaryTable, {
+      props: {
+        formatTrayCount: () => "1",
+        formatTraySummary: () => "TP-009",
+        row: {
+          currentStatus: "实验中",
+          currentStatusLabel: "实验中（已完成1个实验）",
+          experimentCount: 2,
+          experimentSummary: "振动试验A / 振动试验B",
+          experiments: [
+            { experimentCode: "TASK-009-A", experimentName: "振动试验A", displayStatus: "实验完成" },
+            { experimentCode: "TASK-009-B", experimentName: "振动试验B", displayStatus: "待排程" },
+          ],
+          plannedCount: 2,
+          sampleCount: 2,
+          scheduleCount: 1,
+          scheduleLabel: "已排程",
+          trays: [{ trayCode: "TP-009" }],
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("实验中（已完成1个实验）");
+  });
 });

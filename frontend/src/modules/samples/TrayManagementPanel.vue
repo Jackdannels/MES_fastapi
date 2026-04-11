@@ -117,6 +117,8 @@ import {
   STATUS_SCHEDULED,
   STATUS_WAITING,
   aggregateTaskStatusFromSamples,
+  buildTaskExperimentProgress,
+  buildTaskStatusLabel,
   normalizeText,
 } from "../tasks/model.js";
 
@@ -216,17 +218,28 @@ const selectedTaskSamples = computed(() =>
 
 const selectedTaskStatus = computed(() => {
   const aggregatedStatus = aggregateTaskStatusFromSamples(selectedTask.value, selectedTaskSamples.value);
+  const experimentProgress = buildTaskExperimentProgress(selectedTaskCodeForFlow.value, props.samplesFlow.rawExperiments);
+  if (aggregatedStatus !== STATUS_RETENTION && experimentProgress.hasPartialCompletion) {
+    return STATUS_RUNNING;
+  }
   if (aggregatedStatus) {
     return aggregatedStatus;
   }
   return normalizeText(selectedTask.value?.status) || STATUS_WAITING;
 });
 
+const selectedTaskStatusLabel = computed(() =>
+  buildTaskStatusLabel(
+    selectedTaskStatus.value,
+    buildTaskExperimentProgress(selectedTaskCodeForFlow.value, props.samplesFlow.rawExperiments),
+  ),
+);
+
 const selectedTaskFlow = computed(() => {
   const currentStatus = TASK_FLOW_INDEX.has(selectedTaskStatus.value) ? selectedTaskStatus.value : STATUS_WAITING;
   const activeIndex = TASK_FLOW_INDEX.get(currentStatus) ?? 0;
   return {
-    currentStatus,
+    currentStatus: selectedTaskStatusLabel.value,
     steps: TASK_FLOW_STEPS.map((step, index) => ({
       ...step,
       active: index === activeIndex,

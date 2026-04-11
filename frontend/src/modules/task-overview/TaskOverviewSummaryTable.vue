@@ -15,7 +15,7 @@
       <tbody>
         <tr>
           <td>
-            <span class="task-overview-status-chip">{{ row.currentStatus || "-" }}</span>
+            <span class="task-overview-status-chip">{{ row.currentStatusLabel || row.currentStatus || "-" }}</span>
           </td>
           <td>{{ row.experimentCount > 0 ? row.experimentCount : "-" }}</td>
           <td>

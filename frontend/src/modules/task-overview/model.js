@@ -1,9 +1,10 @@
-import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+import { aggregateTaskStatusFromSamples, buildTaskExperimentProgress, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
+const STATUS_RUNNING = "实验中";
 const STATUS_RETENTION = "厂家收回";
 const TRANSFER_STATUS_STORED = "已入库";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
@@ -233,6 +234,7 @@ function buildTaskRows({
         .sort((left, right) => compareText(left.trayCode, right.trayCode));
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
+      const experimentProgress = buildTaskExperimentProgress(row.taskCode, experimentList);
       const aggregatedStatus = normalizeStatus(
         aggregateTaskStatusFromSamples(
           { code: row.taskCode },
@@ -240,7 +242,13 @@ function buildTaskRows({
         ),
       );
       // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
-      const currentStatus = aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
+      const currentStatus =
+        aggregatedStatus === STATUS_RETENTION
+          ? STATUS_RETENTION
+          : experimentProgress.hasPartialCompletion
+            ? STATUS_RUNNING
+            : aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
+      const currentStatusLabel = buildTaskStatusLabel(currentStatus, experimentProgress);
       const experiments = row.experiments.map((experiment) => {
         const displayStatus = resolveExperimentDisplayStatus({
           currentStatus,
@@ -266,6 +274,7 @@ function buildTaskRows({
       return {
         ...row,
         currentStatus,
+        currentStatusLabel,
         scheduleLabel,
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,

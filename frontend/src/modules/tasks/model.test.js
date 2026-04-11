@@ -67,7 +67,7 @@ describe("tasks model", () => {
     expect(rows[0].displayStatus).toBe("实验中");
   });
 
-  test("keeps a task scheduled when one tray is complete and another tray is only ready", () => {
+  test("keeps a partially completed task running and annotates the completed experiment count", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
       [{ id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" }],
@@ -85,9 +85,18 @@ describe("tasks model", () => {
           trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "实验准备就绪", quantity: 1 }],
         },
       ],
+      [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_name: "冲击试验A", status: "实验已经完成" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_name: "冲击试验B", status: "待排程" },
+      ],
     );
 
-    expect(rows[0].displayStatus).toBe("已排程");
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        displayStatus: "实验中",
+        displayStatusLabel: "实验中（已完成1个实验）",
+      }),
+    );
   });
 
   test("marks a task completed only when all trays are in complete or post-complete states", () => {

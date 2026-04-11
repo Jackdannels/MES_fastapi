@@ -58,7 +58,7 @@
           <td>{{ row.sampleCount }}</td>
           <td>{{ row.testType }}</td>
           <td>{{ row.dueAt }}</td>
-          <td><span :class="row.statusClass">{{ row.displayStatus }}</span></td>
+          <td><span :class="row.statusClass">{{ row.displayStatusLabel || row.displayStatus }}</span></td>
           <td>
             <button class="action-link" :data-testid="`open-task-drawer-${index}`" type="button" @click="openTaskDrawer(row)">
               编辑

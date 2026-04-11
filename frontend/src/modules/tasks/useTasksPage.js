@@ -74,7 +74,7 @@ function useTasksPage() {
 
   const { currentPage, pageCount, query, sortDirection, sortKey, visibleRows } = useTableControls({
     rows: filteredRows,
-    searchFields: ["code", "name", "source", "experimentSummary", "testType", "displayStatus"],
+    searchFields: ["code", "name", "source", "experimentSummary", "testType", "displayStatus", "displayStatusLabel"],
     pageSize: 8,
   });
 

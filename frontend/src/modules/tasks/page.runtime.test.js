@@ -227,6 +227,54 @@ describe("TasksPage runtime", () => {
     );
   });
 
+  test("renders partial experiment completion as running with a completed count suffix", async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url === "/api/tasks") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              id: "task-remote-2",
+              code: "SYLU-2026-03-100",
+              name: "远程多实验任务",
+              source: "外部委托",
+              priority: "高",
+              sample_count: 2,
+              sample_type: "结构件",
+              test_type: "冲击试验 / 振动试验",
+              required_device: "冲击试验",
+              due_at: "2026-03-18 18:00",
+              arrival_at: "2026-03-18 12:00",
+              status: "待排程",
+              created_at: "2026-03-18T08:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url === "/api/storage") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            [SCHEDULES_KEY]: [],
+            [SAMPLES_KEY]: [],
+            [STREAMS_KEY]: [],
+            [EXPERIMENTS_KEY]: [
+              { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-A", experiment_name: "冲击试验", status: "实验已经完成" },
+              { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-B", experiment_name: "振动试验", status: "待排程" },
+            ],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("实验中（已完成1个实验）");
+  });
+
   test("opens the intake modal from the route hash, auto-fills task code, and submits a task", async () => {
     setStorage(TASKS_KEY, [
       {
