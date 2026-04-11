@@ -31,7 +31,7 @@
                 v-for="item in experimentLines"
                 :key="`${item.key}-status`"
                 class="task-overview-summary-line task-overview-summary-line-chip"
-                :class="resolveExperimentStatusClass(item.status)"
+                :class="[resolveExperimentStatusClass(item.status), { 'is-overdue': item.isOverdueWaiting }]"
               >
                 {{ item.status }}
               </span>
@@ -75,6 +75,7 @@ const experimentLines = computed(() => {
   if (experiments.length > 0) {
     return experiments.map((experiment, index) => ({
       key: experiment?.experimentCode || `experiment-${index}`,
+      isOverdueWaiting: Boolean(experiment?.isOverdueWaiting),
       label: experiment?.experimentName || experiment?.experimentCode || "-",
       status: experiment?.displayStatus || props.row?.currentStatus || props.row?.scheduleLabel || "-",
     }));
@@ -82,6 +83,7 @@ const experimentLines = computed(() => {
   return [
     {
       key: "task-default",
+      isOverdueWaiting: false,
       label: props.row?.experimentSummary || props.row?.taskType || "-",
       status: props.row?.currentStatus || props.row?.scheduleLabel || "-",
     },

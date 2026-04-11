@@ -14,8 +14,6 @@ describe("DashboardPage runtime", () => {
   test("renders dashboard KPI summaries and task rows from Vue state", () => {
     useDashboardPageMock.mockReturnValue({
       currentPage: ref(1),
-      dataGap: computed(() => "暂无缺口"),
-      dataHealth: computed(() => "98.5%"),
       deviceItems: computed(() => [
         { code: "LAB-01", status: "可用" },
         { code: "LAB-02", status: "使用中" },
@@ -35,14 +33,26 @@ describe("DashboardPage runtime", () => {
         scheduledCount: 2,
         unscheduledCount: "1（暂存间存放0）",
       })),
+      unscheduledExperimentItems: computed(() => [
+        {
+          elapsedLabel: "25:30:00",
+          experimentCode: "T-001-A",
+          experimentLabel: "振动试验",
+          isOverdue: true,
+          taskCode: "T-001",
+        },
+      ]),
     });
 
     const wrapper = mount(DashboardPage);
 
     expect(wrapper.text()).toContain("外部 2 / 内部 1");
-    expect(wrapper.text()).toContain("98.5%");
+    expect(wrapper.text()).toContain("未排程实验计时");
+    expect(wrapper.text()).not.toContain("数据通道");
+    expect(wrapper.text()).toContain("25:30:00");
     expect(wrapper.text()).toContain("T-001");
     expect(wrapper.text()).toContain("LAB-01");
+    expect(wrapper.find(".dashboard-unscheduled-timer.is-overdue").exists()).toBe(true);
   });
 
   test("emits pagination changes through the shared pagination component", async () => {
@@ -50,8 +60,6 @@ describe("DashboardPage runtime", () => {
 
     useDashboardPageMock.mockReturnValue({
       currentPage: ref(1),
-      dataGap: computed(() => "已记录缺口"),
-      dataHealth: computed(() => "92%"),
       deviceItems: computed(() => [{ code: "LAB-01", status: "可用" }]),
       pageCount: computed(() => 3),
       pagedTaskRows: computed(() => [
@@ -68,6 +76,7 @@ describe("DashboardPage runtime", () => {
         scheduledCount: 4,
         unscheduledCount: "5（暂存间存放2）",
       })),
+      unscheduledExperimentItems: computed(() => []),
     });
 
     const wrapper = mount(DashboardPage);

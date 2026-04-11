@@ -51,4 +51,31 @@ describe("TaskOverviewSummaryTable", () => {
     expect(wrapper.findAll(".task-overview-summary-lines span")).toHaveLength(6);
     expect(wrapper.findAll(".task-overview-summary-lines").every((node) => node.classes().includes("is-centered"))).toBe(true);
   });
+
+  test("renders overdue waiting experiments with a red warning class", () => {
+    const wrapper = mount(TaskOverviewSummaryTable, {
+      props: {
+        formatTrayCount: () => "未分配",
+        formatTraySummary: () => "未分配托盘",
+        row: {
+          currentStatus: "待排程",
+          experimentCount: 1,
+          experimentSummary: "振动试验",
+          experiments: [
+            { experimentCode: "TASK-002-A", experimentName: "振动试验", displayStatus: "待排程", isOverdueWaiting: true },
+          ],
+          plannedCount: 1,
+          sampleCount: 0,
+          scheduleCount: 0,
+          scheduleLabel: "待排程",
+          trays: [],
+        },
+      },
+    });
+
+    const statusChip = wrapper.find(".task-overview-summary-line-chip");
+
+    expect(statusChip.text()).toBe("待排程");
+    expect(statusChip.classes()).toContain("is-overdue");
+  });
 });

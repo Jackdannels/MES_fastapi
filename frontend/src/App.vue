@@ -16,7 +16,10 @@
           :class="{ active: isActive(navItem.route.name) }"
           :to="navItem.route.path"
         >
-          {{ navItem.route.meta?.title }}
+          <span class="nav-link-label">
+            {{ navItem.route.meta?.title }}
+            <span v-if="showTaskOverviewAlert(navItem.route.name)" class="nav-alert-dot" aria-hidden="true"></span>
+          </span>
         </RouterLink>
       </nav>
       <div class="sidebar-footer">
@@ -91,16 +94,34 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
+import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { MODULE_LABELS } from "@/lib/moduleCatalog";
 import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
 
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
+
+const parseTimeValue = (value) => {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+};
+
+const hasOverdueWaitingExperiment = (experiments, now = Date.now()) =>
+  (Array.isArray(experiments) ? experiments : []).some((experiment) => {
+    const startedAt = parseTimeValue(experiment?.unscheduled_since);
+    return Number.isFinite(startedAt) && now - startedAt > OVERDUE_MS;
+  });
+
 const route = useRoute();
 const router = useRouter();
+const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.experiments]);
 const exitDialogOpen = ref(false);
+const hasTaskOverviewAlert = ref(false);
+let navAlertTimer = null;
 
 const pageTitle = computed(() => route.meta?.title || "七二四新火工区信息化中控管理系统");
 const pageSubtitle = computed(() => route.meta?.subtitle || "");
@@ -118,8 +139,14 @@ const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
+const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
 
 const isActive = (name) => route.name === name;
+
+const refreshTaskOverviewAlert = async () => {
+  const snapshot = await loadSnapshot();
+  hasTaskOverviewAlert.value = hasOverdueWaitingExperiment(snapshot[STORAGE_KEYS.experiments]);
+};
 
 const openTaskIntake = async () => {
   const target = { path: "/tasks", hash: "#task-intake-modal" };
@@ -165,4 +192,17 @@ const switchModule = async (targetModule) => {
   }
   await router.push(resolveModuleHome(targetModule));
 };
+
+onMounted(() => {
+  void refreshTaskOverviewAlert();
+  navAlertTimer = window.setInterval(() => {
+    void refreshTaskOverviewAlert();
+  }, 5000);
+});
+
+onBeforeUnmount(() => {
+  if (navAlertTimer) {
+    window.clearInterval(navAlertTimer);
+  }
+});
 </script>

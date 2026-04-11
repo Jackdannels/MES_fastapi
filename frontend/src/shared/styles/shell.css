@@ -58,6 +58,21 @@
   border-color: rgba(56, 189, 248, 0.45);
 }
 
+.nav-link-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+  flex: 0 0 auto;
+}
+
 .sidebar-footer {
   margin-top: 28px;
   padding-top: 18px;
