@@ -1,5 +1,5 @@
 // 负责中控总览页的数据加载，并整理页面直接使用的响应式状态。
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildDashboardViewModel } from "./model";
@@ -14,15 +14,26 @@ function useDashboardPage() {
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.streams,
+    STORAGE_KEYS.experiments,
   ]);
 
   const currentPage = ref(1);
-  const viewModel = ref(
+  const now = ref(Date.now());
+  const rawDevices = ref([]);
+  const rawExperiments = ref([]);
+  const rawSchedules = ref([]);
+  const rawStreams = ref([]);
+  const rawTasks = ref([]);
+  let dashboardTimer = null;
+
+  const viewModel = computed(() =>
     buildDashboardViewModel({
-      devices: [],
-      schedules: [],
-      streams: [],
-      tasks: [],
+      devices: rawDevices.value,
+      experiments: rawExperiments.value,
+      schedules: rawSchedules.value,
+      streams: rawStreams.value,
+      tasks: rawTasks.value,
+      now: now.value,
     })
   );
 
@@ -44,30 +55,38 @@ function useDashboardPage() {
 
   const loadDashboard = async () => {
     const snapshot = await loadSnapshot();
-    // 页面层不再拆分统计逻辑，统一委托给 view model 构建函数。
-    viewModel.value = buildDashboardViewModel({
-      devices: snapshot[STORAGE_KEYS.devices],
-      schedules: snapshot[STORAGE_KEYS.schedules],
-      streams: snapshot[STORAGE_KEYS.streams],
-      tasks: snapshot[STORAGE_KEYS.tasks],
-    });
+    rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+    rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
+    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
     // 数据量变化后若当前页已越界，则自动回退到最后一页。
     if (currentPage.value > pageCount.value) {
       currentPage.value = pageCount.value;
     }
   };
 
-  onMounted(loadDashboard);
+  onMounted(() => {
+    void loadDashboard();
+    dashboardTimer = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  });
+
+  onBeforeUnmount(() => {
+    if (dashboardTimer) {
+      window.clearInterval(dashboardTimer);
+    }
+  });
 
   return {
     currentPage,
-    dataGap: computed(() => viewModel.value.dataGap),
-    dataHealth: computed(() => viewModel.value.dataHealth),
     deviceItems: computed(() => viewModel.value.deviceItems),
     pageCount,
     pagedTaskRows,
     setCurrentPage,
     summaryCards: computed(() => viewModel.value.summaryCards),
+    unscheduledExperimentItems: computed(() => viewModel.value.unscheduledExperimentItems),
   };
 }
 

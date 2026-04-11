@@ -13,6 +13,7 @@ import {
   buildScheduleRescheduleForm,
   buildTaskScheduledOverlays,
   createScheduleRecord,
+  deleteScheduleRecord,
   formatDateTime,
   resolveTaskStatus,
   resolveRetentionTimeState,
@@ -871,6 +872,14 @@ describe("schedulePageModel", () => {
 
   test("createScheduleRecord uses planned hours to create a cross-day schedule and stores the duration", () => {
     const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "A实验",
+          unscheduled_since: "2099-03-10T07:00:00.000Z",
+        },
+      ],
       form: {
         device: "Lab-A",
         experiment_code: "SYLU-2026-03-001-A",
@@ -888,11 +897,20 @@ describe("schedulePageModel", () => {
     expect(result.error).toBeUndefined();
     expect(result.schedules[0].experiment_code).toBe("SYLU-2026-03-001-A");
     expect(result.schedules[0].planned_hours).toBe(26.5);
+    expect(result.experiments[0].unscheduled_since).toBe("");
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-21 10:30");
   });
 
   test("updateScheduleRecord recalculates end time when planned hours change", () => {
     const result = updateScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "A实验",
+          unscheduled_since: "",
+        },
+      ],
       form: {
         device: "Lab-A",
         experiment_code: "SYLU-2026-03-001-A",
@@ -923,6 +941,38 @@ describe("schedulePageModel", () => {
     expect(result.schedules[0].experiment_code).toBe("SYLU-2026-03-001-A");
     expect(result.schedules[0].planned_hours).toBe(1.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
+  });
+
+  test("deleteScheduleRecord restarts unscheduled_since when removing the last formal schedule", () => {
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "A实验",
+          unscheduled_since: "",
+        },
+      ],
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      scheduleId: "schedule-1",
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "Lab-A",
+          planned_hours: 1.5,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:30:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.schedules).toEqual([]);
+    expect(result.experiments[0].unscheduled_since).toBe("2099-03-10T08:00:00.000Z");
   });
 
   test("buildGanttRows extends the window and emits a continuous segment for cross-day schedules", () => {

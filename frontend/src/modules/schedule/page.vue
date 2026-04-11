@@ -1,25 +1,4 @@
 <template>
-  <div class="tabs section">
-    <button
-      class="tab-btn"
-      :class="{ active: activeTab === 'unpacking' }"
-      type="button"
-      data-testid="schedule-tab-unpacking"
-      @click="setActiveTab('unpacking')"
-    >
-      {{ uiText.unpackingTab }}
-    </button>
-    <button
-      class="tab-btn"
-      :class="{ active: activeTab === 'retention' }"
-      type="button"
-      data-testid="schedule-tab-retention"
-      @click="setActiveTab('retention')"
-    >
-      {{ uiText.retentionTab }}
-    </button>
-  </div>
-
   <section class="card section">
     <h3>{{ uiText.manualTitle }}</h3>
     <form @submit.prevent="submitSchedule">
@@ -51,25 +30,21 @@
         </div>
         <div class="form-field">
           <label>{{ uiText.scheduleDate }}</label>
-          <input v-model="scheduleForm.schedule_date" type="date" name="schedule_date" :disabled="retentionSelected" />
+          <input v-model="scheduleForm.schedule_date" type="date" name="schedule_date" />
         </div>
-        <div class="form-field" :class="{ 'is-hidden': retentionSelected }">
+        <div class="form-field">
           <label>{{ uiText.timeSlot }}</label>
-          <select v-model="scheduleForm.time_slot" name="time_slot" :disabled="retentionSelected">
+          <select v-model="scheduleForm.time_slot" name="time_slot">
             <option value="morning">{{ uiText.morningSlot }}</option>
             <option value="afternoon">{{ uiText.afternoonSlot }}</option>
             <option value="custom">{{ uiText.customSlot }}</option>
           </select>
         </div>
-        <div class="form-field" :class="{ 'is-hidden': !retentionSelected }">
-          <label>{{ uiText.currentTime }}</label>
-          <div class="retention-now">{{ currentTimeLabel }}</div>
-        </div>
-        <div class="form-field" :class="{ 'is-hidden': retentionSelected }">
+        <div class="form-field">
           <label>{{ uiText.plannedHours }}</label>
           <input v-model="scheduleForm.planned_hours" type="number" name="planned_hours" min="0.5" step="0.5" />
         </div>
-        <div class="form-field" :class="{ 'is-hidden': retentionSelected || scheduleForm.time_slot !== 'custom' }">
+        <div class="form-field" :class="{ 'is-hidden': scheduleForm.time_slot !== 'custom' }">
           <label>{{ uiText.startTime }}</label>
           <input v-model="scheduleForm.custom_start" type="time" name="custom_start" />
         </div>
@@ -80,42 +55,6 @@
       </div>
       <div class="form-alert" :class="{ 'is-hidden': !scheduleWarning }">{{ scheduleWarning }}</div>
     </form>
-  </section>
-
-  <section class="card section" :class="{ 'is-hidden': !showRetentionPanel }">
-    <div class="retention-internal-header">
-      <div>
-        <h3>{{ uiText.retentionInternalTitle }}</h3>
-        <div class="muted">{{ uiText.retentionInternalHint }}</div>
-      </div>
-      <div class="retention-internal-count">
-        <div class="muted">{{ uiText.pendingAllocation }}</div>
-        <div class="kpi">{{ retentionInternalRows.length }}</div>
-      </div>
-    </div>
-    <table class="table" id="retention-internal-table">
-      <thead>
-        <tr>
-          <th>{{ uiText.index }}</th>
-          <th>{{ uiText.taskCode }}</th>
-          <th>{{ uiText.testType }}</th>
-          <th>{{ uiText.retentionTime }}</th>
-          <th>{{ uiText.waited }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-if="retentionInternalRows.length === 0">
-          <td class="muted" colspan="5">{{ uiText.noRetentionTasks }}</td>
-        </tr>
-        <tr v-for="(row, index) in retentionInternalRows" :key="row.code">
-          <td>{{ index + 1 }}</td>
-          <td>{{ row.code }}</td>
-          <td>{{ row.testType }}</td>
-          <td>{{ row.sinceText }}</td>
-          <td>{{ row.waitLabel }}</td>
-        </tr>
-      </tbody>
-    </table>
   </section>
 
   <section class="card section">
@@ -536,18 +475,12 @@ const uiText = {
   noAcceptedTask: "暂无已接收任务",
   noConflictRecords: "暂无冲突记录",
   noDevices: "暂无设备",
-  noRetentionTasks: "暂无暂存间待分配任务",
   noScheduleRecords: "暂无排程记录",
   noTraySummary: "未记录托盘",
   pending: "待处理",
-  pendingAllocation: "待分配",
   partialConflictTitle: "部分冲突提示",
   plannedHours: "预计实验时长（小时）",
   priority: "优先级",
-  retentionInternalHint: "仅显示未分配实验室的任务",
-  retentionInternalTitle: "暂存间内部排程单",
-  retentionTab: "暂存间排程",
-  retentionTime: "暂存时间",
   saveChanges: "保存修改",
   scheduleDate: "排程日期",
   scheduleList: "排程清单",
@@ -566,12 +499,9 @@ const uiText = {
   taskName: "任务名称",
   testType: "试验类型",
   timeSlot: "时段",
-  unpackingTab: "接驳区排程",
-  waited: "已等待",
 };
 
 const {
-  activeTab,
   buildEditLabOptions,
   cancelScheduleConflict,
   closeScheduleDrawer,
@@ -579,7 +509,6 @@ const {
   confirmScheduleConflict,
   conflictRows,
   conflictSearch,
-  currentTimeLabel,
   editForm,
   editWarning,
   experimentOptions,
@@ -589,10 +518,8 @@ const {
   openTaskDetailModal,
   removeSchedule,
   removeTaskDetailSchedule,
-  retentionInternalRows,
   rescheduleFromTaskDetail,
   selectedTaskDetail,
-  retentionSelected,
   saveSchedule,
   scheduleConflictDetail,
   scheduleConflictOpen,
@@ -602,8 +529,6 @@ const {
   scheduleRows,
   scheduleSearch,
   scheduleWarning,
-  setActiveTab,
-  showRetentionPanel,
   submitSchedule,
   summaryCards,
   taskOptions,

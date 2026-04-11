@@ -71,7 +71,7 @@ describe("SchedulePage runtime", () => {
     resetStorage();
   });
 
-  test("switches tabs and renders gantt rows plus retention internal rows from Vue state", async () => {
+  test("renders one unified scheduling page without unpacking or retention tabs", async () => {
     const today = buildDateParts(0);
 
     setStorage(TASKS_KEY, [
@@ -105,12 +105,9 @@ describe("SchedulePage runtime", () => {
 
     expect(wrapper.findAll("#gantt-body tr").length).toBeGreaterThan(0);
     expect(wrapper.get('select[name="task_code"]').text()).toContain("SYLU-2026-01-001");
-
-    await wrapper.get('[data-testid="schedule-tab-retention"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.findAll("#retention-internal-table tbody tr").length).toBe(1);
-    expect(wrapper.text()).toContain("SYLU-2026-01-002");
+    expect(wrapper.find('[data-testid="schedule-tab-unpacking"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="schedule-tab-retention"]').exists()).toBe(false);
+    expect(wrapper.find("#retention-internal-table").exists()).toBe(false);
   });
 
   test("creates, edits, and deletes a schedule from Vue state", async () => {
@@ -731,7 +728,7 @@ describe("SchedulePage runtime", () => {
     expect(deviceSelect.element.value).toBe("");
   });
 
-  test("locks manual time inputs when retention lab is selected and restores legacy gantt classes", async () => {
+  test("does not offer retention as a schedulable device and keeps gantt busy classes intact", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
@@ -757,11 +754,7 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-002");
     await settle(wrapper);
 
-    await wrapper.get('select[name="device"]').setValue(RETENTION_DEVICE);
-    await settle(wrapper);
-
-    expect(wrapper.get('input[name="schedule_date"]').element.disabled).toBe(true);
-    expect(wrapper.get('select[name="time_slot"]').element.closest(".form-field")?.classList.contains("is-hidden")).toBe(true);
+    expect(wrapper.get('select[name="device"]').text()).not.toContain(RETENTION_DEVICE);
 
     const firstBusySlot = wrapper.find(".gantt-slot.busy");
     expect(firstBusySlot.exists()).toBe(true);
@@ -937,7 +930,7 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.get('select[name="device"]').element.value).toBe(PRIMARY_LAB);
   });
 
-  test("only shows tasks with saved tray plans in the unpacking schedule task selector", async () => {
+  test("only shows tasks with saved tray plans in the unified schedule task selector", async () => {
     setStorage(TASKS_KEY, [
       { id: "task-1", code: "SYLU-2026-01-001", name: "已预接驳任务", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
       { id: "task-2", code: "SYLU-2026-01-002", name: "未预接驳任务", test_type: "UNKNOWN", status: STATUS_WAITING },

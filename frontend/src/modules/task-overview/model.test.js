@@ -280,6 +280,34 @@ describe("taskOverviewModel", () => {
 
     expect(rows[0].currentStatus).toBe("实验完成");
   });
+
+  test("buildTaskRows marks overdue waiting experiments after 24 hours", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-03-011", test_type: "振动试验", status: "待排程" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          experiment_name: "振动试验",
+          status: "待排程",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+      now: Date.parse("2026-03-11T09:00:00.000Z"),
+    });
+
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({
+        experimentCode: "SYLU-2026-03-011-A",
+        displayStatus: "待排程",
+        isOverdueWaiting: true,
+      }),
+    ]);
+  });
 });
 
 

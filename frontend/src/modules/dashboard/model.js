@@ -14,6 +14,7 @@ const RETENTION_LOCATION = "暂存间";
 const normalizeText = (value) => String(value ?? "").trim();
 // 带“暂存间”标识的设备会被视为留样暂存位置，而非正式实验室。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
 // 兼容历史状态文案，保证统计口径一致。
 const normalizeStatusLabel = (value) => {
   const normalized = normalizeText(value);
@@ -30,6 +31,14 @@ const normalizeStatusLabel = (value) => {
 const parseTime = (value) => {
   const time = Date.parse(String(value || ""));
   return Number.isFinite(time) ? time : Number.NaN;
+};
+
+const formatElapsedDuration = (elapsedMs) => {
+  const safeElapsed = Math.max(0, Math.floor(elapsedMs / 1000));
+  const hours = String(Math.floor(safeElapsed / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((safeElapsed % 3600) / 60)).padStart(2, "0");
+  const seconds = String(safeElapsed % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
 };
 
 // 总览卡片与表格共用一套状态到样式类的映射。
@@ -109,11 +118,12 @@ function computeDeviceStatus(device, schedules, now = Date.now()) {
 }
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
-function buildDashboardViewModel({ tasks, schedules, devices, streams, now = Date.now() }) {
+function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, now = Date.now() }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const deviceList = Array.isArray(devices) ? devices : [];
   const streamList = Array.isArray(streams) ? streams : [];
+  const experimentList = Array.isArray(experiments) ? experiments : [];
 
   // 先补齐每条任务的展示态和样式，后面的统计全部基于统一后的任务集合。
   const normalizedTasks = taskList.map((task) => {
@@ -161,9 +171,26 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, now = Dat
     status: computeDeviceStatus(device, scheduleList, now),
   }));
 
+  const unscheduledExperimentItems = experimentList
+    .map((experiment) => {
+      const startedAt = parseTime(experiment?.unscheduled_since);
+      if (!Number.isFinite(startedAt)) {
+        return null;
+      }
+
+      const elapsedMs = Math.max(0, now - startedAt);
+      return {
+        elapsedLabel: formatElapsedDuration(elapsedMs),
+        experimentCode: normalizeText(experiment?.experiment_code) || "-",
+        experimentLabel: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code) || "-",
+        isOverdue: elapsedMs > OVERDUE_MS,
+        taskCode: normalizeText(experiment?.task_code) || "-",
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.taskCode.localeCompare(right.taskCode, "zh-Hans-CN"));
+
   return {
-    dataGap: gapCount > 0 ? "已记录缺口" : "暂无缺口",
-    dataHealth: `${Number.isNaN(averageQuality) ? 0 : averageQuality}%`,
     deviceItems,
     summaryCards: {
       alertCount: gapCount,
@@ -176,6 +203,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, now = Dat
       unscheduledCount: `${unscheduledCount}（${STAGING_NOTE_LABEL}${retentionCount}）`,
     },
     taskRows,
+    unscheduledExperimentItems,
   };
 }
 

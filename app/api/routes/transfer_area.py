@@ -111,6 +111,20 @@ def parse_datetime_value(value: Any) -> datetime | None:
         return None
 
 
+def is_staging_device(value: Any) -> bool:
+    return "暂存间" in normalize_text(value)
+
+
+def has_formal_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str, experiment_code_value: str) -> bool:
+    return any(
+        normalize_text(item.get("task_code")) == task_code_value
+        and normalize_text(item.get("experiment_code")) == experiment_code_value
+        and normalize_text(item.get("device"))
+        and not is_staging_device(item.get("device"))
+        for item in snapshot["schedules"]
+    )
+
+
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
     payload = normalize_storage_payload(storage.read_all())
@@ -1302,7 +1316,8 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请先保存托盘，再确认入库")
 
     task["transfer_status"] = TASK_STATUS_STORED
-    task["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    now_iso = datetime.now().isoformat(timespec="seconds")
+    task["updated_at"] = now_iso
     for sample in task_samples:
         sample["location"] = "接驳区"
         sample["status"] = TASK_STATUS_STORED
@@ -1314,6 +1329,18 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
             next_trays.append(normalized)
         sample["trays"] = next_trays
         append_history(sample, "任务已确认入库", task_code(task))
+
+    task_code_value = task_code(task)
+    for experiment in snapshot["experiments"]:
+        if normalize_text(experiment.get("task_code")) != task_code_value:
+            continue
+        experiment_code_value = normalize_text(experiment.get("experiment_code"))
+        if not experiment_code_value:
+            continue
+        if has_formal_schedule(snapshot, task_code_value, experiment_code_value):
+            experiment["unscheduled_since"] = ""
+            continue
+        experiment["unscheduled_since"] = now_iso
 
     write_snapshot(snapshot)
     return {

@@ -10,6 +10,7 @@ const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
 const TASK_COMPLETED_STATUS = "实验已经完成";
 const OVERVIEW_COMPLETED_STATUS = "实验完成";
+const OVERDUE_MS = 24 * 60 * 60 * 1000;
 
 // 任务号、样品号、托盘号的展示排序统一走中文比较规则。
 function compareText(left, right) {
@@ -89,6 +90,7 @@ function buildTaskRows({
   schedules,
   scheduledLabel,
   unscheduledLabel,
+  now = Date.now(),
 }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const experimentList = Array.isArray(experiments) ? experiments : [];
@@ -110,6 +112,7 @@ function buildTaskRows({
       experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
       status: normalizeStatus(experiment?.status),
+      unscheduledSince: parseTimeValue(experiment?.unscheduled_since),
     });
     experimentsByTaskCode.set(taskCode, group);
   });
@@ -232,15 +235,22 @@ function buildTaskRows({
       );
       // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
       const currentStatus = aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
-      const experiments = row.experiments.map((experiment) => ({
-        ...experiment,
-        displayStatus: resolveExperimentDisplayStatus({
+      const experiments = row.experiments.map((experiment) => {
+        const displayStatus = resolveExperimentDisplayStatus({
           currentStatus,
           experiment,
           matchedSchedule: formalScheduleByExperimentCode.get(experiment.experimentCode),
           scheduleLabel,
-        }),
-      }));
+        });
+        return {
+          ...experiment,
+          displayStatus,
+          isOverdueWaiting:
+            normalizeText(displayStatus) === STATUS_WAITING &&
+            Number.isFinite(experiment.unscheduledSince) &&
+            now - experiment.unscheduledSince > OVERDUE_MS,
+        };
+      });
       const experimentSummary =
         row.experiments.length > 0
           ? buildExperimentTypeSummary(row.experiments.map((experiment) => experiment.experimentName))

@@ -69,10 +69,18 @@
       </div>
     </div>
     <div class="card">
-      <h3>数据通道</h3>
-      <div class="muted">Modbus 采集健康度</div>
-      <div class="kpi" id="dashboard-data-health">{{ dataHealth }}</div>
-      <div class="muted" id="dashboard-data-gap">{{ dataGap }}</div>
+      <h3>未排程实验计时</h3>
+      <div v-if="unscheduledExperimentItems.length" class="timeline" id="dashboard-unscheduled-list">
+        <div v-for="item in unscheduledExperimentItems" :key="`${item.taskCode}-${item.experimentCode}`" class="timeline-item">
+          <div class="timeline-dot"></div>
+          <div class="dashboard-unscheduled-item">
+            <div>{{ item.taskCode }} / {{ item.experimentLabel }}</div>
+            <div class="muted">{{ item.experimentCode }}</div>
+            <div class="dashboard-unscheduled-timer" :class="{ 'is-overdue': item.isOverdue }">{{ item.elapsedLabel }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="muted" id="dashboard-unscheduled-empty">暂无未排程实验</div>
     </div>
   </section>
 </template>
@@ -81,6 +89,6 @@
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useDashboardPage } from "./useDashboardPage";
 
-const { currentPage, dataGap, dataHealth, deviceItems, pageCount, pagedTaskRows, setCurrentPage, summaryCards } =
+const { currentPage, deviceItems, pageCount, pagedTaskRows, setCurrentPage, summaryCards, unscheduledExperimentItems } =
   useDashboardPage();
 </script>

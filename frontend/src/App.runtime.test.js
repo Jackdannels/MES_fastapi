@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App.vue";
 import { getNavigationModules } from "@/modules";
 
-const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock } = vi.hoisted(() => ({
+const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock } = vi.hoisted(() => ({
   routeState: {
     meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
@@ -15,6 +15,7 @@ const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionM
   routerReplace: vi.fn(),
   logoutSessionMock: vi.fn(() => Promise.resolve()),
   switchSessionModuleMock: vi.fn(async (moduleKey) => ({ ok: true, module: moduleKey })),
+  loadSnapshotMock: vi.fn(async () => ({ "mes.experiments": [] })),
 }));
 
 const reactiveRoute = reactive(routeState);
@@ -40,13 +41,22 @@ vi.mock("@/auth", () => ({
   switchSessionModule: switchSessionModuleMock,
 }));
 
+vi.mock("@/composables/useStorageSnapshot", () => ({
+  useStorageSnapshot: () => ({
+    loadSnapshot: loadSnapshotMock,
+  }),
+}));
+
 let wrapper;
 
 const mountApp = () => {
   wrapper = mount(App, {
     global: {
       stubs: {
-        RouterLink: true,
+        RouterLink: {
+          props: ["to"],
+          template: '<a class="router-link-stub"><slot /></a>',
+        },
         RouterView: {
           template: '<div data-testid="router-view-stub">Route Outlet</div>',
         },
@@ -67,6 +77,8 @@ describe("App runtime boundary", () => {
     routerReplace.mockReset();
     logoutSessionMock.mockClear();
     switchSessionModuleMock.mockClear();
+    loadSnapshotMock.mockReset();
+    loadSnapshotMock.mockResolvedValue({ "mes.experiments": [] });
     vi.clearAllMocks();
   });
 
@@ -234,5 +246,29 @@ describe("App runtime boundary", () => {
 
     expect(logoutSessionMock).toHaveBeenCalledTimes(1);
     expect(routerReplace).toHaveBeenCalledWith("/login");
+  });
+
+  test("shows a red dot on the task overview menu item when any experiment is overdue", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    loadSnapshotMock.mockResolvedValue({
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+    });
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    const navText = wrapper.findAll(".nav-link").find((node) => node.text().includes("任务/托盘总览"));
+
+    expect(navText.exists()).toBe(true);
+    expect(navText.find(".nav-alert-dot").exists()).toBe(true);
   });
 });

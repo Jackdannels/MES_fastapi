@@ -94,6 +94,72 @@ describe("dashboard model", () => {
       }),
     );
   });
+
+  test("replaces data channel output with unscheduled experiment timers", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-109",
+          source: "外部委托",
+          status: "待排程",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-109",
+          experiment_code: "SYLU-2026-04-109-A",
+          experiment_name: "振动试验",
+          unscheduled_since: "2026-03-17T07:45:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-109",
+        experimentCode: "SYLU-2026-04-109-A",
+        experimentLabel: "振动试验",
+        elapsedLabel: "02:15:00",
+        isOverdue: false,
+      }),
+    ]);
+  });
+
+  test("marks overdue timers when unscheduled duration exceeds 24 hours", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-110",
+          source: "内部新增",
+          status: "待排程",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-110",
+          experiment_code: "SYLU-2026-04-110-B",
+          experiment_name: "冲击试验",
+          unscheduled_since: "2026-03-16T08:30:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-110",
+        elapsedLabel: "25:30:00",
+        isOverdue: true,
+      }),
+    ]);
+  });
 });
 
 

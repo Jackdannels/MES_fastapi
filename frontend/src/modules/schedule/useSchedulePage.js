@@ -3,7 +3,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { useTabState } from "@/composables/useTabState";
 import {
   analyzeTaskTrayConflict,
   buildConflictRows,
@@ -11,7 +10,6 @@ import {
   buildGanttRows,
   buildLabOptions,
   buildManualTaskOptions,
-  buildRetentionInternalRows,
   buildScheduleEditForm,
   buildScheduleRescheduleForm,
   buildScheduleRows,
@@ -34,7 +32,6 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
 function useSchedulePage() {
-  const { activeTab, setActiveTab } = useTabState("unpacking");
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
@@ -69,10 +66,8 @@ function useSchedulePage() {
 
   const taskOptions = computed(() =>
     buildManualTaskOptions({
-      activeTab: activeTab.value,
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
-      samples: rawSamples.value,
       schedules: rawSchedules.value,
       tasks: rawTasks.value,
     }),
@@ -98,7 +93,6 @@ function useSchedulePage() {
   // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
   const manualLabOptions = computed(() =>
     buildLabOptions({
-      activeTab: activeTab.value,
       selectedDevice: normalizeText(scheduleForm.value.device),
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
     }),
@@ -111,14 +105,6 @@ function useSchedulePage() {
     now: now.value,
   }));
   const conflictRows = computed(() => buildConflictRows({ schedules: rawSchedules.value }));
-  const retentionInternalRows = computed(() =>
-    buildRetentionInternalRows({
-      samples: rawSamples.value,
-      schedules: rawSchedules.value,
-      tasks: rawTasks.value,
-      now: now.value,
-    }),
-  );
   const ganttView = computed(() =>
     buildGanttRows({
       devices: rawDevices.value,
@@ -127,7 +113,7 @@ function useSchedulePage() {
       now: now.value,
       samples: rawSamples.value,
       schedules: rawSchedules.value,
-      selectedTaskCode: retentionSelected.value ? "" : normalizeText(scheduleForm.value.task_code),
+      selectedTaskCode: normalizeText(scheduleForm.value.task_code),
       tasks: rawTasks.value,
     }),
   );
@@ -141,9 +127,6 @@ function useSchedulePage() {
     }),
   );
   const summaryCards = computed(() => buildSummaryCards({ now: now.value, schedules: rawSchedules.value }));
-  const currentTimeLabel = computed(() => formatDateTime(now.value));
-  const retentionSelected = computed(() => isRetentionDevice(scheduleForm.value.device));
-  const showRetentionPanel = computed(() => activeTab.value === "retention");
   const selectedTaskDetail = computed(() => {
     const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
     if (!scheduleId) {
@@ -204,6 +187,9 @@ function useSchedulePage() {
 
   const persistAll = async (updates) => {
     // 只同步本页关心的任务、排程和数据流，设备/样品保持原样。
+    if (Array.isArray(updates[STORAGE_KEYS.experiments])) {
+      rawExperiments.value = updates[STORAGE_KEYS.experiments];
+    }
     if (Array.isArray(updates[STORAGE_KEYS.tasks])) {
       rawTasks.value = updates[STORAGE_KEYS.tasks];
     }
@@ -248,7 +234,7 @@ function useSchedulePage() {
 
   const syncManualScheduleLegality = () => {
     // 固定时段如果已经落到非法时间片，会自动纠正到最近合法时段。
-    if (retentionSelected.value || normalizeText(scheduleForm.value.time_slot) === "custom") {
+    if (normalizeText(scheduleForm.value.time_slot) === "custom") {
       return;
     }
 
@@ -263,16 +249,6 @@ function useSchedulePage() {
     // 页面上的当前时间、留样默认时间和合法性检查都跟随秒级时钟更新。
     now.value = new Date();
     syncManualScheduleLegality();
-    syncRetentionSelection();
-  };
-
-  const syncRetentionSelection = () => {
-    // 一旦切到暂存间设备，开始/结束时间立即回填为“此刻”。
-    if (!retentionSelected.value) {
-      return;
-    }
-
-    Object.assign(scheduleForm.value, resolveRetentionTimeState(now.value));
   };
 
   const submitSchedule = async () => {
@@ -301,6 +277,7 @@ function useSchedulePage() {
     }
 
     const result = createScheduleRecord({
+      experiments: rawExperiments.value,
       form: scheduleForm.value,
       now: now.value,
       schedules: rawSchedules.value,
@@ -315,6 +292,7 @@ function useSchedulePage() {
     // 新建排程后同时同步任务状态和流记录，并重置手动排程表单。
     scheduleWarning.value = "";
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -333,6 +311,7 @@ function useSchedulePage() {
     }
 
     const result = createScheduleRecord({
+      experiments: rawExperiments.value,
       form: draft,
       now: now.value,
       schedules: rawSchedules.value,
@@ -348,6 +327,7 @@ function useSchedulePage() {
 
     scheduleWarning.value = "";
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -396,6 +376,7 @@ function useSchedulePage() {
 
   const saveSchedule = async () => {
     const result = updateScheduleRecord({
+      experiments: rawExperiments.value,
       form: editForm.value,
       now: now.value,
       schedules: rawSchedules.value,
@@ -410,6 +391,7 @@ function useSchedulePage() {
     // 编辑成功后沿用与新建相同的快照同步路径。
     editWarning.value = "";
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -419,6 +401,7 @@ function useSchedulePage() {
 
   const removeSchedule = async () => {
     const result = deleteScheduleRecord({
+      experiments: rawExperiments.value,
       now: now.value,
       scheduleId: editForm.value.id,
       schedules: rawSchedules.value,
@@ -426,6 +409,7 @@ function useSchedulePage() {
       tasks: rawTasks.value,
     });
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -440,6 +424,7 @@ function useSchedulePage() {
       return;
     }
     const result = deleteScheduleRecord({
+      experiments: rawExperiments.value,
       now: now.value,
       scheduleId,
       schedules: rawSchedules.value,
@@ -447,6 +432,7 @@ function useSchedulePage() {
       tasks: rawTasks.value,
     });
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -463,6 +449,7 @@ function useSchedulePage() {
     }
 
     const result = deleteScheduleRecord({
+      experiments: rawExperiments.value,
       now: now.value,
       scheduleId,
       schedules: rawSchedules.value,
@@ -470,6 +457,7 @@ function useSchedulePage() {
       tasks: rawTasks.value,
     });
     await persistAll({
+      [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
@@ -490,17 +478,6 @@ function useSchedulePage() {
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
     resetScheduleForm();
   };
-
-  watch(activeTab, () => {
-    // 切页签后如果当前任务不再可选，清空任务和实验室选择。
-    const validTask = taskOptions.value.some((option) => option.code === normalizeText(scheduleForm.value.task_code));
-    if (!validTask) {
-      scheduleForm.value.task_code = "";
-      scheduleForm.value.experiment_code = "";
-      scheduleForm.value.device = "";
-    }
-    scheduleWarning.value = "";
-  });
 
   watch(
     () => scheduleForm.value.task_code,
@@ -529,7 +506,6 @@ function useSchedulePage() {
   watch(
     () => scheduleForm.value.device,
     () => {
-      syncRetentionSelection();
       scheduleWarning.value = "";
     },
   );
@@ -564,7 +540,6 @@ function useSchedulePage() {
         normalizeText(item?.experiment_code) === normalizeText(schedule?.experiment_code || editForm.value.experiment_code),
     );
     return buildLabOptions({
-      activeTab: "unpacking",
       selectedDevice,
       testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
     });
@@ -572,14 +547,12 @@ function useSchedulePage() {
 
   return {
     buildEditLabOptions,
-    activeTab,
     cancelScheduleConflict,
     closeScheduleDrawer,
     closeTaskDetailModal,
     confirmScheduleConflict,
     conflictRows: filteredConflictRows,
     conflictSearch,
-    currentTimeLabel,
     editForm,
     editWarning,
     experimentOptions,
@@ -589,8 +562,6 @@ function useSchedulePage() {
     openScheduleDrawer,
     removeSchedule,
     removeTaskDetailSchedule,
-    retentionInternalRows,
-    retentionSelected,
     rescheduleFromTaskDetail,
     saveSchedule,
     scheduleConflictDetail: scheduleConflictModal.payload,
@@ -604,8 +575,6 @@ function useSchedulePage() {
     scheduleSearch,
     scheduleWarning,
     selectedSchedule: scheduleDrawer.payload,
-    setActiveTab,
-    showRetentionPanel,
     submitSchedule,
     summaryCards,
     taskOptions,

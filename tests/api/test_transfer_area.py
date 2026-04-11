@@ -536,6 +536,50 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
     assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "已入库"
 
 
+def test_transfer_area_confirm_storage_sets_unscheduled_since_only_for_experiments_without_formal_schedule(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-101-b",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-B",
+                "device": "振动一室",
+                "start_at": "2026-03-22T09:00:00",
+                "end_at": "2026-03-22T12:00:00",
+            }
+        ],
+    )
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert allocated.status_code == 200
+    assert confirmed.status_code == 200
+
+    experiments = {
+        item["experiment_code"]: item
+        for item in storage.read("mes.experiments")
+        if item["task_code"] == "SYLU-2026-03-101"
+    }
+    assert experiments["SYLU-2026-03-101-A"]["unscheduled_since"]
+    assert experiments["SYLU-2026-03-101-B"].get("unscheduled_since", "") == ""
+    assert experiments["SYLU-2026-03-101-C"]["unscheduled_since"]
+
+
 def test_transfer_area_allows_second_tray_dispatch_when_transfer_flag_is_missing_but_task_was_already_stored(monkeypatch):
     client, storage = build_client(monkeypatch)
 
