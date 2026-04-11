@@ -1145,16 +1145,7 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 }
 
 // 生成手动排程表单使用的下拉选项。
-function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, schedules, activeTab }) {
-  if (activeTab === "retention") {
-    // 留样页签下，任务下拉来源于暂存中的内部任务。
-    return buildRetentionInternalRows({ tasks, samples, schedules }).map((row) => ({
-      code: row.code,
-      label: `${row.code}${row.name ? ` ${row.name}` : ""}`.trim(),
-      testType: row.testType,
-    }));
-  }
-
+function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, schedules }) {
   const pendingExperimentTaskCodes = new Set(
     (Array.isArray(tasks) ? tasks : [])
       .map((task) => normalizeText(task?.code))
@@ -1194,15 +1185,8 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
     }));
 }
 
-function buildLabOptions({ testType, activeTab, selectedDevice = "" }) {
+function buildLabOptions({ testType, selectedDevice = "" }) {
   let labs = normalizeText(testType) ? resolveLabCandidates(normalizeText(testType)) : [];
-  // 普通排程允许把暂存间作为一个可选去向，留样页签则反过来排除它。
-  if (activeTab !== "retention" && !labs.includes(RETENTION_DEVICE)) {
-    labs = [...labs, RETENTION_DEVICE];
-  }
-  if (activeTab === "retention") {
-    labs = labs.filter((lab) => !isRetentionDevice(lab));
-  }
   if (selectedDevice && !labs.includes(selectedDevice)) {
     labs = [...labs, selectedDevice];
   }
@@ -1253,6 +1237,45 @@ function syncTaskStatuses(tasks, schedules, now = new Date()) {
     // 任务状态完全以当前排程快照重新计算，避免手工维护多处状态。
     status: resolveTaskStatus(task, schedules, now),
   }));
+}
+
+function hasFormalExperimentSchedule(schedules, taskCode, experimentCode) {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    return false;
+  }
+
+  return (Array.isArray(schedules) ? schedules : []).some(
+    (schedule) =>
+      normalizeText(schedule?.task_code) === normalizedTaskCode &&
+      normalizeText(schedule?.experiment_code) === normalizedExperimentCode &&
+      !isRetentionDevice(schedule?.device),
+  );
+}
+
+function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, experimentCode, now = new Date() }) {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const nextExperiments = Array.isArray(experiments) ? experiments.map((experiment) => ({ ...experiment })) : [];
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    return nextExperiments;
+  }
+
+  const hasFormalSchedule = hasFormalExperimentSchedule(schedules, normalizedTaskCode, normalizedExperimentCode);
+  return nextExperiments.map((experiment) => {
+    if (
+      normalizeText(experiment?.task_code) !== normalizedTaskCode ||
+      normalizeText(experiment?.experiment_code) !== normalizedExperimentCode
+    ) {
+      return experiment;
+    }
+
+    return {
+      ...experiment,
+      unscheduled_since: hasFormalSchedule ? "" : now.toISOString(),
+    };
+  });
 }
 
 function buildExperimentOptions({ taskCode, experiments, schedules, tasks }) {
@@ -1333,7 +1356,7 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "" }) {
   });
 }
 
-function createScheduleRecord({ form, tasks, schedules, streams, now = new Date() }) {
+function createScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date() }) {
   const taskCode = normalizeText(form?.task_code);
   const device = normalizeText(form?.device);
   if (!taskCode || !device) {
@@ -1380,15 +1403,22 @@ function createScheduleRecord({ form, tasks, schedules, streams, now = new Date(
   }
 
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextExperiments = syncExperimentUnscheduledSince({
+    experimentCode: candidate.experiment_code,
+    experiments,
+    now,
+    schedules: nextSchedules,
+    taskCode,
+  });
   const targetSchedule =
     nextSchedules.find((schedule) => normalizeText(schedule?.task_code) === taskCode && normalizeText(schedule?.device) === device) ||
     nextSchedules[nextSchedules.length - 1];
   const nextStreams = ensureStreamForSchedule(streams, targetSchedule, now);
 
-  return { schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
+  return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function updateScheduleRecord({ form, tasks, schedules, streams, now = new Date() }) {
+function updateScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date() }) {
   const scheduleId = normalizeText(form?.id);
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
   const target = nextSchedules.find((schedule) => normalizeText(schedule?.id) === scheduleId);
@@ -1428,17 +1458,35 @@ function updateScheduleRecord({ form, tasks, schedules, streams, now = new Date(
   target.status = isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED;
 
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextExperiments = syncExperimentUnscheduledSince({
+    experimentCode: candidate.experiment_code,
+    experiments,
+    now,
+    schedules: nextSchedules,
+    taskCode: candidate.task_code,
+  });
   const nextStreams = ensureStreamForSchedule(streams, target, now);
 
-  return { schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
+  return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function deleteScheduleRecord({ scheduleId, tasks, schedules, streams, now = new Date() }) {
+function deleteScheduleRecord({ experiments, scheduleId, tasks, schedules, streams, now = new Date() }) {
+  const removedSchedule = (Array.isArray(schedules) ? schedules : []).find(
+    (schedule) => normalizeText(schedule?.id) === normalizeText(scheduleId),
+  );
   const nextSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (schedule) => normalizeText(schedule?.id) !== normalizeText(scheduleId),
   );
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextExperiments = syncExperimentUnscheduledSince({
+    experimentCode: normalizeText(removedSchedule?.experiment_code),
+    experiments,
+    now,
+    schedules: nextSchedules,
+    taskCode: normalizeText(removedSchedule?.task_code),
+  });
   return {
+    experiments: nextExperiments,
     schedules: nextSchedules,
     streams: Array.isArray(streams) ? streams.map((stream) => ({ ...stream })) : [],
     tasks: nextTasks,

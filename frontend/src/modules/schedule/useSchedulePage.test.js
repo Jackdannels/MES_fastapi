@@ -36,9 +36,9 @@ const settle = async (wrapper) => {
 const buildSnapshot = () => ({
   "mes.devices": [{ code: "冲击一室" }, { code: "振动一室" }],
   "mes.experiments": [
-    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验", required_device: "冲击一室" },
-    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验", required_device: "振动一室" },
-    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", experiment_name: "温度冲击试验", required_device: "振动一室" },
+    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验", required_device: "冲击一室", unscheduled_since: "" },
+    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验", required_device: "振动一室", unscheduled_since: "2099-03-18T09:00:00.000Z" },
+    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", experiment_name: "温度冲击试验", required_device: "振动一室", unscheduled_since: "2099-03-18T10:00:00.000Z" },
   ],
   "mes.experiment_trays": [
     { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
@@ -223,6 +223,50 @@ describe("useSchedulePage", () => {
     );
   });
 
+  test("persists experiment timers when creating and deleting formal schedules", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.device = "振动一室";
+    wrapper.vm.scheduleForm.schedule_date = "2099-03-21";
+    wrapper.vm.scheduleForm.time_slot = "afternoon";
+
+    await wrapper.vm.submitSchedule();
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "mes.experiments": expect.arrayContaining([
+          expect.objectContaining({
+            experiment_code: "SYLU-2026-03-006-B",
+            unscheduled_since: "",
+          }),
+        ]),
+      }),
+    );
+
+    mocks.persistSnapshot.mockClear();
+    wrapper.vm.openTaskDetailModal("schedule-1");
+    await settle(wrapper);
+
+    await wrapper.vm.removeTaskDetailSchedule();
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "mes.experiments": expect.arrayContaining([
+          expect.objectContaining({
+            experiment_code: "SYLU-2026-03-006-A",
+            unscheduled_since: expect.any(String),
+          }),
+        ]),
+      }),
+    );
+  });
+
   test("deletes a schedule from task detail and backfills the top form for re-scheduling", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
@@ -261,5 +305,19 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.ganttView.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室"]);
+  });
+
+  test("exposes a single scheduling flow without tab state or retention device options", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.activeTab).toBeUndefined();
+    expect(wrapper.vm.showRetentionPanel).toBeUndefined();
+    expect(wrapper.vm.manualLabOptions).not.toContain(RETENTION_DEVICE);
   });
 });
