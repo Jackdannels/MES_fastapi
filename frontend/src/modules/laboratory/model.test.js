@@ -121,8 +121,10 @@ describe("laboratory model", () => {
       canMarkReady: true,
     });
     expect(confirmed.experimentConfirmed).toBe(true);
+    expect(confirmed.comparisonDone).toBe(true);
+    expect(confirmed.installationDone).toBe(true);
     expect(getLaboratoryActionState(confirmed)).toEqual({
-      canCompare: true,
+      canCompare: false,
       canInstallSample: false,
       canMarkReady: false,
     });
@@ -298,17 +300,19 @@ describe("laboratory model", () => {
     });
 
     expect(view.selectedTrayFlow.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
       "到货",
       "A实验已完成",
       "送至暂存间",
       "已到达暂存间",
       "送至实验室",
       "已到达实验室",
-      "比对确认",
       "工装夹具安装",
       "实验准备就绪",
       "B实验进行中",
       "C实验未完成",
+      "放置实验后暂存间",
+      "厂家收回",
     ]);
   });
 
@@ -528,6 +532,8 @@ describe("laboratory model", () => {
     })).toEqual({
       comparisonDone: true,
       experimentConfirmed: false,
+      hasCompared: true,
+      hasInstalled: false,
       installationDone: false,
     });
 
@@ -536,6 +542,8 @@ describe("laboratory model", () => {
     })).toEqual({
       comparisonDone: true,
       experimentConfirmed: false,
+      hasCompared: true,
+      hasInstalled: true,
       installationDone: true,
     });
 
@@ -544,21 +552,46 @@ describe("laboratory model", () => {
     })).toEqual({
       comparisonDone: true,
       experimentConfirmed: true,
+      hasCompared: true,
+      hasInstalled: true,
       installationDone: true,
     });
   });
 
-  test("applyLaboratoryTaskStep synchronizes sample and tray statuses for the current task", () => {
+  test("buildLaboratoryWorkflowFromTask keeps compare available while another tray is still waiting to be compared", () => {
+    const workflow = buildLaboratoryWorkflowFromTask({
+      trayRows: [
+        { trayCode: "TP-001", trayStatus: "已到达实验室" },
+        { trayCode: "TP-002", trayStatus: "送至实验室" },
+      ],
+    });
+
+    expect(workflow).toEqual({
+      comparisonDone: false,
+      experimentConfirmed: false,
+      hasCompared: true,
+      hasInstalled: false,
+      installationDone: false,
+    });
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: true,
+      canInstallSample: true,
+      canMarkReady: false,
+    });
+  });
+
+  test("applyLaboratoryTaskStep only updates the targeted trays for the current task", () => {
     const updatedSamples = applyLaboratoryTaskStep({
       currentTask: {
         device: "盐雾试验室",
         experimentName: "盐雾试验-A",
         taskCode: "SYLU-2026-04-101",
-        trayCodes: ["TP-001"],
+        trayCodes: ["TP-001", "TP-002"],
       },
       historyAction: "实验确认",
       nextStatus: "实验准备就绪",
       now: "2026-04-02T10:30:00.000Z",
+      targetTrayCodes: ["TP-001"],
       samples: [
         {
           code: "SYLU-2026-04-101-SP-001",
@@ -569,6 +602,16 @@ describe("laboratory model", () => {
           status: "已到达实验室",
           task_code: "SYLU-2026-04-101",
           trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
+        },
+        {
+          code: "SYLU-2026-04-101-SP-002",
+          flow_status: "到货",
+          history: [],
+          location: "接驳区",
+          owner: "王工",
+          status: "到货",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "到货", tray_code: "TP-002" }],
         },
         {
           code: "SYLU-2026-04-201-SP-001",
@@ -594,7 +637,13 @@ describe("laboratory model", () => {
       detail: "SYLU-2026-04-101 / 盐雾试验-A / 实验准备就绪",
       status: "实验准备就绪",
     }));
-    expect(updatedSamples[1].status).toBe("已到达实验室");
-    expect(updatedSamples[1].trays[0].status).toBe("已到达实验室");
+    expect(updatedSamples[1]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      location: "接驳区",
+      status: "到货",
+      trays: [expect.objectContaining({ status: "到货", tray_code: "TP-002" })],
+    }));
+    expect(updatedSamples[2].status).toBe("已到达实验室");
+    expect(updatedSamples[2].trays[0].status).toBe("已到达实验室");
   });
 });

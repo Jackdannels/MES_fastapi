@@ -191,6 +191,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
   applyZancunInventoryAction,
   buildZancunMetrics,
@@ -418,8 +419,10 @@ const confirmDetailAction = async () => {
   if (!result.error) {
     snapshot.value = result.snapshot;
     await writeStorageUpdates({
+      [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
   }
 
   closeDetailModal();

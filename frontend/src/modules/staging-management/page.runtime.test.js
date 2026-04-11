@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import StagingManagementPage from "./page.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 let wrapper;
 let headerActions;
@@ -215,5 +216,46 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-detail-confirm"]').trigger("click");
 
     expect(mounted.text()).toContain("今日已出库2");
+  });
+
+  test("allows stock-in for experiment-completed trays and syncs samples into staging", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: "sample-107",
+          code: "SYLU-2026-04-107-SP-001",
+          task_code: "SYLU-2026-04-103",
+          owner: "周工",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-04-107-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+    };
+
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-107-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-detail-confirm"]').trigger("click");
+
+    const updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-001");
+
+    expect(updatedSample).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      flow_status: "已到达暂存间",
+    });
+    expect(updatedSample?.trays).toContainEqual(
+      expect.objectContaining({
+        tray_code: "SYLU-2026-04-107-TP-001",
+        status: "已到达暂存间",
+      }),
+    );
+    expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
   });
 });

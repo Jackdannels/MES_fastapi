@@ -271,6 +271,27 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("persists compare, install, and ready steps into sample tray statuses and keeps progress after remount", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "到货",
+        flow_status: "到货",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "到货", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-101-SP-002",
+        location: "接驳区",
+        owner: "王工",
+        status: "到货",
+        flow_status: "到货",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "到货", tray_code: "TP-002" }],
+      },
+    ];
     let mounted = await mountPage();
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
 
@@ -286,7 +307,14 @@ describe("LaboratoryPage runtime", () => {
       status: "已到达实验室",
       trays: expect.arrayContaining([expect.objectContaining({ status: "已到达实验室", tray_code: "TP-001" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已完成任务比对，待样品安装");
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      status: "到货",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+    }));
+    expect(mounted.text()).toContain("当前任务已完成部分托盘比对，可继续比对或开始样品安装");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
@@ -298,7 +326,12 @@ describe("LaboratoryPage runtime", () => {
       status: "工装夹具安装",
       trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已完成样品安装，待实验确认");
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      status: "到货",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+    }));
+    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪");
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
@@ -310,6 +343,11 @@ describe("LaboratoryPage runtime", () => {
       status: "实验准备就绪",
       trays: expect.arrayContaining([expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-001" })]),
     }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      status: "到货",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+    }));
     expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(3);
 
@@ -317,7 +355,7 @@ describe("LaboratoryPage runtime", () => {
     wrapper = undefined;
 
     mounted = await mountPage();
-    expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
+    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪");
   });
 
   test("renders dual flow panels and allows switching trays within the current experiment", async () => {

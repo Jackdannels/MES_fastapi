@@ -1,8 +1,16 @@
+import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
+
 const TASKS_KEY = "mes.tasks";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
+const STOCK_IN_CANDIDATE_STATUSES = new Set([
+  ...PRE_STAGING_STATUSES,
+  "实验已完成",
+  "实验完成",
+  "放置实验后暂存间",
+]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -123,7 +131,7 @@ const resolveTrayStatus = (statuses, events) => {
   if (normalizeText(latestEvent?.action) === "stock_in") {
     return "已入库";
   }
-  if (statuses.some((status) => PRE_STAGING_STATUSES.has(status))) {
+  if (statuses.some((status) => STOCK_IN_CANDIDATE_STATUSES.has(status))) {
     return "待入库";
   }
   return "";
@@ -407,6 +415,20 @@ function applyZancunInventoryAction(input = {}) {
     time: actionTime,
     operator: normalizeText(payload.operator) || "扫码登记",
   });
+
+  if (actionMode === "stockIn") {
+    const synced = synchronizeSamplesForTrayCodes({
+      historyAction: "暂存间扫码入库",
+      historyDetail: `${matchedRow.trayCode} 已到达暂存间`,
+      location: STAGING_LOCATION,
+      now: actionTime,
+      owner: normalizeText(payload.operator) || "扫码登记",
+      samples: nextSnapshot[SAMPLES_KEY],
+      status: "已到达暂存间",
+      trayCodes: [matchedRow.trayCode],
+    });
+    nextSnapshot[SAMPLES_KEY] = synced.samples;
+  }
 
   const nextRows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime });
   const updatedRow = nextRows.find((row) => normalizeText(row?.trayCode) === normalizedCode) || null;

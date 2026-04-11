@@ -1,7 +1,7 @@
 import loginModule from "./login";
 import dashboardModule from "./dashboard";
-import taskOverviewModule from "./task-overview";
 import tasksModule from "./tasks";
+import taskOverviewModule from "./task-overview";
 import scheduleModule from "./schedule";
 import samplesModule from "./samples";
 import handoverSystemModule from "./handover-system";
@@ -17,8 +17,8 @@ import laboratoryModule from "./laboratory";
 export const MODULES = [
   loginModule,
   dashboardModule,
-  taskOverviewModule,
   tasksModule,
+  taskOverviewModule,
   scheduleModule,
   samplesModule,
   handoverSystemModule,

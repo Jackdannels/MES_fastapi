@@ -377,6 +377,99 @@ def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+EXPERIMENT_RUNNING_STATUSES = {"实验进行中", "实验中"}
+EXPERIMENT_COMPLETED_STATUSES = {"实验已完成", "实验完成"}
+
+
+def parse_experiment_event_detail(detail: Any, task_no: Any) -> dict[str, str] | None:
+    normalized_task_no = normalize_text(task_no)
+    segments = [normalize_text(segment) for segment in str(detail or "").split(" / ") if normalize_text(segment)]
+    if len(segments) < 3 or segments[0] != normalized_task_no:
+        return None
+    return {
+        "experiment_name": segments[1],
+        "status": segments[2],
+    }
+
+
+def derive_experiment_status_map(
+    experiments: list[Dict[str, Any]],
+    schedules: list[Dict[str, Any]],
+    experiment_samples: list[Dict[str, Any]],
+    sample_events: list[Dict[str, Any]],
+) -> dict[str, str]:
+    schedule_by_experiment = {normalize_text(row.get("experiment_no")) for row in schedules if normalize_text(row.get("experiment_no"))}
+    sample_codes_by_experiment: dict[str, set[str]] = {}
+    for row in experiment_samples:
+        experiment_no = normalize_text(row.get("experiment_no"))
+        sample_no = normalize_text(row.get("sample_no"))
+        if not experiment_no or not sample_no:
+            continue
+        sample_codes_by_experiment.setdefault(experiment_no, set()).add(sample_no)
+
+    event_statuses_by_sample_and_experiment: dict[tuple[str, str], set[str]] = {}
+    for row in sample_events:
+        sample_no = normalize_text(row.get("sample_no"))
+        task_no = normalize_text(row.get("task_no"))
+        parsed = parse_experiment_event_detail(row.get("detail"), task_no)
+        if not sample_no or not parsed:
+            continue
+        key = (sample_no, parsed["experiment_name"])
+        event_statuses_by_sample_and_experiment.setdefault(key, set()).add(parsed["status"])
+
+    status_map: dict[str, str] = {}
+    for experiment in experiments:
+        experiment_no = normalize_text(experiment.get("experiment_no"))
+        experiment_name = normalize_text(experiment.get("experiment_name"))
+        related_sample_codes = sample_codes_by_experiment.get(experiment_no, set())
+        started_or_completed_count = 0
+        completed_count = 0
+        for sample_no in related_sample_codes:
+            statuses = event_statuses_by_sample_and_experiment.get((sample_no, experiment_name), set())
+            if statuses & (EXPERIMENT_RUNNING_STATUSES | EXPERIMENT_COMPLETED_STATUSES):
+                started_or_completed_count += 1
+            if statuses & EXPERIMENT_COMPLETED_STATUSES:
+                completed_count += 1
+
+        if related_sample_codes and completed_count == len(related_sample_codes):
+            status_map[experiment_no] = "实验已完成"
+        elif started_or_completed_count > 0:
+            status_map[experiment_no] = "实验中"
+        elif experiment_no in schedule_by_experiment:
+            status_map[experiment_no] = "已排程"
+        else:
+            status_map[experiment_no] = "待排程"
+    return status_map
+
+
+def derive_task_status_map(
+    tasks: list[Dict[str, Any]],
+    experiments: list[Dict[str, Any]],
+    experiment_status_map: dict[str, str],
+) -> dict[str, str]:
+    status_map: dict[str, str] = {}
+    experiments_by_task: dict[str, list[str]] = {}
+    for experiment in experiments:
+        task_no = normalize_text(experiment.get("task_no"))
+        experiment_no = normalize_text(experiment.get("experiment_no"))
+        if task_no and experiment_no:
+            experiments_by_task.setdefault(task_no, []).append(experiment_no)
+
+    for task in tasks:
+        task_no = normalize_text(task.get("task_no"))
+        experiment_nos = experiments_by_task.get(task_no, [])
+        statuses = [experiment_status_map.get(experiment_no, "待排程") for experiment_no in experiment_nos]
+        if statuses and all(status == "实验已完成" for status in statuses):
+            status_map[task_no] = "实验已完成"
+        elif any(status in {"实验中", "实验已完成"} for status in statuses):
+            status_map[task_no] = "实验中"
+        elif any(status == "已排程" for status in statuses):
+            status_map[task_no] = "已排程"
+        else:
+            status_map[task_no] = "待排程"
+    return status_map
+
+
 def build_device_insert_row(device: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "equipment_code": normalize_text(device.get("code")),
@@ -806,6 +899,15 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         if not rows:
             return
+        task_nos = sorted({row["task_no"] for row in rows if row["task_no"]})
+        task_map: Dict[str, int] = {}
+        if task_nos:
+            placeholders = ", ".join(["%s"] * len(task_nos))
+            cursor.execute(
+                f"SELECT task_id, task_no FROM biz_task WHERE task_no IN ({placeholders})",
+                task_nos,
+            )
+            task_map = {row["task_no"]: row["task_id"] for row in cursor.fetchall()}
         cursor.executemany(
             """
             INSERT INTO biz_schedule (
@@ -813,11 +915,12 @@ class MySQLMesStorageBackend(StorageBackend):
               device_name, schedule_start_time, schedule_end_time, planned_hours, schedule_status,
               is_retention, created_by, remark
             ) VALUES (
-              %(schedule_no)s, NULL, %(task_no)s, %(experiment_no)s, %(schedule_type)s, NULL, NULL, NULL,
+              %(schedule_no)s, %(task_id)s, %(task_no)s, %(experiment_no)s, %(schedule_type)s, NULL, NULL, NULL,
               %(device_name)s, %(schedule_start_time)s, %(schedule_end_time)s, %(planned_hours)s, %(schedule_status)s,
               %(is_retention)s, NULL, %(remark)s
             )
             ON DUPLICATE KEY UPDATE
+              task_id = VALUES(task_id),
               task_no = VALUES(task_no),
               experiment_no = VALUES(experiment_no),
               schedule_type = VALUES(schedule_type),
@@ -829,7 +932,7 @@ class MySQLMesStorageBackend(StorageBackend):
               is_retention = VALUES(is_retention),
               remark = VALUES(remark)
             """,
-            rows,
+            [{**row, "task_id": task_map.get(row["task_no"])} for row in rows],
         )
 
     def _replace_experiments(self, cursor, experiments: list[dict[str, Any]]) -> None:
@@ -897,6 +1000,99 @@ class MySQLMesStorageBackend(StorageBackend):
             """,
             rows,
         )
+
+    def _backfill_schedule_task_ids(self, cursor) -> None:
+        cursor.execute(
+            """
+            UPDATE biz_schedule s
+            JOIN biz_task t ON t.task_no = s.task_no
+            SET s.task_id = t.task_id
+            WHERE s.schedule_type = %s
+              AND (s.task_id IS NULL OR s.task_id <> t.task_id)
+            """,
+            (STORAGE_MARKER,),
+        )
+
+    def _sync_progress_statuses(self, cursor) -> None:
+        cursor.execute(
+            """
+            SELECT task_id, task_no, task_status
+            FROM biz_task
+            WHERE source_system = %s
+            ORDER BY task_no ASC
+            """,
+            (STORAGE_MARKER,),
+        )
+        tasks = cursor.fetchall()
+        if not tasks:
+            return
+
+        cursor.execute(
+            """
+            SELECT experiment_id, experiment_no, task_id, task_no, experiment_name, experiment_status
+            FROM biz_experiment
+            ORDER BY task_no ASC, experiment_no ASC
+            """
+        )
+        experiments = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT schedule_id, task_id, task_no, experiment_no, schedule_status
+            FROM biz_schedule
+            WHERE schedule_type = %s
+            ORDER BY task_no ASC, experiment_no ASC
+            """,
+            (STORAGE_MARKER,),
+        )
+        schedules = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT relation_id, experiment_no, task_no, sample_no
+            FROM biz_experiment_sample
+            ORDER BY task_no ASC, experiment_no ASC, sample_no ASC
+            """
+        )
+        experiment_samples = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT sample_no, task_no, detail
+            FROM biz_sample_event
+            WHERE task_no IN (
+              SELECT task_no FROM biz_task WHERE source_system = %s
+            )
+            ORDER BY event_time ASC, event_id ASC
+            """,
+            (STORAGE_MARKER,),
+        )
+        sample_events = cursor.fetchall()
+
+        experiment_status_map = derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events)
+        if experiment_status_map:
+            cursor.executemany(
+                "UPDATE biz_experiment SET experiment_status = %s WHERE experiment_no = %s",
+                [(status, experiment_no) for experiment_no, status in experiment_status_map.items()],
+            )
+            if schedules:
+                cursor.executemany(
+                    "UPDATE biz_schedule SET schedule_status = %s WHERE schedule_id = %s",
+                    [
+                        (
+                            experiment_status_map.get(normalize_text(row.get("experiment_no")), normalize_text(row.get("schedule_status"))),
+                            row["schedule_id"],
+                        )
+                        for row in schedules
+                    ],
+                )
+
+        task_status_map = derive_task_status_map(tasks, experiments, experiment_status_map)
+        if task_status_map:
+            cursor.executemany(
+                "UPDATE biz_task SET task_status = %s WHERE task_no = %s",
+                [(status, task_no) for task_no, status in task_status_map.items()],
+            )
 
     def _replace_devices(self, cursor, devices: list[dict[str, Any]]) -> None:
         rows = [build_device_insert_row(device) for device in devices if normalize_text(device.get("code"))]
@@ -1441,6 +1637,9 @@ class MySQLMesStorageBackend(StorageBackend):
                     self._replace_experiment_samples(cursor, relational_updates["mes.experiment_samples"] or [])
                 if "mes.tasks" in relational_updates:
                     self._replace_tasks(cursor, relational_updates["mes.tasks"] or [], prune=True)
+                if relational_updates:
+                    self._backfill_schedule_task_ids(cursor)
+                    self._sync_progress_statuses(cursor)
             connection.commit()
 
         if snapshot_updates:

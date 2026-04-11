@@ -106,7 +106,8 @@ python scripts\trial_run.py --port 8021
 
 ```powershell
 cd c:\Users\12051\Desktop\MES_fastapi
-python scripts\reset_demo_data.py
+powershell -NoProfile -Command "python scripts\reset_demo_data.py"
+
 ```
 
 该操作是破坏性的，会删除当前任务、样品、实验、排程、托盘分配、冲突记录，并重新生成：

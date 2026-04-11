@@ -22,6 +22,9 @@ from app.core.mysql_storage_backend import (
     build_storage_task_tray_codes,
     build_stream_insert_row,
     build_task_insert_row,
+    derive_experiment_status_map,
+    derive_task_status_map,
+    parse_experiment_event_detail,
 )
 from app.core.demo_data_reset import reset_demo_data
 
@@ -139,6 +142,65 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
     assert storage_item["task_code"] == "SYLU-2026-04-106"
     assert storage_item["experiment_name"] == "A实验"
     assert storage_item["status"] == "待排程"
+
+
+def test_parse_experiment_event_detail_extracts_experiment_name_and_status() -> None:
+    parsed = parse_experiment_event_detail(
+        "SYLU-2026-03-002 / 盐雾试验 / 实验已完成",
+        "SYLU-2026-03-002",
+    )
+
+    assert parsed == {
+        "experiment_name": "盐雾试验",
+        "status": "实验已完成",
+    }
+
+
+def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> None:
+    experiments = [
+        {"experiment_no": "SYLU-2026-03-002-A", "task_no": "SYLU-2026-03-002", "experiment_name": "盐雾试验"},
+        {"experiment_no": "SYLU-2026-03-002-B", "task_no": "SYLU-2026-03-002", "experiment_name": "高低温湿热试验"},
+        {"experiment_no": "SYLU-2026-03-002-C", "task_no": "SYLU-2026-03-002", "experiment_name": "振动试验"},
+    ]
+    schedules = [
+        {"schedule_id": 1, "task_no": "SYLU-2026-03-002", "experiment_no": "SYLU-2026-03-002-A", "schedule_status": "已排程"},
+        {"schedule_id": 2, "task_no": "SYLU-2026-03-002", "experiment_no": "SYLU-2026-03-002-B", "schedule_status": "已排程"},
+        {"schedule_id": 3, "task_no": "SYLU-2026-03-002", "experiment_no": "SYLU-2026-03-002-C", "schedule_status": "已排程"},
+    ]
+    experiment_samples = [
+        {"experiment_no": "SYLU-2026-03-002-A", "sample_no": "SP-001"},
+        {"experiment_no": "SYLU-2026-03-002-A", "sample_no": "SP-002"},
+        {"experiment_no": "SYLU-2026-03-002-B", "sample_no": "SP-005"},
+        {"experiment_no": "SYLU-2026-03-002-C", "sample_no": "SP-001"},
+    ]
+    sample_events = [
+        {"sample_no": "SP-001", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
+        {"sample_no": "SP-002", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
+    ]
+
+    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
+        "SYLU-2026-03-002-A": "实验已完成",
+        "SYLU-2026-03-002-B": "已排程",
+        "SYLU-2026-03-002-C": "已排程",
+    }
+
+
+def test_derive_task_status_map_keeps_task_running_once_any_experiment_started_or_completed() -> None:
+    tasks = [{"task_no": "SYLU-2026-03-002"}]
+    experiments = [
+        {"experiment_no": "SYLU-2026-03-002-A", "task_no": "SYLU-2026-03-002"},
+        {"experiment_no": "SYLU-2026-03-002-B", "task_no": "SYLU-2026-03-002"},
+        {"experiment_no": "SYLU-2026-03-002-C", "task_no": "SYLU-2026-03-002"},
+    ]
+    experiment_status_map = {
+        "SYLU-2026-03-002-A": "实验已完成",
+        "SYLU-2026-03-002-B": "已排程",
+        "SYLU-2026-03-002-C": "已排程",
+    }
+
+    assert derive_task_status_map(tasks, experiments, experiment_status_map) == {
+        "SYLU-2026-03-002": "实验中",
+    }
 
 
 def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:
@@ -479,6 +541,54 @@ def test_replace_samples_persists_real_tray_item_status() -> None:
     assert tray_item_call[0]["status"] == "实验进行中"
 
 
+def test_replace_schedules_backfills_task_id_from_task_no() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 12773, "task_no": "SYLU-2026-03-002"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_schedules(
+        cursor,
+        [
+            {
+                "id": "schedule-1",
+                "task_code": "SYLU-2026-03-002",
+                "experiment_code": "SYLU-2026-03-002-A",
+                "device": "盐雾试验室",
+                "start_at": "2026-04-09T10:05:38Z",
+                "end_at": "2026-04-09T13:35:38Z",
+                "status": "已排程",
+            }
+        ],
+    )
+
+    schedule_call = next(
+        rows
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_schedule" in sql
+    )
+    assert schedule_call[0]["task_id"] == 12773
+
+
 def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_migration() -> None:
     payload = {
         "mes.tasks": [
@@ -659,6 +769,8 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
     monkeypatch.setattr(backend, "_replace_experiments", lambda cursor, rows: order.append("experiments"))
     monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
     monkeypatch.setattr(backend, "_replace_experiment_samples", lambda cursor, rows: order.append("experiment_samples"))
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: order.append("schedule_task_ids"))
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda cursor: order.append("progress_statuses"))
 
     backend._write_many_internal(
         {
@@ -670,7 +782,16 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         }
     )
 
-    assert order == ["tasks:False", "samples", "experiments", "experiment_trays", "experiment_samples", "tasks:True"]
+    assert order == [
+        "tasks:False",
+        "samples",
+        "experiments",
+        "experiment_trays",
+        "experiment_samples",
+        "tasks:True",
+        "schedule_task_ids",
+        "progress_statuses",
+    ]
 
 
 def test_write_many_does_not_clear_unrelated_experiment_tray_assignments(monkeypatch) -> None:

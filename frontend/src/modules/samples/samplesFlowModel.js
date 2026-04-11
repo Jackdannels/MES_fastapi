@@ -47,7 +47,7 @@ const EXPERIMENT_FLOW_STATUS_LABELS = {
   running: "进行中",
   completed: "已完成",
 };
-const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "比对确认", "工装夹具安装", "实验准备就绪"];
+const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"];
 
 const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
@@ -523,6 +523,7 @@ function buildTrayFlowView(input = {}) {
       return steps.length - 1;
     };
 
+    const transportIndex = pushStep({ key: "in_transit", label: "样品运输中" });
     const arrivalIndex = pushStep({ key: "arrival", label: "到货" });
 
     let currentStatus = "到货";
@@ -561,6 +562,14 @@ function buildTrayFlowView(input = {}) {
           label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
         });
       });
+      const postTestStagingIndex = pushStep({
+        key: `route-post-staging-${currentExperimentIndex}`,
+        label: "放置实验后暂存间",
+      });
+      const returnedIndex = pushStep({
+        key: `route-returned-${currentExperimentIndex}`,
+        label: "厂家收回",
+      });
 
       if (routeStatusIndex >= 0) {
         currentStatus = normalizedRouteStatus;
@@ -576,6 +585,24 @@ function buildTrayFlowView(input = {}) {
         routeIndexes.forEach((stepIndex) => {
           steps[stepIndex].reached = true;
         });
+      } else if (normalizedRouteStatus === "放置实验后暂存间") {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = postTestStagingIndex;
+        routeIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        steps[currentExperimentIndexInSteps].reached = true;
+      } else if (normalizedRouteStatus === "厂家收回") {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = returnedIndex;
+        routeIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        steps[currentExperimentIndexInSteps].reached = true;
+        steps[postTestStagingIndex].reached = true;
+      } else if (normalizedRouteStatus === "样品运输中") {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = transportIndex;
       } else {
         currentStatus = normalizedRouteStatus || "到货";
         activeIndex = arrivalIndex;
@@ -603,15 +630,38 @@ function buildTrayFlowView(input = {}) {
       });
       const experimentName = normalizeText(lastExperiment?.name) || `实验${completedExperiments.length}`;
       const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
-      activeIndex = pushStep({
+      const completedIndex = pushStep({
         key: "experiment-final-completed",
         label: completedLabel,
       });
-      currentStatus = completedLabel;
+      const postTestStagingIndex = pushStep({
+        key: "route-final-post-staging",
+        label: "放置实验后暂存间",
+      });
+      const returnedIndex = pushStep({
+        key: "route-final-returned",
+        label: "厂家收回",
+      });
+      const normalizedFinalStatus = normalizeLifecycleStatus(input.location, input.status);
+      if (normalizedFinalStatus === "放置实验后暂存间") {
+        activeIndex = postTestStagingIndex;
+        steps[completedIndex].reached = true;
+        currentStatus = normalizedFinalStatus;
+      } else if (normalizedFinalStatus === "厂家收回") {
+        activeIndex = returnedIndex;
+        steps[completedIndex].reached = true;
+        steps[postTestStagingIndex].reached = true;
+        currentStatus = normalizedFinalStatus;
+      } else {
+        activeIndex = completedIndex;
+        currentStatus = completedLabel;
+      }
     }
 
+    steps[transportIndex].active = activeIndex === transportIndex;
+    steps[transportIndex].reached = activeIndex !== transportIndex;
     steps[arrivalIndex].active = activeIndex === arrivalIndex;
-    steps[arrivalIndex].reached = activeIndex !== arrivalIndex;
+    steps[arrivalIndex].reached = activeIndex !== arrivalIndex && activeIndex !== transportIndex;
     if (steps[activeIndex]) {
       steps[activeIndex].active = true;
     }

@@ -235,13 +235,27 @@ function useLaboratoryPage(options = {}) {
   const closeCompare = () => {
     compareModalOpen.value = false;
   };
+  const getCurrentTaskTrayCodesByStatus = (status) =>
+    (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
+      .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim())
+      .map((row) => String(row?.trayCode || "").trim())
+      .filter(Boolean);
   const persistCurrentTaskStep = async (nextStatus, historyAction) => {
+    const targetTrayCodes =
+      nextStatus === LAB_COMPARE_STATUS
+        ? verifiedTrayCodes.value
+        : nextStatus === LAB_INSTALL_STATUS
+          ? getCurrentTaskTrayCodesByStatus(LAB_COMPARE_STATUS)
+          : nextStatus === LAB_READY_STATUS
+            ? getCurrentTaskTrayCodesByStatus(LAB_INSTALL_STATUS)
+            : currentTask.value?.trayCodes;
     const nextSamples = applyLaboratoryTaskStep({
       currentTask: currentTask.value,
       historyAction,
       nextStatus,
       now: new Date().toISOString(),
       samples: samples.value,
+      targetTrayCodes,
     });
     samples.value = nextSamples;
     await persistSnapshot({

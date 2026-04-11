@@ -1143,17 +1143,19 @@ describe("useProcessLabs", () => {
     await openTaskOverview(labCards.value[0]);
 
     expect(selectedTaskDetail.value.selectedTrayFlow.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
       "到货",
       "A实验已完成",
       "送至暂存间",
       "已到达暂存间",
       "送至实验室",
       "已到达实验室",
-      "比对确认",
       "工装夹具安装",
       "实验准备就绪",
       "B实验进行中",
       "C实验未完成",
+      "放置实验后暂存间",
+      "厂家收回",
     ]);
   });
 });

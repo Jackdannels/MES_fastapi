@@ -187,6 +187,31 @@ describe("staging-management model", () => {
     expect(stockOutDetail.trayCode).toBe("SYLU-2026-04-102-TP-001");
   });
 
+  test("treats experiment-completed trays as valid staging stock-in candidates", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-107",
+      code: "SYLU-2026-04-107-SP-001",
+      task_code: "SYLU-2026-04-103",
+      owner: "周工",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      trays: [{ tray_code: "SYLU-2026-04-107-TP-001", status: "实验已完成", quantity: 1 }],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const completedRow = rows.find((row) => row.trayCode === "SYLU-2026-04-107-TP-001");
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-107-TP-001", "stockIn");
+
+    expect(completedRow).toMatchObject({
+      trayCode: "SYLU-2026-04-107-TP-001",
+      status: "待入库",
+      location: "盐雾试验室",
+    });
+    expect(detail.found).toBe(true);
+    expect(detail.nextStatus).toBe("已入库");
+  });
+
   test("applies inventory actions by appending staging events instead of mutating static rows", () => {
     const stockInResult = applyZancunInventoryAction({
       now: TODAY,
@@ -227,5 +252,42 @@ describe("staging-management model", () => {
       action: "stock_out",
     });
     expect(metrics.stockedOutTodayCount).toBe(2);
+  });
+
+  test("syncs experiment-completed tray samples into staging on stock-in", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-107",
+      code: "SYLU-2026-04-107-SP-001",
+      task_code: "SYLU-2026-04-103",
+      owner: "周工",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      trays: [{ tray_code: "SYLU-2026-04-107-TP-001", status: "实验已完成", quantity: 1 }],
+    });
+
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-107-TP-001",
+        mode: "stockIn",
+      },
+      snapshot,
+    });
+
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-001");
+
+    expect(result.error).toBe("");
+    expect(updatedSample).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      flow_status: "已到达暂存间",
+    });
+    expect(updatedSample?.trays).toContainEqual(
+      expect.objectContaining({
+        tray_code: "SYLU-2026-04-107-TP-001",
+        status: "已到达暂存间",
+      }),
+    );
   });
 });

@@ -429,31 +429,41 @@ function createLaboratoryWorkflow() {
   return {
     comparisonDone: false,
     experimentConfirmed: false,
+    hasCompared: false,
+    hasInstalled: false,
     installationDone: false,
   };
 }
 
 function buildLaboratoryWorkflowFromTask(task) {
-  const maxRank = asArray(task?.trayRows).reduce((highest, row) => Math.max(highest, resolveLaboratoryStatusRank(row?.trayStatus)), 0);
+  const trayRows = asArray(task?.trayRows);
+  const trayRanks = trayRows.map((row) => resolveLaboratoryStatusRank(row?.trayStatus));
+  const hasCompared = trayRanks.some((rank) => rank >= 1);
+  const comparisonDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 1);
+  const hasInstalled = trayRanks.some((rank) => rank >= 2);
+  const installationDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 2);
+  const experimentConfirmed = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 3);
   return {
-    comparisonDone: maxRank >= 1,
-    experimentConfirmed: maxRank >= 3,
-    installationDone: maxRank >= 2,
+    comparisonDone,
+    experimentConfirmed,
+    hasCompared,
+    hasInstalled,
+    installationDone,
   };
 }
 
 function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
   if (workflow.experimentConfirmed) {
     return {
-      canCompare: true,
+      canCompare: false,
       canInstallSample: false,
       canMarkReady: false,
     };
   }
   return {
     canCompare: !workflow.comparisonDone,
-    canInstallSample: workflow.comparisonDone && !workflow.installationDone,
-    canMarkReady: workflow.comparisonDone && workflow.installationDone,
+    canInstallSample: (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone,
+    canMarkReady: (workflow.hasInstalled || workflow.installationDone) && !workflow.experimentConfirmed,
   };
 }
 
@@ -462,28 +472,35 @@ function completeLaboratoryComparison(workflow = createLaboratoryWorkflow()) {
     ...workflow,
     comparisonDone: true,
     experimentConfirmed: false,
+    hasCompared: true,
+    hasInstalled: false,
+    installationDone: false,
   };
 }
 
 function completeLaboratoryInstallation(workflow = createLaboratoryWorkflow()) {
-  if (!workflow.comparisonDone) {
+  if (!(workflow.hasCompared || workflow.comparisonDone)) {
     return { ...workflow };
   }
   return {
     ...workflow,
+    hasCompared: true,
+    hasInstalled: true,
     installationDone: true,
     experimentConfirmed: false,
   };
 }
 
 function confirmLaboratoryExperiment(workflow = createLaboratoryWorkflow()) {
-  if (!workflow.installationDone) {
+  if (!(workflow.hasInstalled || workflow.installationDone)) {
     return { ...workflow };
   }
   return {
-    comparisonDone: false,
+    comparisonDone: true,
     experimentConfirmed: true,
-    installationDone: false,
+    hasCompared: true,
+    hasInstalled: true,
+    installationDone: true,
   };
 }
 
@@ -492,13 +509,19 @@ function buildLaboratoryProgressMessage(workflow, currentTask) {
     return "当前盐雾试验室暂无排程";
   }
   if (workflow.experimentConfirmed) {
-    return "当前任务已确认实验准备就绪";
+    return "当前任务已确认全部托盘实验准备就绪";
+  }
+  if (workflow.hasInstalled && !workflow.installationDone) {
+    return "当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪";
   }
   if (workflow.installationDone) {
-    return "当前任务已完成样品安装，待实验确认";
+    return "当前任务已完成全部托盘样品安装，待实验确认";
+  }
+  if (workflow.hasCompared && !workflow.comparisonDone) {
+    return "当前任务已完成部分托盘比对，可继续比对或开始样品安装";
   }
   if (workflow.comparisonDone) {
-    return "当前任务已完成任务比对，待样品安装";
+    return "当前任务已完成全部托盘任务比对，待样品安装";
   }
   return `当前任务 ${currentTask.taskCode} 待开始任务比对`;
 }
@@ -509,13 +532,15 @@ function applyLaboratoryTaskStep({
   nextStatus = "",
   historyAction = "",
   now = new Date().toISOString(),
+  targetTrayCodes = [],
 }) {
   if (!currentTask) {
     return asArray(samples);
   }
 
   const normalizedStatus = normalizeText(nextStatus);
-  const trayCodeSet = new Set(asArray(currentTask.trayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
+  const scopedTrayCodes = asArray(targetTrayCodes).length > 0 ? targetTrayCodes : currentTask.trayCodes;
+  const trayCodeSet = new Set(asArray(scopedTrayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
   const taskCode = normalizeText(currentTask.taskCode);
   const detail = `${taskCode} / ${normalizeText(currentTask.experimentName) || "-"} / ${normalizedStatus}`;
   const scopedSamples = asArray(samples).filter((sample) => normalizeText(sample?.task_code) === taskCode);

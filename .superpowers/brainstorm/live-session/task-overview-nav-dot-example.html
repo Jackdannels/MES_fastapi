@@ -1,0 +1,45 @@
+<h2>任务/托盘总览菜单红点示例</h2>
+<p class="subtitle">红点只在存在“确认到货后超过 24 小时仍未排程”的实验时显示。</p>
+
+<div class="mockup">
+  <div class="mockup-header">中控系统左侧导航示意</div>
+  <div class="mockup-body" style="background:#f4f7fb;padding:24px;border-radius:18px;">
+    <div style="width:280px;background:#0f172a;color:#e2e8f0;padding:22px 18px;border-radius:22px;box-shadow:0 18px 40px rgba(15,23,42,.28);">
+      <div style="font-size:18px;font-weight:700;line-height:1.4;">七二四新火工区信息化中控管理系统</div>
+      <div style="margin-top:4px;font-size:13px;color:#94a3b8;">实验室中控管理</div>
+
+      <div style="margin-top:22px;display:grid;gap:10px;">
+        <div style="padding:12px 14px;border-radius:14px;background:rgba(148,163,184,.12);">中控总览</div>
+        <div style="padding:12px 14px;border-radius:14px;background:rgba(148,163,184,.12);">样品管理</div>
+        <div style="padding:12px 14px;border-radius:14px;background:rgba(148,163,184,.12);">排程看板</div>
+        <div style="padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,#dbeafe,#bfdbfe);color:#0f172a;font-weight:700;display:flex;align-items:center;justify-content:space-between;box-shadow:inset 0 0 0 1px rgba(59,130,246,.18);">
+          <span>任务/托盘总览</span>
+          <span style="width:10px;height:10px;border-radius:999px;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.18);flex:0 0 auto;"></span>
+        </div>
+        <div style="padding:12px 14px;border-radius:14px;background:rgba(148,163,184,.12);">设备管理</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <div class="label">说明</div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>建议保留</h4>
+      <ul>
+        <li>只在超 24 小时实验存在时显示红点，避免常态化打扰。</li>
+        <li>红点不显示具体数字，导航层只承担告警职责。</li>
+        <li>点进页面后，在实验级状态行继续显示红色“待排程”。</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>避免</h4>
+      <ul>
+        <li>导航直接显示数量，会让侧栏信息噪音变重。</li>
+        <li>任务级和实验级同时叠数字，容易口径冲突。</li>
+        <li>把红点放在页面内 Tab，而不是菜单项，不符合你刚才的要求。</li>
+      </ul>
+    </div>
+  </div>
+</div>

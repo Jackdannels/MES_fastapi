@@ -3,6 +3,7 @@ import { nextTick, reactive } from "vue";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App.vue";
+import { getNavigationModules } from "@/modules";
 
 const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock } = vi.hoisted(() => ({
   routeState: {
@@ -190,6 +191,13 @@ describe("App runtime boundary", () => {
     expect(text).toContain("退出登录");
     expect(text).toContain("自动采集");
     expect(text).toContain("固定报告");
+  });
+
+  test("renders central sidebar with task intake before task overview", async () => {
+    const navLabels = getNavigationModules("central").map((item) => item.route.meta?.title);
+    expect(navLabels.indexOf("任务受理")).toBeGreaterThan(-1);
+    expect(navLabels.indexOf("任务/托盘总览")).toBeGreaterThan(-1);
+    expect(navLabels.indexOf("任务受理")).toBeLessThan(navLabels.indexOf("任务/托盘总览"));
   });
 
   test("opens the exit dialog instead of logging out immediately", async () => {
