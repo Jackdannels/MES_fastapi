@@ -38,12 +38,28 @@ const resetStorage = () => {
   });
 };
 
+const settle = async (router) => {
+  await Promise.resolve();
+  await Promise.resolve();
+  await nextTick();
+  await nextTick();
+  if (router?.isReady) {
+    await router.isReady();
+  }
+  await Promise.resolve();
+  await nextTick();
+};
+
 describe("App task intake entry", () => {
   beforeEach(() => {
     resetStorage();
     vi.stubGlobal("localStorage", createStorageStub());
     vi.stubGlobal("scrollTo", vi.fn());
-    window.scrollTo = vi.fn();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      value: vi.fn(),
+      writable: true,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(() =>
@@ -72,13 +88,11 @@ describe("App task intake entry", () => {
       },
     });
 
-    await nextTick();
-    await nextTick();
+    await settle(router);
 
     const newTaskButton = wrapper.get('[data-testid="open-task-intake"]');
     await newTaskButton.trigger("click");
-    await nextTick();
-    await nextTick();
+    await settle(router);
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(router.currentRoute.value.path).toBe("/tasks");
