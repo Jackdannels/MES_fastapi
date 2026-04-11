@@ -5,6 +5,7 @@ import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
 const STATUS_RETENTION = "厂家收回";
+const TRANSFER_STATUS_STORED = "已入库";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
@@ -51,6 +52,10 @@ function normalizeQuantity(value) {
 function parseTimeValue(value) {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : -1;
+}
+
+function isTaskStored(task) {
+  return normalizeText(task?.transferStatus ?? task?.transfer_status) === TRANSFER_STATUS_STORED;
 }
 
 function upsertLatestSchedule(map, key, schedule) {
@@ -141,6 +146,7 @@ function buildTaskRows({
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
       taskStatus: normalizeStatus(task?.status),
+      transferStatus: normalizeText(task?.transfer_status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",
       timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
       sampleCodes: [],
@@ -246,6 +252,7 @@ function buildTaskRows({
           ...experiment,
           displayStatus,
           isOverdueWaiting:
+            isTaskStored(row) &&
             normalizeText(displayStatus) === STATUS_WAITING &&
             Number.isFinite(experiment.unscheduledSince) &&
             now - experiment.unscheduledSince > OVERDUE_MS,

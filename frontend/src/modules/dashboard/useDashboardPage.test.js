@@ -35,7 +35,7 @@ describe("useDashboardPage", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T10:00:00.000Z"));
     mocks.loadSnapshot.mockResolvedValue({
-      "mes.tasks": [{ code: "SYLU-2026-04-109", source: "外部委托", status: "待排程" }],
+      "mes.tasks": [{ code: "SYLU-2026-04-109", source: "外部委托", status: "待排程", transfer_status: "已入库" }],
       "mes.schedules": [],
       "mes.devices": [],
       "mes.streams": [],

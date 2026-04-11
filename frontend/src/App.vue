@@ -104,21 +104,31 @@ import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
 
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
+const TRANSFER_STATUS_STORED = "已入库";
 
 const parseTimeValue = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
-const hasOverdueWaitingExperiment = (experiments, now = Date.now()) =>
-  (Array.isArray(experiments) ? experiments : []).some((experiment) => {
+const normalizeText = (value) => String(value ?? "").trim();
+
+const hasOverdueWaitingExperiment = (tasks, experiments, now = Date.now()) => {
+  const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
+
+  return (Array.isArray(experiments) ? experiments : []).some((experiment) => {
+    const task = taskByCode.get(normalizeText(experiment?.task_code));
+    if (normalizeText(task?.transfer_status) !== TRANSFER_STATUS_STORED) {
+      return false;
+    }
     const startedAt = parseTimeValue(experiment?.unscheduled_since);
     return Number.isFinite(startedAt) && now - startedAt > OVERDUE_MS;
   });
+};
 
 const route = useRoute();
 const router = useRouter();
-const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.experiments]);
+const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments]);
 const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
 let navAlertTimer = null;
@@ -145,7 +155,10 @@ const isActive = (name) => route.name === name;
 
 const refreshTaskOverviewAlert = async () => {
   const snapshot = await loadSnapshot();
-  hasTaskOverviewAlert.value = hasOverdueWaitingExperiment(snapshot[STORAGE_KEYS.experiments]);
+  hasTaskOverviewAlert.value = hasOverdueWaitingExperiment(
+    snapshot[STORAGE_KEYS.tasks],
+    snapshot[STORAGE_KEYS.experiments],
+  );
 };
 
 const openTaskIntake = async () => {

@@ -15,7 +15,7 @@ const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionM
   routerReplace: vi.fn(),
   logoutSessionMock: vi.fn(() => Promise.resolve()),
   switchSessionModuleMock: vi.fn(async (moduleKey) => ({ ok: true, module: moduleKey })),
-  loadSnapshotMock: vi.fn(async () => ({ "mes.experiments": [] })),
+  loadSnapshotMock: vi.fn(async () => ({ "mes.tasks": [], "mes.experiments": [] })),
 }));
 
 const reactiveRoute = reactive(routeState);
@@ -78,7 +78,7 @@ describe("App runtime boundary", () => {
     logoutSessionMock.mockClear();
     switchSessionModuleMock.mockClear();
     loadSnapshotMock.mockReset();
-    loadSnapshotMock.mockResolvedValue({ "mes.experiments": [] });
+    loadSnapshotMock.mockResolvedValue({ "mes.tasks": [], "mes.experiments": [] });
     vi.clearAllMocks();
   });
 
@@ -253,6 +253,12 @@ describe("App runtime boundary", () => {
     reactiveRoute.name = "dashboard";
     reactiveRoute.path = "/";
     loadSnapshotMock.mockResolvedValue({
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-011",
+          transfer_status: "已入库",
+        },
+      ],
       "mes.experiments": [
         {
           task_code: "SYLU-2026-03-011",
@@ -270,5 +276,35 @@ describe("App runtime boundary", () => {
 
     expect(navText.exists()).toBe(true);
     expect(navText.find(".nav-alert-dot").exists()).toBe(true);
+  });
+
+  test("does not show a red dot when overdue experiments belong to tasks that are not yet stored", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    loadSnapshotMock.mockResolvedValue({
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-012",
+          transfer_status: "未入库",
+        },
+      ],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+    });
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    const navText = wrapper.findAll(".nav-link").find((node) => node.text().includes("任务/托盘总览"));
+
+    expect(navText.exists()).toBe(true);
+    expect(navText.find(".nav-alert-dot").exists()).toBe(false);
   });
 });

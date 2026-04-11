@@ -4,6 +4,7 @@ const SOURCE_INTERNAL = "内部新增";
 const STATUS_RUNNING = "实验中";
 const STATUS_SCHEDULED = "已排程";
 const STATUS_WAITING = "待排程";
+const TRANSFER_STATUS_STORED = "已入库";
 const STATUS_RETENTION = "厂家收回";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
@@ -32,6 +33,8 @@ const parseTime = (value) => {
   const time = Date.parse(String(value || ""));
   return Number.isFinite(time) ? time : Number.NaN;
 };
+
+const isTaskStored = (task) => normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
 
 const formatElapsedDuration = (elapsedMs) => {
   const safeElapsed = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -124,6 +127,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   const deviceList = Array.isArray(devices) ? devices : [];
   const streamList = Array.isArray(streams) ? streams : [];
   const experimentList = Array.isArray(experiments) ? experiments : [];
+  const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
 
   // 先补齐每条任务的展示态和样式，后面的统计全部基于统一后的任务集合。
   const normalizedTasks = taskList.map((task) => {
@@ -173,6 +177,10 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   const unscheduledExperimentItems = experimentList
     .map((experiment) => {
+      const task = taskByCode.get(normalizeText(experiment?.task_code));
+      if (!isTaskStored(task)) {
+        return null;
+      }
       const startedAt = parseTime(experiment?.unscheduled_since);
       if (!Number.isFinite(startedAt)) {
         return null;

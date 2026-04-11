@@ -31,7 +31,7 @@
                 v-for="item in experimentLines"
                 :key="`${item.key}-status`"
                 class="task-overview-summary-line task-overview-summary-line-chip"
-                :class="[resolveExperimentStatusClass(item.status), { 'is-overdue': item.isOverdueWaiting }]"
+                :class="[resolveExperimentStatusClass(item.status), { 'is-overdue': item.isOverdueWaiting, 'is-overdue-highlight': item.isOverdueWaiting }]"
               >
                 {{ item.status }}
               </span>

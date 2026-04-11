@@ -77,5 +77,35 @@ describe("TaskOverviewSummaryTable", () => {
 
     expect(statusChip.text()).toBe("待排程");
     expect(statusChip.classes()).toContain("is-overdue");
+    expect(statusChip.classes()).toContain("is-overdue-highlight");
+  });
+
+  test("keeps non-overdue waiting experiments on the standard pending style", () => {
+    const wrapper = mount(TaskOverviewSummaryTable, {
+      props: {
+        formatTrayCount: () => "未分配",
+        formatTraySummary: () => "未分配托盘",
+        row: {
+          currentStatus: "待排程",
+          experimentCount: 1,
+          experimentSummary: "霉菌试验",
+          experiments: [
+            { experimentCode: "TASK-003-A", experimentName: "霉菌试验", displayStatus: "待排程", isOverdueWaiting: false },
+          ],
+          plannedCount: 1,
+          sampleCount: 0,
+          scheduleCount: 0,
+          scheduleLabel: "待排程",
+          trays: [],
+        },
+      },
+    });
+
+    const statusChip = wrapper.find(".task-overview-summary-line-chip");
+
+    expect(statusChip.text()).toBe("待排程");
+    expect(statusChip.classes()).toContain("is-unscheduled");
+    expect(statusChip.classes()).not.toContain("is-overdue");
+    expect(statusChip.classes()).not.toContain("is-overdue-highlight");
   });
 });

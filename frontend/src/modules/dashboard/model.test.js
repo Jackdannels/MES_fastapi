@@ -102,6 +102,7 @@ describe("dashboard model", () => {
           code: "SYLU-2026-04-109",
           source: "外部委托",
           status: "待排程",
+          transfer_status: "已入库",
         },
       ],
       experiments: [
@@ -136,6 +137,7 @@ describe("dashboard model", () => {
           code: "SYLU-2026-04-110",
           source: "内部新增",
           status: "待排程",
+          transfer_status: "已入库",
         },
       ],
       experiments: [
@@ -159,6 +161,33 @@ describe("dashboard model", () => {
         isOverdue: true,
       }),
     ]);
+  });
+
+  test("ignores unscheduled timers for tasks that are not yet confirmed in transfer storage", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-111",
+          source: "内部新增",
+          status: "待排程",
+          transfer_status: "未入库",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-111",
+          experiment_code: "SYLU-2026-04-111-A",
+          experiment_name: "盐雾试验",
+          unscheduled_since: "2026-03-16T08:30:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([]);
   });
 });
 
