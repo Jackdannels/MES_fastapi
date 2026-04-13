@@ -58,11 +58,11 @@ def create_payloads():
             {
                 "id": "task-103",
                 "code": "SYLU-2026-03-103",
-                "name": "实验中任务",
+                "name": "实验进行中任务",
                 "test_type": "振动试验",
                 "sample_count": 1,
                 "arrival_at": "2026-03-20 08:00",
-                "status": "实验中",
+                "status": "实验进行中",
             },
         ],
         "mes.samples": [
@@ -619,7 +619,7 @@ def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(mon
     client, storage = build_client(monkeypatch)
 
     tasks = storage.read("mes.tasks")
-    tasks[1]["status"] = "实验中"
+    tasks[1]["status"] = "实验进行中"
     storage.write("mes.tasks", tasks)
 
     samples = storage.read("mes.samples")

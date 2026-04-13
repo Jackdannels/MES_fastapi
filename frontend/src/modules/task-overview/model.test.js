@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { buildTaskRows, buildTrayOverviewRows } from "./model";
 
 describe("taskOverviewModel", () => {
-  test("buildTaskRows aggregates tasks, samples, trays, and schedules", () => {
+  test("buildTaskRows aggregates tasks, samples, trays, and schedules by task-level formal schedule presence", () => {
     const rows = buildTaskRows({
       tasks: [
         {
@@ -44,7 +44,7 @@ describe("taskOverviewModel", () => {
       currentStatus: "Queued",
       scheduleLabel: "Scheduled",
       sampleCount: 2,
-      scheduleCount: 2,
+      scheduleCount: 1,
     });
     expect(rows[0].sampleCodes).toEqual(["S-001", "S-002"]);
     expect(rows[0].trays).toEqual([
@@ -78,11 +78,33 @@ describe("taskOverviewModel", () => {
       taskCode: "SYLU-2026-03-006",
       experimentCount: 2,
       experimentSummary: "A实验 / B实验",
+      eligibleExperimentCount: 2,
+      scheduledExperimentCount: 2,
     });
     expect(rows[0].experiments).toEqual([
       expect.objectContaining({ experimentCode: "SYLU-2026-03-006-A", experimentName: "A实验", displayStatus: "已排程" }),
-      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-B", experimentName: "B实验", displayStatus: "实验完成" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-B", experimentName: "B实验", displayStatus: "实验已完成" }),
     ]);
+  });
+
+  test("buildTaskRows excludes manufacturer-returned tasks from scheduled experiment totals", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-03-099", test_type: "冲击试验", status: "厂家收回" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-A", experiment_name: "A实验", status: "实验已完成" },
+        { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-B", experiment_name: "B实验", status: "实验进行中" },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toMatchObject({
+      taskCode: "SYLU-2026-03-099",
+      eligibleExperimentCount: 0,
+      scheduledExperimentCount: 0,
+    });
   });
 
   test("buildTaskRows removes duplicate experiment types from overview summaries", () => {
@@ -278,7 +300,7 @@ describe("taskOverviewModel", () => {
       unscheduledLabel: "未排程",
     });
 
-    expect(rows[0].currentStatus).toBe("实验完成");
+    expect(rows[0].currentStatus).toBe("任务已完成");
   });
 
   test("buildTaskRows marks overdue waiting experiments after 24 hours", () => {
@@ -362,8 +384,8 @@ describe("taskOverviewModel", () => {
 
     expect(rows[0]).toEqual(
       expect.objectContaining({
-        currentStatus: "实验中",
-        currentStatusLabel: "实验中（已完成1个实验）",
+        currentStatus: "任务进行中",
+        currentStatusLabel: "任务进行中（已完成1个实验）",
       }),
     );
   });

@@ -15,7 +15,7 @@ describe("TaskOverviewSummaryTable", () => {
           experimentSummary: "温度冲击 / 振动",
           experiments: [
             { experimentCode: "TASK-001-A", experimentName: "温度冲击", displayStatus: "已排程" },
-            { experimentCode: "TASK-001-B", experimentName: "振动", displayStatus: "实验完成" },
+            { experimentCode: "TASK-001-B", experimentName: "振动", displayStatus: "实验已完成" },
           ],
           plannedCount: 3,
           sampleCount: 2,
@@ -43,7 +43,7 @@ describe("TaskOverviewSummaryTable", () => {
     expect(wrapper.text()).toContain("振动");
     expect(wrapper.text()).toContain("2");
     expect(wrapper.text()).toContain("已排程");
-    expect(wrapper.text()).toContain("实验完成");
+    expect(wrapper.text()).toContain("实验已完成");
     expect(wrapper.text()).toContain("2 / 3");
     expect(wrapper.text()).toContain("TP-001");
     expect(wrapper.text()).toContain("TP-002");
@@ -115,12 +115,12 @@ describe("TaskOverviewSummaryTable", () => {
         formatTrayCount: () => "1",
         formatTraySummary: () => "TP-009",
         row: {
-          currentStatus: "实验中",
-          currentStatusLabel: "实验中（已完成1个实验）",
+          currentStatus: "任务进行中",
+          currentStatusLabel: "任务进行中（已完成1个实验）",
           experimentCount: 2,
           experimentSummary: "振动试验A / 振动试验B",
           experiments: [
-            { experimentCode: "TASK-009-A", experimentName: "振动试验A", displayStatus: "实验完成" },
+            { experimentCode: "TASK-009-A", experimentName: "振动试验A", displayStatus: "实验已完成" },
             { experimentCode: "TASK-009-B", experimentName: "振动试验B", displayStatus: "待排程" },
           ],
           plannedCount: 2,
@@ -132,6 +132,6 @@ describe("TaskOverviewSummaryTable", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("实验中（已完成1个实验）");
+    expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 });

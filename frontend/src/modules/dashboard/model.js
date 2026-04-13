@@ -1,14 +1,20 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
 const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
-const STATUS_RUNNING = "实验中";
+const STATUS_RUNNING = "任务进行中";
+const EXPERIMENT_STATUS_RUNNING = "实验进行中";
+const LEGACY_STATUS_RUNNING = "实验中";
+const TASK_LEGACY_RUNNING = "任务进行中";
 const STATUS_SCHEDULED = "已排程";
 const STATUS_WAITING = "待排程";
 const TRANSFER_STATUS_STORED = "已入库";
 const STATUS_RETENTION = "厂家收回";
+const STATUS_COMPLETED = "任务已完成";
+const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
+const LEGACY_STATUS_COMPLETED = "实验完成";
+const LEGACY_STATUS_COMPLETED_ALT = "实验已经完成";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
-const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
@@ -16,9 +22,19 @@ const normalizeText = (value) => String(value ?? "").trim();
 // 带“暂存间”标识的设备会被视为留样暂存位置，而非正式实验室。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
+const isRunningStatus = (value) => {
+  const normalized = normalizeText(value);
+  return normalized === STATUS_RUNNING || normalized === TASK_LEGACY_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
+};
 // 兼容历史状态文案，保证统计口径一致。
 const normalizeStatusLabel = (value) => {
   const normalized = normalizeText(value);
+  if (normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING || normalized === STATUS_RUNNING) {
+    return STATUS_RUNNING;
+  }
+  if (normalized === EXPERIMENT_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED_ALT || normalized === STATUS_COMPLETED) {
+    return STATUS_COMPLETED;
+  }
   if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
     return STATUS_WAITING;
   }
@@ -47,7 +63,7 @@ const formatElapsedDuration = (elapsedMs) => {
 // 总览卡片与表格共用一套状态到样式类的映射。
 const statusClass = (value) => {
   const normalized = normalizeText(value);
-  if (normalized === STATUS_RUNNING) {
+  if (isRunningStatus(normalized)) {
     return "status running";
   }
   if (normalized === STATUS_SCHEDULED) {
@@ -142,16 +158,18 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   // 任务来源、暂存、排程和数据健康指标都在这里集中计算，页面只负责展示。
   const externalCount = normalizedTasks.filter((task) => normalizeText(task?.source) === SOURCE_EXTERNAL).length;
   const internalCount = normalizedTasks.filter((task) => normalizeText(task?.source) === SOURCE_INTERNAL).length;
-  const stagedTaskCodes = new Set(
+  const formalScheduledTaskCodes = new Set(
     scheduleList
-      .filter((entry) => isRetentionDevice(entry?.device))
+      .filter((entry) => !isRetentionDevice(entry?.device))
       .map((entry) => normalizeText(entry?.task_code))
       .filter(Boolean),
   );
-  const retentionCount = normalizedTasks.filter((task) => stagedTaskCodes.has(normalizeText(task?.code))).length;
   const unscheduledCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_WAITING).length;
-  const runningTaskCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_RUNNING).length;
-  const scheduledCount = scheduleList.filter((entry) => !isRetentionDevice(entry?.device)).length;
+  const runningExperimentCount = experimentList.filter((experiment) => {
+    const normalized = normalizeText(experiment?.status);
+    return normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
+  }).length;
+  const scheduledCount = normalizedTasks.filter((task) => formalScheduledTaskCodes.has(normalizeText(task?.code))).length;
   const gapCount = streamList.filter((stream) => normalizeText(stream?.status).includes("缺口")).length;
   const averageQuality =
     streamList.length === 0
@@ -203,12 +221,11 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
     summaryCards: {
       alertCount: gapCount,
       alertNote: gapCount > 0 ? "存在数据缺口" : "无预警",
-      deviceCount: runningTaskCount,
-      deviceNote: "实验中任务",
+      deviceCount: runningExperimentCount,
       intakeCount: normalizedTasks.length,
       intakeNote: `外部 ${externalCount} / 内部 ${internalCount}`,
       scheduledCount,
-      unscheduledCount: `${unscheduledCount}（${STAGING_NOTE_LABEL}${retentionCount}）`,
+      unscheduledCount,
     },
     taskRows,
     unscheduledExperimentItems,

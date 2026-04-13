@@ -24,7 +24,65 @@
 }
 
 .tasks-list-card {
-  overflow: hidden;
+  overflow-x: auto;
+}
+
+.tasks-table {
+  width: 100%;
+  min-width: 1180px;
+}
+
+.tasks-page .tasks-table thead th,
+.tasks-page .tasks-table tbody td {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.tasks-table__col--index,
+.tasks-table__cell--index {
+  width: 4%;
+}
+
+.tasks-table__col--code,
+.tasks-table__cell--code {
+  width: 16%;
+}
+
+.tasks-table__col--source,
+.tasks-table__cell--source {
+  width: 8%;
+}
+
+.tasks-table__col--sample-count,
+.tasks-table__cell--sample-count {
+  width: 5%;
+}
+
+.tasks-table__col--summary,
+.tasks-table__cell--summary {
+  width: 29%;
+}
+
+.tasks-table__col--due-at,
+.tasks-table__cell--due-at {
+  width: 14%;
+}
+
+.tasks-table__col--status,
+.tasks-table__cell--status {
+  width: 10%;
+}
+
+.tasks-table__col--actions,
+.tasks-table__cell--actions {
+  width: 6%;
+}
+
+.tasks-table__summary-text {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 /* 新建和编辑表单使用网格统一字段间距。 */

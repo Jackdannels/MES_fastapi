@@ -59,6 +59,14 @@ SAMPLE_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("浠诲姟 ", "任务 "),
 )
 
+CANONICAL_RUNNING_STATUS = "实验进行中"
+CANONICAL_COMPLETED_STATUS = "实验已完成"
+CANONICAL_TASK_RUNNING_STATUS = "任务进行中"
+CANONICAL_TASK_COMPLETED_STATUS = "任务已完成"
+LEGACY_RUNNING_STATUSES = {"实验中"}
+LEGACY_COMPLETED_STATUSES = {"实验完成", "实验已经完成"}
+STATUS_VALUE_KEYS = {"status", "flow_status", "task_status", "experiment_status", "schedule_status", "sample_status"}
+
 
 def _default_store() -> Dict[str, Any]:
     return {
@@ -72,6 +80,52 @@ def _sanitize_sample_text(value: str) -> str:
     for source, target in SAMPLE_TEXT_REPLACEMENTS:
         text = text.replace(source, target)
     return text.rstrip("�?")
+
+
+def normalize_experiment_status_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text == CANONICAL_RUNNING_STATUS or text in LEGACY_RUNNING_STATUSES:
+        return CANONICAL_RUNNING_STATUS
+    if text == CANONICAL_COMPLETED_STATUS or text in LEGACY_COMPLETED_STATUSES:
+        return CANONICAL_COMPLETED_STATUS
+    return text
+
+
+def normalize_task_status_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text in {CANONICAL_TASK_RUNNING_STATUS, CANONICAL_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}:
+        return CANONICAL_TASK_RUNNING_STATUS
+    if text in {CANONICAL_TASK_COMPLETED_STATUS, CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}:
+        return CANONICAL_TASK_COMPLETED_STATUS
+    return text
+
+
+def normalize_experiment_detail_text(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    for source in LEGACY_RUNNING_STATUSES:
+        text = text.replace(source, CANONICAL_RUNNING_STATUS)
+    for source in LEGACY_COMPLETED_STATUSES:
+        text = text.replace(source, CANONICAL_COMPLETED_STATUS)
+    return text
+
+
+def _normalize_status_collection(value: Any, *, field_name: str = "", status_scope: str = "experiment") -> Any:
+    if isinstance(value, list):
+        return [_normalize_status_collection(item, status_scope=status_scope) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_status_collection(entry, field_name=key, status_scope=status_scope) for key, entry in value.items()}
+    if isinstance(value, str):
+        if field_name in STATUS_VALUE_KEYS:
+            return normalize_task_status_text(value) if status_scope == "task" else normalize_experiment_status_text(value)
+        if field_name == "detail":
+            return normalize_experiment_detail_text(value)
+    return value
 
 
 def _sanitize_sample_collection(value: Any) -> Any:
@@ -252,7 +306,11 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
 
 def _normalize_value(key: str, value: Any) -> Any:
     if key == "mes.samples" and isinstance(value, list):
-        return _sanitize_sample_collection(value)
+        return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")
+    if key == "mes.tasks" and isinstance(value, list):
+        return _normalize_status_collection(value, status_scope="task")
+    if key in {"mes.schedules", "mes.experiments"} and isinstance(value, list):
+        return _normalize_status_collection(value, status_scope="experiment")
     if key == STORAGE_META_KEY:
         return _normalize_meta(value)
     return value

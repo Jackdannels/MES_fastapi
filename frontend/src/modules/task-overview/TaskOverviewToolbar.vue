@@ -7,6 +7,10 @@
           <div class="task-overview-counter-label">{{ overviewCounterLabel }}</div>
           <div class="task-overview-counter-value">{{ overviewCounterValue }}</div>
         </div>
+        <div v-if="viewMode === 'task' && experimentCounterLabel" class="task-overview-counter">
+          <div class="task-overview-counter-label">{{ experimentCounterLabel }}</div>
+          <div class="task-overview-counter-value">{{ experimentCounterValue }}</div>
+        </div>
         <div class="tabs task-overview-mode-switch">
           <button class="tab-btn" :class="{ active: viewMode === 'task' }" type="button" @click="emit('update:viewMode', 'task')">
             任务总览
@@ -67,6 +71,14 @@ const props = defineProps({
     default: "",
   },
   customStartDate: {
+    type: String,
+    default: "",
+  },
+  experimentCounterLabel: {
+    type: String,
+    default: "",
+  },
+  experimentCounterValue: {
     type: String,
     default: "",
   },

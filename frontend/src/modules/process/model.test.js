@@ -168,7 +168,7 @@ describe("processLabModel", () => {
 
     expect(cards.find((card) => card.name === "Salt Lab")).toEqual(
       expect.objectContaining({
-        status: "实验中",
+        status: "实验进行中",
         statusClass: "is-running",
       })
     );
@@ -243,7 +243,7 @@ describe("processLabModel", () => {
 
     expect(cards.find((card) => card.name === "盐雾试验室")).toEqual(
       expect.objectContaining({
-        status: "实验中",
+        status: "实验进行中",
         statusClass: "is-running",
       })
     );

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>任务总览超时待排程样例</title>
+    <style>
+      :root {
+        --bg: #f7fbff;
+        --card: rgba(255, 255, 255, 0.94);
+        --line: rgba(56, 189, 248, 0.22);
+        --text: #0f172a;
+        --muted: #64748b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(186, 230, 253, 0.62), transparent 34%),
+          radial-gradient(circle at top right, rgba(254, 240, 138, 0.28), transparent 26%),
+          linear-gradient(180deg, #f8fbff 0%, #edf6ff 100%);
+      }
+
+      .wrap {
+        width: min(1180px, calc(100vw - 48px));
+        margin: 40px auto;
+      }
+
+      .hero {
+        margin-bottom: 22px;
+      }
+
+      .hero .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        color: #0284c7;
+        text-transform: uppercase;
+      }
+
+      .hero h1 {
+        margin: 8px 0 10px;
+        font-size: 38px;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .task-card {
+        border: 1px solid rgba(125, 211, 252, 0.48);
+        border-radius: 22px;
+        background: var(--card);
+        box-shadow: 0 18px 44px rgba(148, 163, 184, 0.12);
+        padding: 22px;
+      }
+
+      .task-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .task-code {
+        font-size: 34px;
+        font-weight: 800;
+      }
+
+      .task-status {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        background: rgba(255, 247, 237, 0.88);
+        color: #b45309;
+        font-weight: 700;
+      }
+
+      .summary-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        overflow: hidden;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+      }
+
+      .summary-table th,
+      .summary-table td {
+        padding: 18px 16px;
+        text-align: center;
+        border-bottom: 1px solid rgba(226, 232, 240, 0.72);
+      }
+
+      .summary-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .summary-table th {
+        background: rgba(226, 232, 240, 0.55);
+        font-size: 15px;
+      }
+
+      .content-lines,
+      .status-lines {
+        display: grid;
+        gap: 10px;
+        justify-items: center;
+      }
+
+      .status-chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .status-chip.standard-pending {
+        border: 1px solid rgba(245, 158, 11, 0.45);
+        background: rgba(255, 247, 237, 0.88);
+        color: #b45309;
+      }
+
+      .status-chip.overdue-pending {
+        border: 1px solid rgba(220, 38, 38, 0.72);
+        background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(254, 202, 202, 0.9));
+        color: #b91c1c;
+        font-weight: 800;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 3px rgba(254, 202, 202, 0.35);
+      }
+
+      .legend {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(260px, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .legend-card {
+        border: 1px solid rgba(191, 219, 254, 0.7);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.86);
+        padding: 16px 18px;
+      }
+
+      .legend-card h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+
+      .legend-card p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      @media (max-width: 900px) {
+        .wrap {
+          width: min(100vw - 24px, 1180px);
+          margin: 20px auto;
+        }
+
+        .task-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .summary-table {
+          display: block;
+          overflow-x: auto;
+        }
+
+        .legend {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <div class="eyebrow">Visual Sample</div>
+        <h1>超时待排程样例</h1>
+        <p>普通待排程维持标准黄橙色，超时待排程使用加粗红字与高亮背景。</p>
+      </section>
+
+      <section class="task-card">
+        <div class="task-head">
+          <div class="task-code">SYLU-2026-03-021</div>
+          <div class="task-status">待排程</div>
+        </div>
+
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th>任务状态</th>
+              <th>实验数</th>
+              <th>试验内容</th>
+              <th>实验状态</th>
+              <th>样品数量</th>
+              <th>托盘分配摘要</th>
+              <th>托盘数量</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="task-status">待排程</span></td>
+              <td>2</td>
+              <td>
+                <div class="content-lines">
+                  <span>振动试验</span>
+                  <span>温度冲击试验</span>
+                </div>
+              </td>
+              <td>
+                <div class="status-lines">
+                  <span class="status-chip standard-pending">待排程</span>
+                  <span class="status-chip overdue-pending">待排程（已超时 26h）</span>
+                </div>
+              </td>
+              <td>8 / 8</td>
+              <td>TP-001、TP-002</td>
+              <td>2</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <section class="legend">
+          <article class="legend-card">
+            <h2>未超时待排程</h2>
+            <p>保留标准黄橙色语义，不抢视觉主焦点，适合表达正常等待中的实验。</p>
+          </article>
+          <article class="legend-card">
+            <h2>超时待排程</h2>
+            <p>使用更深红边框、浅红高亮背景和加粗红字，进入列表时可以立即被识别为异常项。</p>
+          </article>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

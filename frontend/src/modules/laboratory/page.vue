@@ -352,7 +352,7 @@
               <div class="muted">当前进行实验</div>
               <h4>{{ runningExperiment.taskCode }} / {{ runningExperiment.experimentName }}</h4>
             </div>
-            <span class="pill">实验中</span>
+            <span class="pill">实验进行中</span>
           </div>
           <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningExperiment.countdownLabel }}</div>
           <div class="laboratory-running-times muted">

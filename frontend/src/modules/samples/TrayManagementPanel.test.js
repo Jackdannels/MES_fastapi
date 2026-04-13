@@ -34,6 +34,6 @@ describe("TrayManagementPanel", () => {
       },
     });
 
-    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toBe("实验中（已完成1个实验）");
+    expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toBe("任务进行中（已完成1个实验）");
   });
 });

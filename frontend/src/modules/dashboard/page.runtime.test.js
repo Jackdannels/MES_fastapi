@@ -27,11 +27,10 @@ describe("DashboardPage runtime", () => {
         alertCount: 0,
         alertNote: "无预警",
         deviceCount: 1,
-        deviceNote: "实验中任务",
         intakeCount: 3,
         intakeNote: "外部 2 / 内部 1",
         scheduledCount: 2,
-        unscheduledCount: "1（暂存间存放0）",
+        unscheduledCount: 1,
       })),
       unscheduledExperimentItems: computed(() => [
         {
@@ -47,11 +46,14 @@ describe("DashboardPage runtime", () => {
     const wrapper = mount(DashboardPage);
 
     expect(wrapper.text()).toContain("外部 2 / 内部 1");
+    expect(wrapper.text()).toContain("正在运行（实验）");
     expect(wrapper.text()).toContain("未排程实验计时");
     expect(wrapper.text()).not.toContain("数据通道");
+    expect(wrapper.text()).not.toContain("实验中任务");
     expect(wrapper.text()).toContain("25:30:00");
     expect(wrapper.text()).toContain("T-001");
     expect(wrapper.text()).toContain("LAB-01");
+    expect(wrapper.get("#dashboard-unscheduled-count").text()).toBe("1");
     expect(wrapper.find(".dashboard-unscheduled-timer.is-overdue").exists()).toBe(true);
   });
 
@@ -70,11 +72,10 @@ describe("DashboardPage runtime", () => {
         alertCount: 1,
         alertNote: "存在数据缺口",
         deviceCount: 1,
-        deviceNote: "实验中任务",
         intakeCount: 9,
         intakeNote: "外部 6 / 内部 3",
         scheduledCount: 4,
-        unscheduledCount: "5（暂存间存放2）",
+        unscheduledCount: 5,
       })),
       unscheduledExperimentItems: computed(() => []),
     });

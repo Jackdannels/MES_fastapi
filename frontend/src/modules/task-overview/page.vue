@@ -7,6 +7,8 @@
       v-model:custom-start-date="customStartDate"
       v-model:custom-end-date="customEndDate"
       v-model:test-type-filter="testTypeFilter"
+      :experiment-counter-label="experimentCounterLabel"
+      :experiment-counter-value="experimentCounterValue"
       :test-type-options="testTypeOptions"
       :overview-counter-label="overviewCounterLabel"
       :overview-counter-value="overviewCounterValue"
@@ -67,6 +69,8 @@ const {
   editError,
   editForm,
   editMessage,
+  experimentCounterLabel,
+  experimentCounterValue,
   filteredRows,
   formatTrayCount,
   formatTraySummary,

@@ -224,7 +224,7 @@ describe("useProcessLabs", () => {
 
     expect(persistSnapshot).toHaveBeenCalledTimes(1);
     const persisted = persistSnapshot.mock.calls[0][0];
-    expect(persisted["mes.tasks"]).toEqual([expect.objectContaining({ code: "TASK-001", status: "实验中" })]);
+    expect(persisted["mes.tasks"]).toEqual([expect.objectContaining({ code: "TASK-001", status: "任务进行中" })]);
     expect(persisted["mes.schedules"]).toEqual([
       expect.objectContaining({
         id: "schedule-1",
@@ -426,7 +426,7 @@ describe("useProcessLabs", () => {
 
     expect(labCards.value[0]).toMatchObject({
       name: "Lab-A",
-      status: "实验中",
+      status: "实验进行中",
       statusClass: "is-running",
     });
   });
@@ -1083,7 +1083,7 @@ describe("useProcessLabs", () => {
 
     expect(labCards.value.find((card) => card.name === "盐雾试验室")).toMatchObject({
       runningTrayCount: 2,
-      status: "实验中",
+      status: "实验进行中",
       statusClass: "is-running",
     });
     expect(labCards.value.find((card) => card.name === "高低温湿热一室")).toMatchObject({

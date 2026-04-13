@@ -52,7 +52,7 @@ vi.mock("./useProcessLabs", async () => {
       runningTrayCount: 1,
       scheduleTime: "03/10 09:30 - 03/10 10:30",
       startDisabledReason: "",
-      status: "实验中",
+      status: "实验进行中",
       statusClass: "is-running",
       targetExperiment: "冲击试验",
       taskCode: "SYLU-2026-03-001",
@@ -214,7 +214,7 @@ vi.mock("./useProcessLabs", async () => {
           trayCode: "TRAY-001",
         },
         startDisabledReason: "当前批次实验未结束",
-        status: "实验中",
+        status: "实验进行中",
         testType: "冲击试验",
         trayCodes: ["TRAY-001", "TRAY-002", "TRAY-003", "TRAY-004"],
         trayCount: 4,
@@ -243,7 +243,7 @@ describe("ProcessPage runtime", () => {
 
     expect(wrapper.text()).toContain("试验过程管控");
     expect(wrapper.text()).toContain("总览");
-    expect(wrapper.text()).toContain("实验中");
+    expect(wrapper.text()).toContain("实验进行中");
     expect(wrapper.text()).toContain("已排程");
     expect(wrapper.text()).toContain("空闲");
     expect(wrapper.findAll(".process-control-summary-item")).toHaveLength(4);

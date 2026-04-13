@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { buildDashboardViewModel } from "./model";
 
 describe("dashboard model", () => {
-  test("treats retention-only schedules as unscheduled and counts them in the staging note", () => {
+  test("treats retention-only schedules as unscheduled without a staging note suffix", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [
         {
@@ -28,7 +28,7 @@ describe("dashboard model", () => {
     });
 
     expect(viewModel.summaryCards.scheduledCount).toBe(0);
-    expect(viewModel.summaryCards.unscheduledCount).toBe("1（暂存间存放1）");
+    expect(viewModel.summaryCards.unscheduledCount).toBe(1);
     expect(viewModel.taskRows[0]).toEqual(
       expect.objectContaining({
         code: "SYLU-2026-04-105",
@@ -62,7 +62,7 @@ describe("dashboard model", () => {
     });
 
     expect(viewModel.summaryCards.scheduledCount).toBe(0);
-    expect(viewModel.summaryCards.unscheduledCount).toBe("1（暂存间存放1）");
+    expect(viewModel.summaryCards.unscheduledCount).toBe(1);
     expect(viewModel.taskRows[0]).toEqual(
       expect.objectContaining({
         code: "SYLU-2026-04-107",
@@ -86,13 +86,106 @@ describe("dashboard model", () => {
       now: Date.parse("2026-03-17T10:00:00.000Z"),
     });
 
-    expect(viewModel.summaryCards.unscheduledCount).toBe("0（暂存间存放0）");
+    expect(viewModel.summaryCards.unscheduledCount).toBe(0);
     expect(viewModel.taskRows[0]).toEqual(
       expect.objectContaining({
         code: "ICP-2026-001",
         status: "厂家收回",
       }),
     );
+  });
+
+  test("counts formal schedules once per task instead of once per schedule record", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-201",
+          source: "外部委托",
+          status: "待排程",
+        },
+        {
+          code: "SYLU-2026-04-202",
+          source: "内部新增",
+          status: "待排程",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-04-201",
+          experiment_code: "SYLU-2026-04-201-A",
+          device: "冲击一室",
+          start_at: "2026-03-17T12:00:00.000Z",
+          end_at: "2026-03-17T14:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "SYLU-2026-04-201",
+          experiment_code: "SYLU-2026-04-201-B",
+          device: "冲击二室",
+          start_at: "2026-03-17T15:00:00.000Z",
+          end_at: "2026-03-17T17:00:00.000Z",
+        },
+      ],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.summaryCards.scheduledCount).toBe(1);
+    expect(viewModel.summaryCards.unscheduledCount).toBe(1);
+  });
+
+  test("counts running experiments from experiment status instead of active scheduled tasks", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-301",
+          source: "外部委托",
+          status: "已排程",
+        },
+        {
+          code: "SYLU-2026-04-302",
+          source: "内部新增",
+          status: "已排程",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-301",
+          experiment_code: "SYLU-2026-04-301-A",
+          experiment_name: "冲击试验",
+          status: "已排程",
+        },
+        {
+          task_code: "SYLU-2026-04-302",
+          experiment_code: "SYLU-2026-04-302-A",
+          experiment_name: "振动试验",
+          status: "实验中",
+        },
+        {
+          task_code: "SYLU-2026-04-302",
+          experiment_code: "SYLU-2026-04-302-B",
+          experiment_name: "盐雾试验",
+          status: "实验进行中",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-04-301",
+          experiment_code: "SYLU-2026-04-301-A",
+          device: "冲击一室",
+          start_at: "2026-03-17T08:00:00.000Z",
+          end_at: "2026-03-17T12:00:00.000Z",
+        },
+      ],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.summaryCards.deviceCount).toBe(2);
   });
 
   test("replaces data channel output with unscheduled experiment timers", () => {

@@ -4,14 +4,14 @@ import { buildExperimentTypeOptions, collectExperimentTypes } from "@/lib/experi
 
 const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RUNNING = "实验中";
+const STATUS_RUNNING = "实验进行中";
 const STATUS_COMPLETED = "实验已完成";
 const STATUS_RETENTION = "暂存间存放";
 const STREAMING_STATUS = "Streaming";
 const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
 const RETENTION_KEYWORD = "暂存间";
-const STARTED_TRAY_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
-const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const STARTED_TRAY_STATUSES = new Set([STATUS_RUNNING, "实验中", STATUS_COMPLETED, "实验完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_TRAY_STATUSES = new Set([STATUS_COMPLETED, "实验完成", "放置实验后暂存间", "厂家收回"]);
 const SLOT_RANGES = Object.freeze({
   morning: { start: "08:00", end: "12:00", label: "上午 08:00-12:00" },
   afternoon: { start: "12:00", end: "18:00", label: "下午 12:00-18:00" },

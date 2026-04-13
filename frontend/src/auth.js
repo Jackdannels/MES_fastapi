@@ -2,9 +2,16 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "./lib/apiBase.js";
 import { MODULE_ROUTES } from "./lib/moduleCatalog.js";
 
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
+const SESSION_PROBE_DEDUP_MS = 1000;
+const NO_SESSION_PROBE_RESULT = Symbol("no-session-probe-result");
 
 const VALID_MODULES = new Set(Object.keys(MODULE_ROUTES));
 const API_BASE_URL = getFrontendApiBaseUrl();
+let pendingAuthSessionRequest = null;
+let lastAuthSessionProbe = {
+  session: NO_SESSION_PROBE_RESULT,
+  timestamp: 0,
+};
 
 function normalizeAuthSession(parsed) {
   if (!parsed || typeof parsed !== "object") {
@@ -44,6 +51,10 @@ function writeAuthSession(session) {
     return;
   }
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  lastAuthSessionProbe = {
+    session,
+    timestamp: Date.now(),
+  };
 }
 
 function clearAuthSession() {
@@ -51,6 +62,18 @@ function clearAuthSession() {
     return;
   }
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  lastAuthSessionProbe = {
+    session: null,
+    timestamp: Date.now(),
+  };
+}
+
+function resetAuthSessionStateForTests() {
+  pendingAuthSessionRequest = null;
+  lastAuthSessionProbe = {
+    session: NO_SESSION_PROBE_RESULT,
+    timestamp: 0,
+  };
 }
 
 function resolveModuleHome(moduleKey) {
@@ -62,6 +85,15 @@ function isAuthenticated() {
 }
 
 async function fetchAuthSession() {
+  const now = Date.now();
+  if (lastAuthSessionProbe.session !== NO_SESSION_PROBE_RESULT && now - lastAuthSessionProbe.timestamp < SESSION_PROBE_DEDUP_MS) {
+    return lastAuthSessionProbe.session;
+  }
+  if (pendingAuthSessionRequest) {
+    return pendingAuthSessionRequest;
+  }
+
+  pendingAuthSessionRequest = (async () => {
   try {
     const response = await fetch(buildApiUrl("/auth/session", API_BASE_URL), {
       headers: {
@@ -83,7 +115,12 @@ async function fetchAuthSession() {
   } catch {
     clearAuthSession();
     return null;
+  } finally {
+    pendingAuthSessionRequest = null;
   }
+  })();
+
+  return pendingAuthSessionRequest;
 }
 
 async function loginWithCredentials(username, password, moduleKey) {
@@ -187,5 +224,6 @@ export {
   logoutSession,
   readAuthSession,
   resolveModuleHome,
+  resetAuthSessionStateForTests,
   switchSessionModule,
 };

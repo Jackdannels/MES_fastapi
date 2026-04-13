@@ -144,6 +144,58 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
     assert storage_item["status"] == "待排程"
 
 
+def test_experiment_mapping_normalizes_legacy_running_status() -> None:
+    storage_experiment = {
+        "id": "experiment-2",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-B",
+        "experiment_name": "B实验",
+        "required_device": "振动试验",
+        "priority": "中",
+        "planned_hours": 2,
+        "status": "实验中",
+        "created_at": "2026-03-17T09:30:00Z",
+        "updated_at": "2026-03-17T09:35:00Z",
+    }
+
+    insert_row = build_experiment_insert_row(storage_experiment)
+    storage_item = build_storage_experiment_item(
+        {
+            **insert_row,
+            "experiment_id": 9,
+        }
+    )
+
+    assert insert_row["experiment_status"] == "实验进行中"
+    assert storage_item["status"] == "实验进行中"
+
+
+def test_experiment_mapping_normalizes_legacy_completed_statuses() -> None:
+    storage_experiment = {
+        "id": "experiment-3",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-C",
+        "experiment_name": "C实验",
+        "required_device": "振动试验",
+        "priority": "中",
+        "planned_hours": 2,
+        "status": "实验完成",
+        "created_at": "2026-03-17T09:30:00Z",
+        "updated_at": "2026-03-17T09:35:00Z",
+    }
+
+    insert_row = build_experiment_insert_row(storage_experiment)
+    storage_item = build_storage_experiment_item(
+        {
+            **insert_row,
+            "experiment_id": 10,
+        }
+    )
+
+    assert insert_row["experiment_status"] == "实验已完成"
+    assert storage_item["status"] == "实验已完成"
+
+
 def test_parse_experiment_event_detail_extracts_experiment_name_and_status() -> None:
     parsed = parse_experiment_event_detail(
         "SYLU-2026-03-002 / 盐雾试验 / 实验已完成",
@@ -176,11 +228,12 @@ def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> No
     sample_events = [
         {"sample_no": "SP-001", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
         {"sample_no": "SP-002", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
+        {"sample_no": "SP-005", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 高低温湿热试验 / 实验中"},
     ]
 
     assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
         "SYLU-2026-03-002-A": "实验已完成",
-        "SYLU-2026-03-002-B": "已排程",
+        "SYLU-2026-03-002-B": "实验进行中",
         "SYLU-2026-03-002-C": "已排程",
     }
 
@@ -195,12 +248,49 @@ def test_derive_task_status_map_keeps_task_running_once_any_experiment_started_o
     experiment_status_map = {
         "SYLU-2026-03-002-A": "实验已完成",
         "SYLU-2026-03-002-B": "已排程",
-        "SYLU-2026-03-002-C": "已排程",
+        "SYLU-2026-03-002-C": "实验进行中",
     }
 
     assert derive_task_status_map(tasks, experiments, experiment_status_map) == {
-        "SYLU-2026-03-002": "实验中",
+        "SYLU-2026-03-002": "任务进行中",
     }
+
+
+def test_normalize_storage_payload_normalizes_legacy_status_variants() -> None:
+    normalized = normalize_storage_payload(
+        {
+            "mes.tasks": [{"code": "TASK-001", "status": "实验中"}, {"code": "TASK-002", "status": "实验已经完成"}],
+            "mes.experiments": [
+                {"task_code": "TASK-001", "experiment_code": "TASK-001-A", "status": "实验中"},
+                {"task_code": "TASK-002", "experiment_code": "TASK-002-A", "status": "实验完成"},
+            ],
+            "mes.schedules": [
+                {"task_code": "TASK-001", "experiment_code": "TASK-001-A", "status": "实验中"},
+                {"task_code": "TASK-002", "experiment_code": "TASK-002-A", "status": "实验已经完成"},
+            ],
+            "mes.samples": [
+                {
+                    "code": "TASK-001-SP-001",
+                    "task_code": "TASK-001",
+                    "status": "实验中",
+                    "flow_status": "实验完成",
+                    "trays": [{"tray_code": "TASK-001-TP-001", "status": "实验中", "quantity": 1}],
+                    "history": [{"action": "开始实验", "detail": "TASK-001 / A实验 / 实验中", "status": "实验完成"}],
+                }
+            ],
+        }
+    )
+
+    assert [task["status"] for task in normalized["mes.tasks"]] == ["任务进行中", "任务已完成"]
+    experiment_status_by_code = {experiment["experiment_code"]: experiment["status"] for experiment in normalized["mes.experiments"]}
+    assert experiment_status_by_code["TASK-001-A"] == "实验进行中"
+    assert experiment_status_by_code["TASK-002-A"] == "实验已完成"
+    assert [schedule["status"] for schedule in normalized["mes.schedules"]] == ["实验进行中", "实验已完成"]
+    assert normalized["mes.samples"][0]["status"] == "实验进行中"
+    assert normalized["mes.samples"][0]["flow_status"] == "实验已完成"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "实验进行中"
+    assert normalized["mes.samples"][0]["history"][0]["status"] == "实验已完成"
+    assert normalized["mes.samples"][0]["history"][0]["detail"] == "TASK-001 / A实验 / 实验进行中"
 
 
 def test_experiment_tray_mapping_round_trip_preserves_assignment_keys() -> None:

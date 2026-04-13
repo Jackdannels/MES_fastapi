@@ -7,16 +7,20 @@ const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
 const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RUNNING = "实验中";
-const STATUS_COMPLETED = "实验已经完成";
+const STATUS_RUNNING = "任务进行中";
+const STATUS_COMPLETED = "任务已完成";
 const STATUS_RETENTION = "厂家收回";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
-const STAGING_NOTE_LABEL = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
-const ACTIVE_TRAY_STATUSES = new Set(["实验进行中", STATUS_RUNNING]);
-const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
-const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", STATUS_COMPLETED]);
+const EXPERIMENT_STATUS_RUNNING = "实验进行中";
+const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
+const LEGACY_STATUS_RUNNING = "实验中";
+const LEGACY_STATUS_COMPLETED = "实验已经完成";
+const LEGACY_STATUS_COMPLETED_ALT = "实验完成";
+const ACTIVE_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_RUNNING]);
+const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT, "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
@@ -38,13 +42,34 @@ const normalizeText = (value) => String(value ?? "").trim();
 // 排程设备名带“暂存间”即视为暂存区，不参与正式实验状态判断。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
 // 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
-const normalizeStatusLabel = (value) => {
+const normalizeTaskStatusLabel = (value) => {
   const normalized = normalizeText(value);
+  if (normalized === LEGACY_STATUS_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING) {
+    return STATUS_RUNNING;
+  }
+  if (
+    normalized === LEGACY_STATUS_COMPLETED
+    || normalized === LEGACY_STATUS_COMPLETED_ALT
+    || normalized === EXPERIMENT_STATUS_COMPLETED
+  ) {
+    return STATUS_COMPLETED;
+  }
   if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
     return STATUS_WAITING;
   }
   if (normalized === STATUS_RETENTION) {
     return STATUS_RETENTION;
+  }
+  return normalized;
+};
+
+const normalizeExperimentStatusLabel = (value) => {
+  const normalized = normalizeText(value);
+  if (normalized === LEGACY_STATUS_RUNNING) {
+    return EXPERIMENT_STATUS_RUNNING;
+  }
+  if (normalized === LEGACY_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED_ALT) {
+    return EXPERIMENT_STATUS_COMPLETED;
   }
   return normalized;
 };
@@ -211,7 +236,7 @@ const buildTaskExperimentProgress = (taskCode, experiments) => {
   );
   const totalCount = matchedExperiments.length;
   const completedCount = matchedExperiments.filter((experiment) =>
-    COMPLETED_EXPERIMENT_STATUSES.has(normalizeStatusLabel(experiment?.status)),
+    COMPLETED_EXPERIMENT_STATUSES.has(normalizeExperimentStatusLabel(experiment?.status)),
   ).length;
 
   return {
@@ -270,7 +295,7 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
   if (aggregatedStatus) {
     return aggregatedStatus;
   }
-  const rawStatus = normalizeStatusLabel(task?.status);
+  const rawStatus = normalizeTaskStatusLabel(task?.status);
   if (rawStatus === STATUS_RUNNING) {
     return STATUS_RUNNING;
   }
@@ -351,7 +376,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       sampleCount: normalizeText(task?.sample_count),
       sampleType: normalizeText(task?.sample_type),
       source: normalizeText(task?.source) || SOURCE_EXTERNAL,
-      status: normalizeStatusLabel(task?.status) || STATUS_WAITING,
+      status: normalizeTaskStatusLabel(task?.status) || STATUS_WAITING,
       statusClass: statusClass(displayStatus),
       testType: experimentSummary,
     };
@@ -372,7 +397,7 @@ function buildTaskMetrics(rows) {
     internalCount,
     retentionCount,
     unscheduledCount,
-    unscheduledLabel: `${unscheduledCount}（${STAGING_NOTE_LABEL}${retentionCount}）`,
+    unscheduledLabel: unscheduledCount,
   };
 }
 
@@ -512,7 +537,7 @@ function buildTaskEditForm(row = {}) {
     sample_count: normalizeText(row?.sampleCount ?? row?.sample_count),
     sample_type: normalizeText(row?.sampleType ?? row?.sample_type),
     source: normalizeText(row?.source) || SOURCE_EXTERNAL,
-    status: normalizeText(row?.displayStatus ?? row?.status) || STATUS_WAITING,
+    status: normalizeTaskStatusLabel(row?.displayStatus ?? row?.status) || STATUS_WAITING,
     test_type: normalizeText(row?.testType ?? row?.test_type),
   };
 }
@@ -567,7 +592,7 @@ function updateTaskRecord(tasks, editForm) {
     sample_count: normalizeText(editForm?.sample_count),
     sample_type: normalizeText(editForm?.sample_type),
     source: normalizeText(editForm?.source),
-    status: normalizeText(editForm?.status) || taskList[targetIndex].status,
+    status: normalizeTaskStatusLabel(editForm?.status) || taskList[targetIndex].status,
     test_type: normalizeText(editForm?.test_type),
     updated_at: new Date().toISOString(),
   };

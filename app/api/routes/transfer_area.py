@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.storage_backend import get_storage_backend, normalize_storage_payload
+from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -19,7 +19,7 @@ TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
 SYSTEM_TRAY_TOTAL = 20
-EXCLUDED_TASK_STATUS_KEYWORDS = ("实验中", "实验已经完成", "实验已完成", "厂家收回")
+EXCLUDED_TASK_STATUS_KEYWORDS = ("实验中", "实验进行中", "实验完成", "实验已经完成", "实验已完成", "厂家收回")
 TASK_TRAY_ID_BASE = 1000
 STOCK_TRAY_ID_BASE = 2000
 TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
@@ -42,6 +42,7 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验进行中",
     "实验中",
     "实验已完成",
+    "实验完成",
     "实验已经完成",
     "放置实验后暂存间",
     "厂家收回",
@@ -277,19 +278,17 @@ def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) ->
 def started_experiment_status_for_task(task_samples: list[dict[str, Any]]) -> str:
     matched_statuses: list[str] = []
     for sample in task_samples:
-        sample_status = normalize_text(sample.get("status"))
+        sample_status = normalize_experiment_status_text(sample.get("status"))
         if sample_status in STARTED_EXPERIMENT_TRAY_STATUSES:
             matched_statuses.append(sample_status)
         for entry in as_list(sample.get("trays")):
-            tray_status = normalize_text(entry.get("status"))
+            tray_status = normalize_experiment_status_text(entry.get("status"))
             if tray_status in STARTED_EXPERIMENT_TRAY_STATUSES:
                 matched_statuses.append(tray_status)
 
     priority = {
         "实验进行中": 0,
-        "实验中": 0,
         "实验已完成": 1,
-        "实验已经完成": 1,
         "放置实验后暂存间": 2,
         "厂家收回": 3,
     }

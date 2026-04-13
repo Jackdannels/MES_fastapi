@@ -14,6 +14,7 @@ const SCHEDULED_LABEL = "已排程";
 const UNSCHEDULED_LABEL = "未排程";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
 const TASK_COUNTER_LABEL = "已排程总任务数";
+const EXPERIMENT_COUNTER_LABEL = "已排程总实验数";
 const TRAY_COUNTER_LABEL = "剩余托盘/总托盘数";
 
 // 为默认日期筛选控件生成稳定的 yyyy-mm-dd 值。
@@ -119,10 +120,14 @@ function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTota
   const trays = Array.isArray(trayOverviewRows) ? trayOverviewRows : [];
   const total = Number(trayOverviewTotal) || 0;
   const scheduledTaskCount = rows.filter((row) => Number(row?.scheduleCount || 0) > 0).length;
+  const scheduledExperimentCount = rows.reduce((sum, row) => sum + Number(row?.scheduledExperimentCount || 0), 0);
+  const eligibleExperimentCount = rows.reduce((sum, row) => sum + Number(row?.eligibleExperimentCount || 0), 0);
   const remainingTrayCount = trays.filter((tray) => String(tray?.targetExperiment || "").trim() === UNASSIGNED_EXPERIMENT_LABEL).length;
   const inTrayMode = viewMode === "tray";
 
   return {
+    experimentCounterLabel: inTrayMode ? "" : EXPERIMENT_COUNTER_LABEL,
+    experimentCounterValue: inTrayMode ? "" : `${scheduledExperimentCount}/${eligibleExperimentCount}`,
     // 托盘模式下剩余托盘过少时给顶部计数器加预警态。
     isTrayCounterAlert: inTrayMode && remainingTrayCount <= 2,
     overviewCounterLabel: inTrayMode ? TRAY_COUNTER_LABEL : TASK_COUNTER_LABEL,
@@ -275,6 +280,8 @@ function useTaskOverview() {
       viewMode: viewMode.value,
     })
   );
+  const experimentCounterLabel = computed(() => overviewMetrics.value.experimentCounterLabel);
+  const experimentCounterValue = computed(() => overviewMetrics.value.experimentCounterValue);
   const overviewCounterLabel = computed(() => overviewMetrics.value.overviewCounterLabel);
   const overviewCounterValue = computed(() => overviewMetrics.value.overviewCounterValue);
   const isTrayCounterAlert = computed(() => overviewMetrics.value.isTrayCounterAlert);
@@ -363,6 +370,8 @@ function useTaskOverview() {
     editError,
     editForm,
     editMessage,
+    experimentCounterLabel,
+    experimentCounterValue,
     filteredRows,
     formatTrayCount,
     formatTraySummary,

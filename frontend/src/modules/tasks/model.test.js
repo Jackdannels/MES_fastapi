@@ -64,7 +64,7 @@ describe("tasks model", () => {
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("实验中");
+    expect(rows[0].displayStatus).toBe("任务进行中");
   });
 
   test("keeps a partially completed task running and annotates the completed experiment count", () => {
@@ -93,8 +93,8 @@ describe("tasks model", () => {
 
     expect(rows[0]).toEqual(
       expect.objectContaining({
-        displayStatus: "实验中",
-        displayStatusLabel: "实验中（已完成1个实验）",
+        displayStatus: "任务进行中",
+        displayStatusLabel: "任务进行中（已完成1个实验）",
       }),
     );
   });
@@ -119,7 +119,7 @@ describe("tasks model", () => {
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("实验已经完成");
+    expect(rows[0].displayStatus).toBe("任务已完成");
   });
 
   test("marks a task as returned only when all trays are returned to the manufacturer", () => {
@@ -198,7 +198,7 @@ describe("tasks model", () => {
       expect.objectContaining({
         retentionCount: 0,
         unscheduledCount: 1,
-        unscheduledLabel: "1（暂存间存放0）",
+        unscheduledLabel: 1,
       }),
     );
   });
@@ -239,7 +239,7 @@ describe("tasks model", () => {
       expect.objectContaining({
         retentionCount: 0,
         unscheduledCount: 1,
-        unscheduledLabel: "1（暂存间存放0）",
+        unscheduledLabel: 1,
       }),
     );
   });

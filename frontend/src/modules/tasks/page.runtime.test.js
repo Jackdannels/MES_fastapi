@@ -99,6 +99,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("SYLU-2026-03-001");
+    expect(wrapper.get("#task-unscheduled-count").text()).toBe("2");
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(2);
 
     await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("SYLU-2026-03-001");
@@ -110,6 +111,36 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
     expect(wrapper.text()).toContain("任务详情");
+  });
+
+  test("uses compact side columns while prioritizing the experiment summary column", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-layout-1",
+        code: "SYLU-2026-03-020",
+        name: "多实验布局任务",
+        source: "内部新增",
+        priority: "高",
+        sample_count: 6,
+        sample_type: "结构件",
+        test_type: "高低温湿热试验 / 振动试验 / 霉菌试验",
+        required_device: "高低温湿热试验",
+        due_at: "2026-03-20 08:00",
+        arrival_at: "2026-03-18 09:00",
+        status: "待排程",
+        created_at: "2026-03-18T08:00:00.000Z",
+      },
+    ]);
+    setStorage(SCHEDULES_KEY, []);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get("#task-table").classes()).toContain("tasks-table");
+    expect(wrapper.get("th.tasks-table__col--index").text()).toBe("序号");
+    expect(wrapper.get("th.tasks-table__col--sample-count").text()).toBe("样品");
+    expect(wrapper.get("th.tasks-table__col--summary").text()).toBe("实验摘要");
+    expect(wrapper.get("td.tasks-table__cell--summary .tasks-table__summary-text").text()).toBe("高低温湿热试验 / 振动试验 / 霉菌试验");
   });
 
   test("filters by atomic experiment type while hiding combined summaries from the filter dropdown", async () => {
@@ -272,7 +303,7 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("实验中（已完成1个实验）");
+    expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 
   test("opens the intake modal from the route hash, auto-fills task code, and submits a task", async () => {

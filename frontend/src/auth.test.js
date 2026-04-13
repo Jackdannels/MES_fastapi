@@ -6,12 +6,14 @@ import {
   loginWithCredentials,
   logoutSession,
   readAuthSession,
+  resetAuthSessionStateForTests,
   resolveModuleHome,
   switchSessionModule,
 } from "./auth";
 
 describe("auth", () => {
   beforeEach(() => {
+    resetAuthSessionStateForTests();
     const store = new Map();
     Object.defineProperty(window, "localStorage", {
       configurable: true,
@@ -126,6 +128,21 @@ describe("auth", () => {
 
     expect(session).toBeNull();
     expect(readAuthSession()).toBeNull();
+  });
+
+  test("fetchAuthSession does not immediately repeat an unauthorized probe", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ detail: "Not authenticated" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const firstAttempt = await fetchAuthSession();
+    const secondAttempt = await fetchAuthSession();
+
+    expect(firstAttempt).toBeNull();
+    expect(secondAttempt).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   test("readAuthSession rejects malformed sessions", () => {

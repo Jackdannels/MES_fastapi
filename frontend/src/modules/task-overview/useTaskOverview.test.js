@@ -109,7 +109,10 @@ describe("useTaskOverview helpers", () => {
 
   test("builds overview metrics for task and tray modes", () => {
     const taskMetrics = buildOverviewMetrics({
-      filteredRows: [{ scheduleCount: 1 }, { scheduleCount: 0 }],
+      filteredRows: [
+        { scheduleCount: 1, scheduledExperimentCount: 2, eligibleExperimentCount: 3 },
+        { scheduleCount: 0, scheduledExperimentCount: 0, eligibleExperimentCount: 2 },
+      ],
       trayOverviewRows: [],
       trayOverviewTotal: 10,
       viewMode: "task",
@@ -122,9 +125,13 @@ describe("useTaskOverview helpers", () => {
     });
 
     expect(taskMetrics.overviewCounterValue).toBe("1/2");
+    expect(taskMetrics.experimentCounterLabel).toBe("已排程总实验数");
+    expect(taskMetrics.experimentCounterValue).toBe("2/5");
     expect(taskMetrics.isTrayCounterAlert).toBe(false);
     expect(trayMetrics.overviewCounterLabel).toBe("剩余托盘/总托盘数");
     expect(trayMetrics.overviewCounterValue).toBe("1/2");
+    expect(trayMetrics.experimentCounterLabel).toBe("");
+    expect(trayMetrics.experimentCounterValue).toBe("");
     expect(trayMetrics.isTrayCounterAlert).toBe(true);
   });
 

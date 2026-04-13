@@ -7,12 +7,21 @@ from threading import Lock
 from typing import Any, Dict, Iterable
 
 from app.core.storage_backend import (
+    CANONICAL_COMPLETED_STATUS,
+    CANONICAL_RUNNING_STATUS,
+    CANONICAL_TASK_COMPLETED_STATUS,
+    CANONICAL_TASK_RUNNING_STATUS,
     CURRENT_SCHEMA_VERSION,
+    LEGACY_COMPLETED_STATUSES,
+    LEGACY_RUNNING_STATUSES,
     STORAGE_KEYS,
     STORAGE_META_KEY,
     StorageBackend,
     _normalize_payload,
     _normalize_value,
+    normalize_experiment_detail_text,
+    normalize_experiment_status_text,
+    normalize_task_status_text,
 )
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
@@ -211,7 +220,7 @@ def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
         "sample_type": normalize_text(task.get("sample_type")),
         "priority": parse_priority_value(task.get("priority")),
         "sample_count": parse_int_value(task.get("sample_count")),
-        "task_status": normalize_text(task.get("status")),
+        "task_status": normalize_task_status_text(task.get("status")),
         "transfer_status": normalize_text(task.get("transfer_status")),
         "tray_limit": parse_int_value(task.get("tray_limit")),
         "arrival_time": parse_storage_datetime(task.get("arrival_at")),
@@ -259,7 +268,7 @@ def build_storage_task_item(row: Dict[str, Any], tray_codes: Iterable[str] | Non
         "conditions": normalize_text(row.get("conditions_text")),
         "attachment": normalize_text(row.get("attachment_path")),
         "remark": normalize_text(row.get("remark")),
-        "status": normalize_text(row.get("task_status")),
+        "status": normalize_task_status_text(row.get("task_status")),
         "transfer_status": normalize_text(row.get("transfer_status")),
         "tray_limit": row.get("tray_limit"),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
@@ -276,7 +285,7 @@ def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
         "required_device": normalize_text(experiment.get("required_device")),
         "priority": parse_priority_value(experiment.get("priority")),
         "planned_hours": parse_float_value(experiment.get("planned_hours")),
-        "experiment_status": normalize_text(experiment.get("status")),
+        "experiment_status": normalize_experiment_status(experiment.get("status")),
         "created_at": parse_storage_datetime(experiment.get("created_at")) or now_utc,
         "updated_at": parse_storage_datetime(experiment.get("updated_at")) or now_utc,
     }
@@ -292,7 +301,7 @@ def build_storage_experiment_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "required_device": normalize_text(row.get("required_device")),
         "priority": format_priority_value(row.get("priority")),
         "planned_hours": 0 if planned_hours in (None, "") else float(planned_hours),
-        "status": normalize_text(row.get("experiment_status")),
+        "status": normalize_experiment_status(row.get("experiment_status")),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
@@ -357,7 +366,7 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
         "schedule_start_time": parse_storage_datetime(schedule.get("start_at")),
         "schedule_end_time": parse_storage_datetime(schedule.get("end_at")),
         "planned_hours": parse_float_value(schedule.get("planned_hours")),
-        "schedule_status": normalize_text(schedule.get("status")),
+        "schedule_status": normalize_experiment_status_text(schedule.get("status")),
         "is_retention": 1 if RETENTION_KEYWORD in device else 0,
         "remark": "",
     }
@@ -373,22 +382,30 @@ def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "start_at": format_iso_storage_datetime(row.get("schedule_start_time")),
         "end_at": format_iso_storage_datetime(row.get("schedule_end_time")),
         "planned_hours": 0 if planned_hours in (None, "") else float(planned_hours),
-        "status": normalize_text(row.get("schedule_status")),
+        "status": normalize_experiment_status_text(row.get("schedule_status")),
     }
 
 
-EXPERIMENT_RUNNING_STATUSES = {"实验进行中", "实验中"}
-EXPERIMENT_COMPLETED_STATUSES = {"实验已完成", "实验完成"}
+EXPERIMENT_RUNNING_STATUS = CANONICAL_RUNNING_STATUS
+LEGACY_EXPERIMENT_RUNNING_STATUS = next(iter(LEGACY_RUNNING_STATUSES))
+EXPERIMENT_RUNNING_STATUSES = {EXPERIMENT_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}
+EXPERIMENT_COMPLETED_STATUSES = {CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}
+TASK_RUNNING_STATUS = CANONICAL_TASK_RUNNING_STATUS
+TASK_COMPLETED_STATUS = CANONICAL_TASK_COMPLETED_STATUS
+
+
+def normalize_experiment_status(value: Any) -> str:
+    return normalize_experiment_status_text(value)
 
 
 def parse_experiment_event_detail(detail: Any, task_no: Any) -> dict[str, str] | None:
     normalized_task_no = normalize_text(task_no)
-    segments = [normalize_text(segment) for segment in str(detail or "").split(" / ") if normalize_text(segment)]
+    segments = [normalize_text(segment) for segment in normalize_experiment_detail_text(detail).split(" / ") if normalize_text(segment)]
     if len(segments) < 3 or segments[0] != normalized_task_no:
         return None
     return {
         "experiment_name": segments[1],
-        "status": segments[2],
+        "status": normalize_experiment_status(segments[2]),
     }
 
 
@@ -434,7 +451,7 @@ def derive_experiment_status_map(
         if related_sample_codes and completed_count == len(related_sample_codes):
             status_map[experiment_no] = "实验已完成"
         elif started_or_completed_count > 0:
-            status_map[experiment_no] = "实验中"
+            status_map[experiment_no] = EXPERIMENT_RUNNING_STATUS
         elif experiment_no in schedule_by_experiment:
             status_map[experiment_no] = "已排程"
         else:
@@ -458,11 +475,11 @@ def derive_task_status_map(
     for task in tasks:
         task_no = normalize_text(task.get("task_no"))
         experiment_nos = experiments_by_task.get(task_no, [])
-        statuses = [experiment_status_map.get(experiment_no, "待排程") for experiment_no in experiment_nos]
-        if statuses and all(status == "实验已完成" for status in statuses):
-            status_map[task_no] = "实验已完成"
-        elif any(status in {"实验中", "实验已完成"} for status in statuses):
-            status_map[task_no] = "实验中"
+        statuses = [normalize_experiment_status(experiment_status_map.get(experiment_no, "待排程")) for experiment_no in experiment_nos]
+        if statuses and all(status == CANONICAL_COMPLETED_STATUS for status in statuses):
+            status_map[task_no] = TASK_COMPLETED_STATUS
+        elif any(status in {EXPERIMENT_RUNNING_STATUS, CANONICAL_COMPLETED_STATUS} for status in statuses):
+            status_map[task_no] = TASK_RUNNING_STATUS
         elif any(status == "已排程" for status in statuses):
             status_map[task_no] = "已排程"
         else:
@@ -538,13 +555,13 @@ def build_sample_insert_row(sample: Dict[str, Any]) -> Dict[str, Any]:
         "sample_spec": "",
         "quantity": parse_int_value(sample.get("quantity")),
         "unit": "",
-        "sample_status": normalize_text(sample.get("status")),
+        "sample_status": normalize_experiment_status_text(sample.get("status")),
         "received_time": parse_storage_datetime(sample.get("created_at")) or parse_storage_datetime(sample.get("arrival_at")),
         "arrival_time": parse_storage_datetime(sample.get("arrival_at")),
         "storage_condition": normalize_text(sample.get("storage_condition")),
         "barcode_no": normalize_text(sample.get("barcode")),
         "location_desc": normalize_text(sample.get("location")),
-        "flow_status": normalize_text(sample.get("flow_status")),
+        "flow_status": normalize_experiment_status_text(sample.get("flow_status")),
         "remark": encode_sample_meta(owner=sample.get("owner"), remark=sample.get("remark")),
         "created_at": parse_storage_datetime(sample.get("created_at")) or datetime.now(timezone.utc).replace(tzinfo=None),
         "updated_at": parse_storage_datetime(sample.get("updated_at")) or datetime.now(timezone.utc).replace(tzinfo=None),
@@ -565,7 +582,7 @@ def build_storage_sample_item(
             "tray_code": normalize_text(tray.get("tray_code")),
             "sample_code": normalize_text(tray.get("sample_code") or row.get("sample_no")),
             "quantity": 0 if tray.get("quantity") in (None, "") else int(tray.get("quantity")),
-            "status": normalize_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status")),
+            "status": normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status")),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
         }
@@ -579,8 +596,8 @@ def build_storage_sample_item(
             "action": normalize_text(event.get("action") or event.get("action_type")),
             "location": normalize_text(event.get("location") or event.get("location_desc")),
             "owner": normalize_text(event.get("owner") or event.get("owner_name")),
-            "status": normalize_text(event.get("status") or event.get("sample_status")),
-            "detail": normalize_text(event.get("detail")),
+            "status": normalize_experiment_status_text(event.get("status") or event.get("sample_status")),
+            "detail": normalize_experiment_detail_text(event.get("detail")),
         }
         for event in (event_rows or [])
     ]
@@ -598,8 +615,8 @@ def build_storage_sample_item(
         "remark": meta["remark"],
         "location": normalize_text(row.get("location_desc")),
         "owner": meta["owner"],
-        "status": normalize_text(row.get("sample_status")),
-        "flow_status": normalize_text(row.get("flow_status")),
+        "status": normalize_experiment_status_text(row.get("sample_status")),
+        "flow_status": normalize_experiment_status_text(row.get("flow_status")),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
         "trays": trays,
@@ -1013,7 +1030,169 @@ class MySQLMesStorageBackend(StorageBackend):
             (STORAGE_MARKER,),
         )
 
+    def _normalize_legacy_status_columns(self, cursor) -> None:
+        cursor.execute(
+            """
+            UPDATE biz_task
+            SET task_status = CASE
+              WHEN task_status = %s THEN %s
+              WHEN task_status IN (%s, %s) THEN %s
+              ELSE task_status
+            END
+            WHERE task_status IN (%s, %s, %s)
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                TASK_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                TASK_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_experiment
+            SET experiment_status = CASE
+              WHEN experiment_status = %s THEN %s
+              WHEN experiment_status IN (%s, %s) THEN %s
+              ELSE experiment_status
+            END
+            WHERE experiment_status IN (%s, %s, %s)
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_schedule
+            SET schedule_status = CASE
+              WHEN schedule_status = %s THEN %s
+              WHEN schedule_status IN (%s, %s) THEN %s
+              ELSE schedule_status
+            END
+            WHERE schedule_status IN (%s, %s, %s)
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_sample
+            SET sample_status = CASE
+                  WHEN sample_status = %s THEN %s
+                  WHEN sample_status IN (%s, %s) THEN %s
+                  ELSE sample_status
+                END,
+                flow_status = CASE
+                  WHEN flow_status = %s THEN %s
+                  WHEN flow_status IN (%s, %s) THEN %s
+                  ELSE flow_status
+                END
+            WHERE sample_status IN (%s, %s, %s)
+               OR flow_status IN (%s, %s, %s)
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_tray_item
+            SET status = CASE
+              WHEN status = %s THEN %s
+              WHEN status IN (%s, %s) THEN %s
+              ELSE status
+            END
+            WHERE status IN (%s, %s, %s)
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_sample_event
+            SET sample_status = CASE
+                  WHEN sample_status = %s THEN %s
+                  WHEN sample_status IN (%s, %s) THEN %s
+                  ELSE sample_status
+                END,
+                detail = REPLACE(
+                  REPLACE(
+                    REPLACE(COALESCE(detail, ''), %s, %s),
+                    %s, %s
+                  ),
+                  %s, %s
+                )
+            WHERE sample_status IN (%s, %s, %s)
+               OR detail LIKE %s
+               OR detail LIKE %s
+               OR detail LIKE %s
+            """,
+            (
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                "实验已经完成",
+                CANONICAL_COMPLETED_STATUS,
+                "实验完成",
+                CANONICAL_COMPLETED_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                EXPERIMENT_RUNNING_STATUS,
+                LEGACY_EXPERIMENT_RUNNING_STATUS,
+                "实验完成",
+                "实验已经完成",
+                "%实验中%",
+                "%实验完成%",
+                "%实验已经完成%",
+            ),
+        )
+
     def _sync_progress_statuses(self, cursor) -> None:
+        self._normalize_legacy_status_columns(cursor)
         cursor.execute(
             """
             SELECT task_id, task_no, task_status
@@ -1396,7 +1575,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "position_no": f"P{index:02d}",
                         "quantity": quantity,
                         "bind_time": parse_storage_datetime(tray_payload.get("created_at")) or parse_storage_datetime(tray_payload.get("updated_at")),
-                        "status": normalize_text(tray_payload.get("status")) or sample_status_by_code.get(sample_code) or "ACTIVE",
+                        "status": normalize_experiment_status_text(tray_payload.get("status")) or sample_status_by_code.get(sample_code) or "ACTIVE",
                         "created_at": parse_storage_datetime(tray_payload.get("created_at")),
                         "updated_at": parse_storage_datetime(tray_payload.get("updated_at")),
                     }
@@ -1437,8 +1616,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         "action_type": normalize_text(event.get("action")),
                         "location_desc": normalize_text(event.get("location")),
                         "owner_name": normalize_text(event.get("owner")),
-                        "sample_status": normalize_text(event.get("status")),
-                        "detail": normalize_text(event.get("detail")),
+                        "sample_status": normalize_experiment_status_text(event.get("status")),
+                        "detail": normalize_experiment_detail_text(event.get("detail")),
                         "event_time": parse_storage_datetime(event.get("time")) or parse_storage_datetime(sample.get("updated_at")) or parse_storage_datetime(sample.get("created_at")),
                         "created_at": parse_storage_datetime(event.get("time")) or parse_storage_datetime(sample.get("updated_at")) or parse_storage_datetime(sample.get("created_at")),
                     }
@@ -1652,6 +1831,8 @@ class MySQLMesStorageBackend(StorageBackend):
             snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
             with self._connect() as connection:
                 with connection.cursor() as cursor:
+                    self._normalize_legacy_status_columns(cursor)
+                    connection.commit()
                     data = {
                         "mes.tasks": self._load_tasks(cursor),
                         "mes.schedules": self._load_schedules(cursor),
@@ -1679,6 +1860,8 @@ class MySQLMesStorageBackend(StorageBackend):
                 return snapshot_values.get(key, [])
             with self._connect() as connection:
                 with connection.cursor() as cursor:
+                    self._normalize_legacy_status_columns(cursor)
+                    connection.commit()
                     if key == "mes.tasks":
                         return self._load_tasks(cursor)
                     if key == "mes.schedules":

@@ -17,9 +17,10 @@ const PROCESS_LABS = [
 // 中文名称排序时统一使用简体中文排序规则。
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RUNNING = "实验中";
+const STATUS_RUNNING = "实验进行中";
+const TASK_STATUS_RUNNING = "任务进行中";
 const STATUS_IDLE = "空闲";
-const RUNNING_SAMPLE_STATUSES = new Set(["实验进行中", STATUS_RUNNING]);
+const RUNNING_SAMPLE_STATUSES = new Set([STATUS_RUNNING, "实验中"]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -136,7 +137,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
           if (experimentCode) {
             return false;
           }
-          return taskStatusMap.get(normalizeText(entry?.task_code)) === STATUS_RUNNING;
+          return taskStatusMap.get(normalizeText(entry?.task_code)) === TASK_STATUS_RUNNING;
         }) || null;
 
       // 没有进行中的情况下，展示最近的未来排程。
@@ -160,7 +161,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
 
       let status = STATUS_IDLE;
       let statusClass = "is-idle";
-      if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === STATUS_RUNNING)) {
+      if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === TASK_STATUS_RUNNING)) {
         status = STATUS_RUNNING;
         statusClass = "is-running";
       } else if (activeSchedule || upcomingSchedule) {

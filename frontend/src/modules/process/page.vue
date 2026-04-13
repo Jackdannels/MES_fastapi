@@ -205,7 +205,7 @@
                   <span>{{ tray.sampleSummary }}</span>
                 </button>
               </div>
-              <div v-else class="muted">当前无实验中托盘。</div>
+              <div v-else class="muted">当前无实验进行中托盘。</div>
             </section>
 
             <section class="process-task-summary-card">
@@ -327,7 +327,7 @@ const {
 
 const summaryItems = computed(() => [
   { count: overviewCount.value, key: PROCESS_FILTERS.overview, label: "总览" },
-  { count: runningCount.value, key: PROCESS_FILTERS.running, label: "实验中" },
+  { count: runningCount.value, key: PROCESS_FILTERS.running, label: "实验进行中" },
   { count: scheduledCount.value, key: PROCESS_FILTERS.scheduled, label: "已排程" },
   { count: idleCount.value, key: PROCESS_FILTERS.idle, label: "空闲" },
 ]);

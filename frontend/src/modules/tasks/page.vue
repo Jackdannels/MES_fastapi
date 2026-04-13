@@ -37,29 +37,31 @@
         @change="setCurrentPage"
       />
     </div>
-    <table class="table" id="task-table">
+    <table class="table tasks-table" id="task-table">
       <thead>
         <tr>
-          <th>序号</th>
-          <th data-sort @click="toggleSort('code')">任务编号</th>
-          <th data-sort @click="toggleSort('source')">来源</th>
-          <th data-sort @click="toggleSort('sampleCount')">样品</th>
-          <th data-sort @click="toggleSort('testType')">实验摘要</th>
-          <th data-sort @click="toggleSort('dueAt')">期望完成</th>
-          <th data-sort @click="toggleSort('displayStatus')">状态</th>
-          <th>操作</th>
+          <th class="tasks-table__col tasks-table__col--index">序号</th>
+          <th class="tasks-table__col tasks-table__col--code" data-sort @click="toggleSort('code')">任务编号</th>
+          <th class="tasks-table__col tasks-table__col--source" data-sort @click="toggleSort('source')">来源</th>
+          <th class="tasks-table__col tasks-table__col--sample-count" data-sort @click="toggleSort('sampleCount')">样品</th>
+          <th class="tasks-table__col tasks-table__col--summary" data-sort @click="toggleSort('testType')">实验摘要</th>
+          <th class="tasks-table__col tasks-table__col--due-at" data-sort @click="toggleSort('dueAt')">期望完成</th>
+          <th class="tasks-table__col tasks-table__col--status" data-sort @click="toggleSort('displayStatus')">状态</th>
+          <th class="tasks-table__col tasks-table__col--actions">操作</th>
         </tr>
       </thead>
       <tbody id="task-table-body">
         <tr v-for="(row, index) in taskRows" :key="row.id">
-          <td>{{ (currentPage - 1) * 8 + index + 1 }}</td>
-          <td>{{ row.code }}</td>
-          <td>{{ row.source }}</td>
-          <td>{{ row.sampleCount }}</td>
-          <td>{{ row.testType }}</td>
-          <td>{{ row.dueAt }}</td>
-          <td><span :class="row.statusClass">{{ row.displayStatusLabel || row.displayStatus }}</span></td>
-          <td>
+          <td class="tasks-table__cell tasks-table__cell--index">{{ (currentPage - 1) * 8 + index + 1 }}</td>
+          <td class="tasks-table__cell tasks-table__cell--code">{{ row.code }}</td>
+          <td class="tasks-table__cell tasks-table__cell--source">{{ row.source }}</td>
+          <td class="tasks-table__cell tasks-table__cell--sample-count">{{ row.sampleCount }}</td>
+          <td class="tasks-table__cell tasks-table__cell--summary">
+            <span class="tasks-table__summary-text">{{ row.testType }}</span>
+          </td>
+          <td class="tasks-table__cell tasks-table__cell--due-at">{{ row.dueAt }}</td>
+          <td class="tasks-table__cell tasks-table__cell--status"><span :class="row.statusClass">{{ row.displayStatusLabel || row.displayStatus }}</span></td>
+          <td class="tasks-table__cell tasks-table__cell--actions">
             <button class="action-link" :data-testid="`open-task-drawer-${index}`" type="button" @click="openTaskDrawer(row)">
               编辑
             </button>
@@ -207,8 +209,8 @@
         <select v-model="editForm.status" name="status">
           <option>待排程</option>
           <option>已排程</option>
-          <option>实验中</option>
-          <option>实验已经完成</option>
+          <option>任务进行中</option>
+          <option>任务已完成</option>
           <option>厂家收回</option>
         </select>
       </div>

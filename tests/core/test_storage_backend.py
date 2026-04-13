@@ -82,6 +82,58 @@ def test_write_many_sanitizes_legacy_sample_text_before_persisting(tmp_path) -> 
     assert persisted["mes.samples"][0]["history"][0]["status"] == "运输中"
 
 
+def test_json_storage_normalizes_legacy_experiment_statuses_and_rewrites_file(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    path.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [
+                    {"code": "TASK-001", "status": "实验中"},
+                    {"code": "TASK-002", "status": "实验已经完成"},
+                ],
+                "mes.experiments": [
+                    {"task_code": "TASK-001", "experiment_code": "TASK-001-A", "status": "实验中"},
+                    {"task_code": "TASK-002", "experiment_code": "TASK-002-A", "status": "实验完成"},
+                ],
+                "mes.schedules": [
+                    {"task_code": "TASK-001", "experiment_code": "TASK-001-A", "status": "实验中"},
+                    {"task_code": "TASK-002", "experiment_code": "TASK-002-A", "status": "实验已经完成"},
+                ],
+                "mes.samples": [
+                    {
+                        "code": "TASK-001-SP-001",
+                        "task_code": "TASK-001",
+                        "status": "实验中",
+                        "flow_status": "实验完成",
+                        "trays": [{"tray_code": "TASK-001-TP-001", "status": "实验中", "quantity": 1}],
+                        "history": [{"action": "开始实验", "detail": "TASK-001 / A实验 / 实验中", "status": "实验完成"}],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    storage = JsonFileStorage(path)
+    snapshot = storage.read_all()
+
+    assert [task["status"] for task in snapshot["mes.tasks"]] == ["任务进行中", "任务已完成"]
+    experiment_status_by_code = {experiment["experiment_code"]: experiment["status"] for experiment in snapshot["mes.experiments"]}
+    assert experiment_status_by_code["TASK-001-A"] == "实验进行中"
+    assert experiment_status_by_code["TASK-002-A"] == "实验已完成"
+    assert [schedule["status"] for schedule in snapshot["mes.schedules"]] == ["实验进行中", "实验已完成"]
+    assert snapshot["mes.samples"][0]["status"] == "实验进行中"
+    assert snapshot["mes.samples"][0]["flow_status"] == "实验已完成"
+    assert snapshot["mes.samples"][0]["trays"][0]["status"] == "实验进行中"
+    assert snapshot["mes.samples"][0]["history"][0]["status"] == "实验已完成"
+    assert snapshot["mes.samples"][0]["history"][0]["detail"] == "TASK-001 / A实验 / 实验进行中"
+
+    persisted = _read_store(path)
+    assert persisted["mes.tasks"][0]["status"] == "任务进行中"
+    assert persisted["mes.tasks"][1]["status"] == "任务已完成"
+
+
 def test_database_storage_backend_bootstraps_from_seed_storage_and_normalizes_samples(tmp_path) -> None:
     path = tmp_path / "mes_store.json"
     seed_storage = JsonFileStorage(path)

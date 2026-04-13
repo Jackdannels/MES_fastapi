@@ -23,6 +23,7 @@ const PROCESS_FILTERS = {
 
 const TRAY_STATUS_READY = "实验准备就绪";
 const TRAY_STATUS_RUNNING = "实验进行中";
+const TASK_STATUS_RUNNING = "任务进行中";
 const RUNNING_TRAY_STATUSES = new Set([TRAY_STATUS_RUNNING, "实验中"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "放置实验后暂存间", "厂家收回"]);
 
@@ -593,7 +594,7 @@ function useProcessLabs(options = {}) {
     const actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     const hasScheduledTask = Boolean(scopedLab?.hasTask);
-    const status = actionState.runningTrayCount > 0 ? "实验中" : hasScheduledTask ? "已排程" : "空闲";
+    const status = actionState.runningTrayCount > 0 ? TRAY_STATUS_RUNNING : hasScheduledTask ? "已排程" : "空闲";
     const statusClass = actionState.runningTrayCount > 0 ? "is-running" : hasScheduledTask ? "is-scheduled" : "is-idle";
     return {
       ...scopedLab,
@@ -797,7 +798,7 @@ function useProcessLabs(options = {}) {
       normalizeText(task?.code) === taskCode
         ? {
             ...task,
-            status: "实验中",
+            status: TASK_STATUS_RUNNING,
             updated_at: timestamp,
           }
         : task,

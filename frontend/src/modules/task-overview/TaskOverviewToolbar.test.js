@@ -8,6 +8,8 @@ const mountToolbar = (props = {}) =>
     props: {
       customEndDate: "",
       customStartDate: "",
+      experimentCounterLabel: "已排程总实验数",
+      experimentCounterValue: "3/5",
       isTrayCounterAlert: false,
       keyword: "",
       overviewCounterLabel: "已排程总任务数",
@@ -26,6 +28,22 @@ describe("TaskOverviewToolbar", () => {
 
     expect(wrapper.find(".task-overview-heading .task-overview-mode-switch").exists()).toBe(true);
     expect(wrapper.find(".task-overview-actions .task-overview-mode-switch").exists()).toBe(false);
+    expect(wrapper.findAll(".task-overview-counter")).toHaveLength(2);
+    expect(wrapper.text()).toContain("已排程总实验数");
+    expect(wrapper.text()).toContain("3/5");
+  });
+
+  test("shows only one counter card in tray mode", () => {
+    const wrapper = mountToolbar({
+      experimentCounterLabel: "",
+      experimentCounterValue: "",
+      overviewCounterLabel: "剩余托盘/总托盘数",
+      overviewCounterValue: "1/20",
+      viewMode: "tray",
+    });
+
+    expect(wrapper.findAll(".task-overview-counter")).toHaveLength(1);
+    expect(wrapper.text()).not.toContain("已排程总实验数");
   });
 
   test("defers keyword updates until composition ends and trims the committed value", async () => {

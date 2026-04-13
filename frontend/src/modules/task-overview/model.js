@@ -4,15 +4,27 @@ import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
-const STATUS_RUNNING = "实验中";
+const STATUS_RUNNING = "任务进行中";
+const LEGACY_STATUS_RUNNING = "实验中";
+const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const STATUS_RETENTION = "厂家收回";
 const TRANSFER_STATUS_STORED = "已入库";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
-const TASK_COMPLETED_STATUS = "实验已经完成";
-const OVERVIEW_COMPLETED_STATUS = "实验完成";
+const TASK_COMPLETED_STATUS = "任务已完成";
+const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
+const LEGACY_TASK_COMPLETED_STATUS = "实验已经完成";
+const LEGACY_OVERVIEW_COMPLETED_STATUS = "实验完成";
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
+const SCHEDULED_EXPERIMENT_STATUSES = new Set([
+  "已排程",
+  "实验准备就绪",
+  "工装夹具安装",
+  EXPERIMENT_STATUS_RUNNING,
+  "放置实验后暂存间",
+  EXPERIMENT_COMPLETED_STATUS,
+]);
 
 // 任务号、样品号、托盘号的展示排序统一走中文比较规则。
 function compareText(left, right) {
@@ -25,16 +37,46 @@ function normalizeText(value) {
 }
 
 // 历史状态“暂存间排放/暂存间存放”在总览里统一视为“厂家收回”。
-function normalizeStatus(value) {
+function normalizeTaskStatus(value) {
   const normalized = normalizeText(value);
+  if (normalized === LEGACY_STATUS_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING) {
+    return STATUS_RUNNING;
+  }
   if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
     return STATUS_WAITING;
   }
   if (normalized === STATUS_RETENTION) {
     return STATUS_RETENTION;
   }
+  if (
+    normalized === LEGACY_TASK_COMPLETED_STATUS
+    || normalized === LEGACY_OVERVIEW_COMPLETED_STATUS
+    || normalized === EXPERIMENT_COMPLETED_STATUS
+    || normalized === TASK_COMPLETED_STATUS
+  ) {
+    return TASK_COMPLETED_STATUS;
+  }
+  return normalized;
+}
+
+function normalizeExperimentStatus(value) {
+  const normalized = normalizeText(value);
+  if (normalized === LEGACY_STATUS_RUNNING) {
+    return EXPERIMENT_STATUS_RUNNING;
+  }
+  if (normalized === LEGACY_TASK_COMPLETED_STATUS || normalized === LEGACY_OVERVIEW_COMPLETED_STATUS) {
+    return EXPERIMENT_COMPLETED_STATUS;
+  }
+  return normalized;
+}
+
+function mapTaskStatusToExperimentFallback(value) {
+  const normalized = normalizeTaskStatus(value);
+  if (normalized === STATUS_RUNNING) {
+    return EXPERIMENT_STATUS_RUNNING;
+  }
   if (normalized === TASK_COMPLETED_STATUS) {
-    return OVERVIEW_COMPLETED_STATUS;
+    return EXPERIMENT_COMPLETED_STATUS;
   }
   return normalized;
 }
@@ -71,12 +113,12 @@ function upsertLatestSchedule(map, key, schedule) {
 }
 
 function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSchedule, scheduleLabel }) {
-  const experimentStatus = normalizeStatus(experiment?.status);
+  const experimentStatus = normalizeExperimentStatus(experiment?.status);
   if (experimentStatus && experimentStatus !== STATUS_WAITING) {
     return experimentStatus;
   }
 
-  const scheduleStatus = normalizeStatus(matchedSchedule?.status);
+  const scheduleStatus = normalizeExperimentStatus(matchedSchedule?.status);
   if (scheduleStatus && scheduleStatus !== STATUS_WAITING) {
     return scheduleStatus;
   }
@@ -85,7 +127,7 @@ function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSche
     return scheduleLabel;
   }
 
-  return currentStatus || experimentStatus || STATUS_WAITING;
+  return mapTaskStatusToExperimentFallback(currentStatus) || experimentStatus || STATUS_WAITING;
 }
 
 // 构建任务视图模式下展示的任务卡片数据。
@@ -117,7 +159,7 @@ function buildTaskRows({
       experimentCode: normalizeText(experiment?.experiment_code),
       experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
-      status: normalizeStatus(experiment?.status),
+      status: normalizeExperimentStatus(experiment?.status),
       unscheduledSince: parseTimeValue(experiment?.unscheduled_since),
     });
     experimentsByTaskCode.set(taskCode, group);
@@ -129,7 +171,7 @@ function buildTaskRows({
     }
     const schedule = {
       device: normalizeText(entry?.device),
-      status: normalizeStatus(entry?.status),
+      status: normalizeExperimentStatus(entry?.status),
       timestamp: parseTimeValue(entry?.start_at || entry?.created_at),
     };
     upsertLatestSchedule(formalScheduleByExperimentCode, entry?.experiment_code, schedule);
@@ -146,7 +188,7 @@ function buildTaskRows({
     taskMap.set(code, {
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
-      taskStatus: normalizeStatus(task?.status),
+      taskStatus: normalizeTaskStatus(task?.status),
       transferStatus: normalizeText(task?.transfer_status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",
       timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
@@ -194,10 +236,10 @@ function buildTaskRows({
     if (isRetentionDevice(entry?.device)) {
       row.retentionCount += 1;
     } else {
-      row.scheduleCount += 1;
+      row.scheduleCount = 1;
     }
     if (!row.taskStatus) {
-      row.taskStatus = normalizeStatus(entry?.status);
+      row.taskStatus = normalizeTaskStatus(entry?.status);
     }
     if (!row.timeValue) {
       row.timeValue = normalizeText(entry?.start_at || entry?.created_at);
@@ -235,7 +277,7 @@ function buildTaskRows({
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
       const experimentProgress = buildTaskExperimentProgress(row.taskCode, experimentList);
-      const aggregatedStatus = normalizeStatus(
+      const aggregatedStatus = normalizeTaskStatus(
         aggregateTaskStatusFromSamples(
           { code: row.taskCode },
           sampleList.filter((sample) => normalizeText(sample?.task_code) === row.taskCode),
@@ -243,7 +285,9 @@ function buildTaskRows({
       );
       // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
       const currentStatus =
-        aggregatedStatus === STATUS_RETENTION
+        row.taskStatus === STATUS_RETENTION
+          ? STATUS_RETENTION
+          : aggregatedStatus === STATUS_RETENTION
           ? STATUS_RETENTION
           : experimentProgress.hasPartialCompletion
             ? STATUS_RUNNING
@@ -275,7 +319,12 @@ function buildTaskRows({
         ...row,
         currentStatus,
         currentStatusLabel,
+        eligibleExperimentCount: currentStatus === STATUS_RETENTION ? 0 : experiments.length,
         scheduleLabel,
+        scheduledExperimentCount:
+          currentStatus === STATUS_RETENTION
+            ? 0
+            : experiments.filter((experiment) => SCHEDULED_EXPERIMENT_STATUSES.has(normalizeText(experiment.displayStatus))).length,
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,
         taskType: buildExperimentTypeSummary(row.taskType),
