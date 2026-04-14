@@ -37,6 +37,7 @@
         @change="setCurrentPage"
       />
     </div>
+    <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ loadError }}</div>
     <table class="table tasks-table" id="task-table">
       <thead>
         <tr>
@@ -246,6 +247,7 @@ const {
   intakeForm,
   intakeModalOpen,
   intakeWarning,
+  loadError,
   metrics,
   pageCount,
   query,

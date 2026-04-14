@@ -9,15 +9,8 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("")
 def health():
-    storage = get_storage_health_report()
-    status = "ok" if storage.get("status") == "ok" else "unhealthy"
-    return JSONResponse(
-        status_code=200 if status == "ok" else 503,
-        content={
-            "status": status,
-            "storage": storage,
-        },
-    )
+    report = get_storage_health_report()
+    return {"status": "ok", "storage": report}
 
 
 @router.get("/db")

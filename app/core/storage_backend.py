@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
-from pathlib import Path
-from threading import Lock
 from typing import Any, Dict, Iterable
 
 from app.core.config import settings
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
-BASE_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_STORE_PATH = BASE_DIR / "data" / "mes_store.json"
 STORAGE_META_KEY = "mes.meta"
 CURRENT_SCHEMA_VERSION = 2
+MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
+RUNTIME_STORAGE_BACKEND = "mysql"
+UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -66,28 +64,6 @@ CANONICAL_TASK_COMPLETED_STATUS = "任务已完成"
 LEGACY_RUNNING_STATUSES = {"实验中"}
 LEGACY_COMPLETED_STATUSES = {"实验完成", "实验已经完成"}
 STATUS_VALUE_KEYS = {"status", "flow_status", "task_status", "experiment_status", "schedule_status", "sample_status"}
-
-
-def _default_store() -> Dict[str, Any]:
-    return {
-        **{key: [] for key in STORAGE_KEYS},
-        STORAGE_META_KEY: {"schema_version": CURRENT_SCHEMA_VERSION},
-    }
-
-
-def _normalize_backend_name(value: Any) -> str:
-    return str(value or "").strip().lower()
-
-
-def _build_mysql_connection_settings() -> MySQLConnectionSettings:
-    return MySQLConnectionSettings(
-        host=settings.MYSQL_HOST,
-        port=settings.MYSQL_PORT,
-        user=settings.MYSQL_USER,
-        password=settings.MYSQL_PASSWORD,
-        database=settings.MYSQL_DATABASE,
-    )
-
 
 def _sanitize_sample_text(value: str) -> str:
     text = str(value)
@@ -380,266 +356,107 @@ class StorageBackend:
         raise NotImplementedError
 
 
-class DatabaseStorageBackend(StorageBackend):
-    def __init__(self, repository, bootstrap_storage: StorageBackend | None = None) -> None:
-        self._repository = repository
-        self._bootstrap_storage = bootstrap_storage
-        self._lock = Lock()
-
-    def _deserialize_payloads(self, payloads: Dict[str, str]) -> Dict[str, Any]:
-        normalized: Dict[str, Any] = {}
-        for key in STORAGE_KEYS:
-            raw_value = payloads.get(key)
-            try:
-                parsed = json.loads(raw_value) if raw_value else []
-            except json.JSONDecodeError:
-                parsed = []
-            normalized[key] = _normalize_value(key, parsed if isinstance(parsed, list) else [])
-        meta_payload = payloads.get(STORAGE_META_KEY)
-        try:
-            parsed_meta = json.loads(meta_payload) if meta_payload else {}
-        except json.JSONDecodeError:
-            parsed_meta = {}
-        normalized[STORAGE_META_KEY] = _normalize_value(STORAGE_META_KEY, parsed_meta if isinstance(parsed_meta, dict) else {})
-        normalized, _ = _normalize_payload(normalized)
-        return normalized
-
-    def _serialize_updates(self, updates: Dict[str, Any]) -> Dict[str, str]:
-        serialized: Dict[str, str] = {}
-        for key, value in updates.items():
-            if key not in STORAGE_KEYS and key != STORAGE_META_KEY:
-                continue
-            if key == STORAGE_META_KEY:
-                normalized = _normalize_value(key, value if isinstance(value, dict) else {})
-            else:
-                normalized = _normalize_value(key, value if isinstance(value, list) else [])
-            serialized[key] = json.dumps(normalized, ensure_ascii=False)
-        return serialized
-
-    def _ensure_bootstrapped(self) -> Dict[str, str]:
-        payloads = self._repository.read_all()
-        if payloads or self._bootstrap_storage is None:
-            return payloads
-        bootstrap_payload = self._bootstrap_storage.read_all()
-        serialized = self._serialize_updates(bootstrap_payload)
-        self._repository.write_many(serialized)
-        return self._repository.read_all()
-
-    def read_all(self) -> Dict[str, Any]:
-        with self._lock:
-            payloads = self._ensure_bootstrapped()
-            return self._deserialize_payloads(payloads)
-
-    def read(self, key: str) -> Any:
-        with self._lock:
-            if key not in STORAGE_KEYS:
-                return []
-            payloads = self._ensure_bootstrapped()
-            return self._deserialize_payloads(payloads).get(key, [])
-
-    def write(self, key: str, value: Any) -> None:
-        self.write_many({key: value})
-
-    def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
-            serialized = self._serialize_updates(updates)
-            if not serialized:
-                return
-            self._repository.write_many(serialized)
+_storage_backend: StorageBackend | None = None
 
 
-def check_mysql_storage_connection(connection_settings: MySQLConnectionSettings | None = None) -> dict[str, Any]:
-    resolved_settings = connection_settings or _build_mysql_connection_settings()
+def _backend_name(backend: StorageBackend | None) -> str | None:
+    if backend is None:
+        return None
+    if backend.__class__.__name__ == "MySQLMesStorageBackend":
+        return "mysql"
+    return backend.__class__.__name__.lower()
+
+
+def check_mysql_storage_connection() -> Dict[str, Any]:
     try:
         import pymysql
-    except ImportError as exc:
+    except ImportError:
         return {
             "status": "unhealthy",
-            "detail": str(exc),
+            "detail": "pymysql is required for the MySQL storage backend",
         }
 
     connection = None
-    cursor = None
-    row = None
     try:
         connection = pymysql.connect(
-            host=resolved_settings.host,
-            port=resolved_settings.port,
-            user=resolved_settings.user,
-            password=resolved_settings.password,
-            database=resolved_settings.database,
-            charset=resolved_settings.charset,
-            autocommit=False,
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+            charset="utf8mb4",
+            autocommit=True,
+            connect_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+            read_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+            write_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
         )
-        cursor = connection.cursor()
-        cursor.execute("select 1")
-        row = cursor.fetchone()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            row = cursor.fetchone()
     except Exception as exc:
         return {
             "status": "unhealthy",
             "detail": str(exc),
         }
     finally:
-        if cursor is not None:
-            try:
-                cursor.close()
-            except Exception:
-                pass
         if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
+            connection.close()
 
+    result = row[0] if isinstance(row, (list, tuple)) and row else row
     return {
         "status": "ok",
-        "result": row[0] if row else None,
+        "result": result,
+        "database": settings.MYSQL_DATABASE,
+        "host": settings.MYSQL_HOST,
+        "port": settings.MYSQL_PORT,
     }
 
 
-class JsonFileStorage(StorageBackend):
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._lock = Lock()
-        self._ensure_file()
-
-    def _ensure_file(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if self._path.exists():
-            return
-        self._write_file(_default_store())
-
-    def _load_file(self) -> tuple[Dict[str, Any], bool]:
-        try:
-            content = self._path.read_text(encoding="utf-8")
-            payload = json.loads(content)
-        except Exception:
-            payload = {}
-        if not isinstance(payload, dict):
-            payload = {}
-        return _normalize_payload(payload)
-
-    def _write_file(self, payload: Dict[str, Any]) -> None:
-        data = dict(payload)
-        for key in STORAGE_KEYS:
-            data.setdefault(key, [])
-        data.setdefault(STORAGE_META_KEY, {"schema_version": CURRENT_SCHEMA_VERSION})
-        tmp_path = self._path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp_path.replace(self._path)
-
-    def read_all(self) -> Dict[str, Any]:
-        with self._lock:
-            payload, changed = self._load_file()
-            if changed:
-                self._write_file(payload)
-            return payload
-
-    def read(self, key: str) -> Any:
-        with self._lock:
-            payload, changed = self._load_file()
-            if changed:
-                self._write_file(payload)
-            return payload.get(key, [])
-
-    def write(self, key: str, value: Any) -> None:
-        with self._lock:
-            payload, _ = self._load_file()
-            payload[key] = _normalize_value(key, value)
-            self._write_file(payload)
-
-    def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
-            payload, _ = self._load_file()
-            payload.update({key: _normalize_value(key, value) for key, value in updates.items()})
-            self._write_file(payload)
-
-
-_storage_backend: StorageBackend | None = None
-
-
-def _describe_active_storage_backend() -> str:
-    backend = _storage_backend
-    if backend is not None:
-        backend_type = backend.__class__.__name__
-        if backend_type == "MySQLMesStorageBackend":
-            return "mysql"
-        if isinstance(backend, JsonFileStorage):
-            return "json"
-    configured_backend = _normalize_backend_name(settings.STORAGE_BACKEND)
-    return configured_backend or "unknown"
-
-
-def _describe_storage_bootstrap(backend_name: str) -> dict[str, Any]:
-    if backend_name != "mysql":
-        return {
-            "enabled": False,
-            "source": None,
-            "status": "not_applicable",
-        }
-
-    backend = _storage_backend
-    bootstrap_storage = None
-    if backend is not None and backend.__class__.__name__ == "MySQLMesStorageBackend":
-        bootstrap_storage = getattr(backend, "_bootstrap_storage", None)
-    bootstrap_enabled = bool(settings.MYSQL_BOOTSTRAP_FROM_JSON)
-    if bootstrap_storage is not None:
-        bootstrap_enabled = True
-    return {
-        "enabled": bootstrap_enabled,
-        "source": "json" if bootstrap_enabled else None,
-        "status": "available" if bootstrap_enabled else "disabled",
+def get_storage_health_report() -> Dict[str, Any]:
+    configured_backend = settings.STORAGE_BACKEND.strip().lower() or RUNTIME_STORAGE_BACKEND
+    mysql_report = check_mysql_storage_connection()
+    report: Dict[str, Any] = {
+        "status": "ok",
+        "configured_backend": configured_backend,
+        "active_backend": _backend_name(_storage_backend),
+        "database": {"status": "not_checked"},
+        "mysql": mysql_report,
     }
 
-
-def get_storage_health_report() -> dict[str, Any]:
-    backend_name = _describe_active_storage_backend()
-    backend_report = {
-        "name": backend_name,
-        "app_env": settings.APP_ENV,
-        "configured_backend": settings.STORAGE_BACKEND,
-        "mysql_auto_init_schema": settings.MYSQL_AUTO_INIT_SCHEMA,
-        "mysql_auto_seed_demo": settings.MYSQL_AUTO_SEED_DEMO,
-        "mysql_bootstrap_from_json": settings.MYSQL_BOOTSTRAP_FROM_JSON,
-    }
-    bootstrap_report = _describe_storage_bootstrap(backend_name)
-
-    if backend_name == "mysql":
-        database_report = check_mysql_storage_connection(_build_mysql_connection_settings())
-        report_status = "ok" if database_report.get("status") == "ok" else "unhealthy"
-    elif backend_name == "json":
-        database_report = {
-            "status": "not_configured",
-        }
-        report_status = "ok"
+    if configured_backend == RUNTIME_STORAGE_BACKEND:
+        report["database"] = mysql_report
+        if report["database"].get("status") != "ok":
+            report["status"] = "unhealthy"
     else:
-        database_report = {
-            "status": "not_configured",
+        report["status"] = "unhealthy"
+        report["active_backend"] = None
+        report["database"] = {
+            "status": "unsupported",
+            "detail": UNSUPPORTED_RUNTIME_BACKEND_DETAIL,
         }
-        report_status = "unhealthy"
 
-    return {
-        "status": report_status,
-        "backend": backend_report,
-        "bootstrap": bootstrap_report,
-        "database": database_report,
-    }
+    return report
 
 
 def get_storage_backend() -> StorageBackend:
     global _storage_backend
     if _storage_backend is None:
-        backend_name = _normalize_backend_name(settings.STORAGE_BACKEND)
-        if backend_name == "mysql":
-            from app.core.mysql_storage_backend import MySQLMesStorageBackend
+        backend_name = settings.STORAGE_BACKEND.strip().lower() or RUNTIME_STORAGE_BACKEND
+        if backend_name != RUNTIME_STORAGE_BACKEND:
+            raise RuntimeError(UNSUPPORTED_RUNTIME_BACKEND_DETAIL)
 
-            connection_settings = _build_mysql_connection_settings()
-            repository = MySQLSnapshotRepository(connection_settings)
-            _storage_backend = MySQLMesStorageBackend(
-                connection_settings,
-                repository,
-                bootstrap_storage=JsonFileStorage(DEFAULT_STORE_PATH) if settings.MYSQL_BOOTSTRAP_FROM_JSON else None,
-            )
-        else:
-            _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)
+        from app.core.mysql_storage_backend import MySQLMesStorageBackend
+
+        connection_settings = MySQLConnectionSettings(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+        )
+        repository = MySQLSnapshotRepository(connection_settings)
+        _storage_backend = MySQLMesStorageBackend(
+            connection_settings,
+            repository,
+        )
     return _storage_backend

@@ -18,6 +18,7 @@ const SECONDARY_LAB = TEST_LABS[1];
 const TERTIARY_LAB = TEST_LABS[2];
 
 let storageState = {};
+let fetchMock = null;
 
 const buildDateParts = (offsetDays = 0) => {
   const date = new Date();
@@ -32,21 +33,46 @@ const buildDateParts = (offsetDays = 0) => {
   };
 };
 
-const createStorageStub = () => ({
-  getItem: (key) => (Object.prototype.hasOwnProperty.call(storageState, key) ? storageState[key] : null),
-  setItem: (key, value) => {
-    storageState[key] = String(value);
-  },
-});
-
 const setStorage = (key, value) => {
-  window.localStorage.setItem(key, JSON.stringify(value));
+  storageState[key] = JSON.parse(JSON.stringify(value));
 };
 
-const getStorage = (key) => JSON.parse(window.localStorage.getItem(key) || "[]");
+const getStorage = (key) => JSON.parse(JSON.stringify(storageState[key] ?? []));
 
 const resetStorage = () => {
   storageState = {};
+};
+
+const installStorageFetchMock = () => {
+  fetchMock = vi.fn(async (input, options = {}) => {
+    const url = String(input);
+    const method = options.method ?? "GET";
+
+    if (url.endsWith("/api/storage") && method === "GET") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(JSON.stringify(storageState)),
+      };
+    }
+
+    if (url.endsWith("/api/storage") && method === "PUT") {
+      const updates = JSON.parse(options.body ?? "{}");
+      Object.entries(updates).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          storageState[key] = JSON.parse(JSON.stringify(value));
+        }
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      };
+    }
+
+    throw new Error(`Unhandled fetch: ${method} ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
 };
 
 const settle = async (wrapper) => {
@@ -59,11 +85,7 @@ const settle = async (wrapper) => {
 describe("SchedulePage runtime", () => {
   beforeEach(() => {
     resetStorage();
-    vi.stubGlobal("localStorage", createStorageStub());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new Error("offline"))),
-    );
+    installStorageFetchMock();
   });
 
   afterEach(() => {

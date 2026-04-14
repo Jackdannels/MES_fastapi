@@ -76,4 +76,20 @@ describe("useDashboardPage", () => {
       }),
     ]);
   });
+
+  test("surfaces snapshot load failures without throwing an unhandled rejection", async () => {
+    mocks.loadSnapshot.mockRejectedValueOnce(new Error("offline"));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.loadError).toContain("总览数据加载失败");
+    expect(wrapper.vm.pagedTaskRows).toEqual([]);
+    expect(wrapper.vm.summaryCards).toEqual(
+      expect.objectContaining({
+        intakeCount: 0,
+        scheduledCount: 0,
+      }),
+    );
+  });
 });

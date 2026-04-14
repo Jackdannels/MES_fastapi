@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import random
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
-from app.core.storage_backend import DEFAULT_STORE_PATH, EXPERIMENT_TYPE_OPTIONS, JsonFileStorage, normalize_storage_payload
+from app.core.storage_backend import EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
 TASK_CODE_PREFIX = "SYLU-2026-03-"
@@ -116,7 +115,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None) -> di
     return normalize_storage_payload(snapshot)
 
 
-def reset_demo_data(storage_backend: Any, store_path: Path | None = None) -> dict[str, Any]:
+def reset_demo_data(storage_backend: Any) -> dict[str, Any]:
     current_snapshot = storage_backend.read_all() if hasattr(storage_backend, "read_all") else {}
     preserved_snapshot = {
         "mes.devices": list(current_snapshot.get("mes.devices", [])) if isinstance(current_snapshot, dict) else [],
@@ -124,19 +123,14 @@ def reset_demo_data(storage_backend: Any, store_path: Path | None = None) -> dic
     }
     snapshot = build_demo_reset_snapshot(preserved_snapshot)
 
-    json_storage = JsonFileStorage(store_path or DEFAULT_STORE_PATH)
-    json_storage.write_many(snapshot)
-    if storage_backend is not json_storage:
-        storage_backend.write_many(snapshot)
+    storage_backend.write_many(snapshot)
     return snapshot
 
 
-def run_demo_reset(storage_backend: Any, store_path: Path | None = None) -> dict[str, Any]:
-    resolved_store_path = Path(store_path or DEFAULT_STORE_PATH)
-    snapshot = reset_demo_data(storage_backend, store_path=resolved_store_path)
+def run_demo_reset(storage_backend: Any) -> dict[str, Any]:
+    snapshot = reset_demo_data(storage_backend)
     return {
         "task_count": len(snapshot.get("mes.tasks", [])),
         "sample_count": len(snapshot.get("mes.samples", [])),
         "experiment_count": len(snapshot.get("mes.experiments", [])),
-        "store_path": str(resolved_store_path),
     }

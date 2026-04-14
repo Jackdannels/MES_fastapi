@@ -2,6 +2,16 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
+function readLocalArray(key) {
+  void key;
+  return [];
+}
+
+function writeLocalArray(key, value) {
+  void key;
+  void value;
+}
+
 async function readStorageSnapshot(keys) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
   const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
@@ -33,11 +43,5 @@ async function writeStorageUpdates(updates) {
     throw new Error(`Failed to write storage updates: ${response.status} ${response.statusText}`);
   }
 }
-
-function readLocalArray(_key) {
-  return [];
-}
-
-function writeLocalArray(_key, _value) {}
 
 export { readLocalArray, readStorageSnapshot, writeLocalArray, writeStorageUpdates };

@@ -15,7 +15,7 @@ async function readTasks() {
 }
 
 async function createTask(task) {
-  const fallbackTask = task ?? {};
+  const payload = task ?? {};
   const response = await fetch(buildApiUrl("/api/tasks", API_BASE_URL), {
     method: "POST",
     headers: {
@@ -23,7 +23,7 @@ async function createTask(task) {
       Accept: "application/json",
     },
     credentials: "include",
-    body: JSON.stringify(fallbackTask),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error(`Failed to create task: ${response.status} ${response.statusText}`);
@@ -32,7 +32,7 @@ async function createTask(task) {
 }
 
 async function updateTask(taskId, task) {
-  const fallbackTask = task ?? {};
+  const payload = task ?? {};
   const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`, API_BASE_URL), {
     method: "PUT",
     headers: {
@@ -40,7 +40,7 @@ async function updateTask(taskId, task) {
       Accept: "application/json",
     },
     credentials: "include",
-    body: JSON.stringify(fallbackTask),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error(`Failed to update task ${taskId}: ${response.status} ${response.statusText}`);

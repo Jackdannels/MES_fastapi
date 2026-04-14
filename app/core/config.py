@@ -24,9 +24,8 @@ class Settings(BaseSettings):
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = "mes_single_branch"
-    MYSQL_BOOTSTRAP_FROM_JSON: bool = True
-    MYSQL_AUTO_INIT_SCHEMA: bool = True
-    MYSQL_AUTO_SEED_DEMO: bool = True
+    MYSQL_AUTO_INIT_SCHEMA: bool = False
+    MYSQL_AUTO_SEED_DEMO: bool = False
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
@@ -48,12 +47,22 @@ class Settings(BaseSettings):
                 return True
         return value
 
-    @field_validator("APP_ENV", "STORAGE_BACKEND", mode="before")
+    @field_validator("APP_ENV", mode="before")
     @classmethod
-    def normalize_text_settings(cls, value: object) -> object:
-        if isinstance(value, str):
-            return value.strip().lower()
-        return value
+    def normalize_app_env(cls, value: object) -> str:
+        normalized = str(value or "dev").strip().lower()
+        if normalized in {"development", "local"}:
+            return "dev"
+        if normalized in {"production", "release"}:
+            return "prod"
+        if normalized in {"testing"}:
+            return "test"
+        return normalized or "dev"
+
+    @field_validator("STORAGE_BACKEND", mode="before")
+    @classmethod
+    def normalize_storage_backend(cls, value: object) -> str:
+        return str(value or "mysql").strip().lower() or "mysql"
 
 
 settings = Settings()

@@ -24,6 +24,7 @@ function useDashboardPage() {
   const rawSchedules = ref([]);
   const rawStreams = ref([]);
   const rawTasks = ref([]);
+  const loadError = ref("");
   let dashboardTimer = null;
 
   const viewModel = computed(() =>
@@ -54,15 +55,21 @@ function useDashboardPage() {
   };
 
   const loadDashboard = async () => {
-    const snapshot = await loadSnapshot();
-    rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
-    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-    rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
-    // 数据量变化后若当前页已越界，则自动回退到最后一页。
-    if (currentPage.value > pageCount.value) {
-      currentPage.value = pageCount.value;
+    try {
+      const snapshot = await loadSnapshot();
+      rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+      rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
+      rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+      loadError.value = "";
+      // 数据量变化后若当前页已越界，则自动回退到最后一页。
+      if (currentPage.value > pageCount.value) {
+        currentPage.value = pageCount.value;
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? String(error.message || "").trim() : "";
+      loadError.value = detail ? `总览数据加载失败，请稍后重试，${detail}` : "总览数据加载失败，请稍后重试";
     }
   };
 
@@ -82,6 +89,7 @@ function useDashboardPage() {
   return {
     currentPage,
     deviceItems: computed(() => viewModel.value.deviceItems),
+    loadError,
     pageCount,
     pagedTaskRows,
     setCurrentPage,

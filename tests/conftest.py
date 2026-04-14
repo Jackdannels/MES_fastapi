@@ -9,6 +9,7 @@ os.environ.setdefault("DEMO_USER", "test-admin")
 os.environ.setdefault("DEMO_PASSWORD", "test-password")
 os.environ.setdefault("SESSION_SECRET_KEY", "test-session-secret")
 os.environ.setdefault("FRONTEND_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")
+os.environ.setdefault("STORAGE_BACKEND", "mysql")
 
 from app.main import app
 
