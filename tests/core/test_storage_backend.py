@@ -309,26 +309,6 @@ def test_reset_demo_data_does_not_rewrite_json_snapshot_by_default(tmp_path) -> 
     assert _read_store(path) == {"sentinel": True}
 
 
-def test_reset_demo_data_can_export_json_snapshot_when_requested(tmp_path) -> None:
-    path = tmp_path / "mes_store.json"
-
-    class _DummyStorage:
-        def read_all(self):
-            return {
-                "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
-                "mes.meta": {"schema_version": 2},
-            }
-
-        def write_many(self, updates):
-            return None
-
-    snapshot = reset_demo_data(_DummyStorage(), store_path=path, export_json_snapshot=True)
-    persisted = _read_store(path)
-
-    assert persisted["mes.devices"] == snapshot["mes.devices"]
-    assert len(persisted["mes.tasks"]) == 20
-
-
 def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
     path = tmp_path / "mes_store.json"
     storage = DatabaseStorageBackend(InMemorySnapshotRepository(), bootstrap_storage=JsonFileStorage(path))
@@ -339,20 +319,9 @@ def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
     assert summary["experiment_count"] == 60
     assert summary["sample_count"] > 100
     assert summary["store_path"] == str(path)
-    assert summary["json_snapshot_written"] is False
 
 
-def test_run_demo_reset_reports_when_json_snapshot_is_exported(tmp_path) -> None:
-    path = tmp_path / "mes_store.json"
-    storage = DatabaseStorageBackend(InMemorySnapshotRepository(), bootstrap_storage=JsonFileStorage(path))
-
-    summary = run_demo_reset(storage, store_path=path, export_json_snapshot=True)
-
-    assert summary["json_snapshot_written"] is True
-    assert path.exists() is True
-
-
-def test_reset_demo_script_skips_json_snapshot_by_default(monkeypatch, capsys) -> None:
+def test_reset_demo_script_resets_mysql_only(monkeypatch, capsys) -> None:
     module = importlib.import_module("scripts.reset_demo_data")
     captured = {}
 
@@ -366,15 +335,43 @@ def test_reset_demo_script_skips_json_snapshot_by_default(monkeypatch, capsys) -
             "sample_count": 160,
             "experiment_count": 60,
             "store_path": "mes_store.json",
-            "json_snapshot_written": False,
         },
     )
 
     exit_code = module.main([])
 
     assert exit_code == 0
-    assert captured == {"seed_demo": False, "backend": "backend", "export_json_snapshot": False}
-    assert "json_snapshot=skipped" in capsys.readouterr().out
+    assert captured == {"seed_demo": False, "backend": "backend"}
+    assert "json_snapshot" not in capsys.readouterr().out
+
+
+def test_export_mysql_snapshot_script_writes_json_snapshot(monkeypatch, tmp_path, capsys) -> None:
+    module = importlib.import_module("scripts.export_mysql_snapshot")
+    destination = tmp_path / "snapshot.json"
+
+    class _DummyStorage:
+        def read_all(self):
+            return {
+                "mes.tasks": [{"code": "SYLU-2026-03-001"}],
+                "mes.samples": [],
+                "mes.experiments": [],
+                "mes.schedules": [],
+                "mes.experiment_trays": [],
+                "mes.experiment_samples": [],
+                "mes.devices": [],
+                "mes.streams": [],
+                "mes.conflicts": [],
+                "mes.meta": {"schema_version": 2},
+            }
+
+    monkeypatch.setattr(module, "create_mysql_storage_backend", lambda: _DummyStorage())
+
+    exit_code = module.main(["--output", str(destination)])
+
+    assert exit_code == 0
+    persisted = _read_store(destination)
+    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    assert "tasks=1" in capsys.readouterr().out
 
 
 def test_init_mysql_storage_script_initializes_schema_without_demo_seed_by_default(monkeypatch, capsys) -> None:

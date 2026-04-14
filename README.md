@@ -173,6 +173,6 @@ python scripts\reset_demo_data.py
 补充说明：
 
 - `scripts\reset_demo_data.py` 会先校验并补齐当前 MySQL 存储扩展，再重置业务演示数据
-- `scripts\reset_demo_data.py` 默认只重置当前 MySQL 业务数据，不再把 JSON 文件当运行期依赖写回
-- 如确实需要导出一份 JSON 快照做离线检查，可执行 `python scripts\reset_demo_data.py --write-json-snapshot`
+- `scripts\reset_demo_data.py` 只重置当前 MySQL 业务数据，不再承担 JSON 导出职责
+- 如确实需要导出一份 JSON 快照做离线检查，可执行 `python scripts\export_mysql_snapshot.py --output app\data\mes_store.json`
 - 推荐通过 `python scripts\migrate_json_to_mysql.py --source ...` 执行一次性 JSON 导入，而不是依赖运行期 bootstrap
