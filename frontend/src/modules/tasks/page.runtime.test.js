@@ -460,6 +460,67 @@ describe("TasksPage runtime", () => {
     expect(state.tasks[0].test_type.trim().length).toBeGreaterThan(0);
   });
 
+  test("keeps the created task visible when creation succeeds but the follow-up reload fails", async () => {
+    window.location.hash = "#task-intake-modal";
+    let taskReloadFailed = false;
+    const fetchMock = vi.fn((url, options = {}) => {
+      const method = options.method ?? "GET";
+      if (url === "/api/tasks" && method === "GET") {
+        if (taskReloadFailed) {
+          return Promise.reject(new Error("reload failed"));
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [createTask()],
+        });
+      }
+      if (url === "/api/tasks" && method === "POST") {
+        taskReloadFailed = true;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => JSON.parse(options.body ?? "{}"),
+        });
+      }
+      if (url === "/api/storage" && method === "GET") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            [SCHEDULES_KEY]: [],
+            [SAMPLES_KEY]: [],
+            [STREAMS_KEY]: [],
+            [EXPERIMENTS_KEY]: [],
+          }),
+        });
+      }
+      if (url === "/api/storage" && method === "PUT") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true }),
+        });
+      }
+      return Promise.reject(new Error(`unexpected request: ${method} ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="test_type"]').setValue("冲击试验");
+    await wrapper.get('input[name="name"]').setValue("冲击试验-批次D");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-04-001");
+    expect(wrapper.find(".modal.is-open").exists()).toBe(false);
+    expect(wrapper.text()).toContain("任务列表刷新失败");
+  });
+
   test("deletes a task and cascades related schedules, samples, and streams", async () => {
     const { state } = installApiFetchMock({
       tasks: [createTask({ sample_count: 2 })],

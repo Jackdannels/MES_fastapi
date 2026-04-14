@@ -34,6 +34,7 @@
           <AppPagination :current-page="currentPage" :page-count="pageCount" @change="setCurrentPage" />
         </div>
       </div>
+      <div v-if="loadError" class="form-alert" data-testid="dashboard-load-error">{{ loadError }}</div>
       <table class="table">
         <thead>
           <tr>
@@ -88,6 +89,6 @@
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useDashboardPage } from "./useDashboardPage";
 
-const { currentPage, deviceItems, pageCount, pagedTaskRows, setCurrentPage, summaryCards, unscheduledExperimentItems } =
+const { currentPage, deviceItems, loadError, pageCount, pagedTaskRows, setCurrentPage, summaryCards, unscheduledExperimentItems } =
   useDashboardPage();
 </script>

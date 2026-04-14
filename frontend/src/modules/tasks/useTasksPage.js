@@ -165,6 +165,7 @@ function useTasksPage() {
 
   const persistRelated = async (updates) => {
     // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
+    await persistSnapshot(updates);
     if (Array.isArray(updates[STORAGE_KEYS.schedules])) {
       rawSchedules.value = updates[STORAGE_KEYS.schedules];
     }
@@ -174,7 +175,6 @@ function useTasksPage() {
     if (Array.isArray(updates[STORAGE_KEYS.streams])) {
       rawStreams.value = updates[STORAGE_KEYS.streams];
     }
-    await persistSnapshot(updates);
   };
 
   const submitTask = async () => {
@@ -194,17 +194,28 @@ function useTasksPage() {
     const nextSamples = syncTaskSamples(rawSamples.value, nextTask);
     try {
       await createTask(nextTask);
-      rawTasks.value = await readTasks();
+      rawTasks.value = [nextTask, ...rawTasks.value];
+      closeIntakeModal();
+      resetIntakeForm();
+    } catch (error) {
+      intakeWarning.value = buildFailureMessage("任务提交失败，请稍后重试", error);
+      return;
+    }
 
+    try {
       await persistRelated({
         [STORAGE_KEYS.samples]: nextSamples,
       });
+    } catch (error) {
+      loadError.value = buildFailureMessage("任务已创建，但关联数据保存失败，请刷新后确认", error);
+      return;
+    }
 
-      closeIntakeModal();
-      resetIntakeForm();
+    try {
+      rawTasks.value = await readTasks();
       loadError.value = "";
     } catch (error) {
-      intakeWarning.value = buildFailureMessage("任务提交失败，请稍后重试", error);
+      loadError.value = buildFailureMessage("任务已创建，但任务列表刷新失败，请刷新后确认", error);
     }
   };
 
@@ -221,16 +232,30 @@ function useTasksPage() {
 
     try {
       await updateTaskByApi(editForm.value.id, updatedTask);
-      rawTasks.value = await readTasks();
-      // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-      const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
+      rawTasks.value = tasks;
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+      return;
+    }
+
+    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
+    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
+    try {
       await persistRelated({
         [STORAGE_KEYS.samples]: nextSamples,
       });
+    } catch (error) {
       closeTaskDrawer();
+      loadError.value = buildFailureMessage("任务已更新，但关联数据保存失败，请刷新后确认", error);
+      return;
+    }
+
+    closeTaskDrawer();
+    try {
+      rawTasks.value = await readTasks();
       loadError.value = "";
     } catch (error) {
-      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
     }
   };
 
@@ -248,16 +273,30 @@ function useTasksPage() {
 
     try {
       await deleteTaskByApi(editForm.value.id);
-      rawTasks.value = await readTasks();
+      rawTasks.value = nextSnapshot.tasks;
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务删除失败，请稍后重试", error);
+      return;
+    }
+
+    try {
       await persistRelated({
         [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
         [STORAGE_KEYS.samples]: nextSnapshot.samples,
         [STORAGE_KEYS.streams]: nextSnapshot.streams,
       });
+    } catch (error) {
       closeTaskDrawer();
+      loadError.value = buildFailureMessage("任务已删除，但关联数据保存失败，请刷新后确认", error);
+      return;
+    }
+
+    closeTaskDrawer();
+    try {
+      rawTasks.value = await readTasks();
       loadError.value = "";
     } catch (error) {
-      editWarning.value = buildFailureMessage("任务删除失败，请稍后重试", error);
+      loadError.value = buildFailureMessage("任务已删除，但任务列表刷新失败，请刷新后确认", error);
     }
   };
 

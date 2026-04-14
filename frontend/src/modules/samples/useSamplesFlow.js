@@ -177,26 +177,37 @@ function useSamplesFlow() {
       .sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
   );
 
+  const buildFailureMessage = (prefix, error) => {
+    const detail = String(error instanceof Error ? error.message : "").trim();
+    return detail ? `${prefix}，${detail}` : prefix;
+  };
+
   const load = async () => {
     // 当前页面只消费任务与样品快照，不依赖排程和流数据。
     loading.value = true;
-    const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
-    rawTasks.value = Array.isArray(tasks) ? tasks : [];
-    const normalizedSamples = normalizeSamplesSnapshot(
-      Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
-      DEFAULT_LABELS,
-    );
-    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-    rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-    const prunedSamples = pruneSamplesForCurrentTasks(normalizedSamples, rawTasks.value);
-    rawSamples.value = prunedSamples;
-    if (samplesChanged(prunedSamples, normalizedSamples)) {
-      await persistSnapshot({
-        [STORAGE_KEYS.samples]: prunedSamples,
-      });
+    try {
+      const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+      rawTasks.value = Array.isArray(tasks) ? tasks : [];
+      const normalizedSamples = normalizeSamplesSnapshot(
+        Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
+        DEFAULT_LABELS,
+      );
+      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+      const prunedSamples = pruneSamplesForCurrentTasks(normalizedSamples, rawTasks.value);
+      rawSamples.value = prunedSamples;
+      if (samplesChanged(prunedSamples, normalizedSamples)) {
+        await persistSnapshot({
+          [STORAGE_KEYS.samples]: prunedSamples,
+        });
+      }
+      warning.value = "";
+    } catch (error) {
+      warning.value = buildFailureMessage("样品数据加载失败，请稍后重试", error);
+    } finally {
+      loading.value = false;
     }
-    loading.value = false;
   };
 
   const resetPage = () => {

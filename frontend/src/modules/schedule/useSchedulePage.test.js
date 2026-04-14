@@ -320,4 +320,15 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.showRetentionPanel).toBeUndefined();
     expect(wrapper.vm.manualLabOptions).not.toContain(RETENTION_DEVICE);
   });
+
+  test("surfaces snapshot load failures on the scheduling form instead of rejecting", async () => {
+    mocks.loadSnapshot.mockRejectedValueOnce(new Error("offline"));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleWarning).toContain("排程数据加载失败");
+    expect(wrapper.vm.scheduleRows).toEqual([]);
+    expect(wrapper.vm.taskOptions).toEqual([]);
+  });
 });
