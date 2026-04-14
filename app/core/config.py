@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "MES"
+    APP_ENV: str = "dev"
     DEBUG: bool = False
     SERVE_WEB_APP: bool = False
     DEMO_USER: Optional[str] = None
@@ -16,7 +17,7 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 30
     SESSION_MAX_AGE_HOURS: int = 8
     FRONTEND_ORIGINS: str = "http://127.0.0.1:5173,http://localhost:5173"
-    STORAGE_BACKEND: str = "json"
+    STORAGE_BACKEND: str = "mysql"
 
     MYSQL_HOST: str = "127.0.0.1"
     MYSQL_PORT: int = 3306
@@ -24,6 +25,8 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = "mes_single_branch"
     MYSQL_BOOTSTRAP_FROM_JSON: bool = True
+    MYSQL_AUTO_INIT_SCHEMA: bool = True
+    MYSQL_AUTO_SEED_DEMO: bool = True
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
@@ -43,6 +46,13 @@ class Settings(BaseSettings):
                 return False
             if normalized in {"debug", "development", "dev"}:
                 return True
+        return value
+
+    @field_validator("APP_ENV", "STORAGE_BACKEND", mode="before")
+    @classmethod
+    def normalize_text_settings(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
         return value
 
 

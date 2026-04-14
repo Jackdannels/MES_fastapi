@@ -75,6 +75,20 @@ def _default_store() -> Dict[str, Any]:
     }
 
 
+def _normalize_backend_name(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _build_mysql_connection_settings() -> MySQLConnectionSettings:
+    return MySQLConnectionSettings(
+        host=settings.MYSQL_HOST,
+        port=settings.MYSQL_PORT,
+        user=settings.MYSQL_USER,
+        password=settings.MYSQL_PASSWORD,
+        database=settings.MYSQL_DATABASE,
+    )
+
+
 def _sanitize_sample_text(value: str) -> str:
     text = str(value)
     for source, target in SAMPLE_TEXT_REPLACEMENTS:
@@ -434,6 +448,55 @@ class DatabaseStorageBackend(StorageBackend):
             self._repository.write_many(serialized)
 
 
+def check_mysql_storage_connection(connection_settings: MySQLConnectionSettings | None = None) -> dict[str, Any]:
+    resolved_settings = connection_settings or _build_mysql_connection_settings()
+    try:
+        import pymysql
+    except ImportError as exc:
+        return {
+            "status": "unhealthy",
+            "detail": str(exc),
+        }
+
+    connection = None
+    cursor = None
+    row = None
+    try:
+        connection = pymysql.connect(
+            host=resolved_settings.host,
+            port=resolved_settings.port,
+            user=resolved_settings.user,
+            password=resolved_settings.password,
+            database=resolved_settings.database,
+            charset=resolved_settings.charset,
+            autocommit=False,
+        )
+        cursor = connection.cursor()
+        cursor.execute("select 1")
+        row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "status": "unhealthy",
+            "detail": str(exc),
+        }
+    finally:
+        if cursor is not None:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    return {
+        "status": "ok",
+        "result": row[0] if row else None,
+    }
+
+
 class JsonFileStorage(StorageBackend):
     def __init__(self, path: Path) -> None:
         self._path = path
@@ -495,32 +558,87 @@ class JsonFileStorage(StorageBackend):
 _storage_backend: StorageBackend | None = None
 
 
+def _describe_active_storage_backend() -> str:
+    backend = _storage_backend
+    if backend is not None:
+        backend_type = backend.__class__.__name__
+        if backend_type == "MySQLMesStorageBackend":
+            return "mysql"
+        if isinstance(backend, JsonFileStorage):
+            return "json"
+    configured_backend = _normalize_backend_name(settings.STORAGE_BACKEND)
+    return configured_backend or "unknown"
+
+
+def _describe_storage_bootstrap(backend_name: str) -> dict[str, Any]:
+    if backend_name != "mysql":
+        return {
+            "enabled": False,
+            "source": None,
+            "status": "not_applicable",
+        }
+
+    backend = _storage_backend
+    bootstrap_storage = None
+    if backend is not None and backend.__class__.__name__ == "MySQLMesStorageBackend":
+        bootstrap_storage = getattr(backend, "_bootstrap_storage", None)
+    bootstrap_enabled = bool(settings.MYSQL_BOOTSTRAP_FROM_JSON)
+    if bootstrap_storage is not None:
+        bootstrap_enabled = True
+    return {
+        "enabled": bootstrap_enabled,
+        "source": "json" if bootstrap_enabled else None,
+        "status": "available" if bootstrap_enabled else "disabled",
+    }
+
+
+def get_storage_health_report() -> dict[str, Any]:
+    backend_name = _describe_active_storage_backend()
+    backend_report = {
+        "name": backend_name,
+        "app_env": settings.APP_ENV,
+        "configured_backend": settings.STORAGE_BACKEND,
+        "mysql_auto_init_schema": settings.MYSQL_AUTO_INIT_SCHEMA,
+        "mysql_auto_seed_demo": settings.MYSQL_AUTO_SEED_DEMO,
+        "mysql_bootstrap_from_json": settings.MYSQL_BOOTSTRAP_FROM_JSON,
+    }
+    bootstrap_report = _describe_storage_bootstrap(backend_name)
+
+    if backend_name == "mysql":
+        database_report = check_mysql_storage_connection(_build_mysql_connection_settings())
+        report_status = "ok" if database_report.get("status") == "ok" else "unhealthy"
+    elif backend_name == "json":
+        database_report = {
+            "status": "not_configured",
+        }
+        report_status = "ok"
+    else:
+        database_report = {
+            "status": "not_configured",
+        }
+        report_status = "unhealthy"
+
+    return {
+        "status": report_status,
+        "backend": backend_report,
+        "bootstrap": bootstrap_report,
+        "database": database_report,
+    }
+
+
 def get_storage_backend() -> StorageBackend:
     global _storage_backend
     if _storage_backend is None:
-        backend_name = settings.STORAGE_BACKEND.strip().lower()
+        backend_name = _normalize_backend_name(settings.STORAGE_BACKEND)
         if backend_name == "mysql":
             from app.core.mysql_storage_backend import MySQLMesStorageBackend
 
-            repository = MySQLSnapshotRepository(
-                MySQLConnectionSettings(
-                    host=settings.MYSQL_HOST,
-                    port=settings.MYSQL_PORT,
-                    user=settings.MYSQL_USER,
-                    password=settings.MYSQL_PASSWORD,
-                    database=settings.MYSQL_DATABASE,
-                )
-            )
+            connection_settings = _build_mysql_connection_settings()
+            repository = MySQLSnapshotRepository(connection_settings)
             _storage_backend = MySQLMesStorageBackend(
-                MySQLConnectionSettings(
-                    host=settings.MYSQL_HOST,
-                    port=settings.MYSQL_PORT,
-                    user=settings.MYSQL_USER,
-                    password=settings.MYSQL_PASSWORD,
-                    database=settings.MYSQL_DATABASE,
-                ),
+                connection_settings,
                 repository,
-                bootstrap_storage=JsonFileStorage(DEFAULT_STORE_PATH),
+                bootstrap_storage=JsonFileStorage(DEFAULT_STORE_PATH) if settings.MYSQL_BOOTSTRAP_FROM_JSON else None,
             )
         else:
             _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)

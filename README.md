@@ -17,6 +17,14 @@
 ```env
 DEBUG=true
 SERVE_WEB_APP=false
+STORAGE_BACKEND=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+# MYSQL_PASSWORD=change-me
+MYSQL_DATABASE=mes_single_branch
+# Keep true only for the first empty-state migration from app/data/mes_store.json.
+MYSQL_BOOTSTRAP_FROM_JSON=true
 DEMO_USER=admin
 DEMO_PASSWORD=123
 SESSION_SECRET_KEY=local-dev-session-secret
@@ -50,6 +58,7 @@ python scripts\run_local.py --reload --host 0.0.0.0 --port 8000
 说明：
 
 - 当前默认是 API-only
+- 当前默认存储后端是 MySQL
 - 所以 `http://127.0.0.1:8000/` 返回 `404` 是正常现象
 
 ### 4. 启动前端

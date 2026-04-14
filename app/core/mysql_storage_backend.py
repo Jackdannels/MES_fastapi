@@ -787,52 +787,17 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def _ensure_bootstrapped(self) -> None:
         self._ensure_schema_extensions()
-        snapshot_payloads = self._snapshot_repository.read_all()
         if self._bootstrap_storage is None:
             return
         counts = self._managed_counts()
-        pending_updates: Dict[str, Any] = {}
-
-        if not any(counts.values()):
-            bootstrap_payload = self._bootstrap_storage.read_all()
-            merged_payload = dict(bootstrap_payload)
-            for key in SNAPSHOT_STORAGE_KEYS:
-                if normalize_text(snapshot_payloads.get(key)):
-                    try:
-                        merged_payload[key] = json.loads(snapshot_payloads[key])
-                    except json.JSONDecodeError:
-                        merged_payload[key] = bootstrap_payload.get(key, [])
-            self._write_many_internal(merged_payload)
+        if any(counts.values()):
             return
 
-        if counts.get("mes.tasks", 0) == 0:
-            pending_updates.update(
-                {
-                    key: self._bootstrap_storage.read(key)
-                    for key in RELATIONAL_STORAGE_KEYS
-                }
-            )
-            if pending_updates:
-                self._write_many_internal(pending_updates)
+        bootstrap_payload = self._bootstrap_storage.read_all()
+        if not bootstrap_payload:
             return
 
-        for key in RELATIONAL_STORAGE_KEYS:
-            if counts.get(key, 0) > 0:
-                continue
-            if key == "mes.samples":
-                raw_sample_payload = snapshot_payloads.get("mes.samples")
-                if normalize_text(raw_sample_payload):
-                    try:
-                        pending_updates["mes.samples"] = json.loads(raw_sample_payload)
-                    except json.JSONDecodeError:
-                        pending_updates["mes.samples"] = self._bootstrap_storage.read("mes.samples")
-                else:
-                    pending_updates["mes.samples"] = self._bootstrap_storage.read("mes.samples")
-                continue
-            pending_updates[key] = self._bootstrap_storage.read(key)
-
-        if pending_updates:
-            self._write_many_internal(pending_updates)
+        self._write_many_internal(dict(bootstrap_payload))
 
     def _delete_missing_rows(
         self,
