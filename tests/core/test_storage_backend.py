@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import re
 import sys
-import importlib
 from pathlib import Path
 
 import pytest
@@ -755,7 +756,7 @@ def test_json_storage_backfills_three_experiments_for_existing_sylu_tasks_withou
     ]
 
 
-def test_storage_health_report_describes_json_mode_and_bootstrap_source(monkeypatch, tmp_path) -> None:
+def test_storage_health_report_marks_json_runtime_mode_unsupported(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(storage_backend_module.settings, "STORAGE_BACKEND", "json")
     monkeypatch.setattr(storage_backend_module.settings, "MYSQL_BOOTSTRAP_FROM_JSON", True)
     monkeypatch.setattr(storage_backend_module, "DEFAULT_STORE_PATH", tmp_path / "mes_store.json")
@@ -769,22 +770,32 @@ def test_storage_health_report_describes_json_mode_and_bootstrap_source(monkeypa
     )
     storage_backend_module._storage_backend = None
 
-    storage_backend_module.get_storage_backend()
     report = storage_backend_module.get_storage_health_report()
 
-    assert report["status"] == "ok"
+    assert report["status"] == "unhealthy"
     assert report["configured_backend"] == "json"
-    assert report["active_backend"] == "json"
-    assert report["database"]["status"] == "not_configured"
+    assert report["active_backend"] is None
+    assert report["database"] == {
+        "status": "unsupported",
+        "detail": "Only mysql runtime storage is supported",
+    }
     assert report["mysql"] == {
         "status": "unhealthy",
         "detail": "pymysql is required for the MySQL storage backend",
     }
     assert report["bootstrap"] == {
-        "from_json_enabled": True,
+        "from_json_enabled": False,
         "source_path": str(tmp_path / "mes_store.json"),
-        "last_result": "not_applicable",
+        "last_result": "unsupported_runtime_backend",
     }
+
+
+def test_get_storage_backend_rejects_json_runtime_mode(monkeypatch) -> None:
+    monkeypatch.setattr(storage_backend_module.settings, "STORAGE_BACKEND", "json")
+    storage_backend_module._storage_backend = None
+
+    with pytest.raises(RuntimeError, match="Only mysql runtime storage is supported"):
+        storage_backend_module.get_storage_backend()
 
 
 def test_storage_health_report_marks_mysql_unhealthy_when_connection_check_fails(monkeypatch) -> None:
@@ -809,8 +820,8 @@ def test_storage_health_report_marks_mysql_unhealthy_when_connection_check_fails
         "status": "unhealthy",
         "detail": "pymysql is required for the MySQL storage backend",
     }
-    assert report["bootstrap"]["from_json_enabled"] is True
-    assert report["bootstrap"]["last_result"] == "not_checked"
+    assert report["bootstrap"]["from_json_enabled"] is False
+    assert report["bootstrap"]["last_result"] == "disabled"
 
 
 def test_check_mysql_storage_connection_uses_short_timeouts(monkeypatch) -> None:
@@ -856,4 +867,9 @@ def test_check_mysql_storage_connection_uses_short_timeouts(monkeypatch) -> None
 
 def test_storage_backend_defaults_to_mysql() -> None:
     assert storage_backend_module.settings.STORAGE_BACKEND == "mysql"
+
+
+def test_pytest_defaults_disable_runtime_json_bootstrap() -> None:
+    assert os.environ["STORAGE_BACKEND"] == "mysql"
+    assert os.environ["MYSQL_BOOTSTRAP_FROM_JSON"] == "false"
 

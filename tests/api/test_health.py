@@ -22,14 +22,14 @@ def test_health_reports_storage_diagnostics(client, monkeypatch):
         "get_storage_health_report",
         lambda: {
             "status": "ok",
-            "configured_backend": "json",
-            "active_backend": "json",
-            "database": {"status": "not_configured"},
+            "configured_backend": "mysql",
+            "active_backend": "mysql",
+            "database": {"status": "ok", "result": 1},
             "mysql": {"status": "ok", "result": 1},
             "bootstrap": {
-                "from_json_enabled": True,
+                "from_json_enabled": False,
                 "source_path": "C:/tmp/mes_store.json",
-                "last_result": "not_applicable",
+                "last_result": "disabled",
             },
         },
     )
@@ -41,14 +41,14 @@ def test_health_reports_storage_diagnostics(client, monkeypatch):
         "status": "ok",
         "storage": {
             "status": "ok",
-            "configured_backend": "json",
-            "active_backend": "json",
-            "database": {"status": "not_configured"},
+            "configured_backend": "mysql",
+            "active_backend": "mysql",
+            "database": {"status": "ok", "result": 1},
             "mysql": {"status": "ok", "result": 1},
             "bootstrap": {
-                "from_json_enabled": True,
+                "from_json_enabled": False,
                 "source_path": "C:/tmp/mes_store.json",
-                "last_result": "not_applicable",
+                "last_result": "disabled",
             },
         },
     }
@@ -71,9 +71,9 @@ def test_health_surfaces_storage_backend_unhealthy_details_without_failing_healt
                 "detail": "pymysql is required for the MySQL storage backend",
             },
             "bootstrap": {
-                "from_json_enabled": True,
+                "from_json_enabled": False,
                 "source_path": "C:/tmp/mes_store.json",
-                "last_result": "not_checked",
+                "last_result": "disabled",
             },
         },
     )
@@ -96,9 +96,9 @@ def test_health_surfaces_storage_backend_unhealthy_details_without_failing_healt
                 "detail": "pymysql is required for the MySQL storage backend",
             },
             "bootstrap": {
-                "from_json_enabled": True,
+                "from_json_enabled": False,
                 "source_path": "C:/tmp/mes_store.json",
-                "last_result": "not_checked",
+                "last_result": "disabled",
             },
         },
     }

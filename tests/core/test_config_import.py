@@ -49,3 +49,10 @@ def test_settings_expose_storage_migration_flags() -> None:
     assert settings.APP_ENV == "dev"
     assert settings.MYSQL_AUTO_INIT_SCHEMA is False
     assert settings.MYSQL_AUTO_SEED_DEMO is True
+
+
+def test_settings_disable_runtime_json_bootstrap_by_default() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.STORAGE_BACKEND == "mysql"
+    assert settings.MYSQL_BOOTSTRAP_FROM_JSON is False

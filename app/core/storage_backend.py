@@ -15,6 +15,8 @@ DEFAULT_STORE_PATH = BASE_DIR / "data" / "mes_store.json"
 STORAGE_META_KEY = "mes.meta"
 CURRENT_SCHEMA_VERSION = 2
 MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
+RUNTIME_STORAGE_BACKEND = "mysql"
+UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -554,25 +556,33 @@ def check_mysql_storage_connection() -> Dict[str, Any]:
 
 
 def get_storage_health_report() -> Dict[str, Any]:
-    configured_backend = settings.STORAGE_BACKEND.strip().lower() or "json"
+    configured_backend = settings.STORAGE_BACKEND.strip().lower() or RUNTIME_STORAGE_BACKEND
     mysql_report = check_mysql_storage_connection()
     report: Dict[str, Any] = {
         "status": "ok",
         "configured_backend": configured_backend,
         "active_backend": _backend_name(_storage_backend),
-        "database": {"status": "not_configured"},
+        "database": {"status": "not_checked"},
         "mysql": mysql_report,
         "bootstrap": {
-            "from_json_enabled": bool(settings.MYSQL_BOOTSTRAP_FROM_JSON),
+            "from_json_enabled": False,
             "source_path": str(DEFAULT_STORE_PATH),
-            "last_result": "not_applicable" if configured_backend != "mysql" else "not_checked",
+            "last_result": "disabled",
         },
     }
 
-    if configured_backend == "mysql":
+    if configured_backend == RUNTIME_STORAGE_BACKEND:
         report["database"] = mysql_report
         if report["database"].get("status") != "ok":
             report["status"] = "unhealthy"
+    else:
+        report["status"] = "unhealthy"
+        report["active_backend"] = None
+        report["database"] = {
+            "status": "unsupported",
+            "detail": UNSUPPORTED_RUNTIME_BACKEND_DETAIL,
+        }
+        report["bootstrap"]["last_result"] = "unsupported_runtime_backend"
 
     return report
 
@@ -580,31 +590,23 @@ def get_storage_health_report() -> Dict[str, Any]:
 def get_storage_backend() -> StorageBackend:
     global _storage_backend
     if _storage_backend is None:
-        backend_name = settings.STORAGE_BACKEND.strip().lower()
-        if backend_name == "mysql":
-            from app.core.mysql_storage_backend import MySQLMesStorageBackend
+        backend_name = settings.STORAGE_BACKEND.strip().lower() or RUNTIME_STORAGE_BACKEND
+        if backend_name != RUNTIME_STORAGE_BACKEND:
+            raise RuntimeError(UNSUPPORTED_RUNTIME_BACKEND_DETAIL)
 
-            repository = MySQLSnapshotRepository(
-                MySQLConnectionSettings(
-                    host=settings.MYSQL_HOST,
-                    port=settings.MYSQL_PORT,
-                    user=settings.MYSQL_USER,
-                    password=settings.MYSQL_PASSWORD,
-                    database=settings.MYSQL_DATABASE,
-                )
-            )
-            bootstrap_storage = JsonFileStorage(DEFAULT_STORE_PATH) if settings.MYSQL_BOOTSTRAP_FROM_JSON else None
-            _storage_backend = MySQLMesStorageBackend(
-                MySQLConnectionSettings(
-                    host=settings.MYSQL_HOST,
-                    port=settings.MYSQL_PORT,
-                    user=settings.MYSQL_USER,
-                    password=settings.MYSQL_PASSWORD,
-                    database=settings.MYSQL_DATABASE,
-                ),
-                repository,
-                bootstrap_storage=bootstrap_storage,
-            )
-        else:
-            _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)
+        from app.core.mysql_storage_backend import MySQLMesStorageBackend
+
+        connection_settings = MySQLConnectionSettings(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+        )
+        repository = MySQLSnapshotRepository(connection_settings)
+        _storage_backend = MySQLMesStorageBackend(
+            connection_settings,
+            repository,
+            bootstrap_storage=None,
+        )
     return _storage_backend

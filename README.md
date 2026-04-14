@@ -8,6 +8,7 @@
 - 后端默认只提供 API，在 `http://127.0.0.1:8000/`
 - 后端业务存储默认走 MySQL
 - 后端健康检查地址：`http://127.0.0.1:8000/health`
+- 运行期不再支持 `STORAGE_BACKEND=json`
 
 ## 最简测试流程
 
@@ -61,6 +62,7 @@ python scripts\run_local.py --reload --host 0.0.0.0 --port 8000
 
 - 当前默认是 API-only
 - 当前默认业务数据源是 MySQL
+- 运行期只支持 MySQL 作为业务存储后端
 - 所以 `http://127.0.0.1:8000/` 返回 `404` 是正常现象
 
 ### 4. 启动前端
@@ -143,9 +145,10 @@ python scripts\migrate_json_to_mysql.py --source app\data\mes_store.json
 
 - `scripts\init_mysql_storage.py` 会先创建数据库和 `app_storage_snapshot` 表，再对已有 MES 主表做结构对齐
 - 该脚本要求基础 MES 主表已存在；当前仓库不包含 `biz_task`、`biz_sample`、`biz_tray`、`biz_tray_item`、`md_equipment`、`sys_role` 的完整建表种子 SQL
+- 后端运行期只支持 MySQL 存储，不再支持 `STORAGE_BACKEND=json`
 - `init_mysql_storage.py` 不会隐式从 JSON 导入业务数据
 - `migrate_json_to_mysql.py` 是唯一保留的 JSON -> MySQL 显式迁移入口，且要求目标 MySQL 中不存在任何受管 MES 快照/前端迁移数据
-- 推荐把 `MYSQL_BOOTSTRAP_FROM_JSON` 保持为 `false`，通过显式迁移脚本完成 JSON 导入
+- `MYSQL_BOOTSTRAP_FROM_JSON` 默认保持为 `false`；JSON 只用于显式迁移，不再参与运行期存储选择
 
 ## 演示数据整库重置
 

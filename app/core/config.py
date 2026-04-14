@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = "mes_single_branch"
-    MYSQL_BOOTSTRAP_FROM_JSON: bool = True
+    MYSQL_BOOTSTRAP_FROM_JSON: bool = False
     MYSQL_AUTO_INIT_SCHEMA: bool = False
     MYSQL_AUTO_SEED_DEMO: bool = False
 
