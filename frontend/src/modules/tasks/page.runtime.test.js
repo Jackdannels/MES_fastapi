@@ -2,12 +2,16 @@ import { mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { buildApiUrl, getFrontendApiBaseUrl } from "../../lib/apiBase.js";
 import TasksPage from "./page.vue";
 
 const SCHEDULES_KEY = "mes.schedules";
 const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
+const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
+const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 
 const routeState = reactive({ hash: "" });
 
@@ -52,7 +56,7 @@ const createTasksPageFetchMock = ({
   const fetchMock = vi.fn((url, options = {}) => {
     const method = options.method ?? "GET";
 
-    if (url === "/api/tasks" && method === "GET") {
+    if (url === TASKS_ENDPOINT && method === "GET") {
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -60,7 +64,7 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url === "/api/tasks" && method === "POST") {
+    if (url === TASKS_ENDPOINT && method === "POST") {
       const nextTask = JSON.parse(options.body ?? "{}");
       state.tasks = [nextTask, ...state.tasks];
       return Promise.resolve({
@@ -70,8 +74,8 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url.startsWith("/api/tasks/") && method === "PUT") {
-      const taskId = url.slice("/api/tasks/".length);
+    if (url.startsWith(buildTaskEndpoint("")) && method === "PUT") {
+      const taskId = url.slice(buildTaskEndpoint("").length);
       const nextTask = JSON.parse(options.body ?? "{}");
       state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(nextTask) : task));
       return Promise.resolve({
@@ -81,8 +85,8 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url.startsWith("/api/tasks/") && method === "DELETE") {
-      const taskId = url.slice("/api/tasks/".length);
+    if (url.startsWith(buildTaskEndpoint("")) && method === "DELETE") {
+      const taskId = url.slice(buildTaskEndpoint("").length);
       state.tasks = state.tasks.filter((task) => task.id !== taskId);
       return Promise.resolve({
         ok: true,
@@ -90,7 +94,7 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url === "/api/storage" && method === "GET") {
+    if (url === STORAGE_ENDPOINT && method === "GET") {
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -103,7 +107,7 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url === "/api/storage" && method === "PUT") {
+    if (url === STORAGE_ENDPOINT && method === "PUT") {
       const updates = JSON.parse(options.body ?? "{}");
       if (Array.isArray(updates[SCHEDULES_KEY])) {
         state.schedules = clone(updates[SCHEDULES_KEY]);
@@ -306,7 +310,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("温度冲击 / 振动 / 盐雾");
     expect(wrapper.text()).not.toContain("设备要求");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks",
+      TASKS_ENDPOINT,
       expect.objectContaining({
         credentials: "include",
       }),
@@ -415,14 +419,14 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/tasks",
+      TASKS_ENDPOINT,
       expect.objectContaining({
         method: "POST",
       }),
     );
 
     const storageWriteCall = fetchMock.mock.calls.find(
-      ([url, options]) => url === "/api/storage" && options?.method === "PUT",
+      ([url, options]) => url === STORAGE_ENDPOINT && options?.method === "PUT",
     );
     expect(storageWriteCall).toBeTruthy();
     expect(JSON.parse(storageWriteCall[1].body)).toEqual({
@@ -465,7 +469,7 @@ describe("TasksPage runtime", () => {
     let taskReloadFailed = false;
     const fetchMock = vi.fn((url, options = {}) => {
       const method = options.method ?? "GET";
-      if (url === "/api/tasks" && method === "GET") {
+      if (url === TASKS_ENDPOINT && method === "GET") {
         if (taskReloadFailed) {
           return Promise.reject(new Error("reload failed"));
         }
@@ -475,7 +479,7 @@ describe("TasksPage runtime", () => {
           json: async () => [createTask()],
         });
       }
-      if (url === "/api/tasks" && method === "POST") {
+      if (url === TASKS_ENDPOINT && method === "POST") {
         taskReloadFailed = true;
         return Promise.resolve({
           ok: true,
@@ -483,7 +487,7 @@ describe("TasksPage runtime", () => {
           json: async () => JSON.parse(options.body ?? "{}"),
         });
       }
-      if (url === "/api/storage" && method === "GET") {
+      if (url === STORAGE_ENDPOINT && method === "GET") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -495,7 +499,7 @@ describe("TasksPage runtime", () => {
           }),
         });
       }
-      if (url === "/api/storage" && method === "PUT") {
+      if (url === STORAGE_ENDPOINT && method === "PUT") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -579,7 +583,7 @@ describe("TasksPage runtime", () => {
   test("sample update event reloads tasks and refreshes the open drawer arrival time", async () => {
     let taskLoadCount = 0;
     const fetchMock = vi.fn((url) => {
-      if (url === "/api/tasks") {
+      if (url === TASKS_ENDPOINT) {
         taskLoadCount += 1;
         return Promise.resolve({
           ok: true,
@@ -603,7 +607,7 @@ describe("TasksPage runtime", () => {
                 ],
         });
       }
-      if (url === "/api/storage") {
+      if (url === STORAGE_ENDPOINT) {
         return Promise.resolve({
           ok: true,
           json: async () => ({

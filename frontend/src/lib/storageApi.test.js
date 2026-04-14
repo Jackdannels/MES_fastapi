@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { readStorageSnapshot, writeStorageUpdates } from "./storageApi";
 import { STORAGE_KEYS } from "./storageKeys";
+
+const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 
 describe("storageApi", () => {
   beforeEach(() => {
@@ -66,7 +69,7 @@ describe("storageApi", () => {
     });
 
     expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith("/api/storage", {
+    expect(fetchMock).toHaveBeenCalledWith(STORAGE_ENDPOINT, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

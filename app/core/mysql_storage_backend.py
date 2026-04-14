@@ -629,11 +629,9 @@ class MySQLMesStorageBackend(StorageBackend):
         self,
         connection_settings: MySQLConnectionSettings,
         snapshot_repository: MySQLSnapshotRepository,
-        bootstrap_storage: StorageBackend | None = None,
     ) -> None:
         self._connection_settings = connection_settings
         self._snapshot_repository = snapshot_repository
-        self._bootstrap_storage = bootstrap_storage
         self._lock = Lock()
         self._schema_initialized = False
 
@@ -753,55 +751,6 @@ class MySQLMesStorageBackend(StorageBackend):
                 normalized = _normalize_value(key, updates.get(key) if isinstance(updates.get(key), list) else [])
             serialized[key] = json.dumps(normalized, ensure_ascii=False)
         return serialized
-
-    def _managed_counts(self) -> dict[str, int]:
-        self._ensure_schema_extensions()
-        with self._connect() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_task WHERE source_system = %s", (STORAGE_MARKER,))
-                task_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_schedule WHERE schedule_type = %s", (STORAGE_MARKER,))
-                schedule_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment")
-                experiment_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment_tray")
-                experiment_tray_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_experiment_sample")
-                experiment_sample_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM md_equipment WHERE manufacturer = %s", (STORAGE_MARKER,))
-                device_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_data_stream WHERE remark = %s", (STORAGE_MARKER,))
-                stream_count = int(cursor.fetchone()["total"])
-                cursor.execute("SELECT COUNT(*) AS total FROM biz_sample WHERE remark LIKE %s", (f"{SAMPLE_META_PREFIX}%",))
-                sample_count = int(cursor.fetchone()["total"])
-        return {
-            "mes.tasks": task_count,
-            "mes.schedules": schedule_count,
-            "mes.devices": device_count,
-            "mes.streams": stream_count,
-            "mes.samples": sample_count,
-            "mes.experiments": experiment_count,
-            "mes.experiment_trays": experiment_tray_count,
-            "mes.experiment_samples": experiment_sample_count,
-        }
-
-    def _ensure_bootstrapped(self) -> None:
-        self._ensure_schema_extensions()
-        if self._bootstrap_storage is None:
-            return
-        counts = self._managed_counts()
-
-        if not any(counts.values()):
-            snapshot_payloads = self._snapshot_repository.read_all()
-            bootstrap_payload = self._bootstrap_storage.read_all()
-            merged_payload = dict(bootstrap_payload)
-            for key in SNAPSHOT_STORAGE_KEYS:
-                if normalize_text(snapshot_payloads.get(key)):
-                    try:
-                        merged_payload[key] = json.loads(snapshot_payloads[key])
-                    except json.JSONDecodeError:
-                        merged_payload[key] = bootstrap_payload.get(key, [])
-            self._write_many_internal(merged_payload)
 
     def _delete_missing_rows(
         self,
@@ -1796,7 +1745,6 @@ class MySQLMesStorageBackend(StorageBackend):
     def read_all(self) -> Dict[str, Any]:
         with self._lock:
             self._ensure_schema_extensions()
-            self._ensure_bootstrapped()
             snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
             with self._connect() as connection:
                 with connection.cursor() as cursor:
@@ -1823,7 +1771,6 @@ class MySQLMesStorageBackend(StorageBackend):
             return []
         with self._lock:
             self._ensure_schema_extensions()
-            self._ensure_bootstrapped()
             if key in SNAPSHOT_STORAGE_KEYS:
                 snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
                 return snapshot_values.get(key, [])

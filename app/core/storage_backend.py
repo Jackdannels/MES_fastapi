@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
-from pathlib import Path
-from threading import Lock
 from typing import Any, Dict, Iterable
 
 from app.core.config import settings
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
-BASE_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_STORE_PATH = BASE_DIR / "data" / "mes_store.json"
 STORAGE_META_KEY = "mes.meta"
 CURRENT_SCHEMA_VERSION = 2
 MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
@@ -69,14 +64,6 @@ CANONICAL_TASK_COMPLETED_STATUS = "任务已完成"
 LEGACY_RUNNING_STATUSES = {"实验中"}
 LEGACY_COMPLETED_STATUSES = {"实验完成", "实验已经完成"}
 STATUS_VALUE_KEYS = {"status", "flow_status", "task_status", "experiment_status", "schedule_status", "sample_status"}
-
-
-def _default_store() -> Dict[str, Any]:
-    return {
-        **{key: [] for key in STORAGE_KEYS},
-        STORAGE_META_KEY: {"schema_version": CURRENT_SCHEMA_VERSION},
-    }
-
 
 def _sanitize_sample_text(value: str) -> str:
     text = str(value)
@@ -369,144 +356,14 @@ class StorageBackend:
         raise NotImplementedError
 
 
-class DatabaseStorageBackend(StorageBackend):
-    def __init__(self, repository, bootstrap_storage: StorageBackend | None = None) -> None:
-        self._repository = repository
-        self._bootstrap_storage = bootstrap_storage
-        self._lock = Lock()
-
-    def _deserialize_payloads(self, payloads: Dict[str, str]) -> Dict[str, Any]:
-        normalized: Dict[str, Any] = {}
-        for key in STORAGE_KEYS:
-            raw_value = payloads.get(key)
-            try:
-                parsed = json.loads(raw_value) if raw_value else []
-            except json.JSONDecodeError:
-                parsed = []
-            normalized[key] = _normalize_value(key, parsed if isinstance(parsed, list) else [])
-        meta_payload = payloads.get(STORAGE_META_KEY)
-        try:
-            parsed_meta = json.loads(meta_payload) if meta_payload else {}
-        except json.JSONDecodeError:
-            parsed_meta = {}
-        normalized[STORAGE_META_KEY] = _normalize_value(STORAGE_META_KEY, parsed_meta if isinstance(parsed_meta, dict) else {})
-        normalized, _ = _normalize_payload(normalized)
-        return normalized
-
-    def _serialize_updates(self, updates: Dict[str, Any]) -> Dict[str, str]:
-        serialized: Dict[str, str] = {}
-        for key, value in updates.items():
-            if key not in STORAGE_KEYS and key != STORAGE_META_KEY:
-                continue
-            if key == STORAGE_META_KEY:
-                normalized = _normalize_value(key, value if isinstance(value, dict) else {})
-            else:
-                normalized = _normalize_value(key, value if isinstance(value, list) else [])
-            serialized[key] = json.dumps(normalized, ensure_ascii=False)
-        return serialized
-
-    def _ensure_bootstrapped(self) -> Dict[str, str]:
-        payloads = self._repository.read_all()
-        if payloads or self._bootstrap_storage is None:
-            return payloads
-        bootstrap_payload = self._bootstrap_storage.read_all()
-        serialized = self._serialize_updates(bootstrap_payload)
-        self._repository.write_many(serialized)
-        return self._repository.read_all()
-
-    def read_all(self) -> Dict[str, Any]:
-        with self._lock:
-            payloads = self._ensure_bootstrapped()
-            return self._deserialize_payloads(payloads)
-
-    def read(self, key: str) -> Any:
-        with self._lock:
-            if key not in STORAGE_KEYS:
-                return []
-            payloads = self._ensure_bootstrapped()
-            return self._deserialize_payloads(payloads).get(key, [])
-
-    def write(self, key: str, value: Any) -> None:
-        self.write_many({key: value})
-
-    def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
-            serialized = self._serialize_updates(updates)
-            if not serialized:
-                return
-            self._repository.write_many(serialized)
-
-
-class JsonFileStorage(StorageBackend):
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._lock = Lock()
-        self._ensure_file()
-
-    def _ensure_file(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        if self._path.exists():
-            return
-        self._write_file(_default_store())
-
-    def _load_file(self) -> tuple[Dict[str, Any], bool]:
-        try:
-            content = self._path.read_text(encoding="utf-8")
-            payload = json.loads(content)
-        except Exception:
-            payload = {}
-        if not isinstance(payload, dict):
-            payload = {}
-        return _normalize_payload(payload)
-
-    def _write_file(self, payload: Dict[str, Any]) -> None:
-        data = dict(payload)
-        for key in STORAGE_KEYS:
-            data.setdefault(key, [])
-        data.setdefault(STORAGE_META_KEY, {"schema_version": CURRENT_SCHEMA_VERSION})
-        tmp_path = self._path.with_suffix(".tmp")
-        tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp_path.replace(self._path)
-
-    def read_all(self) -> Dict[str, Any]:
-        with self._lock:
-            payload, changed = self._load_file()
-            if changed:
-                self._write_file(payload)
-            return payload
-
-    def read(self, key: str) -> Any:
-        with self._lock:
-            payload, changed = self._load_file()
-            if changed:
-                self._write_file(payload)
-            return payload.get(key, [])
-
-    def write(self, key: str, value: Any) -> None:
-        with self._lock:
-            payload, _ = self._load_file()
-            payload[key] = _normalize_value(key, value)
-            self._write_file(payload)
-
-    def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
-            payload, _ = self._load_file()
-            payload.update({key: _normalize_value(key, value) for key, value in updates.items()})
-            self._write_file(payload)
-
-
 _storage_backend: StorageBackend | None = None
 
 
 def _backend_name(backend: StorageBackend | None) -> str | None:
     if backend is None:
         return None
-    if isinstance(backend, JsonFileStorage):
-        return "json"
     if backend.__class__.__name__ == "MySQLMesStorageBackend":
         return "mysql"
-    if isinstance(backend, DatabaseStorageBackend):
-        return "database"
     return backend.__class__.__name__.lower()
 
 
@@ -564,11 +421,6 @@ def get_storage_health_report() -> Dict[str, Any]:
         "active_backend": _backend_name(_storage_backend),
         "database": {"status": "not_checked"},
         "mysql": mysql_report,
-        "bootstrap": {
-            "from_json_enabled": False,
-            "source_path": str(DEFAULT_STORE_PATH),
-            "last_result": "disabled",
-        },
     }
 
     if configured_backend == RUNTIME_STORAGE_BACKEND:
@@ -582,7 +434,6 @@ def get_storage_health_report() -> Dict[str, Any]:
             "status": "unsupported",
             "detail": UNSUPPORTED_RUNTIME_BACKEND_DETAIL,
         }
-        report["bootstrap"]["last_result"] = "unsupported_runtime_backend"
 
     return report
 
@@ -607,6 +458,5 @@ def get_storage_backend() -> StorageBackend:
         _storage_backend = MySQLMesStorageBackend(
             connection_settings,
             repository,
-            bootstrap_storage=None,
         )
     return _storage_backend

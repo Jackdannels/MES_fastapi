@@ -22,7 +22,7 @@ def _import_config_with_env(overrides: dict[str, str]) -> subprocess.CompletedPr
     )
 
 
-def test_config_module_imports_when_mysql_bootstrap_flag_is_present() -> None:
+def test_config_module_imports_when_unknown_legacy_storage_env_is_present() -> None:
     result = _import_config_with_env({"MYSQL_BOOTSTRAP_FROM_JSON": "false"})
 
     assert result.returncode == 0, result.stderr
@@ -55,4 +55,4 @@ def test_settings_disable_runtime_json_bootstrap_by_default() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.STORAGE_BACKEND == "mysql"
-    assert settings.MYSQL_BOOTSTRAP_FROM_JSON is False
+    assert "MYSQL_BOOTSTRAP_FROM_JSON" not in Settings.model_fields

@@ -20,8 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = run_demo_reset(create_mysql_storage_backend())
     print(
         f"Demo data reset complete: tasks={summary['task_count']}, "
-        f"samples={summary['sample_count']}, experiments={summary['experiment_count']}, "
-        f"store={summary['store_path']}"
+        f"samples={summary['sample_count']}, experiments={summary['experiment_count']}"
     )
     return 0
 

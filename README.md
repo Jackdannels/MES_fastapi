@@ -29,7 +29,6 @@ MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=
 MYSQL_DATABASE=mes_single_branch
-MYSQL_BOOTSTRAP_FROM_JSON=false
 MYSQL_AUTO_INIT_SCHEMA=false
 MYSQL_AUTO_SEED_DEMO=false
 ```
@@ -134,21 +133,12 @@ cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\init_mysql_storage.py --seed-demo
 ```
 
-如需把历史 `mes_store.json` 一次性导入 MySQL，使用显式迁移脚本：
-
-```powershell
-cd c:\Users\12051\Desktop\MES_fastapi
-python scripts\migrate_json_to_mysql.py --source app\data\mes_store.json
-```
-
 说明：
 
 - `scripts\init_mysql_storage.py` 会先创建数据库和 `app_storage_snapshot` 表，再对已有 MES 主表做结构对齐
 - 该脚本要求基础 MES 主表已存在；当前仓库不包含 `biz_task`、`biz_sample`、`biz_tray`、`biz_tray_item`、`md_equipment`、`sys_role` 的完整建表种子 SQL
 - 后端运行期只支持 MySQL 存储，不再支持 `STORAGE_BACKEND=json`
-- `init_mysql_storage.py` 不会隐式从 JSON 导入业务数据
-- `migrate_json_to_mysql.py` 是唯一保留的 JSON -> MySQL 显式迁移入口，且要求目标 MySQL 中不存在任何受管 MES 快照/前端迁移数据
-- `MYSQL_BOOTSTRAP_FROM_JSON` 默认保持为 `false`；JSON 只用于显式迁移，不再参与运行期存储选择
+- `init_mysql_storage.py` 不会隐式从其他持久化介质导入业务数据
 
 ## 演示数据整库重置
 
@@ -173,6 +163,4 @@ python scripts\reset_demo_data.py
 补充说明：
 
 - `scripts\reset_demo_data.py` 会先校验并补齐当前 MySQL 存储扩展，再重置业务演示数据
-- `scripts\reset_demo_data.py` 只重置当前 MySQL 业务数据，不再承担 JSON 导出职责
-- 如确实需要导出一份 JSON 快照做离线检查，可执行 `python scripts\export_mysql_snapshot.py --output app\data\mes_store.json`
-- 推荐通过 `python scripts\migrate_json_to_mysql.py --source ...` 执行一次性 JSON 导入，而不是依赖运行期 bootstrap
+- `scripts\reset_demo_data.py` 只重置当前 MySQL 业务数据

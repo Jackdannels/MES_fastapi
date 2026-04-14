@@ -133,7 +133,6 @@ def create_mysql_storage_backend() -> MySQLMesStorageBackend:
     return MySQLMesStorageBackend(
         connection_settings,
         MySQLSnapshotRepository(connection_settings),
-        bootstrap_storage=None,
     )
 
 

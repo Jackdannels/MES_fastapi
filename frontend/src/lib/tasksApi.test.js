@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { createTask, deleteTask, readTasks, updateTask } from "./tasksApi";
+
+const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
+const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 
 describe("tasksApi", () => {
   beforeEach(() => {
@@ -69,21 +73,21 @@ describe("tasksApi", () => {
     expect(window.localStorage.getItem("mes.tasks")).toBeNull();
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "/api/tasks",
+      TASKS_ENDPOINT,
       expect.objectContaining({
         method: "POST",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      "/api/tasks/SYLU-2026-03-002",
+      buildTaskEndpoint("SYLU-2026-03-002"),
       expect.objectContaining({
         method: "PUT",
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      "/api/tasks/SYLU-2026-03-003",
+      buildTaskEndpoint("SYLU-2026-03-003"),
       expect.objectContaining({
         method: "DELETE",
         credentials: "include",
