@@ -569,3 +569,7 @@ def test_check_mysql_storage_connection_uses_short_timeouts(monkeypatch) -> None
     assert captured["sql"] == "SELECT 1"
     assert captured["closed"] is True
 
+
+def test_storage_backend_defaults_to_mysql() -> None:
+    assert storage_backend_module.settings.STORAGE_BACKEND == "mysql"
+

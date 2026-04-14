@@ -6,6 +6,7 @@
 
 - 前端独立运行在 `http://127.0.0.1:5173/`
 - 后端默认只提供 API，在 `http://127.0.0.1:8000/`
+- 后端业务存储默认走 MySQL
 - 后端健康检查地址：`http://127.0.0.1:8000/health`
 
 ## 最简测试流程
@@ -21,6 +22,13 @@ DEMO_USER=admin
 DEMO_PASSWORD=123
 SESSION_SECRET_KEY=local-dev-session-secret
 FRONTEND_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+STORAGE_BACKEND=mysql
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+MYSQL_USER=root
+MYSQL_PASSWORD=
+MYSQL_DATABASE=mes_single_branch
+MYSQL_BOOTSTRAP_FROM_JSON=true
 ```
 
 ### 2. 准备前端环境文件
@@ -50,6 +58,7 @@ python scripts\run_local.py --reload --host 0.0.0.0 --port 8000
 说明：
 
 - 当前默认是 API-only
+- 当前默认业务数据源是 MySQL
 - 所以 `http://127.0.0.1:8000/` 返回 `404` 是正常现象
 
 ### 4. 启动前端
@@ -120,3 +129,8 @@ powershell -NoProfile -Command "python scripts\reset_demo_data.py"
 - 所有任务初始状态统一为全新任务状态
 
 设备定义会保留，不会随这次重置被删除。
+
+补充说明：
+
+- `MYSQL_BOOTSTRAP_FROM_JSON=true` 只用于迁移期首次空库导入
+- 只要 MySQL 中已经存在任意受管业务数据，应用就不会继续从 JSON 回灌

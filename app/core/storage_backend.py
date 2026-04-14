@@ -593,6 +593,7 @@ def get_storage_backend() -> StorageBackend:
                     database=settings.MYSQL_DATABASE,
                 )
             )
+            bootstrap_storage = JsonFileStorage(DEFAULT_STORE_PATH) if settings.MYSQL_BOOTSTRAP_FROM_JSON else None
             _storage_backend = MySQLMesStorageBackend(
                 MySQLConnectionSettings(
                     host=settings.MYSQL_HOST,
@@ -602,7 +603,7 @@ def get_storage_backend() -> StorageBackend:
                     database=settings.MYSQL_DATABASE,
                 ),
                 repository,
-                bootstrap_storage=JsonFileStorage(DEFAULT_STORE_PATH),
+                bootstrap_storage=bootstrap_storage,
             )
         else:
             _storage_backend = JsonFileStorage(DEFAULT_STORE_PATH)
