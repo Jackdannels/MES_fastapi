@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -8,15 +9,28 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.demo_data_reset import run_demo_reset
-from app.core.storage_backend import get_storage_backend
+from scripts.init_mysql_storage import create_mysql_storage_backend, initialize_mysql_storage
 
 
-def main() -> int:
-    summary = run_demo_reset(get_storage_backend())
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Reset MySQL demo data without using JSON as the runtime source.")
+    parser.add_argument(
+        "--write-json-snapshot",
+        action="store_true",
+        help="Also export the generated demo snapshot to mes_store.json for offline inspection.",
+    )
+    args = parser.parse_args(argv)
+
+    initialize_mysql_storage(seed_demo=False)
+    summary = run_demo_reset(
+        create_mysql_storage_backend(),
+        export_json_snapshot=args.write_json_snapshot,
+    )
     print(
         f"Demo data reset complete: tasks={summary['task_count']}, "
         f"samples={summary['sample_count']}, experiments={summary['experiment_count']}, "
-        f"store={summary['store_path']}"
+        f"store={summary['store_path']}, "
+        f"json_snapshot={'written' if summary['json_snapshot_written'] else 'skipped'}"
     )
     return 0
 

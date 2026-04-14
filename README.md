@@ -28,7 +28,9 @@ MYSQL_PORT=3306
 MYSQL_USER=root
 MYSQL_PASSWORD=
 MYSQL_DATABASE=mes_single_branch
-MYSQL_BOOTSTRAP_FROM_JSON=true
+MYSQL_BOOTSTRAP_FROM_JSON=false
+MYSQL_AUTO_INIT_SCHEMA=false
+MYSQL_AUTO_SEED_DEMO=false
 ```
 
 ### 2. 准备前端环境文件
@@ -109,14 +111,49 @@ python scripts\trial_run.py --port 8021
 - `logout_status_code` 为 `204`
 - `post_logout_session_status_code` 为 `401`
 
+## 初始化与迁移
+
+开发环境可以按配置启用自动建表或自动灌演示数据：
+
+- `MYSQL_AUTO_INIT_SCHEMA=true` 只建议本地开发使用
+- `MYSQL_AUTO_SEED_DEMO=true` 只建议本地开发使用
+
+显式初始化 MySQL 时，使用脚本而不是依赖运行期 JSON：
+
+```powershell
+cd c:\Users\12051\Desktop\MES_fastapi
+python scripts\init_mysql_storage.py
+```
+
+如需初始化后直接重建演示基线：
+
+```powershell
+cd c:\Users\12051\Desktop\MES_fastapi
+python scripts\init_mysql_storage.py --seed-demo
+```
+
+如需把历史 `mes_store.json` 一次性导入 MySQL，使用显式迁移脚本：
+
+```powershell
+cd c:\Users\12051\Desktop\MES_fastapi
+python scripts\migrate_json_to_mysql.py --source app\data\mes_store.json
+```
+
+说明：
+
+- `scripts\init_mysql_storage.py` 会先创建数据库和 `app_storage_snapshot` 表，再对已有 MES 主表做结构对齐
+- 该脚本要求基础 MES 主表已存在；当前仓库不包含 `biz_task`、`biz_sample`、`biz_tray`、`biz_tray_item`、`md_equipment`、`sys_role` 的完整建表种子 SQL
+- `init_mysql_storage.py` 不会隐式从 JSON 导入业务数据
+- `migrate_json_to_mysql.py` 是唯一保留的 JSON -> MySQL 显式迁移入口，且要求目标 MySQL 中不存在任何受管 MES 快照/前端迁移数据
+- 推荐把 `MYSQL_BOOTSTRAP_FROM_JSON` 保持为 `false`，通过显式迁移脚本完成 JSON 导入
+
 ## 演示数据整库重置
 
 如需清空当前业务演示数据并重新生成一套干净基线，可执行：
 
 ```powershell
 cd c:\Users\12051\Desktop\MES_fastapi
-powershell -NoProfile -Command "python scripts\reset_demo_data.py"
-
+python scripts\reset_demo_data.py
 ```
 
 该操作是破坏性的，会删除当前任务、样品、实验、排程、托盘分配、冲突记录，并重新生成：
@@ -132,5 +169,7 @@ powershell -NoProfile -Command "python scripts\reset_demo_data.py"
 
 补充说明：
 
-- `MYSQL_BOOTSTRAP_FROM_JSON=true` 只用于迁移期首次空库导入
-- 只要 MySQL 中已经存在任意受管业务数据，应用就不会继续从 JSON 回灌
+- `scripts\reset_demo_data.py` 会先校验并补齐当前 MySQL 存储扩展，再重置业务演示数据
+- `scripts\reset_demo_data.py` 默认只重置当前 MySQL 业务数据，不再把 JSON 文件当运行期依赖写回
+- 如确实需要导出一份 JSON 快照做离线检查，可执行 `python scripts\reset_demo_data.py --write-json-snapshot`
+- 推荐通过 `python scripts\migrate_json_to_mysql.py --source ...` 执行一次性 JSON 导入，而不是依赖运行期 bootstrap

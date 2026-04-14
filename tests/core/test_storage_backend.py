@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 import re
 import sys
+import importlib
+from pathlib import Path
+
+import pytest
 
 import app.core.storage_backend as storage_backend_module
 from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data, run_demo_reset
@@ -251,7 +255,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert snapshot["mes.conflicts"] == []
 
 
-def test_reset_demo_data_rewrites_store_with_fresh_tasks_and_preserves_devices(tmp_path) -> None:
+def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_devices(tmp_path) -> None:
     path = tmp_path / "mes_store.json"
     seed_storage = JsonFileStorage(path)
     seed_storage.write_many(
@@ -271,8 +275,6 @@ def test_reset_demo_data_rewrites_store_with_fresh_tasks_and_preserves_devices(t
     storage = DatabaseStorageBackend(repository, bootstrap_storage=seed_storage)
 
     snapshot = reset_demo_data(storage, store_path=path)
-    persisted = _read_store(path)
-
     assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
     assert len(snapshot["mes.tasks"]) == 20
     assert snapshot["mes.schedules"] == []
@@ -280,9 +282,50 @@ def test_reset_demo_data_rewrites_store_with_fresh_tasks_and_preserves_devices(t
     assert snapshot["mes.experiment_samples"] == []
     assert snapshot["mes.streams"] == []
     assert snapshot["mes.conflicts"] == []
+    assert storage.read_all()["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert storage.read_all()["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+
+
+def test_reset_demo_data_does_not_rewrite_json_snapshot_by_default(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    path.write_text(json.dumps({"sentinel": True}, ensure_ascii=False), encoding="utf-8")
+    writes = {}
+
+    class _DummyStorage:
+        def read_all(self):
+            return {
+                "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+                "mes.meta": {"schema_version": 2},
+            }
+
+        def write_many(self, updates):
+            writes.update(updates)
+
+    snapshot = reset_demo_data(_DummyStorage(), store_path=path)
+
+    assert len(snapshot["mes.tasks"]) == 20
+    assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert _read_store(path) == {"sentinel": True}
+
+
+def test_reset_demo_data_can_export_json_snapshot_when_requested(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+
+    class _DummyStorage:
+        def read_all(self):
+            return {
+                "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+                "mes.meta": {"schema_version": 2},
+            }
+
+        def write_many(self, updates):
+            return None
+
+    snapshot = reset_demo_data(_DummyStorage(), store_path=path, export_json_snapshot=True)
+    persisted = _read_store(path)
+
+    assert persisted["mes.devices"] == snapshot["mes.devices"]
     assert len(persisted["mes.tasks"]) == 20
-    assert persisted["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
-    assert persisted["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
 
 
 def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
@@ -295,6 +338,247 @@ def test_run_demo_reset_returns_summary_counts(tmp_path) -> None:
     assert summary["experiment_count"] == 60
     assert summary["sample_count"] > 100
     assert summary["store_path"] == str(path)
+    assert summary["json_snapshot_written"] is False
+
+
+def test_run_demo_reset_reports_when_json_snapshot_is_exported(tmp_path) -> None:
+    path = tmp_path / "mes_store.json"
+    storage = DatabaseStorageBackend(InMemorySnapshotRepository(), bootstrap_storage=JsonFileStorage(path))
+
+    summary = run_demo_reset(storage, store_path=path, export_json_snapshot=True)
+
+    assert summary["json_snapshot_written"] is True
+    assert path.exists() is True
+
+
+def test_reset_demo_script_skips_json_snapshot_by_default(monkeypatch, capsys) -> None:
+    module = importlib.import_module("scripts.reset_demo_data")
+    captured = {}
+
+    monkeypatch.setattr(module, "initialize_mysql_storage", lambda seed_demo=False: captured.update({"seed_demo": seed_demo}))
+    monkeypatch.setattr(module, "create_mysql_storage_backend", lambda: "backend")
+    monkeypatch.setattr(
+        module,
+        "run_demo_reset",
+        lambda backend, **kwargs: captured.update({"backend": backend, **kwargs}) or {
+            "task_count": 20,
+            "sample_count": 160,
+            "experiment_count": 60,
+            "store_path": "mes_store.json",
+            "json_snapshot_written": False,
+        },
+    )
+
+    exit_code = module.main([])
+
+    assert exit_code == 0
+    assert captured == {"seed_demo": False, "backend": "backend", "export_json_snapshot": False}
+    assert "json_snapshot=skipped" in capsys.readouterr().out
+
+
+def test_init_mysql_storage_script_initializes_schema_without_demo_seed_by_default(monkeypatch, capsys) -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+    captured = {}
+
+    monkeypatch.setattr(
+        module,
+        "initialize_mysql_storage",
+        lambda seed_demo=False: captured.update({"seed_demo": seed_demo}) or {
+            "database": "mes",
+            "schema_initialized": True,
+            "demo_seeded": False,
+            "task_count": 0,
+        },
+    )
+
+    exit_code = module.main([])
+
+    assert exit_code == 0
+    assert captured == {"seed_demo": False}
+    assert "demo_seeded=no" in capsys.readouterr().out
+
+
+def test_initialize_mysql_storage_applies_schema_sql_before_loading_backend(monkeypatch, tmp_path) -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+    schema_paths = [tmp_path / "001.sql", tmp_path / "002.sql"]
+    applied_paths = []
+    touched = []
+
+    class _DummyBackend:
+        def read_all(self):
+            touched.append("read_all")
+            return {"mes.tasks": []}
+
+    monkeypatch.setattr(module, "ensure_database_exists", lambda: touched.append("ensure_database"))
+    monkeypatch.setattr(module, "ensure_required_base_tables_exist", lambda: touched.append("ensure_required_base_tables"))
+    monkeypatch.setattr(module, "iter_schema_sql_paths", lambda: schema_paths)
+    monkeypatch.setattr(module, "apply_sql_file", lambda path: applied_paths.append(path))
+    monkeypatch.setattr(module, "create_mysql_storage_backend", lambda: _DummyBackend())
+
+    summary = module.initialize_mysql_storage(seed_demo=False)
+
+    assert applied_paths == schema_paths
+    assert touched == ["ensure_database", "ensure_required_base_tables", "read_all"]
+    assert summary["schema_initialized"] is True
+    assert summary["task_count"] == 0
+
+
+def test_initialize_mysql_storage_requires_preprovisioned_base_schema(monkeypatch, tmp_path) -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+    schema_paths = [tmp_path / "001.sql", tmp_path / "2026-03-17-mes-single-branch-schema-alignment.sql"]
+    applied_paths = []
+
+    monkeypatch.setattr(module, "ensure_database_exists", lambda: None)
+    monkeypatch.setattr(module, "iter_schema_sql_paths", lambda: schema_paths)
+    monkeypatch.setattr(module, "apply_sql_file", lambda path: applied_paths.append(path))
+    monkeypatch.setattr(
+        module,
+        "ensure_required_base_tables_exist",
+        lambda: (_ for _ in ()).throw(RuntimeError("Missing required tables: biz_task")),
+    )
+
+    with pytest.raises(RuntimeError, match="Missing required tables: biz_task"):
+        module.initialize_mysql_storage(seed_demo=False)
+
+    assert applied_paths == []
+
+
+def test_migrate_json_to_mysql_script_requires_explicit_source_and_writes_mysql(monkeypatch, tmp_path, capsys) -> None:
+    module = importlib.import_module("scripts.migrate_json_to_mysql")
+    source = tmp_path / "mes_store.json"
+    source.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [{"code": "SYLU-2026-03-001"}],
+                "mes.samples": [{"code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    writes = {}
+
+    class _DummyBackend:
+        def write_many(self, updates):
+            writes.update(updates)
+
+    monkeypatch.setattr(module, "ensure_mysql_target_is_empty", lambda: None)
+    monkeypatch.setattr(module, "initialize_mysql_storage", lambda seed_demo=False: None)
+    monkeypatch.setattr(module, "create_mysql_storage_backend", lambda: _DummyBackend())
+
+    exit_code = module.main(["--source", str(source)])
+
+    assert exit_code == 0
+    assert writes["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    assert "tasks=1" in capsys.readouterr().out
+
+
+def test_migrate_json_to_mysql_fails_when_source_file_is_missing(tmp_path) -> None:
+    module = importlib.import_module("scripts.migrate_json_to_mysql")
+
+    with pytest.raises(FileNotFoundError):
+        module.migrate_json_to_mysql(tmp_path / "missing.json")
+
+
+def test_migrate_json_to_mysql_rejects_non_empty_mysql_target(monkeypatch, tmp_path) -> None:
+    module = importlib.import_module("scripts.migrate_json_to_mysql")
+    source = tmp_path / "mes_store.json"
+    source.write_text(
+        json.dumps(
+            {
+                "mes.tasks": [{"code": "SYLU-2026-03-001"}],
+                "mes.samples": [],
+                "mes.experiments": [],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        module,
+        "ensure_mysql_target_is_empty",
+        lambda: (_ for _ in ()).throw(RuntimeError("Target MySQL storage already contains managed MES data")),
+    )
+    monkeypatch.setattr(
+        module,
+        "initialize_mysql_storage",
+        lambda seed_demo=False: (_ for _ in ()).throw(AssertionError("initialize_mysql_storage should not run for non-empty targets")),
+    )
+
+    with pytest.raises(RuntimeError, match="already contains managed MES data"):
+        module.migrate_json_to_mysql(source)
+
+
+def test_ensure_mysql_target_is_empty_rejects_existing_snapshot_rows(monkeypatch) -> None:
+    module = importlib.import_module("scripts.migrate_json_to_mysql")
+
+    class _FakeCursor:
+        def execute(self, statement, params=None):
+            return None
+
+        def fetchone(self):
+            return (1,)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConnection:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(module, "ensure_database_exists", lambda: None)
+    monkeypatch.setattr(module, "ensure_required_base_tables_exist", lambda: None)
+    monkeypatch.setattr(module, "_table_exists", lambda cursor, table_name: True)
+    monkeypatch.setattr(module, "_connect_mysql", lambda database=None: _FakeConnection())
+
+    with pytest.raises(RuntimeError, match="already contains managed MES data"):
+        module.ensure_mysql_target_is_empty()
+
+
+def test_ensure_mysql_target_is_empty_rejects_existing_schedule_rows(monkeypatch) -> None:
+    module = importlib.import_module("scripts.migrate_json_to_mysql")
+    counts = iter([(0,), (1,)])
+
+    class _FakeCursor:
+        def execute(self, statement, params=None):
+            return None
+
+        def fetchone(self):
+            return next(counts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConnection:
+        def cursor(self):
+            return _FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(module, "ensure_database_exists", lambda: None)
+    monkeypatch.setattr(module, "ensure_required_base_tables_exist", lambda: None)
+    monkeypatch.setattr(module, "_table_exists", lambda cursor, table_name: False)
+    monkeypatch.setattr(module, "_connect_mysql", lambda database=None: _FakeConnection())
+
+    with pytest.raises(RuntimeError, match="already contains managed MES data"):
+        module.ensure_mysql_target_is_empty()
 
 
 def test_json_storage_preserves_existing_task_codes_without_auto_migration(tmp_path) -> None:
