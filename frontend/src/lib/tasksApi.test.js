@@ -22,7 +22,7 @@ describe("tasksApi", () => {
     vi.restoreAllMocks();
   });
 
-  test("reads tasks from the dedicated tasks endpoint and refreshes local cache", async () => {
+  test("reads tasks from the dedicated tasks endpoint without refreshing local cache", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -34,19 +34,17 @@ describe("tasksApi", () => {
     const tasks = await readTasks();
 
     expect(tasks).toEqual([{ code: "SYLU-2026-03-001" }]);
-    expect(JSON.parse(window.localStorage.getItem("mes.tasks"))).toEqual([{ code: "SYLU-2026-03-001" }]);
+    expect(window.localStorage.getItem("mes.tasks")).toBeNull();
   });
 
-  test("falls back to local task cache when the tasks endpoint is unavailable", async () => {
+  test("rejects when the tasks endpoint is unavailable instead of falling back to local cache", async () => {
     window.localStorage.setItem("mes.tasks", JSON.stringify([{ code: "LOCAL-1" }]));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
-    const tasks = await readTasks();
-
-    expect(tasks).toEqual([{ code: "LOCAL-1" }]);
+    await expect(readTasks()).rejects.toThrow("network");
   });
 
-  test("creates, updates, and deletes tasks through the dedicated tasks endpoint", async () => {
+  test("creates, updates, and deletes tasks through the dedicated tasks endpoint without mutating local cache", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -68,6 +66,7 @@ describe("tasksApi", () => {
 
     expect(created).toEqual({ code: "SYLU-2026-03-002" });
     expect(updated).toEqual({ code: "SYLU-2026-03-003" });
+    expect(window.localStorage.getItem("mes.tasks")).toBeNull();
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       "/api/tasks",
@@ -90,5 +89,13 @@ describe("tasksApi", () => {
         credentials: "include",
       }),
     );
+  });
+
+  test("rejects failed task mutations instead of pretending local success", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+    await expect(createTask({ code: "SYLU-2026-03-009" })).rejects.toThrow("offline");
+    await expect(updateTask("SYLU-2026-03-009", { code: "SYLU-2026-03-010" })).rejects.toThrow("offline");
+    expect(window.localStorage.getItem("mes.tasks")).toBeNull();
   });
 });

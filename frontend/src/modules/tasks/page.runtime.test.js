@@ -1,37 +1,139 @@
 import { mount } from "@vue/test-utils";
 import { reactive } from "vue";
-import { beforeEach, afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TasksPage from "./page.vue";
 
-const TASKS_KEY = "mes.tasks";
 const SCHEDULES_KEY = "mes.schedules";
 const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
 
-let storageState = {};
 const routeState = reactive({ hash: "" });
 
 vi.mock("vue-router", () => ({
   useRoute: () => routeState,
 }));
 
-const createStorageStub = () => ({
-  getItem: (key) => (Object.prototype.hasOwnProperty.call(storageState, key) ? storageState[key] : null),
-  setItem: (key, value) => {
-    storageState[key] = String(value);
-  },
+const clone = (value) => JSON.parse(JSON.stringify(value));
+
+const createTask = (overrides = {}) => ({
+  id: "task-1",
+  code: "SYLU-2026-03-001",
+  name: "冲击试验-批次A",
+  source: "外部委托",
+  priority: "高",
+  sample_count: 12,
+  sample_type: "结构件",
+  test_type: "冲击试验",
+  required_device: "冲击试验",
+  due_at: "2026-03-13 18:00",
+  arrival_at: "2026-03-13 12:00",
+  status: "待排程",
+  created_at: "2026-03-13T08:00:00.000Z",
+  ...overrides,
 });
 
-const setStorage = (key, value) => {
-  window.localStorage.setItem(key, JSON.stringify(value));
+const createTasksPageFetchMock = ({
+  tasks = [],
+  schedules = [],
+  samples = [],
+  streams = [],
+  experiments = [],
+} = {}) => {
+  const state = {
+    tasks: clone(tasks),
+    schedules: clone(schedules),
+    samples: clone(samples),
+    streams: clone(streams),
+    experiments: clone(experiments),
+  };
+
+  const fetchMock = vi.fn((url, options = {}) => {
+    const method = options.method ?? "GET";
+
+    if (url === "/api/tasks" && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => clone(state.tasks),
+      });
+    }
+
+    if (url === "/api/tasks" && method === "POST") {
+      const nextTask = JSON.parse(options.body ?? "{}");
+      state.tasks = [nextTask, ...state.tasks];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => clone(nextTask),
+      });
+    }
+
+    if (url.startsWith("/api/tasks/") && method === "PUT") {
+      const taskId = url.slice("/api/tasks/".length);
+      const nextTask = JSON.parse(options.body ?? "{}");
+      state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(nextTask) : task));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => clone(nextTask),
+      });
+    }
+
+    if (url.startsWith("/api/tasks/") && method === "DELETE") {
+      const taskId = url.slice("/api/tasks/".length);
+      state.tasks = state.tasks.filter((task) => task.id !== taskId);
+      return Promise.resolve({
+        ok: true,
+        status: 204,
+      });
+    }
+
+    if (url === "/api/storage" && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          [SCHEDULES_KEY]: clone(state.schedules),
+          [SAMPLES_KEY]: clone(state.samples),
+          [STREAMS_KEY]: clone(state.streams),
+          [EXPERIMENTS_KEY]: clone(state.experiments),
+        }),
+      });
+    }
+
+    if (url === "/api/storage" && method === "PUT") {
+      const updates = JSON.parse(options.body ?? "{}");
+      if (Array.isArray(updates[SCHEDULES_KEY])) {
+        state.schedules = clone(updates[SCHEDULES_KEY]);
+      }
+      if (Array.isArray(updates[SAMPLES_KEY])) {
+        state.samples = clone(updates[SAMPLES_KEY]);
+      }
+      if (Array.isArray(updates[STREAMS_KEY])) {
+        state.streams = clone(updates[STREAMS_KEY]);
+      }
+      if (Array.isArray(updates[EXPERIMENTS_KEY])) {
+        state.experiments = clone(updates[EXPERIMENTS_KEY]);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      });
+    }
+
+    return Promise.reject(new Error(`unexpected request: ${method} ${url}`));
+  });
+
+  return { fetchMock, state };
 };
 
-const getStorage = (key) => JSON.parse(window.localStorage.getItem(key) || "[]");
-
-const resetStorage = () => {
-  storageState = {};
+const installApiFetchMock = (config = {}) => {
+  const api = createTasksPageFetchMock(config);
+  vi.stubGlobal("fetch", api.fetchMock);
+  return api;
 };
 
 const settle = async (wrapper) => {
@@ -43,57 +145,45 @@ const settle = async (wrapper) => {
 
 describe("TasksPage runtime", () => {
   beforeEach(() => {
-    resetStorage();
     window.location.hash = "";
     routeState.hash = "";
-    vi.stubGlobal("localStorage", createStorageStub());
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() => Promise.reject(new Error("offline"))),
-    );
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    resetStorage();
     window.location.hash = "";
     routeState.hash = "";
   });
 
-  test("renders task rows, filters visible tasks, and opens the task drawer from Vue state", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-1",
-        code: "SYLU-2026-03-001",
-        name: "冲击试验-批次A",
-        source: "外部委托",
-        priority: "高",
-        sample_count: 12,
-        sample_type: "结构件",
-        test_type: "冲击试验",
-        required_device: "冲击试验",
-        due_at: "2026-03-13 18:00",
-        arrival_at: "2026-03-13 12:00",
-        status: "待排程",
-        created_at: "2026-03-13T08:00:00.000Z",
-      },
-      {
-        id: "task-2",
-        code: "SYLU-2026-03-002",
-        name: "霉菌试验",
-        source: "内部新增",
-        priority: "中",
-        sample_count: 4,
-        sample_type: "粉末",
-        test_type: "霉菌试验",
-        required_device: "霉菌试验",
-        due_at: "2026-03-14 10:00",
-        arrival_at: "2026-03-13 09:00",
-        status: "待排程",
-        created_at: "2026-03-13T09:00:00.000Z",
-      },
-    ]);
-    setStorage(SCHEDULES_KEY, []);
+  test("shows an explicit load error when task data cannot be fetched", async () => {
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("任务数据加载失败");
+    expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(0);
+  });
+
+  test("renders task rows, filters visible tasks, and opens the task drawer from API data", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask(),
+        createTask({
+          id: "task-2",
+          code: "SYLU-2026-03-002",
+          name: "霉菌试验",
+          source: "内部新增",
+          priority: "中",
+          sample_count: 4,
+          sample_type: "粉末",
+          test_type: "霉菌试验",
+          required_device: "霉菌试验",
+          due_at: "2026-03-14 10:00",
+          arrival_at: "2026-03-13 09:00",
+          created_at: "2026-03-13T09:00:00.000Z",
+        }),
+      ],
+    });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -114,24 +204,22 @@ describe("TasksPage runtime", () => {
   });
 
   test("uses compact side columns while prioritizing the experiment summary column", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-layout-1",
-        code: "SYLU-2026-03-020",
-        name: "多实验布局任务",
-        source: "内部新增",
-        priority: "高",
-        sample_count: 6,
-        sample_type: "结构件",
-        test_type: "高低温湿热试验 / 振动试验 / 霉菌试验",
-        required_device: "高低温湿热试验",
-        due_at: "2026-03-20 08:00",
-        arrival_at: "2026-03-18 09:00",
-        status: "待排程",
-        created_at: "2026-03-18T08:00:00.000Z",
-      },
-    ]);
-    setStorage(SCHEDULES_KEY, []);
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-layout-1",
+          code: "SYLU-2026-03-020",
+          name: "多实验布局任务",
+          source: "内部新增",
+          sample_count: 6,
+          test_type: "高低温湿热试验 / 振动试验 / 霉菌试验",
+          required_device: "高低温湿热试验",
+          due_at: "2026-03-20 08:00",
+          arrival_at: "2026-03-18 09:00",
+          created_at: "2026-03-18T08:00:00.000Z",
+        }),
+      ],
+    });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -144,45 +232,35 @@ describe("TasksPage runtime", () => {
   });
 
   test("filters by atomic experiment type while hiding combined summaries from the filter dropdown", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-1",
-        code: "SYLU-2026-03-001",
-        name: "多实验任务",
-        source: "外部委托",
-        priority: "高",
-        sample_count: 12,
-        sample_type: "结构件",
-        test_type: "冲击试验 / 盐雾试验 / 冲击试验",
-        required_device: "冲击试验",
-        due_at: "2026-03-13 18:00",
-        arrival_at: "2026-03-13 12:00",
-        status: "待排程",
-        created_at: "2026-03-13T08:00:00.000Z",
-      },
-      {
-        id: "task-2",
-        code: "SYLU-2026-03-002",
-        name: "霉菌任务",
-        source: "内部新增",
-        priority: "中",
-        sample_count: 4,
-        sample_type: "粉末",
-        test_type: "霉菌试验",
-        required_device: "霉菌试验",
-        due_at: "2026-03-14 10:00",
-        arrival_at: "2026-03-13 09:00",
-        status: "待排程",
-        created_at: "2026-03-13T09:00:00.000Z",
-      },
-    ]);
-    setStorage(EXPERIMENTS_KEY, [
-      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_type: "冲击试验" },
-      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_type: "盐雾试验" },
-      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_type: "冲击试验" },
-      { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", experiment_type: "霉菌试验" },
-    ]);
-    setStorage(SCHEDULES_KEY, []);
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          code: "SYLU-2026-03-001",
+          name: "多实验任务",
+          test_type: "冲击试验 / 盐雾试验 / 冲击试验",
+        }),
+        createTask({
+          id: "task-2",
+          code: "SYLU-2026-03-002",
+          name: "霉菌任务",
+          source: "内部新增",
+          priority: "中",
+          sample_count: 4,
+          sample_type: "粉末",
+          test_type: "霉菌试验",
+          required_device: "霉菌试验",
+          due_at: "2026-03-14 10:00",
+          arrival_at: "2026-03-13 09:00",
+          created_at: "2026-03-13T09:00:00.000Z",
+        }),
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_type: "冲击试验" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_type: "盐雾试验" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_type: "冲击试验" },
+        { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", experiment_type: "霉菌试验" },
+      ],
+    });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -202,47 +280,24 @@ describe("TasksPage runtime", () => {
   });
 
   test("loads tasks from the dedicated tasks api while reading related collections from storage snapshot", async () => {
-    const fetchMock = vi.fn((url) => {
-      if (url === "/api/tasks") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [
-            {
-              id: "task-remote-1",
-              code: "SYLU-2026-03-099",
-              name: "远程冲击试验",
-              source: "外部委托",
-              priority: "高",
-              sample_count: 2,
-              sample_type: "结构件",
-              test_type: "冲击试验",
-              required_device: "冲击试验",
-              due_at: "2026-03-18 18:00",
-              arrival_at: "2026-03-18 12:00",
-              status: "待排程",
-              created_at: "2026-03-18T08:00:00.000Z",
-            },
-          ],
-        });
-      }
-      if (url === "/api/storage") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SCHEDULES_KEY]: [],
-            [SAMPLES_KEY]: [],
-            [STREAMS_KEY]: [],
-            [EXPERIMENTS_KEY]: [
-              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-A", experiment_type: "温度冲击" },
-              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-B", experiment_type: "振动" },
-              { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-C", experiment_type: "盐雾" },
-            ],
-          }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected url: ${url}`));
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-remote-1",
+          code: "SYLU-2026-03-099",
+          name: "远程冲击试验",
+          sample_count: 2,
+          due_at: "2026-03-18 18:00",
+          arrival_at: "2026-03-18 12:00",
+          created_at: "2026-03-18T08:00:00.000Z",
+        }),
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-A", experiment_type: "温度冲击" },
+        { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-B", experiment_type: "振动" },
+        { task_code: "SYLU-2026-03-099", experiment_code: "SYLU-2026-03-099-C", experiment_type: "盐雾" },
+      ],
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -259,46 +314,24 @@ describe("TasksPage runtime", () => {
   });
 
   test("renders partial experiment completion as running with a completed count suffix", async () => {
-    const fetchMock = vi.fn((url) => {
-      if (url === "/api/tasks") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [
-            {
-              id: "task-remote-2",
-              code: "SYLU-2026-03-100",
-              name: "远程多实验任务",
-              source: "外部委托",
-              priority: "高",
-              sample_count: 2,
-              sample_type: "结构件",
-              test_type: "冲击试验 / 振动试验",
-              required_device: "冲击试验",
-              due_at: "2026-03-18 18:00",
-              arrival_at: "2026-03-18 12:00",
-              status: "待排程",
-              created_at: "2026-03-18T08:00:00.000Z",
-            },
-          ],
-        });
-      }
-      if (url === "/api/storage") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SCHEDULES_KEY]: [],
-            [SAMPLES_KEY]: [],
-            [STREAMS_KEY]: [],
-            [EXPERIMENTS_KEY]: [
-              { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-A", experiment_name: "冲击试验", status: "实验已经完成" },
-              { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-B", experiment_name: "振动试验", status: "待排程" },
-            ],
-          }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected url: ${url}`));
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-remote-2",
+          code: "SYLU-2026-03-100",
+          name: "远程多实验任务",
+          sample_count: 2,
+          test_type: "冲击试验 / 振动试验",
+          due_at: "2026-03-18 18:00",
+          arrival_at: "2026-03-18 12:00",
+          created_at: "2026-03-18T08:00:00.000Z",
+        }),
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-A", experiment_name: "冲击试验", status: "实验已经完成" },
+        { task_code: "SYLU-2026-03-100", experiment_code: "SYLU-2026-03-100-B", experiment_name: "振动试验", status: "待排程" },
+      ],
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -307,23 +340,10 @@ describe("TasksPage runtime", () => {
   });
 
   test("opens the intake modal from the route hash, auto-fills task code, and submits a task", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-1",
-        code: "SYLU-2026-03-001",
-        name: "冲击试验-批次A",
-        source: "外部委托",
-        priority: "高",
-        sample_count: 12,
-        sample_type: "结构件",
-        test_type: "冲击试验",
-        due_at: "2026-03-13 18:00",
-        arrival_at: "2026-03-13 12:00",
-        status: "待排程",
-        created_at: "2026-03-13T08:00:00.000Z",
-      },
-    ]);
-    setStorage(SAMPLES_KEY, []);
+    const { state } = installApiFetchMock({
+      tasks: [createTask()],
+      samples: [],
+    });
     window.location.hash = "#task-intake-modal";
 
     const wrapper = mount(TasksPage);
@@ -344,10 +364,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
-    const tasks = getStorage(TASKS_KEY);
-
-    expect(tasks).toHaveLength(2);
-    expect(tasks[0]).toEqual(
+    expect(state.tasks).toHaveLength(2);
+    expect(state.tasks[0]).toEqual(
       expect.objectContaining({
         code: "SYLU-2026-04-001",
         name: "冲击试验-批次B",
@@ -356,22 +374,16 @@ describe("TasksPage runtime", () => {
   });
 
   test("shows arrival time as a read-only field in intake and edit forms", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-1",
-        code: "SYLU-2026-03-001",
-        name: "冲击试验-批次A",
-        source: "外部委托",
-        priority: "高",
-        sample_count: 2,
-        sample_type: "结构件",
-        test_type: "冲击试验",
-        required_device: "冲击试验",
-        arrival_at: "2026-03-18 08:00",
-        status: "待排程",
-        created_at: "2026-03-18T08:00:00.000Z",
-      },
-    ]);
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          sample_count: 2,
+          arrival_at: "2026-03-18 08:00",
+          due_at: "",
+          created_at: "2026-03-18T08:00:00.000Z",
+        }),
+      ],
+    });
     window.location.hash = "#task-intake-modal";
 
     const wrapper = mount(TasksPage);
@@ -387,39 +399,11 @@ describe("TasksPage runtime", () => {
   });
 
   test("submits tasks through the dedicated tasks api and only persists dependent collections through storage", async () => {
-    window.location.hash = "#task-intake-modal";
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => [],
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SCHEDULES_KEY]: [],
-            [SAMPLES_KEY]: [],
-            [STREAMS_KEY]: [],
-          }),
-        });
-      }
-      if (url === "/api/tasks" && options.method === "POST") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => JSON.parse(options.body),
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
+    const { fetchMock } = installApiFetchMock({
+      tasks: [],
+      samples: [],
     });
-    vi.stubGlobal("fetch", fetchMock);
+    window.location.hash = "#task-intake-modal";
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -447,8 +431,10 @@ describe("TasksPage runtime", () => {
   });
 
   test("creates a random task when the intake form is submitted with all default empty values", async () => {
-    setStorage(TASKS_KEY, []);
-    setStorage(SAMPLES_KEY, []);
+    const { state } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
     window.location.hash = "#task-intake-modal";
 
     const wrapper = mount(TasksPage);
@@ -460,10 +446,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
-    const tasks = getStorage(TASKS_KEY);
-
-    expect(tasks).toHaveLength(1);
-    expect(tasks[0]).toEqual(
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0]).toEqual(
       expect.objectContaining({
         code: expect.stringMatching(/^SYLU-\d{4}-\d{2}-\d{3}$/),
         name: expect.any(String),
@@ -472,73 +456,23 @@ describe("TasksPage runtime", () => {
         status: expect.any(String),
       }),
     );
-    expect(tasks[0].name.trim().length).toBeGreaterThan(0);
-    expect(tasks[0].test_type.trim().length).toBeGreaterThan(0);
+    expect(state.tasks[0].name.trim().length).toBeGreaterThan(0);
+    expect(state.tasks[0].test_type.trim().length).toBeGreaterThan(0);
   });
 
   test("deletes a task and cascades related schedules, samples, and streams", async () => {
-    setStorage(TASKS_KEY, [
-      {
-        id: "task-1",
-        code: "SYLU-2026-03-001",
-        name: "冲击试验-批次A",
-        source: "外部委托",
-        priority: "高",
-        sample_count: 2,
-        sample_type: "结构件",
-        test_type: "冲击试验",
-        required_device: "冲击试验",
-        due_at: "2026-03-13 18:00",
-        arrival_at: "2026-03-13 12:00",
-        status: "待排程",
-        created_at: "2026-03-13T08:00:00.000Z",
-      },
-    ]);
-    setStorage(SCHEDULES_KEY, [
-      { id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2026-03-13 12:00", end_at: "2026-03-13 14:00" },
-    ]);
-    setStorage(SAMPLES_KEY, [
-      { id: "sample-1", code: "SYLU-2026-03-001-SP-001", task_code: "SYLU-2026-03-001" },
-    ]);
-    setStorage(STREAMS_KEY, [
-      { id: "stream-1", task_code: "SYLU-2026-03-001" },
-    ]);
-
-    let deleted = false;
-    const fetchMock = vi.fn((url, options = {}) => {
-      if (url === "/api/tasks" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => (deleted ? [] : getStorage(TASKS_KEY)),
-        });
-      }
-      if (url === "/api/tasks/task-1" && options.method === "DELETE") {
-        deleted = true;
-        return Promise.resolve({
-          ok: true,
-          status: 204,
-        });
-      }
-      if (url === "/api/storage" && options.method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ ok: true }),
-        });
-      }
-      if (url === "/api/storage" && !options.method) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SCHEDULES_KEY]: getStorage(SCHEDULES_KEY),
-            [SAMPLES_KEY]: getStorage(SAMPLES_KEY),
-            [STREAMS_KEY]: getStorage(STREAMS_KEY),
-            [EXPERIMENTS_KEY]: [],
-          }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${url}`));
+    const { state } = installApiFetchMock({
+      tasks: [createTask({ sample_count: 2 })],
+      schedules: [
+        { id: "schedule-1", task_code: "SYLU-2026-03-001", device: "冲击一室", start_at: "2026-03-13 12:00", end_at: "2026-03-13 14:00" },
+      ],
+      samples: [
+        { id: "sample-1", code: "SYLU-2026-03-001-SP-001", task_code: "SYLU-2026-03-001" },
+      ],
+      streams: [
+        { id: "stream-1", task_code: "SYLU-2026-03-001" },
+      ],
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -547,14 +481,14 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-delete"]').trigger("click");
     await settle(wrapper);
 
-    expect(getStorage(TASKS_KEY)).toHaveLength(0);
-    expect(getStorage(SCHEDULES_KEY)).toHaveLength(0);
-    expect(getStorage(SAMPLES_KEY)).toHaveLength(0);
-    expect(getStorage(STREAMS_KEY)).toHaveLength(0);
+    expect(state.tasks).toHaveLength(0);
+    expect(state.schedules).toHaveLength(0);
+    expect(state.samples).toHaveLength(0);
+    expect(state.streams).toHaveLength(0);
   });
 
   test("opens the intake modal when vue-router updates the route hash on the same page", async () => {
-    setStorage(TASKS_KEY, []);
+    installApiFetchMock({ tasks: [] });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -568,7 +502,7 @@ describe("TasksPage runtime", () => {
   });
 
   test("opens the intake modal when the app header dispatches the open-task event", async () => {
-    setStorage(TASKS_KEY, []);
+    installApiFetchMock({ tasks: [] });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -591,36 +525,20 @@ describe("TasksPage runtime", () => {
           json: async () =>
             taskLoadCount === 1
               ? [
-                  {
-                    id: "task-1",
-                    code: "SYLU-2026-03-001",
-                    name: "冲击试验-批次A",
-                    source: "外部委托",
-                    priority: "高",
+                  createTask({
                     sample_count: 2,
-                    sample_type: "结构件",
-                    test_type: "冲击试验",
-                    required_device: "冲击试验",
                     arrival_at: "",
-                    status: "待排程",
+                    due_at: "",
                     created_at: "2026-03-18T08:00:00.000Z",
-                  },
+                  }),
                 ]
               : [
-                  {
-                    id: "task-1",
-                    code: "SYLU-2026-03-001",
-                    name: "冲击试验-批次A",
-                    source: "外部委托",
-                    priority: "高",
+                  createTask({
                     sample_count: 2,
-                    sample_type: "结构件",
-                    test_type: "冲击试验",
-                    required_device: "冲击试验",
                     arrival_at: "2026-03-18 09:14:45",
-                    status: "待排程",
+                    due_at: "",
                     created_at: "2026-03-18T08:00:00.000Z",
-                  },
+                  }),
                 ],
         });
       }

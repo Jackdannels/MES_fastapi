@@ -45,6 +45,7 @@ function useTasksPage() {
   const rawSamples = ref([]);
   const rawStreams = ref([]);
   const rawExperiments = ref([]);
+  const loadError = ref("");
   const intakeForm = ref(createTaskIntakeForm());
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
@@ -157,6 +158,11 @@ function useTasksPage() {
     openIntakeModal();
   };
 
+  const buildFailureMessage = (prefix, error) => {
+    const detail = normalizeText(error instanceof Error ? error.message : "");
+    return detail ? `${prefix}，${detail}` : prefix;
+  };
+
   const persistRelated = async (updates) => {
     // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
     if (Array.isArray(updates[STORAGE_KEYS.schedules])) {
@@ -186,15 +192,20 @@ function useTasksPage() {
     const nextTask = createTaskRecord(intakeForm.value, rawTasks.value);
     // 任务创建后立即同步样品编号，保持任务与样品侧数据一致。
     const nextSamples = syncTaskSamples(rawSamples.value, nextTask);
-    await createTask(nextTask);
-    rawTasks.value = await readTasks();
+    try {
+      await createTask(nextTask);
+      rawTasks.value = await readTasks();
 
-    await persistRelated({
-      [STORAGE_KEYS.samples]: nextSamples,
-    });
+      await persistRelated({
+        [STORAGE_KEYS.samples]: nextSamples,
+      });
 
-    closeIntakeModal();
-    resetIntakeForm();
+      closeIntakeModal();
+      resetIntakeForm();
+      loadError.value = "";
+    } catch (error) {
+      intakeWarning.value = buildFailureMessage("任务提交失败，请稍后重试", error);
+    }
   };
 
   const saveDraft = async () => {
@@ -208,14 +219,19 @@ function useTasksPage() {
       return;
     }
 
-    await updateTaskByApi(editForm.value.id, updatedTask);
-    rawTasks.value = await readTasks();
-    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
-    await persistRelated({
-      [STORAGE_KEYS.samples]: nextSamples,
-    });
-    closeTaskDrawer();
+    try {
+      await updateTaskByApi(editForm.value.id, updatedTask);
+      rawTasks.value = await readTasks();
+      // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
+      const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
+      await persistRelated({
+        [STORAGE_KEYS.samples]: nextSamples,
+      });
+      closeTaskDrawer();
+      loadError.value = "";
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+    }
   };
 
   const deleteTask = async () => {
@@ -230,33 +246,43 @@ function useTasksPage() {
       editForm.value.id,
     );
 
-    await deleteTaskByApi(editForm.value.id);
-    rawTasks.value = await readTasks();
-    await persistRelated({
-      [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
-      [STORAGE_KEYS.samples]: nextSnapshot.samples,
-      [STORAGE_KEYS.streams]: nextSnapshot.streams,
-    });
-    closeTaskDrawer();
+    try {
+      await deleteTaskByApi(editForm.value.id);
+      rawTasks.value = await readTasks();
+      await persistRelated({
+        [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
+        [STORAGE_KEYS.samples]: nextSnapshot.samples,
+        [STORAGE_KEYS.streams]: nextSnapshot.streams,
+      });
+      closeTaskDrawer();
+      loadError.value = "";
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务删除失败，请稍后重试", error);
+    }
   };
 
   const loadTasksPage = async () => {
-    const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
-    rawTasks.value = Array.isArray(tasks) ? tasks : [];
-    rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-    rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-    rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-    if (taskDrawer.open.value) {
-      const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
-      const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value).find(
-        (row) => normalizeText(row?.code) === selectedTaskCode,
-      );
-      if (selectedRow) {
-        taskDrawer.openWith(selectedRow);
-        editForm.value = buildTaskEditForm(selectedRow);
-        editWarning.value = "";
+    try {
+      const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+      rawTasks.value = Array.isArray(tasks) ? tasks : [];
+      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+      rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+      rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
+      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      loadError.value = "";
+      if (taskDrawer.open.value) {
+        const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
+        const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value).find(
+          (row) => normalizeText(row?.code) === selectedTaskCode,
+        );
+        if (selectedRow) {
+          taskDrawer.openWith(selectedRow);
+          editForm.value = buildTaskEditForm(selectedRow);
+          editWarning.value = "";
+        }
       }
+    } catch (error) {
+      loadError.value = buildFailureMessage("任务数据加载失败，请检查网络后重试", error);
     }
     syncIntakeDerivedFields();
     syncModalWithHash(route.hash || (typeof window !== "undefined" ? window.location.hash : ""));
@@ -323,6 +349,7 @@ function useTasksPage() {
     intakeForm,
     intakeModalOpen: intakeModal.open,
     intakeWarning,
+    loadError,
     metrics,
     pageCount,
     query,

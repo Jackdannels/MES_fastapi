@@ -46,22 +46,18 @@ describe("storageApi", () => {
       [STORAGE_KEYS.schedules]: [{ task_code: "T-1" }],
       [STORAGE_KEYS.staging_events]: [{ tray_code: "T-1-TP-001", action: "stock_in" }],
     });
+    expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
   });
 
-  test("falls back to local storage when remote storage is unavailable", async () => {
+  test("rejects when remote storage is unavailable instead of falling back to local storage", async () => {
     window.localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify([{ code: "LOCAL-1" }]));
     window.localStorage.setItem(STORAGE_KEYS.schedules, JSON.stringify([{ task_code: "LOCAL-1" }]));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
-    const snapshot = await readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules]);
-
-    expect(snapshot).toEqual({
-      [STORAGE_KEYS.tasks]: [{ code: "LOCAL-1" }],
-      [STORAGE_KEYS.schedules]: [{ task_code: "LOCAL-1" }],
-    });
+    await expect(readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.schedules])).rejects.toThrow("network");
   });
 
-  test("writes updates to local storage and syncs them remotely", async () => {
+  test("writes updates remotely without persisting local business caches", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -69,7 +65,7 @@ describe("storageApi", () => {
       [STORAGE_KEYS.tasks]: [{ code: "T-2" }],
     });
 
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.tasks))).toEqual([{ code: "T-2" }]);
+    expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/storage", {
       method: "PUT",
       headers: {
@@ -83,22 +79,7 @@ describe("storageApi", () => {
     });
   });
 
-  test("refreshes local sample cache from clean remote storage payload", async () => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.samples,
-      JSON.stringify([
-        {
-          code: "S-1",
-          task_code: "T-1",
-          history: [
-            {
-              action: "鏍峰搧缂栧彿閲嶆帓",
-              detail: "浠诲姟 T-1",
-            },
-          ],
-        },
-      ])
-    );
+  test("returns clean remote sample payloads without refreshing local sample cache", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -124,70 +105,19 @@ describe("storageApi", () => {
 
     expect(snapshot[STORAGE_KEYS.samples][0].history[0].action).toBe("样品编号重排");
     expect(snapshot[STORAGE_KEYS.samples][0].history[0].detail).toBe("任务 T-1");
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.samples))[0].history[0].action).toBe("样品编号重排");
+    expect(window.localStorage.getItem(STORAGE_KEYS.samples)).toBeNull();
   });
 
-  test("does not auto-migrate legacy local task-linked collections when remote storage is unavailable", async () => {
-    window.localStorage.setItem(
-      STORAGE_KEYS.tasks,
-      JSON.stringify([
-        {
-          id: "task-1",
-          code: "SYLU-2026-04-105",
-          name: "高低温湿热试验-批次E",
-          test_type: "高低温湿热试验",
-          created_at: "2026-03-05T09:00:00",
-        },
-      ]),
-    );
-    window.localStorage.setItem(
-      STORAGE_KEYS.samples,
-      JSON.stringify([
-        {
-          id: "sample-1",
-          code: "SYLU-2026-04-105-SP-001",
-          task_code: "SYLU-2026-04-105",
-          created_at: "2026-03-05T09:05:00",
-          trays: [{ tray_code: "SYLU-2026-04-105-TP-001", sample_code: "SYLU-2026-04-105-SP-001" }],
-        },
-      ]),
-    );
-    window.localStorage.setItem(
-      STORAGE_KEYS.schedules,
-      JSON.stringify([
-        {
-          id: "schedule-1",
-          task_code: "SYLU-2026-04-105",
-          experiment_code: "SYLU-2026-04-105-A",
-          device: "高低温实验室",
-        },
-      ]),
-    );
-    window.localStorage.setItem(
-      STORAGE_KEYS.streams,
-      JSON.stringify([{ id: "stream-1", task_code: "SYLU-2026-04-105" }]),
-    );
-    window.localStorage.setItem(STORAGE_KEYS.experiments, JSON.stringify([]));
+  test("does not persist local business caches when remote writes fail", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 
-    const snapshot = await readStorageSnapshot([
-      STORAGE_KEYS.tasks,
-      STORAGE_KEYS.experiments,
-      STORAGE_KEYS.samples,
-      STORAGE_KEYS.schedules,
-      STORAGE_KEYS.streams,
-    ]);
+    await expect(
+      writeStorageUpdates({
+        [STORAGE_KEYS.tasks]: [{ code: "T-3" }],
+      }),
+    ).rejects.toThrow("offline");
 
-    expect(snapshot[STORAGE_KEYS.tasks][0].code).toBe("SYLU-2026-04-105");
-    expect(snapshot[STORAGE_KEYS.samples][0].code).toBe("SYLU-2026-04-105-SP-001");
-    expect(snapshot[STORAGE_KEYS.samples][0].trays[0].tray_code).toBe("SYLU-2026-04-105-TP-001");
-    expect(snapshot[STORAGE_KEYS.schedules][0]).toMatchObject({
-      task_code: "SYLU-2026-04-105",
-      experiment_code: "SYLU-2026-04-105-A",
-    });
-    expect(snapshot[STORAGE_KEYS.streams][0].task_code).toBe("SYLU-2026-04-105");
-    expect(snapshot[STORAGE_KEYS.experiments]).toEqual([]);
-    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEYS.tasks))[0].code).toBe("SYLU-2026-04-105");
+    expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
   });
 });
 
