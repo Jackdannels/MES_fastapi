@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 
+import app.core.storage_backend as storage_backend_module
 from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data, run_demo_reset
 from app.core.storage_backend import DatabaseStorageBackend, JsonFileStorage
 
@@ -467,4 +469,103 @@ def test_json_storage_backfills_three_experiments_for_existing_sylu_tasks_withou
         "SYLU-2026-03-001-B",
         "SYLU-2026-03-001-C",
     ]
+
+
+def test_storage_health_report_describes_json_mode_and_bootstrap_source(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(storage_backend_module.settings, "STORAGE_BACKEND", "json")
+    monkeypatch.setattr(storage_backend_module.settings, "MYSQL_BOOTSTRAP_FROM_JSON", True)
+    monkeypatch.setattr(storage_backend_module, "DEFAULT_STORE_PATH", tmp_path / "mes_store.json")
+    monkeypatch.setattr(
+        storage_backend_module,
+        "check_mysql_storage_connection",
+        lambda: {
+            "status": "unhealthy",
+            "detail": "pymysql is required for the MySQL storage backend",
+        },
+    )
+    storage_backend_module._storage_backend = None
+
+    storage_backend_module.get_storage_backend()
+    report = storage_backend_module.get_storage_health_report()
+
+    assert report["status"] == "ok"
+    assert report["configured_backend"] == "json"
+    assert report["active_backend"] == "json"
+    assert report["database"]["status"] == "not_configured"
+    assert report["mysql"] == {
+        "status": "unhealthy",
+        "detail": "pymysql is required for the MySQL storage backend",
+    }
+    assert report["bootstrap"] == {
+        "from_json_enabled": True,
+        "source_path": str(tmp_path / "mes_store.json"),
+        "last_result": "not_applicable",
+    }
+
+
+def test_storage_health_report_marks_mysql_unhealthy_when_connection_check_fails(monkeypatch) -> None:
+    monkeypatch.setattr(storage_backend_module.settings, "STORAGE_BACKEND", "mysql")
+    monkeypatch.setattr(storage_backend_module.settings, "MYSQL_BOOTSTRAP_FROM_JSON", True)
+    storage_backend_module._storage_backend = None
+    monkeypatch.setattr(
+        storage_backend_module,
+        "check_mysql_storage_connection",
+        lambda: {
+            "status": "unhealthy",
+            "detail": "pymysql is required for the MySQL storage backend",
+        },
+    )
+
+    report = storage_backend_module.get_storage_health_report()
+
+    assert report["status"] == "unhealthy"
+    assert report["configured_backend"] == "mysql"
+    assert report["active_backend"] is None
+    assert report["database"] == {
+        "status": "unhealthy",
+        "detail": "pymysql is required for the MySQL storage backend",
+    }
+    assert report["bootstrap"]["from_json_enabled"] is True
+    assert report["bootstrap"]["last_result"] == "not_checked"
+
+
+def test_check_mysql_storage_connection_uses_short_timeouts(monkeypatch) -> None:
+    captured = {}
+
+    class _FakeCursor:
+        def execute(self, sql):
+            captured["sql"] = sql
+
+        def fetchone(self):
+            return (1,)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeConnection:
+        def cursor(self):
+            return _FakeCursor()
+
+        def close(self):
+            captured["closed"] = True
+
+    class _FakePyMySQL:
+        @staticmethod
+        def connect(**kwargs):
+            captured["kwargs"] = kwargs
+            return _FakeConnection()
+
+    monkeypatch.setitem(sys.modules, "pymysql", _FakePyMySQL)
+
+    report = storage_backend_module.check_mysql_storage_connection()
+
+    assert report["status"] == "ok"
+    assert captured["kwargs"]["connect_timeout"] == 3
+    assert captured["kwargs"]["read_timeout"] == 3
+    assert captured["kwargs"]["write_timeout"] == 3
+    assert captured["sql"] == "SELECT 1"
+    assert captured["closed"] is True
 

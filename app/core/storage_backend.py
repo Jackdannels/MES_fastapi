@@ -14,6 +14,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_STORE_PATH = BASE_DIR / "data" / "mes_store.json"
 STORAGE_META_KEY = "mes.meta"
 CURRENT_SCHEMA_VERSION = 2
+MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -493,6 +494,87 @@ class JsonFileStorage(StorageBackend):
 
 
 _storage_backend: StorageBackend | None = None
+
+
+def _backend_name(backend: StorageBackend | None) -> str | None:
+    if backend is None:
+        return None
+    if isinstance(backend, JsonFileStorage):
+        return "json"
+    if backend.__class__.__name__ == "MySQLMesStorageBackend":
+        return "mysql"
+    if isinstance(backend, DatabaseStorageBackend):
+        return "database"
+    return backend.__class__.__name__.lower()
+
+
+def check_mysql_storage_connection() -> Dict[str, Any]:
+    try:
+        import pymysql
+    except ImportError:
+        return {
+            "status": "unhealthy",
+            "detail": "pymysql is required for the MySQL storage backend",
+        }
+
+    connection = None
+    try:
+        connection = pymysql.connect(
+            host=settings.MYSQL_HOST,
+            port=settings.MYSQL_PORT,
+            user=settings.MYSQL_USER,
+            password=settings.MYSQL_PASSWORD,
+            database=settings.MYSQL_DATABASE,
+            charset="utf8mb4",
+            autocommit=True,
+            connect_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+            read_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+            write_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+        )
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            row = cursor.fetchone()
+    except Exception as exc:
+        return {
+            "status": "unhealthy",
+            "detail": str(exc),
+        }
+    finally:
+        if connection is not None:
+            connection.close()
+
+    result = row[0] if isinstance(row, (list, tuple)) and row else row
+    return {
+        "status": "ok",
+        "result": result,
+        "database": settings.MYSQL_DATABASE,
+        "host": settings.MYSQL_HOST,
+        "port": settings.MYSQL_PORT,
+    }
+
+
+def get_storage_health_report() -> Dict[str, Any]:
+    configured_backend = settings.STORAGE_BACKEND.strip().lower() or "json"
+    mysql_report = check_mysql_storage_connection()
+    report: Dict[str, Any] = {
+        "status": "ok",
+        "configured_backend": configured_backend,
+        "active_backend": _backend_name(_storage_backend),
+        "database": {"status": "not_configured"},
+        "mysql": mysql_report,
+        "bootstrap": {
+            "from_json_enabled": bool(settings.MYSQL_BOOTSTRAP_FROM_JSON),
+            "source_path": str(DEFAULT_STORE_PATH),
+            "last_result": "not_applicable" if configured_backend != "mysql" else "not_checked",
+        },
+    }
+
+    if configured_backend == "mysql":
+        report["database"] = mysql_report
+        if report["database"].get("status") != "ok":
+            report["status"] = "unhealthy"
+
+    return report
 
 
 def get_storage_backend() -> StorageBackend:

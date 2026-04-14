@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "MES"
+    APP_ENV: str = "dev"
     DEBUG: bool = False
     SERVE_WEB_APP: bool = False
     DEMO_USER: Optional[str] = None
@@ -24,6 +25,8 @@ class Settings(BaseSettings):
     MYSQL_PASSWORD: str = ""
     MYSQL_DATABASE: str = "mes_single_branch"
     MYSQL_BOOTSTRAP_FROM_JSON: bool = True
+    MYSQL_AUTO_INIT_SCHEMA: bool = False
+    MYSQL_AUTO_SEED_DEMO: bool = False
 
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
@@ -44,6 +47,18 @@ class Settings(BaseSettings):
             if normalized in {"debug", "development", "dev"}:
                 return True
         return value
+
+    @field_validator("APP_ENV", mode="before")
+    @classmethod
+    def normalize_app_env(cls, value: object) -> str:
+        normalized = str(value or "dev").strip().lower()
+        if normalized in {"development", "local"}:
+            return "dev"
+        if normalized in {"production", "release"}:
+            return "prod"
+        if normalized in {"testing"}:
+            return "test"
+        return normalized or "dev"
 
 
 settings = Settings()

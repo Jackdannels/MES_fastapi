@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from app.core.storage_backend import get_storage_health_report
 from app.db.session import get_connection
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -8,7 +9,8 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 @router.get("")
 def health():
-    return {"status": "ok"}
+    report = get_storage_health_report()
+    return {"status": "ok", "storage": report}
 
 
 @router.get("/db")
