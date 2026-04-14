@@ -58,4 +58,16 @@ async function deleteTask(taskId) {
   }
 }
 
-export { createTask, deleteTask, readTasks, updateTask };
+async function resetTasks() {
+  const response = await fetch(buildApiUrl("/api/tasks/reset", API_BASE_URL), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to reset tasks: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export { createTask, deleteTask, readTasks, resetTasks, updateTask };

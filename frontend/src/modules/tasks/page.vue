@@ -38,6 +38,7 @@
       />
     </div>
     <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ loadError }}</div>
+    <div v-if="resetFeedback" class="form-alert" data-testid="task-reset-feedback">{{ resetFeedback }}</div>
     <table class="table tasks-table" id="task-table">
       <thead>
         <tr>
@@ -156,6 +157,22 @@
     </form>
   </AppModal>
 
+  <AppModal :open="resetModalOpen" title="确认任务重置" @close="closeResetModal">
+    <div v-if="resetModalOpen" data-testid="task-reset-modal">
+      <p>确认后将清空当前数据库中的所有任务相关数据，并重建为新的演示基线。</p>
+      <p>重置后所有任务都会回到待排程，所有样品都会回到运输中。</p>
+      <div v-if="resetError" class="form-alert">{{ resetError }}</div>
+    </div>
+    <template #footer>
+      <button class="action-btn danger" data-testid="task-reset-confirm" type="button" :disabled="resetting" @click="resetTasks">
+        确认重置
+      </button>
+      <button class="action-btn secondary" data-testid="task-reset-cancel" type="button" :disabled="resetting" @click="closeResetModal">
+        取消
+      </button>
+    </template>
+  </AppModal>
+
   <AppDrawer :open="taskDrawerOpen" title="任务详情" @close="closeTaskDrawer">
     <form class="form-grid tasks-edit-form">
       <div class="form-field">
@@ -251,6 +268,12 @@ const {
   metrics,
   pageCount,
   query,
+  closeResetModal,
+  resetError,
+  resetFeedback,
+  resetModalOpen,
+  resetTasks,
+  resetting,
   saveDraft,
   setCurrentPage,
   statusOptions,

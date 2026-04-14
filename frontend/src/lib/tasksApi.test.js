@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { createTask, deleteTask, readTasks, updateTask } from "./tasksApi";
+import { createTask, deleteTask, readTasks, resetTasks, updateTask } from "./tasksApi";
 
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
+const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 
 describe("tasksApi", () => {
@@ -101,5 +102,25 @@ describe("tasksApi", () => {
     await expect(createTask({ code: "SYLU-2026-03-009" })).rejects.toThrow("offline");
     await expect(updateTask("SYLU-2026-03-009", { code: "SYLU-2026-03-010" })).rejects.toThrow("offline");
     expect(window.localStorage.getItem("mes.tasks")).toBeNull();
+  });
+
+  test("resets tasks through the dedicated reset endpoint without mutating local cache", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ task_count: 20, sample_count: 160, experiment_count: 60 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const summary = await resetTasks();
+
+    expect(summary).toEqual({ task_count: 20, sample_count: 160, experiment_count: 60 });
+    expect(window.localStorage.getItem("mes.tasks")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      TASKS_RESET_ENDPOINT,
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
   });
 });

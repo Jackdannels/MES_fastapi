@@ -3,7 +3,19 @@ from fastapi.testclient import TestClient
 
 
 class FakeTaskStorage:
-    def __init__(self, tasks=None, schedules=None, samples=None, streams=None, experiments=None, experiment_trays=None, experiment_samples=None):
+    def __init__(
+        self,
+        tasks=None,
+        schedules=None,
+        samples=None,
+        streams=None,
+        experiments=None,
+        experiment_trays=None,
+        experiment_samples=None,
+        conflicts=None,
+        devices=None,
+        meta=None,
+    ):
         self.payloads = {
             "mes.tasks": list(tasks or []),
             "mes.schedules": list(schedules or []),
@@ -12,23 +24,46 @@ class FakeTaskStorage:
             "mes.experiments": list(experiments or []),
             "mes.experiment_trays": list(experiment_trays or []),
             "mes.experiment_samples": list(experiment_samples or []),
+            "mes.conflicts": list(conflicts or []),
+            "mes.devices": list(devices or []),
+            "mes.meta": dict(meta or {}),
         }
 
+    @staticmethod
+    def _clone_value(value):
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, dict):
+            return dict(value)
+        return value
+
     def read(self, key):
-        return list(self.payloads.get(key, []))
+        return self._clone_value(self.payloads.get(key, []))
 
     def read_all(self):
-        return {key: list(value) for key, value in self.payloads.items()}
+        return {key: self._clone_value(value) for key, value in self.payloads.items()}
 
     def write(self, key, value):
-        self.payloads[key] = list(value)
+        self.payloads[key] = self._clone_value(value)
 
     def write_many(self, updates):
         for key, value in updates.items():
-            self.payloads[key] = list(value)
+            self.payloads[key] = self._clone_value(value)
 
 
-def build_client(monkeypatch, tasks=None, schedules=None, samples=None, streams=None, experiments=None, experiment_trays=None, experiment_samples=None):
+def build_client(
+    monkeypatch,
+    tasks=None,
+    schedules=None,
+    samples=None,
+    streams=None,
+    experiments=None,
+    experiment_trays=None,
+    experiment_samples=None,
+    conflicts=None,
+    devices=None,
+    meta=None,
+):
     from app.api.routes import tasks as tasks_route
 
     storage = FakeTaskStorage(
@@ -39,6 +74,9 @@ def build_client(monkeypatch, tasks=None, schedules=None, samples=None, streams=
         experiments=experiments,
         experiment_trays=experiment_trays,
         experiment_samples=experiment_samples,
+        conflicts=conflicts,
+        devices=devices,
+        meta=meta,
     )
     monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: storage)
 
@@ -293,4 +331,41 @@ def test_delete_task_also_removes_related_records(monkeypatch):
     assert [item["task_code"] for item in storage.read("mes.experiments")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_trays")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_samples")] == ["SYLU-2026-03-002"]
+
+
+def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and_meta(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[{"id": "SYLU-2026-03-999", "code": "SYLU-2026-03-999", "name": "旧任务", "status": "实验进行中"}],
+        schedules=[{"id": "SCH-1", "task_code": "SYLU-2026-03-999"}],
+        samples=[{"id": "SYLU-2026-03-999-SP-001", "code": "SYLU-2026-03-999-SP-001", "task_code": "SYLU-2026-03-999", "status": "到货", "flow_status": "到货"}],
+        streams=[{"id": "STREAM-1", "task_code": "SYLU-2026-03-999"}],
+        experiments=[{"id": "EXP-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "experiment_name": "振动试验", "status": "实验进行中"}],
+        experiment_trays=[{"id": "REL-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
+        experiment_samples=[{"id": "EXS-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
+        conflicts=[{"task_code": "SYLU-2026-03-999"}],
+        devices=[{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+        meta={"schema_version": 2},
+    )
+
+    response = client.post("/api/tasks/reset")
+    storage = client.app.state.storage
+
+    assert response.status_code == 200
+    assert response.json()["task_count"] == 20
+    assert response.json()["experiment_count"] == 60
+    assert response.json()["sample_count"] == len(storage.read("mes.samples"))
+    assert response.json()["sample_count"] > 100
+    assert len(storage.read("mes.tasks")) == 20
+    assert all(task["status"] == "待排程" for task in storage.read("mes.tasks"))
+    assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in storage.read("mes.tasks"))
+    assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in storage.read("mes.samples"))
+    assert all(experiment["status"] == "待排程" for experiment in storage.read("mes.experiments"))
+    assert storage.read("mes.schedules") == []
+    assert storage.read("mes.streams") == []
+    assert storage.read("mes.experiment_trays") == []
+    assert storage.read("mes.experiment_samples") == []
+    assert storage.read("mes.conflicts") == []
+    assert storage.read("mes.devices") == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert storage.read_all()["mes.meta"] == {"schema_version": 2}
 

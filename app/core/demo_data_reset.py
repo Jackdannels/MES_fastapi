@@ -8,6 +8,7 @@ from app.core.storage_backend import EXPERIMENT_TYPE_OPTIONS, normalize_storage_
 
 TASK_COUNT = 20
 TASK_CODE_PREFIX = "SYLU-2026-03-"
+MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
 
 
 def _task_code(index: int) -> str:
@@ -28,7 +29,11 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None) -> di
 
     for index in range(1, TASK_COUNT + 1):
         task_code = _task_code(index)
-        experiment_types = rng.sample(list(EXPERIMENT_TYPE_OPTIONS), 3)
+        remaining_experiment_types = [
+            experiment_type for experiment_type in EXPERIMENT_TYPE_OPTIONS if experiment_type != MANDATORY_EXPERIMENT_TYPE
+        ]
+        experiment_types = [MANDATORY_EXPERIMENT_TYPE, *rng.sample(remaining_experiment_types, 2)]
+        rng.shuffle(experiment_types)
         sample_count = rng.randint(5, 12)
         created_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%dT%H:%M:%SZ")
         arrival_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%d %H:%M")

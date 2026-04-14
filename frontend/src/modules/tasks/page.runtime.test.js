@@ -10,6 +10,7 @@ const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
+const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 
@@ -44,6 +45,8 @@ const createTasksPageFetchMock = ({
   samples = [],
   streams = [],
   experiments = [],
+  afterReset = null,
+  resetError = null,
 } = {}) => {
   const state = {
     tasks: clone(tasks),
@@ -71,6 +74,32 @@ const createTasksPageFetchMock = ({
         ok: true,
         status: 200,
         json: async () => clone(nextTask),
+      });
+    }
+
+    if (url === TASKS_RESET_ENDPOINT && method === "POST") {
+      if (resetError) {
+        return Promise.resolve({
+          ok: false,
+          status: resetError.status ?? 500,
+          statusText: resetError.statusText ?? "Reset Failed",
+        });
+      }
+      if (afterReset) {
+        state.tasks = clone(afterReset.tasks ?? []);
+        state.schedules = clone(afterReset.schedules ?? []);
+        state.samples = clone(afterReset.samples ?? []);
+        state.streams = clone(afterReset.streams ?? []);
+        state.experiments = clone(afterReset.experiments ?? []);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          task_count: state.tasks.length,
+          sample_count: state.samples.length,
+          experiment_count: state.experiments.length,
+        }),
       });
     }
 
@@ -578,6 +607,68 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+  });
+
+  test("opens the reset dialog from the app event and rebuilds the task list after confirmation", async () => {
+    const { state, fetchMock } = installApiFetchMock({
+      tasks: [createTask()],
+      experiments: [{ task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_name: "冲击试验", status: "实验进行中" }],
+      afterReset: {
+        tasks: [
+          createTask({
+            id: "task-reset-1",
+            code: "SYLU-2026-03-001",
+            name: "演示任务001",
+            test_type: "盐雾试验 / 冲击试验 / 霉菌试验",
+            status: "待排程",
+          }),
+        ],
+        experiments: [
+          { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_name: "盐雾试验", status: "待排程" },
+          { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_name: "冲击试验", status: "待排程" },
+          { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_name: "霉菌试验", status: "待排程" },
+        ],
+        samples: [{ id: "sample-reset-1", code: "SYLU-2026-03-001-SP-001", task_code: "SYLU-2026-03-001", status: "运输中", flow_status: "运输中" }],
+      },
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:open-task-reset"));
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="task-reset-modal"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="task-reset-confirm"]').trigger("click");
+    await settle(wrapper);
+    await settle(wrapper);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      TASKS_RESET_ENDPOINT,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(state.tasks[0].test_type).toContain("盐雾试验");
+    expect(wrapper.text()).toContain("任务数据已重置");
+    expect(wrapper.text()).toContain("盐雾试验 / 冲击试验 / 霉菌试验");
+  });
+
+  test("shows an explicit reset error when the reset request fails", async () => {
+    installApiFetchMock({
+      tasks: [createTask()],
+      resetError: { status: 500, statusText: "Server Error" },
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:open-task-reset"));
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-reset-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("任务重置失败");
+    expect(wrapper.find('[data-testid="task-reset-modal"]').exists()).toBe(true);
   });
 
   test("sample update event reloads tasks and refreshes the open drawer arrival time", async () => {

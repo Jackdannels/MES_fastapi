@@ -38,6 +38,15 @@
           <p class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
+          <button
+            v-if="showTaskResetAction"
+            class="action-btn secondary"
+            data-testid="open-task-reset"
+            type="button"
+            @click="openTaskReset"
+          >
+            任务重置
+          </button>
           <button class="action-btn" data-testid="open-task-intake" type="button" @click="openTaskIntake">
             新建任务
           </button>
@@ -105,6 +114,7 @@ import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule 
 
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const TRANSFER_STATUS_STORED = "已入库";
+const TASK_RESET_EVENT = "mes:open-task-reset";
 
 const parseTimeValue = (value) => {
   const parsed = Date.parse(String(value || ""));
@@ -149,6 +159,7 @@ const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
+const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
 
 const isActive = (name) => route.name === name;
@@ -177,6 +188,10 @@ const openTaskIntake = async () => {
   } finally {
     window.dispatchEvent(new CustomEvent("mes:open-task-intake"));
   }
+};
+
+const openTaskReset = () => {
+  window.dispatchEvent(new CustomEvent(TASK_RESET_EVENT));
 };
 
 const refreshPage = () => {

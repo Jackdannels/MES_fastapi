@@ -6,7 +6,7 @@ import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
 import { matchesExperimentTypeFilter } from "@/lib/experimentTypes";
-import { createTask, deleteTask as deleteTaskByApi, readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
+import { createTask, deleteTask as deleteTaskByApi, readTasks, resetTasks as resetTasksByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
   STATUS_WAITING,
@@ -28,6 +28,7 @@ import {
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 const TASK_INTAKE_HASH = "#task-intake-modal";
+const TASK_RESET_EVENT = "mes:open-task-reset";
 
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
@@ -46,6 +47,9 @@ function useTasksPage() {
   const rawStreams = ref([]);
   const rawExperiments = ref([]);
   const loadError = ref("");
+  const resetFeedback = ref("");
+  const resetError = ref("");
+  const resetting = ref(false);
   const intakeForm = ref(createTaskIntakeForm());
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
@@ -54,6 +58,7 @@ function useTasksPage() {
   const selectedStatus = ref("");
 
   const intakeModal = useDialogState();
+  const resetModal = useDialogState();
   const taskDrawer = useDialogState();
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
@@ -128,6 +133,19 @@ function useTasksPage() {
     removeTaskHash();
   };
 
+  const openResetModal = () => {
+    resetError.value = "";
+    resetModal.openWith({ id: "task-reset-modal" });
+  };
+
+  const closeResetModal = () => {
+    if (resetting.value) {
+      return;
+    }
+    resetModal.close();
+    resetError.value = "";
+  };
+
   const openTaskDrawer = (row) => {
     editForm.value = buildTaskEditForm(row);
     editWarning.value = "";
@@ -156,6 +174,10 @@ function useTasksPage() {
 
   const handleOpenTaskIntake = () => {
     openIntakeModal();
+  };
+
+  const handleOpenTaskReset = () => {
+    openResetModal();
   };
 
   const buildFailureMessage = (prefix, error) => {
@@ -300,6 +322,26 @@ function useTasksPage() {
     }
   };
 
+  const resetTasks = async () => {
+    if (resetting.value) {
+      return;
+    }
+
+    resetting.value = true;
+    resetError.value = "";
+    resetFeedback.value = "";
+    try {
+      const summary = await resetTasksByApi();
+      resetModal.close();
+      await loadTasksPage();
+      resetFeedback.value = `任务数据已重置，共重建 ${summary.task_count} 个任务。`;
+    } catch (error) {
+      resetError.value = buildFailureMessage("任务重置失败，请稍后重试", error);
+    } finally {
+      resetting.value = false;
+    }
+  };
+
   const loadTasksPage = async () => {
     try {
       const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
@@ -367,17 +409,20 @@ function useTasksPage() {
     void loadTasksPage();
     window.addEventListener("hashchange", handleHashChange);
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.addEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.addEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
   });
 
   onBeforeUnmount(() => {
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.removeEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.removeEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
   });
 
   return {
     closeIntakeModal,
+    closeResetModal,
     closeTaskDrawer,
     currentPage,
     deleteTask,
@@ -392,6 +437,11 @@ function useTasksPage() {
     metrics,
     pageCount,
     query,
+    resetError,
+    resetFeedback,
+    resetModalOpen: resetModal.open,
+    resetTasks,
+    resetting,
     saveDraft,
     selectedRow: taskDrawer.payload,
     setCurrentPage,

@@ -3,6 +3,7 @@ import re
 
 from fastapi import APIRouter, Body, HTTPException, status
 
+from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -178,6 +179,12 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     snapshot["mes.experiments"] = experiments + next_experiments
     storage.write_many(snapshot)
     return next_task
+
+
+@router.post("/reset")
+def reset_tasks() -> dict[str, int]:
+    storage = get_storage_backend()
+    return run_demo_reset(storage)
 
 
 @router.put("/{task_id}")

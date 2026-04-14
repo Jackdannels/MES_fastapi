@@ -185,6 +185,26 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).toContain("排程看板");
   });
 
+  test("shows the task reset action only on the tasks route", async () => {
+    reactiveRoute.meta = { module: "central", title: "任务受理" };
+    reactiveRoute.name = "tasks";
+    reactiveRoute.path = "/tasks";
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(true);
+
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(false);
+  });
+
   test("renders sidebar and header actions with utf-8 chinese labels", async () => {
     reactiveRoute.meta = { module: "central", title: "中控总览", subtitle: "任务、设备与数据流的实时概览。" };
     reactiveRoute.name = "dashboard";

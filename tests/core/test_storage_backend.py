@@ -24,6 +24,9 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all(task["source"] == "外部委托" for task in tasks[:10])
     assert all(task["source"] == "内部新增" for task in tasks[10:])
     assert all(task["status"] == "待排程" for task in tasks)
+    assert all(task["experiment_count"] == 3 for task in tasks)
+    assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in tasks)
+    assert all(len(set(str(task["test_type"]).split(" / "))) == 3 for task in tasks)
 
     assert len(experiments) == 60
     experiments_by_task = {}
@@ -31,6 +34,9 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
         experiments_by_task.setdefault(experiment["task_code"], []).append(experiment)
     assert set(experiments_by_task) == {task["code"] for task in tasks}
     assert all(len(task_experiments) == 3 for task_experiments in experiments_by_task.values())
+    assert all(any(experiment["experiment_name"] == "盐雾试验" for experiment in task_experiments) for task_experiments in experiments_by_task.values())
+    assert all(len({experiment["experiment_name"] for experiment in task_experiments}) == 3 for task_experiments in experiments_by_task.values())
+    assert all(all(experiment["status"] == "待排程" for experiment in task_experiments) for task_experiments in experiments_by_task.values())
 
     samples_by_task = {}
     for sample in samples:
@@ -77,11 +83,14 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
 
     assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
     assert len(snapshot["mes.tasks"]) == 20
+    assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in snapshot["mes.tasks"])
     assert snapshot["mes.schedules"] == []
     assert snapshot["mes.experiment_trays"] == []
     assert snapshot["mes.experiment_samples"] == []
     assert snapshot["mes.streams"] == []
     assert snapshot["mes.conflicts"] == []
+    assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in snapshot["mes.samples"])
+    assert all(experiment["status"] == "待排程" for experiment in snapshot["mes.experiments"])
     assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
     assert writes["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
 
