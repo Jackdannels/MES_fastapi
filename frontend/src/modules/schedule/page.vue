@@ -35,9 +35,9 @@
         <div class="form-field">
           <label>{{ uiText.timeSlot }}</label>
           <select v-model="scheduleForm.time_slot" name="time_slot">
-            <option value="morning">{{ uiText.morningSlot }}</option>
-            <option value="afternoon">{{ uiText.afternoonSlot }}</option>
-            <option value="custom">{{ uiText.customSlot }}</option>
+            <option v-for="option in manualTimeSlotOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </div>
         <div class="form-field">
@@ -514,6 +514,7 @@ const {
   experimentOptions,
   ganttView,
   manualLabOptions,
+  manualTimeSlotOptions,
   openScheduleDrawer,
   openTaskDetailModal,
   removeSchedule,

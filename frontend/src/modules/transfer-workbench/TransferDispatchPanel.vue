@@ -13,6 +13,7 @@
 
     <div class="transfer-overview-toolbar">
       <input
+        ref="scanInputRef"
         :value="dispatchState.state.scanCode"
         class="search-input"
         data-testid="transfer-dispatch-scan-input"
@@ -132,11 +133,22 @@
 </template>
 
 <script setup>
+import { onMounted, ref } from "vue";
+
+import { useScanInputFocus } from "@/composables/useScanInputFocus";
+
 defineProps({
   dispatchState: {
     type: Object,
     required: true,
   },
+});
+
+const scanInputRef = ref(null);
+const { focusScanInput } = useScanInputFocus(scanInputRef);
+
+onMounted(() => {
+  void focusScanInput();
 });
 
 const joinExperimentLabels = (labels) => {

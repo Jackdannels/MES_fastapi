@@ -198,6 +198,7 @@ describe("StagingManagementPage runtime", () => {
 
     expect(document.activeElement).toBe(input);
     expect(input.readOnly).toBe(false);
+    expect(mounted.get('[data-testid="zancun-scan-modal"] .form-actions').classes()).toContain("form-actions--touch");
   });
 
   test("stock-in and stock-out confirmations update today's KPI cards", async () => {

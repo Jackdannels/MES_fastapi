@@ -4,10 +4,10 @@
     <div v-if="open" class="modal-content">
       <div class="modal-header">
         <strong>{{ title }}</strong>
-        <button class="modal-close" type="button" @click="emitClose">关闭</button>
+        <button class="modal-close modal-close--touch" type="button" @click="emitClose">关闭</button>
       </div>
       <slot />
-      <div v-if="$slots.footer" class="form-actions">
+      <div v-if="$slots.footer" class="form-actions form-actions--touch">
         <slot name="footer" />
       </div>
     </div>

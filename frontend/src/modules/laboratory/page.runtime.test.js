@@ -189,6 +189,8 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T09:30:00.000Z"));
     expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T11:00:00.000Z"));
     expect(mounted.text()).not.toContain("SYLU-2026-04-102");
+    expect(mounted.find('[data-testid="laboratory-reset-task"]').exists()).toBe(true);
+    expect(mounted.find(".laboratory-control-header .pill").exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
@@ -257,6 +259,15 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
   });
 
+  test("auto focuses the compare scan input when the compare modal opens", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await nextTick();
+
+    expect(document.activeElement).toBe(mounted.get('[data-testid="laboratory-compare-scan-input"]').element);
+  });
+
   test("compare feedback lists all allowed laboratories when another tray belongs to multiple experiments", async () => {
     const mounted = await mountPage();
 
@@ -268,6 +279,117 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("高低温湿热一室");
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("盐雾试验室");
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("error");
+  });
+
+  test("opens double confirmation modals for reset and warns before resetting the current experiment trays", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    expect(mounted.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(true);
+    expect(mounted.text()).toContain("是否重置当前任务下当前实验对应托盘？");
+    expect(mounted.get('[data-testid="laboratory-reset-confirm-modal"] .form-actions').classes()).toContain("form-actions--touch");
+
+    await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-reset-danger-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-reset-danger-modal"]').text()).toContain("危险操作确认");
+    expect(mounted.get('[data-testid="laboratory-reset-danger-modal"]').text()).toContain("重置后请把当前试验室所有样品从室内推出，重新比对！");
+    expect(mounted.get('[data-testid="laboratory-reset-danger-modal"] .form-actions').classes()).toContain("form-actions--touch");
+  });
+
+  test("disables the reset button while the current experiment is running", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+  });
+
+  test("resets only the current salt-spray experiment trays after double confirmation", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.tasks] = [
+      { code: "SYLU-2026-04-301", name: "复合环境任务", test_type: "高低温湿热试验 / 盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiments] = [
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", experiment_name: "高低温湿热试验" },
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", experiment_name: "盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", tray_code: "TP-301-A" },
+      { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", tray_code: "TP-301-B" },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-salt",
+        task_code: "SYLU-2026-04-301",
+        experiment_code: "SYLU-2026-04-301-B",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:30:00.000Z",
+        end_at: "2026-04-02T11:00:00.000Z",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-301-SP-001",
+        location: "高低温湿热一室",
+        owner: "赵工",
+        status: "已到达实验室",
+        flow_status: "已到达实验室",
+        task_code: "SYLU-2026-04-301",
+        trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-301-A" }],
+      },
+      {
+        code: "SYLU-2026-04-301-SP-002",
+        location: "盐雾试验室",
+        owner: "赵工",
+        status: "实验准备就绪",
+        flow_status: "实验准备就绪",
+        task_code: "SYLU-2026-04-301",
+        trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-301-B" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
+    await nextTick();
+    await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SYLU-2026-04-301-SP-001",
+          status: "已到达实验室",
+          trays: [expect.objectContaining({ tray_code: "TP-301-A", status: "已到达实验室" })],
+        }),
+        expect.objectContaining({
+          code: "SYLU-2026-04-301-SP-002",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [expect.objectContaining({ tray_code: "TP-301-B", status: "送至实验室" })],
+        }),
+      ]),
+    );
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
   });
 
   test("persists compare, install, and ready steps into sample tray statuses and keeps progress after remount", async () => {
@@ -331,7 +453,12 @@ describe("LaboratoryPage runtime", () => {
       status: "到货",
       trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪");
+    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await nextTick();
+    expect(mounted.find('[data-testid="laboratory-install-modal"].is-open').exists()).toBe(false);
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
@@ -355,7 +482,7 @@ describe("LaboratoryPage runtime", () => {
     wrapper = undefined;
 
     mounted = await mountPage();
-    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪");
+    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
   });
 
   test("renders dual flow panels and allows switching trays within the current experiment", async () => {

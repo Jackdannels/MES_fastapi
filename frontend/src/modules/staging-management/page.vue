@@ -186,9 +186,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import AppModal from "@/components/shared/AppModal.vue";
+import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -210,6 +211,7 @@ const activeMetricMode = ref("all");
 const overviewCurrentPage = ref(1);
 const overviewPageSize = 5;
 const scanInputRef = ref(null);
+const { focusScanInput } = useScanInputFocus(scanInputRef);
 
 const nowValue = () => new Date().toISOString();
 
@@ -354,11 +356,6 @@ const loadSnapshot = async () => {
     [STORAGE_KEYS.samples]: nextSnapshot[STORAGE_KEYS.samples] || [],
     [STORAGE_KEYS.staging_events]: nextSnapshot[STORAGE_KEYS.staging_events] || [],
   };
-};
-
-const focusScanInput = async () => {
-  await nextTick();
-  scanInputRef.value?.focus?.();
 };
 
 const openScanModal = async (mode) => {

@@ -655,6 +655,59 @@ def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(mon
     assert reloaded.json()["detail"] == "该任务已有托盘开始实验，不能重新入库。"
 
 
+def test_transfer_area_progress_stays_running_until_all_task_experiments_complete(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": "experiment-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "experiment_name": "耐久试验",
+                "required_device": "耐久试验",
+                "status": "实验已完成",
+            },
+            {
+                "id": "experiment-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "experiment_name": "通电试验",
+                "required_device": "通电试验",
+                "status": "待排程",
+            },
+        ],
+    )
+
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "实验已完成"
+        sample["flow_status"] = "实验已完成"
+        sample["location"] = "耐久试验室"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "实验已完成",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+
+    assert bootstrap.status_code == 200
+    task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-102")
+    assert task_row["taskStatus"] == "已入库"
+    assert task_row["taskProgress"] == "实验进行中"
+
+    assert workspace.status_code == 200
+    assert workspace.json()["task"]["taskStatus"] == "已入库"
+    assert workspace.json()["task"]["taskProgress"] == "实验进行中"
+
+
 def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_codes(monkeypatch):
     client, storage = build_client(monkeypatch)
 

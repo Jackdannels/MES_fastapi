@@ -159,6 +159,20 @@ input[type="datetime-local"].format-hint-empty:focus::before {
   margin-top: 14px;
 }
 
+.form-actions--touch {
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+
+.form-actions--touch > :first-child {
+  margin-right: auto;
+}
+
 .form-alert {
   margin-top: 12px;
   padding: 10px 12px;
@@ -310,12 +324,29 @@ input[type="datetime-local"].format-hint-empty:focus::before {
 
 .modal-close,
 .drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
   border: 1px solid rgba(15, 23, 42, 0.2);
   color: var(--text);
-  padding: 6px 10px;
+  min-width: 72px;
+  min-height: 42px;
+  padding: 0 14px;
   border-radius: 10px;
+  font-size: 14px;
   cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .form-actions--touch {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-actions--touch > :first-child {
+    margin-right: 0;
+  }
 }
 
 .drawer {

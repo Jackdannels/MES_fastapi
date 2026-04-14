@@ -134,13 +134,21 @@
 }
 
 .action-btn {
-  padding: 10px 16px;
-  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: 14px;
   border: 1px solid rgba(56, 189, 248, 0.35);
   background: rgba(56, 189, 248, 0.16);
   color: var(--text);
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .action-btn.secondary {

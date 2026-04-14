@@ -141,6 +141,27 @@
   gap: 16px;
 }
 
+.laboratory-reset-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.95), rgba(254, 202, 202, 0.98));
+  color: #991b1b;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.laboratory-reset-button[disabled] {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .laboratory-control-header h3,
 .laboratory-progress-panel h4,
 .laboratory-compare-head h4 {
@@ -398,6 +419,21 @@
 .laboratory-modal-body {
   display: grid;
   gap: 16px;
+}
+
+.laboratory-danger-panel {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(220, 38, 38, 0.28);
+  background: linear-gradient(180deg, rgba(254, 226, 226, 0.96), rgba(254, 202, 202, 0.92));
+  color: #7f1d1d;
+}
+
+.laboratory-danger-panel strong,
+.laboratory-danger-panel p {
+  margin: 0;
 }
 
 .laboratory-schedule-card,

@@ -10,6 +10,7 @@ import {
   confirmLaboratoryExperiment,
   createLaboratoryWorkflow,
   getLaboratoryActionState,
+  resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 } from "./model";
 
@@ -580,6 +581,28 @@ describe("laboratory model", () => {
     });
   });
 
+  test("buildLaboratoryWorkflowFromTask locks compare and install once any tray has entered installation", () => {
+    const workflow = buildLaboratoryWorkflowFromTask({
+      trayRows: [
+        { trayCode: "TP-001", trayStatus: "工装夹具安装" },
+        { trayCode: "TP-002", trayStatus: "送至实验室" },
+      ],
+    });
+
+    expect(workflow).toEqual({
+      comparisonDone: false,
+      experimentConfirmed: false,
+      hasCompared: true,
+      hasInstalled: true,
+      installationDone: false,
+    });
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: false,
+      canInstallSample: false,
+      canMarkReady: true,
+    });
+  });
+
   test("applyLaboratoryTaskStep only updates the targeted trays for the current task", () => {
     const updatedSamples = applyLaboratoryTaskStep({
       currentTask: {
@@ -645,5 +668,94 @@ describe("laboratory model", () => {
     }));
     expect(updatedSamples[2].status).toBe("已到达实验室");
     expect(updatedSamples[2].trays[0].status).toBe("已到达实验室");
+  });
+
+  test("resetLaboratoryExperimentTrays only resets trays for the current task and experiment", () => {
+    const updatedSamples = resetLaboratoryExperimentTrays({
+      currentTask: {
+        device: "盐雾试验室",
+        experimentCode: "SYLU-2026-04-301-B",
+        experimentName: "盐雾试验",
+        taskCode: "SYLU-2026-04-301",
+        trayCodes: ["TP-301-B"],
+      },
+      now: "2026-04-02T10:40:00.000Z",
+      samples: [
+        {
+          code: "SYLU-2026-04-301-SP-001",
+          flow_status: "已到达实验室",
+          history: [],
+          location: "高低温湿热一室",
+          owner: "赵工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-301",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-301-A" }],
+        },
+        {
+          code: "SYLU-2026-04-301-SP-002",
+          flow_status: "实验准备就绪",
+          history: [],
+          location: "盐雾试验室",
+          owner: "赵工",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-04-301",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-301-B" }],
+        },
+        {
+          code: "SYLU-2026-04-301-SP-003",
+          flow_status: "工装夹具安装",
+          history: [],
+          location: "盐雾试验室",
+          owner: "赵工",
+          status: "工装夹具安装",
+          task_code: "SYLU-2026-04-301",
+          trays: [
+            { quantity: 1, status: "工装夹具安装", tray_code: "TP-301-B" },
+            { quantity: 1, status: "实验准备就绪", tray_code: "TP-301-C" },
+          ],
+        },
+        {
+          code: "SYLU-2026-04-401-SP-001",
+          flow_status: "实验准备就绪",
+          history: [],
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-04-401",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-401-A" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      code: "SYLU-2026-04-301-SP-001",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ tray_code: "TP-301-A", status: "已到达实验室" })],
+    }));
+    expect(updatedSamples[1]).toEqual(expect.objectContaining({
+      code: "SYLU-2026-04-301-SP-002",
+      flow_status: "送至实验室",
+      status: "送至实验室",
+      trays: [expect.objectContaining({ tray_code: "TP-301-B", status: "送至实验室" })],
+    }));
+    expect(updatedSamples[1].history[0]).toEqual(expect.objectContaining({
+      action: "实验任务重置",
+      detail: "SYLU-2026-04-301 / 盐雾试验 / 送至实验室",
+      status: "送至实验室",
+    }));
+    expect(updatedSamples[2]).toEqual(expect.objectContaining({
+      code: "SYLU-2026-04-301-SP-003",
+      flow_status: "送至实验室",
+      status: "送至实验室",
+      trays: expect.arrayContaining([
+        expect.objectContaining({ tray_code: "TP-301-B", status: "送至实验室" }),
+        expect.objectContaining({ tray_code: "TP-301-C", status: "实验准备就绪" }),
+      ]),
+    }));
+    expect(updatedSamples[3]).toEqual(expect.objectContaining({
+      code: "SYLU-2026-04-401-SP-001",
+      status: "实验准备就绪",
+      trays: [expect.objectContaining({ tray_code: "TP-401-A", status: "实验准备就绪" })],
+    }));
   });
 });

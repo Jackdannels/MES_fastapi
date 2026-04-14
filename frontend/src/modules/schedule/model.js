@@ -16,6 +16,7 @@ const SLOT_RANGES = Object.freeze({
   morning: { start: "08:00", end: "12:00", label: "上午 08:00-12:00" },
   afternoon: { start: "12:00", end: "18:00", label: "下午 12:00-18:00" },
 });
+const SLOT_BUFFER_MINUTES = 10;
 
 // 排程模块的大部分判断都依赖稳定字符串，因此先做统一规范化。
 const normalizeText = (value) => String(value ?? "").trim();
@@ -98,6 +99,15 @@ const toLocalTimeValue = (value) => {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 };
 
+const truncateToMinute = (value) => {
+  const date = parseDate(value);
+  if (!date) {
+    return null;
+  }
+  date.setSeconds(0, 0);
+  return date;
+};
+
 // 排程表格统一展示 yyyy-MM-dd HH:mm 格式。
 const formatDateTime = (value) => {
   const date = parseDate(value);
@@ -112,6 +122,76 @@ const addDays = (date, days) => {
   const nextDate = new Date(date.getTime());
   nextDate.setDate(nextDate.getDate() + days);
   return nextDate;
+};
+
+const buildSlotBoundary = (dateValue, timeValue) => parseDate(`${dateValue}T${timeValue}:00`);
+
+const getLatestMorningScheduleEnd = (dateValue, schedules = []) => {
+  const noonBoundary = buildSlotBoundary(dateValue, SLOT_RANGES.afternoon.start);
+  if (!noonBoundary) {
+    return null;
+  }
+
+  let latestEnd = null;
+  (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
+    if (isRetentionDevice(schedule?.device)) {
+      return;
+    }
+    const startAt = parseDate(schedule?.start_at);
+    const endAt = parseDate(schedule?.end_at);
+    if (!startAt || !endAt) {
+      return;
+    }
+    if (toLocalDateValue(startAt) !== dateValue) {
+      return;
+    }
+    if (startAt >= noonBoundary) {
+      return;
+    }
+    if (!latestEnd || endAt > latestEnd) {
+      latestEnd = endAt;
+    }
+  });
+
+  return latestEnd;
+};
+
+const resolveFixedSlotStartAt = ({ dateValue, now = new Date(), schedules = [], slot }) => {
+  const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
+  const current = truncateToMinute(now) || new Date();
+  let earliestStart = buildSlotBoundary(dateValue, range.start);
+  const slotEnd = buildSlotBoundary(dateValue, range.end);
+
+  if (!earliestStart || !slotEnd) {
+    return null;
+  }
+
+  if (slot === "afternoon") {
+    const latestMorningEnd = getLatestMorningScheduleEnd(dateValue, schedules);
+    if (latestMorningEnd) {
+      const bufferedStart = new Date(latestMorningEnd.getTime() + SLOT_BUFFER_MINUTES * 60 * 1000);
+      if (bufferedStart > earliestStart) {
+        earliestStart = bufferedStart;
+      }
+    }
+  }
+
+  if (toLocalDateValue(current) === dateValue && current >= earliestStart && current < slotEnd) {
+    earliestStart = current;
+  }
+
+  return truncateToMinute(earliestStart);
+};
+
+const buildFixedSlotLabel = ({ dateValue, now = new Date(), schedules = [], slot }) => {
+  const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
+  const prefix = slot === "afternoon" ? "下午" : "上午";
+  const earliestStart = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
+  const earliestText = toLocalTimeValue(earliestStart);
+  if (!earliestText || earliestText === range.start) {
+    return `${prefix}（${range.start}-${range.end}）`;
+  }
+  return `${prefix}（${range.start}-${range.end}，最早 ${earliestText} 开始）`;
 };
 
 // 判断两个时间区间是否重叠，是冲突检测和甘特图命中的基础工具。
@@ -194,6 +274,24 @@ const resolveLegalManualScheduleState = (now = new Date()) => {
     time_slot: "morning",
   };
 };
+
+function buildManualTimeSlotOptions({ now = new Date(), scheduleDate = "", schedules = [] } = {}) {
+  const selectedDate = normalizeText(scheduleDate) || toLocalDateValue(now);
+  return [
+    {
+      value: "morning",
+      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "morning" }),
+    },
+    {
+      value: "afternoon",
+      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "afternoon" }),
+    },
+    {
+      value: "custom",
+      label: "自定义",
+    },
+  ];
+}
 
 // 阻止用户把手动排程放到已经过去的非法时间片。
 const isManualScheduleSelectionLegal = (form, now = new Date()) => {
@@ -293,7 +391,7 @@ function buildScheduleRescheduleForm(schedule) {
 }
 
 // 解析手动排程操作实际使用的开始和结束时间。
-function resolveScheduleTimes(form, now = new Date()) {
+function resolveScheduleTimes(form, now = new Date(), schedules = []) {
   const dateValue = normalizeText(form?.schedule_date);
   if (!dateValue) {
     return { error: "Invalid schedule date" };
@@ -334,9 +432,10 @@ function resolveScheduleTimes(form, now = new Date()) {
   } else {
     // 上午/下午快捷时段直接复用预设时间窗。
     const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-    startTime = range.start;
+    const slotStartAt = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
+    startTime = toLocalTimeValue(slotStartAt) || range.start;
     plannedHours ||= inferPlannedHours(
-      parseDate(`${dateValue}T${range.start}:00`),
+      slotStartAt,
       parseDate(`${dateValue}T${range.end}:00`),
     );
   }
@@ -347,7 +446,7 @@ function resolveScheduleTimes(form, now = new Date()) {
 
   const startAt = parseDate(`${dateValue}T${startTime}:00`);
   const endAt = startAt ? new Date(startAt.getTime() + plannedHours * 60 * 60 * 1000) : null;
-  if (!startAt || !endAt || endAt <= startAt || endAt <= now) {
+  if (!startAt || !endAt || endAt <= startAt) {
     return { error: "Invalid schedule time" };
   }
 
@@ -1363,7 +1462,7 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
     return { error: "请选择任务和实验室" };
   }
 
-  const resolved = resolveScheduleTimes(form, now);
+  const resolved = resolveScheduleTimes(form, now, schedules);
   if (resolved.error) {
     return resolved;
   }
@@ -1426,7 +1525,7 @@ function updateScheduleRecord({ experiments, form, tasks, schedules, streams, no
     return { error: "未找到排程记录" };
   }
 
-  const resolved = resolveScheduleTimes(form, now);
+  const resolved = resolveScheduleTimes(form, now, schedules);
   if (resolved.error) {
     return resolved;
   }
@@ -1507,6 +1606,7 @@ export {
   buildGanttRows,
   buildLabOptions,
   buildManualTaskOptions,
+  buildManualTimeSlotOptions,
   buildRetentionInternalRows,
   buildScheduleEditForm,
   buildScheduleRescheduleForm,

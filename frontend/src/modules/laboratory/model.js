@@ -12,6 +12,7 @@ const SALT_SPRAY_LAB = "盐雾试验室";
 const LAB_COMPARE_STATUS = "已到达实验室";
 const LAB_INSTALL_STATUS = "工装夹具安装";
 const LAB_READY_STATUS = "实验准备就绪";
+const LAB_RESET_STATUS = "送至实验室";
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
   { key: "scheduled", label: STATUS_SCHEDULED },
@@ -461,8 +462,8 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
     };
   }
   return {
-    canCompare: !workflow.comparisonDone,
-    canInstallSample: (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone,
+    canCompare: !workflow.hasInstalled && !workflow.comparisonDone,
+    canInstallSample: !workflow.hasInstalled && (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone,
     canMarkReady: (workflow.hasInstalled || workflow.installationDone) && !workflow.experimentConfirmed,
   };
 }
@@ -512,7 +513,7 @@ function buildLaboratoryProgressMessage(workflow, currentTask) {
     return "当前任务已确认全部托盘实验准备就绪";
   }
   if (workflow.hasInstalled && !workflow.installationDone) {
-    return "当前任务已有托盘完成样品安装，可继续安装或确认已安装托盘准备就绪";
+    return "当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪";
   }
   if (workflow.installationDone) {
     return "当前任务已完成全部托盘样品安装，待实验确认";
@@ -555,6 +556,25 @@ function applyLaboratoryTaskStep({
   }).samples;
   const syncedByCode = new Map(syncedSamples.map((sample) => [normalizeText(sample?.code), sample]));
   return asArray(samples).map((sample) => syncedByCode.get(normalizeText(sample?.code)) || sample);
+}
+
+function resetLaboratoryExperimentTrays({
+  samples = [],
+  currentTask = null,
+  now = new Date().toISOString(),
+}) {
+  if (!currentTask || !asArray(currentTask?.trayCodes).length) {
+    return asArray(samples);
+  }
+
+  return applyLaboratoryTaskStep({
+    currentTask,
+    historyAction: "实验任务重置",
+    nextStatus: LAB_RESET_STATUS,
+    now,
+    samples,
+    targetTrayCodes: currentTask.trayCodes,
+  });
 }
 
 function buildLaboratoryChecklist(task) {
@@ -631,6 +651,7 @@ export {
   SALT_SPRAY_LAB,
   LAB_COMPARE_STATUS,
   LAB_INSTALL_STATUS,
+  LAB_RESET_STATUS,
   LAB_READY_STATUS,
   buildLaboratoryChecklist,
   buildLaboratoryTaskFlow,
@@ -644,5 +665,6 @@ export {
   confirmLaboratoryExperiment,
   createLaboratoryWorkflow,
   getLaboratoryActionState,
+  resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 };

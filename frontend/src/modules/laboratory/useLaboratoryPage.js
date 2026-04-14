@@ -1,5 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -14,6 +15,7 @@ import {
   LAB_INSTALL_STATUS,
   LAB_READY_STATUS,
   getLaboratoryActionState,
+  resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 } from "./model";
 
@@ -44,6 +46,7 @@ function useLaboratoryPage(options = {}) {
   const selectedTrayCode = ref("");
   const pendingTaskCode = ref("");
   const compareScanCode = ref("");
+  const compareScanInputRef = ref(null);
   const compareFeedback = ref(null);
   const verifiedTrayCodes = ref([]);
   const scheduleModalOpen = ref(false);
@@ -52,6 +55,8 @@ function useLaboratoryPage(options = {}) {
   const installModalOpen = ref(false);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
+  const resetConfirmModalOpen = ref(false);
+  const resetDangerModalOpen = ref(false);
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const tickNow = ref(now || new Date());
@@ -76,11 +81,15 @@ function useLaboratoryPage(options = {}) {
   const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
   const actionState = computed(() => getLaboratoryActionState(workflow.value));
+  const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value));
   const runningExperiment = computed(() => view.value.runningExperiment);
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = computed(() => typeof document !== "undefined" && Boolean(document.querySelector(".header-actions")));
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
+  const canResetCurrentTask = computed(
+    () => Boolean(currentTask.value && Array.isArray(currentTask.value?.trayCodes) && currentTask.value.trayCodes.length > 0) && !runningInteractionLocked.value,
+  );
 
   const clearRunningModalRestoreTimer = () => {
     if (runningModalRestoreTimer && typeof window !== "undefined") {
@@ -225,12 +234,13 @@ function useLaboratoryPage(options = {}) {
   const closeTaskList = () => {
     taskListModalOpen.value = false;
   };
-  const openCompare = () => {
+  const openCompare = async () => {
     if (runningInteractionLocked.value) {
       return;
     }
     resetCompareState();
     compareModalOpen.value = true;
+    await focusScanInput();
   };
   const closeCompare = () => {
     compareModalOpen.value = false;
@@ -287,7 +297,7 @@ function useLaboratoryPage(options = {}) {
     compareScanCode.value = "";
   };
   const openInstall = () => {
-    if (runningInteractionLocked.value) {
+    if (runningInteractionLocked.value || !actionState.value.canInstallSample) {
       return;
     }
     installModalOpen.value = true;
@@ -296,11 +306,15 @@ function useLaboratoryPage(options = {}) {
     installModalOpen.value = false;
   };
   const confirmInstall = async () => {
+    if (!actionState.value.canInstallSample) {
+      installModalOpen.value = false;
+      return;
+    }
     await persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
   };
   const openReady = () => {
-    if (runningInteractionLocked.value) {
+    if (runningInteractionLocked.value || !actionState.value.canMarkReady) {
       return;
     }
     readyModalOpen.value = true;
@@ -309,12 +323,56 @@ function useLaboratoryPage(options = {}) {
     readyModalOpen.value = false;
   };
   const confirmReady = async () => {
+    if (!actionState.value.canMarkReady) {
+      readyModalOpen.value = false;
+      return;
+    }
     await persistCurrentTaskStep(LAB_READY_STATUS, "实验确认");
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
   };
   const closeConfirmed = () => {
     confirmedModalOpen.value = false;
+  };
+  const openResetConfirm = () => {
+    if (!canResetCurrentTask.value) {
+      return;
+    }
+    resetConfirmModalOpen.value = true;
+  };
+  const closeResetConfirm = () => {
+    resetConfirmModalOpen.value = false;
+  };
+  const confirmResetPrompt = () => {
+    if (!canResetCurrentTask.value) {
+      resetConfirmModalOpen.value = false;
+      return;
+    }
+    resetConfirmModalOpen.value = false;
+    resetDangerModalOpen.value = true;
+  };
+  const closeResetDanger = () => {
+    resetDangerModalOpen.value = false;
+  };
+  const confirmResetTask = async () => {
+    if (!canResetCurrentTask.value) {
+      resetDangerModalOpen.value = false;
+      return;
+    }
+    const nextSamples = resetLaboratoryExperimentTrays({
+      currentTask: currentTask.value,
+      now: new Date().toISOString(),
+      samples: samples.value,
+    });
+    samples.value = nextSamples;
+    await persistSnapshot({
+      [STORAGE_KEYS.samples]: nextSamples,
+    });
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    }
+    resetDangerModalOpen.value = false;
+    resetCompareState();
   };
   const openCompleteConfirm = () => {
     if (!runningExperiment.value?.active) {
@@ -364,17 +422,23 @@ function useLaboratoryPage(options = {}) {
     checklist,
     closeCompleteConfirm,
     compareFeedback,
+    compareScanInputRef,
     closeCompare,
     closeConfirmed,
     closeInstall,
     closeReady,
+    closeResetConfirm,
+    closeResetDanger,
     closeScheduleBoard,
       closeTaskList,
+      canResetCurrentTask,
       compareScanCode,
       compareModalOpen,
       completePromptVisible,
       confirmCurrentTask,
       confirmCompare,
+    confirmResetPrompt,
+    confirmResetTask,
     confirmCompleteExperiment,
     confirmInstall,
     confirmReady,
@@ -389,6 +453,7 @@ function useLaboratoryPage(options = {}) {
     openCompleteConfirm,
     openInstall,
     openReady,
+    openResetConfirm,
     openScheduleBoard,
     openTaskList,
     showRunningModal,
@@ -398,6 +463,8 @@ function useLaboratoryPage(options = {}) {
     progressMessage,
     readyModalOpen,
     recentTasks: computed(() => view.value.scheduleRows),
+    resetConfirmModalOpen,
+    resetDangerModalOpen,
     runningExperiment,
     runningModalVisible,
     scheduleModalOpen,

@@ -379,6 +379,23 @@ describe("TransferWorkbench runtime", () => {
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
   });
 
+  test("handover dispatch view auto focuses the tray scan input", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element);
+
+    wrapper.unmount();
+  });
+
   test("pre-allocation mode uses clickable filter cards and hides confirm storage", async () => {
     const wrapper = mount(TransferWorkbench, {
       props: {

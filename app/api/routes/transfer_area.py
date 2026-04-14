@@ -727,9 +727,34 @@ def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str,
     return True
 
 
-def task_progress(task: dict[str, Any], task_status: str, assigned_trays: list[dict[str, Any]], task_samples: list[dict[str, Any]]) -> str:
+def are_task_experiments_all_completed(task: dict[str, Any], experiments: list[dict[str, Any]]) -> bool:
+    task_code_value = task_code(task)
+    task_experiments = [
+        experiment
+        for experiment in experiments
+        if normalize_text(experiment.get("task_code")) == task_code_value
+    ]
+    if not task_experiments:
+        return False
+
+    completed_statuses = {"实验已完成", "放置实验后暂存间", "厂家收回"}
+    return all(
+        normalize_experiment_status_text(experiment.get("status")) in completed_statuses
+        for experiment in task_experiments
+    )
+
+
+def task_progress(
+    task: dict[str, Any],
+    task_status: str,
+    assigned_trays: list[dict[str, Any]],
+    task_samples: list[dict[str, Any]],
+    experiments: list[dict[str, Any]],
+) -> str:
     started_status = started_experiment_status_for_task(task_samples)
     if started_status:
+        if not are_task_experiments_all_completed(task, experiments):
+            return "实验进行中"
         return started_status
     if task_status == TASK_STATUS_STORED:
         return "已确认入库"
@@ -772,7 +797,7 @@ def serialize_workspace(
         }
         for tray in assigned_trays
     ]
-    current_progress = task_progress(task, current_task_status, assigned_trays, task_samples)
+    current_progress = task_progress(task, current_task_status, assigned_trays, task_samples, experiments or [])
     printed_tray_count = sum(1 for tray in assigned_trays if tray["barcode"])
     global_samples = all_samples if all_samples is not None else task_samples
     max_assignable_count = max_assignable_tray_count(global_samples, task_samples)

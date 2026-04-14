@@ -10,6 +10,7 @@ import {
   buildGanttRows,
   buildLabOptions,
   buildManualTaskOptions,
+  buildManualTimeSlotOptions,
   buildScheduleEditForm,
   buildScheduleRescheduleForm,
   buildScheduleRows,
@@ -100,6 +101,13 @@ function useSchedulePage() {
     buildLabOptions({
       selectedDevice: normalizeText(scheduleForm.value.device),
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
+    }),
+  );
+  const manualTimeSlotOptions = computed(() =>
+    buildManualTimeSlotOptions({
+      now: now.value,
+      scheduleDate: scheduleForm.value.schedule_date,
+      schedules: rawSchedules.value,
     }),
   );
 
@@ -262,7 +270,7 @@ function useSchedulePage() {
       experiment_code: normalizeText(scheduleForm.value.experiment_code),
       task_code: normalizeText(scheduleForm.value.task_code),
     };
-    const resolved = resolveScheduleTimes(scheduleForm.value, now.value);
+    const resolved = resolveScheduleTimes(scheduleForm.value, now.value, rawSchedules.value);
     if (!resolved.error) {
       candidate.start_at = resolved.startAt.toISOString();
       candidate.end_at = resolved.endAt.toISOString();
@@ -567,6 +575,7 @@ function useSchedulePage() {
     experimentOptions,
     ganttView,
     manualLabOptions,
+    manualTimeSlotOptions,
     openTaskDetailModal,
     openScheduleDrawer,
     removeSchedule,

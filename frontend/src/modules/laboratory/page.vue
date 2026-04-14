@@ -38,7 +38,15 @@
           <h3>盐雾试验室操作台</h3>
           <p class="muted">当前实验室固定为盐雾试验室，任务与实验准备流程按现有项目数据口径展示。</p>
         </div>
-        <span class="pill">当前实验室任务</span>
+        <button
+          class="laboratory-reset-button"
+          data-testid="laboratory-reset-task"
+          type="button"
+          :disabled="!canResetCurrentTask"
+          @click="openResetConfirm"
+        >
+          重置当前实验任务
+        </button>
       </div>
 
       <div class="laboratory-actions-grid">
@@ -294,7 +302,13 @@
         <div class="laboratory-compare-scan">
           <label class="form-field">
             <span>扫码托盘</span>
-            <input v-model="compareScanCode" data-testid="laboratory-compare-scan-input" type="text" placeholder="请扫描或输入托盘编号" />
+            <input
+              ref="compareScanInputRef"
+              v-model="compareScanCode"
+              data-testid="laboratory-compare-scan-input"
+              type="text"
+              placeholder="请扫描或输入托盘编号"
+            />
           </label>
           <button class="action-btn" data-testid="laboratory-compare-scan-submit" type="button" @click="submitCompareScan">扫码确认</button>
         </div>
@@ -340,6 +354,29 @@
       </div>
       <template #footer>
         <button class="action-btn" type="button" @click="closeConfirmed">关闭</button>
+      </template>
+    </AppModal>
+
+    <AppModal :open="resetConfirmModalOpen" data-testid="laboratory-reset-confirm-modal" title="确认重置任务" @close="closeResetConfirm">
+      <div class="laboratory-modal-body laboratory-prompt-card">
+        <p>是否重置当前任务下当前实验对应托盘？</p>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" data-testid="laboratory-reset-cancel" type="button" @click="closeResetConfirm">取消</button>
+        <button class="action-btn" data-testid="laboratory-reset-confirm" type="button" @click="confirmResetPrompt">确认重置</button>
+      </template>
+    </AppModal>
+
+    <AppModal :open="resetDangerModalOpen" data-testid="laboratory-reset-danger-modal" title="危险操作确认" @close="closeResetDanger">
+      <div class="laboratory-modal-body">
+        <div class="laboratory-danger-panel">
+          <strong>危险操作确认</strong>
+          <p>重置后请把当前试验室所有样品从室内推出，重新比对！</p>
+        </div>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" data-testid="laboratory-reset-danger-cancel" type="button" @click="closeResetDanger">取消</button>
+        <button class="action-btn danger" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认危险重置</button>
       </template>
     </AppModal>
 
@@ -407,20 +444,26 @@ const {
   actionState,
   canTeleportScheduleAction,
   canCompleteCompare,
+  canResetCurrentTask,
   checklist,
   closeCompleteConfirm,
   compareFeedback,
+  compareScanInputRef,
   compareScanCode,
   closeCompare,
   closeConfirmed,
   closeInstall,
   closeReady,
+  closeResetConfirm,
+  closeResetDanger,
   closeScheduleBoard,
   closeTaskList,
   compareModalOpen,
   completePromptVisible,
   confirmCurrentTask,
   confirmCompare,
+  confirmResetPrompt,
+  confirmResetTask,
   confirmCompleteExperiment,
   confirmInstall,
   confirmReady,
@@ -434,12 +477,15 @@ const {
   openCompare,
   openInstall,
   openReady,
+  openResetConfirm,
   openScheduleBoard,
   openTaskList,
   pendingTaskCode,
   progressMessage,
   readyModalOpen,
   recentTasks,
+  resetConfirmModalOpen,
+  resetDangerModalOpen,
   runningExperiment,
   runningInteractionLocked,
   runningModalVisible,

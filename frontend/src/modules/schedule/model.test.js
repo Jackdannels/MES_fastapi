@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   analyzeTaskTrayConflict,
+  buildManualTimeSlotOptions,
   RETENTION_DEVICE,
   STATUS_SCHEDULED,
   STATUS_WAITING,
@@ -36,6 +37,61 @@ describe("schedulePageModel", () => {
     expect(result.error).toBeUndefined();
     expect(result.startTime).toBe("08:00");
     expect(result.endTime).toBe("12:00");
+  });
+
+  test("resolveScheduleTimes lets a morning slot start at the current morning time and continue into the afternoon", () => {
+    const result = resolveScheduleTimes(
+      {
+        device: "冲击一室",
+        planned_hours: 3.5,
+        schedule_date: "2099-03-20",
+        time_slot: "morning",
+      },
+      new Date("2099-03-20T11:59:00"),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.startTime).toBe("11:59");
+    expect(result.endTime).toBe("15:29");
+  });
+
+  test("resolveScheduleTimes delays afternoon slot start until ten minutes after the latest morning experiment ends", () => {
+    const result = resolveScheduleTimes(
+      {
+        device: "盐雾试验室",
+        planned_hours: 3.5,
+        schedule_date: "2099-03-20",
+        time_slot: "afternoon",
+      },
+      new Date("2099-03-20T12:30:00"),
+      [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2099-03-001",
+          device: "冲击一室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T05:40:00.000Z",
+        },
+      ],
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.startTime).toBe("13:50");
+    expect(result.endTime).toBe("17:20");
+  });
+
+  test("buildManualTimeSlotOptions shows the earliest start time inside the active slot window", () => {
+    const options = buildManualTimeSlotOptions({
+      now: new Date("2099-03-20T17:07:00"),
+      scheduleDate: "2099-03-20",
+      schedules: [],
+    });
+
+    expect(options.find((option) => option.value === "afternoon")).toEqual(
+      expect.objectContaining({
+        label: expect.stringContaining("17:07"),
+      }),
+    );
   });
 
   test("buildGanttRows treats 13:00 end time as occupying the afternoon slot", () => {

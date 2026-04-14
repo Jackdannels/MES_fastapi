@@ -1029,7 +1029,28 @@ describe("SchedulePage runtime", () => {
     vi.useRealTimers();
   });
 
+  test("shows the effective current start time inside the active fixed-slot label", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2099-03-20T17:07:00"));
+
+    setStorage(TASKS_KEY, []);
+    setStorage(DEVICES_KEY, []);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    expect(wrapper.get('select[name="time_slot"]').text()).toContain("17:07");
+
+    vi.useRealTimers();
+  });
+
   test("shows updated slot hint labels in selector and gantt header", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2099-03-20T09:00:00"));
+
     setStorage(TASKS_KEY, []);
     setStorage(DEVICES_KEY, []);
     setStorage(SCHEDULES_KEY, []);
@@ -1040,12 +1061,14 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     const slotSelectText = wrapper.get('select[name="time_slot"]').text();
-    expect(slotSelectText).toContain("上午（08:00-12:00）");
-    expect(slotSelectText).toContain("下午（12:00-18:00）");
+    expect(slotSelectText).toContain("上午（08:00-12:00");
+    expect(slotSelectText).toContain("下午（12:00-18:00");
 
     const ganttHeaderText = wrapper.get("#gantt-table thead").text();
     expect(ganttHeaderText).toContain("上午 08:00-12:00");
     expect(ganttHeaderText).toContain("下午 12:00-18:00");
+
+    vi.useRealTimers();
   });
 });
 

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>实验室触控按钮预览</title>
+  <style>
+    :root {
+      --bg: #edf3f8;
+      --panel: rgba(255, 255, 255, 0.92);
+      --line: rgba(15, 23, 42, 0.08);
+      --text: #10233f;
+      --muted: #5e728d;
+      --primary-bg: rgba(56, 189, 248, 0.16);
+      --primary-line: rgba(56, 189, 248, 0.34);
+      --danger-bg: rgba(239, 68, 68, 0.14);
+      --danger-line: rgba(239, 68, 68, 0.34);
+      --warning-bg: rgba(245, 158, 11, 0.14);
+      --warning-line: rgba(245, 158, 11, 0.34);
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(186, 230, 253, 0.65), transparent 28%),
+        radial-gradient(circle at top right, rgba(254, 226, 226, 0.55), transparent 32%),
+        linear-gradient(180deg, #f7fbff 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .shell {
+      width: min(1480px, calc(100vw - 40px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 8px;
+      padding: 22px 26px;
+      border-radius: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .hero h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .hero p, .hero li {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .hero ul {
+      margin: 0;
+      padding-left: 20px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .option {
+      display: grid;
+      gap: 14px;
+      padding: 20px;
+      border-radius: 24px;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid rgba(15, 23, 42, 0.09);
+      box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
+    }
+
+    .option.recommended {
+      border-color: rgba(56, 189, 248, 0.35);
+      box-shadow: 0 18px 40px rgba(14, 165, 233, 0.12);
+    }
+
+    .option-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(226, 232, 240, 0.84);
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+    }
+
+    .recommended .badge {
+      background: rgba(186, 230, 253, 0.92);
+      color: #075985;
+    }
+
+    .option h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .option p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .canvas {
+      display: grid;
+      gap: 16px;
+      min-height: 720px;
+      padding: 18px;
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.94));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .lab-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+    }
+
+    .lab-copy {
+      display: grid;
+      gap: 8px;
+    }
+
+    .lab-copy strong {
+      font-size: 24px;
+    }
+
+    .lab-copy span {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .reset-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      font-weight: 800;
+      color: #991b1b;
+      border: 1px solid rgba(220, 38, 38, 0.28);
+      background: linear-gradient(180deg, rgba(254, 226, 226, 0.95), rgba(254, 202, 202, 0.98));
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+    }
+
+    .reset-a {
+      min-height: 42px;
+      padding: 0 18px;
+      border-radius: 999px;
+      font-size: 13px;
+    }
+
+    .reset-b {
+      min-height: 48px;
+      padding: 0 22px;
+      border-radius: 999px;
+      font-size: 14px;
+    }
+
+    .reset-c {
+      min-height: 46px;
+      padding: 0 24px;
+      border-radius: 16px;
+      font-size: 14px;
+    }
+
+    .action-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .action-card {
+      min-height: 120px;
+      border-radius: 20px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(255,255,255,0.88);
+      display: grid;
+      align-content: space-between;
+      padding: 16px;
+    }
+
+    .action-card strong { font-size: 18px; }
+    .action-card span { color: var(--muted); font-size: 13px; }
+
+    .action-card .btn {
+      margin-top: 10px;
+      border-radius: 14px;
+      border: 1px solid var(--primary-line);
+      background: var(--primary-bg);
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+    }
+
+    .modal {
+      margin-top: auto;
+      border-radius: 24px;
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      background: rgba(255,255,255,0.98);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 22px 10px;
+    }
+
+    .modal-head strong { font-size: 18px; }
+
+    .close {
+      border: 1px solid rgba(15,23,42,0.16);
+      border-radius: 12px;
+      min-width: 68px;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #334155;
+      background: rgba(248,250,252,0.96);
+      font-size: 13px;
+    }
+
+    .modal-body {
+      padding: 12px 22px 20px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .modal-body p {
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1.7;
+      margin: 0;
+    }
+
+    .danger-panel {
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid var(--danger-line);
+      background: linear-gradient(180deg, rgba(254, 226, 226, 0.96), rgba(254, 202, 202, 0.92));
+      color: #7f1d1d;
+    }
+
+    .danger-panel strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .footer {
+      border-top: 1px solid rgba(226, 232, 240, 0.95);
+      padding: 16px 22px 20px;
+    }
+
+    .footer-a,
+    .footer-c {
+      display: flex;
+      gap: 14px;
+      justify-content: flex-end;
+    }
+
+    .footer-b {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .btn {
+      min-width: 110px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .btn-secondary {
+      border: 1px solid var(--warning-line);
+      background: var(--warning-bg);
+      color: #9a5b00;
+    }
+
+    .btn-primary {
+      border: 1px solid var(--primary-line);
+      background: var(--primary-bg);
+      color: #0f172a;
+    }
+
+    .btn-danger {
+      border: 1px solid var(--danger-line);
+      background: var(--danger-bg);
+      color: #7f1d1d;
+    }
+
+    .size-a .btn {
+      min-height: 46px;
+      padding: 0 22px;
+    }
+
+    .size-b .btn {
+      min-height: 54px;
+      min-width: 136px;
+      padding: 0 28px;
+      font-size: 16px;
+    }
+
+    .size-c .btn {
+      min-height: 50px;
+      min-width: 124px;
+      padding: 0 24px;
+      font-size: 16px;
+    }
+
+    .notes {
+      display: grid;
+      gap: 8px;
+      padding-left: 18px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1200px) {
+      .grid { grid-template-columns: 1fr; }
+      .canvas { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>盐雾试验室触控优化预览</h1>
+      <p>目标：保守放大，不改变现有布局结构。主要看两个点：头部重置按钮是否更好点按；双确认弹窗底部按钮是否更适合触控。</p>
+      <ul>
+        <li>`A`：最保守，只放大尺寸和间距，按钮仍右对齐。</li>
+        <li>`B`：推荐，按钮放大后保持底部一左一右，占满底部动作区，更适合触控。</li>
+        <li>`C`：折中，重置按钮更强调，弹窗按钮仍同组但留更大空隙。</li>
+      </ul>
+    </section>
+
+    <section class="grid">
+      <article class="option">
+        <div class="option-header">
+          <h2>A 轻量放大</h2>
+          <span class="badge">最保守</span>
+        </div>
+        <p>基本不改现有视觉语言，只把重置按钮和弹窗底部按钮做一档放大，适合希望“尽量不像改版”的场景。</p>
+        <div class="canvas">
+          <div class="lab-header">
+            <div class="lab-copy">
+              <strong>盐雾试验室操作台</strong>
+              <span>当前实验室固定为盐雾试验室，任务与实验准备流程按现有项目数据口径展示。</span>
+            </div>
+            <div class="reset-button reset-a">重置当前实验任务</div>
+          </div>
+          <div class="action-strip">
+            <div class="action-card"><span>步骤 1</span><strong>任务比对</strong><div class="btn">比对任务</div></div>
+            <div class="action-card"><span>步骤 2</span><strong>样品安装</strong><div class="btn">安装样品</div></div>
+            <div class="action-card"><span>步骤 3</span><strong>确认准备就绪</strong><div class="btn">确认准备就绪</div></div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>确认重置任务</strong><div class="close">关闭</div></div>
+            <div class="modal-body"><p>是否重置当前任务下当前实验对应托盘？</p></div>
+            <div class="footer footer-a size-a">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-primary">确认重置</div>
+            </div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>危险操作确认</strong><div class="close">关闭</div></div>
+            <div class="modal-body">
+              <div class="danger-panel">
+                <strong>危险操作确认</strong>
+                重置后请把当前试验室所有样品从室内推出，重新比对！
+              </div>
+            </div>
+            <div class="footer footer-a size-a">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-danger">确认危险重置</div>
+            </div>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>优点：最不容易让页面观感跳变。</li>
+          <li>缺点：触控收益有，但没有完全把底部触控空间吃满。</li>
+        </ul>
+      </article>
+
+      <article class="option recommended">
+        <div class="option-header">
+          <h2>B 触控优先</h2>
+          <span class="badge">推荐</span>
+        </div>
+        <p>保持现有布局层级不变，只把底部动作区拉成“一左一右”触控位，按钮更大、间距更开，最接近你描述的左下角和右下角设计。</p>
+        <div class="canvas">
+          <div class="lab-header">
+            <div class="lab-copy">
+              <strong>盐雾试验室操作台</strong>
+              <span>当前实验室固定为盐雾试验室，任务与实验准备流程按现有项目数据口径展示。</span>
+            </div>
+            <div class="reset-button reset-b">重置当前实验任务</div>
+          </div>
+          <div class="action-strip">
+            <div class="action-card"><span>步骤 1</span><strong>任务比对</strong><div class="btn">比对任务</div></div>
+            <div class="action-card"><span>步骤 2</span><strong>样品安装</strong><div class="btn">安装样品</div></div>
+            <div class="action-card"><span>步骤 3</span><strong>确认准备就绪</strong><div class="btn">确认准备就绪</div></div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>确认重置任务</strong><div class="close">关闭</div></div>
+            <div class="modal-body"><p>是否重置当前任务下当前实验对应托盘？</p></div>
+            <div class="footer footer-b size-b">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-primary">确认重置</div>
+            </div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>危险操作确认</strong><div class="close">关闭</div></div>
+            <div class="modal-body">
+              <div class="danger-panel">
+                <strong>危险操作确认</strong>
+                重置后请把当前试验室所有样品从室内推出，重新比对！
+              </div>
+            </div>
+            <div class="footer footer-b size-b">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-danger">确认危险重置</div>
+            </div>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>优点：最适合触控，误触率最低，仍没改掉原本的头部和弹窗结构。</li>
+          <li>缺点：底部动作区会比现在更显眼一些。</li>
+        </ul>
+      </article>
+
+      <article class="option">
+        <div class="option-header">
+          <h2>C 中间方案</h2>
+          <span class="badge">折中</span>
+        </div>
+        <p>重置按钮更明显一些，但弹窗按钮仍保持在同一组里，只是尺寸和留白进一步提高。</p>
+        <div class="canvas">
+          <div class="lab-header">
+            <div class="lab-copy">
+              <strong>盐雾试验室操作台</strong>
+              <span>当前实验室固定为盐雾试验室，任务与实验准备流程按现有项目数据口径展示。</span>
+            </div>
+            <div class="reset-button reset-c">重置当前实验任务</div>
+          </div>
+          <div class="action-strip">
+            <div class="action-card"><span>步骤 1</span><strong>任务比对</strong><div class="btn">比对任务</div></div>
+            <div class="action-card"><span>步骤 2</span><strong>样品安装</strong><div class="btn">安装样品</div></div>
+            <div class="action-card"><span>步骤 3</span><strong>确认准备就绪</strong><div class="btn">确认准备就绪</div></div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>确认重置任务</strong><div class="close">关闭</div></div>
+            <div class="modal-body"><p>是否重置当前任务下当前实验对应托盘？</p></div>
+            <div class="footer footer-c size-c">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-primary">确认重置</div>
+            </div>
+          </div>
+          <div class="modal">
+            <div class="modal-head"><strong>危险操作确认</strong><div class="close">关闭</div></div>
+            <div class="modal-body">
+              <div class="danger-panel">
+                <strong>危险操作确认</strong>
+                重置后请把当前试验室所有样品从室内推出，重新比对！
+              </div>
+            </div>
+            <div class="footer footer-c size-c">
+              <div class="btn btn-secondary">取消</div>
+              <div class="btn btn-danger">确认危险重置</div>
+            </div>
+          </div>
+        </div>
+        <ul class="notes">
+          <li>优点：比 A 更好点，又没有 B 那么强调动作区。</li>
+          <li>缺点：触控命中区和操作清晰度还是略逊于 B。</li>
+        </ul>
+      </article>
+    </section>
+  </div>
+</body>
+</html>
