@@ -215,6 +215,189 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView prioritizes a started experiment ahead of earlier unstarted experiments", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-002-TP-002",
+      taskCode: "SYLU-2026-03-002",
+      currentExperimentCode: "SYLU-2026-03-002-B",
+      location: "盐雾试验室",
+      status: "实验准备就绪",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          experiment_name: "温度冲击试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          start_at: "2026-04-09T08:00:00",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          start_at: "2026-04-09T14:00:00",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          start_at: "2026-04-10T08:00:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-002-SP-005",
+          task_code: "SYLU-2026-03-002",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-002", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+      ],
+    });
+
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
+      "到货",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "工装夹具安装",
+      "实验准备就绪",
+      "盐雾试验进行中",
+      "冲击试验未完成",
+      "温度冲击试验未完成",
+      "放置实验后暂存间",
+      "厂家收回",
+    ]);
+    expect(view.steps.find((step) => step.label === "实验准备就绪")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+    expect(view.steps.find((step) => step.label === "冲击试验未完成")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+  });
+
+  test("buildTrayFlowView keeps scheduled order when the later experiment has not entered lab flow yet", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-002-TP-002",
+      taskCode: "SYLU-2026-03-002",
+      currentExperimentCode: "SYLU-2026-03-002-B",
+      location: "接驳区",
+      status: "到货",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          experiment_name: "温度冲击试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          tray_code: "SYLU-2026-03-002-TP-002",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          start_at: "2026-04-09T08:00:00",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          start_at: "2026-04-09T14:00:00",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-C",
+          start_at: "2026-04-10T08:00:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-002-SP-005",
+          task_code: "SYLU-2026-03-002",
+          location: "接驳区",
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-002", status: "到货", quantity: 1 }],
+          history: [],
+        },
+      ],
+    });
+
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
+      "到货",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "工装夹具安装",
+      "实验准备就绪",
+      "冲击试验进行中",
+      "盐雾试验未完成",
+      "温度冲击试验未完成",
+      "放置实验后暂存间",
+      "厂家收回",
+    ]);
+    expect(view.steps.find((step) => step.label === "到货")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
       "样品运输中",

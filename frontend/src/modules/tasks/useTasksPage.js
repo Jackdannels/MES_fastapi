@@ -5,7 +5,8 @@ import { useRoute } from "vue-router";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
-import { matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { buildExperimentTypeOptions, buildExperimentTypeSummary, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { createTask, deleteTask as deleteTaskByApi, readTasks, resetTasks as resetTasksByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
@@ -54,16 +55,23 @@ function useTasksPage() {
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
   const editWarning = ref("");
+  const intakeExperimentDraft = ref([]);
   const selectedTestType = ref("");
   const selectedStatus = ref("");
 
   const intakeModal = useDialogState();
+  const intakeExperimentModal = useDialogState();
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
+  const intakeExperimentTypeOptions = computed(() =>
+    buildExperimentTypeOptions(Object.keys(TEST_PREFIX_MAP), filterOptions.value.testTypeOptions),
+  );
+  const intakeExperimentSummary = computed(() => buildExperimentTypeSummary(intakeForm.value.test_types));
+  const intakeExperimentDraftSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
 
   const filteredRows = computed(() =>
     allRows.value.filter((row) => {
@@ -99,6 +107,7 @@ function useTasksPage() {
   };
 
   const syncIntakeDerivedFields = () => {
+    intakeForm.value.test_type = intakeExperimentSummary.value;
     // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
     const nextCode = buildTaskCode(
       intakeForm.value.test_type,
@@ -110,6 +119,8 @@ function useTasksPage() {
 
   const resetIntakeForm = () => {
     intakeForm.value = createTaskIntakeForm();
+    intakeExperimentDraft.value = [];
+    intakeExperimentModal.close();
     intakeWarning.value = "";
     syncIntakeDerivedFields();
   };
@@ -130,7 +141,41 @@ function useTasksPage() {
 
   const closeIntakeModal = () => {
     intakeModal.close();
+    intakeExperimentModal.close();
+    intakeExperimentDraft.value = [];
     removeTaskHash();
+  };
+
+  const openIntakeExperimentPicker = () => {
+    intakeExperimentDraft.value = Array.isArray(intakeForm.value.test_types) ? [...intakeForm.value.test_types] : [];
+    intakeExperimentModal.openWith({ id: "task-intake-test-types-modal" });
+  };
+
+  const closeIntakeExperimentPicker = () => {
+    intakeExperimentModal.close();
+    intakeExperimentDraft.value = [];
+  };
+
+  const toggleIntakeExperimentType = (experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (!normalizedType) {
+      return;
+    }
+    const currentTypes = Array.isArray(intakeExperimentDraft.value) ? [...intakeExperimentDraft.value] : [];
+    const targetIndex = currentTypes.findIndex((entry) => normalizeText(entry) === normalizedType);
+    if (targetIndex >= 0) {
+      currentTypes.splice(targetIndex, 1);
+    } else {
+      currentTypes.push(normalizedType);
+    }
+    intakeExperimentDraft.value = currentTypes;
+  };
+
+  const confirmIntakeExperimentPicker = () => {
+    intakeForm.value.test_types = Array.isArray(intakeExperimentDraft.value) ? [...intakeExperimentDraft.value] : [];
+    intakeWarning.value = "";
+    syncIntakeDerivedFields();
+    closeIntakeExperimentPicker();
   };
 
   const openResetModal = () => {
@@ -208,6 +253,10 @@ function useTasksPage() {
 
     if (!normalizeText(intakeForm.value.name)) {
       intakeWarning.value = "请填写任务名称";
+      return;
+    }
+    if (intakeForm.value.test_types.length === 0) {
+      intakeWarning.value = "请选择至少一个试验类型";
       return;
     }
 
@@ -370,7 +419,7 @@ function useTasksPage() {
   };
 
   watch(
-    () => intakeForm.value.test_type,
+    () => intakeForm.value.test_types.join(" / "),
     () => {
       syncIntakeDerivedFields();
     },
@@ -431,6 +480,11 @@ function useTasksPage() {
     filterStatus: selectedStatus,
     filterTestType: selectedTestType,
     intakeForm,
+    intakeExperimentDraft,
+    intakeExperimentDraftSummary,
+    intakeExperimentModalOpen: intakeExperimentModal.open,
+    intakeExperimentSummary,
+    intakeExperimentTypeOptions,
     intakeModalOpen: intakeModal.open,
     intakeWarning,
     loadError,
@@ -446,10 +500,14 @@ function useTasksPage() {
     selectedRow: taskDrawer.payload,
     setCurrentPage,
     statusOptions: computed(() => filterOptions.value.statusOptions),
+    closeIntakeExperimentPicker,
+    confirmIntakeExperimentPicker,
+    openIntakeExperimentPicker,
     submitTask,
     taskDrawerOpen: taskDrawer.open,
     taskRows: visibleRows,
     testTypeOptions: computed(() => filterOptions.value.testTypeOptions),
+    toggleIntakeExperimentType,
     toggleSort,
     updateTask,
     openTaskDrawer,

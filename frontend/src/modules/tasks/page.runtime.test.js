@@ -372,7 +372,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 
-  test("opens the intake modal from the route hash, auto-fills task code, and submits a task", async () => {
+  test("opens the intake modal from the route hash, supports multi-select experiments, and submits a task", async () => {
     const { state } = installApiFetchMock({
       tasks: [createTask()],
       samples: [],
@@ -384,11 +384,25 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
 
-    await wrapper.get('select[name="test_type"]').setValue("冲击试验");
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("请选择试验类型");
+    expect(wrapper.get('[data-testid="task-intake-test-types-grid"]').classes()).toContain("tasks-intake-test-types__grid");
+    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("已选");
+    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("未选");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').classes()).toContain("is-selected");
+    expect(wrapper.get('[data-testid="task-intake-test-type-check-冲击试验"]').text()).toContain("✓");
+    await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验 / 盐雾试验");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
 
     const codeInput = wrapper.get('input[name="code"]');
 
     expect(codeInput.element.value).toBe("SYLU-2026-04-001");
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("冲击试验 / 盐雾试验");
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).not.toContain("→");
     expect(wrapper.find('input[name="required_device"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("必需设备/能力");
 
@@ -402,6 +416,8 @@ describe("TasksPage runtime", () => {
       expect.objectContaining({
         code: "SYLU-2026-04-001",
         name: "冲击试验-批次B",
+        test_type: "冲击试验 / 盐雾试验",
+        test_types: ["冲击试验", "盐雾试验"],
       }),
     );
   });
@@ -441,7 +457,10 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="test_type"]').setValue("冲击试验");
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次C");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
@@ -451,6 +470,16 @@ describe("TasksPage runtime", () => {
       TASKS_ENDPOINT,
       expect.objectContaining({
         method: "POST",
+        body: expect.any(String),
+      }),
+    );
+    const createTaskCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST",
+    );
+    expect(JSON.parse(createTaskCall[1].body)).toEqual(
+      expect.objectContaining({
+        test_type: "冲击试验 / 盐雾试验",
+        test_types: ["冲击试验", "盐雾试验"],
       }),
     );
 
@@ -542,7 +571,9 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    await wrapper.get('select[name="test_type"]').setValue("冲击试验");
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次D");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
@@ -552,6 +583,44 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("SYLU-2026-04-001");
     expect(wrapper.find(".modal.is-open").exists()).toBe(false);
     expect(wrapper.text()).toContain("任务列表刷新失败");
+  });
+
+  test("requires at least one selected experiment before submitting a non-pristine intake form", async () => {
+    installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('input[name="name"]').setValue("未选择实验的任务");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请选择至少一个试验类型");
+  });
+
+  test("keeps the trigger summary unchanged when the experiment picker is cancelled", async () => {
+    installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("请选择试验类型");
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验");
+    await wrapper.get('[data-testid="task-intake-test-types-cancel"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("请选择试验类型");
   });
 
   test("deletes a task and cascades related schedules, samples, and streams", async () => {

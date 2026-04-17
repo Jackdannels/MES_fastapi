@@ -195,6 +195,8 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="open-task-intake"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("查看排程");
 
     reactiveRoute.meta = { module: "central", title: "中控总览" };
     reactiveRoute.name = "dashboard";
@@ -203,6 +205,7 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="open-task-intake"]').exists()).toBe(false);
   });
 
   test("renders sidebar and header actions with utf-8 chinese labels", async () => {
@@ -218,7 +221,8 @@ describe("App runtime boundary", () => {
     expect(text).toContain("实验室中控管理");
     expect(text).toContain("中控中心");
     expect(text).toContain("中控总览");
-    expect(text).toContain("新建任务");
+    expect(text).not.toContain("新建任务");
+    expect(text).not.toContain("查看排程");
     expect(text).toContain("刷新");
     expect(text).toContain("退出登录");
     expect(text).toContain("自动采集");

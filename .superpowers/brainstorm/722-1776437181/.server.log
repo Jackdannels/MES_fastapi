@@ -1,0 +1,16 @@
+{"type":"server-started","port":60751,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:60751","screen_dir":"C:/Users/12051/Desktop/MES_fastapi/.superpowers/brainstorm/722-1776437181"}
+{"type":"screen-added","file":"C:\\Users\\12051\\Desktop\\MES_fastapi\\.superpowers\\brainstorm\\722-1776437181\\task-intake-experiment-modal.html"}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437316496}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437317087}
+{"source":"user-event","type":"click","text":"四综合试验\n            点击整项即可切换状态，不再使用原地下拉面板。\n          \n          \n            已选\n            →","choice":"szh","id":null,"timestamp":1776437317904}
+{"source":"user-event","type":"click","text":"温度冲击试验\n            右侧箭头作为更直接的视觉反馈，提醒当前项已纳入任务。\n          \n          \n            已选\n            →","choice":"wdc","id":null,"timestamp":1776437318339}
+{"source":"user-event","type":"click","text":"盐雾试验\n            未选中时保持普通卡片状态，避免视觉噪音过重。\n          \n          \n            点击添加","choice":"yw","id":null,"timestamp":1776437319254}
+{"source":"user-event","type":"click","text":"四综合试验\n            点击整项即可切换状态，不再使用原地下拉面板。\n          \n          \n            已选\n            →","choice":"szh","id":null,"timestamp":1776437322667}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437323042}
+{"source":"user-event","type":"click","text":"四综合试验\n            点击整项即可切换状态，不再使用原地下拉面板。\n          \n          \n            已选\n            →","choice":"szh","id":null,"timestamp":1776437323469}
+{"source":"user-event","type":"click","text":"温度冲击试验\n            右侧箭头作为更直接的视觉反馈，提醒当前项已纳入任务。\n          \n          \n            已选\n            →","choice":"wdc","id":null,"timestamp":1776437323731}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437324676}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437325944}
+{"source":"user-event","type":"click","text":"高低温湿热试验\n            优先显示在顶部预览，适合快速确认已选内容。\n          \n          \n            已选\n            →","choice":"gdw","id":null,"timestamp":1776437326423}
+{"source":"user-event","type":"click","text":"温度冲击试验\n            右侧箭头作为更直接的视觉反馈，提醒当前项已纳入任务。\n          \n          \n            已选\n            →","choice":"wdc","id":null,"timestamp":1776437331973}
+{"source":"user-event","type":"click","text":"盐雾试验\n            未选中时保持普通卡片状态，避免视觉噪音过重。\n          \n          \n            点击添加","choice":"yw","id":null,"timestamp":1776437332656}

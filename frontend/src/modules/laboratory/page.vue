@@ -10,15 +10,6 @@
       >
         总览
       </button>
-      <button
-        class="action-btn secondary laboratory-header-action-button laboratory-header-action-button--schedule"
-        data-testid="laboratory-open-schedule"
-        type="button"
-        :disabled="runningInteractionLocked"
-        @click="openScheduleBoard"
-      >
-        查看排程
-      </button>
     </Teleport>
 
     <section class="grid laboratory-summary-grid stagger">
@@ -179,10 +170,11 @@
               </div>
             </div>
             <div class="laboratory-flow-status" data-testid="laboratory-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
-            <ol class="laboratory-flow-steps laboratory-flow-steps--tray">
+            <ol class="laboratory-flow-steps laboratory-flow-steps--tray" data-testid="laboratory-tray-flow-list">
               <li
                 v-for="step in selectedTrayFlow.steps"
                 :key="`tray-flow-${step.key}`"
+                :data-testid="`laboratory-tray-flow-step-${step.key}`"
                 :class="{ 'is-active': step.active, 'is-reached': step.reached }"
               >
                 {{ step.label }}
@@ -192,29 +184,6 @@
         </div>
       </div>
     </section>
-
-    <AppModal :open="scheduleModalOpen" data-testid="laboratory-schedule-modal" title="实验排程清单" @close="closeScheduleBoard">
-      <div class="laboratory-modal-body">
-        <table class="table laboratory-schedule-card">
-          <thead>
-            <tr>
-              <th>任务编号</th>
-              <th>实验</th>
-              <th>执行人员</th>
-              <th>计划时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in scheduleRows" :key="row.id">
-              <td>{{ row.taskCode }}</td>
-              <td>{{ row.experimentName }}</td>
-              <td>{{ row.owner }}</td>
-              <td>{{ row.timeRange }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </AppModal>
 
     <AppModal
       :open="taskListModalOpen"
@@ -456,7 +425,6 @@ const {
   closeReady,
   closeResetConfirm,
   closeResetDanger,
-  closeScheduleBoard,
   closeTaskList,
   compareModalOpen,
   completePromptVisible,
@@ -478,7 +446,6 @@ const {
   openInstall,
   openReady,
   openResetConfirm,
-  openScheduleBoard,
   openTaskList,
   pendingTaskCode,
   progressMessage,
@@ -489,7 +456,6 @@ const {
   runningExperiment,
   runningInteractionLocked,
   runningModalVisible,
-  scheduleModalOpen,
   scheduleRows,
   selectedTrayFlow,
   selectedTrayRow,

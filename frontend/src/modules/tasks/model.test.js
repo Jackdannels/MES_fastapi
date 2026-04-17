@@ -6,6 +6,7 @@ import {
   buildTaskEditForm,
   buildTaskMetrics,
   buildTaskRows,
+  createTaskIntakeForm,
   createTaskRecord,
   updateTaskRecord,
 } from "./model";
@@ -260,6 +261,37 @@ describe("tasks model", () => {
     );
 
     expect(task.arrival_at).toBe("");
+  });
+
+  test("createTaskIntakeForm starts with an empty experiment type array", () => {
+    expect(createTaskIntakeForm()).toEqual(
+      expect.objectContaining({
+        test_type: "",
+        test_types: [],
+      }),
+    );
+  });
+
+  test("createTaskRecord derives test_type from the selected experiment array in order", () => {
+    const task = createTaskRecord(
+      {
+        code: "SYLU-2026-03-001",
+        name: "多实验任务",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_type: "",
+        test_types: ["冲击试验", "盐雾试验", "温度冲击试验"],
+      },
+      [],
+    );
+
+    expect(task).toEqual(
+      expect.objectContaining({
+        test_type: "冲击试验 / 盐雾试验 / 温度冲击试验",
+        required_device: "冲击试验 / 盐雾试验 / 温度冲击试验",
+      }),
+    );
   });
 
   test("updateTaskRecord preserves stored arrival_at instead of taking manual form input", () => {

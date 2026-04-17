@@ -106,6 +106,8 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "霉菌试验",
+            "test_type": "霉菌试验 / 盐雾试验",
+            "test_types": ["霉菌试验", "盐雾试验"],
             "status": "待排程",
         },
     )
@@ -125,19 +127,19 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert listed.json()[0]["code"] == "SYLU-2026-03-001"
     assert created.status_code == 201
     assert created.json()["code"] == "SYLU-2026-03-002"
-    assert created.json()["experiment_count"] == 3
-    assert len(created.json()["experiment_codes"]) == 3
+    assert created.json()["experiment_count"] == 2
+    assert len(created.json()["experiment_codes"]) == 2
     assert updated.status_code == 200
     assert updated.json()["code"] == "SYLU-2026-03-003"
     assert updated.json()["status"] == "已排程"
-    assert updated.json()["experiment_count"] == 3
+    assert updated.json()["experiment_count"] == 2
     assert deleted.status_code == 204
     assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-003"]
-    assert remaining.json()[0]["experiment_count"] == 3
-    assert len(remaining.json()[0]["experiment_codes"]) == 3
+    assert remaining.json()[0]["experiment_count"] == 2
+    assert len(remaining.json()[0]["experiment_codes"]) == 2
 
 
-def test_create_task_generates_three_distinct_experiments_and_persists_relation_rows(monkeypatch):
+def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch):
     client = build_client(monkeypatch, tasks=[])
 
     created = client.post(
@@ -146,8 +148,9 @@ def test_create_task_generates_three_distinct_experiments_and_persists_relation_
             "id": "SYLU-2026-04-105",
             "code": "SYLU-2026-04-105",
             "name": "高低温湿热试验-批次E",
-            "test_type": "高低温湿热试验",
-            "required_device": "高低温湿热试验",
+            "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
+            "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
+            "required_device": "冲击试验 / 盐雾试验 / 温度冲击试验",
             "status": "待排程",
         },
     )
@@ -166,14 +169,62 @@ def test_create_task_generates_three_distinct_experiments_and_persists_relation_
         "SYLU-2026-04-105-B",
         "SYLU-2026-04-105-C",
     ]
-    assert [item["experiment_name"] for item in storage.read("mes.experiments")][0] == "高低温湿热试验"
-    assert len({item["experiment_name"] for item in storage.read("mes.experiments")}) == 3
+    assert [item["experiment_name"] for item in storage.read("mes.experiments")] == [
+        "冲击试验",
+        "盐雾试验",
+        "温度冲击试验",
+    ]
     assert storage.read("mes.tasks")[0]["experiment_count"] == 3
     assert storage.read("mes.tasks")[0]["experiment_codes"] == [
         "SYLU-2026-04-105-A",
         "SYLU-2026-04-105-B",
         "SYLU-2026-04-105-C",
     ]
+    assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
+
+
+def test_create_task_rejects_missing_empty_or_duplicate_test_types(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+
+    missing = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-106",
+            "code": "SYLU-2026-04-106",
+            "name": "缺少实验数组",
+            "test_type": "冲击试验",
+            "status": "待排程",
+        },
+    )
+    empty = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-107",
+            "code": "SYLU-2026-04-107",
+            "name": "空实验数组",
+            "test_type": "",
+            "test_types": [],
+            "status": "待排程",
+        },
+    )
+    duplicate = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-108",
+            "code": "SYLU-2026-04-108",
+            "name": "重复实验数组",
+            "test_type": "冲击试验 / 冲击试验",
+            "test_types": ["冲击试验", "冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    assert missing.status_code == 400
+    assert missing.json() == {"detail": "test_types is required"}
+    assert empty.status_code == 400
+    assert empty.json() == {"detail": "test_types must contain at least one experiment type"}
+    assert duplicate.status_code == 400
+    assert duplicate.json() == {"detail": "test_types must not contain duplicates"}
 
 
 def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch):
@@ -197,7 +248,8 @@ def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch)
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "新任务",
-            "test_type": "振动试验",
+            "test_type": "振动试验 / 盐雾试验",
+            "test_types": ["振动试验", "盐雾试验"],
             "status": "待排程",
         },
     )
@@ -209,7 +261,6 @@ def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch)
         "SYLU-2026-03-001-A",
         "SYLU-2026-03-002-A",
         "SYLU-2026-03-002-B",
-        "SYLU-2026-03-002-C",
     ]
 
 

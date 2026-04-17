@@ -196,23 +196,17 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
   });
 
-  test("teleports the schedule button and opens the salt-spray schedule modal", async () => {
+  test("does not teleport any schedule button into the laboratory header actions", async () => {
     const mounted = await mountPage();
 
     const scheduleButton = document.body.querySelector('[data-testid="laboratory-open-schedule"]');
-    expect(scheduleButton).not.toBeNull();
+    expect(scheduleButton).toBeNull();
 
     const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
-    expect(headerButtons).toContain("查看排程");
     expect(headerButtons).toContain("刷新");
     expect(headerButtons).toContain("退出登录");
-
-    scheduleButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
-
-    expect(mounted.find('[data-testid="laboratory-schedule-modal"].is-open').exists()).toBe(true);
-    expect(mounted.text()).toContain("SYLU-2026-04-101");
-    expect(mounted.text()).not.toContain("SYLU-2026-04-102");
+    expect(headerButtons).not.toContain("查看排程");
+    expect(mounted.find('[data-testid="laboratory-schedule-modal"].is-open').exists()).toBe(false);
   });
 
   test("shows detailed task rows, allows selecting the next task, and updates the current task after confirmation", async () => {
@@ -492,11 +486,16 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toContain("已排程");
     expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("托盘流程图");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-001");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-list"]').classes()).toContain("laboratory-flow-steps--tray");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-step-in_transit"]').classes()).toContain("is-reached");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-step-arrived"]').classes()).toContain("is-active");
 
     await mounted.get('[data-testid="laboratory-tray-tab-TP-002"]').trigger("click");
 
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-002");
     expect(mounted.get('[data-testid="laboratory-tray-tab-TP-002"]').classes()).toContain("is-active");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-step-in_transit"]').classes()).toContain("is-reached");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-step-arrived"]').classes()).toContain("is-active");
   });
 
   test("shows a floating running modal, allows temporary hide, and restores it from the overview button", async () => {

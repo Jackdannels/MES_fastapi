@@ -19,6 +19,8 @@ const TERTIARY_LAB = TEST_LABS[2];
 
 let storageState = {};
 let fetchMock = null;
+let pageHeader = null;
+let headerActions = null;
 
 const buildDateParts = (offsetDays = 0) => {
   const date = new Date();
@@ -82,6 +84,24 @@ const settle = async (wrapper) => {
   await wrapper.vm.$nextTick();
 };
 
+const installHeaderActions = () => {
+  pageHeader = document.createElement("header");
+  pageHeader.className = "page-header";
+  pageHeader.innerHTML = `
+    <div>
+      <div class="eyebrow">中控中心</div>
+      <h1>排程看板</h1>
+      <p class="subtitle">统一排程与冲突管理。</p>
+    </div>
+    <div class="header-actions">
+      <button class="action-btn secondary" type="button">刷新</button>
+      <button class="action-btn secondary" data-testid="app-logout" type="button">退出登录</button>
+    </div>
+  `;
+  document.body.appendChild(pageHeader);
+  headerActions = pageHeader.querySelector(".header-actions");
+};
+
 describe("SchedulePage runtime", () => {
   beforeEach(() => {
     resetStorage();
@@ -91,6 +111,9 @@ describe("SchedulePage runtime", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetStorage();
+    pageHeader?.remove();
+    pageHeader = null;
+    headerActions = null;
   });
 
   test("renders one unified scheduling page without unpacking or retention tabs", async () => {
@@ -130,6 +153,23 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.find('[data-testid="schedule-tab-unpacking"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="schedule-tab-retention"]').exists()).toBe(false);
     expect(wrapper.find("#retention-internal-table").exists()).toBe(false);
+  });
+
+  test("teleports an exception action into the schedule header", async () => {
+    installHeaderActions();
+
+    const wrapper = mount(SchedulePage, { attachTo: document.body });
+    await settle(wrapper);
+
+    const exceptionButton = document.body.querySelector('[data-testid="schedule-exception-action"]');
+    expect(exceptionButton).not.toBeNull();
+    expect(String(exceptionButton?.textContent || "").trim()).toBe("异常处理");
+    expect(exceptionButton?.className || "").toContain("schedule-header-action-button--exception");
+
+    const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
+    expect(headerButtons).toContain("异常处理");
+
+    wrapper.unmount();
   });
 
   test("creates, edits, and deletes a schedule from Vue state", async () => {

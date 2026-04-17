@@ -65,7 +65,11 @@ describe("tasksApi", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    const created = await createTask({ code: "SYLU-2026-03-002" });
+    const created = await createTask({
+      code: "SYLU-2026-03-002",
+      test_type: "冲击试验 / 盐雾试验",
+      test_types: ["冲击试验", "盐雾试验"],
+    });
     const updated = await updateTask("SYLU-2026-03-002", { code: "SYLU-2026-03-003" });
     await deleteTask("SYLU-2026-03-003");
 
@@ -77,6 +81,11 @@ describe("tasksApi", () => {
       TASKS_ENDPOINT,
       expect.objectContaining({
         method: "POST",
+        body: JSON.stringify({
+          code: "SYLU-2026-03-002",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+        }),
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

@@ -17,17 +17,6 @@ SNAPSHOT_KEYS = (
     "mes.experiment_samples",
 )
 
-MIN_EXPERIMENTS_PER_TASK = 3
-EXPERIMENT_TYPE_OPTIONS = (
-    "高低温湿热试验",
-    "温度冲击试验",
-    "冲击试验",
-    "振动试验",
-    "盐雾试验",
-    "霉菌试验",
-    "四综合试验",
-)
-
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
@@ -77,16 +66,50 @@ def parse_int(value: Any) -> int:
     return parsed if parsed > 0 else 0
 
 
-def build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
-    task_type = normalize_text(task.get("test_type")) or normalize_text(task.get("required_device")) or normalize_text(task.get("name"))
-    experiment_types: list[str] = []
-    for candidate in (task_type, *EXPERIMENT_TYPE_OPTIONS):
-        normalized = normalize_text(candidate)
-        if not normalized or normalized in experiment_types:
-            continue
-        experiment_types.append(normalized)
-        if len(experiment_types) >= count:
-            break
+def collect_unique_texts(*values: Any) -> list[str]:
+    collected: list[str] = []
+    for value in values:
+        normalized = normalize_text(value)
+        if normalized and normalized not in collected:
+            collected.append(normalized)
+    return collected
+
+
+def split_experiment_summary(value: Any) -> list[str]:
+    return collect_unique_texts(*(str(value or "").split("/")))
+
+
+def parse_test_types(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise HTTPException(status_code=400, detail="test_types must be an array")
+    normalized = [normalize_text(item) for item in value]
+    if not normalized or not any(normalized):
+        raise HTTPException(status_code=400, detail="test_types must contain at least one experiment type")
+    if any(not item for item in normalized):
+        raise HTTPException(status_code=400, detail="test_types must not contain empty values")
+    if len(set(normalized)) != len(normalized):
+        raise HTTPException(status_code=400, detail="test_types must not contain duplicates")
+    return normalized
+
+
+def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
+    explicit_types = task.get("test_types")
+    if isinstance(explicit_types, list):
+        collected = collect_unique_texts(*explicit_types)
+        if collected:
+            return collected
+
+    existing_list = [dict(experiment) for experiment in (existing_experiments or [])]
+    return collect_unique_texts(
+        *split_experiment_summary(task.get("test_type")),
+        *(experiment.get("experiment_name") for experiment in existing_list),
+        *split_experiment_summary(task.get("required_device")),
+        task.get("name"),
+    )
+
+
+def build_experiment_types(task: dict[str, Any], count: int, existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
+    experiment_types = extract_task_test_types(task, existing_experiments)
     while len(experiment_types) < count:
         experiment_types.append(f"实验{len(experiment_types) + 1}")
     return experiment_types[:count]
@@ -121,15 +144,20 @@ def build_task_experiments(task: dict[str, Any], existing_experiments: list[dict
     existing_codes = [normalize_text(experiment.get("experiment_code")) for experiment in existing_list if normalize_text(experiment.get("experiment_code"))]
     explicit_codes = [normalize_text(code) for code in (task.get("experiment_codes") if isinstance(task.get("experiment_codes"), list) else []) if normalize_text(code)]
     explicit_count = parse_int(task.get("experiment_count"))
+    experiment_types = extract_task_test_types(task, existing_list)
 
-    if explicit_count > 0 or explicit_codes:
-        desired_count = max(MIN_EXPERIMENTS_PER_TASK, explicit_count, len(explicit_codes))
-    else:
-        desired_count = max(MIN_EXPERIMENTS_PER_TASK, len(existing_list))
+    desired_count = max(
+        explicit_count,
+        len(explicit_codes),
+        len(experiment_types),
+        len(existing_list),
+    )
+    if desired_count <= 0:
+        desired_count = 1
 
     seed_codes = explicit_codes if explicit_codes else existing_codes
     experiment_codes = build_experiment_codes(task_code, desired_count, seed_codes)
-    experiment_types = build_experiment_types(task, desired_count)
+    experiment_types = build_experiment_types(task, desired_count, existing_list)
     existing_by_code = {normalize_text(experiment.get("experiment_code")): dict(experiment) for experiment in existing_list}
 
     experiments: list[dict[str, Any]] = []
@@ -156,6 +184,10 @@ def build_task_experiments(task: dict[str, Any], existing_experiments: list[dict
 
 def persist_task_experiments(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     experiments = build_task_experiments(task, existing_experiments)
+    task["test_types"] = build_experiment_types(task, len(experiments), existing_experiments)
+    task["test_type"] = " / ".join(task["test_types"])
+    if not normalize_text(task.get("required_device")):
+        task["required_device"] = task["test_type"]
     task["experiment_codes"] = [normalize_text(experiment.get("experiment_code")) for experiment in experiments if normalize_text(experiment.get("experiment_code"))]
     task["experiment_count"] = len(task["experiment_codes"])
     return experiments
@@ -173,6 +205,9 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
     experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
     next_task = dict(payload)
+    if "test_types" not in next_task:
+        raise HTTPException(status_code=400, detail="test_types is required")
+    next_task["test_types"] = parse_test_types(next_task.get("test_types"))
     next_experiments = persist_task_experiments(next_task)
     tasks.insert(0, next_task)
     snapshot["mes.tasks"] = tasks

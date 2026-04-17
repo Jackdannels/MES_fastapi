@@ -42,6 +42,7 @@ const SAMPLE_FLOW_STEPS = [
 
 const FLOW_STEP_KEY_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step) => [step.label, step.key]));
 const FLOW_STEP_INDEX_BY_KEY = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.key, index]));
+const EXPERIMENT_STARTED_FLOW_INDEX = FLOW_STEP_INDEX_BY_KEY.get("sent_to_lab") ?? 4;
 const EXPERIMENT_FLOW_STATUS_LABELS = {
   pending: "未完成",
   running: "进行中",
@@ -183,6 +184,13 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
 
 const buildExperimentRouteSteps = () => MULTI_EXPERIMENT_ROUTE_STEPS.slice();
 
+const hasExperimentEnteredLabFlow = (status, location = "") => {
+  const normalizedStatus = normalizeLifecycleStatus(location, status);
+  const key = FLOW_STEP_KEY_BY_LABEL.get(normalizedStatus);
+  const index = FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
+  return index >= EXPERIMENT_STARTED_FLOW_INDEX;
+};
+
 const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], experimentTrays = [], schedules = [] }) => {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
@@ -291,6 +299,13 @@ const buildTrayExperimentFlow = (input = {}) => {
     trayCode,
     samples: input.samples,
   });
+  const experimentStatusMap = new Map(
+    orderedExperiments.map((experiment) => {
+      const eventStatus = normalizeText(experimentEventMap.get(experiment.name)?.status);
+      const fallbackStatus = experiment.code === explicitExperimentCode ? normalizedStatus : "";
+      return [experiment.code, eventStatus || fallbackStatus];
+    }),
+  );
   const completedExperiments = orderedExperiments
     .map((experiment) => {
       const event = experimentEventMap.get(experiment.name);
@@ -306,30 +321,20 @@ const buildTrayExperimentFlow = (input = {}) => {
     })
     .filter(Boolean)
     .sort((left, right) => left.completedAt - right.completedAt);
-  if (completedExperiments.length === 0 && explicitIndex > 0) {
-    completedExperiments.push(
-      ...orderedExperiments.slice(0, explicitIndex).map((experiment, index) => ({
-        code: experiment.code,
-        name: experiment.name,
-        state: "completed",
-        completedAt: index,
-      })),
-    );
-  }
   const completedCodeSet = new Set(completedExperiments.map((experiment) => experiment.code));
+  const unfinishedExperiments = orderedExperiments.filter((experiment) => !completedCodeSet.has(experiment.code));
+  const startedUnfinishedExperiments = unfinishedExperiments.filter((experiment) =>
+    hasExperimentEnteredLabFlow(experimentStatusMap.get(experiment.code)),
+  );
+  const startedUnfinishedCodeSet = new Set(startedUnfinishedExperiments.map((experiment) => experiment.code));
+  const explicitExperiment =
+    explicitIndex >= 0
+    && !completedCodeSet.has(orderedExperiments[explicitIndex]?.code)
+    && hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
+      ? orderedExperiments[explicitIndex]
+      : null;
   const currentExperiment =
-    orderedExperiments.find((experiment) => !completedCodeSet.has(experiment.code)) || null;
-
-  const pendingExperiments = orderedExperiments
-    .filter(
-      (experiment) =>
-        experiment.code !== normalizeText(currentExperiment?.code) && !completedCodeSet.has(experiment.code),
-    )
-    .map((experiment) => ({
-      code: experiment.code,
-      name: experiment.name,
-      state: "pending",
-    }));
+    explicitExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
 
   if (!currentExperiment) {
     return completedExperiments.map((experiment, index) => ({
@@ -341,26 +346,40 @@ const buildTrayExperimentFlow = (input = {}) => {
     }));
   }
 
-  const currentEventStatus = experimentEventMap.get(currentExperiment.name)?.status;
-  const routeStatus =
-    currentEventStatus
-    || normalizedStatus;
+  const routeStatus = experimentStatusMap.get(currentExperiment.code) || normalizedStatus;
+  const orderedFlowExperiments = [
+    ...orderedExperiments.filter((experiment) => completedCodeSet.has(experiment.code)),
+    currentExperiment,
+    ...startedUnfinishedExperiments.filter((experiment) => experiment.code !== currentExperiment.code),
+    ...unfinishedExperiments.filter(
+      (experiment) =>
+        experiment.code !== currentExperiment.code && !startedUnfinishedCodeSet.has(experiment.code),
+    ),
+  ];
 
-  return [
-    ...completedExperiments.map((experiment) => ({
+  return orderedFlowExperiments.map((experiment) => {
+    if (completedCodeSet.has(experiment.code)) {
+      return {
+        code: experiment.code,
+        name: experiment.name,
+        state: "completed",
+      };
+    }
+    if (experiment.code === currentExperiment.code) {
+      return {
+        code: currentExperiment.code,
+        name: currentExperiment.name,
+        state: "current",
+        routeSteps: buildExperimentRouteSteps(),
+        routeStatus,
+      };
+    }
+    return {
       code: experiment.code,
       name: experiment.name,
-      state: "completed",
-    })),
-    {
-      code: currentExperiment.code,
-      name: currentExperiment.name,
-      state: "current",
-      routeSteps: buildExperimentRouteSteps(),
-      routeStatus,
-    },
-    ...pendingExperiments,
-  ];
+      state: "pending",
+    };
+  });
 };
 
 const resolveFlowStatusRank = (location, status, labels = DEFAULT_LABELS) => {
@@ -511,7 +530,8 @@ function buildTrayFlowView(input = {}) {
     const currentExperimentIndex = experimentFlow.findIndex((item) => normalizeText(item?.state) === "current");
     const activeExperiment = currentExperimentIndex >= 0 ? experimentFlow[currentExperimentIndex] : null;
     const completedExperiments = experimentFlow.filter((item) => normalizeText(item?.state) === "completed");
-    const pendingExperiments = experimentFlow.filter((item) => normalizeText(item?.state) === "pending");
+    const experimentsBeforeCurrent = currentExperimentIndex >= 0 ? experimentFlow.slice(0, currentExperimentIndex) : [];
+    const experimentsAfterCurrent = currentExperimentIndex >= 0 ? experimentFlow.slice(currentExperimentIndex + 1) : [];
     const steps = [];
 
     const pushStep = (step) => {
@@ -530,13 +550,17 @@ function buildTrayFlowView(input = {}) {
     let activeIndex = arrivalIndex;
 
     if (activeExperiment) {
-      completedExperiments.forEach((experiment, index) => {
+      const pushExperimentStep = (experiment, index) => {
         const name = normalizeText(experiment?.name) || `实验${index + 1}`;
+        const state = normalizeText(experiment?.state);
         pushStep({
-          key: `experiment-completed-${index}`,
-          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
-          reached: true,
+          key: `experiment-${state || "pending"}-${index}`,
+          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS[state] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
+          reached: state === "completed",
         });
+      };
+      experimentsBeforeCurrent.forEach((experiment, index) => {
+        pushExperimentStep(experiment, index);
       });
       const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
         ? activeExperiment.routeSteps.filter(Boolean)
@@ -555,12 +579,8 @@ function buildTrayFlowView(input = {}) {
         label: `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`,
       });
 
-      pendingExperiments.forEach((experiment, index) => {
-        const name = normalizeText(experiment?.name) || `实验${index + 1}`;
-        pushStep({
-          key: `experiment-pending-${index}`,
-          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
-        });
+      experimentsAfterCurrent.forEach((experiment, index) => {
+        pushExperimentStep(experiment, index + experimentsBeforeCurrent.length + 1);
       });
       const postTestStagingIndex = pushStep({
         key: `route-post-staging-${currentExperimentIndex}`,

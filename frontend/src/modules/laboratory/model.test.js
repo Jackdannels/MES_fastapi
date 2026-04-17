@@ -261,7 +261,7 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.currentStatus).toContain("TP-SALT-2");
   });
 
-  test("buildSaltSprayLaboratoryView compresses completed experiments for a shared tray across three experiments", () => {
+  test("buildSaltSprayLaboratoryView compresses completed experiments for a shared tray across three experiments when completion history exists", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
         { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-501" },
@@ -282,6 +282,12 @@ describe("laboratory model", () => {
           status: "实验准备就绪",
           task_code: "SYLU-2026-04-501",
           trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-501" }],
+          history: [
+            {
+              time: "2026-04-02T10:30:00.000Z",
+              detail: "SYLU-2026-04-501 / A实验 / 实验已完成",
+            },
+          ],
         },
       ],
       schedules: [

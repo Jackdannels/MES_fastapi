@@ -472,6 +472,7 @@ function createTaskIntakeForm() {
     sample_type: "",
     source: SOURCE_INTERNAL,
     test_type: "",
+    test_types: [],
   };
 }
 
@@ -504,6 +505,7 @@ function createRandomTaskIntakeForm(now = new Date()) {
     sample_type: randomFrom(RANDOM_SAMPLE_TYPES),
     source,
     test_type: testType,
+    test_types: [testType],
   };
 }
 
@@ -544,9 +546,14 @@ function buildTaskEditForm(row = {}) {
 
 // 将新的受理表单转换为可持久化的任务记录。
 function createTaskRecord(form, tasks) {
+  const selectedTestTypes = collectExperimentTypes(form?.test_types);
+  const testTypeSummary = buildExperimentTypeSummary(
+    selectedTestTypes,
+    selectedTestTypes.length > 0 ? "" : form?.test_type,
+  );
   // 优先使用表单中已有任务号，否则按试验类型自动生成，再兜底为时间戳编号。
   const taskCode = normalizeText(form?.code)
-    || buildTaskCode(form?.test_type, tasks, form?.due_at || form?.arrival_at || new Date())
+    || buildTaskCode(testTypeSummary, tasks, form?.due_at || form?.arrival_at || new Date())
     || `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${Date.now().toString().slice(-3)}`;
   return {
     id: createId("task"),
@@ -559,8 +566,9 @@ function createTaskRecord(form, tasks) {
     priority: normalizeText(form?.priority) || "高",
     sample_count: normalizeText(form?.sample_count),
     sample_type: normalizeText(form?.sample_type),
-    test_type: normalizeText(form?.test_type),
-    required_device: normalizeText(form?.test_type),
+    test_type: testTypeSummary,
+    test_types: selectedTestTypes,
+    required_device: testTypeSummary,
     due_at: fromDateTimeLocalValue(form?.due_at),
     arrival_at: "",
     conditions: normalizeText(form?.conditions),

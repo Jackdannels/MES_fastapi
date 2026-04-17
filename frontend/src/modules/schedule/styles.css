@@ -72,6 +72,18 @@
   margin-bottom: 10px;
 }
 
+.schedule-header-action-button--exception {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(254, 226, 226, 0.92);
+  color: #b91c1c;
+}
+
+.schedule-header-action-button--exception:hover,
+.schedule-header-action-button--exception:focus-visible {
+  border-color: rgba(220, 38, 38, 0.4);
+  background: rgba(254, 202, 202, 0.98);
+}
+
 .schedule-task-overlays__list {
   display: grid;
   gap: 10px;

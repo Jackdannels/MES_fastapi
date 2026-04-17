@@ -1,0 +1,406 @@
+<style>
+  .scene {
+    display: grid;
+    place-items: center;
+    min-height: 78vh;
+    padding: 24px;
+  }
+
+  .task-shell {
+    width: min(1120px, 96vw);
+    border-radius: 28px;
+    padding: 28px;
+    background:
+      linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(242, 247, 252, 0.96)),
+      radial-gradient(circle at top left, rgba(123, 197, 255, 0.14), transparent 38%);
+    box-shadow: 0 30px 80px rgba(15, 23, 42, 0.12);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+  }
+
+  .task-shell__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 22px;
+  }
+
+  .task-shell__header h2 {
+    margin: 0;
+    font-size: 28px;
+  }
+
+  .task-shell__header p {
+    margin: 8px 0 0;
+  }
+
+  .task-shell__pill {
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: rgba(18, 91, 155, 0.08);
+    color: #125b9b;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .task-shell__fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    filter: blur(1.4px);
+    opacity: 0.45;
+  }
+
+  .task-shell__field {
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.84);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    padding: 18px;
+    min-height: 90px;
+  }
+
+  .task-shell__field--wide {
+    grid-column: span 2;
+  }
+
+  .task-shell__label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #64748b;
+    text-transform: uppercase;
+  }
+
+  .task-shell__value {
+    margin-top: 12px;
+    font-size: 21px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .task-shell__overlay {
+    position: absolute;
+    inset: 0;
+  }
+
+  .selection-modal {
+    position: relative;
+    margin: -420px auto 0;
+    width: min(760px, 88vw);
+    border-radius: 30px;
+    padding: 26px;
+    background: linear-gradient(180deg, #fffdf9 0%, #f8fbff 100%);
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    box-shadow: 0 34px 90px rgba(15, 23, 42, 0.24);
+  }
+
+  .selection-modal__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .selection-modal__header h3 {
+    margin: 0;
+    font-size: 28px;
+  }
+
+  .selection-modal__header .subtitle {
+    margin: 8px 0 0;
+  }
+
+  .selection-modal__summary {
+    margin-bottom: 18px;
+    border-radius: 22px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, rgba(255, 252, 242, 0.96), rgba(236, 245, 255, 0.98));
+    border: 1px solid rgba(255, 196, 97, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .selection-modal__summary .label {
+    margin-bottom: 8px;
+    color: #b45309;
+  }
+
+  .selection-modal__summary-value {
+    font-size: 28px;
+    line-height: 1.35;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .selection-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 18px;
+  }
+
+  .selection-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .selection-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 18px 18px 20px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    cursor: pointer;
+    transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .selection-item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(37, 99, 235, 0.28);
+    box-shadow: 0 12px 28px rgba(59, 130, 246, 0.1);
+  }
+
+  .selection-item.is-selected {
+    border-color: rgba(14, 165, 233, 0.44);
+    background: linear-gradient(135deg, rgba(234, 248, 255, 0.98), rgba(244, 255, 246, 0.98));
+    box-shadow: 0 16px 34px rgba(14, 165, 233, 0.14);
+  }
+
+  .selection-item__name {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .selection-item__meta {
+    margin-top: 6px;
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  .selection-item__tail {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .selection-item__arrow {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0ea5e9, #2563eb);
+    color: white;
+    font-size: 18px;
+    box-shadow: 0 10px 18px rgba(37, 99, 235, 0.2);
+  }
+
+  .selection-preview {
+    border-radius: 22px;
+    padding: 20px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.95));
+    color: white;
+    min-height: 100%;
+  }
+
+  .selection-preview .label {
+    color: rgba(255, 255, 255, 0.62);
+  }
+
+  .selection-preview h4 {
+    margin: 10px 0 8px;
+    font-size: 24px;
+  }
+
+  .selection-preview p {
+    margin: 0 0 18px;
+    color: rgba(255, 255, 255, 0.72);
+  }
+
+  .selection-preview__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .selection-preview__chip {
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .selection-modal__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 18px;
+    gap: 16px;
+  }
+
+  .selection-modal__hint {
+    color: #64748b;
+    font-size: 14px;
+  }
+
+  .selection-actions {
+    display: flex;
+    gap: 12px;
+  }
+
+  .selection-actions .mock-button {
+    min-width: 120px;
+    border-radius: 14px;
+    font-weight: 800;
+  }
+
+  .selection-actions .mock-button.secondary {
+    background: #f8fafc;
+    color: #0f172a;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+  }
+
+  @media (max-width: 860px) {
+    .task-shell__fields {
+      grid-template-columns: 1fr;
+    }
+
+    .selection-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .selection-modal__summary-value {
+      font-size: 22px;
+    }
+  }
+</style>
+
+<h2>新增任务实验选择弹窗</h2>
+<p class="subtitle">方案 1 预览：点击字段后打开独立弹窗，顶部固定显示已选实验摘要，列表项选中后右侧出现箭头。</p>
+
+<div class="scene">
+  <div class="task-shell">
+    <div class="task-shell__header">
+      <div>
+        <h2>手动添加任务</h2>
+        <p class="subtitle">试验类型字段作为入口，真正的选择在二级弹窗中完成。</p>
+      </div>
+      <div class="task-shell__pill">当前预览为静态稿</div>
+    </div>
+
+    <div class="task-shell__fields">
+      <div class="task-shell__field">
+        <div class="task-shell__label">任务名称</div>
+        <div class="task-shell__value">高低温湿热筛选任务</div>
+      </div>
+      <div class="task-shell__field">
+        <div class="task-shell__label">任务编号</div>
+        <div class="task-shell__value">SYLU-2026-04-021</div>
+      </div>
+      <div class="task-shell__field">
+        <div class="task-shell__label">优先级</div>
+        <div class="task-shell__value">高</div>
+      </div>
+      <div class="task-shell__field task-shell__field--wide">
+        <div class="task-shell__label">试验类型</div>
+        <div class="task-shell__value">点击打开实验选择弹窗</div>
+      </div>
+      <div class="task-shell__field">
+        <div class="task-shell__label">期望完成时间</div>
+        <div class="task-shell__value">2026-04-19 10:30</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="selection-modal">
+    <div class="selection-modal__header">
+      <div>
+        <h3>选择试验类型</h3>
+        <p class="subtitle">顶部先看摘要，再在列表中勾选需要的实验。</p>
+      </div>
+      <div class="task-shell__pill">多选模式</div>
+    </div>
+
+    <div class="selection-modal__summary">
+      <div class="label">已选实验预览</div>
+      <div class="selection-modal__summary-value">高低温湿热试验 / 四综合试验 / 温度冲击试验</div>
+    </div>
+
+    <div class="selection-layout">
+      <div class="selection-list">
+        <div class="selection-item is-selected" data-choice="gdw" onclick="toggleSelect(this)">
+          <div>
+            <div class="selection-item__name">高低温湿热试验</div>
+            <div class="selection-item__meta">优先显示在顶部预览，适合快速确认已选内容。</div>
+          </div>
+          <div class="selection-item__tail">
+            <span>已选</span>
+            <span class="selection-item__arrow">→</span>
+          </div>
+        </div>
+
+        <div class="selection-item is-selected" data-choice="szh" onclick="toggleSelect(this)">
+          <div>
+            <div class="selection-item__name">四综合试验</div>
+            <div class="selection-item__meta">点击整项即可切换状态，不再使用原地下拉面板。</div>
+          </div>
+          <div class="selection-item__tail">
+            <span>已选</span>
+            <span class="selection-item__arrow">→</span>
+          </div>
+        </div>
+
+        <div class="selection-item is-selected" data-choice="wdc" onclick="toggleSelect(this)">
+          <div>
+            <div class="selection-item__name">温度冲击试验</div>
+            <div class="selection-item__meta">右侧箭头作为更直接的视觉反馈，提醒当前项已纳入任务。</div>
+          </div>
+          <div class="selection-item__tail">
+            <span>已选</span>
+            <span class="selection-item__arrow">→</span>
+          </div>
+        </div>
+
+        <div class="selection-item" data-choice="yw" onclick="toggleSelect(this)">
+          <div>
+            <div class="selection-item__name">盐雾试验</div>
+            <div class="selection-item__meta">未选中时保持普通卡片状态，避免视觉噪音过重。</div>
+          </div>
+          <div class="selection-item__tail">
+            <span>点击添加</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="selection-preview">
+        <div class="label">预览位置说明</div>
+        <h4>顶部更适合观看</h4>
+        <p>预览条固定在弹窗顶部，不跟随列表滚动。用户无论选多少实验，都能第一时间看到当前摘要。</p>
+
+        <div class="label">当前视觉信号</div>
+        <div class="selection-preview__chips">
+          <div class="selection-preview__chip">顶部摘要固定</div>
+          <div class="selection-preview__chip">选中项高亮</div>
+          <div class="selection-preview__chip">右侧箭头</div>
+          <div class="selection-preview__chip">确认后回写主表单</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="selection-modal__footer">
+      <div class="selection-modal__hint">如果这个方向对，下一步我就把现有任务受理页改成这个交互和视觉层级。</div>
+      <div class="selection-actions">
+        <button class="mock-button secondary">取消</button>
+        <button class="mock-button">确认选择</button>
+      </div>
+    </div>
+  </div>
+</div>

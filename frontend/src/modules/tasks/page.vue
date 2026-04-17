@@ -121,10 +121,16 @@
         </div>
         <div class="form-field">
           <label>试验类型</label>
-          <select v-model="intakeForm.test_type" name="test_type">
-            <option value="">请选择试验类型</option>
-            <option v-for="option in testTypeOptions" :key="option" :value="option">{{ option }}</option>
-          </select>
+          <div class="tasks-intake-test-types">
+            <button
+              class="search-input tasks-intake-test-types__trigger"
+              data-testid="task-intake-test-types-trigger"
+              type="button"
+              @click="openIntakeExperimentPicker"
+            >
+              <span>{{ intakeExperimentSummary || "请选择试验类型" }}</span>
+            </button>
+          </div>
         </div>
         <div class="form-field">
           <label>期望完成时间</label>
@@ -155,6 +161,48 @@
       </div>
       <div class="form-alert" :class="{ 'is-hidden': !intakeWarning }" data-task-warning>{{ intakeWarning }}</div>
     </form>
+  </AppModal>
+
+  <AppModal :open="intakeExperimentModalOpen" title="选择试验类型" @close="closeIntakeExperimentPicker">
+    <div class="tasks-intake-picker-modal" data-testid="task-intake-test-types-modal">
+      <div class="tasks-intake-picker-modal__summary" data-testid="task-intake-test-types-summary">
+        {{ intakeExperimentDraftSummary || "请选择试验类型" }}
+      </div>
+
+      <div
+        class="tasks-intake-test-types__grid"
+        data-testid="task-intake-test-types-grid"
+      >
+        <button
+          v-for="option in intakeExperimentTypeOptions"
+          :key="option"
+          class="tasks-intake-test-types__card"
+          :class="{ 'is-selected': intakeExperimentDraft.includes(option) }"
+          :data-testid="`task-intake-test-type-option-${option}`"
+          type="button"
+          @click="toggleIntakeExperimentType(option)"
+        >
+          <span class="tasks-intake-test-types__card-name">{{ option }}</span>
+          <span class="tasks-intake-test-types__card-tail">
+            <span
+              class="tasks-intake-test-types__check"
+              :class="{ 'is-selected': intakeExperimentDraft.includes(option) }"
+              :data-testid="`task-intake-test-type-check-${option}`"
+            >
+              {{ intakeExperimentDraft.includes(option) ? "✓" : "" }}
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" data-testid="task-intake-test-types-cancel" type="button" @click="closeIntakeExperimentPicker">
+        取消
+      </button>
+      <button class="action-btn" data-testid="task-intake-test-types-confirm" type="button" @click="confirmIntakeExperimentPicker">
+        确认选择
+      </button>
+    </template>
   </AppModal>
 
   <AppModal :open="resetModalOpen" title="确认任务重置" @close="closeResetModal">
@@ -262,6 +310,11 @@ const {
   filterStatus,
   filterTestType,
   intakeForm,
+  intakeExperimentDraft,
+  intakeExperimentDraftSummary,
+  intakeExperimentModalOpen,
+  intakeExperimentSummary,
+  intakeExperimentTypeOptions,
   intakeModalOpen,
   intakeWarning,
   loadError,
@@ -277,12 +330,130 @@ const {
   saveDraft,
   setCurrentPage,
   statusOptions,
+  closeIntakeExperimentPicker,
+  confirmIntakeExperimentPicker,
+  openIntakeExperimentPicker,
   submitTask,
   taskDrawerOpen,
   taskRows,
   testTypeOptions,
+  toggleIntakeExperimentType,
   toggleSort,
   updateTask,
   openTaskDrawer,
 } = useTasksPage();
 </script>
+
+<style scoped>
+.tasks-intake-test-types__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+  width: 100%;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.tasks-intake-picker-modal {
+  display: grid;
+  gap: 16px;
+}
+
+.tasks-intake-picker-modal__summary {
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(248, 250, 252, 0.95);
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.tasks-intake-test-types__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tasks-intake-test-types__card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  background: rgba(248, 250, 252, 0.95);
+  color: #0f172a;
+  text-align: left;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.tasks-intake-test-types__card:hover {
+  border-color: rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.06);
+}
+
+.tasks-intake-test-types__card.is-selected {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.12);
+  box-shadow: none;
+}
+
+.tasks-intake-test-types__card-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.tasks-intake-test-types__card-tail {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.tasks-intake-test-types__check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.24);
+  background: rgba(255, 255, 255, 0.98);
+  color: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tasks-intake-test-types__check.is-selected {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.18);
+  color: #0f172a;
+}
+
+@media (max-width: 820px) {
+  .tasks-intake-test-types__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tasks-intake-picker-modal__summary {
+    font-size: 15px;
+  }
+
+  .tasks-intake-test-types__card-name {
+    font-size: 14px;
+  }
+}
+</style>

@@ -47,10 +47,15 @@
           >
             任务重置
           </button>
-          <button class="action-btn" data-testid="open-task-intake" type="button" @click="openTaskIntake">
+          <button
+            v-if="showTaskIntakeAction"
+            class="action-btn"
+            data-testid="open-task-intake"
+            type="button"
+            @click="openTaskIntake"
+          >
             新建任务
           </button>
-          <RouterLink class="action-btn secondary" to="/schedule">查看排程</RouterLink>
           <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
         </div>
@@ -160,6 +165,7 @@ const isCentralModule = computed(() => currentModule.value === "central");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");
+const showTaskIntakeAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
 
 const isActive = (name) => route.name === name;

@@ -1,4 +1,14 @@
 <template>
+  <Teleport v-if="canTeleportExceptionAction" to=".header-actions">
+    <button
+      class="action-btn schedule-header-action-button schedule-header-action-button--exception"
+      data-testid="schedule-exception-action"
+      type="button"
+    >
+      异常处理
+    </button>
+  </Teleport>
+
   <section class="card section">
     <h3>{{ uiText.manualTitle }}</h3>
     <form @submit.prevent="submitSchedule">
@@ -429,6 +439,8 @@
 </template>
 
 <script setup>
+import { Teleport, computed } from "vue";
+
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useSchedulePage } from "./useSchedulePage";
@@ -536,4 +548,6 @@ const {
   taskScheduledOverlays,
   resetScheduleForm,
 } = useSchedulePage();
+
+const canTeleportExceptionAction = computed(() => typeof document !== "undefined" && Boolean(document.querySelector(".header-actions")));
 </script>
