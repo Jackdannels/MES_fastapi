@@ -10,6 +10,8 @@ const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionM
     meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
     path: "/task-overview",
+    query: {},
+    hash: "",
   },
   routerPush: vi.fn(() => Promise.resolve()),
   routerReplace: vi.fn(),
@@ -73,6 +75,8 @@ describe("App runtime boundary", () => {
     reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
     reactiveRoute.name = "task-overview";
     reactiveRoute.path = "/task-overview";
+    reactiveRoute.query = {};
+    reactiveRoute.hash = "";
     routerPush.mockReset();
     routerReplace.mockReset();
     logoutSessionMock.mockClear();
@@ -330,5 +334,85 @@ describe("App runtime boundary", () => {
 
     expect(navText.exists()).toBe(true);
     expect(navText.find(".nav-alert-dot").exists()).toBe(false);
+  });
+
+  test("does not show a red dot when the overdue experiment already has a formal schedule", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    loadSnapshotMock.mockResolvedValue({
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-03-013",
+          transfer_status: "已入库",
+        },
+      ],
+      "mes.schedules": [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-013",
+          experiment_code: "SYLU-2026-03-013-A",
+          device: "冲击一室",
+          start_at: "2026-03-17T12:00:00.000Z",
+          end_at: "2026-03-17T15:00:00.000Z",
+        },
+      ],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-03-013",
+          experiment_code: "SYLU-2026-03-013-A",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+    });
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    const navText = wrapper.findAll(".nav-link").find((node) => node.text().includes("任务/托盘总览"));
+
+    expect(navText.exists()).toBe(true);
+    expect(navText.find(".nav-alert-dot").exists()).toBe(false);
+  });
+
+  test("clicking the task overview nav routes to the lowest overdue task when the red dot is active", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    loadSnapshotMock.mockResolvedValue({
+      "mes.tasks": [
+        { code: "SYLU-2026-03-003", transfer_status: "已入库" },
+        { code: "SYLU-2026-03-002", transfer_status: "已入库" },
+      ],
+      "mes.schedules": [],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-03-003",
+          experiment_code: "SYLU-2026-03-003-B",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+    });
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    const navLink = wrapper.findAll(".nav-link").find((node) => node.text().includes("任务/托盘总览"));
+
+    expect(navLink.exists()).toBe(true);
+
+    await navLink.trigger("click");
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: "/task-overview",
+      query: { highlightTask: "SYLU-2026-03-002" },
+    });
   });
 });

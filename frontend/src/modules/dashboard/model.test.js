@@ -256,6 +256,56 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("shows only arrived experiments without a formal schedule in the unscheduled timer list", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-112",
+          source: "内部新增",
+          status: "待排程",
+          transfer_status: "已入库",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-112",
+          experiment_code: "SYLU-2026-04-112-A",
+          experiment_name: "盐雾试验",
+          unscheduled_since: "2026-03-16T08:30:00.000Z",
+        },
+        {
+          task_code: "SYLU-2026-04-112",
+          experiment_code: "SYLU-2026-04-112-B",
+          experiment_name: "振动试验",
+          unscheduled_since: "2026-03-16T07:30:00.000Z",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-04-112",
+          experiment_code: "SYLU-2026-04-112-A",
+          device: "盐雾试验室",
+          start_at: "2026-03-17T12:00:00.000Z",
+          end_at: "2026-03-17T16:00:00.000Z",
+        },
+      ],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-112",
+        experimentCode: "SYLU-2026-04-112-B",
+        experimentLabel: "振动试验",
+        elapsedLabel: "26:30:00",
+        isOverdue: true,
+      }),
+    ]);
+  });
+
   test("ignores unscheduled timers for tasks that are not yet confirmed in transfer storage", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

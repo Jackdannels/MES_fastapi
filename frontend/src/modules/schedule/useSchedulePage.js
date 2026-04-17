@@ -34,6 +34,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
 function useSchedulePage() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+    STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_trays,
@@ -44,6 +45,7 @@ function useSchedulePage() {
   ]);
 
   const rawDevices = ref([]);
+  const rawConflicts = ref([]);
   const rawExperiments = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
@@ -61,6 +63,7 @@ function useSchedulePage() {
   const scheduleDrawer = useDialogState();
   const taskDetailModal = useDialogState();
   const scheduleConflictModal = useDialogState();
+  const exceptionModal = useDialogState();
   const pendingScheduleDraft = ref(null);
   const scheduleFormWatchSuspended = ref(false);
   let clockTimer = null;
@@ -112,12 +115,20 @@ function useSchedulePage() {
   );
 
   const scheduleRows = computed(() => buildScheduleRows({
+    experimentTrays: rawExperimentTrays.value,
     experiments: rawExperiments.value,
+    samples: rawSamples.value,
     schedules: rawSchedules.value,
     tasks: rawTasks.value,
     now: now.value,
   }));
   const conflictRows = computed(() => buildConflictRows({ schedules: rawSchedules.value }));
+  const pendingExceptionRows = computed(() =>
+    rawConflicts.value.filter(
+      (entry) => normalizeText(entry?.type) === "schedule_missed_start" && normalizeText(entry?.status) === "pending",
+    ),
+  );
+  const pendingExceptionCount = computed(() => pendingExceptionRows.value.length);
   const ganttView = computed(() =>
     buildGanttRows({
       devices: rawDevices.value,
@@ -139,7 +150,14 @@ function useSchedulePage() {
       taskCode: scheduleForm.value.task_code,
     }),
   );
-  const summaryCards = computed(() => buildSummaryCards({ now: now.value, schedules: rawSchedules.value }));
+  const summaryCards = computed(() =>
+    buildSummaryCards({
+      experimentTrays: rawExperimentTrays.value,
+      now: now.value,
+      samples: rawSamples.value,
+      schedules: rawSchedules.value,
+    }),
+  );
   const selectedTaskDetail = computed(() => {
     const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
     if (!scheduleId) {
@@ -198,10 +216,17 @@ function useSchedulePage() {
     );
   });
 
+  const exceptionActionLabel = computed(() =>
+    pendingExceptionCount.value > 0 ? `异常处理 ${pendingExceptionCount.value}` : "异常处理",
+  );
+
   const persistAll = async (updates) => {
     // 只同步本页关心的任务、排程和数据流，设备/样品保持原样。
     if (Array.isArray(updates[STORAGE_KEYS.experiments])) {
       rawExperiments.value = updates[STORAGE_KEYS.experiments];
+    }
+    if (Array.isArray(updates[STORAGE_KEYS.conflicts])) {
+      rawConflicts.value = updates[STORAGE_KEYS.conflicts];
     }
     if (Array.isArray(updates[STORAGE_KEYS.tasks])) {
       rawTasks.value = updates[STORAGE_KEYS.tasks];
@@ -218,6 +243,14 @@ function useSchedulePage() {
   const resetScheduleForm = () => {
     scheduleForm.value = createManualScheduleForm(now.value);
     scheduleWarning.value = "";
+  };
+
+  const openExceptionModal = () => {
+    exceptionModal.openWith();
+  };
+
+  const closeExceptionModal = () => {
+    exceptionModal.close();
   };
 
   const replaceScheduleForm = async (nextForm) => {
@@ -483,6 +516,7 @@ function useSchedulePage() {
   const loadSchedulePage = async () => {
     try {
       const snapshot = await loadSnapshot();
+      rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
       rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
@@ -494,6 +528,26 @@ function useSchedulePage() {
     } catch (error) {
       scheduleWarning.value = buildFailureMessage("排程数据加载失败，请稍后重试", error);
     }
+  };
+
+  const acknowledgeException = async (conflictId) => {
+    const normalizedConflictId = normalizeText(conflictId);
+    if (!normalizedConflictId) {
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    const nextConflicts = rawConflicts.value.map((entry) =>
+      normalizeText(entry?.id) === normalizedConflictId
+        ? {
+            ...entry,
+            acknowledged_at: timestamp,
+            status: "acknowledged",
+          }
+        : entry,
+    );
+    await persistAll({
+      [STORAGE_KEYS.conflicts]: nextConflicts,
+    });
   };
 
   watch(
@@ -564,7 +618,9 @@ function useSchedulePage() {
 
   return {
     buildEditLabOptions,
+    acknowledgeException,
     cancelScheduleConflict,
+    closeExceptionModal,
     closeScheduleDrawer,
     closeTaskDetailModal,
     confirmScheduleConflict,
@@ -572,12 +628,17 @@ function useSchedulePage() {
     conflictSearch,
     editForm,
     editWarning,
+    exceptionActionLabel,
+    exceptionModalOpen: exceptionModal.open,
     experimentOptions,
     ganttView,
     manualLabOptions,
     manualTimeSlotOptions,
     openTaskDetailModal,
+    openExceptionModal,
     openScheduleDrawer,
+    pendingExceptionCount,
+    pendingExceptionRows,
     removeSchedule,
     removeTaskDetailSchedule,
     rescheduleFromTaskDetail,

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.core.mysql_storage_backend import (
     STORAGE_MARKER,
     MySQLConnectionSettings,
     MySQLMesStorageBackend,
+    backfill_missing_unscheduled_since,
     normalize_storage_payload,
     build_experiment_insert_row,
     build_experiment_sample_insert_row,
@@ -142,6 +145,152 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
     assert storage_item["task_code"] == "SYLU-2026-04-106"
     assert storage_item["experiment_name"] == "A实验"
     assert storage_item["status"] == "待排程"
+
+
+def test_experiment_mapping_round_trip_preserves_unscheduled_since() -> None:
+    storage_experiment = {
+        "id": "experiment-1",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-A",
+        "experiment_name": "A实验",
+        "required_device": "四综合试验",
+        "priority": "高",
+        "planned_hours": 3.5,
+        "status": "待排程",
+        "unscheduled_since": "2026-03-17T09:36:00Z",
+        "created_at": "2026-03-17T09:30:00Z",
+        "updated_at": "2026-03-17T09:35:00Z",
+    }
+
+    insert_row = build_experiment_insert_row(storage_experiment)
+    storage_item = build_storage_experiment_item(
+        {
+            **insert_row,
+            "experiment_id": 8,
+        }
+    )
+
+    assert insert_row["unscheduled_since"] is not None
+    assert storage_item["unscheduled_since"] == "2026-03-17T09:36:00Z"
+
+
+def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() -> None:
+    experiments, repaired = backfill_missing_unscheduled_since(
+        tasks=[
+            {
+                "code": "SYLU-2026-04-106",
+                "transfer_status": "已入库",
+            }
+        ],
+        schedules=[],
+        experiments=[
+            {
+                "task_code": "SYLU-2026-04-106",
+                "experiment_code": "SYLU-2026-04-106-A",
+                "experiment_name": "A实验",
+                "status": "待排程",
+                "unscheduled_since": "",
+            }
+        ],
+        experiment_trays=[],
+        experiment_samples=[
+            {
+                "task_code": "SYLU-2026-04-106",
+                "experiment_code": "SYLU-2026-04-106-A",
+                "sample_code": "SYLU-2026-04-106-SP-001",
+            },
+            {
+                "task_code": "SYLU-2026-04-106",
+                "experiment_code": "SYLU-2026-04-106-A",
+                "sample_code": "SYLU-2026-04-106-SP-002",
+            },
+        ],
+        samples=[
+            {
+                "code": "SYLU-2026-04-106-SP-001",
+                "task_code": "SYLU-2026-04-106",
+                "status": "已入库",
+                "updated_at": "2026-03-17T11:00:00Z",
+                "history": [
+                    {
+                        "action": "任务已确认入库",
+                        "time": "2026-03-17T09:30:00Z",
+                    }
+                ],
+            },
+            {
+                "code": "SYLU-2026-04-106-SP-002",
+                "task_code": "SYLU-2026-04-106",
+                "status": "已入库",
+                "updated_at": "2026-03-17T12:00:00Z",
+                "history": [
+                    {
+                        "action": "任务已确认入库",
+                        "time": "2026-03-17T09:00:00Z",
+                    }
+                ],
+            },
+        ],
+    )
+
+    assert experiments[0]["unscheduled_since"] == "2026-03-17T09:00:00Z"
+    assert repaired == {
+        "SYLU-2026-04-106-A": datetime(2026, 3, 17, 9, 0),
+    }
+
+
+def test_backfill_missing_unscheduled_since_skips_formal_schedule_and_started_experiment() -> None:
+    experiments, repaired = backfill_missing_unscheduled_since(
+        tasks=[
+            {"code": "TASK-001", "transfer_status": "已入库"},
+            {"code": "TASK-002", "transfer_status": "已入库"},
+        ],
+        schedules=[
+            {
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "device": "冲击一室",
+                "status": "已排程",
+            }
+        ],
+        experiments=[
+            {
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "experiment_name": "A实验",
+                "status": "待排程",
+                "unscheduled_since": "",
+            },
+            {
+                "task_code": "TASK-002",
+                "experiment_code": "TASK-002-A",
+                "experiment_name": "A实验",
+                "status": "实验进行中",
+                "unscheduled_since": "",
+            },
+        ],
+        experiment_trays=[],
+        experiment_samples=[],
+        samples=[
+            {
+                "code": "TASK-001-SP-001",
+                "task_code": "TASK-001",
+                "status": "已入库",
+                "updated_at": "2026-03-17T10:00:00Z",
+                "history": [{"action": "任务已确认入库", "time": "2026-03-17T09:00:00Z"}],
+            },
+            {
+                "code": "TASK-002-SP-001",
+                "task_code": "TASK-002",
+                "status": "已入库",
+                "updated_at": "2026-03-17T10:00:00Z",
+                "history": [{"action": "任务已确认入库", "time": "2026-03-17T09:00:00Z"}],
+            },
+        ],
+    )
+
+    assert [experiment["unscheduled_since"] for experiment in experiments] == ["", ""]
+    assert repaired == {}
 
 
 def test_experiment_mapping_normalizes_legacy_running_status() -> None:
@@ -830,6 +979,15 @@ class _DummyConnection:
         return False
 
 
+class _TrackingConnection(_DummyConnection):
+    def __init__(self) -> None:
+        self.commit_count = 0
+
+    def commit(self):
+        self.commit_count += 1
+        return None
+
+
 def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -871,6 +1029,66 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "schedule_task_ids",
         "progress_statuses",
     ]
+
+
+def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = _TrackingConnection()
+    repaired = {}
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(backend, "_normalize_legacy_status_columns", lambda cursor: None)
+    monkeypatch.setattr(
+        backend,
+        "_load_tasks",
+        lambda cursor: [{"code": "TASK-001", "transfer_status": "已入库"}],
+    )
+    monkeypatch.setattr(backend, "_load_schedules", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_devices", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_streams", lambda cursor: [])
+    monkeypatch.setattr(
+        backend,
+        "_load_samples",
+        lambda cursor: [
+            {
+                "code": "TASK-001-SP-001",
+                "task_code": "TASK-001",
+                "status": "已入库",
+                "updated_at": "2026-03-17T10:00:00Z",
+                "history": [{"action": "任务已确认入库", "time": "2026-03-17T09:00:00Z"}],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        backend,
+        "_load_experiments",
+        lambda cursor: [
+            {
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "experiment_name": "A实验",
+                "status": "待排程",
+                "unscheduled_since": "",
+            }
+        ],
+    )
+    monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_samples", lambda cursor: [])
+    monkeypatch.setattr(
+        backend,
+        "_update_experiment_unscheduled_since",
+        lambda cursor, values: repaired.update(values),
+    )
+
+    snapshot = backend.read_all()
+
+    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17T09:00:00Z"
+    assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 9, 0)}
+    assert connection.commit_count == 2
 
 
 def test_write_many_does_not_clear_unrelated_experiment_tray_assignments(monkeypatch) -> None:

@@ -4,8 +4,9 @@
       class="action-btn schedule-header-action-button schedule-header-action-button--exception"
       data-testid="schedule-exception-action"
       type="button"
+      @click="openExceptionModal"
     >
-      异常处理
+      {{ exceptionActionLabel }}
     </button>
   </Teleport>
 
@@ -382,6 +383,38 @@
     </template>
   </AppModal>
 
+  <AppModal :open="exceptionModalOpen" title="异常处理" data-testid="schedule-exception-modal" @close="closeExceptionModal">
+    <div class="schedule-exception-panel">
+      <div v-if="pendingExceptionRows.length === 0" class="muted">当前暂无待确认异常。</div>
+      <div v-else class="schedule-exception-list">
+        <article
+          v-for="row in pendingExceptionRows"
+          :key="row.id"
+          class="schedule-exception-card"
+          :data-testid="`schedule-exception-row-${row.id}`"
+        >
+          <div class="schedule-exception-card__head">
+            <strong>{{ row.task_code || "-" }}</strong>
+            <span>{{ row.device || "-" }}</span>
+          </div>
+          <div class="schedule-exception-card__reason">{{ row.reason }}</div>
+          <div class="schedule-exception-card__detail">{{ row.detail || "-" }}</div>
+          <div class="schedule-exception-card__meta">触发时间：{{ row.created_at ? row.created_at.replace("T", " ").replace(".000Z", "") : "-" }}</div>
+          <div class="schedule-exception-card__actions">
+            <button
+              class="action-btn schedule-header-action-button schedule-header-action-button--exception"
+              type="button"
+              :data-testid="`schedule-exception-acknowledge-${row.id}`"
+              @click="acknowledgeException(row.id)"
+            >
+              确认
+            </button>
+          </div>
+        </article>
+      </div>
+    </div>
+  </AppModal>
+
   <AppDrawer :open="scheduleDrawerOpen" :title="uiText.editScheduleTitle" @close="closeScheduleDrawer">
     <form class="form-grid" @submit.prevent="saveSchedule">
       <div class="form-field">
@@ -514,8 +547,10 @@ const uiText = {
 };
 
 const {
+  acknowledgeException,
   buildEditLabOptions,
   cancelScheduleConflict,
+  closeExceptionModal,
   closeScheduleDrawer,
   closeTaskDetailModal,
   confirmScheduleConflict,
@@ -523,12 +558,16 @@ const {
   conflictSearch,
   editForm,
   editWarning,
+  exceptionActionLabel,
+  exceptionModalOpen,
   experimentOptions,
   ganttView,
   manualLabOptions,
   manualTimeSlotOptions,
+  openExceptionModal,
   openScheduleDrawer,
   openTaskDetailModal,
+  pendingExceptionRows,
   removeSchedule,
   removeTaskDetailSchedule,
   rescheduleFromTaskDetail,

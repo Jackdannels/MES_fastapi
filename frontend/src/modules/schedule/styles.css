@@ -84,6 +84,50 @@
   background: rgba(254, 202, 202, 0.98);
 }
 
+.schedule-exception-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.schedule-exception-list {
+  display: grid;
+  gap: 12px;
+}
+
+.schedule-exception-card {
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 255, 255, 0.96));
+}
+
+.schedule-exception-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.schedule-exception-card__reason {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.schedule-exception-card__detail,
+.schedule-exception-card__meta {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.schedule-exception-card__actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .schedule-task-overlays__list {
   display: grid;
   gap: 10px;

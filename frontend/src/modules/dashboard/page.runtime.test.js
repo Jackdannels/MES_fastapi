@@ -51,9 +51,11 @@ describe("DashboardPage runtime", () => {
     expect(wrapper.text()).not.toContain("数据通道");
     expect(wrapper.text()).not.toContain("实验中任务");
     expect(wrapper.text()).toContain("25:30:00");
-    expect(wrapper.text()).toContain("T-001");
+    expect(wrapper.text()).toContain("T-001 / 振动试验");
+    expect(wrapper.text()).not.toContain("T-001-A");
     expect(wrapper.text()).toContain("LAB-01");
     expect(wrapper.get("#dashboard-unscheduled-count").text()).toBe("1");
+    expect(wrapper.find(".dashboard-unscheduled-title.is-overdue").exists()).toBe(true);
     expect(wrapper.find(".dashboard-unscheduled-timer.is-overdue").exists()).toBe(true);
   });
 

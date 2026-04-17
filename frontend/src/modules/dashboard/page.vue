@@ -74,8 +74,7 @@
         <div v-for="item in unscheduledExperimentItems" :key="`${item.taskCode}-${item.experimentCode}`" class="timeline-item">
           <div class="timeline-dot"></div>
           <div class="dashboard-unscheduled-item">
-            <div>{{ item.taskCode }} / {{ item.experimentLabel }}</div>
-            <div class="muted">{{ item.experimentCode }}</div>
+            <div class="dashboard-unscheduled-title" :class="{ 'is-overdue': item.isOverdue }">{{ item.taskCode }} / {{ item.experimentLabel }}</div>
             <div class="dashboard-unscheduled-timer" :class="{ 'is-overdue': item.isOverdue }">{{ item.elapsedLabel }}</div>
           </div>
         </div>

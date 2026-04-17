@@ -48,6 +48,15 @@
   gap: 2px;
 }
 
+.dashboard-unscheduled-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dashboard-unscheduled-title.is-overdue {
+  color: #dc2626;
+}
+
 .dashboard-unscheduled-timer {
   font-weight: 700;
   color: var(--text);

@@ -51,6 +51,13 @@ const parseTime = (value) => {
 };
 
 const isTaskStored = (task) => normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
+const hasFormalScheduleForExperiment = (schedules, taskCode, experimentCode) =>
+  (Array.isArray(schedules) ? schedules : []).some(
+    (entry) =>
+      !isRetentionDevice(entry?.device) &&
+      normalizeText(entry?.task_code) === normalizeText(taskCode) &&
+      normalizeText(entry?.experiment_code) === normalizeText(experimentCode),
+  );
 
 const formatElapsedDuration = (elapsedMs) => {
   const safeElapsed = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -197,6 +204,9 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
     .map((experiment) => {
       const task = taskByCode.get(normalizeText(experiment?.task_code));
       if (!isTaskStored(task)) {
+        return null;
+      }
+      if (hasFormalScheduleForExperiment(scheduleList, experiment?.task_code, experiment?.experiment_code)) {
         return null;
       }
       const startedAt = parseTime(experiment?.unscheduled_since);

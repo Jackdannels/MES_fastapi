@@ -87,6 +87,41 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows keeps unscheduled sibling experiments waiting even when the task status is already marked scheduled", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-020",
+          test_type: "盐雾试验 / 振动试验",
+          status: "已排程",
+          sample_count: 2,
+          transfer_status: "已入库",
+        },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-020", experiment_code: "SYLU-2026-03-020-A", experiment_name: "盐雾试验", status: "" },
+        { task_code: "SYLU-2026-03-020", experiment_code: "SYLU-2026-03-020-B", experiment_name: "振动试验", status: "" },
+      ],
+      samples: [],
+      schedules: [
+        { task_code: "SYLU-2026-03-020", experiment_code: "SYLU-2026-03-020-A", status: "已排程", device: "盐雾试验室" },
+      ],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        eligibleExperimentCount: 2,
+        scheduledExperimentCount: 1,
+      }),
+    );
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-020-A", displayStatus: "已排程" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-020-B", displayStatus: "待排程" }),
+    ]);
+  });
+
   test("buildTaskRows excludes manufacturer-returned tasks from scheduled experiment totals", () => {
     const rows = buildTaskRows({
       tasks: [{ code: "SYLU-2026-03-099", test_type: "冲击试验", status: "厂家收回" }],

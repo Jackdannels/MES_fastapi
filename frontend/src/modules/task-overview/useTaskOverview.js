@@ -1,6 +1,6 @@
 // 负责任务总览页的筛选、计数器和编辑交互逻辑。
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
@@ -16,6 +16,9 @@ const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
 const TASK_COUNTER_LABEL = "已排程总任务数";
 const EXPERIMENT_COUNTER_LABEL = "已排程总实验数";
 const TRAY_COUNTER_LABEL = "剩余托盘/总托盘数";
+const TASK_HIGHLIGHT_QUERY_KEY = "highlightTask";
+const TASK_HIGHLIGHT_CLASS = "is-highlighted";
+const TASK_HIGHLIGHT_DURATION_MS = 2200;
 
 // 为默认日期筛选控件生成稳定的 yyyy-mm-dd 值。
 function getTodayDateValue(now = new Date()) {
@@ -157,9 +160,20 @@ function applyRouteFiltersState({ routeQuery, viewMode, testTypeFilter, selected
   return nextState;
 }
 
+function findTaskCardElement(rootElement, taskCode) {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  if (!rootElement || !normalizedTaskCode) {
+    return null;
+  }
+  return Array.from(rootElement.querySelectorAll(".task-overview-card")).find(
+    (element) => String(element.getAttribute("data-task-code") || "").trim() === normalizedTaskCode
+  ) || null;
+}
+
 // 统一管理任务总览页的加载、筛选、托盘模式和编辑器联动。
 function useTaskOverview() {
   const route = useRoute();
+  const router = useRouter();
   const overviewRoot = ref(null);
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.tasks,
@@ -179,6 +193,8 @@ function useTaskOverview() {
   const customEndDate = ref(getTodayDateValue());
   const testTypeFilter = ref("");
   const rows = ref([]);
+  let highlightTimer = null;
+  let highlightedCardElement = null;
 
   const buildRows = (tasks, samples, schedules, experiments) =>
     buildTaskRows({
@@ -316,6 +332,59 @@ function useTaskOverview() {
     selectedTaskCode.value = nextState.selectedTaskCode;
   };
 
+  const clearHighlightedCard = () => {
+    if (highlightTimer && typeof window !== "undefined") {
+      window.clearTimeout(highlightTimer);
+    }
+    highlightTimer = null;
+    if (highlightedCardElement) {
+      highlightedCardElement.classList.remove(TASK_HIGHLIGHT_CLASS);
+      highlightedCardElement = null;
+    }
+  };
+
+  const clearHighlightTaskQuery = () => {
+    if (!String(route.query?.[TASK_HIGHLIGHT_QUERY_KEY] || "").trim()) {
+      return;
+    }
+    const nextQuery = { ...route.query };
+    delete nextQuery[TASK_HIGHLIGHT_QUERY_KEY];
+    void router.replace({ query: nextQuery }).catch(() => {});
+  };
+
+  const highlightTaskCardFromRoute = async () => {
+    const highlightedTaskCode = String(route.query?.[TASK_HIGHLIGHT_QUERY_KEY] || "").trim();
+    if (!highlightedTaskCode || viewMode.value !== "task") {
+      return;
+    }
+
+    await nextTick();
+    const targetCard = findTaskCardElement(overviewRoot.value, highlightedTaskCode);
+    if (!targetCard) {
+      return;
+    }
+
+    clearHighlightedCard();
+    highlightedCardElement = targetCard;
+    targetCard.classList.add(TASK_HIGHLIGHT_CLASS);
+    targetCard.scrollIntoView?.({
+      behavior: "smooth",
+      block: "center",
+      inline: "nearest",
+    });
+    clearHighlightTaskQuery();
+
+    if (typeof window !== "undefined") {
+      highlightTimer = window.setTimeout(() => {
+        if (highlightedCardElement === targetCard) {
+          targetCard.classList.remove(TASK_HIGHLIGHT_CLASS);
+          highlightedCardElement = null;
+        }
+        highlightTimer = null;
+      }, TASK_HIGHLIGHT_DURATION_MS);
+    }
+  };
+
   watch(timeFilter, (nextValue) => {
     if (nextValue !== "custom") {
       return;
@@ -345,6 +414,16 @@ function useTaskOverview() {
     }
   );
 
+  watch(
+    () => [route.query[TASK_HIGHLIGHT_QUERY_KEY], filteredRows.value.length, viewMode.value],
+    () => {
+      if (route.query[TASK_HIGHLIGHT_QUERY_KEY]) {
+        void highlightTaskCardFromRoute();
+      }
+    },
+    { flush: "post" }
+  );
+
   onMounted(() => {
     applyRouteFilters();
     // 首次加载后挂全局点击，用于处理卡片外点击关闭编辑器。
@@ -358,6 +437,7 @@ function useTaskOverview() {
     if (typeof window !== "undefined") {
       window.removeEventListener("click", handleWindowClick);
     }
+    clearHighlightedCard();
   });
 
   return {
@@ -406,6 +486,7 @@ function useTaskOverview() {
 export {
   applyRouteFiltersState,
   buildOverviewMetrics,
+  findTaskCardElement,
   filterTaskOverviewRows,
   getTodayDateValue,
   useTaskOverview,

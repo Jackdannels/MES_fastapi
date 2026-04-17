@@ -286,6 +286,7 @@ def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
         "priority": parse_priority_value(experiment.get("priority")),
         "planned_hours": parse_float_value(experiment.get("planned_hours")),
         "experiment_status": normalize_experiment_status(experiment.get("status")),
+        "unscheduled_since": parse_storage_datetime(experiment.get("unscheduled_since")),
         "created_at": parse_storage_datetime(experiment.get("created_at")) or now_utc,
         "updated_at": parse_storage_datetime(experiment.get("updated_at")) or now_utc,
     }
@@ -302,6 +303,7 @@ def build_storage_experiment_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "priority": format_priority_value(row.get("priority")),
         "planned_hours": 0 if planned_hours in (None, "") else float(planned_hours),
         "status": normalize_experiment_status(row.get("experiment_status")),
+        "unscheduled_since": format_iso_storage_datetime(row.get("unscheduled_since")),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
@@ -392,6 +394,9 @@ EXPERIMENT_RUNNING_STATUSES = {EXPERIMENT_RUNNING_STATUS, *LEGACY_RUNNING_STATUS
 EXPERIMENT_COMPLETED_STATUSES = {CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}
 TASK_RUNNING_STATUS = CANONICAL_TASK_RUNNING_STATUS
 TASK_COMPLETED_STATUS = CANONICAL_TASK_COMPLETED_STATUS
+TASK_STORED_STATUS = "已入库"
+UNSCHEDULED_BACKFILL_HISTORY_ACTION = "任务已确认入库"
+UNSCHEDULED_BACKFILL_ELIGIBLE_STATUSES = {"", "待排程", "已排程"}
 
 
 def normalize_experiment_status(value: Any) -> str:
@@ -485,6 +490,163 @@ def derive_task_status_map(
         else:
             status_map[task_no] = "待排程"
     return status_map
+
+
+def has_formal_schedule(
+    schedules: list[Dict[str, Any]],
+    task_code: Any,
+    experiment_code: Any,
+) -> bool:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    return any(
+        normalize_text(schedule.get("task_code")) == normalized_task_code
+        and normalize_text(schedule.get("experiment_code")) == normalized_experiment_code
+        and normalize_text(schedule.get("device"))
+        and RETENTION_KEYWORD not in normalize_text(schedule.get("device"))
+        for schedule in (schedules or [])
+    )
+
+
+def is_unscheduled_since_backfill_eligible(experiment: Dict[str, Any]) -> bool:
+    if normalize_text(experiment.get("unscheduled_since")):
+        return False
+    return normalize_experiment_status(experiment.get("status")) in UNSCHEDULED_BACKFILL_ELIGIBLE_STATUSES
+
+
+def resolve_experiment_sample_codes(
+    experiment: Dict[str, Any],
+    experiment_trays: list[Dict[str, Any]],
+    experiment_samples: list[Dict[str, Any]],
+    samples: list[Dict[str, Any]],
+) -> list[str]:
+    task_code = normalize_text(experiment.get("task_code"))
+    experiment_code = normalize_text(experiment.get("experiment_code"))
+
+    direct_sample_codes = sorted(
+        {
+            normalize_text(entry.get("sample_code"))
+            for entry in (experiment_samples or [])
+            if normalize_text(entry.get("task_code")) == task_code
+            and normalize_text(entry.get("experiment_code")) == experiment_code
+            and normalize_text(entry.get("sample_code"))
+        }
+    )
+    if direct_sample_codes:
+        return direct_sample_codes
+
+    tray_codes = {
+        normalize_text(entry.get("tray_code"))
+        for entry in (experiment_trays or [])
+        if normalize_text(entry.get("task_code")) == task_code
+        and normalize_text(entry.get("experiment_code")) == experiment_code
+        and normalize_text(entry.get("tray_code"))
+    }
+    if tray_codes:
+        tray_sample_codes = sorted(
+            {
+                normalize_text(sample.get("code"))
+                for sample in (samples or [])
+                if normalize_text(sample.get("task_code")) == task_code
+                and any(normalize_text(tray.get("tray_code")) in tray_codes for tray in (sample.get("trays") or []))
+                and normalize_text(sample.get("code"))
+            }
+        )
+        if tray_sample_codes:
+            return tray_sample_codes
+
+    return sorted(
+        {
+            normalize_text(sample.get("code"))
+            for sample in (samples or [])
+            if normalize_text(sample.get("task_code")) == task_code and normalize_text(sample.get("code"))
+        }
+    )
+
+
+def resolve_sample_storage_time(sample: Dict[str, Any]) -> datetime | None:
+    history_times = [
+        parse_storage_datetime(entry.get("time"))
+        for entry in (sample.get("history") or [])
+        if normalize_text(entry.get("action")) == UNSCHEDULED_BACKFILL_HISTORY_ACTION
+        and parse_storage_datetime(entry.get("time")) is not None
+    ]
+    if history_times:
+        return min(history_times)
+
+    status_times = [
+        parse_storage_datetime(entry.get("time"))
+        for entry in (sample.get("history") or [])
+        if normalize_text(entry.get("status")) == TASK_STORED_STATUS
+        and parse_storage_datetime(entry.get("time")) is not None
+    ]
+    if status_times:
+        return min(status_times)
+
+    if (
+        normalize_text(sample.get("status")) == TASK_STORED_STATUS
+        or normalize_text(sample.get("flow_status")) == TASK_STORED_STATUS
+    ):
+        return parse_storage_datetime(sample.get("updated_at"))
+
+    return None
+
+
+def backfill_missing_unscheduled_since(
+    tasks: list[Dict[str, Any]],
+    schedules: list[Dict[str, Any]],
+    experiments: list[Dict[str, Any]],
+    experiment_trays: list[Dict[str, Any]],
+    experiment_samples: list[Dict[str, Any]],
+    samples: list[Dict[str, Any]],
+) -> tuple[list[Dict[str, Any]], dict[str, datetime]]:
+    task_by_code = {
+        normalize_text(task.get("code")): task
+        for task in (tasks or [])
+        if normalize_text(task.get("code"))
+    }
+    sample_by_code = {
+        normalize_text(sample.get("code")): sample
+        for sample in (samples or [])
+        if normalize_text(sample.get("code"))
+    }
+
+    next_experiments: list[Dict[str, Any]] = []
+    repaired: dict[str, datetime] = {}
+
+    for experiment in (experiments or []):
+        next_experiment = dict(experiment)
+        experiment_code = normalize_text(experiment.get("experiment_code"))
+        task_code = normalize_text(experiment.get("task_code"))
+        task = task_by_code.get(task_code) or {}
+
+        if normalize_text(task.get("transfer_status")) != TASK_STORED_STATUS:
+            next_experiments.append(next_experiment)
+            continue
+        if not is_unscheduled_since_backfill_eligible(experiment):
+            next_experiments.append(next_experiment)
+            continue
+        if has_formal_schedule(schedules, task_code, experiment_code):
+            next_experiments.append(next_experiment)
+            continue
+
+        sample_codes = resolve_experiment_sample_codes(experiment, experiment_trays, experiment_samples, samples)
+        sample_times = [
+            resolve_sample_storage_time(sample_by_code[sample_code])
+            for sample_code in sample_codes
+            if sample_code in sample_by_code
+        ]
+        sample_times = [value for value in sample_times if value is not None]
+        if not sample_times:
+            next_experiments.append(next_experiment)
+            continue
+
+        earliest_time = min(sample_times)
+        next_experiment["unscheduled_since"] = format_iso_storage_datetime(earliest_time)
+        repaired[experiment_code] = earliest_time
+        next_experiments.append(next_experiment)
+
+    return next_experiments, repaired
 
 
 def build_device_insert_row(device: Dict[str, Any]) -> Dict[str, Any]:
@@ -679,6 +841,7 @@ class MySQLMesStorageBackend(StorageBackend):
                       priority TINYINT NULL,
                       planned_hours DECIMAL(10,2) NULL,
                       experiment_status VARCHAR(30) NULL,
+                      unscheduled_since DATETIME NULL,
                       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                       PRIMARY KEY (experiment_id),
@@ -687,6 +850,9 @@ class MySQLMesStorageBackend(StorageBackend):
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                     """
                 )
+                cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'unscheduled_since'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_experiment ADD COLUMN unscheduled_since DATETIME NULL AFTER experiment_status")
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS biz_experiment_tray (
@@ -888,10 +1054,10 @@ class MySQLMesStorageBackend(StorageBackend):
             """
             INSERT INTO biz_experiment (
               experiment_no, task_id, task_no, experiment_name, required_device, priority,
-              planned_hours, experiment_status, created_at, updated_at
+              planned_hours, experiment_status, unscheduled_since, created_at, updated_at
             ) VALUES (
               %(experiment_no)s, %(task_id)s, %(task_no)s, %(experiment_name)s, %(required_device)s, %(priority)s,
-              %(planned_hours)s, %(experiment_status)s, %(created_at)s, %(updated_at)s
+              %(planned_hours)s, %(experiment_status)s, %(unscheduled_since)s, %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
               task_id = VALUES(task_id),
@@ -901,6 +1067,7 @@ class MySQLMesStorageBackend(StorageBackend):
               priority = VALUES(priority),
               planned_hours = VALUES(planned_hours),
               experiment_status = VALUES(experiment_status),
+              unscheduled_since = VALUES(unscheduled_since),
               updated_at = VALUES(updated_at)
             """,
             [{**row, "task_id": task_map.get(row["task_no"])} for row in rows],
@@ -1596,7 +1763,7 @@ class MySQLMesStorageBackend(StorageBackend):
         cursor.execute(
             """
             SELECT experiment_no, task_no, experiment_name, required_device, priority,
-                   planned_hours, experiment_status, created_at, updated_at
+                   planned_hours, experiment_status, unscheduled_since, created_at, updated_at
             FROM biz_experiment
             ORDER BY task_no ASC, experiment_no ASC
             """
@@ -1709,6 +1876,55 @@ class MySQLMesStorageBackend(StorageBackend):
             for row in sample_rows
         ]
 
+    def _update_experiment_unscheduled_since(
+        self,
+        cursor,
+        repaired: dict[str, datetime],
+    ) -> None:
+        if not repaired:
+            return
+        cursor.executemany(
+            """
+            UPDATE biz_experiment
+            SET unscheduled_since = %(unscheduled_since)s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE experiment_no = %(experiment_no)s
+              AND unscheduled_since IS NULL
+            """,
+            [
+                {
+                    "experiment_no": experiment_no,
+                    "unscheduled_since": unscheduled_since,
+                }
+                for experiment_no, unscheduled_since in repaired.items()
+                if experiment_no
+            ],
+        )
+
+    def _backfill_unscheduled_since_for_reads(
+        self,
+        cursor,
+        *,
+        tasks: list[dict[str, Any]],
+        schedules: list[dict[str, Any]],
+        experiments: list[dict[str, Any]],
+        experiment_trays: list[dict[str, Any]],
+        experiment_samples: list[dict[str, Any]],
+        samples: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], bool]:
+        next_experiments, repaired = backfill_missing_unscheduled_since(
+            tasks,
+            schedules,
+            experiments,
+            experiment_trays,
+            experiment_samples,
+            samples,
+        )
+        if not repaired:
+            return next_experiments, False
+        self._update_experiment_unscheduled_since(cursor, repaired)
+        return next_experiments, True
+
     def _write_many_internal(self, updates: Dict[str, Any]) -> None:
         self._ensure_schema_extensions()
         relational_updates = {key: updates.get(key) for key in RELATIONAL_STORAGE_KEYS if key in updates}
@@ -1750,15 +1966,32 @@ class MySQLMesStorageBackend(StorageBackend):
                 with connection.cursor() as cursor:
                     self._normalize_legacy_status_columns(cursor)
                     connection.commit()
+                    tasks = self._load_tasks(cursor)
+                    schedules = self._load_schedules(cursor)
+                    samples = self._load_samples(cursor)
+                    experiments = self._load_experiments(cursor)
+                    experiment_trays = self._load_experiment_trays(cursor)
+                    experiment_samples = self._load_experiment_samples(cursor)
+                    experiments, repaired = self._backfill_unscheduled_since_for_reads(
+                        cursor,
+                        tasks=tasks,
+                        schedules=schedules,
+                        experiments=experiments,
+                        experiment_trays=experiment_trays,
+                        experiment_samples=experiment_samples,
+                        samples=samples,
+                    )
+                    if repaired:
+                        connection.commit()
                     data = {
-                        "mes.tasks": self._load_tasks(cursor),
-                        "mes.schedules": self._load_schedules(cursor),
+                        "mes.tasks": tasks,
+                        "mes.schedules": schedules,
                         "mes.devices": self._load_devices(cursor),
                         "mes.streams": self._load_streams(cursor),
-                        "mes.samples": self._load_samples(cursor),
-                        "mes.experiments": self._load_experiments(cursor),
-                        "mes.experiment_trays": self._load_experiment_trays(cursor),
-                        "mes.experiment_samples": self._load_experiment_samples(cursor),
+                        "mes.samples": samples,
+                        "mes.experiments": experiments,
+                        "mes.experiment_trays": experiment_trays,
+                        "mes.experiment_samples": experiment_samples,
                     }
             data.update(snapshot_values)
             for key in STORAGE_KEYS:
@@ -1778,22 +2011,39 @@ class MySQLMesStorageBackend(StorageBackend):
                 with connection.cursor() as cursor:
                     self._normalize_legacy_status_columns(cursor)
                     connection.commit()
+                    tasks = self._load_tasks(cursor)
+                    schedules = self._load_schedules(cursor)
+                    samples = self._load_samples(cursor)
+                    experiments = self._load_experiments(cursor)
+                    experiment_trays = self._load_experiment_trays(cursor)
+                    experiment_samples = self._load_experiment_samples(cursor)
+                    experiments, repaired = self._backfill_unscheduled_since_for_reads(
+                        cursor,
+                        tasks=tasks,
+                        schedules=schedules,
+                        experiments=experiments,
+                        experiment_trays=experiment_trays,
+                        experiment_samples=experiment_samples,
+                        samples=samples,
+                    )
+                    if repaired:
+                        connection.commit()
                     if key == "mes.tasks":
-                        return self._load_tasks(cursor)
+                        return tasks
                     if key == "mes.schedules":
-                        return self._load_schedules(cursor)
+                        return schedules
                     if key == "mes.devices":
                         return self._load_devices(cursor)
                     if key == "mes.streams":
                         return self._load_streams(cursor)
                     if key == "mes.samples":
-                        return self._load_samples(cursor)
+                        return samples
                     if key == "mes.experiments":
-                        return self._load_experiments(cursor)
+                        return experiments
                     if key == "mes.experiment_trays":
-                        return self._load_experiment_trays(cursor)
+                        return experiment_trays
                     if key == "mes.experiment_samples":
-                        return self._load_experiment_samples(cursor)
+                        return experiment_samples
             return []
 
     def write(self, key: str, value: Any) -> None:

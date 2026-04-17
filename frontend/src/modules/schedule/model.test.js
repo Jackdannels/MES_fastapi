@@ -147,6 +147,27 @@ describe("schedulePageModel", () => {
     ).toBe(STATUS_SCHEDULED);
   });
 
+  test("resolveTaskStatus does not mark an expired unstarted schedule as completed", () => {
+    expect(
+      resolveTaskStatus(
+        { code: "SYLU-2026-03-001", status: STATUS_SCHEDULED },
+        [
+          {
+            id: "schedule-1",
+            task_code: "SYLU-2026-03-001",
+            experiment_code: "SYLU-2026-03-001-A",
+            device: "冲击一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+          },
+        ],
+        [],
+        new Date("2099-03-20T12:00:00.000Z"),
+        [],
+      ),
+    ).toBe(STATUS_WAITING);
+  });
+
   test("buildScheduleRows exposes experiment identifiers for multi-experiment scheduling", async () => {
     const { buildScheduleRows } = await import("./model");
     const rows = buildScheduleRows({

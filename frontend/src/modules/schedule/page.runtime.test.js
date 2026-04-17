@@ -12,6 +12,7 @@ const SCHEDULES_KEY = "mes.schedules";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
+const CONFLICTS_KEY = "mes.conflicts";
 
 const PRIMARY_LAB = TEST_LABS[0];
 const SECONDARY_LAB = TEST_LABS[1];
@@ -157,18 +158,103 @@ describe("SchedulePage runtime", () => {
 
   test("teleports an exception action into the schedule header", async () => {
     installHeaderActions();
+    setStorage(CONFLICTS_KEY, [
+      {
+        id: "conflict-1",
+        type: "schedule_missed_start",
+        status: "pending",
+        task_code: "TASK-001",
+        reason: "排程时段内未开始实验，系统已自动撤销排程",
+      },
+    ]);
 
     const wrapper = mount(SchedulePage, { attachTo: document.body });
     await settle(wrapper);
 
     const exceptionButton = document.body.querySelector('[data-testid="schedule-exception-action"]');
     expect(exceptionButton).not.toBeNull();
-    expect(String(exceptionButton?.textContent || "").trim()).toBe("异常处理");
+    expect(String(exceptionButton?.textContent || "").trim()).toBe("异常处理 1");
     expect(exceptionButton?.className || "").toContain("schedule-header-action-button--exception");
 
     const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
-    expect(headerButtons).toContain("异常处理");
+    expect(headerButtons).toContain("异常处理 1");
 
+    wrapper.unmount();
+  });
+
+  test("reconciles expired unstarted schedules on load and lets the user acknowledge the generated exception", async () => {
+    installHeaderActions();
+    setStorage(TASKS_KEY, [
+      { code: "TASK-001", name: "任务001", status: "已排程", test_type: "冲击试验" },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "冲击试验", status: "已排程" },
+    ]);
+    setStorage(EXPERIMENT_TRAYS_KEY, [
+      { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
+    ]);
+    setStorage(SAMPLES_KEY, [
+      {
+        code: "TASK-001-SP-001",
+        task_code: "TASK-001",
+        location: PRIMARY_LAB,
+        status: "实验准备就绪",
+        trays: [{ tray_code: "TASK-001-TP-001", status: "实验准备就绪", quantity: 1 }],
+        history: [],
+      },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: PRIMARY_LAB,
+        start_at: "2026-04-15T00:00:00.000Z",
+        end_at: "2026-04-15T03:30:00.000Z",
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(CONFLICTS_KEY, []);
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-15T04:00:00.000Z"));
+
+    const wrapper = mount(SchedulePage, { attachTo: document.body });
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toEqual([]);
+    expect(getStorage(TASKS_KEY)).toEqual([expect.objectContaining({ code: "TASK-001", status: STATUS_WAITING })]);
+    expect(getStorage(CONFLICTS_KEY)).toEqual([
+      expect.objectContaining({
+        schedule_id: "schedule-1",
+        status: "pending",
+        task_code: "TASK-001",
+        type: "schedule_missed_start",
+      }),
+    ]);
+    const createdConflictId = getStorage(CONFLICTS_KEY)[0].id;
+    await settle(wrapper);
+    expect(String(document.body.querySelector('[data-testid="schedule-exception-action"]')?.textContent || "").trim()).toBe("异常处理 1");
+
+    document.body.querySelector('[data-testid="schedule-exception-action"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="schedule-exception-modal"].is-open').exists()).toBe(true);
+    expect(wrapper.text()).toContain("TASK-001");
+    expect(wrapper.text()).toContain("排程时段内未开始实验，系统已自动撤销排程");
+
+    await wrapper.get(`[data-testid="schedule-exception-acknowledge-${createdConflictId}"]`).trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(CONFLICTS_KEY)).toEqual([
+      expect.objectContaining({
+        id: createdConflictId,
+        status: "acknowledged",
+      }),
+    ]);
+    expect(String(document.body.querySelector('[data-testid="schedule-exception-action"]')?.textContent || "").trim()).toBe("异常处理");
+
+    vi.useRealTimers();
     wrapper.unmount();
   });
 

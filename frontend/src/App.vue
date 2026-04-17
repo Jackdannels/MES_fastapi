@@ -15,6 +15,7 @@
           class="nav-link"
           :class="{ active: isActive(navItem.route.name) }"
           :to="navItem.route.path"
+          @click="handleCentralNavClick(navItem, $event)"
         >
           <span class="nav-link-label">
             {{ navItem.route.meta?.title }}
@@ -112,38 +113,17 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { MODULE_LABELS } from "@/lib/moduleCatalog";
 import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
 
-const OVERDUE_MS = 24 * 60 * 60 * 1000;
-const TRANSFER_STATUS_STORED = "已入库";
 const TASK_RESET_EVENT = "mes:open-task-reset";
-
-const parseTimeValue = (value) => {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const normalizeText = (value) => String(value ?? "").trim();
-
-const hasOverdueWaitingExperiment = (tasks, experiments, now = Date.now()) => {
-  const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
-
-  return (Array.isArray(experiments) ? experiments : []).some((experiment) => {
-    const task = taskByCode.get(normalizeText(experiment?.task_code));
-    if (normalizeText(task?.transfer_status) !== TRANSFER_STATUS_STORED) {
-      return false;
-    }
-    const startedAt = parseTimeValue(experiment?.unscheduled_since);
-    return Number.isFinite(startedAt) && now - startedAt > OVERDUE_MS;
-  });
-};
 
 const route = useRoute();
 const router = useRouter();
-const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments]);
+const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules]);
 const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
 let navAlertTimer = null;
@@ -175,7 +155,33 @@ const refreshTaskOverviewAlert = async () => {
   hasTaskOverviewAlert.value = hasOverdueWaitingExperiment(
     snapshot[STORAGE_KEYS.tasks],
     snapshot[STORAGE_KEYS.experiments],
+    snapshot[STORAGE_KEYS.schedules],
   );
+};
+
+const handleCentralNavClick = async (navItem, event) => {
+  if (navItem?.route?.name !== "task-overview" || !hasTaskOverviewAlert.value) {
+    return;
+  }
+
+  event.preventDefault();
+  const snapshot = await loadSnapshot();
+  const highlightedTaskCode = findFirstOverdueWaitingTaskCode(
+    snapshot[STORAGE_KEYS.tasks],
+    snapshot[STORAGE_KEYS.experiments],
+    snapshot[STORAGE_KEYS.schedules],
+  );
+
+  await router
+    .push(
+      highlightedTaskCode
+        ? {
+            path: navItem.route.path,
+            query: { highlightTask: highlightedTaskCode },
+          }
+        : navItem.route.path,
+    )
+    .catch(() => {});
 };
 
 const openTaskIntake = async () => {

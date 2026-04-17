@@ -461,8 +461,33 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
   };
 }
 
+const resolveScheduleTaskStatusArgs = (samplesOrNow, nowMaybe, experimentTraysMaybe) => {
+  if (Array.isArray(samplesOrNow)) {
+    return {
+      experimentTrays: Array.isArray(experimentTraysMaybe) ? experimentTraysMaybe : [],
+      now: parseDate(nowMaybe) || new Date(),
+      samples: samplesOrNow,
+    };
+  }
+
+  if (samplesOrNow instanceof Date || typeof samplesOrNow === "number" || typeof samplesOrNow === "string") {
+    return {
+      experimentTrays: Array.isArray(nowMaybe) ? nowMaybe : [],
+      now: parseDate(samplesOrNow) || new Date(),
+      samples: [],
+    };
+  }
+
+  return {
+    experimentTrays: Array.isArray(experimentTraysMaybe) ? experimentTraysMaybe : [],
+    now: parseDate(nowMaybe) || new Date(),
+    samples: [],
+  };
+};
+
 // 推导看板行和留样视图共用的任务状态。
-function resolveTaskStatus(taskOrTaskCode, schedules, now = new Date()) {
+function resolveTaskStatus(taskOrTaskCode, schedules, samplesOrNow, nowMaybe, experimentTraysMaybe) {
+  const { samples, now, experimentTrays } = resolveScheduleTaskStatusArgs(samplesOrNow, nowMaybe, experimentTraysMaybe);
   const taskCode =
     typeof taskOrTaskCode === "object" && taskOrTaskCode !== null
       ? normalizeText(taskOrTaskCode?.code)
@@ -478,10 +503,22 @@ function resolveTaskStatus(taskOrTaskCode, schedules, now = new Date()) {
   if (rawStatus === STATUS_RUNNING) {
     return STATUS_RUNNING;
   }
+  if (rawStatus === STATUS_COMPLETED) {
+    return STATUS_COMPLETED;
+  }
 
   const labSchedules = related.filter((schedule) => !isRetentionDevice(schedule?.device));
   const retentionSchedules = related.filter((schedule) => isRetentionDevice(schedule?.device));
   const currentTime = now.getTime();
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const lifecycleStates = labSchedules.map((schedule) => resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap }));
+
+  if (lifecycleStates.some((state) => state.started)) {
+    if (lifecycleStates.every((state) => state.completed)) {
+      return STATUS_COMPLETED;
+    }
+    return STATUS_RUNNING;
+  }
 
   // 当前时间命中排程窗口也只能说明任务已进入排程窗口，不能自动说明已经开始实验。
   const activeLab = labSchedules.find((schedule) => {
@@ -500,15 +537,6 @@ function resolveTaskStatus(taskOrTaskCode, schedules, now = new Date()) {
   });
   if (futureLab) {
     return STATUS_SCHEDULED;
-  }
-
-  // 有历史实验结束记录但没有后续排程时，视为已完成。
-  const completedLab = labSchedules.find((schedule) => {
-    const end = parseDate(schedule?.end_at);
-    return end && end.getTime() < currentTime;
-  });
-  if (completedLab) {
-    return STATUS_COMPLETED;
   }
 
   if (retentionSchedules.length > 0) {
@@ -901,7 +929,7 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 }
 
 // 构建看板页签使用的主排程表格行。
-function buildScheduleRows({ schedules, tasks, experiments, now = new Date() }) {
+function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = new Date() }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
   const experimentList = Array.isArray(experiments) ? experiments : [];
@@ -915,7 +943,7 @@ function buildScheduleRows({ schedules, tasks, experiments, now = new Date() }) 
       const experimentCode = normalizeText(schedule?.experiment_code);
       const task = taskByCode.get(taskCode);
       // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
-      const status = resolveTaskStatus(task || taskCode, schedules, now);
+      const status = resolveTaskStatus(task || taskCode, schedules, samples, now, experimentTrays);
 
       return {
         device: normalizeText(schedule?.device),
@@ -1318,8 +1346,8 @@ function resolveRetentionTimeState(now = new Date()) {
 }
 
 // 构建排程看板上方展示的汇总卡片。
-function buildSummaryCards({ schedules, now = new Date() }) {
-  const rows = buildScheduleRows({ schedules, tasks: [], now });
+function buildSummaryCards({ schedules, samples = [], experimentTrays = [], now = new Date() }) {
+  const rows = buildScheduleRows({ schedules, tasks: [], samples, experimentTrays, now });
   const conflictRows = buildConflictRows({ schedules });
   return {
     changeCount: 0,
@@ -1330,11 +1358,11 @@ function buildSummaryCards({ schedules, now = new Date() }) {
 }
 
 // 持久化辅助逻辑会在更新排程时同步任务和数据流状态。
-function syncTaskStatuses(tasks, schedules, now = new Date()) {
+function syncTaskStatuses(tasks, schedules, now = new Date(), samples = [], experimentTrays = []) {
   return (Array.isArray(tasks) ? tasks : []).map((task) => ({
     ...task,
     // 任务状态完全以当前排程快照重新计算，避免手工维护多处状态。
-    status: resolveTaskStatus(task, schedules, now),
+    status: resolveTaskStatus(task, schedules, samples, now, experimentTrays),
   }));
 }
 

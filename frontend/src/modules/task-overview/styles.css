@@ -168,6 +168,25 @@
   background: rgba(239, 246, 255, 0.8);
 }
 
+.task-overview-card.is-highlighted {
+  border-color: rgba(239, 68, 68, 0.7);
+  box-shadow: 0 0 0 3px rgba(254, 202, 202, 0.85);
+  animation: task-overview-highlight-flash 0.55s ease 3;
+}
+
+@keyframes task-overview-highlight-flash {
+  0%,
+  100% {
+    border-color: rgba(239, 68, 68, 0.22);
+    box-shadow: 0 0 0 0 rgba(252, 165, 165, 0);
+  }
+
+  50% {
+    border-color: rgba(239, 68, 68, 0.78);
+    box-shadow: 0 0 0 4px rgba(254, 202, 202, 0.92);
+  }
+}
+
 /* 左侧索引列突出排序和选中信息。 */
 .task-overview-index-col {
   border-right: 1px dashed rgba(15, 23, 42, 0.16);

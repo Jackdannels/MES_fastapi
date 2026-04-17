@@ -5,6 +5,7 @@ import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
 const STATUS_RUNNING = "任务进行中";
+const STATUS_SCHEDULED = "已排程";
 const LEGACY_STATUS_RUNNING = "实验中";
 const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const STATUS_RETENTION = "厂家收回";
@@ -98,7 +99,12 @@ function parseTimeValue(value) {
 }
 
 function isTaskStored(task) {
-  return normalizeText(task?.transferStatus ?? task?.transfer_status) === TRANSFER_STATUS_STORED;
+  return normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
+}
+
+function isScheduledLikeStatus(value) {
+  const normalized = normalizeText(value);
+  return normalized === STATUS_SCHEDULED || normalized === "Scheduled";
 }
 
 function upsertLatestSchedule(map, key, schedule) {
@@ -127,7 +133,12 @@ function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSche
     return scheduleLabel;
   }
 
-  return mapTaskStatusToExperimentFallback(currentStatus) || experimentStatus || STATUS_WAITING;
+  const taskFallbackStatus = mapTaskStatusToExperimentFallback(currentStatus);
+  if (taskFallbackStatus && !isScheduledLikeStatus(taskFallbackStatus)) {
+    return taskFallbackStatus;
+  }
+
+  return experimentStatus || STATUS_WAITING;
 }
 
 // 构建任务视图模式下展示的任务卡片数据。
@@ -189,7 +200,7 @@ function buildTaskRows({
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
       taskStatus: normalizeTaskStatus(task?.status),
-      transferStatus: normalizeText(task?.transfer_status),
+      transfer_status: normalizeText(task?.transfer_status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",
       timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
       sampleCodes: [],
