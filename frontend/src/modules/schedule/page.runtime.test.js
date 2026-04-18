@@ -948,7 +948,7 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(1.5);
   });
 
-  test("renders a cross-day gantt segment as one continuous bar cell", async () => {
+  test("renders a cross-day gantt segment only inside the fixed three-day window", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
@@ -973,7 +973,7 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     const crossDaySegment = wrapper.get('[data-testid="gantt-segment-schedule-1"]');
-    expect(Number(crossDaySegment.attributes("colspan"))).toBeGreaterThan(2);
+    expect(Number(crossDaySegment.attributes("colspan"))).toBe(1);
     expect(crossDaySegment.text()).toContain("SYLU-2026-01-001");
   });
 
@@ -1197,4 +1197,3 @@ describe("SchedulePage runtime", () => {
     vi.useRealTimers();
   });
 });
-

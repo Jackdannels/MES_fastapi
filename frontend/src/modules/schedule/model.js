@@ -218,6 +218,15 @@ const parsePlannedHours = (value) => {
   return normalized >= 0.5 ? normalized : null;
 };
 
+const resolvePlannedHours = (form) => {
+  const unit = normalizeText(form?.planned_duration_unit) || "hours";
+  if (unit === "days") {
+    const days = Number.parseInt(String(form?.planned_hours ?? "").trim(), 10);
+    return Number.isInteger(days) && days >= 1 ? days * 24 : null;
+  }
+  return parsePlannedHours(form?.planned_hours);
+};
+
 // 如果没有显式填写计划时长，则从开始/结束时间反推。
 const inferPlannedHours = (startAt, endAt) => {
   if (!startAt || !endAt) {
@@ -225,6 +234,20 @@ const inferPlannedHours = (startAt, endAt) => {
   }
   const hours = (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60);
   return parsePlannedHours(hours) || 3.5;
+};
+
+const buildPlannedDurationFormState = (plannedHours) => {
+  const hours = parsePlannedHours(plannedHours);
+  if (hours && Number.isInteger(hours / 24)) {
+    return {
+      plannedDurationUnit: "days",
+      plannedHours: hours / 24,
+    };
+  }
+  return {
+    plannedDurationUnit: "hours",
+    plannedHours: hours || 3.5,
+  };
 };
 
 // 甘特图里的时间段会根据当前时刻区分为进行中、已完成或忙碌。
@@ -328,6 +351,7 @@ function createManualScheduleForm(now = new Date()) {
     device: "",
     experiment_code: "",
     planned_hours: 3.5,
+    planned_duration_unit: "hours",
     schedule_date: legalState.schedule_date,
     task_code: "",
     time_slot: legalState.time_slot,
@@ -342,6 +366,7 @@ function createScheduleEditForm() {
     experiment_code: "",
     id: "",
     planned_hours: 3.5,
+    planned_duration_unit: "hours",
     schedule_date: "",
     task_code: "",
     time_slot: "morning",
@@ -354,6 +379,7 @@ function buildScheduleEditForm(schedule) {
   const endAt = parseDate(schedule?.end_at);
   const startTime = startAt ? toLocalTimeValue(startAt) : "";
   const endTime = endAt ? toLocalTimeValue(endAt) : "";
+  const duration = buildPlannedDurationFormState(schedule?.planned_hours || inferPlannedHours(startAt, endAt));
   let timeSlot = "custom";
 
   if (startTime === SLOT_RANGES.morning.start) {
@@ -369,7 +395,8 @@ function buildScheduleEditForm(schedule) {
     device: normalizeText(schedule?.device),
     experiment_code: normalizeText(schedule?.experiment_code),
     id: normalizeText(schedule?.id),
-    planned_hours: parsePlannedHours(schedule?.planned_hours) || inferPlannedHours(startAt, endAt),
+    planned_hours: duration.plannedHours,
+    planned_duration_unit: duration.plannedDurationUnit,
     schedule_date: startAt ? toLocalDateValue(startAt) : "",
     task_code: normalizeText(schedule?.task_code),
     time_slot: timeSlot,
@@ -384,6 +411,7 @@ function buildScheduleRescheduleForm(schedule) {
     device: editForm.device,
     experiment_code: editForm.experiment_code,
     planned_hours: editForm.planned_hours,
+    planned_duration_unit: editForm.planned_duration_unit,
     schedule_date: editForm.schedule_date,
     task_code: editForm.task_code,
     time_slot: editForm.time_slot,
@@ -415,7 +443,7 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
 
   const slot = normalizeText(form?.time_slot) || "morning";
   let startTime = "";
-  let plannedHours = parsePlannedHours(form?.planned_hours);
+  let plannedHours = resolvePlannedHours(form);
 
   if (slot === "custom") {
     // 自定义时段优先使用手填开始时间，如未填计划时长则从结束时间反推。
@@ -423,11 +451,15 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
     if (!startTime) {
       return { error: "Custom start time required" };
     }
+    const customStartAt = parseDate(`${dateValue}T${startTime}:00`);
+    const earliestCustomStart = truncateToMinute(now) || new Date();
+    if (!customStartAt || customStartAt < earliestCustomStart) {
+      return { error: "自定义开始时间不能早于当前时间" };
+    }
     if (!plannedHours) {
       const endTime = normalizeText(form?.custom_end);
-      const startAt = parseDate(`${dateValue}T${startTime}:00`);
       const endAt = parseDate(`${dateValue}T${endTime}:00`);
-      plannedHours = inferPlannedHours(startAt, endAt);
+      plannedHours = inferPlannedHours(customStartAt, endAt);
     }
   } else {
     // 上午/下午快捷时段直接复用预设时间窗。
@@ -1030,17 +1062,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
   // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。
-  const latestVisibleEnd = visibleSchedules.reduce((latest, schedule) => {
-    const scheduleEnd = parseDate(schedule?.end_at);
-    if (!scheduleEnd) {
-      return latest;
-    }
-    return !latest || scheduleEnd > latest ? scheduleEnd : latest;
-  }, null);
-  const requiredDays = latestVisibleEnd ? getDaySpan(anchorDate, latestVisibleEnd) + 1 : days;
-  const totalDays = Math.max(days, requiredDays);
-
-  const dayList = Array.from({ length: totalDays }, (_, index) => {
+  const dayList = Array.from({ length: days }, (_, index) => {
     const date = addDays(anchorDate, index);
     return {
       date,
@@ -1187,7 +1209,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
         ? "idle"
         : slot.state === "conflict" || slot.state === "stacked" || slot.state === "split"
           ? `${slot.state}:${slot.key}`
-          : `${slot.scheduleId}:${slot.className}`;
+          : `${slot.label}:${slot.className}`;
       const previous = segments[segments.length - 1];
       if (previous && previous.signature == signature && slot.state !== "conflict" && slot.state !== "stacked" && slot.state !== "split") {
         previous.colspan += 1;
@@ -1648,6 +1670,8 @@ export {
   formatDateTime,
   isRetentionDevice,
   normalizeText,
+  toLocalDateValue,
+  toLocalTimeValue,
   resolveLegalManualScheduleState,
   resolveRetentionTimeState,
   resolveScheduleTimes,
