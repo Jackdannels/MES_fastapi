@@ -52,24 +52,36 @@
           </select>
         </div>
         <div class="form-field">
-          <label>{{ scheduleForm.time_slot === "custom" ? uiText.plannedDuration : uiText.plannedHours }}</label>
+          <label>{{ uiText.plannedDuration }}</label>
           <div class="schedule-duration-control">
             <input
               v-model="scheduleForm.planned_hours"
               type="number"
               name="planned_hours"
-              :min="scheduleForm.planned_duration_unit === 'days' ? 1 : 0.5"
-              :step="scheduleForm.planned_duration_unit === 'days' ? 1 : 0.5"
+              :min="0.5"
+              :step="0.5"
             />
-            <select
-              v-if="scheduleForm.time_slot === 'custom'"
-              v-model="scheduleForm.planned_duration_unit"
-              class="schedule-duration-unit"
-              name="planned_duration_unit"
-            >
-              <option value="hours">{{ uiText.durationUnitHours }}</option>
-              <option value="days">{{ uiText.durationUnitDays }}</option>
-            </select>
+            <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
+              <button
+                type="button"
+                name="planned_duration_unit"
+                data-testid="schedule-duration-unit-hours"
+                class="schedule-duration-toggle__button"
+                :class="{ 'is-active': scheduleForm.planned_duration_unit === 'hours' }"
+                @click="setScheduleDurationUnit('hours')"
+              >
+                {{ uiText.durationUnitHours }}
+              </button>
+              <button
+                type="button"
+                data-testid="schedule-duration-unit-days"
+                class="schedule-duration-toggle__button"
+                :class="{ 'is-active': scheduleForm.planned_duration_unit === 'days' }"
+                @click="setScheduleDurationUnit('days')"
+              >
+                {{ uiText.durationUnitDays }}
+              </button>
+            </div>
           </div>
         </div>
         <div class="form-field" :class="{ 'is-hidden': scheduleForm.time_slot !== 'custom' }">
@@ -532,24 +544,36 @@
         </select>
       </div>
       <div class="form-field">
-        <label>{{ editForm.time_slot === "custom" ? uiText.plannedDuration : uiText.plannedHours }}</label>
+        <label>{{ uiText.plannedDuration }}</label>
         <div class="schedule-duration-control">
           <input
             v-model="editForm.planned_hours"
             type="number"
             name="edit_planned_hours"
-            :min="editForm.planned_duration_unit === 'days' ? 1 : 0.5"
-            :step="editForm.planned_duration_unit === 'days' ? 1 : 0.5"
+            :min="0.5"
+            :step="0.5"
           />
-          <select
-            v-if="editForm.time_slot === 'custom'"
-            v-model="editForm.planned_duration_unit"
-            class="schedule-duration-unit"
-            name="edit_planned_duration_unit"
-          >
-            <option value="hours">{{ uiText.durationUnitHours }}</option>
-            <option value="days">{{ uiText.durationUnitDays }}</option>
-          </select>
+          <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
+            <button
+              type="button"
+              name="edit_planned_duration_unit"
+              data-testid="edit-duration-unit-hours"
+              class="schedule-duration-toggle__button"
+              :class="{ 'is-active': editForm.planned_duration_unit === 'hours' }"
+              @click="setEditDurationUnit('hours')"
+            >
+              {{ uiText.durationUnitHours }}
+            </button>
+            <button
+              type="button"
+              data-testid="edit-duration-unit-days"
+              class="schedule-duration-toggle__button"
+              :class="{ 'is-active': editForm.planned_duration_unit === 'days' }"
+              @click="setEditDurationUnit('days')"
+            >
+              {{ uiText.durationUnitDays }}
+            </button>
+          </div>
         </div>
       </div>
       <div class="form-field" :class="{ 'is-hidden': editForm.time_slot !== 'custom' }">
@@ -598,6 +622,7 @@ const uiText = {
   deleteThenReschedule: "删除后重新排程",
   deleteSchedule: "删除排程",
   device: "设备",
+  durationUnitLabel: "预计实验时长单位",
   durationUnitDays: "天数",
   durationUnitHours: "小时",
   edit: "编辑",
@@ -687,6 +712,8 @@ const {
   resetGanttWindow,
   selectedTaskDetail,
   saveSchedule,
+  setEditDurationUnit,
+  setScheduleDurationUnit,
   scheduleConflictDetail,
   scheduleConflictOpen,
   taskDetailModalOpen,

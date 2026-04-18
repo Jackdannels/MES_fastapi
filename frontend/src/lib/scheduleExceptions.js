@@ -45,6 +45,40 @@ const buildExperimentTrayMap = (experimentTrays) => {
   return trayMap;
 };
 
+const buildTrayExperimentCodeMap = (experimentTrays) => {
+  const trayMap = new Map();
+  asArray(experimentTrays).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const current = trayMap.get(trayCode) || new Set();
+    current.add(experimentCode);
+    trayMap.set(trayCode, current);
+  });
+  return trayMap;
+};
+
+const buildExperimentNameMap = (experiments) =>
+  new Map(
+    asArray(experiments).map((entry) => [normalizeText(entry?.experiment_code), normalizeText(entry?.experiment_name)]),
+  );
+
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
 const collectScheduleSamples = ({ experimentTrayMap, samples, schedule }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
@@ -61,26 +95,38 @@ const collectScheduleSamples = ({ experimentTrayMap, samples, schedule }) => {
   });
 };
 
-const resolveScheduleLifecycle = ({ experimentTrayMap, samples, schedule }) => {
+const resolveScheduleLifecycle = ({
+  experimentTrayMap,
+  trayExperimentCodeMap,
+  experimentNameByCode,
+  samples,
+  schedule,
+}) => {
   const matchedSamples = collectScheduleSamples({ experimentTrayMap, samples, schedule });
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const scopedTrayCodes = experimentTrayMap.get(`${taskCode}::${experimentCode}`) || new Set();
   const trayStatuses = [];
-  let startedByHistory = false;
+  const experimentName = normalizeText(experimentNameByCode.get(experimentCode));
+  const latestHistoryBySample = new Map();
 
   matchedSamples.forEach((sample) => {
     asArray(sample?.history).forEach((entry) => {
-      if (normalizeText(entry?.action) !== "开始实验") {
+      const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+      if (!parsed || parsed.experimentName !== experimentName) {
         return;
       }
-      if (scopedTrayCodes.size === 0) {
-        startedByHistory = true;
+      const sampleCode = normalizeText(sample?.code);
+      if (!sampleCode) {
         return;
       }
-      const sampleTrayCodes = new Set(asArray(sample?.trays).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean));
-      if (Array.from(scopedTrayCodes).some((trayCode) => sampleTrayCodes.has(trayCode))) {
-        startedByHistory = true;
+      const eventTime = parseDate(entry?.time)?.getTime() || 0;
+      const existing = latestHistoryBySample.get(sampleCode);
+      if (!existing || eventTime >= existing.time) {
+        latestHistoryBySample.set(sampleCode, {
+          status: parsed.status,
+          time: eventTime,
+        });
       }
     });
 
@@ -105,12 +151,30 @@ const resolveScheduleLifecycle = ({ experimentTrayMap, samples, schedule }) => {
     });
   });
 
+  if (latestHistoryBySample.size > 0) {
+    const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => entry.status);
+    return {
+      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_STATUSES.has(status)),
+      started: historyStatuses.some((status) => STARTED_STATUSES.has(status)),
+      trayStatuses,
+    };
+  }
+
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (hasSharedScopedTray) {
+    return {
+      completed: false,
+      started: false,
+      trayStatuses,
+    };
+  }
+
   const startedByStatus = trayStatuses.some((status) => STARTED_STATUSES.has(status));
   const completedByStatus = trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_STATUSES.has(status));
 
   return {
     completed: completedByStatus,
-    started: startedByStatus || startedByHistory,
+    started: startedByStatus,
     trayStatuses,
   };
 };
@@ -144,6 +208,8 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   const experimentTrays = working[STORAGE_KEYS.experiment_trays];
   const conflicts = working[STORAGE_KEYS.conflicts];
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
 
   const expiredUnstartedSchedules = schedules.filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
@@ -153,7 +219,7 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     if (!endAt || endAt.getTime() >= now.getTime()) {
       return false;
     }
-    const lifecycle = resolveScheduleLifecycle({ experimentTrayMap, samples, schedule });
+    const lifecycle = resolveScheduleLifecycle({ experimentTrayMap, trayExperimentCodeMap, experimentNameByCode, samples, schedule });
     return !lifecycle.started;
   });
 

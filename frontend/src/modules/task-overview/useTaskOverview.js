@@ -181,6 +181,7 @@ function useTaskOverview() {
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.streams,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
   ]);
 
   const loading = ref(false);
@@ -196,12 +197,13 @@ function useTaskOverview() {
   let highlightTimer = null;
   let highlightedCardElement = null;
 
-  const buildRows = (tasks, samples, schedules, experiments) =>
+  const buildRows = (tasks, samples, schedules, experiments, experimentTrays) =>
     buildTaskRows({
       tasks,
       experiments,
       samples,
       schedules,
+      experimentTrays,
       scheduledLabel: SCHEDULED_LABEL,
       unscheduledLabel: UNSCHEDULED_LABEL,
     });
@@ -219,9 +221,9 @@ function useTaskOverview() {
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,
     });
 
-  const replaceOverview = (tasks, samples, schedules, experiments) => {
+  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = []) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
-    rows.value = buildRows(tasks, samples, schedules, experiments);
+    rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays);
     trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments);
   };
 
@@ -261,6 +263,7 @@ function useTaskOverview() {
         snapshot[STORAGE_KEYS.samples],
         snapshot[STORAGE_KEYS.schedules],
         snapshot[STORAGE_KEYS.experiments],
+        snapshot[STORAGE_KEYS.experiment_trays],
       );
     } finally {
       loading.value = false;

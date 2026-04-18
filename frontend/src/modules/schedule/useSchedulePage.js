@@ -321,6 +321,38 @@ function useSchedulePage() {
     scheduleFormWatchSuspended.value = false;
   };
 
+  const normalizeDurationValue = (value, fallback) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  const normalizeDayDurationValue = (value) => {
+    return Math.max(0.5, Math.round(value * 2) / 2);
+  };
+
+  const setDurationUnit = (formRef, nextUnit) => {
+    const form = formRef.value;
+    const currentUnit = normalizeText(form?.planned_duration_unit) || "hours";
+    if (currentUnit === nextUnit) {
+      return;
+    }
+    const currentValue = normalizeDurationValue(form?.planned_hours, currentUnit === "days" ? 0.5 : 3.5);
+    form.planned_duration_unit = nextUnit;
+    if (nextUnit === "days") {
+      form.planned_hours = normalizeDayDurationValue(Math.ceil(currentValue / 12) / 2);
+      return;
+    }
+    form.planned_hours = Math.max(0.5, currentValue * 24);
+  };
+
+  const setScheduleDurationUnit = (unit) => {
+    setDurationUnit(scheduleForm, unit);
+  };
+
+  const setEditDurationUnit = (unit) => {
+    setDurationUnit(editForm, unit);
+  };
+
   const resetScheduleFormForTask = async ({ taskCode, schedules }) => {
     const baseForm = createManualScheduleForm(now.value);
     const nextExperimentCode =
@@ -672,7 +704,6 @@ function useSchedulePage() {
       if (nextSlot !== "custom") {
         scheduleForm.value.custom_start = "";
         scheduleForm.value.custom_end = "";
-        scheduleForm.value.planned_duration_unit = "hours";
       }
     },
   );
@@ -681,7 +712,7 @@ function useSchedulePage() {
     () => scheduleForm.value.planned_duration_unit,
     (unit) => {
       if (unit === "days") {
-        scheduleForm.value.planned_hours = Math.max(1, Math.ceil(Number(scheduleForm.value.planned_hours) || 1));
+        scheduleForm.value.planned_hours = normalizeDayDurationValue(Number(scheduleForm.value.planned_hours) || 0.5);
       }
     },
   );
@@ -690,7 +721,8 @@ function useSchedulePage() {
     () => editForm.value.time_slot,
     (nextSlot) => {
       if (nextSlot !== "custom") {
-        editForm.value.planned_duration_unit = "hours";
+        editForm.value.custom_start = "";
+        editForm.value.custom_end = "";
       }
     },
   );
@@ -699,7 +731,7 @@ function useSchedulePage() {
     () => editForm.value.planned_duration_unit,
     (unit) => {
       if (unit === "days") {
-        editForm.value.planned_hours = Math.max(1, Math.ceil(Number(editForm.value.planned_hours) || 1));
+        editForm.value.planned_hours = normalizeDayDurationValue(Number(editForm.value.planned_hours) || 0.5);
       }
     },
   );
@@ -764,6 +796,8 @@ function useSchedulePage() {
     removeTaskDetailSchedule,
     rescheduleFromTaskDetail,
     saveSchedule,
+    setEditDurationUnit,
+    setScheduleDurationUnit,
     scheduleConflictDetail: scheduleConflictModal.payload,
     scheduleConflictOpen: scheduleConflictModal.open,
     scheduleDrawerOpen: scheduleDrawer.open,

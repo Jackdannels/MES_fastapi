@@ -4,6 +4,7 @@ import {
   analyzeTaskTrayConflict,
   buildManualTimeSlotOptions,
   RETENTION_DEVICE,
+  STATUS_COMPLETED,
   STATUS_SCHEDULED,
   STATUS_WAITING,
   buildConflictRows,
@@ -111,6 +112,24 @@ describe("schedulePageModel", () => {
     expect(result.error).toBeUndefined();
     expect(result.plannedHours).toBe(48);
     expect(formatDateTime(result.endAt)).toContain("2099-03-22 09:30");
+  });
+
+  test("resolveScheduleTimes supports half-day durations", () => {
+    const result = resolveScheduleTimes(
+      {
+        custom_start: "09:30",
+        device: "Lab-A",
+        planned_duration_unit: "days",
+        planned_hours: 0.5,
+        schedule_date: "2099-03-20",
+        time_slot: "custom",
+      },
+      new Date("2099-03-20T09:30:00"),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.plannedHours).toBe(12);
+    expect(formatDateTime(result.endAt)).toContain("2099-03-20 21:30");
   });
 
   test("buildManualTimeSlotOptions shows the earliest start time inside the active slot window", () => {
@@ -230,6 +249,134 @@ describe("schedulePageModel", () => {
       experimentCode: "SYLU-2026-03-006-A",
       experimentLabel: "四综合试验",
     });
+  });
+
+  test("buildScheduleRows resolves row status per experiment instead of sharing one task status", async () => {
+    const { buildScheduleRows } = await import("./model");
+    const rows = buildScheduleRows({
+      now: new Date("2099-03-20T09:30:00.000Z"),
+      tasks: [{ code: "SYLU-2026-03-010", name: "多实验任务", test_type: "冲击试验" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-B",
+          experiment_name: "温度冲击试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-010", experiment_code: "SYLU-2026-03-010-A", tray_code: "SYLU-2026-03-010-TP-001" },
+        { task_code: "SYLU-2026-03-010", experiment_code: "SYLU-2026-03-010-B", tray_code: "SYLU-2026-03-010-TP-002" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-010-SP-001",
+          task_code: "SYLU-2026-03-010",
+          status: STATUS_COMPLETED,
+          trays: [{ tray_code: "SYLU-2026-03-010-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-03-010-SP-002",
+          task_code: "SYLU-2026-03-010",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-03-010-TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+        {
+          id: "schedule-2",
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-B",
+          device: "温度冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-010-A", rowStatus: STATUS_COMPLETED }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-010-B", rowStatus: STATUS_SCHEDULED }),
+    ]);
+  });
+
+  test("buildScheduleRows prefers experiment-specific history over shared tray terminal status", async () => {
+    const { buildScheduleRows } = await import("./model");
+    const rows = buildScheduleRows({
+      now: new Date("2099-03-20T09:30:00.000Z"),
+      tasks: [{ code: "TASK-020", name: "共享托盘任务", test_type: "冲击试验" }],
+      experiments: [
+        { task_code: "TASK-020", experiment_code: "TASK-020-A", experiment_name: "冲击试验" },
+        { task_code: "TASK-020", experiment_code: "TASK-020-B", experiment_name: "盐雾试验" },
+        { task_code: "TASK-020", experiment_code: "TASK-020-C", experiment_name: "温度冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-020", experiment_code: "TASK-020-A", tray_code: "TASK-020-TP-001" },
+        { task_code: "TASK-020", experiment_code: "TASK-020-B", tray_code: "TASK-020-TP-001" },
+        { task_code: "TASK-020", experiment_code: "TASK-020-C", tray_code: "TASK-020-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-020-SP-001",
+          task_code: "TASK-020",
+          status: STATUS_COMPLETED,
+          trays: [{ tray_code: "TASK-020-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+          history: [
+            { action: "实验完成", detail: "TASK-020 / 盐雾试验 / 实验已完成", time: "2099-03-20T08:55:00.000Z" },
+            { action: "开始实验", detail: "TASK-020 / 盐雾试验 / 实验进行中", time: "2099-03-20T08:20:00.000Z" },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-20-a",
+          task_code: "TASK-020",
+          experiment_code: "TASK-020-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T09:00:00.000Z",
+          end_at: "2099-03-20T11:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+        {
+          id: "schedule-20-b",
+          task_code: "TASK-020",
+          experiment_code: "TASK-020-B",
+          device: "盐雾试验室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+        {
+          id: "schedule-20-c",
+          task_code: "TASK-020",
+          experiment_code: "TASK-020-C",
+          device: "温度冲击一室",
+          start_at: "2099-03-20T12:00:00.000Z",
+          end_at: "2099-03-20T14:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({ experimentCode: "TASK-020-B", rowStatus: STATUS_COMPLETED }),
+      expect.objectContaining({ experimentCode: "TASK-020-A", rowStatus: STATUS_SCHEDULED }),
+      expect.objectContaining({ experimentCode: "TASK-020-C", rowStatus: STATUS_SCHEDULED }),
+    ]);
   });
 
   test("buildExperimentOptions returns experiment-level options for the selected task", () => {
@@ -463,6 +610,25 @@ describe("schedulePageModel", () => {
         custom_start: "15:05",
         planned_duration_unit: "days",
         planned_hours: 4,
+        time_slot: "custom",
+      }),
+    );
+  });
+
+  test("buildScheduleRescheduleForm maps half-day durations back into days", () => {
+    expect(
+      buildScheduleRescheduleForm({
+        device: "Lab-A",
+        experiment_code: "SYLU-2026-03-008-C",
+        planned_hours: 12,
+        start_at: "2026-03-31T07:05:00.000Z",
+        end_at: "2026-03-31T19:05:00.000Z",
+        task_code: "SYLU-2026-03-008",
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        planned_duration_unit: "days",
+        planned_hours: 0.5,
         time_slot: "custom",
       }),
     );
@@ -991,6 +1157,56 @@ describe("schedulePageModel", () => {
     expect(vibrationRow).toBeTruthy();
     expect(impactRow?.slots.some((slot) => slot.scheduleId === "schedule-1" && slot.state === "running")).toBe(true);
     expect(vibrationRow?.slots.some((slot) => slot.scheduleId === "schedule-2")).toBe(true);
+  });
+
+  test("buildGanttRows keeps future shared-tray experiments visible when only a previous experiment completed", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "温度冲击一室" }],
+      now: new Date("2099-03-20T02:00:00.000Z"),
+      experiments: [
+        { task_code: "TASK-030", experiment_code: "TASK-030-B", experiment_name: "盐雾试验" },
+        { task_code: "TASK-030", experiment_code: "TASK-030-C", experiment_name: "温度冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-030", experiment_code: "TASK-030-B", tray_code: "TASK-030-TP-001" },
+        { task_code: "TASK-030", experiment_code: "TASK-030-C", tray_code: "TASK-030-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-030-SP-001",
+          task_code: "TASK-030",
+          status: STATUS_COMPLETED,
+          location: "盐雾试验室",
+          trays: [{ tray_code: "TASK-030-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+          history: [
+            { action: "实验完成", detail: "TASK-030 / 盐雾试验 / 实验已完成", time: "2099-03-20T01:00:00.000Z" },
+            { action: "开始实验", detail: "TASK-030 / 盐雾试验 / 实验进行中", time: "2099-03-20T00:15:00.000Z" },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-30-b",
+          task_code: "TASK-030",
+          experiment_code: "TASK-030-B",
+          device: "盐雾试验室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T01:00:00.000Z",
+        },
+        {
+          id: "schedule-30-c",
+          task_code: "TASK-030",
+          experiment_code: "TASK-030-C",
+          device: "温度冲击一室",
+          start_at: "2099-03-20T04:00:00.000Z",
+          end_at: "2099-03-20T06:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    const tempShockRow = gantt.rows.find((row) => row.device === "温度冲击一室");
+    expect(tempShockRow?.slots.some((slot) => slot.scheduleId === "schedule-30-c")).toBe(true);
   });
 
   test("resolveRetentionTimeState snaps retention scheduling to now", () => {

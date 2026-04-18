@@ -207,6 +207,7 @@ const createId = (prefix) => {
 
 const SLOT_SEQUENCE = ["am", "pm"];
 const HALF_DAY_MS = 12 * 60 * 60 * 1000;
+const HALF_DAY_HOURS = 12;
 
 // 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
 const parsePlannedHours = (value) => {
@@ -218,11 +219,20 @@ const parsePlannedHours = (value) => {
   return normalized >= 0.5 ? normalized : null;
 };
 
+const parsePlannedDays = (value) => {
+  const rawValue = Number.parseFloat(String(value ?? "").trim());
+  if (!Number.isFinite(rawValue)) {
+    return null;
+  }
+  const normalized = Math.round(rawValue * 2) / 2;
+  return normalized >= 0.5 ? normalized : null;
+};
+
 const resolvePlannedHours = (form) => {
   const unit = normalizeText(form?.planned_duration_unit) || "hours";
   if (unit === "days") {
-    const days = Number.parseInt(String(form?.planned_hours ?? "").trim(), 10);
-    return Number.isInteger(days) && days >= 1 ? days * 24 : null;
+    const days = parsePlannedDays(form?.planned_hours);
+    return days ? days * 24 : null;
   }
   return parsePlannedHours(form?.planned_hours);
 };
@@ -238,7 +248,7 @@ const inferPlannedHours = (startAt, endAt) => {
 
 const buildPlannedDurationFormState = (plannedHours) => {
   const hours = parsePlannedHours(plannedHours);
-  if (hours && Number.isInteger(hours / 24)) {
+  if (hours && Number.isInteger(hours / HALF_DAY_HOURS)) {
     return {
       plannedDurationUnit: "days",
       plannedHours: hours / 24,
@@ -756,17 +766,61 @@ const buildExperimentTrayMap = (experimentTrays) => {
   return trayMap;
 };
 
-const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
+const buildTrayExperimentCodeMap = (experimentTrays) => {
+  const trayMap = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const current = trayMap.get(trayCode) || new Set();
+    current.add(experimentCode);
+    trayMap.set(trayCode, current);
+  });
+  return trayMap;
+};
+
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
+const collectScheduleMatchedSamples = ({ schedule, samples, experimentTrayMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const scopedTrayCodes = new Set(experimentTrayMap.get(`${taskCode}::${experimentCode}`) || []);
+  const matchedSamples = (Array.isArray(samples) ? samples : []).filter((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    if (scopedTrayCodes.size === 0) {
+      return true;
+    }
+    return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => scopedTrayCodes.has(normalizeText(tray?.tray_code)));
+  });
+  return {
+    experimentCode,
+    matchedSamples,
+    scopedTrayCodes,
+    taskCode,
+  };
+};
+
+const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
+  const { matchedSamples, scopedTrayCodes, taskCode } = collectScheduleMatchedSamples({ schedule, samples, experimentTrayMap });
   const statuses = [];
 
-  (Array.isArray(samples) ? samples : []).forEach((sample) => {
-    if (normalizeText(sample?.task_code) !== taskCode) {
-      return;
-    }
-
+  matchedSamples.forEach((sample) => {
     const trays = Array.isArray(sample?.trays) ? sample.trays : [];
     if (trays.length === 0 && scopedTrayCodes.size === 0) {
       const sampleStatus = normalizeText(sample?.status);
@@ -791,12 +845,98 @@ const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) =
   return statuses;
 };
 
-const resolveScheduleLifecycleState = ({ schedule, samples, experimentTrayMap }) => {
+const resolveScheduleLifecycleState = ({
+  schedule,
+  samples,
+  experimentTrayMap,
+  experimentNameByCode = new Map(),
+  trayExperimentCodeMap = new Map(),
+}) => {
+  const { matchedSamples, scopedTrayCodes, taskCode, experimentCode } = collectScheduleMatchedSamples({
+    schedule,
+    samples,
+    experimentTrayMap,
+  });
+  const experimentName =
+    normalizeText(schedule?.experiment_name)
+    || normalizeText(experimentNameByCode.get(experimentCode));
+  const latestHistoryBySample = new Map();
+
+  if (experimentName) {
+    matchedSamples.forEach((sample) => {
+      const sampleCode = normalizeText(sample?.code);
+      if (!sampleCode) {
+        return;
+      }
+      (Array.isArray(sample?.history) ? sample.history : []).forEach((entry) => {
+        const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+        if (!parsed || parsed.experimentName !== experimentName) {
+          return;
+        }
+        const eventTime = parseDate(entry?.time)?.getTime() || 0;
+        const existing = latestHistoryBySample.get(sampleCode);
+        if (!existing || eventTime >= existing.time) {
+          latestHistoryBySample.set(sampleCode, { status: parsed.status, time: eventTime });
+        }
+      });
+    });
+  }
+
+  if (latestHistoryBySample.size > 0) {
+    const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => entry.status);
+    return {
+      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status)),
+      started: historyStatuses.some((status) => STARTED_TRAY_STATUSES.has(status)),
+    };
+  }
+
   const trayStatuses = collectScheduleTrayStatuses({ schedule, samples, experimentTrayMap });
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (hasSharedScopedTray) {
+    return {
+      completed: false,
+      started: false,
+    };
+  }
   return {
     completed: trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status)),
     started: trayStatuses.some((status) => STARTED_TRAY_STATUSES.has(status)),
   };
+};
+
+const resolveScheduleRowStatus = ({
+  schedule,
+  samples,
+  now,
+  experimentTrayMap,
+  experimentNameByCode = new Map(),
+  trayExperimentCodeMap = new Map(),
+}) => {
+  const lifecycleState = resolveScheduleLifecycleState({
+    schedule,
+    samples,
+    experimentTrayMap,
+    experimentNameByCode,
+    trayExperimentCodeMap,
+  });
+  if (lifecycleState.started) {
+    return lifecycleState.completed ? STATUS_COMPLETED : STATUS_RUNNING;
+  }
+
+  if (isRetentionDevice(schedule?.device)) {
+    return STATUS_RETENTION;
+  }
+
+  const currentTime = now.getTime();
+  const startAt = parseDate(schedule?.start_at);
+  const endAt = parseDate(schedule?.end_at);
+  if (startAt && endAt && startAt.getTime() <= currentTime && endAt.getTime() >= currentTime) {
+    return STATUS_SCHEDULED;
+  }
+  if (endAt && endAt.getTime() > currentTime) {
+    return STATUS_SCHEDULED;
+  }
+  return STATUS_WAITING;
 };
 
 const taskHasSavedTrayPlan = ({ task, samples, experimentTrays }) => {
@@ -964,18 +1104,24 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = new Date() }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
-  const experimentList = Array.isArray(experiments) ? experiments : [];
-  const experimentNameByCode = new Map(
-    experimentList.map((experiment) => [normalizeText(experiment?.experiment_code), normalizeText(experiment?.experiment_name)]),
-  );
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
 
   return (Array.isArray(schedules) ? schedules : [])
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
       const experimentCode = normalizeText(schedule?.experiment_code);
       const task = taskByCode.get(taskCode);
-      // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
-      const status = resolveTaskStatus(task || taskCode, schedules, samples, now, experimentTrays);
+      // 排程列表的状态按当前这条实验排程的真实生命周期判断，避免同任务下兄弟实验互相串扰。
+      const status = resolveScheduleRowStatus({
+        schedule,
+        samples,
+        now,
+        experimentTrayMap,
+        experimentNameByCode,
+        trayExperimentCodeMap,
+      });
 
       return {
         device: normalizeText(schedule?.device),
@@ -1045,11 +1191,19 @@ function buildConflictRows({ schedules }) {
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
 function buildGanttRows({ schedules, devices, experiments = [], experimentTrays = [], samples = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
   const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
     }
-    const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
+    const lifecycleState = resolveScheduleLifecycleState({
+      schedule,
+      samples,
+      experimentTrayMap,
+      experimentNameByCode,
+      trayExperimentCodeMap,
+    });
     const endAt = parseDate(schedule?.end_at);
     if (!lifecycleState.started) {
       return true;
@@ -1059,7 +1213,6 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
     }
     return !endAt || endAt >= now;
   });
-  const experimentNameByCode = buildExperimentNameMap(experiments);
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
   // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。
   const dayList = Array.from({ length: days }, (_, index) => {
@@ -1182,7 +1335,13 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
         const schedule = matched[0];
         const startAt = parseDate(schedule?.start_at);
         const endAt = parseDate(schedule?.end_at);
-        const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
+        const lifecycleState = resolveScheduleLifecycleState({
+          schedule,
+          samples,
+          experimentTrayMap,
+          experimentNameByCode,
+          trayExperimentCodeMap,
+        });
         const stateMeta = getSlotState({ completed: lifecycleState.completed, endAt, now, startAt, started: lifecycleState.started });
         return {
           className: stateMeta.className,
