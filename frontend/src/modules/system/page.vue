@@ -18,9 +18,9 @@
       <thead>
         <tr>
           <th>序号</th>
-          <th data-sort @click="toggleSort('name')">角色</th>
-          <th data-sort @click="toggleSort('scope')">范围</th>
-          <th data-sort @click="toggleSort('keyPermissions')">关键权限</th>
+          <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" @click="toggleSort('name')">角色</th>
+          <th data-sort :data-sort-dir="sortKey === 'scope' ? sortDirection : ''" @click="toggleSort('scope')">范围</th>
+          <th data-sort :data-sort-dir="sortKey === 'keyPermissions' ? sortDirection : ''" @click="toggleSort('keyPermissions')">关键权限</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -119,6 +119,8 @@ const {
   roleModalOpen,
   settings,
   summaryCards,
+  sortDirection,
+  sortKey,
   toggleSort,
   visibleRoleRows,
 } = useSystemPage();

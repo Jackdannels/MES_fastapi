@@ -43,12 +43,12 @@
       <thead>
         <tr>
           <th class="tasks-table__col tasks-table__col--index">序号</th>
-          <th class="tasks-table__col tasks-table__col--code" data-sort @click="toggleSort('code')">任务编号</th>
-          <th class="tasks-table__col tasks-table__col--source" data-sort @click="toggleSort('source')">来源</th>
-          <th class="tasks-table__col tasks-table__col--sample-count" data-sort @click="toggleSort('sampleCount')">样品</th>
-          <th class="tasks-table__col tasks-table__col--summary" data-sort @click="toggleSort('testType')">实验摘要</th>
-          <th class="tasks-table__col tasks-table__col--due-at" data-sort @click="toggleSort('dueAt')">期望完成</th>
-          <th class="tasks-table__col tasks-table__col--status" data-sort @click="toggleSort('displayStatus')">状态</th>
+          <th class="tasks-table__col tasks-table__col--code" data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" @click="toggleSort('code')">任务编号</th>
+          <th class="tasks-table__col tasks-table__col--source" data-sort :data-sort-dir="sortKey === 'source' ? sortDirection : ''" @click="toggleSort('source')">来源</th>
+          <th class="tasks-table__col tasks-table__col--sample-count" data-sort :data-sort-dir="sortKey === 'sampleCount' ? sortDirection : ''" @click="toggleSort('sampleCount')">样品</th>
+          <th class="tasks-table__col tasks-table__col--summary" data-sort :data-sort-dir="sortKey === 'testType' ? sortDirection : ''" @click="toggleSort('testType')">实验摘要</th>
+          <th class="tasks-table__col tasks-table__col--due-at" data-sort :data-sort-dir="sortKey === 'dueAt' ? sortDirection : ''" @click="toggleSort('dueAt')">期望完成</th>
+          <th class="tasks-table__col tasks-table__col--status" data-sort :data-sort-dir="sortKey === 'displayStatus' ? sortDirection : ''" @click="toggleSort('displayStatus')">状态</th>
           <th class="tasks-table__col tasks-table__col--actions">操作</th>
         </tr>
       </thead>
@@ -333,6 +333,8 @@ const {
   closeIntakeExperimentPicker,
   confirmIntakeExperimentPicker,
   openIntakeExperimentPicker,
+  sortDirection,
+  sortKey,
   submitTask,
   taskDrawerOpen,
   taskRows,

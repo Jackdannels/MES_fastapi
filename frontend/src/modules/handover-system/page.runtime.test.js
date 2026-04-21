@@ -331,8 +331,8 @@ describe("TransferAreaPage runtime", () => {
 
     await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("click");
     await settle(wrapper);
-    expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(1);
-    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').classes()).toContain("is-active");
+    expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(0);
+    expect(wrapper.get('[data-testid="transfer-locked-operation-hint"]').text()).toBe("托盘已保存，若想更改请重新入库");
 
     await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").trigger("click");
     await settle(wrapper);
@@ -919,25 +919,19 @@ describe("TransferAreaPage runtime", () => {
     expect(firstTrayInfoRow.text()).toContain("托盘 #1");
     expect(firstTrayInfoRow.findAll(".transfer-tray-experiment-tag")).toHaveLength(1);
 
+    expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').attributes("aria-disabled")).toBe("true");
+    expect(wrapper.find('[data-testid="transfer-tray-select-0"]').exists()).toBe(false);
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').attributes("aria-disabled")).toBe("false");
+
     await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
     await settle(wrapper);
 
     const firstToggle = wrapper.get('[data-testid="transfer-tray-select-0"]');
     expect(firstToggle.text()).toContain("✓");
     expect(firstToggle.classes()).toContain("is-selected");
-
-    const secondToggle = wrapper.get('[data-testid="transfer-tray-select-1"]');
-    expect(secondToggle.classes()).not.toContain("is-selected");
-
-    await secondToggle.trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('[data-testid="transfer-tray-select-1"]').classes()).not.toContain("is-selected");
-
-    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
-    await settle(wrapper);
-    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
-    await settle(wrapper);
 
     const unlockedSecondToggle = wrapper.get('[data-testid="transfer-tray-select-1"]');
     await unlockedSecondToggle.trigger("click");

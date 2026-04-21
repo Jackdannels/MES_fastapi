@@ -117,7 +117,7 @@ def test_session_returns_user_from_cookie(client):
     assert response.json()["module"] == "visual"
     assert response.json()["logged_at"]
     assert response.json()["last_seen_at"]
-    assert response.json()["expires_at"]
+    assert response.json()["expires_at"] is None
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["vary"] == "Cookie"
 
@@ -188,7 +188,30 @@ def test_switch_module_rejects_unknown_modules(client):
     assert response.json() == {"detail": "Invalid module"}
 
 
+def test_session_does_not_expire_by_default_after_long_inactivity(client, monkeypatch):
+    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 0)
+    monkeypatch.setattr(settings, "SESSION_MAX_AGE_HOURS", 0)
+    start = datetime(2026, 3, 11, 9, 0, tzinfo=timezone.utc)
+    set_auth_time(monkeypatch, start)
+    client.post(
+        "/auth/login",
+        json={"username": settings.DEMO_USER, "password": settings.DEMO_PASSWORD, "module": "central"},
+    )
+
+    much_later = start + timedelta(days=30)
+    set_auth_time(monkeypatch, much_later)
+    response = client.get("/auth/session")
+
+    assert response.status_code == 200
+    assert response.json()["logged_at"] == "2026-03-11T09:00:00Z"
+    assert response.json()["last_seen_at"] == "2026-04-10T09:00:00Z"
+    assert response.json()["expires_at"] is None
+    assert response.cookies.get("mes_session")
+
+
 def test_session_refreshes_idle_deadline_before_timeout(client, monkeypatch):
+    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 30)
+    monkeypatch.setattr(settings, "SESSION_MAX_AGE_HOURS", 8)
     start = datetime(2026, 3, 11, 9, 0, tzinfo=timezone.utc)
     set_auth_time(monkeypatch, start)
     client.post(
@@ -208,6 +231,8 @@ def test_session_refreshes_idle_deadline_before_timeout(client, monkeypatch):
 
 
 def test_session_expires_after_idle_timeout(client, monkeypatch):
+    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 30)
+    monkeypatch.setattr(settings, "SESSION_MAX_AGE_HOURS", 8)
     start = datetime(2026, 3, 11, 9, 0, tzinfo=timezone.utc)
     set_auth_time(monkeypatch, start)
     login_response = client.post(
@@ -227,6 +252,8 @@ def test_session_expires_after_idle_timeout(client, monkeypatch):
 
 
 def test_session_expires_after_absolute_lifetime(client, monkeypatch):
+    monkeypatch.setattr(settings, "SESSION_IDLE_TIMEOUT_MINUTES", 30)
+    monkeypatch.setattr(settings, "SESSION_MAX_AGE_HOURS", 8)
     start = datetime(2026, 3, 11, 9, 0, tzinfo=timezone.utc)
     set_auth_time(monkeypatch, start)
     client.post(

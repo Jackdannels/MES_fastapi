@@ -19,7 +19,17 @@ TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
 SYSTEM_TRAY_TOTAL = 20
-EXCLUDED_TASK_STATUS_KEYWORDS = ("实验中", "实验进行中", "实验完成", "实验已经完成", "实验已完成", "厂家收回")
+EXCLUDED_TASK_STATUS_KEYWORDS = (
+    "实验中",
+    "实验进行中",
+    "实验完成",
+    "实验已经完成",
+    "实验已完成",
+    "任务进行中",
+    "任务完成",
+    "任务已完成",
+    "厂家收回",
+)
 TASK_TRAY_ID_BASE = 1000
 STOCK_TRAY_ID_BASE = 2000
 TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
@@ -1341,6 +1351,8 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
 
     task["transfer_status"] = TASK_STATUS_STORED
     now_iso = datetime.now().isoformat(timespec="seconds")
+    if not task_arrival_time(task):
+        task["arrival_at"] = now_iso
     task["updated_at"] = now_iso
     for sample in task_samples:
         sample["location"] = "接驳区"

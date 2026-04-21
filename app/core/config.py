@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     SESSION_COOKIE_NAME: str = "mes_session"
     SESSION_COOKIE_SECURE: Optional[bool] = None
     SESSION_SECRET_KEY: Optional[str] = None
-    SESSION_IDLE_TIMEOUT_MINUTES: int = 30
-    SESSION_MAX_AGE_HOURS: int = 8
+    SESSION_IDLE_TIMEOUT_MINUTES: int = 0
+    SESSION_MAX_AGE_HOURS: int = 0
     FRONTEND_ORIGINS: str = "http://127.0.0.1:5173,http://localhost:5173"
     STORAGE_BACKEND: str = "mysql"
 

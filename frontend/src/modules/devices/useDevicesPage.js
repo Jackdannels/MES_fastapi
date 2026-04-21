@@ -155,6 +155,8 @@ function useDevicesPage() {
     saveCurrentDevice,
     savePoint,
     selectedDevice,
+    sortDirection,
+    sortKey,
     testTypeOptions,
     toggleSort,
   };

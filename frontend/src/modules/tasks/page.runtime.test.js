@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -170,9 +170,9 @@ const installApiFetchMock = (config = {}) => {
 };
 
 const settle = async (wrapper) => {
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
   await wrapper.vm.$nextTick();
+  await flushPromises();
   await wrapper.vm.$nextTick();
 };
 
@@ -234,6 +234,32 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
     expect(wrapper.text()).toContain("任务详情");
+  });
+
+  test("updates the sort arrow direction on repeated header clicks", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({ id: "task-1", code: "SYLU-2026-03-001" }),
+        createTask({ id: "task-2", code: "SYLU-2026-03-002" }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const codeHeader = wrapper.get(".tasks-table__col--code");
+
+    expect(codeHeader.attributes("data-sort-dir")).toBe("");
+
+    await codeHeader.trigger("click");
+    await settle(wrapper);
+
+    expect(codeHeader.attributes("data-sort-dir")).toBe("asc");
+
+    await codeHeader.trigger("click");
+    await settle(wrapper);
+
+    expect(codeHeader.attributes("data-sort-dir")).toBe("desc");
   });
 
   test("uses compact side columns while prioritizing the experiment summary column", async () => {

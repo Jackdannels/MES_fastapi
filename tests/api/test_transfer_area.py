@@ -852,3 +852,68 @@ def test_transfer_area_allocate_rejects_when_system_trays_are_insufficient(monke
 
     assert response.status_code == 400
     assert response.json()["detail"] == "系统剩余托盘不足，当前最多可分配 0 个托盘。"
+
+
+def test_transfer_area_confirm_storage_backfills_arrival_time_for_preallocated_tasks(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    tasks.append(
+        {
+            "id": "task-201",
+            "code": "SYLU-2026-04-201",
+            "name": "中控新增任务",
+            "test_type": "盐雾试验",
+            "sample_count": 2,
+            "arrival_at": "",
+            "status": "待排程",
+            "tray_limit": 4,
+            "tray_codes": ["SYLU-2026-04-201-TP-001"],
+        }
+    )
+    storage.write("mes.tasks", tasks)
+    samples = storage.read("mes.samples")
+    samples.extend(
+        [
+            {
+                "id": "sample-201-1",
+                "code": "SYLU-2026-04-201-SP-001",
+                "task_code": "SYLU-2026-04-201",
+                "status": "未入库",
+                "flow_status": "运输中",
+                "location": "",
+                "trays": [
+                    {
+                        "tray_id": 1001,
+                        "tray_code": "SYLU-2026-04-201-TP-001",
+                        "quantity": 1,
+                        "status": "未入库",
+                    }
+                ],
+            },
+            {
+                "id": "sample-201-2",
+                "code": "SYLU-2026-04-201-SP-002",
+                "task_code": "SYLU-2026-04-201",
+                "status": "未入库",
+                "flow_status": "运输中",
+                "location": "",
+                "trays": [
+                    {
+                        "tray_id": 1001,
+                        "tray_code": "SYLU-2026-04-201-TP-001",
+                        "quantity": 1,
+                        "status": "未入库",
+                    }
+                ],
+            },
+        ]
+    )
+    storage.write("mes.samples", samples)
+
+    response = client.post("/api/transfer-area/tasks/task-201/confirm-storage")
+
+    assert response.status_code == 200
+    assert response.json()["workspace"]["task"]["taskStatus"] == "已入库"
+    assert response.json()["workspace"]["task"]["receivedTime"]
+    updated_task = next(task for task in storage.read("mes.tasks") if task["code"] == "SYLU-2026-04-201")
+    assert updated_task["arrival_at"]

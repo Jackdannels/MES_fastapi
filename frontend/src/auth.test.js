@@ -130,6 +130,21 @@ describe("auth", () => {
     expect(readAuthSession()).toBeNull();
   });
 
+  test("fetchAuthSession keeps cached state when the session probe cannot reach the backend", async () => {
+    const cachedSession = {
+      logged_at: "2026-03-11T00:00:00Z",
+      module: "visual",
+      username: "admin",
+    };
+    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(cachedSession));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Network error")));
+
+    const session = await fetchAuthSession();
+
+    expect(session).toEqual(cachedSession);
+    expect(readAuthSession()).toEqual(cachedSession);
+  });
+
   test("fetchAuthSession does not immediately repeat an unauthorized probe", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,

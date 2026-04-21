@@ -91,6 +91,8 @@ function useDataPage() {
     reportForm,
     reportModalOpen: reportModal.open,
     selectedRow,
+    sortDirection,
+    sortKey,
     toggleSort,
     validateReport,
   };

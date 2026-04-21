@@ -65,6 +65,7 @@
           <tr>
             <th>序号</th>
             <th
+              data-sort
               data-testid="samples-flow-sort-task"
               :data-sort-dir="samplesFlow.sortKey === 'task_code' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('task_code')"
@@ -72,6 +73,7 @@
               任务
             </th>
             <th
+              data-sort
               data-testid="samples-flow-sort-code"
               :data-sort-dir="samplesFlow.sortKey === 'code' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('code')"
@@ -79,6 +81,7 @@
               样品编号
             </th>
             <th
+              data-sort
               data-testid="samples-flow-sort-tray"
               :data-sort-dir="samplesFlow.sortKey === 'trayCount' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('trayCount')"
@@ -86,6 +89,7 @@
               托盘数
             </th>
             <th
+              data-sort
               data-testid="samples-flow-sort-location"
               :data-sort-dir="samplesFlow.sortKey === 'location' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('location')"
@@ -93,6 +97,7 @@
               当前位置
             </th>
             <th
+              data-sort
               data-testid="samples-flow-sort-owner"
               :data-sort-dir="samplesFlow.sortKey === 'owner' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('owner')"
@@ -100,6 +105,7 @@
               责任人
             </th>
             <th
+              data-sort
               data-testid="samples-flow-sort-status"
               :data-sort-dir="samplesFlow.sortKey === 'status' ? samplesFlow.sortDirection : ''"
               @click="samplesFlow.toggleSamplesFlowSort('status')"

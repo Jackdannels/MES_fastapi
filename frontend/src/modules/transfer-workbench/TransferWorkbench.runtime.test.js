@@ -433,6 +433,155 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test.each([
+    ["handover", { mode: "handover" }],
+    ["pre-allocation", { embedded: true, mode: "pre-allocation", showHeader: false }],
+  ])("%s mode shows a saved-tray hint when locked actions are attempted", async (_label, props) => {
+    const wrapper = mount(TransferWorkbench, { props });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    const experimentTabs = wrapper.findAll('[data-testid^="transfer-experiment-tab-"]');
+    expect(experimentTabs).toHaveLength(2);
+    experimentTabs.forEach((tab) => {
+      expect(tab.attributes("aria-disabled")).toBe("false");
+    });
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    wrapper.findAll('[data-testid^="transfer-experiment-tab-"]').forEach((tab) => {
+      expect(tab.attributes("aria-disabled")).toBe("true");
+    });
+
+    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-locked-operation-hint"]').text()).toBe("托盘已保存，若想更改请重新入库");
+
+    await wrapper.get(".sample-tray-sample-tag").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-locked-operation-hint"]').text()).toBe("托盘已保存，若想更改请重新入库");
+
+    await wrapper.get(".sample-tray-remove").trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-locked-operation-hint"]').text()).toBe("托盘已保存，若想更改请重新入库");
+  });
+
+  test("handover mode allows confirming a centrally pre-allocated task without a received time", async () => {
+    const bootstrapPayload = {
+      taskOverview: [
+        {
+          taskId: 201,
+          seq: 1,
+          taskNo: "SYLU-2026-04-201",
+          taskName: "中控新增任务",
+          sampleCount: 2,
+          taskType: "盐雾试验",
+          experimentTypeText: "盐雾试验",
+          receivedTime: "",
+          taskStatus: "未入库",
+          taskProgress: "中控已预分配托盘，等待样品送达",
+          sampleCodes: ["SYLU-2026-04-201-SP-001", "SYLU-2026-04-201-SP-002"],
+          sampleCodesText: "SYLU-2026-04-201-SP-001 / SYLU-2026-04-201-SP-002",
+        },
+      ],
+      pendingTaskCount: 1,
+      storedTaskCount: 0,
+    };
+    const preAllocatedWorkspace = {
+      allocationSaved: true,
+      task: {
+        taskId: 201,
+        taskNo: "SYLU-2026-04-201",
+        taskName: "中控新增任务",
+        taskType: "盐雾试验",
+        experimentTypeText: "盐雾试验",
+        taskStatus: "未入库",
+        taskProgress: "中控已预分配托盘，等待样品送达",
+        receivedTime: "",
+        trayLimit: 4,
+        printedTrayCount: 0,
+      },
+      experiments: [
+        { experimentCode: "SYLU-2026-04-201-A", experimentName: "盐雾试验", assignedTrayNos: ["SYLU-2026-04-201-TP-001"] },
+      ],
+      assignedTrays: [
+        {
+          trayId: 1001,
+          trayNo: "SYLU-2026-04-201-TP-001",
+          trayType: "标准托盘",
+          trayStatus: "未入库",
+          capacity: 4,
+          experimentLabels: ["盐雾试验"],
+          experimentCodes: ["SYLU-2026-04-201-A"],
+          samples: [
+            { sampleId: "sample-201-1", sampleNo: "SYLU-2026-04-201-SP-001", sampleStatus: "未入库" },
+            { sampleId: "sample-201-2", sampleNo: "SYLU-2026-04-201-SP-002", sampleStatus: "未入库" },
+          ],
+          barcode: null,
+          barcodeData: null,
+        },
+      ],
+      trayInventory: [],
+    };
+    const confirmedWorkspace = {
+      ...preAllocatedWorkspace,
+      allocationSaved: true,
+      task: {
+        ...preAllocatedWorkspace.task,
+        taskStatus: "已入库",
+        taskProgress: "已确认入库",
+        receivedTime: "2026-04-21 16:30",
+      },
+      assignedTrays: preAllocatedWorkspace.assignedTrays.map((tray) => ({
+        ...tray,
+        trayStatus: "已入库",
+        samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "已入库" })),
+      })),
+    };
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/201/workspace")) {
+        return { ok: true, status: 200, json: async () => preAllocatedWorkspace };
+      }
+      if (url.includes("/api/transfer-area/tasks/201/confirm-storage") && options.method === "POST") {
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已确认入库", workspace: confirmedWorkspace }) };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-201"]').trigger("click");
+    await settle(wrapper);
+
+    const confirmButton = wrapper.findAll("button").find((button) => button.text() === "确认入库");
+    expect(confirmButton.attributes("disabled")).toBeUndefined();
+
+    await confirmButton.trigger("click");
+    await settle(wrapper);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/tasks/201/confirm-storage"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(wrapper.text()).toContain("任务已确认入库");
+  });
+
   test("overview task type filter shows only atomic experiment types and matches tasks containing the selected type", async () => {
     const wrapper = mount(TransferWorkbench, {
       props: {

@@ -92,12 +92,12 @@
       <thead>
         <tr>
           <th>序号</th>
-          <th data-sort @click="toggleSort('code')">设备编号</th>
-          <th data-sort @click="toggleSort('name')">设备名称</th>
-          <th data-sort @click="toggleSort('type')">试验类型</th>
-          <th data-sort @click="toggleSort('status')">状态</th>
-          <th data-sort @click="toggleSort('location')">位置</th>
-          <th data-sort @click="toggleSort('nextCal')">下次校准</th>
+          <th data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" @click="toggleSort('code')">设备编号</th>
+          <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" @click="toggleSort('name')">设备名称</th>
+          <th data-sort :data-sort-dir="sortKey === 'type' ? sortDirection : ''" @click="toggleSort('type')">试验类型</th>
+          <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" @click="toggleSort('status')">状态</th>
+          <th data-sort :data-sort-dir="sortKey === 'location' ? sortDirection : ''" @click="toggleSort('location')">位置</th>
+          <th data-sort :data-sort-dir="sortKey === 'nextCal' ? sortDirection : ''" @click="toggleSort('nextCal')">下次校准</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -306,6 +306,8 @@ const {
   saveCurrentDevice,
   savePoint,
   selectedDevice,
+  sortDirection,
+  sortKey,
   testTypeOptions,
   toggleSort,
 } = useDevicesPage();

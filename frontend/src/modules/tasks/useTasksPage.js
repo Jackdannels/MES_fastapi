@@ -503,6 +503,8 @@ function useTasksPage() {
     closeIntakeExperimentPicker,
     confirmIntakeExperimentPicker,
     openIntakeExperimentPicker,
+    sortDirection,
+    sortKey,
     submitTask,
     taskDrawerOpen: taskDrawer.open,
     taskRows: visibleRows,

@@ -27,11 +27,11 @@
       <thead>
         <tr>
           <th>序号</th>
-          <th data-sort @click="toggleSort('taskCode')">任务</th>
-          <th data-sort @click="toggleSort('device')">设备</th>
-          <th data-sort @click="toggleSort('lastPacket')">最近数据包</th>
-          <th data-sort @click="toggleSort('quality')">数据质量</th>
-          <th data-sort @click="toggleSort('status')">状态</th>
+          <th data-sort :data-sort-dir="sortKey === 'taskCode' ? sortDirection : ''" @click="toggleSort('taskCode')">任务</th>
+          <th data-sort :data-sort-dir="sortKey === 'device' ? sortDirection : ''" @click="toggleSort('device')">设备</th>
+          <th data-sort :data-sort-dir="sortKey === 'lastPacket' ? sortDirection : ''" @click="toggleSort('lastPacket')">最近数据包</th>
+          <th data-sort :data-sort-dir="sortKey === 'quality' ? sortDirection : ''" @click="toggleSort('quality')">数据质量</th>
+          <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" @click="toggleSort('status')">状态</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -144,6 +144,8 @@ const {
   reportForm,
   reportModalOpen,
   selectedRow,
+  sortDirection,
+  sortKey,
   toggleSort,
   validateReport,
 } = useDataPage();

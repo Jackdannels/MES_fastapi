@@ -206,8 +206,9 @@
                 v-for="experiment in experiments"
                 :key="experiment.experimentCode"
                 class="transfer-task-experiment-pill"
-                :class="{ active: activeAssignmentMode === experiment.experimentCode }"
+                :class="{ active: activeAssignmentMode === experiment.experimentCode, 'is-disabled': experimentSelectionLocked }"
                 :data-testid="`transfer-experiment-tab-${experiment.experimentCode}`"
+                :aria-disabled="experimentSelectionLocked ? 'true' : 'false'"
                 :title="experiment.experimentCode"
                 type="button"
                 @click.stop="setAssignmentMode(experiment.experimentCode)"
@@ -261,7 +262,11 @@
 
             <div v-if="trayCapacityExceeded" class="form-alert" data-testid="transfer-tray-capacity-warning">{{ trayCapacityWarning }}</div>
 
-            <div v-if="selectionHintText" class="transfer-selected-sample-hint">
+            <div
+              v-if="selectionHintText"
+              class="transfer-selected-sample-hint"
+              :data-testid="lockedOperationHint ? 'transfer-locked-operation-hint' : 'transfer-selection-hint'"
+            >
               {{ selectionHintText }}
             </div>
 
@@ -327,7 +332,16 @@
                 <div class="transfer-tray-card__footer">
                   <div class="transfer-tray-card__count">条码：{{ tray.barcode?.barcodeNo || "未打印" }}</div>
                   <div class="transfer-tray-card__actions">
-                    <button class="sample-tray-remove" type="button" :disabled="taskEditingLocked" @click.stop="removeTray(index)">删除托盘</button>
+                    <button
+                      class="sample-tray-remove"
+                      :class="{ 'is-disabled': taskEditingLocked }"
+                      type="button"
+                      :aria-disabled="taskEditingLocked ? 'true' : 'false'"
+                      :disabled="isStoredTask || Boolean(reloadBlockedReason)"
+                      @click.stop="removeTray(index)"
+                    >
+                      删除托盘
+                    </button>
                   </div>
                 </div>
               </div>
@@ -465,6 +479,8 @@ const printingAllBarcodes = ref(false);
 const barcodeModalVisible = ref(false);
 const barcodePreviewItems = ref([]);
 const barcodePrintConfirmed = ref(false);
+const lockedOperationHint = ref("");
+const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 const taskPage = ref(1);
 const overviewPageSize = ref(3);
 const pendingTaskCount = ref(0);
@@ -645,6 +661,7 @@ const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
 const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
 const currentExperimentName = computed(() => experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)?.experimentName || "实验");
 const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
+const experimentSelectionLocked = computed(() => allocationReadOnly.value);
 const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
 const canDragSamples = computed(() => props.mode === "pre-allocation" && !taskEditingLocked.value);
 const hasTrayCapacityLimit = computed(() => currentTask.value?.maxAssignableTrayCount != null);
@@ -681,7 +698,6 @@ const canSaveAllocation = computed(() => (
 ));
 const canConfirm = computed(() => (
   Boolean(selectedTaskId.value)
-  && Boolean(currentTask.value?.receivedTime)
   && loadedTrayCount.value > 0
   && allocationSaved.value
   && !isStoredTask.value
@@ -740,6 +756,9 @@ const trayInteractionHint = computed(() => {
   return "触控可先点目标托盘，再点其他托盘中的样品完成移入；点一个样品再点另一个样品可交换位置。";
 });
 const selectionHintText = computed(() => {
+  if (lockedOperationHint.value) {
+    return lockedOperationHint.value;
+  }
   if (selectedSampleLabel.value) {
     return `已选样品：${selectedSampleLabel.value}`;
   }
@@ -838,6 +857,7 @@ const refreshEditableTrayState = (message = "") => {
   clearExperimentAssignments();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
+  lockedOperationHint.value = "";
   if (message) {
     feedback.value = message;
   }
@@ -866,6 +886,7 @@ const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, me
   clearExperimentAssignments();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
+  lockedOperationHint.value = "";
   if (message) {
     feedback.value = message;
   }
@@ -879,6 +900,7 @@ const resetInteractiveState = () => {
   selectedSampleId.value = null;
   selectedSampleTrayIndex.value = -1;
   barcodePrintConfirmed.value = false;
+  lockedOperationHint.value = "";
 };
 
 const applyWorkspace = (workspace) => {
@@ -983,6 +1005,14 @@ const clearSelectedSample = () => {
   selectedSampleTrayIndex.value = -1;
 };
 
+const showSavedAllocationHint = () => {
+  if (!allocationSaved.value) {
+    return false;
+  }
+  lockedOperationHint.value = SAVED_ALLOCATION_HINT;
+  return true;
+};
+
 const isSampleSelected = (sampleId) => selectedSampleId.value === sampleId;
 const isTraySelectedForCurrentExperiment = (trayNo) => (
   isExperimentMode.value
@@ -992,6 +1022,9 @@ const isTraySelectedForCurrentExperiment = (trayNo) => (
 const normalizeTraySamples = (samples) => samples.slice().sort((a, b) => String(a.sampleNo || "").localeCompare(String(b.sampleNo || "")));
 
 const setAssignmentMode = (mode) => {
+  if (mode && mode !== "task" && showSavedAllocationHint()) {
+    return;
+  }
   activeAssignmentMode.value = mode || "task";
   clearSelectedSample();
 };
@@ -1021,6 +1054,7 @@ const handleDetailShellClick = (event) => {
 
 const toggleExperimentTraySelection = (trayIndex) => {
   if (!isExperimentMode.value || allocationReadOnly.value) {
+    showSavedAllocationHint();
     return;
   }
   const tray = assignedTrays.value[trayIndex];
@@ -1045,6 +1079,10 @@ const toggleExperimentTraySelection = (trayIndex) => {
 const setActiveTray = (index) => {
   if (isExperimentMode.value) {
     toggleExperimentTraySelection(index);
+    return;
+  }
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
     return;
   }
   if (selectedSampleId.value != null && selectedSampleTrayIndex.value >= 0 && selectedSampleTrayIndex.value !== index) {
@@ -1075,7 +1113,10 @@ const decreaseTrayLimit = () => {
 const allowTrayDrag = () => canDragSamples.value;
 
 const startDragging = (sampleId, trayIndex) => {
-  if (!canDragSamples.value) return;
+  if (!canDragSamples.value) {
+    showSavedAllocationHint();
+    return;
+  }
   draggingSampleId.value = sampleId;
   draggingFromTrayIndex.value = trayIndex;
   selectedSampleId.value = sampleId;
@@ -1083,7 +1124,11 @@ const startDragging = (sampleId, trayIndex) => {
 };
 
 const placeSelectedSampleToTray = (targetIndex) => {
-  if (taskEditingLocked.value || selectedSampleId.value == null || selectedSampleTrayIndex.value < 0) return;
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
+    return;
+  }
+  if (selectedSampleId.value == null || selectedSampleTrayIndex.value < 0) return;
   const sourceTray = assignedTrays.value[selectedSampleTrayIndex.value];
   const targetTray = assignedTrays.value[targetIndex];
   if (!sourceTray || !targetTray || sourceTray === targetTray) return;
@@ -1104,7 +1149,10 @@ const placeSelectedSampleToTray = (targetIndex) => {
 };
 
 const swapTraySamples = (sourceSampleId, sourceTrayIndex, targetSampleId, targetTrayIndex) => {
-  if (taskEditingLocked.value) return;
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
+    return;
+  }
   const sourceTray = assignedTrays.value[sourceTrayIndex];
   const targetTray = assignedTrays.value[targetTrayIndex];
   if (!sourceTray || !targetTray) return;
@@ -1121,7 +1169,10 @@ const swapTraySamples = (sourceSampleId, sourceTrayIndex, targetSampleId, target
 };
 
 const selectTraySample = (sampleId, trayIndex) => {
-  if (taskEditingLocked.value) return;
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
+    return;
+  }
   if (armedTrayIndex.value >= 0 && armedTrayIndex.value !== trayIndex && selectedSampleId.value == null) {
     selectedSampleId.value = sampleId;
     selectedSampleTrayIndex.value = trayIndex;
@@ -1142,7 +1193,11 @@ const selectTraySample = (sampleId, trayIndex) => {
 };
 
 const handleTrayDrop = (targetIndex) => {
-  if (taskEditingLocked.value || draggingSampleId.value == null || draggingFromTrayIndex.value < 0) return;
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
+    return;
+  }
+  if (draggingSampleId.value == null || draggingFromTrayIndex.value < 0) return;
   selectedSampleId.value = draggingSampleId.value;
   selectedSampleTrayIndex.value = draggingFromTrayIndex.value;
   placeSelectedSampleToTray(targetIndex);
@@ -1178,7 +1233,11 @@ const addInventoryTray = () => {
 
 const removeTray = (index) => {
   const tray = assignedTrays.value[index];
-  if (!tray || taskEditingLocked.value) return;
+  if (!tray) return;
+  if (taskEditingLocked.value) {
+    showSavedAllocationHint();
+    return;
+  }
   if (assignedTrays.value.length <= minimumTrayCount.value) {
     feedback.value = "当前托盘数量已是最小值，不能继续删除。";
     return;

@@ -39,15 +39,28 @@ def parse_utc(value: str) -> datetime:
         raise HTTPException(status_code=401, detail="Invalid session") from exc
 
 
+def resolve_session_idle_timeout() -> timedelta | None:
+    if settings.SESSION_IDLE_TIMEOUT_MINUTES <= 0:
+        return None
+    return timedelta(minutes=settings.SESSION_IDLE_TIMEOUT_MINUTES)
+
+
+def resolve_session_max_age() -> timedelta | None:
+    if settings.SESSION_MAX_AGE_HOURS <= 0:
+        return None
+    return timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+
+
 def build_auth_session(*, username: str, module: str, now: datetime | None = None) -> dict:
     issued_at = (now or current_utc()).astimezone(timezone.utc)
-    expires_at = issued_at + timedelta(hours=settings.SESSION_MAX_AGE_HOURS)
+    max_age = resolve_session_max_age()
+    expires_at = issued_at + max_age if max_age else None
     return {
         "username": username,
         "module": module,
         "logged_at": format_utc(issued_at),
         "last_seen_at": format_utc(issued_at),
-        "expires_at": format_utc(expires_at),
+        "expires_at": format_utc(expires_at) if expires_at else None,
     }
 
 
@@ -55,15 +68,21 @@ def refresh_auth_session(session: dict, *, now: datetime | None = None) -> dict:
     current_time = (now or current_utc()).astimezone(timezone.utc)
     logged_at = parse_utc(str(session.get("logged_at", "")))
     last_seen_at = parse_utc(str(session.get("last_seen_at", "")))
-    expires_at = parse_utc(str(session.get("expires_at", "")))
-    idle_deadline = last_seen_at + timedelta(minutes=settings.SESSION_IDLE_TIMEOUT_MINUTES)
-    if current_time > idle_deadline or current_time > expires_at:
+    idle_timeout = resolve_session_idle_timeout()
+    if idle_timeout and current_time > last_seen_at + idle_timeout:
         raise HTTPException(status_code=401, detail="Session expired")
+    max_age = resolve_session_max_age()
+    expires_at = None
+    if max_age:
+        raw_expires_at = session.get("expires_at")
+        expires_at = parse_utc(str(raw_expires_at)) if raw_expires_at else logged_at + max_age
+        if current_time > expires_at:
+            raise HTTPException(status_code=401, detail="Session expired")
     return {
         **session,
         "last_seen_at": format_utc(current_time),
         "logged_at": format_utc(logged_at),
-        "expires_at": format_utc(expires_at),
+        "expires_at": format_utc(expires_at) if expires_at else None,
     }
 
 
@@ -94,17 +113,19 @@ def load_auth_session(token: str) -> dict:
 
 def set_auth_cookie(response: Response, session: dict) -> None:
     require_session_secret()
-    expires_at = parse_utc(str(session.get("expires_at", "")))
-    remaining_seconds = max(0, int((expires_at - current_utc()).total_seconds()))
-    response.set_cookie(
-        key=settings.SESSION_COOKIE_NAME,
-        value=dump_auth_session(session),
-        httponly=True,
-        secure=use_secure_session_cookie(),
-        samesite="lax",
-        path="/",
-        max_age=remaining_seconds,
-    )
+    cookie_options = {
+        "key": settings.SESSION_COOKIE_NAME,
+        "value": dump_auth_session(session),
+        "httponly": True,
+        "secure": use_secure_session_cookie(),
+        "samesite": "lax",
+        "path": "/",
+    }
+    raw_expires_at = session.get("expires_at")
+    if raw_expires_at:
+        expires_at = parse_utc(str(raw_expires_at))
+        cookie_options["max_age"] = max(0, int((expires_at - current_utc()).total_seconds()))
+    response.set_cookie(**cookie_options)
 
 
 def clear_auth_cookie(response: Response) -> None:

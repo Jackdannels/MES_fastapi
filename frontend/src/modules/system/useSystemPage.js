@@ -66,6 +66,8 @@ function useSystemPage() {
     roleModalOpen: createRoleDialog.open,
     settings,
     summaryCards,
+    sortDirection,
+    sortKey,
     toggleSort,
     visibleRoleRows: visibleRows,
   };

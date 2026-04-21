@@ -93,31 +93,39 @@ async function fetchAuthSession() {
     return pendingAuthSessionRequest;
   }
 
+  const cachedSession = readAuthSession();
   pendingAuthSessionRequest = (async () => {
-  try {
-    const response = await fetch(buildApiUrl("/auth/session", API_BASE_URL), {
-      headers: {
-        Accept: "application/json",
-      },
-      credentials: "include",
-    });
-    if (!response.ok) {
+    try {
+      const response = await fetch(buildApiUrl("/auth/session", API_BASE_URL), {
+        headers: {
+          Accept: "application/json",
+        },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        clearAuthSession();
+        return null;
+      }
+      const payload = normalizeAuthSession(await response.json());
+      if (!payload) {
+        clearAuthSession();
+        return null;
+      }
+      writeAuthSession(payload);
+      return payload;
+    } catch {
+      if (cachedSession) {
+        lastAuthSessionProbe = {
+          session: cachedSession,
+          timestamp: Date.now(),
+        };
+        return cachedSession;
+      }
       clearAuthSession();
       return null;
+    } finally {
+      pendingAuthSessionRequest = null;
     }
-    const payload = normalizeAuthSession(await response.json());
-    if (!payload) {
-      clearAuthSession();
-      return null;
-    }
-    writeAuthSession(payload);
-    return payload;
-  } catch {
-    clearAuthSession();
-    return null;
-  } finally {
-    pendingAuthSessionRequest = null;
-  }
   })();
 
   return pendingAuthSessionRequest;
