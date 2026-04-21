@@ -299,7 +299,11 @@ function buildTaskRows({
     const group = experimentsByTaskCode.get(taskCode) || [];
     group.push({
       experimentCode: normalizeText(experiment?.experiment_code),
-      experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
+      experimentName:
+        normalizeText(experiment?.experiment_name)
+        || normalizeText(experiment?.experiment_type)
+        || normalizeText(experiment?.required_device)
+        || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
       status: normalizeExperimentStatus(experiment?.status),
       task_code: taskCode,

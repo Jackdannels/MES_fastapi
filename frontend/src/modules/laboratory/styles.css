@@ -442,7 +442,7 @@
 }
 
 .laboratory-task-list-modal .modal-content {
-  width: min(1500px, 98vw);
+  width: min(1840px, 98vw);
   max-height: min(88vh, 980px);
   padding: 24px 28px;
 }
@@ -522,14 +522,22 @@
 
 .laboratory-task-tray-list {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 
+.laboratory-task-tray-list--grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(210px, max-content));
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+}
+
 .laboratory-task-tray-row {
   display: flex;
-  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .laboratory-tray-chip {

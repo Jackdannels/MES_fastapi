@@ -58,6 +58,7 @@
             新建任务
           </button>
           <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
+          <span class="header-actions-before-logout"></span>
           <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
         </div>
       </header>
@@ -91,6 +92,7 @@
           <p class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
+          <span class="header-actions-before-logout"></span>
           <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
         </div>
       </header>

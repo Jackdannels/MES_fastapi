@@ -22,31 +22,41 @@ function useTransferDispatch() {
     feedback: "",
   });
 
+  const fetchTrayDispatch = async (trayCode) => {
+    const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/dispatch`, API_BASE_URL), {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response));
+    }
+    return response.json();
+  };
+
+  const applyDispatchPayload = (payload, fallbackDestinations = []) => {
+    state.tray = payload?.tray || null;
+    state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : fallbackDestinations;
+  };
+
   const lookupTray = async () => {
     const trayCode = normalizeText(state.scanCode);
     if (!trayCode) {
       state.feedback = "请输入或扫描托盘编号。";
-      return;
+      return false;
     }
 
     state.loading = true;
     try {
-      const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/dispatch`, API_BASE_URL), {
-        headers: {
-          Accept: "application/json",
-        },
-      });
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response));
-      }
-      const payload = await response.json();
-      state.tray = payload?.tray || null;
-      state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : [];
+      const payload = await fetchTrayDispatch(trayCode);
+      applyDispatchPayload(payload);
       state.feedback = "";
+      return true;
     } catch (error) {
       state.tray = null;
       state.destinations = [];
       state.feedback = error instanceof Error ? error.message : "托盘查询失败，请重试。";
+      return false;
     } finally {
       state.loading = false;
     }
@@ -63,11 +73,11 @@ function useTransferDispatch() {
     const trayCode = normalizeText(state.tray?.trayNo || state.scanCode);
     if (!trayCode) {
       state.feedback = "请先扫描托盘编号。";
-      return;
+      return false;
     }
     if (!canSelectDestination(destination)) {
       state.feedback = "当前候选位置尚未排程，不能直接出库。";
-      return;
+      return false;
     }
 
     state.submitting = true;
@@ -88,12 +98,16 @@ function useTransferDispatch() {
         throw new Error(await readErrorMessage(response));
       }
       const payload = await response.json();
-      state.tray = payload?.tray || state.tray;
-      state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : state.destinations;
+      applyDispatchPayload(payload, state.destinations);
       state.feedback = normalizeText(payload?.message) || "托盘出库状态已更新。";
+      const refreshedPayload = await fetchTrayDispatch(trayCode);
+      applyDispatchPayload(refreshedPayload, state.destinations);
+      state.scanCode = "";
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+      return true;
     } catch (error) {
       state.feedback = error instanceof Error ? error.message : "托盘出库失败，请重试。";
+      return false;
     } finally {
       state.submitting = false;
     }

@@ -87,6 +87,42 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows displays the concrete type for a single experiment record", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-021",
+          test_type: "盐雾试验",
+          status: "待排程",
+          sample_count: 1,
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-021",
+          experiment_code: "SYLU-2026-03-021-A",
+          experiment_type: "盐雾试验",
+          status: "待排程",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toMatchObject({
+      experimentCount: 1,
+      experimentSummary: "盐雾试验",
+    });
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({
+        experimentCode: "SYLU-2026-03-021-A",
+        experimentName: "盐雾试验",
+      }),
+    ]);
+  });
+
   test("buildTaskRows keeps unscheduled sibling experiments waiting even when the task status is already marked scheduled", () => {
     const rows = buildTaskRows({
       tasks: [

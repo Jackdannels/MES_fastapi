@@ -238,8 +238,36 @@ const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], exp
       name:
         normalizeText(experiment?.experiment_name)
         || normalizeText(experiment?.name)
+        || normalizeText(experiment?.experiment_type)
+        || normalizeText(experiment?.required_device)
         || `${index + 1}实验`,
     }));
+};
+
+const resolveSingleTrayExperimentName = (input = {}) => {
+  const orderedExperiments = buildOrderedTrayExperiments({
+    taskCode: input.taskCode,
+    trayCode: input.trayCode,
+    experiments: input.experiments,
+    experimentTrays: input.experimentTrays,
+    schedules: input.schedules,
+  });
+  return orderedExperiments.length === 1 ? normalizeText(orderedExperiments[0]?.name) : "";
+};
+
+const buildSingleExperimentStatusLabel = (experimentName, status) => {
+  const normalizedName = normalizeText(experimentName);
+  const normalizedStatus = normalizeText(status);
+  if (!normalizedName) {
+    return normalizedStatus;
+  }
+  if (normalizedStatus === "实验进行中" || normalizedStatus === "实验中") {
+    return `${normalizedName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`;
+  }
+  if (normalizedStatus === "实验已完成" || normalizedStatus === "实验完成") {
+    return `${normalizedName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+  }
+  return normalizedStatus;
 };
 
 const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) => {
@@ -697,13 +725,16 @@ function buildTrayFlowView(input = {}) {
   const status = normalizeLifecycleStatus(input.location, input.status) || SAMPLE_FLOW_STEPS[0].label;
   const currentKey = FLOW_STEP_KEY_BY_LABEL.get(status) || SAMPLE_FLOW_STEPS[0].key;
   const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;
+  const singleExperimentName = resolveSingleTrayExperimentName(input);
+  const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
 
   return {
     trayCode,
-    status,
-    currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${status}` : `当前状态：${status}`,
+    status: displayStatus,
+    currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${displayStatus}` : `当前状态：${displayStatus}`,
     steps: SAMPLE_FLOW_STEPS.map((step, index) => ({
       ...step,
+      label: buildSingleExperimentStatusLabel(singleExperimentName, step.label),
       active: step.key === currentKey,
       reached: index < currentIndex,
     })),
