@@ -27,6 +27,8 @@ from app.core.mysql_storage_backend import (
     build_task_insert_row,
     derive_experiment_status_map,
     derive_task_status_map,
+    format_iso_storage_datetime,
+    parse_storage_datetime,
     parse_experiment_event_detail,
 )
 from app.core.demo_data_reset import reset_demo_data
@@ -171,7 +173,29 @@ def test_experiment_mapping_round_trip_preserves_unscheduled_since() -> None:
     )
 
     assert insert_row["unscheduled_since"] is not None
-    assert storage_item["unscheduled_since"] == "2026-03-17T09:36:00Z"
+    assert storage_item["unscheduled_since"] == "2026-03-17T17:36:00+08:00"
+
+
+def test_mysql_storage_datetimes_use_beijing_timezone_for_api_payloads() -> None:
+    assert format_iso_storage_datetime(datetime(2026, 4, 21, 15, 4, 5)) == "2026-04-21T15:04:05+08:00"
+    assert parse_storage_datetime("2026-04-21T07:04:05Z") == datetime(2026, 4, 21, 15, 4, 5)
+
+    storage_item = build_storage_experiment_item(
+        {
+            "experiment_no": "SYLU-2026-03-001-B",
+            "task_no": "SYLU-2026-03-001",
+            "experiment_name": "振动试验",
+            "required_device": "振动试验",
+            "priority": None,
+            "planned_hours": 0,
+            "experiment_status": "待排程",
+            "unscheduled_since": datetime(2026, 4, 21, 15, 4, 5),
+            "created_at": datetime(2026, 3, 1, 9, 0, 0),
+            "updated_at": datetime(2026, 4, 21, 15, 29, 32),
+        }
+    )
+
+    assert storage_item["unscheduled_since"] == "2026-04-21T15:04:05+08:00"
 
 
 def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() -> None:
@@ -233,9 +257,9 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
         ],
     )
 
-    assert experiments[0]["unscheduled_since"] == "2026-03-17T09:00:00Z"
+    assert experiments[0]["unscheduled_since"] == "2026-03-17T17:00:00+08:00"
     assert repaired == {
-        "SYLU-2026-04-106-A": datetime(2026, 3, 17, 9, 0),
+        "SYLU-2026-04-106-A": datetime(2026, 3, 17, 17, 0),
     }
 
 
@@ -1086,8 +1110,8 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
 
     snapshot = backend.read_all()
 
-    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17T09:00:00Z"
-    assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 9, 0)}
+    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17T17:00:00+08:00"
+    assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 17, 0)}
     assert connection.commit_count == 2
 
 

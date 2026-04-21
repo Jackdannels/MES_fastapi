@@ -118,7 +118,7 @@
             :data-testid="`transfer-dispatch-destination-${index}`"
             :disabled="!dispatchState.canSelectDestination(destination)"
             type="button"
-            @click="dispatchState.submitDestination(destination)"
+            @click="handleDestinationSubmit(destination)"
           >
             {{ dispatchState.state.submitting ? "提交中..." : "送往此处" }}
           </button>
@@ -137,12 +137,13 @@ import { onMounted, ref } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 
-defineProps({
+const props = defineProps({
   dispatchState: {
     type: Object,
     required: true,
   },
 });
+const dispatchState = props.dispatchState;
 
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
@@ -150,6 +151,13 @@ const { focusScanInput } = useScanInputFocus(scanInputRef);
 onMounted(() => {
   void focusScanInput();
 });
+
+const handleDestinationSubmit = async (destination) => {
+  const submitted = await dispatchState.submitDestination(destination);
+  if (submitted) {
+    await focusScanInput();
+  }
+};
 
 const joinExperimentLabels = (labels) => {
   if (!Array.isArray(labels) || !labels.length) {

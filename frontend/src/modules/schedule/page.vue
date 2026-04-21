@@ -52,12 +52,41 @@
           </select>
         </div>
         <div class="form-field">
-          <label>{{ uiText.plannedHours }}</label>
-          <input v-model="scheduleForm.planned_hours" type="number" name="planned_hours" min="0.5" step="0.5" />
+          <label>{{ uiText.plannedDuration }}</label>
+          <div class="schedule-duration-control">
+            <input
+              v-model="scheduleForm.planned_hours"
+              type="number"
+              name="planned_hours"
+              :min="0.5"
+              :step="0.5"
+            />
+            <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
+              <button
+                type="button"
+                name="planned_duration_unit"
+                data-testid="schedule-duration-unit-hours"
+                class="schedule-duration-toggle__button"
+                :class="{ 'is-active': scheduleForm.planned_duration_unit === 'hours' }"
+                @click="setScheduleDurationUnit('hours')"
+              >
+                {{ uiText.durationUnitHours }}
+              </button>
+              <button
+                type="button"
+                data-testid="schedule-duration-unit-days"
+                class="schedule-duration-toggle__button"
+                :class="{ 'is-active': scheduleForm.planned_duration_unit === 'days' }"
+                @click="setScheduleDurationUnit('days')"
+              >
+                {{ uiText.durationUnitDays }}
+              </button>
+            </div>
+          </div>
         </div>
         <div class="form-field" :class="{ 'is-hidden': scheduleForm.time_slot !== 'custom' }">
           <label>{{ uiText.startTime }}</label>
-          <input v-model="scheduleForm.custom_start" type="time" name="custom_start" />
+          <input v-model="scheduleForm.custom_start" type="time" name="custom_start" :min="scheduleCustomStartMinTime" />
         </div>
       </div>
       <div class="form-actions">
@@ -96,7 +125,46 @@
         <thead>
           <tr>
             <th rowspan="2" class="gantt-sticky">{{ uiText.lab }}</th>
-            <th v-for="day in ganttView.days" :key="day.key" colspan="2">{{ day.label }}</th>
+            <th
+              v-for="(day, dayIndex) in ganttView.days"
+              :key="day.key"
+              colspan="2"
+              class="gantt-day-heading"
+            >
+              <button
+                v-if="dayIndex === 0"
+                class="gantt-window-nav gantt-window-nav--home"
+                type="button"
+                :disabled="!canResetGanttWindow"
+                :aria-label="uiText.resetGanttWindow"
+                :title="uiText.resetGanttWindow"
+                @click="resetGanttWindow"
+              >
+                «
+              </button>
+              <button
+                v-if="dayIndex === 0"
+                class="gantt-window-nav gantt-window-nav--prev"
+                type="button"
+                :disabled="!canShowPreviousGanttWindow"
+                :aria-label="uiText.previousGanttWindow"
+                :title="uiText.previousGanttWindow"
+                @click="showPreviousGanttWindow"
+              >
+                ‹
+              </button>
+              <span>{{ day.label }}</span>
+              <button
+                v-if="dayIndex === ganttView.days.length - 1"
+                class="gantt-window-nav gantt-window-nav--next"
+                type="button"
+                :aria-label="uiText.nextGanttWindow"
+                :title="uiText.nextGanttWindow"
+                @click="showNextGanttWindow"
+              >
+                ›
+              </button>
+            </th>
           </tr>
           <tr>
             <template v-for="day in ganttView.days" :key="`${day.key}-slots`">
@@ -110,7 +178,32 @@
             <td class="muted" :colspan="ganttView.days.length * 2 + 1">{{ uiText.noDevices }}</td>
           </tr>
           <tr v-for="row in ganttView.rows" :key="row.device">
-            <td class="gantt-sticky">{{ row.device }}</td>
+            <td class="gantt-sticky">
+              <div v-if="getDeviceScheduleNavigation(row.device).hasSchedules" class="gantt-lab-cell">
+                <button
+                  class="gantt-lab-nav"
+                  type="button"
+                  :disabled="!getDeviceScheduleNavigation(row.device).canPrevious"
+                  :aria-label="uiText.previousLabSchedule"
+                  :title="uiText.previousLabSchedule"
+                  @click="jumpDeviceSchedule(row.device, 'previous')"
+                >
+                  &lsaquo;
+                </button>
+                <span class="gantt-lab-name">{{ row.device }}</span>
+                <button
+                  class="gantt-lab-nav"
+                  type="button"
+                  :disabled="!getDeviceScheduleNavigation(row.device).canNext"
+                  :aria-label="uiText.nextLabSchedule"
+                  :title="uiText.nextLabSchedule"
+                  @click="jumpDeviceSchedule(row.device, 'next')"
+                >
+                  &rsaquo;
+                </button>
+              </div>
+              <template v-else>{{ row.device }}</template>
+            </td>
             <td
               v-for="segment in row.segments"
               :key="segment.key"
@@ -451,12 +544,41 @@
         </select>
       </div>
       <div class="form-field">
-        <label>{{ uiText.plannedHours }}</label>
-        <input v-model="editForm.planned_hours" type="number" name="edit_planned_hours" min="0.5" step="0.5" />
+        <label>{{ uiText.plannedDuration }}</label>
+        <div class="schedule-duration-control">
+          <input
+            v-model="editForm.planned_hours"
+            type="number"
+            name="edit_planned_hours"
+            :min="0.5"
+            :step="0.5"
+          />
+          <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
+            <button
+              type="button"
+              name="edit_planned_duration_unit"
+              data-testid="edit-duration-unit-hours"
+              class="schedule-duration-toggle__button"
+              :class="{ 'is-active': editForm.planned_duration_unit === 'hours' }"
+              @click="setEditDurationUnit('hours')"
+            >
+              {{ uiText.durationUnitHours }}
+            </button>
+            <button
+              type="button"
+              data-testid="edit-duration-unit-days"
+              class="schedule-duration-toggle__button"
+              :class="{ 'is-active': editForm.planned_duration_unit === 'days' }"
+              @click="setEditDurationUnit('days')"
+            >
+              {{ uiText.durationUnitDays }}
+            </button>
+          </div>
+        </div>
       </div>
       <div class="form-field" :class="{ 'is-hidden': editForm.time_slot !== 'custom' }">
         <label>{{ uiText.startTime }}</label>
-        <input v-model="editForm.custom_start" type="time" name="custom_start" />
+        <input v-model="editForm.custom_start" type="time" name="custom_start" :min="editCustomStartMinTime" />
       </div>
       <div class="form-alert" :class="{ 'is-hidden': !editWarning }" style="grid-column: 1 / -1;">
         {{ editWarning }}
@@ -500,6 +622,9 @@ const uiText = {
   deleteThenReschedule: "删除后重新排程",
   deleteSchedule: "删除排程",
   device: "设备",
+  durationUnitLabel: "预计实验时长单位",
+  durationUnitDays: "天数",
+  durationUnitHours: "小时",
   edit: "编辑",
   editScheduleTitle: "排程编辑",
   endTime: "结束时间",
@@ -520,14 +645,20 @@ const uiText = {
   noAcceptedTask: "暂无已接收任务",
   noConflictRecords: "暂无冲突记录",
   noDevices: "暂无设备",
+  nextGanttWindow: "后三天",
+  nextLabSchedule: "跳转到该实验室下一个实验",
   noScheduleRecords: "暂无排程记录",
   noTraySummary: "未记录托盘",
   pending: "待处理",
   partialConflictTitle: "部分冲突提示",
+  plannedDuration: "预计实验时长",
   plannedHours: "预计实验时长（小时）",
+  previousGanttWindow: "前三天",
+  previousLabSchedule: "跳转到该实验室上一个实验",
   priority: "优先级",
   saveChanges: "保存修改",
   scheduleDate: "排程日期",
+  resetGanttWindow: "回到当前日期",
   scheduleList: "排程清单",
   scheduleSearchPlaceholder: "筛选任务/设备/时间",
   selectAcceptedTask: "请选择已接收任务",
@@ -550,6 +681,8 @@ const {
   acknowledgeException,
   buildEditLabOptions,
   cancelScheduleConflict,
+  canResetGanttWindow,
+  canShowPreviousGanttWindow,
   closeExceptionModal,
   closeScheduleDrawer,
   closeTaskDetailModal,
@@ -557,11 +690,16 @@ const {
   conflictRows,
   conflictSearch,
   editForm,
+  editCustomStartMinTime,
   editWarning,
   exceptionActionLabel,
   exceptionModalOpen,
   experimentOptions,
   ganttView,
+  getDeviceScheduleNavigation,
+  jumpDeviceSchedule,
+  showNextGanttWindow,
+  showPreviousGanttWindow,
   manualLabOptions,
   manualTimeSlotOptions,
   openExceptionModal,
@@ -571,13 +709,17 @@ const {
   removeSchedule,
   removeTaskDetailSchedule,
   rescheduleFromTaskDetail,
+  resetGanttWindow,
   selectedTaskDetail,
   saveSchedule,
+  setEditDurationUnit,
+  setScheduleDurationUnit,
   scheduleConflictDetail,
   scheduleConflictOpen,
   taskDetailModalOpen,
   scheduleDrawerOpen,
   scheduleForm,
+  scheduleCustomStartMinTime,
   scheduleRows,
   scheduleSearch,
   scheduleWarning,

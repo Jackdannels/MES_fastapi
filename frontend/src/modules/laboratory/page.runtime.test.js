@@ -124,6 +124,7 @@ const mountPage = async () => {
     </div>
     <div class="header-actions">
       <button class="action-btn secondary" type="button">刷新</button>
+      <span class="header-actions-before-logout"></span>
       <button class="action-btn secondary" data-testid="app-logout" type="button">退出登录</button>
     </div>
   `;
@@ -131,6 +132,34 @@ const mountPage = async () => {
   headerActions = pageHeader.querySelector(".header-actions");
 
   wrapper = mount(LaboratoryPage, { attachTo: document.body });
+  await Promise.resolve();
+  await Promise.resolve();
+  await nextTick();
+  await nextTick();
+  return wrapper;
+};
+
+const mountPageInsideShell = async () => {
+  const Shell = {
+    components: { LaboratoryPage },
+    template: `
+      <div>
+        <header class="page-header">
+          <div>
+            <div class="eyebrow">盐雾试验室操作台</div>
+            <h1>盐雾试验室操作台</h1>
+            <p class="subtitle">查看盐雾试验室当前任务与实验准备流程。</p>
+          </div>
+          <div class="header-actions">
+            <span class="header-actions-before-logout"></span>
+            <button class="action-btn secondary" data-testid="app-logout" type="button">退出登录</button>
+          </div>
+        </header>
+        <LaboratoryPage />
+      </div>
+    `,
+  };
+  wrapper = mount(Shell, { attachTo: document.body });
   await Promise.resolve();
   await Promise.resolve();
   await nextTick();
@@ -209,6 +238,29 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-schedule-modal"].is-open').exists()).toBe(false);
   });
 
+  test("shows a disabled header display-modal button when no experiment is running", async () => {
+    await mountPage();
+
+    const displayButton = document.body.querySelector('[data-testid="laboratory-show-running-modal"]');
+    const logoutButton = document.body.querySelector('[data-testid="app-logout"]');
+    const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
+
+    expect(headerButtons).toEqual(["刷新", "显示弹窗", "退出登录"]);
+    expect(displayButton?.getAttribute("disabled")).not.toBeNull();
+    expect(logoutButton?.previousElementSibling?.querySelector('[data-testid="laboratory-show-running-modal"]')).toBe(displayButton);
+  });
+
+  test("mounts the header display-modal button when the page and shell render together", async () => {
+    await mountPageInsideShell();
+
+    const displayButton = document.body.querySelector('[data-testid="laboratory-show-running-modal"]');
+    const logoutButton = document.body.querySelector('[data-testid="app-logout"]');
+
+    expect(displayButton?.textContent?.trim()).toBe("显示弹窗");
+    expect(displayButton?.getAttribute("disabled")).not.toBeNull();
+    expect(logoutButton?.previousElementSibling?.querySelector('[data-testid="laboratory-show-running-modal"]')).toBe(displayButton);
+  });
+
   test("shows detailed task rows, allows selecting the next task, and updates the current task after confirmation", async () => {
     const mounted = await mountPage();
 
@@ -231,6 +283,31 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-current");
   });
 
+  test("wraps many trays in the task list modal instead of placing them all on one line", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({
+      task_code: "SYLU-2026-04-101",
+      experiment_code: "SYLU-2026-04-101-A",
+      tray_code: `TP-${String(index + 1).padStart(3, "0")}`,
+    }));
+    snapshotState[STORAGE_KEYS.samples] = snapshotState[STORAGE_KEYS.experiment_trays].map((entry, index) => ({
+      code: `SYLU-2026-04-101-SP-${String(index + 1).padStart(3, "0")}`,
+      location: "盐雾试验室",
+      owner: "王工",
+      status: "已到达实验室",
+      task_code: "SYLU-2026-04-101",
+      trays: [{ quantity: 1, status: "到货", tray_code: entry.tray_code }],
+    }));
+
+    const mounted = await mountPage();
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+
+    const currentRow = mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-101"]');
+    const trayList = currentRow.get(".laboratory-task-tray-list");
+    expect(trayList.classes()).toContain("laboratory-task-tray-list--grid");
+    expect(trayList.findAll(".laboratory-tray-chip")).toHaveLength(7);
+  });
+
   test("compares trays against the current task and shows green/red feedback", async () => {
     const mounted = await mountPage();
 
@@ -250,6 +327,47 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("success");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("does not allow completed experiment trays to be added to comparison", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验已完成",
+        flow_status: "实验已完成",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验已完成", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-101-SP-002",
+        location: "接驳区",
+        owner: "王工",
+        status: "送至实验室",
+        flow_status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-002" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("托盘已完成实验");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("TP-001 已完成实验，无需再次比对。");
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("error");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeDefined();
+
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-002");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
   });
 
@@ -525,7 +643,7 @@ describe("LaboratoryPage runtime", () => {
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
     const findRunningBackdrop = () => document.body.querySelector('[data-testid="laboratory-running-backdrop"]');
 
-    expect(document.body.querySelector('[data-testid="laboratory-open-overview"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-show-running-modal"]')?.getAttribute("disabled")).toBeNull();
     expect(document.body.querySelectorAll(".modal.is-open")).toHaveLength(0);
     expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
@@ -543,7 +661,7 @@ describe("LaboratoryPage runtime", () => {
 
     expect(findRunningModal()).toBeNull();
 
-    document.body.querySelector('[data-testid="laboratory-open-overview"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.body.querySelector('[data-testid="laboratory-show-running-modal"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
     expect(findRunningModal()).not.toBeNull();

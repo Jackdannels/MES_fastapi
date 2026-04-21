@@ -87,6 +87,42 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows displays the concrete type for a single experiment record", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-021",
+          test_type: "盐雾试验",
+          status: "待排程",
+          sample_count: 1,
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-021",
+          experiment_code: "SYLU-2026-03-021-A",
+          experiment_type: "盐雾试验",
+          status: "待排程",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toMatchObject({
+      experimentCount: 1,
+      experimentSummary: "盐雾试验",
+    });
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({
+        experimentCode: "SYLU-2026-03-021-A",
+        experimentName: "盐雾试验",
+      }),
+    ]);
+  });
+
   test("buildTaskRows keeps unscheduled sibling experiments waiting even when the task status is already marked scheduled", () => {
     const rows = buildTaskRows({
       tasks: [
@@ -423,6 +459,67 @@ describe("taskOverviewModel", () => {
         currentStatusLabel: "任务进行中（已完成1个实验）",
       }),
     );
+  });
+
+  test("buildTaskRows restores missed sibling experiments to waiting when only another shared-tray experiment has history", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-03-001", test_type: "盐雾试验 / 冲击试验 / 温度冲击试验", status: "待排程" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", experiment_name: "盐雾试验", status: "实验已完成" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", experiment_name: "冲击试验", status: "实验进行中" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", experiment_name: "温度冲击试验", status: "实验进行中" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-001" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-002" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", tray_code: "SYLU-2026-03-001-TP-001" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", tray_code: "SYLU-2026-03-001-TP-002" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", tray_code: "SYLU-2026-03-001-TP-001" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-C", tray_code: "SYLU-2026-03-001-TP-002" },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-SP-001",
+          status: "实验已完成",
+          trays: [
+            { tray_code: "SYLU-2026-03-001-TP-001", status: "实验已完成", quantity: 1 },
+          ],
+          history: [
+            { time: "2026-04-14T23:27:00.000Z", detail: "SYLU-2026-03-001 / 盐雾试验 / 实验进行中" },
+            { time: "2026-04-15T02:57:00.000Z", detail: "SYLU-2026-03-001 / 盐雾试验 / 实验已完成" },
+          ],
+        },
+        {
+          task_code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-SP-002",
+          status: "实验已完成",
+          trays: [
+            { tray_code: "SYLU-2026-03-001-TP-002", status: "实验已完成", quantity: 1 },
+          ],
+          history: [
+            { time: "2026-04-14T23:30:00.000Z", detail: "SYLU-2026-03-001 / 盐雾试验 / 实验进行中" },
+            { time: "2026-04-15T02:59:00.000Z", detail: "SYLU-2026-03-001 / 盐雾试验 / 实验已完成" },
+          ],
+        },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        currentStatus: "任务进行中",
+        currentStatusLabel: "任务进行中（已完成1个实验）",
+        scheduledExperimentCount: 1,
+      }),
+    );
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-001-A", displayStatus: "实验已完成" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-001-B", displayStatus: "待排程" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-001-C", displayStatus: "待排程" }),
+    ]);
   });
 });
 

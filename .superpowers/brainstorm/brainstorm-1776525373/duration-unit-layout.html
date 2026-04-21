@@ -1,0 +1,178 @@
+<style>
+  .duration-demo-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .duration-card {
+    border: 1px solid #d9e2ec;
+    border-radius: 18px;
+    background: #fff;
+    padding: 18px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  }
+  .duration-card h3 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+  .duration-card p {
+    margin: 0 0 14px;
+    color: #52606d;
+    line-height: 1.5;
+  }
+  .duration-recommend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #fff1dc;
+    color: #a24b00;
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .mock-field-label {
+    font-size: 14px;
+    color: #243b53;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+  .mock-field-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #7b8794;
+  }
+  .mock-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+  }
+  .mock-input {
+    flex: 1;
+    height: 52px;
+    border: 1px solid #cbd2d9;
+    border-radius: 14px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    font-size: 26px;
+    font-weight: 700;
+    color: #102a43;
+    background: #fff;
+  }
+  .mock-switch {
+    margin-left: 10px;
+    display: inline-flex;
+    align-items: center;
+    padding: 4px;
+    border-radius: 14px;
+    background: #e5e7eb;
+    border: 1px solid #d1d5db;
+    gap: 4px;
+  }
+  .mock-switch.attached {
+    margin-left: 0;
+    border-radius: 0 14px 14px 0;
+    border-left: none;
+    background: #f3f4f6;
+  }
+  .mock-input.attached-left {
+    border-radius: 14px 0 0 14px;
+  }
+  .mock-pill {
+    min-width: 52px;
+    height: 42px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #6b7280;
+    background: transparent;
+  }
+  .mock-pill.active {
+    background: linear-gradient(180deg, #ffd490 0%, #ffb84d 100%);
+    color: #7c2d12;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45);
+  }
+  .mock-pill.active-blue {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .mock-vertical {
+    display: flex;
+    gap: 8px;
+    margin-left: 10px;
+  }
+  .mock-vertical .mock-pill {
+    width: 60px;
+    background: #eef2f7;
+  }
+  .mock-vertical .mock-pill.active {
+    background: #ffcc80;
+  }
+  .mock-helper {
+    margin-top: 8px;
+    color: #486581;
+    font-size: 13px;
+  }
+  @media (max-width: 1100px) {
+    .duration-demo-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<h2>预计实验时长单位切换</h2>
+<p class="subtitle">目标：单位切换放在数字输入框右侧，当前选中高亮，未选中变灰；切换只影响预计时长换算，保存时仍统一按小时计算。</p>
+
+<div class="duration-demo-grid">
+  <div class="card duration-card option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="duration-recommend">推荐方案</div>
+    <h3>A. 输入框连体切换</h3>
+    <p>输入值和单位像一个整体控件，视觉最紧凑，也最像“这是同一个字段的两个部分”。</p>
+    <div class="mock-field-label">预计实验时长</div>
+    <div class="mock-row">
+      <div class="mock-input attached-left">15</div>
+      <div class="mock-switch attached">
+        <span class="mock-pill">小时</span>
+        <span class="mock-pill active">天</span>
+      </div>
+    </div>
+    <div class="mock-helper">切到“天”后输入整数天数，例如 15；内部自动换算成 360 小时。</div>
+    <div class="mock-field-note">优点：占位省、层级清楚、对长时长最直观。</div>
+  </div>
+
+  <div class="card duration-card option" data-choice="b" onclick="toggleSelect(this)">
+    <h3>B. 输入框后置胶囊</h3>
+    <p>输入框和切换分开一点点距离，仍在右侧，但边界更清楚，适合保守改动。</p>
+    <div class="mock-field-label">预计实验时长</div>
+    <div class="mock-row">
+      <div class="mock-input">3.5</div>
+      <div class="mock-switch">
+        <span class="mock-pill active-blue">小时</span>
+        <span class="mock-pill">天</span>
+      </div>
+    </div>
+    <div class="mock-helper">适合延续现有表单样式，改动风险更低。</div>
+    <div class="mock-field-note">优点：实现简单。缺点：整体感稍弱一点。</div>
+  </div>
+
+  <div class="card duration-card option" data-choice="c" onclick="toggleSelect(this)">
+    <h3>C. 右侧双层按钮</h3>
+    <p>把“小时 / 天”做成更明显的右侧按钮组，强调切换动作本身。</p>
+    <div class="mock-field-label">预计实验时长</div>
+    <div class="mock-row">
+      <div class="mock-input">15</div>
+      <div class="mock-vertical">
+        <span class="mock-pill">小时</span>
+        <span class="mock-pill active">天</span>
+      </div>
+    </div>
+    <div class="mock-helper">适合想突出单位切换，但会让字段高度更高。</div>
+    <div class="mock-field-note">优点：切换很醒目。缺点：比现有表单更跳。</div>
+  </div>
+</div>

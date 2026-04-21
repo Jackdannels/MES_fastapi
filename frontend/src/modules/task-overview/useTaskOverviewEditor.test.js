@@ -108,7 +108,9 @@ describe("useTaskOverviewEditor", () => {
     expect(replaceOverview).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ code: "TASK-001", test_type: "新类型" })]),
       expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001" })]),
-      snapshot[STORAGE_KEYS.schedules]
+      snapshot[STORAGE_KEYS.schedules],
+      expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001", experiment_code: "TASK-001-A" })]),
+      []
     );
   });
 
@@ -204,7 +206,9 @@ describe("useTaskOverviewEditor", () => {
     expect(replaceOverview).toHaveBeenCalledWith(
       [{ code: "TASK-002", test_type: "B" }],
       [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
-      [{ id: "schedule-2", task_code: "TASK-002" }]
+      [{ id: "schedule-2", task_code: "TASK-002" }],
+      [],
+      []
     );
   });
 

@@ -27,6 +27,45 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.key === "completed")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView labels single-experiment running and completed steps with the concrete experiment type", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-004",
+      taskCode: "SYLU-2026-03-001",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_type: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-004",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-004 | 当前状态：送至实验室");
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
+      "到货",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至实验室",
+      "已到达实验室",
+      "工装夹具安装",
+      "实验准备就绪",
+      "盐雾试验进行中",
+      "盐雾试验已完成",
+      "放置实验后暂存间",
+      "厂家收回",
+    ]);
+    expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({ active: true }));
+  });
+
   test("buildTrayFlowView collapses completed experiments and expands only the current unfinished experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",

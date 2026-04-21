@@ -346,6 +346,7 @@ describe("TransferWorkbench runtime", () => {
   test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
       props: {
         mode: "handover",
       },
@@ -376,7 +377,18 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
     expect(wrapper.text()).toContain("当前状态：送至实验室");
+    expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("");
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch"),
+      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
+    );
+    expect(fetch.mock.calls.filter(([input, options = {}]) =>
+      String(input).includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+      && (options.method || "GET") === "GET"
+    )).toHaveLength(2);
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
+    wrapper.unmount();
   });
 
   test("handover dispatch view auto focuses the tray scan input", async () => {

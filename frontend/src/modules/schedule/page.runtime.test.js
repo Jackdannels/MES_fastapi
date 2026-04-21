@@ -930,16 +930,24 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("morning");
-    await wrapper.get('input[name="planned_hours"]').setValue("26.5");
+    await wrapper.get('[data-testid="schedule-duration-unit-days"]').trigger("click");
+    expect(wrapper.get('[data-testid="schedule-duration-unit-days"]').classes()).toContain("is-active");
+    expect(wrapper.get('[data-testid="schedule-duration-unit-hours"]').classes()).not.toContain("is-active");
+    await wrapper.get('input[name="planned_hours"]').setValue("15");
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
     await settle(wrapper);
 
     expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
-    expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(26.5);
+    expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(360);
 
     await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
     await settle(wrapper);
 
+    expect(wrapper.get('[data-testid="edit-duration-unit-days"]').classes()).toContain("is-active");
+    expect(wrapper.get('input[name="edit_planned_hours"]').element.value).toBe("15");
+    await wrapper.get('[data-testid="edit-duration-unit-hours"]').trigger("click");
+    expect(wrapper.get('[data-testid="edit-duration-unit-hours"]').classes()).toContain("is-active");
+    expect(wrapper.get('input[name="edit_planned_hours"]').element.value).toBe("360");
     await wrapper.get('input[name="edit_planned_hours"]').setValue("1.5");
     await wrapper.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
     await wrapper.get('[data-testid="schedule-update"]').trigger("click");
@@ -948,7 +956,36 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(1.5);
   });
 
-  test("renders a cross-day gantt segment as one continuous bar cell", async () => {
+  test("supports saving half-day durations from the duration toggle", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Cross Day Task", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("custom");
+    await wrapper.get('input[name="custom_start"]').setValue("09:30");
+    await wrapper.get('[data-testid="schedule-duration-unit-days"]').trigger("click");
+    await wrapper.get('input[name="planned_hours"]').setValue("0.5");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+    expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(12);
+  });
+
+  test("renders a cross-day gantt segment only inside the fixed three-day window", async () => {
     const future = buildDateParts(2);
 
     setStorage(TASKS_KEY, [
@@ -973,7 +1010,7 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     const crossDaySegment = wrapper.get('[data-testid="gantt-segment-schedule-1"]');
-    expect(Number(crossDaySegment.attributes("colspan"))).toBeGreaterThan(2);
+    expect(Number(crossDaySegment.attributes("colspan"))).toBe(1);
     expect(crossDaySegment.text()).toContain("SYLU-2026-01-001");
   });
 
@@ -1197,4 +1234,3 @@ describe("SchedulePage runtime", () => {
     vi.useRealTimers();
   });
 });
-

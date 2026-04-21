@@ -207,6 +207,7 @@ const createId = (prefix) => {
 
 const SLOT_SEQUENCE = ["am", "pm"];
 const HALF_DAY_MS = 12 * 60 * 60 * 1000;
+const HALF_DAY_HOURS = 12;
 
 // 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
 const parsePlannedHours = (value) => {
@@ -218,6 +219,24 @@ const parsePlannedHours = (value) => {
   return normalized >= 0.5 ? normalized : null;
 };
 
+const parsePlannedDays = (value) => {
+  const rawValue = Number.parseFloat(String(value ?? "").trim());
+  if (!Number.isFinite(rawValue)) {
+    return null;
+  }
+  const normalized = Math.round(rawValue * 2) / 2;
+  return normalized >= 0.5 ? normalized : null;
+};
+
+const resolvePlannedHours = (form) => {
+  const unit = normalizeText(form?.planned_duration_unit) || "hours";
+  if (unit === "days") {
+    const days = parsePlannedDays(form?.planned_hours);
+    return days ? days * 24 : null;
+  }
+  return parsePlannedHours(form?.planned_hours);
+};
+
 // 如果没有显式填写计划时长，则从开始/结束时间反推。
 const inferPlannedHours = (startAt, endAt) => {
   if (!startAt || !endAt) {
@@ -225,6 +244,20 @@ const inferPlannedHours = (startAt, endAt) => {
   }
   const hours = (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60);
   return parsePlannedHours(hours) || 3.5;
+};
+
+const buildPlannedDurationFormState = (plannedHours) => {
+  const hours = parsePlannedHours(plannedHours);
+  if (hours && Number.isInteger(hours / HALF_DAY_HOURS)) {
+    return {
+      plannedDurationUnit: "days",
+      plannedHours: hours / 24,
+    };
+  }
+  return {
+    plannedDurationUnit: "hours",
+    plannedHours: hours || 3.5,
+  };
 };
 
 // 甘特图里的时间段会根据当前时刻区分为进行中、已完成或忙碌。
@@ -328,6 +361,7 @@ function createManualScheduleForm(now = new Date()) {
     device: "",
     experiment_code: "",
     planned_hours: 3.5,
+    planned_duration_unit: "hours",
     schedule_date: legalState.schedule_date,
     task_code: "",
     time_slot: legalState.time_slot,
@@ -342,6 +376,7 @@ function createScheduleEditForm() {
     experiment_code: "",
     id: "",
     planned_hours: 3.5,
+    planned_duration_unit: "hours",
     schedule_date: "",
     task_code: "",
     time_slot: "morning",
@@ -354,6 +389,7 @@ function buildScheduleEditForm(schedule) {
   const endAt = parseDate(schedule?.end_at);
   const startTime = startAt ? toLocalTimeValue(startAt) : "";
   const endTime = endAt ? toLocalTimeValue(endAt) : "";
+  const duration = buildPlannedDurationFormState(schedule?.planned_hours || inferPlannedHours(startAt, endAt));
   let timeSlot = "custom";
 
   if (startTime === SLOT_RANGES.morning.start) {
@@ -369,7 +405,8 @@ function buildScheduleEditForm(schedule) {
     device: normalizeText(schedule?.device),
     experiment_code: normalizeText(schedule?.experiment_code),
     id: normalizeText(schedule?.id),
-    planned_hours: parsePlannedHours(schedule?.planned_hours) || inferPlannedHours(startAt, endAt),
+    planned_hours: duration.plannedHours,
+    planned_duration_unit: duration.plannedDurationUnit,
     schedule_date: startAt ? toLocalDateValue(startAt) : "",
     task_code: normalizeText(schedule?.task_code),
     time_slot: timeSlot,
@@ -384,6 +421,7 @@ function buildScheduleRescheduleForm(schedule) {
     device: editForm.device,
     experiment_code: editForm.experiment_code,
     planned_hours: editForm.planned_hours,
+    planned_duration_unit: editForm.planned_duration_unit,
     schedule_date: editForm.schedule_date,
     task_code: editForm.task_code,
     time_slot: editForm.time_slot,
@@ -415,7 +453,7 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
 
   const slot = normalizeText(form?.time_slot) || "morning";
   let startTime = "";
-  let plannedHours = parsePlannedHours(form?.planned_hours);
+  let plannedHours = resolvePlannedHours(form);
 
   if (slot === "custom") {
     // 自定义时段优先使用手填开始时间，如未填计划时长则从结束时间反推。
@@ -423,11 +461,15 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
     if (!startTime) {
       return { error: "Custom start time required" };
     }
+    const customStartAt = parseDate(`${dateValue}T${startTime}:00`);
+    const earliestCustomStart = truncateToMinute(now) || new Date();
+    if (!customStartAt || customStartAt < earliestCustomStart) {
+      return { error: "自定义开始时间不能早于当前时间" };
+    }
     if (!plannedHours) {
       const endTime = normalizeText(form?.custom_end);
-      const startAt = parseDate(`${dateValue}T${startTime}:00`);
       const endAt = parseDate(`${dateValue}T${endTime}:00`);
-      plannedHours = inferPlannedHours(startAt, endAt);
+      plannedHours = inferPlannedHours(customStartAt, endAt);
     }
   } else {
     // 上午/下午快捷时段直接复用预设时间窗。
@@ -724,17 +766,61 @@ const buildExperimentTrayMap = (experimentTrays) => {
   return trayMap;
 };
 
-const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
+const buildTrayExperimentCodeMap = (experimentTrays) => {
+  const trayMap = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const current = trayMap.get(trayCode) || new Set();
+    current.add(experimentCode);
+    trayMap.set(trayCode, current);
+  });
+  return trayMap;
+};
+
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
+const collectScheduleMatchedSamples = ({ schedule, samples, experimentTrayMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const scopedTrayCodes = new Set(experimentTrayMap.get(`${taskCode}::${experimentCode}`) || []);
+  const matchedSamples = (Array.isArray(samples) ? samples : []).filter((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    if (scopedTrayCodes.size === 0) {
+      return true;
+    }
+    return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => scopedTrayCodes.has(normalizeText(tray?.tray_code)));
+  });
+  return {
+    experimentCode,
+    matchedSamples,
+    scopedTrayCodes,
+    taskCode,
+  };
+};
+
+const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
+  const { matchedSamples, scopedTrayCodes, taskCode } = collectScheduleMatchedSamples({ schedule, samples, experimentTrayMap });
   const statuses = [];
 
-  (Array.isArray(samples) ? samples : []).forEach((sample) => {
-    if (normalizeText(sample?.task_code) !== taskCode) {
-      return;
-    }
-
+  matchedSamples.forEach((sample) => {
     const trays = Array.isArray(sample?.trays) ? sample.trays : [];
     if (trays.length === 0 && scopedTrayCodes.size === 0) {
       const sampleStatus = normalizeText(sample?.status);
@@ -759,12 +845,98 @@ const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) =
   return statuses;
 };
 
-const resolveScheduleLifecycleState = ({ schedule, samples, experimentTrayMap }) => {
+const resolveScheduleLifecycleState = ({
+  schedule,
+  samples,
+  experimentTrayMap,
+  experimentNameByCode = new Map(),
+  trayExperimentCodeMap = new Map(),
+}) => {
+  const { matchedSamples, scopedTrayCodes, taskCode, experimentCode } = collectScheduleMatchedSamples({
+    schedule,
+    samples,
+    experimentTrayMap,
+  });
+  const experimentName =
+    normalizeText(schedule?.experiment_name)
+    || normalizeText(experimentNameByCode.get(experimentCode));
+  const latestHistoryBySample = new Map();
+
+  if (experimentName) {
+    matchedSamples.forEach((sample) => {
+      const sampleCode = normalizeText(sample?.code);
+      if (!sampleCode) {
+        return;
+      }
+      (Array.isArray(sample?.history) ? sample.history : []).forEach((entry) => {
+        const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+        if (!parsed || parsed.experimentName !== experimentName) {
+          return;
+        }
+        const eventTime = parseDate(entry?.time)?.getTime() || 0;
+        const existing = latestHistoryBySample.get(sampleCode);
+        if (!existing || eventTime >= existing.time) {
+          latestHistoryBySample.set(sampleCode, { status: parsed.status, time: eventTime });
+        }
+      });
+    });
+  }
+
+  if (latestHistoryBySample.size > 0) {
+    const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => entry.status);
+    return {
+      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status)),
+      started: historyStatuses.some((status) => STARTED_TRAY_STATUSES.has(status)),
+    };
+  }
+
   const trayStatuses = collectScheduleTrayStatuses({ schedule, samples, experimentTrayMap });
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (hasSharedScopedTray) {
+    return {
+      completed: false,
+      started: false,
+    };
+  }
   return {
     completed: trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status)),
     started: trayStatuses.some((status) => STARTED_TRAY_STATUSES.has(status)),
   };
+};
+
+const resolveScheduleRowStatus = ({
+  schedule,
+  samples,
+  now,
+  experimentTrayMap,
+  experimentNameByCode = new Map(),
+  trayExperimentCodeMap = new Map(),
+}) => {
+  const lifecycleState = resolveScheduleLifecycleState({
+    schedule,
+    samples,
+    experimentTrayMap,
+    experimentNameByCode,
+    trayExperimentCodeMap,
+  });
+  if (lifecycleState.started) {
+    return lifecycleState.completed ? STATUS_COMPLETED : STATUS_RUNNING;
+  }
+
+  if (isRetentionDevice(schedule?.device)) {
+    return STATUS_RETENTION;
+  }
+
+  const currentTime = now.getTime();
+  const startAt = parseDate(schedule?.start_at);
+  const endAt = parseDate(schedule?.end_at);
+  if (startAt && endAt && startAt.getTime() <= currentTime && endAt.getTime() >= currentTime) {
+    return STATUS_SCHEDULED;
+  }
+  if (endAt && endAt.getTime() > currentTime) {
+    return STATUS_SCHEDULED;
+  }
+  return STATUS_WAITING;
 };
 
 const taskHasSavedTrayPlan = ({ task, samples, experimentTrays }) => {
@@ -932,18 +1104,24 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = new Date() }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
-  const experimentList = Array.isArray(experiments) ? experiments : [];
-  const experimentNameByCode = new Map(
-    experimentList.map((experiment) => [normalizeText(experiment?.experiment_code), normalizeText(experiment?.experiment_name)]),
-  );
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
 
   return (Array.isArray(schedules) ? schedules : [])
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
       const experimentCode = normalizeText(schedule?.experiment_code);
       const task = taskByCode.get(taskCode);
-      // 行状态不是直接读排程状态，而是基于任务整体排程情况实时推导。
-      const status = resolveTaskStatus(task || taskCode, schedules, samples, now, experimentTrays);
+      // 排程列表的状态按当前这条实验排程的真实生命周期判断，避免同任务下兄弟实验互相串扰。
+      const status = resolveScheduleRowStatus({
+        schedule,
+        samples,
+        now,
+        experimentTrayMap,
+        experimentNameByCode,
+        trayExperimentCodeMap,
+      });
 
       return {
         device: normalizeText(schedule?.device),
@@ -1013,11 +1191,19 @@ function buildConflictRows({ schedules }) {
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
 function buildGanttRows({ schedules, devices, experiments = [], experimentTrays = [], samples = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
   const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
     }
-    const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
+    const lifecycleState = resolveScheduleLifecycleState({
+      schedule,
+      samples,
+      experimentTrayMap,
+      experimentNameByCode,
+      trayExperimentCodeMap,
+    });
     const endAt = parseDate(schedule?.end_at);
     if (!lifecycleState.started) {
       return true;
@@ -1027,20 +1213,9 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
     }
     return !endAt || endAt >= now;
   });
-  const experimentNameByCode = buildExperimentNameMap(experiments);
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
   // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。
-  const latestVisibleEnd = visibleSchedules.reduce((latest, schedule) => {
-    const scheduleEnd = parseDate(schedule?.end_at);
-    if (!scheduleEnd) {
-      return latest;
-    }
-    return !latest || scheduleEnd > latest ? scheduleEnd : latest;
-  }, null);
-  const requiredDays = latestVisibleEnd ? getDaySpan(anchorDate, latestVisibleEnd) + 1 : days;
-  const totalDays = Math.max(days, requiredDays);
-
-  const dayList = Array.from({ length: totalDays }, (_, index) => {
+  const dayList = Array.from({ length: days }, (_, index) => {
     const date = addDays(anchorDate, index);
     return {
       date,
@@ -1160,7 +1335,13 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
         const schedule = matched[0];
         const startAt = parseDate(schedule?.start_at);
         const endAt = parseDate(schedule?.end_at);
-        const lifecycleState = resolveScheduleLifecycleState({ schedule, samples, experimentTrayMap });
+        const lifecycleState = resolveScheduleLifecycleState({
+          schedule,
+          samples,
+          experimentTrayMap,
+          experimentNameByCode,
+          trayExperimentCodeMap,
+        });
         const stateMeta = getSlotState({ completed: lifecycleState.completed, endAt, now, startAt, started: lifecycleState.started });
         return {
           className: stateMeta.className,
@@ -1187,7 +1368,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
         ? "idle"
         : slot.state === "conflict" || slot.state === "stacked" || slot.state === "split"
           ? `${slot.state}:${slot.key}`
-          : `${slot.scheduleId}:${slot.className}`;
+          : `${slot.label}:${slot.className}`;
       const previous = segments[segments.length - 1];
       if (previous && previous.signature == signature && slot.state !== "conflict" && slot.state !== "stacked" && slot.state !== "split") {
         previous.colspan += 1;
@@ -1648,6 +1829,8 @@ export {
   formatDateTime,
   isRetentionDevice,
   normalizeText,
+  toLocalDateValue,
+  toLocalTimeValue,
   resolveLegalManualScheduleState,
   resolveRetentionTimeState,
   resolveScheduleTimes,

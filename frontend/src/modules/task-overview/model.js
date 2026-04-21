@@ -1,4 +1,4 @@
-import { aggregateTaskStatusFromSamples, buildTaskExperimentProgress, buildTaskStatusLabel } from "@/modules/tasks/model";
+import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
@@ -25,6 +25,19 @@ const SCHEDULED_EXPERIMENT_STATUSES = new Set([
   EXPERIMENT_STATUS_RUNNING,
   "放置实验后暂存间",
   EXPERIMENT_COMPLETED_STATUS,
+]);
+const STARTED_EXPERIMENT_STATUSES = new Set([
+  EXPERIMENT_STATUS_RUNNING,
+  EXPERIMENT_COMPLETED_STATUS,
+  "实验完成",
+  "放置实验后暂存间",
+  STATUS_RETENTION,
+]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set([
+  EXPERIMENT_COMPLETED_STATUS,
+  "实验完成",
+  "放置实验后暂存间",
+  STATUS_RETENTION,
 ]);
 
 // 任务号、样品号、托盘号的展示排序统一走中文比较规则。
@@ -71,17 +84,6 @@ function normalizeExperimentStatus(value) {
   return normalized;
 }
 
-function mapTaskStatusToExperimentFallback(value) {
-  const normalized = normalizeTaskStatus(value);
-  if (normalized === STATUS_RUNNING) {
-    return EXPERIMENT_STATUS_RUNNING;
-  }
-  if (normalized === TASK_COMPLETED_STATUS) {
-    return EXPERIMENT_COMPLETED_STATUS;
-  }
-  return normalized;
-}
-
 // 判断排程设备是否属于暂存间，用于区分正式实验和留样暂存。
 function isRetentionDevice(value) {
   return normalizeText(value).includes(RETENTION_KEYWORD);
@@ -102,11 +104,6 @@ function isTaskStored(task) {
   return normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
 }
 
-function isScheduledLikeStatus(value) {
-  const normalized = normalizeText(value);
-  return normalized === STATUS_SCHEDULED || normalized === "Scheduled";
-}
-
 function upsertLatestSchedule(map, key, schedule) {
   const normalizedKey = normalizeText(key);
   if (!normalizedKey) {
@@ -118,10 +115,137 @@ function upsertLatestSchedule(map, key, schedule) {
   }
 }
 
-function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSchedule, scheduleLabel }) {
-  const experimentStatus = normalizeExperimentStatus(experiment?.status);
-  if (experimentStatus && experimentStatus !== STATUS_WAITING) {
-    return experimentStatus;
+function buildExperimentTrayMap(experimentTrays) {
+  const trayMap = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
+    const taskCode = normalizeText(entry?.task_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    const trayCode = normalizeText(entry?.tray_code);
+    if (!taskCode || !experimentCode || !trayCode) {
+      return;
+    }
+    const key = `${taskCode}::${experimentCode}`;
+    const trays = trayMap.get(key) || [];
+    trays.push(trayCode);
+    trayMap.set(key, trays);
+  });
+  return trayMap;
+}
+
+function buildTrayExperimentCodeMap(experimentTrays) {
+  const trayMap = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const current = trayMap.get(trayCode) || new Set();
+    current.add(experimentCode);
+    trayMap.set(trayCode, current);
+  });
+  return trayMap;
+}
+
+function parseExperimentHistoryDetail(detail, taskCode) {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+}
+
+function collectExperimentMatchedSamples({ experiment, samples, experimentTrayMap }) {
+  const taskCode = normalizeText(experiment?.task_code);
+  const experimentCode = normalizeText(experiment?.experimentCode || experiment?.experiment_code);
+  const scopedTrayCodes = new Set(experimentTrayMap.get(`${taskCode}::${experimentCode}`) || []);
+  const matchedSamples = (Array.isArray(samples) ? samples : []).filter((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    if (scopedTrayCodes.size === 0) {
+      return true;
+    }
+    return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => scopedTrayCodes.has(normalizeText(tray?.tray_code)));
+  });
+
+  return {
+    matchedSamples,
+    scopedTrayCodes,
+    taskCode,
+  };
+}
+
+function resolveExperimentLifecycleState({ experiment, samples, experimentTrayMap, trayExperimentCodeMap }) {
+  const { matchedSamples, scopedTrayCodes, taskCode } = collectExperimentMatchedSamples({
+    experiment,
+    samples,
+    experimentTrayMap,
+  });
+  const experimentName =
+    normalizeText(experiment?.experimentName)
+    || normalizeText(experiment?.experiment_name)
+    || normalizeText(experiment?.requiredDevice)
+    || normalizeText(experiment?.required_device);
+  const latestHistoryBySample = new Map();
+
+  if (experimentName) {
+    matchedSamples.forEach((sample) => {
+      const sampleCode = normalizeText(sample?.code);
+      if (!sampleCode) {
+        return;
+      }
+      (Array.isArray(sample?.history) ? sample.history : []).forEach((entry) => {
+        const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+        if (!parsed || parsed.experimentName !== experimentName) {
+          return;
+        }
+        const eventTime = parseTimeValue(entry?.time);
+        const existing = latestHistoryBySample.get(sampleCode);
+        if (!existing || eventTime >= existing.time) {
+          latestHistoryBySample.set(sampleCode, { status: parsed.status, time: eventTime });
+        }
+      });
+    });
+  }
+
+  if (latestHistoryBySample.size > 0) {
+    const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => normalizeExperimentStatus(entry.status));
+    return {
+      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_EXPERIMENT_STATUSES.has(status)),
+      started: historyStatuses.some((status) => STARTED_EXPERIMENT_STATUSES.has(status)),
+    };
+  }
+
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (hasSharedScopedTray) {
+    return {
+      completed: false,
+      started: false,
+    };
+  }
+
+  return {
+    completed: false,
+    started: false,
+  };
+}
+
+function resolveExperimentDisplayStatus({ experiment, matchedSchedule, scheduleLabel, samples, experimentTrayMap, trayExperimentCodeMap }) {
+  const lifecycleState = resolveExperimentLifecycleState({
+    experiment,
+    samples,
+    experimentTrayMap,
+    trayExperimentCodeMap,
+  });
+  if (lifecycleState.started) {
+    return lifecycleState.completed ? EXPERIMENT_COMPLETED_STATUS : EXPERIMENT_STATUS_RUNNING;
   }
 
   const scheduleStatus = normalizeExperimentStatus(matchedSchedule?.status);
@@ -133,12 +257,16 @@ function resolveExperimentDisplayStatus({ currentStatus, experiment, matchedSche
     return scheduleLabel;
   }
 
-  const taskFallbackStatus = mapTaskStatusToExperimentFallback(currentStatus);
-  if (taskFallbackStatus && !isScheduledLikeStatus(taskFallbackStatus)) {
-    return taskFallbackStatus;
+  const experimentStatus = normalizeExperimentStatus(experiment?.status);
+  if (
+    experimentStatus &&
+    experimentStatus !== STATUS_WAITING &&
+    experimentStatus !== EXPERIMENT_STATUS_RUNNING
+  ) {
+    return experimentStatus;
   }
 
-  return experimentStatus || STATUS_WAITING;
+  return STATUS_WAITING;
 }
 
 // 构建任务视图模式下展示的任务卡片数据。
@@ -147,6 +275,7 @@ function buildTaskRows({
   experiments,
   samples,
   schedules,
+  experimentTrays = [],
   scheduledLabel,
   unscheduledLabel,
   now = Date.now(),
@@ -159,6 +288,8 @@ function buildTaskRows({
   const knownTaskCodes = new Set();
   const experimentsByTaskCode = new Map();
   const formalScheduleByExperimentCode = new Map();
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
 
   experimentList.forEach((experiment) => {
     const taskCode = normalizeText(experiment?.task_code);
@@ -168,9 +299,14 @@ function buildTaskRows({
     const group = experimentsByTaskCode.get(taskCode) || [];
     group.push({
       experimentCode: normalizeText(experiment?.experiment_code),
-      experimentName: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.experiment_code),
+      experimentName:
+        normalizeText(experiment?.experiment_name)
+        || normalizeText(experiment?.experiment_type)
+        || normalizeText(experiment?.required_device)
+        || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
       status: normalizeExperimentStatus(experiment?.status),
+      task_code: taskCode,
       unscheduledSince: parseTimeValue(experiment?.unscheduled_since),
     });
     experimentsByTaskCode.set(taskCode, group);
@@ -287,29 +423,20 @@ function buildTaskRows({
         .sort((left, right) => compareText(left.trayCode, right.trayCode));
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
-      const experimentProgress = buildTaskExperimentProgress(row.taskCode, experimentList);
       const aggregatedStatus = normalizeTaskStatus(
         aggregateTaskStatusFromSamples(
           { code: row.taskCode },
           sampleList.filter((sample) => normalizeText(sample?.task_code) === row.taskCode),
         ),
       );
-      // 有托盘聚合状态时优先展示，否则再按任务原状态、暂存或排程兜底。
-      const currentStatus =
-        row.taskStatus === STATUS_RETENTION
-          ? STATUS_RETENTION
-          : aggregatedStatus === STATUS_RETENTION
-          ? STATUS_RETENTION
-          : experimentProgress.hasPartialCompletion
-            ? STATUS_RUNNING
-            : aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_RETENTION : scheduleLabel);
-      const currentStatusLabel = buildTaskStatusLabel(currentStatus, experimentProgress);
       const experiments = row.experiments.map((experiment) => {
         const displayStatus = resolveExperimentDisplayStatus({
-          currentStatus,
           experiment,
           matchedSchedule: formalScheduleByExperimentCode.get(experiment.experimentCode),
           scheduleLabel,
+          samples: sampleList,
+          experimentTrayMap,
+          trayExperimentCodeMap,
         });
         return {
           ...experiment,
@@ -321,6 +448,42 @@ function buildTaskRows({
             now - experiment.unscheduledSince > OVERDUE_MS,
         };
       });
+      const completedExperimentCount = experiments.filter(
+        (experiment) => normalizeText(experiment.displayStatus) === EXPERIMENT_COMPLETED_STATUS,
+      ).length;
+      const runningExperimentCount = experiments.filter(
+        (experiment) => normalizeText(experiment.displayStatus) === EXPERIMENT_STATUS_RUNNING,
+      ).length;
+      const scheduledExperimentCount = experiments.filter(
+        (experiment) => SCHEDULED_EXPERIMENT_STATUSES.has(normalizeText(experiment.displayStatus)),
+      ).length;
+      const hasPartialCompletion = experiments.length > 0 && completedExperimentCount > 0 && completedExperimentCount < experiments.length;
+      const experimentProgress = {
+        completedCount: completedExperimentCount,
+        hasPartialCompletion,
+        isFullyCompleted: experiments.length > 0 && completedExperimentCount === experiments.length,
+        totalCount: experiments.length,
+      };
+      // 任务概览优先使用实验级结果构建任务状态，避免共享托盘的样品状态把未排实验顶成进行中。
+      const currentStatus =
+        experiments.length > 0
+          ? row.taskStatus === STATUS_RETENTION
+            ? STATUS_RETENTION
+            : aggregatedStatus === STATUS_RETENTION
+            ? STATUS_RETENTION
+            : experimentProgress.isFullyCompleted
+              ? TASK_COMPLETED_STATUS
+              : runningExperimentCount > 0 || experimentProgress.hasPartialCompletion
+                ? STATUS_RUNNING
+                : scheduledExperimentCount > 0
+                  ? STATUS_SCHEDULED
+                  : STATUS_WAITING
+          : row.taskStatus === STATUS_RETENTION
+            ? STATUS_RETENTION
+            : aggregatedStatus === STATUS_RETENTION
+            ? STATUS_RETENTION
+            : aggregatedStatus || row.taskStatus || (row.retentionCount > 0 ? STATUS_WAITING : scheduleLabel);
+      const currentStatusLabel = buildTaskStatusLabel(currentStatus, experimentProgress);
       const experimentSummary =
         row.experiments.length > 0
           ? buildExperimentTypeSummary(row.experiments.map((experiment) => experiment.experimentName))
@@ -332,10 +495,7 @@ function buildTaskRows({
         currentStatusLabel,
         eligibleExperimentCount: currentStatus === STATUS_RETENTION ? 0 : experiments.length,
         scheduleLabel,
-        scheduledExperimentCount:
-          currentStatus === STATUS_RETENTION
-            ? 0
-            : experiments.filter((experiment) => SCHEDULED_EXPERIMENT_STATUSES.has(normalizeText(experiment.displayStatus))).length,
+        scheduledExperimentCount: currentStatus === STATUS_RETENTION ? 0 : scheduledExperimentCount,
         sampleCodes: uniqueSampleCodes,
         sampleCount: uniqueSampleCodes.length,
         taskType: buildExperimentTypeSummary(row.taskType),

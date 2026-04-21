@@ -27,6 +27,9 @@ import {
   resolveLegalManualScheduleState,
   resolveRetentionTimeState,
   resolveScheduleTimes,
+  STATUS_SCHEDULED,
+  toLocalDateValue,
+  toLocalTimeValue,
   updateScheduleRecord,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -59,6 +62,7 @@ function useSchedulePage() {
   const scheduleSearch = ref("");
   const conflictSearch = ref("");
   const now = ref(new Date());
+  const ganttWindowOffsetDays = ref(0);
 
   const scheduleDrawer = useDialogState();
   const taskDetailModal = useDialogState();
@@ -129,6 +133,62 @@ function useSchedulePage() {
     ),
   );
   const pendingExceptionCount = computed(() => pendingExceptionRows.value.length);
+  const ganttStartDate = computed(() => {
+    const date = new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate());
+    date.setDate(date.getDate() + ganttWindowOffsetDays.value);
+    return date;
+  });
+  const canShowPreviousGanttWindow = computed(() => ganttWindowOffsetDays.value > 0);
+  const canResetGanttWindow = computed(() => ganttWindowOffsetDays.value !== 0);
+  const resolveCustomStartMinTime = (form) => {
+    if (normalizeText(form?.time_slot) !== "custom") {
+      return "";
+    }
+    const selectedDate = normalizeText(form?.schedule_date);
+    if (!selectedDate || selectedDate !== toLocalDateValue(now.value)) {
+      return "";
+    }
+    return toLocalTimeValue(now.value);
+  };
+  const scheduleCustomStartMinTime = computed(() => resolveCustomStartMinTime(scheduleForm.value));
+  const editCustomStartMinTime = computed(() => resolveCustomStartMinTime(editForm.value));
+  const getTodayStart = () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate());
+  const getGanttDateOffset = (dateValue) => {
+    const target = new Date(`${dateValue}T00:00:00`);
+    if (Number.isNaN(target.getTime())) {
+      return 0;
+    }
+    return Math.max(0, Math.floor((target.getTime() - getTodayStart().getTime()) / (24 * 60 * 60 * 1000)));
+  };
+  const getDeviceScheduleDateKeys = (device) => {
+    const normalizedDevice = normalizeText(device);
+    const todayKey = toLocalDateValue(now.value);
+    return Array.from(
+      new Set(
+        rawSchedules.value
+          .filter(
+            (schedule) =>
+              normalizeText(schedule?.device) === normalizedDevice &&
+              normalizeText(schedule?.status) === STATUS_SCHEDULED &&
+              !isRetentionDevice(schedule?.device),
+          )
+          .map((schedule) => {
+            const startAt = new Date(schedule?.start_at);
+            return Number.isNaN(startAt.getTime()) ? "" : toLocalDateValue(startAt);
+          })
+          .filter((dateKey) => dateKey && dateKey >= todayKey),
+      ),
+    ).sort();
+  };
+  const getDeviceScheduleNavigation = (device) => {
+    const dateKeys = getDeviceScheduleDateKeys(device);
+    const currentKey = toLocalDateValue(ganttStartDate.value);
+    return {
+      canNext: dateKeys.some((dateKey) => dateKey > currentKey),
+      canPrevious: dateKeys.some((dateKey) => dateKey < currentKey),
+      hasSchedules: dateKeys.length > 0,
+    };
+  };
   const ganttView = computed(() =>
     buildGanttRows({
       devices: rawDevices.value,
@@ -138,6 +198,7 @@ function useSchedulePage() {
       samples: rawSamples.value,
       schedules: rawSchedules.value,
       selectedTaskCode: normalizeText(scheduleForm.value.task_code),
+      startDate: ganttStartDate.value,
       tasks: rawTasks.value,
     }),
   );
@@ -258,6 +319,38 @@ function useSchedulePage() {
     scheduleForm.value = nextForm;
     await nextTick();
     scheduleFormWatchSuspended.value = false;
+  };
+
+  const normalizeDurationValue = (value, fallback) => {
+    const parsed = Number.parseFloat(String(value ?? "").trim());
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
+  const normalizeDayDurationValue = (value) => {
+    return Math.max(0.5, Math.round(value * 2) / 2);
+  };
+
+  const setDurationUnit = (formRef, nextUnit) => {
+    const form = formRef.value;
+    const currentUnit = normalizeText(form?.planned_duration_unit) || "hours";
+    if (currentUnit === nextUnit) {
+      return;
+    }
+    const currentValue = normalizeDurationValue(form?.planned_hours, currentUnit === "days" ? 0.5 : 3.5);
+    form.planned_duration_unit = nextUnit;
+    if (nextUnit === "days") {
+      form.planned_hours = normalizeDayDurationValue(Math.ceil(currentValue / 12) / 2);
+      return;
+    }
+    form.planned_hours = Math.max(0.5, currentValue * 24);
+  };
+
+  const setScheduleDurationUnit = (unit) => {
+    setDurationUnit(scheduleForm, unit);
+  };
+
+  const setEditDurationUnit = (unit) => {
+    setDurationUnit(editForm, unit);
   };
 
   const resetScheduleFormForTask = async ({ taskCode, schedules }) => {
@@ -400,6 +493,30 @@ function useSchedulePage() {
     editForm.value = buildScheduleEditForm(schedule);
     editWarning.value = "";
     scheduleDrawer.openWith({ id: scheduleId });
+  };
+
+  const showPreviousGanttWindow = () => {
+    ganttWindowOffsetDays.value = Math.max(0, ganttWindowOffsetDays.value - 3);
+  };
+
+  const showNextGanttWindow = () => {
+    ganttWindowOffsetDays.value += 3;
+  };
+
+  const resetGanttWindow = () => {
+    ganttWindowOffsetDays.value = 0;
+  };
+
+  const jumpDeviceSchedule = (device, direction) => {
+    const dateKeys = getDeviceScheduleDateKeys(device);
+    const currentKey = toLocalDateValue(ganttStartDate.value);
+    const targetKey = direction === "previous"
+      ? dateKeys.filter((dateKey) => dateKey < currentKey).at(-1)
+      : dateKeys.find((dateKey) => dateKey > currentKey);
+    if (!targetKey) {
+      return;
+    }
+    ganttWindowOffsetDays.value = getGanttDateOffset(targetKey);
   };
 
   const closeScheduleDrawer = () => {
@@ -591,6 +708,34 @@ function useSchedulePage() {
     },
   );
 
+  watch(
+    () => scheduleForm.value.planned_duration_unit,
+    (unit) => {
+      if (unit === "days") {
+        scheduleForm.value.planned_hours = normalizeDayDurationValue(Number(scheduleForm.value.planned_hours) || 0.5);
+      }
+    },
+  );
+
+  watch(
+    () => editForm.value.time_slot,
+    (nextSlot) => {
+      if (nextSlot !== "custom") {
+        editForm.value.custom_start = "";
+        editForm.value.custom_end = "";
+      }
+    },
+  );
+
+  watch(
+    () => editForm.value.planned_duration_unit,
+    (unit) => {
+      if (unit === "days") {
+        editForm.value.planned_hours = normalizeDayDurationValue(Number(editForm.value.planned_hours) || 0.5);
+      }
+    },
+  );
+
   onMounted(() => {
     void loadSchedulePage();
     clockTimer = window.setInterval(syncRetentionClock, 1000);
@@ -620,6 +765,8 @@ function useSchedulePage() {
     buildEditLabOptions,
     acknowledgeException,
     cancelScheduleConflict,
+    canResetGanttWindow,
+    canShowPreviousGanttWindow,
     closeExceptionModal,
     closeScheduleDrawer,
     closeTaskDetailModal,
@@ -627,11 +774,17 @@ function useSchedulePage() {
     conflictRows: filteredConflictRows,
     conflictSearch,
     editForm,
+    editCustomStartMinTime,
     editWarning,
     exceptionActionLabel,
     exceptionModalOpen: exceptionModal.open,
     experimentOptions,
     ganttView,
+    getDeviceScheduleNavigation,
+    jumpDeviceSchedule,
+    resetGanttWindow,
+    showNextGanttWindow,
+    showPreviousGanttWindow,
     manualLabOptions,
     manualTimeSlotOptions,
     openTaskDetailModal,
@@ -643,6 +796,8 @@ function useSchedulePage() {
     removeTaskDetailSchedule,
     rescheduleFromTaskDetail,
     saveSchedule,
+    setEditDurationUnit,
+    setScheduleDurationUnit,
     scheduleConflictDetail: scheduleConflictModal.payload,
     scheduleConflictOpen: scheduleConflictModal.open,
     scheduleDrawerOpen: scheduleDrawer.open,
@@ -650,6 +805,7 @@ function useSchedulePage() {
     taskDetailModalOpen: taskDetailModal.open,
     taskScheduledOverlays,
     scheduleForm,
+    scheduleCustomStartMinTime,
     scheduleRows: filteredScheduleRows,
     scheduleSearch,
     scheduleWarning,

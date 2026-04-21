@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from threading import Lock
 from typing import Any, Dict, Iterable
 
@@ -41,6 +41,7 @@ RELATIONAL_STORAGE_KEYS = (
 SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", "mes.staging_events", STORAGE_META_KEY)
 RETENTION_KEYWORD = "暂存间"
 SAMPLE_TASK_CODE_PATTERN = re.compile(r"^(?P<task_code>.+)-SP-\d+$")
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def normalize_text(value: Any) -> str:
@@ -84,7 +85,7 @@ def parse_storage_datetime(value: Any) -> datetime | None:
         return None
 
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        parsed = parsed.astimezone(BEIJING_TZ).replace(tzinfo=None)
 
     return parsed
 
@@ -93,7 +94,9 @@ def format_iso_storage_datetime(value: Any) -> str:
     parsed = parse_storage_datetime(value) if not isinstance(value, datetime) else value
     if parsed is None:
         return ""
-    return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(BEIJING_TZ).replace(tzinfo=None)
+    return f"{parsed.strftime('%Y-%m-%dT%H:%M:%S')}+08:00"
 
 
 def format_display_storage_datetime(value: Any) -> str:

@@ -116,6 +116,36 @@ const resolveLaboratoryStatusRank = (value) => {
   return 0;
 };
 
+const buildBlockedComparisonResult = (trayCode, status) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  const normalizedStatus = normalizeText(status);
+  if (normalizedStatus === "实验已完成" || normalizedStatus === "实验完成" || normalizedStatus === "放置实验后暂存间" || normalizedStatus === "厂家收回") {
+    return {
+      guidance: `${normalizedTrayCode} 已完成实验，无需再次比对。`,
+      message: "托盘已完成实验",
+      ok: false,
+      tone: "error",
+      trayCode: normalizedTrayCode,
+    };
+  }
+  if (normalizedStatus === "实验进行中" || normalizedStatus === "实验中") {
+    return {
+      guidance: `${normalizedTrayCode} 当前实验正在进行中，不能再次比对。`,
+      message: "托盘实验进行中",
+      ok: false,
+      tone: "error",
+      trayCode: normalizedTrayCode,
+    };
+  }
+  return {
+    guidance: `${normalizedTrayCode} 当前状态为${normalizedStatus || "已比对"}，已完成任务比对，无需再次比对。`,
+    message: "托盘已完成比对",
+    ok: false,
+    tone: "error",
+    trayCode: normalizedTrayCode,
+  };
+};
+
 const buildTaskMap = (tasks) => {
   const taskMap = new Map();
   asArray(tasks).forEach((task) => {
@@ -441,16 +471,28 @@ function buildLaboratoryWorkflowFromTask(task) {
   const trayRanks = trayRows.map((row) => resolveLaboratoryStatusRank(row?.trayStatus));
   const hasCompared = trayRanks.some((rank) => rank >= 1);
   const comparisonDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 1);
-  const hasInstalled = trayRanks.some((rank) => rank >= 2);
+  const hasInstalled = trayRanks.some((rank) => rank >= 2 && rank < 5);
   const installationDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 2);
   const experimentConfirmed = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 3);
-  return {
+  const workflow = {
     comparisonDone,
     experimentConfirmed,
     hasCompared,
     hasInstalled,
     installationDone,
   };
+  Object.defineProperties(workflow, {
+    hasComparedWaitingInstall: {
+      value: trayRanks.some((rank) => rank === 1),
+    },
+    hasInstalledWaitingReady: {
+      value: trayRanks.some((rank) => rank === 2),
+    },
+    hasInProgressPreparation: {
+      value: trayRanks.some((rank) => rank >= 2 && rank < 5),
+    },
+  });
+  return workflow;
 }
 
 function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
@@ -461,10 +503,19 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
       canMarkReady: false,
     };
   }
+  const hasComparedWaitingInstall = Object.prototype.hasOwnProperty.call(workflow, "hasComparedWaitingInstall")
+    ? workflow.hasComparedWaitingInstall
+    : !workflow.hasInstalled && (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone;
+  const hasInstalledWaitingReady = Object.prototype.hasOwnProperty.call(workflow, "hasInstalledWaitingReady")
+    ? workflow.hasInstalledWaitingReady
+    : (workflow.hasInstalled || workflow.installationDone) && !workflow.experimentConfirmed;
+  const hasInProgressPreparation = Object.prototype.hasOwnProperty.call(workflow, "hasInProgressPreparation")
+    ? workflow.hasInProgressPreparation
+    : Boolean(workflow.hasInstalled);
   return {
-    canCompare: !workflow.hasInstalled && !workflow.comparisonDone,
-    canInstallSample: !workflow.hasInstalled && (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone,
-    canMarkReady: (workflow.hasInstalled || workflow.installationDone) && !workflow.experimentConfirmed,
+    canCompare: !workflow.comparisonDone && !hasInProgressPreparation,
+    canInstallSample: Boolean(hasComparedWaitingInstall),
+    canMarkReady: Boolean(hasInstalledWaitingReady),
   };
 }
 
@@ -612,6 +663,11 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
   }
 
   if (asArray(currentTask.trayCodes).includes(normalizedScanCode)) {
+    const matchedTray = asArray(currentTask.trayRows).find((row) => normalizeText(row?.trayCode) === normalizedScanCode) || null;
+    const trayStatus = normalizeText(matchedTray?.trayStatus) || normalizeText(matchedTray?.displayStatus);
+    if (resolveLaboratoryStatusRank(trayStatus) >= 1) {
+      return buildBlockedComparisonResult(normalizedScanCode, trayStatus);
+    }
     return {
       guidance: `${normalizedScanCode} 属于当前任务 ${currentTask.taskCode}`,
       matchedRow: currentTask,

@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
@@ -20,6 +20,7 @@ import {
 } from "./model";
 
 const RUNNING_MODAL_RESTORE_MS = 10_000;
+const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 
 function useLaboratoryPage(options = {}) {
   const now = options.now;
@@ -85,7 +86,7 @@ function useLaboratoryPage(options = {}) {
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value));
   const runningExperiment = computed(() => view.value.runningExperiment);
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
-  const canTeleportScheduleAction = computed(() => typeof document !== "undefined" && Boolean(document.querySelector(".header-actions")));
+  const canTeleportScheduleAction = ref(false);
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const canResetCurrentTask = computed(
     () => Boolean(currentTask.value && Array.isArray(currentTask.value?.trayCodes) && currentTask.value.trayCodes.length > 0) && !runningInteractionLocked.value,
@@ -96,6 +97,10 @@ function useLaboratoryPage(options = {}) {
       window.clearTimeout(runningModalRestoreTimer);
       runningModalRestoreTimer = null;
     }
+  };
+
+  const syncHeaderActionTarget = () => {
+    canTeleportScheduleAction.value = typeof document !== "undefined" && Boolean(document.querySelector(HEADER_ACTION_TARGET_SELECTOR));
   };
 
   const showRunningModal = () => {
@@ -190,6 +195,7 @@ function useLaboratoryPage(options = {}) {
   };
 
   onMounted(() => {
+    void nextTick().then(syncHeaderActionTarget);
     if (typeof window !== "undefined") {
       tickTimer = window.setInterval(() => {
         tickNow.value = now || new Date();

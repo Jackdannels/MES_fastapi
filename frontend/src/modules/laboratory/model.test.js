@@ -438,6 +438,115 @@ describe("laboratory model", () => {
     );
   });
 
+  test("validateLaboratoryTrayScan rejects current task trays that already completed the experiment", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-002" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", experiment_name: "盐雾试验-A" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-001",
+          owner: "王工",
+          status: "实验已完成",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ tray_code: "TP-001", quantity: 1, status: "实验已完成" }],
+        },
+        {
+          code: "SP-002",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ tray_code: "TP-002", quantity: 1, status: "送至实验室" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-04-101", name: "盐雾连接器-A", test_type: "盐雾试验" }],
+    });
+
+    const completedTray = validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-001",
+      scheduleRows: view.scheduleRows,
+    });
+    const waitingTray = validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-002",
+      scheduleRows: view.scheduleRows,
+    });
+
+    expect(completedTray).toEqual(expect.objectContaining({
+      guidance: "TP-001 已完成实验，无需再次比对。",
+      message: "托盘已完成实验",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-001",
+    }));
+    expect(waitingTray).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      tone: "success",
+      trayCode: "TP-002",
+    }));
+  });
+
+  test("validateLaboratoryTrayScan rejects current task trays that already passed comparison", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", experiment_name: "盐雾试验-A" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-001",
+          owner: "王工",
+          status: "工装夹具安装",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ tray_code: "TP-001", quantity: 1, status: "工装夹具安装" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-04-101", name: "盐雾连接器-A", test_type: "盐雾试验" }],
+    });
+
+    expect(validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-001",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      guidance: "TP-001 当前状态为工装夹具安装，已完成任务比对，无需再次比对。",
+      message: "托盘已完成比对",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-001",
+    }));
+  });
+
   test("validateLaboratoryTrayScan lists all allowed laboratories when a tray belongs to multiple experiments", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
@@ -606,6 +715,21 @@ describe("laboratory model", () => {
       canCompare: false,
       canInstallSample: false,
       canMarkReady: true,
+    });
+  });
+
+  test("buildLaboratoryWorkflowFromTask allows compare after a partial tray experiment is completed", () => {
+    const workflow = buildLaboratoryWorkflowFromTask({
+      trayRows: [
+        { trayCode: "TP-001", trayStatus: "实验已完成" },
+        { trayCode: "TP-002", trayStatus: "送至实验室" },
+      ],
+    });
+
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: true,
+      canInstallSample: false,
+      canMarkReady: false,
     });
   });
 

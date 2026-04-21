@@ -1,14 +1,14 @@
 <template>
   <div class="laboratory-page">
-    <Teleport v-if="canTeleportScheduleAction" to=".header-actions">
+    <Teleport v-if="canTeleportScheduleAction" to=".header-actions-before-logout">
       <button
-        v-if="runningExperiment.active"
         class="action-btn secondary laboratory-header-action-button laboratory-header-action-button--overview"
-        data-testid="laboratory-open-overview"
+        data-testid="laboratory-show-running-modal"
         type="button"
+        :disabled="!runningExperiment.active"
         @click="showRunningModal"
       >
-        总览
+        显示弹窗
       </button>
     </Teleport>
 
@@ -222,7 +222,7 @@
               <td>{{ row.endDateTimeLabel }}</td>
               <td>{{ row.sampleCount }}</td>
               <td>
-                <div class="laboratory-task-tray-list">
+                <div class="laboratory-task-tray-list laboratory-task-tray-list--grid">
                   <div v-for="tray in row.trayRows" :key="`${row.id}-${tray.trayCode}`" class="laboratory-task-tray-row">
                     <span class="laboratory-tray-chip">{{ tray.trayCode }}</span>
                   </div>

@@ -296,6 +296,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const samples = snapshot[STORAGE_KEYS.samples];
       const schedules = snapshot[STORAGE_KEYS.schedules];
       const experiments = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      const experimentTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       const taskIndex = tasks.findIndex((task) => String(task?.code || "").trim() === code);
       if (taskIndex < 0) {
         editError.value = `Task ${code} was not found.`;
@@ -425,7 +426,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         [STORAGE_KEYS.samples]: nextSamples,
       });
 
-      replaceOverview(nextTasks, nextSamples, schedules);
+      replaceOverview(nextTasks, nextSamples, schedules, nextExperiments, experimentTrays);
       editForm.value.sampleCount = finalCodes.length;
       editForm.value.sampleCodesText = finalCodes.join("\n");
       editForm.value.experiments = normalizedExperiments;
@@ -501,7 +502,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         [STORAGE_KEYS.streams]: nextStreams,
       });
 
-      replaceOverview(nextTasks, nextSamples, nextSchedules);
+      replaceOverview(nextTasks, nextSamples, nextSchedules, nextExperiments, nextExperimentTrays);
       selectedTaskCode.value = "";
       cancelEdit();
     } catch (error) {

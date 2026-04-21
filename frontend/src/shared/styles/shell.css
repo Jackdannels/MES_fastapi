@@ -133,6 +133,10 @@
   gap: 12px;
 }
 
+.header-actions-before-logout {
+  display: contents;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;

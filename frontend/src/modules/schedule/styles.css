@@ -44,6 +44,59 @@
   min-height: 38px;
 }
 
+.schedule-duration-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+  width: 100%;
+}
+
+.schedule-duration-control input {
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.schedule-duration-toggle {
+  display: inline-flex;
+  align-items: stretch;
+  height: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-left: none;
+  border-radius: 0 12px 12px 0;
+  overflow: hidden;
+  background: rgba(226, 232, 240, 0.6);
+}
+
+.schedule-duration-toggle__button {
+  min-width: 64px;
+  padding: 0 14px;
+  border: 0;
+  background: rgba(226, 232, 240, 0.05);
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.schedule-duration-toggle__button + .schedule-duration-toggle__button {
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.schedule-duration-toggle__button.is-active {
+  background: linear-gradient(180deg, rgba(255, 213, 128, 0.96), rgba(255, 184, 77, 0.92));
+  color: #9a3412;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.schedule-duration-toggle__button:not(.is-active):hover,
+.schedule-duration-toggle__button:not(.is-active):focus-visible {
+  background: rgba(241, 245, 249, 0.95);
+  color: #64748b;
+  outline: none;
+}
+
 /* 留样内部汇总头部显示数量和老化级别。 */
 .retention-internal-header {
   display: flex;
@@ -309,6 +362,66 @@
   font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif;
 }
 
+.gantt-day-heading {
+  position: relative;
+}
+
+.gantt-window-nav {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.gantt-window-nav:hover,
+.gantt-window-nav:focus-visible {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(219, 234, 254, 0.95);
+  color: #1e3a8a;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+  outline: none;
+}
+
+.gantt-window-nav:disabled {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(241, 245, 249, 0.62);
+  color: rgba(100, 116, 139, 0.42);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.gantt-window-nav:disabled:hover {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(241, 245, 249, 0.62);
+  color: rgba(100, 116, 139, 0.42);
+}
+
+.gantt-window-nav--home {
+  left: 10px;
+  font-size: 16px;
+}
+
+.gantt-window-nav--prev {
+  left: 46px;
+}
+
+.gantt-window-nav--next {
+  right: 12px;
+}
+
 .gantt-sticky {
   position: sticky;
   left: 0;
@@ -327,6 +440,81 @@
 }
 
 /* 单元格内的 gantt-slot 既承载空闲态，也承载任务块。 */
+.gantt th.gantt-sticky,
+.gantt td.gantt-sticky {
+  width: 188px;
+  min-width: 188px;
+  max-width: 188px;
+}
+
+.gantt td.gantt-sticky {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.gantt-lab-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 26px;
+}
+
+.gantt-lab-name {
+  display: block;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-lab-nav {
+  position: absolute;
+  top: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.92);
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  transform: translateY(-50%);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.gantt-lab-nav:first-child {
+  left: 0;
+}
+
+.gantt-lab-nav:last-child {
+  right: 0;
+}
+
+.gantt-lab-nav:hover,
+.gantt-lab-nav:focus-visible {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(219, 234, 254, 0.98);
+  color: #1e3a8a;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+  outline: none;
+}
+
+.gantt-lab-nav:disabled {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(241, 245, 249, 0.62);
+  color: rgba(100, 116, 139, 0.42);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .gantt-slot {
   width: 100%;
   min-height: 40px;
