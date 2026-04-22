@@ -120,9 +120,10 @@ describe("App runtime boundary", () => {
     mountApp();
     await nextTick();
 
-    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
     expect(wrapper.text()).toContain("暂存间系统");
     expect(wrapper.text()).toContain("退出登录");
+    expect(wrapper.find(".sidebar").exists()).toBe(false);
+    expect(wrapper.find(".nav-link").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("实验室中控管理");
     expect(wrapper.text()).not.toContain("中控中心");
     expect(wrapper.text()).not.toContain("新建任务");
@@ -137,9 +138,11 @@ describe("App runtime boundary", () => {
     mountApp();
     await nextTick();
 
-    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
     expect(wrapper.text()).toContain("盐雾试验室操作台");
     expect(wrapper.text()).toContain("退出登录");
+    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
+    expect(wrapper.find(".sidebar").exists()).toBe(true);
+    expect(wrapper.find(".nav-link").exists()).toBe(true);
     expect(wrapper.text()).not.toContain("中控中心");
     expect(wrapper.text()).not.toContain("新建任务");
     expect(wrapper.text()).not.toContain("查看排程");
@@ -212,7 +215,7 @@ describe("App runtime boundary", () => {
     expect(wrapper.find('[data-testid="open-task-intake"]').exists()).toBe(false);
   });
 
-  test("renders sidebar and header actions with utf-8 chinese labels", async () => {
+  test("renders central sidebar and header actions with utf-8 chinese labels", async () => {
     reactiveRoute.meta = { module: "central", title: "中控总览", subtitle: "任务、设备与数据流的实时概览。" };
     reactiveRoute.name = "dashboard";
     reactiveRoute.path = "/";
@@ -225,6 +228,8 @@ describe("App runtime boundary", () => {
     expect(text).toContain("实验室中控管理");
     expect(text).toContain("中控中心");
     expect(text).toContain("中控总览");
+    expect(wrapper.find(".sidebar").exists()).toBe(true);
+    expect(wrapper.find(".nav-link").exists()).toBe(true);
     expect(text).not.toContain("新建任务");
     expect(text).not.toContain("查看排程");
     expect(text).toContain("刷新");

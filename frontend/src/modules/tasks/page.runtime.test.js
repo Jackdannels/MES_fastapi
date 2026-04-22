@@ -262,6 +262,32 @@ describe("TasksPage runtime", () => {
     expect(codeHeader.attributes("data-sort-dir")).toBe("desc");
   });
 
+  test("sorts the sample count column numerically instead of lexically", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({ id: "task-10", code: "SYLU-2026-03-010", sample_count: 10 }),
+        createTask({ id: "task-2", code: "SYLU-2026-03-002", sample_count: 2 }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const sampleHeader = wrapper.get(".tasks-table__col--sample-count");
+
+    await sampleHeader.trigger("click");
+    await settle(wrapper);
+
+    let rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["2", "10"]);
+
+    await sampleHeader.trigger("click");
+    await settle(wrapper);
+
+    rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["10", "2"]);
+  });
+
   test("uses compact side columns while prioritizing the experiment summary column", async () => {
     installApiFetchMock({
       tasks: [
@@ -516,6 +542,59 @@ describe("TasksPage runtime", () => {
     expect(JSON.parse(storageWriteCall[1].body)).toEqual({
       [SAMPLES_KEY]: expect.any(Array),
     });
+  });
+
+  test("edits task experiment types through the same multi-select picker and saves only type names", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-edit-1",
+          code: "SYLU-2026-03-001",
+          name: "演示任务001",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+        }),
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "演示任务001-A",
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get("td.tasks-table__cell--summary .tasks-table__summary-text").text()).toBe("冲击试验");
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("冲击试验");
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).not.toContain("演示任务001-A");
+
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-霉菌试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-edit-1") && options?.method === "PUT",
+    );
+    expect(JSON.parse(updateCall[1].body)).toEqual(
+      expect.objectContaining({
+        required_device: "盐雾试验 / 霉菌试验",
+        test_type: "盐雾试验 / 霉菌试验",
+        test_types: ["盐雾试验", "霉菌试验"],
+      }),
+    );
   });
 
   test("creates a random task when the intake form is submitted with all default empty values", async () => {

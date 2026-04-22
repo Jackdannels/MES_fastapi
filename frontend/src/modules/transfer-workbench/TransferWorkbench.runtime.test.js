@@ -448,6 +448,58 @@ describe("TransferWorkbench runtime", () => {
   test.each([
     ["handover", { mode: "handover" }],
     ["pre-allocation", { embedded: true, mode: "pre-allocation", showHeader: false }],
+  ])("%s mode sorts overview tasks only by task number", async (_label, props) => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = bootstrapPayload.taskOverview.map((task) => ({
+      ...task,
+      seq: task.taskId === 101 ? 2 : 1,
+    }));
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, { props });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-filter-all"]').trigger("click");
+    await settle(wrapper);
+
+    const headersWithSort = wrapper.findAll(".transfer-table__head [data-sort]");
+    expect(headersWithSort).toHaveLength(1);
+
+    const taskNoHeader = wrapper.get('[data-testid="transfer-sort-task-no"]');
+    expect(taskNoHeader.attributes("data-sort-dir")).toBe("");
+    expect(wrapper.findAll('[data-testid^="transfer-task-row-"]').map((row) => row.text())).toEqual([
+      expect.stringContaining("SYLU-2026-03-101"),
+      expect.stringContaining("SYLU-2026-03-102"),
+    ]);
+
+    await taskNoHeader.trigger("click");
+    await settle(wrapper);
+
+    expect(taskNoHeader.attributes("data-sort-dir")).toBe("asc");
+    expect(wrapper.findAll('[data-testid^="transfer-task-row-"]').map((row) => row.text())).toEqual([
+      expect.stringContaining("SYLU-2026-03-101"),
+      expect.stringContaining("SYLU-2026-03-102"),
+    ]);
+
+    await taskNoHeader.trigger("click");
+    await settle(wrapper);
+
+    expect(taskNoHeader.attributes("data-sort-dir")).toBe("desc");
+    expect(wrapper.findAll('[data-testid^="transfer-task-row-"]').map((row) => row.text())).toEqual([
+      expect.stringContaining("SYLU-2026-03-102"),
+      expect.stringContaining("SYLU-2026-03-101"),
+    ]);
+  });
+
+  test.each([
+    ["handover", { mode: "handover" }],
+    ["pre-allocation", { embedded: true, mode: "pre-allocation", showHeader: false }],
   ])("%s mode shows a saved-tray hint when locked actions are attempted", async (_label, props) => {
     const wrapper = mount(TransferWorkbench, { props });
     await settle(wrapper);

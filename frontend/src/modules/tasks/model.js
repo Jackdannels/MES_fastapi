@@ -155,6 +155,17 @@ const fromDateTimeLocalValue = (value) => {
   return normalized.replace("T", " ").slice(0, sliceLength);
 };
 
+const formatBeijingDateTime = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const beijingDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return beijingDate.toISOString().slice(0, 16).replace("T", " ");
+};
+
+const buildDefaultDueAt = (now = new Date()) => formatBeijingDateTime(new Date(now.getTime() + 72 * 60 * 60 * 1000));
+
 // 任务页表格和标签共用状态样式类映射。
 const statusClass = (value) => {
   const normalized = normalizeText(value);
@@ -334,7 +345,6 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
     const current = experimentsByTaskCode.get(taskCode) || [];
     const label =
       normalizeText(experiment?.experiment_type) ||
-      normalizeText(experiment?.experiment_name) ||
       normalizeText(experiment?.required_device);
     if (label) {
       current.push(label);
@@ -348,9 +358,10 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
     const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
     const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
     const fallbackType = normalizeText(task?.test_type);
-    const experimentSummary = buildExperimentTypeSummary(experimentTypes, fallbackType);
+    const taskExperimentTypes = collectExperimentTypes(experimentTypes, fallbackType);
+    const experimentSummary = buildExperimentTypeSummary(taskExperimentTypes);
     const experimentCount =
-      collectExperimentTypes(experimentTypes, fallbackType).length ||
+      taskExperimentTypes.length ||
       Number.parseInt(task?.experiment_count, 10) ||
       (experimentSummary ? 1 : 0);
 
@@ -379,6 +390,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       status: normalizeTaskStatusLabel(task?.status) || STATUS_WAITING,
       statusClass: statusClass(displayStatus),
       testType: experimentSummary,
+      testTypes: taskExperimentTypes,
     };
   });
 }
@@ -523,11 +535,14 @@ function createTaskEditForm() {
     source: SOURCE_EXTERNAL,
     status: STATUS_WAITING,
     test_type: "",
+    test_types: [],
   };
 }
 
 // 将表格中的可见行映射回抽屉编辑表单所需的结构。
 function buildTaskEditForm(row = {}) {
+  const selectedTestTypes = collectExperimentTypes(row?.testTypes, row?.test_types, row?.testType, row?.test_type);
+  const testTypeSummary = buildExperimentTypeSummary(selectedTestTypes);
   return {
     arrival_at: toDateTimeLocalValue(row?.arrivalAt ?? row?.arrival_at),
     code: normalizeText(row?.code),
@@ -540,7 +555,8 @@ function buildTaskEditForm(row = {}) {
     sample_type: normalizeText(row?.sampleType ?? row?.sample_type),
     source: normalizeText(row?.source) || SOURCE_EXTERNAL,
     status: normalizeTaskStatusLabel(row?.displayStatus ?? row?.status) || STATUS_WAITING,
-    test_type: normalizeText(row?.testType ?? row?.test_type),
+    test_type: testTypeSummary,
+    test_types: selectedTestTypes,
   };
 }
 
@@ -569,7 +585,7 @@ function createTaskRecord(form, tasks) {
     test_type: testTypeSummary,
     test_types: selectedTestTypes,
     required_device: testTypeSummary,
-    due_at: fromDateTimeLocalValue(form?.due_at),
+    due_at: fromDateTimeLocalValue(form?.due_at) || buildDefaultDueAt(),
     arrival_at: "",
     conditions: normalizeText(form?.conditions),
     attachment: normalizeText(form?.attachment),
@@ -588,6 +604,11 @@ function updateTaskRecord(tasks, editForm) {
   }
 
   const previousCode = normalizeText(taskList[targetIndex]?.code);
+  const selectedTestTypes = collectExperimentTypes(editForm?.test_types);
+  const testTypeSummary = buildExperimentTypeSummary(
+    selectedTestTypes,
+    selectedTestTypes.length > 0 ? "" : editForm?.test_type,
+  );
   // 更新时保留未编辑字段，仅覆盖抽屉允许修改的部分。
   taskList[targetIndex] = {
     ...taskList[targetIndex],
@@ -596,12 +617,13 @@ function updateTaskRecord(tasks, editForm) {
     name: normalizeText(editForm?.name),
     priority: normalizeText(editForm?.priority),
     remark: normalizeText(editForm?.remark),
-    required_device: normalizeText(editForm?.test_type) || taskList[targetIndex].required_device,
+    required_device: testTypeSummary || taskList[targetIndex].required_device,
     sample_count: normalizeText(editForm?.sample_count),
     sample_type: normalizeText(editForm?.sample_type),
     source: normalizeText(editForm?.source),
     status: normalizeTaskStatusLabel(editForm?.status) || taskList[targetIndex].status,
-    test_type: normalizeText(editForm?.test_type),
+    test_type: testTypeSummary,
+    test_types: collectExperimentTypes(selectedTestTypes, testTypeSummary),
     updated_at: new Date().toISOString(),
   };
 

@@ -56,22 +56,28 @@ function useTasksPage() {
   const intakeWarning = ref("");
   const editWarning = ref("");
   const intakeExperimentDraft = ref([]);
+  const editExperimentDraft = ref([]);
   const selectedTestType = ref("");
   const selectedStatus = ref("");
 
   const intakeModal = useDialogState();
   const intakeExperimentModal = useDialogState();
+  const editExperimentModal = useDialogState();
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
-  const intakeExperimentTypeOptions = computed(() =>
+  const experimentTypeOptions = computed(() =>
     buildExperimentTypeOptions(Object.keys(TEST_PREFIX_MAP), filterOptions.value.testTypeOptions),
   );
+  const intakeExperimentTypeOptions = experimentTypeOptions;
+  const editExperimentTypeOptions = experimentTypeOptions;
   const intakeExperimentSummary = computed(() => buildExperimentTypeSummary(intakeForm.value.test_types));
   const intakeExperimentDraftSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
+  const editExperimentSummary = computed(() => buildExperimentTypeSummary(editForm.value.test_types));
+  const editExperimentDraftSummary = computed(() => buildExperimentTypeSummary(editExperimentDraft.value));
 
   const filteredRows = computed(() =>
     allRows.value.filter((row) => {
@@ -146,6 +152,21 @@ function useTasksPage() {
     removeTaskHash();
   };
 
+  const toggleExperimentDraftType = (draftRef, experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (!normalizedType) {
+      return;
+    }
+    const currentTypes = Array.isArray(draftRef.value) ? [...draftRef.value] : [];
+    const targetIndex = currentTypes.findIndex((entry) => normalizeText(entry) === normalizedType);
+    if (targetIndex >= 0) {
+      currentTypes.splice(targetIndex, 1);
+    } else {
+      currentTypes.push(normalizedType);
+    }
+    draftRef.value = currentTypes;
+  };
+
   const openIntakeExperimentPicker = () => {
     intakeExperimentDraft.value = Array.isArray(intakeForm.value.test_types) ? [...intakeForm.value.test_types] : [];
     intakeExperimentModal.openWith({ id: "task-intake-test-types-modal" });
@@ -157,18 +178,7 @@ function useTasksPage() {
   };
 
   const toggleIntakeExperimentType = (experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (!normalizedType) {
-      return;
-    }
-    const currentTypes = Array.isArray(intakeExperimentDraft.value) ? [...intakeExperimentDraft.value] : [];
-    const targetIndex = currentTypes.findIndex((entry) => normalizeText(entry) === normalizedType);
-    if (targetIndex >= 0) {
-      currentTypes.splice(targetIndex, 1);
-    } else {
-      currentTypes.push(normalizedType);
-    }
-    intakeExperimentDraft.value = currentTypes;
+    toggleExperimentDraftType(intakeExperimentDraft, experimentType);
   };
 
   const confirmIntakeExperimentPicker = () => {
@@ -176,6 +186,27 @@ function useTasksPage() {
     intakeWarning.value = "";
     syncIntakeDerivedFields();
     closeIntakeExperimentPicker();
+  };
+
+  const openEditExperimentPicker = () => {
+    editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
+    editExperimentModal.openWith({ id: "task-edit-test-types-modal" });
+  };
+
+  const closeEditExperimentPicker = () => {
+    editExperimentModal.close();
+    editExperimentDraft.value = [];
+  };
+
+  const toggleEditExperimentType = (experimentType) => {
+    toggleExperimentDraftType(editExperimentDraft, experimentType);
+  };
+
+  const confirmEditExperimentPicker = () => {
+    editForm.value.test_types = Array.isArray(editExperimentDraft.value) ? [...editExperimentDraft.value] : [];
+    editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
+    editWarning.value = "";
+    closeEditExperimentPicker();
   };
 
   const openResetModal = () => {
@@ -199,6 +230,8 @@ function useTasksPage() {
 
   const closeTaskDrawer = () => {
     taskDrawer.close();
+    editExperimentModal.close();
+    editExperimentDraft.value = [];
   };
 
   const syncModalWithHash = (hashValue) => {
@@ -295,6 +328,9 @@ function useTasksPage() {
   };
 
   const updateTask = async () => {
+    if (Array.isArray(editForm.value.test_types)) {
+      editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
+    }
     const { previousCode, tasks } = updateTaskRecord(rawTasks.value, editForm.value);
     const updatedTask = tasks.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
     if (!updatedTask) {
@@ -501,8 +537,16 @@ function useTasksPage() {
     setCurrentPage,
     statusOptions: computed(() => filterOptions.value.statusOptions),
     closeIntakeExperimentPicker,
+    closeEditExperimentPicker,
     confirmIntakeExperimentPicker,
+    confirmEditExperimentPicker,
+    editExperimentDraft,
+    editExperimentDraftSummary,
+    editExperimentModalOpen: editExperimentModal.open,
+    editExperimentSummary,
+    editExperimentTypeOptions,
     openIntakeExperimentPicker,
+    openEditExperimentPicker,
     sortDirection,
     sortKey,
     submitTask,
@@ -510,6 +554,7 @@ function useTasksPage() {
     taskRows: visibleRows,
     testTypeOptions: computed(() => filterOptions.value.testTypeOptions),
     toggleIntakeExperimentType,
+    toggleEditExperimentType,
     toggleSort,
     updateTask,
     openTaskDrawer,

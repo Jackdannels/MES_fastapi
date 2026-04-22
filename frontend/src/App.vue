@@ -67,7 +67,7 @@
   </div>
 
   <div v-else class="app-shell">
-    <aside class="sidebar">
+    <aside v-if="!isStagingModule" class="sidebar">
       <div class="brand">
         七二四新火工区信息化中控管理系统
         <span>{{ moduleLabel }}</span>
@@ -144,6 +144,7 @@ const currentModule = computed(() => {
 const moduleLabel = computed(() => MODULE_LABELS[currentModule.value] || MODULE_LABELS.central);
 const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
+const isStagingModule = computed(() => currentModule.value === "staging");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");

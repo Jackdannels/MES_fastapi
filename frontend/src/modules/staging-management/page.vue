@@ -58,29 +58,64 @@
           </div>
         </div>
 
-        <div class="zancun-console-list">
-          <div
-            v-for="(row, index) in traySlots"
-            :key="row?.id || `empty-${index}`"
-            class="zancun-console-slot"
-            :data-testid="`zancun-console-slot-${index}`"
-          >
-            <template v-if="row">
-              <div class="zancun-console-slot__main">
-                <strong>{{ row.trayCode }}</strong>
-                <span class="muted">{{ row.taskCode }}</span>
+        <div class="zancun-inventory-columns">
+          <section class="zancun-inventory-column" data-testid="zancun-current-staging-column">
+            <div class="zancun-inventory-column__head">
+              <h4>暂存间样品</h4>
+              <span class="pill">当前在库 {{ currentStagingRows.length }}</span>
+            </div>
+            <div class="zancun-console-list">
+              <div
+                v-for="row in currentStagingRows"
+                :key="row.id"
+                class="zancun-console-slot"
+                data-testid="zancun-current-staging-row"
+              >
+                <div class="zancun-console-slot__main">
+                  <strong>{{ row.trayCode }}</strong>
+                  <span class="muted">{{ row.taskCode }}</span>
+                </div>
+                <div class="zancun-console-slot__meta">
+                  <span>{{ row.sampleType }}</span>
+                  <span>数量 {{ row.quantity }}</span>
+                  <span>{{ row.location }}</span>
+                  <span :class="row.statusClass">{{ row.status }}</span>
+                </div>
               </div>
-              <div class="zancun-console-slot__meta">
-                <span>{{ row.sampleType }}</span>
-                <span>数量 {{ row.quantity }}</span>
-                <span>{{ row.location }}</span>
-                <span :class="row.statusClass">{{ row.status }}</span>
+              <div v-if="currentStagingRows.length === 0" class="zancun-console-slot">
+                <div class="zancun-console-slot__empty muted">当前页暂无暂存间样品</div>
               </div>
-            </template>
-            <template v-else>
-              <div class="zancun-console-slot__empty muted">当前页暂无更多托盘</div>
-            </template>
-          </div>
+            </div>
+          </section>
+
+          <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
+            <div class="zancun-inventory-column__head">
+              <h4>计划入库</h4>
+              <span class="pill">待入库 {{ plannedInboundRows.length }}</span>
+            </div>
+            <div class="zancun-console-list">
+              <div
+                v-for="row in plannedInboundRows"
+                :key="row.id"
+                class="zancun-console-slot"
+                data-testid="zancun-planned-inbound-row"
+              >
+                <div class="zancun-console-slot__main">
+                  <strong>{{ row.trayCode }}</strong>
+                  <span class="muted">{{ row.taskCode }}</span>
+                </div>
+                <div class="zancun-console-slot__meta">
+                  <span>{{ row.sampleType }}</span>
+                  <span>数量 {{ row.quantity }}</span>
+                  <span>{{ row.location }}</span>
+                  <span :class="row.statusClass">{{ row.status }}</span>
+                </div>
+              </div>
+              <div v-if="plannedInboundRows.length === 0" class="zancun-console-slot">
+                <div class="zancun-console-slot__empty muted">当前页暂无计划入库托盘</div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
@@ -130,6 +165,39 @@
     </AppModal>
 
     <AppModal
+      :open="destinationModalOpen"
+      title="选择目标实验室"
+      data-testid="zancun-destination-modal"
+      @close="cancelDestinationAction"
+    >
+      <div class="zancun-destination-panel">
+        <article class="zancun-destination-summary">
+          <div>
+            <strong>{{ activeDetail.trayCode }}</strong>
+            <div class="muted">{{ activeDetail.taskCode }} / {{ activeDetail.sampleType }}</div>
+          </div>
+          <span class="pill">样品数 {{ activeDetail.quantity || 0 }}</span>
+        </article>
+
+        <article class="zancun-destination-card" data-testid="zancun-destination-card">
+          <div class="zancun-destination-card__main">
+            <h4>{{ activeDetail.targetLab || "暂无目标实验室" }}</h4>
+            <div class="muted">{{ activeDetail.targetExperimentName || "待确认实验" }}</div>
+          </div>
+          <button
+            class="action-btn secondary zancun-destination-card__action"
+            data-testid="zancun-destination-submit"
+            type="button"
+            :disabled="!activeDetail.targetLab"
+            @click="confirmDestinationAction"
+          >
+            送至{{ activeDetail.targetLab || "目标实验室" }}
+          </button>
+        </article>
+      </div>
+    </AppModal>
+
+    <AppModal
       :open="detailModalOpen"
       :title="activeDetailMode === 'stockIn' ? '入库物品详细信息' : '出库物品详细信息'"
       data-testid="zancun-detail-modal"
@@ -172,6 +240,14 @@
           <label>确认状态</label>
           <input :value="activeDetail.nextStatus" type="text" readonly />
         </div>
+        <div v-if="activeDetailMode === 'stockOut'" class="form-field">
+          <label>目标实验室</label>
+          <input :value="activeDetail.targetLab || '暂无后续实验室'" data-testid="zancun-detail-target-lab" type="text" readonly />
+        </div>
+        <div v-if="activeDetailMode === 'stockOut'" class="form-field">
+          <label>目标实验</label>
+          <input :value="activeDetail.targetExperimentName || '待确认实验'" type="text" readonly />
+        </div>
       </div>
       <template #footer>
         <button class="action-btn" data-testid="zancun-detail-confirm" type="button" @click="confirmDetailAction">
@@ -195,6 +271,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
   applyZancunInventoryAction,
+  buildZancunInventorySections,
   buildZancunMetrics,
   buildZancunOverviewView,
   buildZancunRowsFromSnapshot,
@@ -203,6 +280,9 @@ import {
 
 const snapshot = ref({
   [STORAGE_KEYS.tasks]: [],
+  [STORAGE_KEYS.schedules]: [],
+  [STORAGE_KEYS.experiments]: [],
+  [STORAGE_KEYS.experiment_trays]: [],
   [STORAGE_KEYS.samples]: [],
   [STORAGE_KEYS.staging_events]: [],
 });
@@ -278,9 +358,9 @@ const activeMetricLabel = computed(() => {
 
 const overviewRows = computed(() => overviewView.value.rows);
 const overviewPageCount = computed(() => overviewView.value.pageCount);
-const traySlots = computed(() =>
-  Array.from({ length: overviewPageSize }, (_, index) => overviewRows.value[index] || null),
-);
+const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value));
+const currentStagingRows = computed(() => inventorySections.value.currentStagingRows);
+const plannedInboundRows = computed(() => inventorySections.value.plannedInboundRows);
 
 watch([overviewQuery, activeMetricMode], () => {
   overviewCurrentPage.value = 1;
@@ -305,6 +385,7 @@ const selectMetricMode = (mode) => {
 
 const scanModalOpen = ref(false);
 const detailModalOpen = ref(false);
+const destinationModalOpen = ref(false);
 const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
 const scanWarning = ref("");
@@ -324,6 +405,9 @@ const activeDetail = reactive({
   stockInAt: "",
   stockInAtDisplay: "",
   taskCode: "",
+  targetExperimentCode: "",
+  targetExperimentName: "",
+  targetLab: "",
   trayCode: "",
 });
 
@@ -342,17 +426,26 @@ const resetDetail = () => {
   activeDetail.stockInAt = "";
   activeDetail.stockInAtDisplay = "";
   activeDetail.taskCode = "";
+  activeDetail.targetExperimentCode = "";
+  activeDetail.targetExperimentName = "";
+  activeDetail.targetLab = "";
   activeDetail.trayCode = "";
 };
 
 const loadSnapshot = async () => {
   const nextSnapshot = await readStorageSnapshot([
     STORAGE_KEYS.tasks,
+    STORAGE_KEYS.schedules,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.staging_events,
   ]);
   snapshot.value = {
     [STORAGE_KEYS.tasks]: nextSnapshot[STORAGE_KEYS.tasks] || [],
+    [STORAGE_KEYS.schedules]: nextSnapshot[STORAGE_KEYS.schedules] || [],
+    [STORAGE_KEYS.experiments]: nextSnapshot[STORAGE_KEYS.experiments] || [],
+    [STORAGE_KEYS.experiment_trays]: nextSnapshot[STORAGE_KEYS.experiment_trays] || [],
     [STORAGE_KEYS.samples]: nextSnapshot[STORAGE_KEYS.samples] || [],
     [STORAGE_KEYS.staging_events]: nextSnapshot[STORAGE_KEYS.staging_events] || [],
   };
@@ -378,12 +471,35 @@ const openDetailModal = (detail, mode) => {
   detailModalOpen.value = true;
 };
 
+const openDestinationModal = (detail) => {
+  Object.assign(activeDetail, detail);
+  activeDetailMode.value = "stockOut";
+  destinationModalOpen.value = true;
+};
+
 const closeDetailModal = () => {
   detailModalOpen.value = false;
   resetDetail();
 };
 
-const completeScan = () => {
+const closeDestinationModal = () => {
+  destinationModalOpen.value = false;
+  resetDetail();
+};
+
+const persistInventoryResult = async (result) => {
+  if (!result.error) {
+    snapshot.value = result.snapshot;
+    await writeStorageUpdates({
+      [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
+      [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
+    });
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+  }
+  return !result.error;
+};
+
+const completeScan = async () => {
   if (!String(scanForm.code ?? "").trim()) {
     scanWarning.value = "请先完成扫码或输入托盘编号。";
     return;
@@ -395,12 +511,60 @@ const completeScan = () => {
     return;
   }
 
+  if (activeScanMode.value === "stockIn") {
+    const result = applyZancunInventoryAction({
+      now: nowValue(),
+      payload: {
+        code: detail.trayCode,
+        mode: "stockIn",
+      },
+      snapshot: snapshot.value,
+    });
+    if (await persistInventoryResult(result)) {
+      cancelScan();
+    } else {
+      scanWarning.value = result.error;
+    }
+    return;
+  }
+
+  if (detail.status === "放置实验后暂存间") {
+    scanWarning.value = "该托盘已完成全部实验，当前应保留在暂存间。";
+    return;
+  }
+
+  if (!detail.targetLab) {
+    scanWarning.value = "未找到该托盘可出库的目标实验室。";
+    return;
+  }
+
   cancelScan();
-  openDetailModal(detail, activeScanMode.value);
+  openDestinationModal(detail);
 };
 
 const cancelDetailAction = () => {
   closeDetailModal();
+};
+
+const cancelDestinationAction = () => {
+  closeDestinationModal();
+};
+
+const confirmDestinationAction = async () => {
+  const result = applyZancunInventoryAction({
+    now: nowValue(),
+    payload: {
+      code: activeDetail.trayCode,
+      mode: "stockOut",
+      targetExperimentCode: activeDetail.targetExperimentCode,
+      targetExperimentName: activeDetail.targetExperimentName,
+      targetLab: activeDetail.targetLab,
+    },
+    snapshot: snapshot.value,
+  });
+
+  await persistInventoryResult(result);
+  closeDestinationModal();
 };
 
 const confirmDetailAction = async () => {

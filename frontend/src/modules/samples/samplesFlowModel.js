@@ -691,10 +691,10 @@ function buildTrayFlowView(input = {}) {
         label: "厂家收回",
       });
       const normalizedFinalStatus = normalizeLifecycleStatus(input.location, input.status);
-      if (normalizedFinalStatus === "放置实验后暂存间") {
+      if (normalizedFinalStatus === "放置实验后暂存间" || normalizedFinalStatus === "已到达暂存间") {
         activeIndex = postTestStagingIndex;
         steps[completedIndex].reached = true;
-        currentStatus = normalizedFinalStatus;
+        currentStatus = "放置实验后暂存间";
       } else if (normalizedFinalStatus === "厂家收回") {
         activeIndex = returnedIndex;
         steps[completedIndex].reached = true;

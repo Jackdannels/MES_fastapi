@@ -437,6 +437,56 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView treats staging after all mapped experiments are completed as post-experiment staging", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-002",
+      taskCode: "SYLU-2026-03-001",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-B",
+          experiment_name: "四综合试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-B",
+          tray_code: "SYLU-2026-03-001-TP-002",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "已到达暂存间", quantity: 1 }],
+          history: [
+            { time: "2026-04-21T10:30:00.000Z", detail: "SYLU-2026-03-001 / 盐雾试验 / 实验已完成" },
+            { time: "2026-04-21T12:30:00.000Z", detail: "SYLU-2026-03-001 / 四综合试验 / 实验已完成" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-002 | 当前状态：放置实验后暂存间");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ reached: true }));
+    expect(view.steps.find((step) => step.label === "放置实验后暂存间")).toEqual(expect.objectContaining({ active: true }));
+  });
+
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
       "样品运输中",

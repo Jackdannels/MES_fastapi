@@ -1,6 +1,14 @@
 import { computed, ref, unref, watch } from "vue";
 
 const normalizeText = (value) => String(value ?? "").trim().toLowerCase();
+const parseSortableNumber = (value) => {
+  const text = String(value ?? "").trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(text)) {
+    return null;
+  }
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 function useTableControls(options) {
   const query = ref("");
@@ -30,8 +38,15 @@ function useTableControls(options) {
 
     const directionFactor = sortDirection.value === "desc" ? -1 : 1;
     return rows.sort((left, right) => {
-      const leftValue = normalizeText(left?.[sortKey.value]);
-      const rightValue = normalizeText(right?.[sortKey.value]);
+      const rawLeftValue = left?.[sortKey.value];
+      const rawRightValue = right?.[sortKey.value];
+      const leftNumber = parseSortableNumber(rawLeftValue);
+      const rightNumber = parseSortableNumber(rawRightValue);
+      if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+        return (leftNumber - rightNumber) * directionFactor;
+      }
+      const leftValue = normalizeText(rawLeftValue);
+      const rightValue = normalizeText(rawRightValue);
       if (leftValue === rightValue) {
         return normalizeText(left?.code).localeCompare(normalizeText(right?.code)) * directionFactor;
       }

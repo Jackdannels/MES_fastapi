@@ -107,10 +107,15 @@
   color: var(--muted);
 }
 
-.task-overview-tray-table th,
-.task-overview-tray-table td {
+.task-overview-tray-table {
+  table-layout: fixed;
+}
+
+.task-overview-tray-table.table th,
+.task-overview-tray-table.table td {
   text-align: center;
   vertical-align: middle;
+  line-height: 1.4;
   word-break: break-word;
 }
 

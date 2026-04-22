@@ -52,13 +52,14 @@
   font-weight: 600;
   background: rgba(56, 189, 248, 0.18);
   padding: 12px 10px;
-  text-align: left;
+  text-align: center;
   vertical-align: middle;
 }
 
 .table td {
   padding: 12px 10px;
-  text-align: middle;
+  text-align: center;
+  vertical-align: middle;
   border-bottom: 1px solid rgba(15, 23, 42, 0.08);
 }
 

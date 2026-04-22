@@ -1,19 +1,25 @@
 import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
+import { getLabsForTestType } from "@/lib/labs";
 
 const TASKS_KEY = "mes.tasks";
+const SCHEDULES_KEY = "mes.schedules";
+const EXPERIMENTS_KEY = "mes.experiments";
+const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
   "实验完成",
-  "放置实验后暂存间",
+  POST_EXPERIMENT_STAGING_STATUS,
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
 
 const createId = (prefix) => {
   const stamp = Date.now();
@@ -47,7 +53,7 @@ const resolveStatusClass = (status) => {
   if (normalized === "待入库") {
     return "status accepted";
   }
-  if (normalized === "已入库") {
+  if (normalized === "已入库" || normalized === POST_EXPERIMENT_STAGING_STATUS) {
     return "status retention";
   }
   if (normalized === "已出库") {
@@ -90,6 +96,33 @@ const toDateKey = (value) => {
   return `${year}-${month}-${day}`;
 };
 
+const parseTimeValue = (value) => {
+  const timestamp = Date.parse(normalizeText(value));
+  return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
+};
+
+const isStagingDestination = (value) => normalizeText(value).includes("暂存间");
+
+const resolveExperimentName = (experiment, fallback = "") =>
+  normalizeText(experiment?.experiment_name)
+  || normalizeText(experiment?.name)
+  || normalizeText(experiment?.experiment_type)
+  || normalizeText(fallback);
+
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = normalizeText(detail)
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
 const buildTaskMap = (tasks) => {
   const map = new Map();
   asArray(tasks).forEach((task) => {
@@ -123,22 +156,181 @@ const buildEventMap = (stagingEvents) => {
   return eventMap;
 };
 
-const resolveTrayStatus = (statuses, events) => {
+const isCurrentStagingStatus = (status) => {
+  const normalized = normalizeText(status);
+  return normalized === "已入库" || normalized === POST_EXPERIMENT_STAGING_STATUS;
+};
+
+const resolveTrayStatus = (statuses, events, options = {}) => {
   const latestEvent = asArray(events).at(-1);
+  const hasStoredStatus = statuses.some((status) => normalizeText(status) === "已到达暂存间" || normalizeText(status) === "暂存间存放");
+  const hasStockInCandidateStatus = statuses.some((status) => STOCK_IN_CANDIDATE_STATUSES.has(normalizeText(status)));
+  const hasCompletedExperimentStatus = statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
+  if (normalizeText(latestEvent?.action) === "stock_out" && hasCompletedExperimentStatus) {
+    return "待入库";
+  }
   if (normalizeText(latestEvent?.action) === "stock_out") {
     return "已出库";
   }
   if (normalizeText(latestEvent?.action) === "stock_in") {
+    return options.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : "已入库";
+  }
+  if (hasStoredStatus) {
     return "已入库";
   }
-  if (statuses.some((status) => STOCK_IN_CANDIDATE_STATUSES.has(status))) {
+  if (hasStockInCandidateStatus) {
     return "待入库";
   }
   return "";
 };
 
+const buildExperimentMap = (experiments) => {
+  const map = new Map();
+  asArray(experiments).forEach((experiment) => {
+    const code = normalizeText(experiment?.experiment_code);
+    if (code) {
+      map.set(code, experiment);
+    }
+  });
+  return map;
+};
+
+const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => {
+  const codes = new Set();
+  asArray(experimentTrays).forEach((entry) => {
+    if (normalizeText(entry?.task_code) !== taskCode || normalizeText(entry?.tray_code) !== trayCode) {
+      return;
+    }
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (experimentCode) {
+      codes.add(experimentCode);
+    }
+  });
+  return codes;
+};
+
+const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
+  const names = new Set();
+  asArray(samples).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return;
+    }
+    const touchesTray = asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === trayCode);
+    if (!touchesTray) {
+      return;
+    }
+    asArray(sample?.history).forEach((entry) => {
+      const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+      if (parsed && COMPLETED_EXPERIMENT_STATUSES.has(parsed.status)) {
+        names.add(parsed.experimentName);
+      }
+    });
+  });
+  return names;
+};
+
+const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays }) => {
+  const experimentMap = buildExperimentMap(experiments);
+  const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
+  if (trayExperimentCodes.size === 0) {
+    return false;
+  }
+
+  const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
+  return Array.from(trayExperimentCodes).some((experimentCode) => {
+    const experimentName = resolveExperimentName(experimentMap.get(experimentCode));
+    return !experimentName || !completedExperimentNames.has(experimentName);
+  });
+};
+
+const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, experimentTrays }) => {
+  const taskCode = normalizeText(row?.taskCode);
+  const trayCode = normalizeText(row?.trayCode);
+  if (!taskCode || !trayCode) {
+    return null;
+  }
+
+  const experimentMap = buildExperimentMap(experiments);
+  const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
+  const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
+  const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
+  const isUnfinishedExperiment = (experimentCode, fallbackName = "") => {
+    const experiment = experimentMap.get(normalizeText(experimentCode));
+    const experimentName = resolveExperimentName(experiment, fallbackName);
+    return !experimentName || !completedExperimentNames.has(experimentName);
+  };
+
+  const scheduledDestinations = asArray(schedules)
+    .filter((schedule) => {
+      const experimentCode = normalizeText(schedule?.experiment_code);
+      const device = normalizeText(schedule?.device);
+      return (
+        normalizeText(schedule?.task_code) === taskCode
+        && device
+        && !isStagingDestination(device)
+        && acceptsExperimentCode(experimentCode)
+        && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
+      );
+    })
+    .sort((left, right) => parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at));
+
+  const scheduled = scheduledDestinations[0];
+  if (scheduled) {
+    const experimentCode = normalizeText(scheduled?.experiment_code);
+    const experiment = experimentMap.get(experimentCode);
+    return {
+      targetExperimentCode: experimentCode,
+      targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
+      targetLab: normalizeText(scheduled?.device),
+      targetScheduleStartAt: normalizeText(scheduled?.start_at),
+      targetScheduleEndAt: normalizeText(scheduled?.end_at),
+    };
+  }
+
+  const fallbackExperiment = asArray(experiments).find((experiment) => {
+    const experimentCode = normalizeText(experiment?.experiment_code);
+    const requiredDevice = normalizeText(experiment?.required_device);
+    return (
+      normalizeText(experiment?.task_code) === taskCode
+      && requiredDevice
+      && !isStagingDestination(requiredDevice)
+      && acceptsExperimentCode(experimentCode)
+      && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
+    );
+  });
+  if (fallbackExperiment) {
+    return {
+      targetExperimentCode: normalizeText(fallbackExperiment?.experiment_code),
+      targetExperimentName: resolveExperimentName(fallbackExperiment),
+      targetLab: normalizeText(fallbackExperiment?.required_device),
+      targetScheduleStartAt: "",
+      targetScheduleEndAt: "",
+    };
+  }
+
+  if (trayExperimentCodes.size > 0) {
+    return null;
+  }
+
+  const fallbackLab = getLabsForTestType(row?.testType)[0] || "";
+  if (fallbackLab && !isStagingDestination(fallbackLab)) {
+    return {
+      targetExperimentCode: "",
+      targetExperimentName: normalizeText(row?.testType),
+      targetLab: fallbackLab,
+      targetScheduleStartAt: "",
+      targetScheduleEndAt: "",
+    };
+  }
+
+  return null;
+};
+
 function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const tasks = asArray(snapshot[TASKS_KEY]);
+  const schedules = asArray(snapshot[SCHEDULES_KEY]);
+  const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
+  const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
@@ -163,6 +355,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: normalizeText(task?.source) || "待确认来源",
         statuses: [],
         taskCode,
+        testType: normalizeText(task?.test_type),
         trayCode,
       };
 
@@ -171,6 +364,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       current.location = current.location || normalizeText(sample?.location) || STAGING_LOCATION;
       current.sampleType = current.sampleType || normalizeText(task?.test_type || task?.sample_type || sample?.sample_type) || "待确认样品类型";
       current.source = current.source || normalizeText(task?.source) || "待确认来源";
+      current.testType = current.testType || normalizeText(task?.test_type);
       current.quantity += Number(tray?.quantity) || 1;
       current.statuses.push(normalizeText(tray?.status) || normalizeText(sample?.status) || `${taskCode}-tray-${trayIndex + 1}`);
       trayMap.set(trayCode, current);
@@ -189,6 +383,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: "待确认来源",
         statuses: [],
         taskCode: normalizeText(latestEvent?.task_code),
+        testType: "",
         trayCode,
       });
     }
@@ -202,13 +397,31 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         .slice()
         .reverse()
         .find((event) => normalizeText(event?.action) === "stock_in") || null;
-      const status = resolveTrayStatus(row.statuses, events);
+      const hasCompletedExperimentStatus = row.statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
+      const isPostExperimentInbound =
+        hasCompletedExperimentStatus
+        && !hasRemainingMappedExperiment({
+          experiments,
+          experimentTrays,
+          samples,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+        });
+      const status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound });
       const stockInToday = events.some(
         (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );
       const stockOutToday = events.some(
         (event) => normalizeText(event?.action) === "stock_out" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );
+
+      const targetDestination = resolveTrayTargetDestination({
+        experiments,
+        experimentTrays,
+        row,
+        samples,
+        schedules,
+      });
 
       return {
         id: row.id,
@@ -224,12 +437,31 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         stockInToday,
         stockOutToday,
         taskCode: normalizeText(row.taskCode),
+        isPostExperimentInbound,
+        targetExperimentCode: targetDestination?.targetExperimentCode || "",
+        targetExperimentName: targetDestination?.targetExperimentName || "",
+        targetLab: targetDestination?.targetLab || "",
+        targetScheduleEndAt: targetDestination?.targetScheduleEndAt || "",
+        targetScheduleStartAt: targetDestination?.targetScheduleStartAt || "",
+        testType: normalizeText(row.testType),
         trayCode: normalizeText(row.trayCode),
         updatedAt: normalizeText(lastEvent?.time || lastStockInEvent?.time),
       };
     })
     .filter((row) => Boolean(row.status))
     .sort((left, right) => compareValues(left.trayCode, right.trayCode, "asc"));
+}
+
+function buildZancunInventorySections(rows = []) {
+  const rowList = asArray(rows);
+  return {
+    currentStagingRows: rowList
+      .filter((row) => isCurrentStagingStatus(row?.status))
+      .sort((left, right) => compareValues(left?.trayCode, right?.trayCode, "asc")),
+    plannedInboundRows: rowList
+      .filter((row) => normalizeText(row?.status) === "待入库")
+      .sort((left, right) => compareValues(left?.trayCode, right?.trayCode, "asc")),
+  };
 }
 
 function buildZancunMetrics(input = {}) {
@@ -256,7 +488,7 @@ function buildZancunMetrics(input = {}) {
     stockedInTodayCount: stockedInToday.size,
     stockedOutTodayCount: stockedOutToday.size,
     totalQuantity: rowList
-      .filter((row) => normalizeText(row?.status) !== "已出库")
+      .filter((row) => isCurrentStagingStatus(row?.status))
       .reduce((sum, row) => sum + (Number(row?.quantity) || 0), 0),
   };
 }
@@ -350,6 +582,9 @@ function buildZancunScanDetail(rows, code, mode) {
       stockInAt: "",
       stockInAtDisplay: "-",
       taskCode: "待确认任务",
+      targetExperimentCode: "",
+      targetExperimentName: "",
+      targetLab: "",
       trayCode: normalizedCode,
     };
   }
@@ -374,6 +609,9 @@ function applyZancunInventoryAction(input = {}) {
   const nextSnapshot = {
     ...snapshot,
     [TASKS_KEY]: asArray(snapshot[TASKS_KEY]).map((task) => ({ ...task })),
+    [SCHEDULES_KEY]: asArray(snapshot[SCHEDULES_KEY]).map((schedule) => ({ ...schedule })),
+    [EXPERIMENTS_KEY]: asArray(snapshot[EXPERIMENTS_KEY]).map((experiment) => ({ ...experiment })),
+    [EXPERIMENT_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_TRAYS_KEY]).map((entry) => ({ ...entry })),
     [SAMPLES_KEY]: asArray(snapshot[SAMPLES_KEY]).map((sample) => ({
       ...sample,
       trays: asArray(sample?.trays).map((tray) => ({ ...tray })),
@@ -399,9 +637,34 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
+  if (actionMode === "stockOut" && normalizeText(matchedRow.status) === POST_EXPERIMENT_STAGING_STATUS) {
+    return {
+      error: "该托盘已完成全部实验，当前应保留在暂存间。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
   if (actionMode === "stockOut" && normalizeText(matchedRow.status) !== "已入库") {
     return {
       error: "该托盘尚未完成暂存间扫码入库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  if (actionMode === "stockOut" && !normalizeText(matchedRow.targetLab)) {
+    return {
+      error: "未找到该托盘可出库的目标实验室。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  const selectedTargetLab = normalizeText(payload.targetLab);
+  if (actionMode === "stockOut" && !selectedTargetLab) {
+    return {
+      error: "请选择目标实验室后再出库。",
       row: null,
       snapshot: nextSnapshot,
     };
@@ -414,17 +677,39 @@ function applyZancunInventoryAction(input = {}) {
     action: actionMode === "stockIn" ? "stock_in" : "stock_out",
     time: actionTime,
     operator: normalizeText(payload.operator) || "扫码登记",
+    ...(actionMode === "stockOut"
+      ? {
+          target_experiment_code: normalizeText(matchedRow.targetExperimentCode),
+          target_experiment_name: normalizeText(matchedRow.targetExperimentName),
+          target_lab: selectedTargetLab,
+        }
+      : {}),
   });
 
   if (actionMode === "stockIn") {
+    const nextStockInStatus = matchedRow.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : "已到达暂存间";
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: "暂存间扫码入库",
-      historyDetail: `${matchedRow.trayCode} 已到达暂存间`,
+      historyDetail: `${matchedRow.trayCode} ${nextStockInStatus}`,
       location: STAGING_LOCATION,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
-      status: "已到达暂存间",
+      status: nextStockInStatus,
+      trayCodes: [matchedRow.trayCode],
+    });
+    nextSnapshot[SAMPLES_KEY] = synced.samples;
+  }
+
+  if (actionMode === "stockOut") {
+    const synced = synchronizeSamplesForTrayCodes({
+      historyAction: "暂存间扫码出库",
+      historyDetail: `${matchedRow.trayCode} 送至 ${selectedTargetLab}`,
+      location: selectedTargetLab,
+      now: actionTime,
+      owner: normalizeText(payload.operator) || "扫码登记",
+      samples: nextSnapshot[SAMPLES_KEY],
+      status: "送至实验室",
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples;
@@ -442,6 +727,7 @@ function applyZancunInventoryAction(input = {}) {
 
 export {
   applyZancunInventoryAction,
+  buildZancunInventorySections,
   buildZancunMetrics,
   buildZancunOverviewView,
   buildZancunRowsFromSnapshot,

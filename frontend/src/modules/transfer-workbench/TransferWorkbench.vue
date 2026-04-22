@@ -100,7 +100,16 @@
           <div class="transfer-table">
             <div class="transfer-table__head transfer-table__head--compact">
               <div>序号</div>
-              <div>任务编号</div>
+              <button
+                class="transfer-table__sort"
+                data-sort
+                :data-sort-dir="overviewTaskNoSortDirection"
+                data-testid="transfer-sort-task-no"
+                type="button"
+                @click="toggleOverviewTaskNoSort"
+              >
+                任务编号
+              </button>
               <div>任务信息</div>
               <div>样品编号</div>
               <div>样品数</div>
@@ -465,6 +474,7 @@ const activeAssignmentMode = ref("task");
 const draftExperimentTraySelections = ref({});
 const availableInventory = ref([]);
 const trayLimit = ref(4);
+const overviewTaskNoSortDirection = ref("");
 const activeTrayIndex = ref(-1);
 const armedTrayIndex = ref(-1);
 const draggingSampleId = ref(null);
@@ -648,9 +658,28 @@ const filteredTaskOverview = computed(() => {
     return typeMatch && statusMatch && (!query || searchTextPool.includes(query));
   });
 });
-const taskPageCount = computed(() => Math.max(1, Math.ceil(filteredTaskOverview.value.length / overviewPageSize.value)));
+const sortedTaskOverview = computed(() => {
+  const rows = filteredTaskOverview.value.slice();
+  if (!overviewTaskNoSortDirection.value) {
+    return rows;
+  }
+  const directionFactor = overviewTaskNoSortDirection.value === "desc" ? -1 : 1;
+  return rows.sort((left, right) => {
+    const taskNoCompare = String(left?.taskNo || "").localeCompare(String(right?.taskNo || ""), "zh-Hans-CN", {
+      numeric: true,
+      sensitivity: "base",
+    });
+    if (taskNoCompare !== 0) {
+      return taskNoCompare * directionFactor;
+    }
+    const leftSeq = Number.parseInt(left?.seq, 10);
+    const rightSeq = Number.parseInt(right?.seq, 10);
+    return ((Number.isFinite(leftSeq) ? leftSeq : 0) - (Number.isFinite(rightSeq) ? rightSeq : 0)) * directionFactor;
+  });
+});
+const taskPageCount = computed(() => Math.max(1, Math.ceil(sortedTaskOverview.value.length / overviewPageSize.value)));
 const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
-const pagedTaskOverview = computed(() => filteredTaskOverview.value.slice((currentTaskPage.value - 1) * overviewPageSize.value, currentTaskPage.value * overviewPageSize.value));
+const pagedTaskOverview = computed(() => sortedTaskOverview.value.slice((currentTaskPage.value - 1) * overviewPageSize.value, currentTaskPage.value * overviewPageSize.value));
 const remainingTrayCount = computed(() => availableInventory.value.length);
 const totalAssignedSampleCount = computed(() => assignedTrays.value.reduce((sum, tray) => sum + tray.samples.length, 0));
 const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
@@ -992,6 +1021,11 @@ const reloadBootstrap = async () => {
 
 const changePage = (offset) => {
   taskPage.value = Math.min(taskPageCount.value, Math.max(1, taskPage.value + offset));
+};
+
+const toggleOverviewTaskNoSort = () => {
+  overviewTaskNoSortDirection.value = overviewTaskNoSortDirection.value === "asc" ? "desc" : "asc";
+  taskPage.value = 1;
 };
 
 const backToOverview = async () => {

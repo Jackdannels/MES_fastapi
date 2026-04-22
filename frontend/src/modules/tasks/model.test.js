@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   buildFilterOptions,
@@ -12,6 +12,10 @@ import {
 } from "./model";
 
 describe("tasks model", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("marks a task as running when any tray is sent to the lab", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
@@ -294,6 +298,44 @@ describe("tasks model", () => {
     );
   });
 
+  test("updateTaskRecord derives test_type from the edited experiment array in order", () => {
+    const result = updateTaskRecord(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "旧任务",
+          status: "待排程",
+          sample_count: "2",
+          sample_type: "结构件",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+        },
+      ],
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-001",
+        name: "旧任务",
+        priority: "高",
+        sample_count: "2",
+        sample_type: "结构件",
+        source: "内部新增",
+        status: "待排程",
+        test_type: "冲击试验",
+        test_types: ["盐雾试验", "霉菌试验"],
+      },
+    );
+
+    expect(result.tasks[0]).toEqual(
+      expect.objectContaining({
+        required_device: "盐雾试验 / 霉菌试验",
+        test_type: "盐雾试验 / 霉菌试验",
+        test_types: ["盐雾试验", "霉菌试验"],
+      }),
+    );
+  });
+
   test("updateTaskRecord preserves stored arrival_at instead of taking manual form input", () => {
     const result = updateTaskRecord(
       [
@@ -361,6 +403,37 @@ describe("tasks model", () => {
         experimentCount: 3,
         experimentSummary: "温度冲击 / 振动 / 盐雾",
         testType: "温度冲击 / 振动 / 盐雾",
+      }),
+    );
+  });
+
+  test("buildTaskRows does not mix experiment names into the experiment type summary", () => {
+    const rows = buildTaskRows(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "演示任务001",
+          status: "待排程",
+          sample_count: 6,
+          test_type: "盐雾试验",
+        },
+      ],
+      [],
+      [],
+      [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "演示任务001-A",
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(
+      expect.objectContaining({
+        experimentSummary: "盐雾试验",
+        testType: "盐雾试验",
       }),
     );
   });
@@ -443,6 +516,27 @@ describe("tasks model", () => {
     );
 
     expect(task.code).toBe("SYLU-2026-03-003");
+  });
+
+  test("createTaskRecord defaults an empty due_at to Beijing creation time plus 72 hours", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-22T03:30:00.000Z"));
+
+    const task = createTaskRecord(
+      {
+        code: "SYLU-2026-04-001",
+        name: "无期望完成时间任务",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_type: "",
+        test_types: ["盐雾试验"],
+        due_at: "",
+      },
+      [],
+    );
+
+    expect(task.due_at).toBe("2026-04-25 11:30");
   });
 });
 

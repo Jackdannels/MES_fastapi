@@ -256,10 +256,16 @@
       </div>
       <div class="form-field">
         <label>试验类型</label>
-        <select v-model="editForm.test_type" name="test_type">
-          <option value="">请选择试验类型</option>
-          <option v-for="option in testTypeOptions" :key="option" :value="option">{{ option }}</option>
-        </select>
+        <div class="tasks-intake-test-types">
+          <button
+            class="search-input tasks-intake-test-types__trigger"
+            data-testid="task-edit-test-types-trigger"
+            type="button"
+            @click="openEditExperimentPicker"
+          >
+            <span>{{ editExperimentSummary || "请选择试验类型" }}</span>
+          </button>
+        </div>
       </div>
       <div class="form-field">
         <label>期望完成时间</label>
@@ -291,6 +297,48 @@
     </div>
     <div class="form-alert" :class="{ 'is-hidden': !editWarning }" data-task-edit-warning>{{ editWarning }}</div>
   </AppDrawer>
+
+  <AppModal :open="editExperimentModalOpen" title="选择试验类型" @close="closeEditExperimentPicker">
+    <div class="tasks-intake-picker-modal" data-testid="task-edit-test-types-modal">
+      <div class="tasks-intake-picker-modal__summary" data-testid="task-edit-test-types-summary">
+        {{ editExperimentDraftSummary || "请选择试验类型" }}
+      </div>
+
+      <div
+        class="tasks-intake-test-types__grid"
+        data-testid="task-edit-test-types-grid"
+      >
+        <button
+          v-for="option in editExperimentTypeOptions"
+          :key="option"
+          class="tasks-intake-test-types__card"
+          :class="{ 'is-selected': editExperimentDraft.includes(option) }"
+          :data-testid="`task-edit-test-type-option-${option}`"
+          type="button"
+          @click="toggleEditExperimentType(option)"
+        >
+          <span class="tasks-intake-test-types__card-name">{{ option }}</span>
+          <span class="tasks-intake-test-types__card-tail">
+            <span
+              class="tasks-intake-test-types__check"
+              :class="{ 'is-selected': editExperimentDraft.includes(option) }"
+              :data-testid="`task-edit-test-type-check-${option}`"
+            >
+              {{ editExperimentDraft.includes(option) ? "✓" : "" }}
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" data-testid="task-edit-test-types-cancel" type="button" @click="closeEditExperimentPicker">
+        取消
+      </button>
+      <button class="action-btn" data-testid="task-edit-test-types-confirm" type="button" @click="confirmEditExperimentPicker">
+        确认选择
+      </button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
@@ -305,6 +353,13 @@ const {
   closeTaskDrawer,
   currentPage,
   deleteTask,
+  closeEditExperimentPicker,
+  confirmEditExperimentPicker,
+  editExperimentDraft,
+  editExperimentDraftSummary,
+  editExperimentModalOpen,
+  editExperimentSummary,
+  editExperimentTypeOptions,
   editForm,
   editWarning,
   filterStatus,
@@ -332,6 +387,7 @@ const {
   statusOptions,
   closeIntakeExperimentPicker,
   confirmIntakeExperimentPicker,
+  openEditExperimentPicker,
   openIntakeExperimentPicker,
   sortDirection,
   sortKey,
@@ -340,6 +396,7 @@ const {
   taskRows,
   testTypeOptions,
   toggleIntakeExperimentType,
+  toggleEditExperimentType,
   toggleSort,
   updateTask,
   openTaskDrawer,
