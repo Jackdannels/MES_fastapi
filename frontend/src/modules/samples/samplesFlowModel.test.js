@@ -197,6 +197,55 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "A实验进行中")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView highlights the latest completed experiment when the next experiment has not started", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-002-TP-001",
+      taskCode: "SYLU-2026-03-002",
+      location: "接驳区",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          experiment_name: "霉菌试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-001",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-B",
+          tray_code: "SYLU-2026-03-002-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-002-SP-001",
+          task_code: "SYLU-2026-03-002",
+          location: "接驳区",
+          status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "实验已完成", quantity: 1 }],
+          history: [
+            { time: "2026-04-21T10:30:00.000Z", detail: "SYLU-2026-03-002 / 盐雾试验 / 实验已完成" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-002-TP-001 | 当前状态：盐雾试验已完成");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "到货")).toEqual(expect.objectContaining({ active: false }));
+  });
+
   test("buildTrayFlowView uses the real tray status for the current experiment even without an explicit experiment code", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-002-TP-002",

@@ -581,14 +581,15 @@ function buildTrayFlowView(input = {}) {
       const pushExperimentStep = (experiment, index) => {
         const name = normalizeText(experiment?.name) || `实验${index + 1}`;
         const state = normalizeText(experiment?.state);
-        pushStep({
+        return pushStep({
           key: `experiment-${state || "pending"}-${index}`,
           label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS[state] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
           reached: state === "completed",
         });
       };
+      const completedStepIndexes = [];
       experimentsBeforeCurrent.forEach((experiment, index) => {
-        pushExperimentStep(experiment, index);
+        completedStepIndexes.push(pushExperimentStep(experiment, index));
       });
       const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
         ? activeExperiment.routeSteps.filter(Boolean)
@@ -633,6 +634,15 @@ function buildTrayFlowView(input = {}) {
         routeIndexes.forEach((stepIndex) => {
           steps[stepIndex].reached = true;
         });
+      } else if (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成") {
+        const latestCompletedIndex = completedStepIndexes.at(-1);
+        if (latestCompletedIndex !== undefined) {
+          currentStatus = steps[latestCompletedIndex].label;
+          activeIndex = latestCompletedIndex;
+        } else {
+          currentStatus = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          activeIndex = currentExperimentIndexInSteps;
+        }
       } else if (normalizedRouteStatus === "放置实验后暂存间") {
         currentStatus = normalizedRouteStatus;
         activeIndex = postTestStagingIndex;

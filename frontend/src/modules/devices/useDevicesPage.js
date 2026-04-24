@@ -26,8 +26,15 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPage() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([STORAGE_KEYS.devices, STORAGE_KEYS.schedules]);
+  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+    STORAGE_KEYS.devices,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.schedules,
+  ]);
   const rawDevices = ref([]);
+  const rawExperimentTrays = ref([]);
+  const rawSamples = ref([]);
   const rawSchedules = ref([]);
   const deviceForm = ref(createDeviceForm());
   const selectedDevice = ref(buildSelectedDevice());
@@ -39,7 +46,9 @@ function useDevicesPage() {
   const deviceDrawer = useDialogState();
   const pointModal = useDialogState();
 
-  const baseRows = computed(() => buildDeviceRows(rawDevices.value, rawSchedules.value));
+  const baseRows = computed(() =>
+    buildDeviceRows(rawDevices.value, rawSchedules.value, new Date(), rawSamples.value, rawExperimentTrays.value),
+  );
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
@@ -121,6 +130,10 @@ function useDevicesPage() {
   const loadDevicesPage = async () => {
     const snapshot = await loadSnapshot();
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+    rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
+      ? snapshot[STORAGE_KEYS.experiment_trays]
+      : [];
+    rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
   };
 

@@ -5,6 +5,7 @@ const DEFAULT_DEVICE_STATUS = "可用";
 const ACTIVE_DEVICE_STATUS = "使用中";
 const MAINTENANCE_DEVICE_STATUS = "维护/校准";
 const DISABLED_DEVICE_STATUS = "停用";
+const RUNNING_TRAY_STATUSES = new Set(["实验进行中", "实验中"]);
 
 const DEFAULT_POINT_ROWS = Object.freeze([
   {
@@ -50,28 +51,57 @@ const createId = (prefix) => {
   return `${prefix}-${Date.now()}-${random}`;
 };
 
-// 判断某条排程是否在当前时刻占用了指定设备。
-const isScheduleActive = (schedule, deviceCode, now = new Date()) => {
-  if (!schedule || schedule.device !== deviceCode) {
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
+const isRunningTrayStatus = (status) => RUNNING_TRAY_STATUSES.has(normalizeText(status));
+
+const isScheduleExperimentRunning = (schedule, deviceCode, samples = [], experimentTrays = []) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  if (!taskCode || normalizeText(schedule?.device) !== deviceCode) {
     return false;
   }
 
-  const start = new Date(schedule.start_at);
-  const end = new Date(schedule.end_at);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  const scopedTrayCodes = new Set(
+    asArray(experimentTrays)
+      .filter(
+        (entry) =>
+          normalizeText(entry?.task_code) === taskCode
+          && normalizeText(entry?.experiment_code) === experimentCode,
+      )
+      .map((entry) => normalizeText(entry?.tray_code))
+      .filter(Boolean),
+  );
+  if (experimentCode && scopedTrayCodes.size === 0) {
     return false;
   }
 
-  return start <= now && end >= now;
+  return asArray(samples).some((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    const sampleLocation = normalizeText(sample?.location);
+    if (sampleLocation && sampleLocation !== deviceCode) {
+      return false;
+    }
+
+    return asArray(sample?.trays).some((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (scopedTrayCodes.size > 0 && !scopedTrayCodes.has(trayCode)) {
+        return false;
+      }
+      return isRunningTrayStatus(normalizeText(tray?.status) || normalizeText(sample?.status));
+    });
+  });
 };
 
-// 根据排程活动和维护标记推导设备当前状态。
-function resolveDeviceStatus(device, schedules, now = new Date()) {
+// 根据实际实验运行状态和维护标记推导设备当前状态。
+function resolveDeviceStatus(device, schedules, now = new Date(), samples = [], experimentTrays = []) {
   const deviceCode = normalizeText(device?.code);
-  const activeSchedule = (Array.isArray(schedules) ? schedules : []).find((schedule) =>
-    isScheduleActive(schedule, deviceCode, now),
+  const runningSchedule = asArray(schedules).find((schedule) =>
+    isScheduleExperimentRunning(schedule, deviceCode, samples, experimentTrays),
   );
-  if (activeSchedule) {
+  if (runningSchedule) {
     return ACTIVE_DEVICE_STATUS;
   }
   return normalizeText(device?.status) || DEFAULT_DEVICE_STATUS;
@@ -93,11 +123,11 @@ function resolveStatusClass(status) {
 }
 
 // 将存储中的设备记录转换成设备页表格行。
-function buildDeviceRows(devices, schedules, now = new Date()) {
+function buildDeviceRows(devices, schedules, now = new Date(), samples = [], experimentTrays = []) {
   const deviceList = Array.isArray(devices) ? devices : [];
   return deviceList.map((device, index) => {
-    // 设备状态优先以当前排程推导结果为准，再回退到设备自身状态。
-    const status = resolveDeviceStatus(device, schedules, now);
+    // 设备状态优先以实际运行托盘推导结果为准，再回退到设备自身状态。
+    const status = resolveDeviceStatus(device, schedules, now, samples, experimentTrays);
     return {
       acquisitionEnabled: normalizeText(device?.acquisition_enabled) || "启用",
       code: normalizeText(device?.code) || `DEVICE-${index + 1}`,
