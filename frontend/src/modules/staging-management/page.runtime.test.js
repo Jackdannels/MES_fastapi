@@ -292,7 +292,42 @@ describe("StagingManagementPage runtime", () => {
     expect(destinationModal.text()).not.toContain("恒温恒湿间（暂存间）");
   });
 
-  test("stock-out scan blocks fully completed mapped trays without showing a wrong target lab", async () => {
+  test("stock-out scan shows fallback lab as disabled when the experiment is not scheduled", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.schedules]: createSnapshot()[STORAGE_KEYS.schedules].filter(
+        (schedule) => schedule.experiment_code !== "SYLU-2026-04-102-A" || schedule.device.includes("暂存间"),
+      ),
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const destinationModal = mounted.get('[data-testid="zancun-destination-modal"]');
+    expect(destinationModal.classes()).toContain("is-open");
+    expect(destinationModal.text()).toContain("当前实验未排程，仅作为托底目标，暂不可出库。");
+    expect(destinationModal.get('[data-testid="zancun-destination-submit"]').attributes("disabled")).toBeDefined();
+  });
+
+  test("manufacturer return opens a danger confirmation modal when experiments remain unfinished", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-manufacturer-return"]').trigger("click");
+
+    expect(mounted.get('[data-testid="zancun-manufacturer-return-card"]').classes()).toContain("is-danger");
+    expect(mounted.get('[data-testid="zancun-return-danger-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-return-danger-modal"]').text()).toContain("危险操作确认");
+    expect(mounted.get('[data-testid="zancun-return-danger-modal"]').text()).toContain("该托盘中样品尚有未完成实验，是否立即厂家收回！");
+    expect(mounted.get('[data-testid="zancun-return-danger-modal"] .form-actions').classes()).toContain("form-actions--touch");
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].some((event) => event.action === "manufacturer_return")).toBe(false);
+  });
+
+  test("stock-out scan lets post-experiment staging trays return to manufacturer without warning styling", async () => {
     remoteSnapshot = {
       ...createSnapshot(),
       [STORAGE_KEYS.tasks]: [
@@ -355,10 +390,19 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-03-001-TP-002");
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
 
-    expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
-    expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
-    expect(mounted.text()).toContain("该托盘已完成全部实验，当前应保留在暂存间。");
+    expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="zancun-destination-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-manufacturer-return-card"]').classes()).toContain("is-safe");
+    expect(mounted.get('[data-testid="zancun-manufacturer-return"]').classes()).toContain("is-safe");
     expect(mounted.text()).not.toContain("送至冲击一室");
+
+    await mounted.get('[data-testid="zancun-manufacturer-return"]').trigger("click");
+
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "manufacturer_return",
+      target_lab: "厂家收回",
+      tray_code: "SYLU-2026-03-001-TP-002",
+    });
   });
 
   test("allows stock-in for fully completed trays and shows post-experiment staging", async () => {

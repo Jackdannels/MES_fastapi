@@ -245,6 +245,34 @@ describe("staging-management model", () => {
     expect(detail.targetExperimentName).toBe("振动试验");
   });
 
+  test("marks unscheduled fallback destinations as unavailable stock-out targets", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].filter(
+      (schedule) => schedule.experiment_code !== "SYLU-2026-04-102-A" || schedule.device.includes("暂存间"),
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "stockOut",
+        targetLab: detail.targetLab,
+      },
+      snapshot,
+    });
+
+    expect(detail).toEqual(
+      expect.objectContaining({
+        targetLab: "振动一室",
+        targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
+        targetIsFallback: true,
+      }),
+    );
+    expect(result.error).toBe("当前实验未排程，仅作为托底目标，暂不可出库。");
+  });
+
   test("treats experiment-completed trays as valid staging stock-in candidates", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.samples].push({
@@ -365,6 +393,31 @@ describe("staging-management model", () => {
 
     expect(result.error).toBe("请选择目标实验室后再出库。");
     expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out")).toHaveLength(1);
+  });
+
+  test("manufacturer return writes returned status even when mapped experiments remain unfinished", () => {
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "manufacturerReturn",
+      },
+      snapshot: createSnapshot(),
+    });
+
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001");
+
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "manufacturer_return",
+      target_lab: "厂家收回",
+      tray_code: "SYLU-2026-04-102-TP-001",
+    });
+    expect(updatedSample).toMatchObject({
+      location: "厂家收回",
+      status: "厂家收回",
+      flow_status: "厂家收回",
+    });
   });
 
   test("syncs fully completed tray samples into post-experiment staging on stock-in", () => {

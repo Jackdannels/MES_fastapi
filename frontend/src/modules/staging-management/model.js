@@ -172,6 +172,9 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
   if (normalizeText(latestEvent?.action) === "stock_out") {
     return "已出库";
   }
+  if (normalizeText(latestEvent?.action) === "manufacturer_return") {
+    return "厂家收回";
+  }
   if (normalizeText(latestEvent?.action) === "stock_in") {
     return options.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : "已入库";
   }
@@ -260,6 +263,56 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     return !experimentName || !completedExperimentNames.has(experimentName);
   };
 
+  const nextExperiment = asArray(experiments).find((experiment) => {
+    const experimentCode = normalizeText(experiment?.experiment_code);
+    return (
+      normalizeText(experiment?.task_code) === taskCode
+      && acceptsExperimentCode(experimentCode)
+      && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
+    );
+  });
+
+  if (nextExperiment) {
+    const nextExperimentCode = normalizeText(nextExperiment?.experiment_code);
+    const scheduledDestinations = asArray(schedules)
+      .filter((schedule) => {
+        const device = normalizeText(schedule?.device);
+        return (
+          normalizeText(schedule?.task_code) === taskCode
+          && normalizeText(schedule?.experiment_code) === nextExperimentCode
+          && device
+          && !isStagingDestination(device)
+        );
+      })
+      .sort((left, right) => parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at));
+
+    const scheduled = scheduledDestinations[0];
+    if (scheduled) {
+      return {
+        targetExperimentCode: nextExperimentCode,
+        targetExperimentName: resolveExperimentName(nextExperiment, scheduled?.experiment_name),
+        targetIsFallback: false,
+        targetLab: normalizeText(scheduled?.device),
+        targetScheduleStartAt: normalizeText(scheduled?.start_at),
+        targetScheduleEndAt: normalizeText(scheduled?.end_at),
+        targetUnavailableReason: "",
+      };
+    }
+
+    const requiredDevice = normalizeText(nextExperiment?.required_device);
+    if (requiredDevice && !isStagingDestination(requiredDevice)) {
+      return {
+        targetExperimentCode: nextExperimentCode,
+        targetExperimentName: resolveExperimentName(nextExperiment),
+        targetIsFallback: true,
+        targetLab: requiredDevice,
+        targetScheduleStartAt: "",
+        targetScheduleEndAt: "",
+        targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
+      };
+    }
+  }
+
   const scheduledDestinations = asArray(schedules)
     .filter((schedule) => {
       const experimentCode = normalizeText(schedule?.experiment_code);
@@ -281,9 +334,11 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     return {
       targetExperimentCode: experimentCode,
       targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
+      targetIsFallback: false,
       targetLab: normalizeText(scheduled?.device),
       targetScheduleStartAt: normalizeText(scheduled?.start_at),
       targetScheduleEndAt: normalizeText(scheduled?.end_at),
+      targetUnavailableReason: "",
     };
   }
 
@@ -302,9 +357,11 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     return {
       targetExperimentCode: normalizeText(fallbackExperiment?.experiment_code),
       targetExperimentName: resolveExperimentName(fallbackExperiment),
+      targetIsFallback: true,
       targetLab: normalizeText(fallbackExperiment?.required_device),
       targetScheduleStartAt: "",
       targetScheduleEndAt: "",
+      targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
     };
   }
 
@@ -317,9 +374,11 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     return {
       targetExperimentCode: "",
       targetExperimentName: normalizeText(row?.testType),
+      targetIsFallback: true,
       targetLab: fallbackLab,
       targetScheduleStartAt: "",
       targetScheduleEndAt: "",
+      targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
     };
   }
 
@@ -440,9 +499,11 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         isPostExperimentInbound,
         targetExperimentCode: targetDestination?.targetExperimentCode || "",
         targetExperimentName: targetDestination?.targetExperimentName || "",
+        targetIsFallback: Boolean(targetDestination?.targetIsFallback),
         targetLab: targetDestination?.targetLab || "",
         targetScheduleEndAt: targetDestination?.targetScheduleEndAt || "",
         targetScheduleStartAt: targetDestination?.targetScheduleStartAt || "",
+        targetUnavailableReason: targetDestination?.targetUnavailableReason || "",
         testType: normalizeText(row.testType),
         trayCode: normalizeText(row.trayCode),
         updatedAt: normalizeText(lastEvent?.time || lastStockInEvent?.time),
@@ -479,7 +540,7 @@ function buildZancunMetrics(input = {}) {
     if (normalizeText(event?.action) === "stock_in") {
       stockedInToday.add(trayCode);
     }
-    if (normalizeText(event?.action) === "stock_out") {
+    if (normalizeText(event?.action) === "stock_out" || normalizeText(event?.action) === "manufacturer_return") {
       stockedOutToday.add(trayCode);
     }
   });
@@ -584,7 +645,9 @@ function buildZancunScanDetail(rows, code, mode) {
       taskCode: "待确认任务",
       targetExperimentCode: "",
       targetExperimentName: "",
+      targetIsFallback: false,
       targetLab: "",
+      targetUnavailableReason: "",
       trayCode: normalizedCode,
     };
   }
@@ -602,7 +665,12 @@ function buildZancunScanDetail(rows, code, mode) {
 function applyZancunInventoryAction(input = {}) {
   const snapshot = input.snapshot && typeof input.snapshot === "object" ? input.snapshot : {};
   const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
-  const actionMode = payload.mode === "stockOut" ? "stockOut" : "stockIn";
+  const actionMode =
+    payload.mode === "manufacturerReturn"
+      ? "manufacturerReturn"
+      : payload.mode === "stockOut"
+        ? "stockOut"
+        : "stockIn";
   const normalizedCode = normalizeText(payload.code);
   const actionTime = normalizeText(payload.actionTime || input.now) || new Date().toISOString();
 
@@ -631,7 +699,15 @@ function applyZancunInventoryAction(input = {}) {
   const matchedRow = rows.find((row) => normalizeText(row?.trayCode) === normalizedCode);
   if (!matchedRow) {
     return {
-      error: actionMode === "stockOut" ? "未找到对应的出库托盘。" : "未找到对应的入库托盘。",
+      error: actionMode === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  if (actionMode === "manufacturerReturn" && !isCurrentStagingStatus(matchedRow.status)) {
+    return {
+      error: "该托盘尚未完成暂存间扫码入库。",
       row: null,
       snapshot: nextSnapshot,
     };
@@ -661,6 +737,14 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
+  if (actionMode === "stockOut" && normalizeText(matchedRow.targetUnavailableReason)) {
+    return {
+      error: matchedRow.targetUnavailableReason,
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
   const selectedTargetLab = normalizeText(payload.targetLab);
   if (actionMode === "stockOut" && !selectedTargetLab) {
     return {
@@ -674,10 +758,19 @@ function applyZancunInventoryAction(input = {}) {
     id: createId("staging-event"),
     tray_code: matchedRow.trayCode,
     task_code: matchedRow.taskCode,
-    action: actionMode === "stockIn" ? "stock_in" : "stock_out",
+    action:
+      actionMode === "stockIn"
+        ? "stock_in"
+        : actionMode === "manufacturerReturn"
+          ? "manufacturer_return"
+          : "stock_out",
     time: actionTime,
     operator: normalizeText(payload.operator) || "扫码登记",
-    ...(actionMode === "stockOut"
+    ...(actionMode === "manufacturerReturn"
+      ? {
+          target_lab: "厂家收回",
+        }
+      : actionMode === "stockOut"
       ? {
           target_experiment_code: normalizeText(matchedRow.targetExperimentCode),
           target_experiment_name: normalizeText(matchedRow.targetExperimentName),
@@ -710,6 +803,20 @@ function applyZancunInventoryAction(input = {}) {
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
       status: "送至实验室",
+      trayCodes: [matchedRow.trayCode],
+    });
+    nextSnapshot[SAMPLES_KEY] = synced.samples;
+  }
+
+  if (actionMode === "manufacturerReturn") {
+    const synced = synchronizeSamplesForTrayCodes({
+      historyAction: "厂家收回",
+      historyDetail: `${matchedRow.trayCode} 厂家收回`,
+      location: "厂家收回",
+      now: actionTime,
+      owner: normalizeText(payload.operator) || "扫码登记",
+      samples: nextSnapshot[SAMPLES_KEY],
+      status: "厂家收回",
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples;

@@ -21,6 +21,7 @@ import {
 
 const RUNNING_MODAL_RESTORE_MS = 10_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
+const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 
 function useLaboratoryPage(options = {}) {
   const now = options.now;
@@ -88,9 +89,14 @@ function useLaboratoryPage(options = {}) {
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = ref(false);
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
-  const canResetCurrentTask = computed(
-    () => Boolean(currentTask.value && Array.isArray(currentTask.value?.trayCodes) && currentTask.value.trayCodes.length > 0) && !runningInteractionLocked.value,
-  );
+  const canResetCurrentTask = computed(() => {
+    const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
+    return (
+      trayRows.length > 0
+      && trayRows.every((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+      && !runningInteractionLocked.value
+    );
+  });
 
   const clearRunningModalRestoreTimer = () => {
     if (runningModalRestoreTimer && typeof window !== "undefined") {

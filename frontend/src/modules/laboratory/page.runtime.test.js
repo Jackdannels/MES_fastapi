@@ -394,6 +394,21 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("opens double confirmation modals for reset and warns before resetting the current experiment trays", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "已到达实验室",
+        flow_status: "已到达实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [
+          { quantity: 1, status: "已到达实验室", tray_code: "TP-001" },
+          { quantity: 1, status: "已到达实验室", tray_code: "TP-002" },
+        ],
+      },
+    ];
     const mounted = await mountPage();
 
     await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
@@ -421,6 +436,25 @@ describe("LaboratoryPage runtime", () => {
         flow_status: "实验进行中",
         task_code: "SYLU-2026-04-101",
         trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+  });
+
+  test("disables the reset button after the current experiment is completed", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验已完成",
+        flow_status: "实验已完成",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验已完成", tray_code: "TP-001" }],
       },
     ];
 

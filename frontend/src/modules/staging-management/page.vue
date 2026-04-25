@@ -179,19 +179,46 @@
           <span class="pill">样品数 {{ activeDetail.quantity || 0 }}</span>
         </article>
 
-        <article class="zancun-destination-card" data-testid="zancun-destination-card">
+        <article
+          class="zancun-destination-card"
+          :class="{ 'is-disabled': activeDetail.targetIsFallback }"
+          data-testid="zancun-destination-card"
+        >
           <div class="zancun-destination-card__main">
             <h4>{{ activeDetail.targetLab || "暂无目标实验室" }}</h4>
             <div class="muted">{{ activeDetail.targetExperimentName || "待确认实验" }}</div>
+            <div v-if="activeDetail.targetUnavailableReason" class="muted zancun-destination-warning">
+              {{ activeDetail.targetUnavailableReason }}
+            </div>
           </div>
           <button
             class="action-btn secondary zancun-destination-card__action"
             data-testid="zancun-destination-submit"
             type="button"
-            :disabled="!activeDetail.targetLab"
+            :disabled="!activeDetail.targetLab || activeDetail.targetIsFallback"
             @click="confirmDestinationAction"
           >
             送至{{ activeDetail.targetLab || "目标实验室" }}
+          </button>
+        </article>
+
+        <article
+          class="zancun-destination-card zancun-destination-card--return"
+          :class="manufacturerReturnSafe ? 'is-safe' : 'is-danger'"
+          data-testid="zancun-manufacturer-return-card"
+        >
+          <div class="zancun-destination-card__main">
+            <h4>厂家收回</h4>
+            <div class="muted">{{ manufacturerReturnSafe ? "全部实验已完成" : "尚有未完成实验" }}</div>
+          </div>
+          <button
+            class="action-btn secondary zancun-destination-card__action zancun-manufacturer-return"
+            :class="manufacturerReturnSafe ? 'is-safe' : 'is-danger'"
+            data-testid="zancun-manufacturer-return"
+            type="button"
+            @click="confirmManufacturerReturn"
+          >
+            厂家收回
           </button>
         </article>
       </div>
@@ -255,6 +282,21 @@
         </button>
         <button class="action-btn secondary" data-testid="zancun-detail-cancel" type="button" @click="cancelDetailAction">
           {{ activeDetailMode === "stockIn" ? "取消入库" : "取消出库" }}
+        </button>
+      </template>
+    </AppModal>
+
+    <AppModal :open="returnDangerModalOpen" data-testid="zancun-return-danger-modal" title="危险操作确认" @close="closeReturnDanger">
+      <div class="form-grid">
+        <div class="laboratory-danger-panel zancun-return-danger-panel">
+          <strong>危险操作确认</strong>
+          <p>该托盘中样品尚有未完成实验，是否立即厂家收回！</p>
+        </div>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" data-testid="zancun-return-danger-cancel" type="button" @click="closeReturnDanger">取消</button>
+        <button class="action-btn danger" data-testid="zancun-return-danger-confirm" type="button" @click="confirmDangerManufacturerReturn">
+          确认厂家收回
         </button>
       </template>
     </AppModal>
@@ -386,6 +428,7 @@ const selectMetricMode = (mode) => {
 const scanModalOpen = ref(false);
 const detailModalOpen = ref(false);
 const destinationModalOpen = ref(false);
+const returnDangerModalOpen = ref(false);
 const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
 const scanWarning = ref("");
@@ -405,9 +448,12 @@ const activeDetail = reactive({
   stockInAt: "",
   stockInAtDisplay: "",
   taskCode: "",
+  isPostExperimentInbound: false,
   targetExperimentCode: "",
   targetExperimentName: "",
+  targetIsFallback: false,
   targetLab: "",
+  targetUnavailableReason: "",
   trayCode: "",
 });
 
@@ -426,9 +472,12 @@ const resetDetail = () => {
   activeDetail.stockInAt = "";
   activeDetail.stockInAtDisplay = "";
   activeDetail.taskCode = "";
+  activeDetail.isPostExperimentInbound = false;
   activeDetail.targetExperimentCode = "";
   activeDetail.targetExperimentName = "";
+  activeDetail.targetIsFallback = false;
   activeDetail.targetLab = "";
+  activeDetail.targetUnavailableReason = "";
   activeDetail.trayCode = "";
 };
 
@@ -477,6 +526,8 @@ const openDestinationModal = (detail) => {
   destinationModalOpen.value = true;
 };
 
+const manufacturerReturnSafe = computed(() => activeDetail.status === "放置实验后暂存间" || activeDetail.isPostExperimentInbound);
+
 const closeDetailModal = () => {
   detailModalOpen.value = false;
   resetDetail();
@@ -485,6 +536,10 @@ const closeDetailModal = () => {
 const closeDestinationModal = () => {
   destinationModalOpen.value = false;
   resetDetail();
+};
+
+const closeReturnDanger = () => {
+  returnDangerModalOpen.value = false;
 };
 
 const persistInventoryResult = async (result) => {
@@ -528,13 +583,8 @@ const completeScan = async () => {
     return;
   }
 
-  if (detail.status === "放置实验后暂存间") {
-    scanWarning.value = "该托盘已完成全部实验，当前应保留在暂存间。";
-    return;
-  }
-
-  if (!detail.targetLab) {
-    scanWarning.value = "未找到该托盘可出库的目标实验室。";
+  if (detail.status !== "已入库" && detail.status !== "放置实验后暂存间") {
+    scanWarning.value = "该托盘尚未完成暂存间扫码入库。";
     return;
   }
 
@@ -551,6 +601,9 @@ const cancelDestinationAction = () => {
 };
 
 const confirmDestinationAction = async () => {
+  if (activeDetail.targetIsFallback) {
+    return;
+  }
   const result = applyZancunInventoryAction({
     now: nowValue(),
     payload: {
@@ -565,6 +618,35 @@ const confirmDestinationAction = async () => {
 
   await persistInventoryResult(result);
   closeDestinationModal();
+};
+
+const confirmManufacturerReturn = async () => {
+  if (!manufacturerReturnSafe.value) {
+    returnDangerModalOpen.value = true;
+    return;
+  }
+
+  await submitManufacturerReturn();
+};
+
+const submitManufacturerReturn = async () => {
+  returnDangerModalOpen.value = false;
+
+  const result = applyZancunInventoryAction({
+    now: nowValue(),
+    payload: {
+      code: activeDetail.trayCode,
+      mode: "manufacturerReturn",
+    },
+    snapshot: snapshot.value,
+  });
+
+  await persistInventoryResult(result);
+  closeDestinationModal();
+};
+
+const confirmDangerManufacturerReturn = async () => {
+  await submitManufacturerReturn();
 };
 
 const confirmDetailAction = async () => {
