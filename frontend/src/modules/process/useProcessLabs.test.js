@@ -1,3 +1,5 @@
+import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import { describe, expect, test, vi } from "vitest";
 
 import { useProcessLabs } from "./useProcessLabs";
@@ -5,6 +7,45 @@ import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 // 过程管控页的风险点在于：实验室卡片、抽屉详情和托盘汇总必须来自同一份快照口径。
 describe("useProcessLabs", () => {
+  test("reloads lab status when sample progress changes are broadcast", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+    const Harness = {
+      setup() {
+        useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+          loadSnapshot,
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+
+    wrapper.unmount();
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+  });
+
   test("loads lab cards and opens task detail drawer in place", async () => {
     // 这里覆盖“卡片加载 -> 原地打开抽屉 -> 汇总托盘数”的完整主流程。
     const loadSnapshot = vi.fn(async () => ({

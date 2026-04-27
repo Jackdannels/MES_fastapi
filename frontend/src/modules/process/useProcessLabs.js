@@ -1,5 +1,5 @@
 // 围绕实验室占用情况和任务下钻构建过程管控页状态。
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { PROCESS_LABS, buildProcessLabCards } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
@@ -863,7 +863,17 @@ function useProcessLabs(options = {}) {
   };
 
   if (autoLoad) {
-    onMounted(loadLabStatus);
+    onMounted(() => {
+      void loadLabStatus();
+      if (typeof window !== "undefined") {
+        window.addEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+      }
+    });
+    onBeforeUnmount(() => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+      }
+    });
   }
 
   return {
