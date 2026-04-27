@@ -6,11 +6,11 @@ import { describe, expect, test } from "vitest";
 const panelPath = resolve(process.cwd(), "src/modules/samples/SamplesManagementPanel.vue");
 
 describe("SamplesManagementPanel structure", () => {
-  test("renders the shared pre-allocation workbench and removes lifecycle trace", () => {
+  test("removes the embedded pre-allocation workbench and keeps flow panels", () => {
     const source = readFileSync(panelPath, "utf8");
 
-    expect(source).toContain("TransferWorkbench");
-    expect(source).toContain('mode="pre-allocation"');
+    expect(source).not.toContain("TransferWorkbench");
+    expect(source).not.toContain('mode="pre-allocation"');
     expect(source).not.toContain("SampleProcessPanel");
     expect(source).not.toContain("样品全生命周期追踪");
     expect(source).toContain("样品流转与状态");

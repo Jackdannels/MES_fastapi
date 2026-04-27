@@ -1,7 +1,5 @@
 <template>
   <div class="samples-management-panel" :class="{ 'is-hidden': hidden }" data-testid="samples-management-panel">
-    <TransferWorkbench embedded mode="pre-allocation" :show-header="false" />
-
     <div class="tabs section">
       <button
         class="tab-btn"
@@ -302,7 +300,6 @@ import { useTabState } from "@/composables/useTabState";
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
-import TransferWorkbench from "@/modules/transfer-workbench/TransferWorkbench.vue";
 
 defineProps({
   hidden: {

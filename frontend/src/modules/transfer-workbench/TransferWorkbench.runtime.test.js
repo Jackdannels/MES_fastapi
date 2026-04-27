@@ -418,8 +418,10 @@ describe("TransferWorkbench runtime", () => {
     });
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("样品预分装");
-    expect(wrapper.get(".transfer-overview-page-title").classes()).toContain("transfer-overview-page-title--compact");
+    expect(wrapper.text()).not.toContain("样品预分装");
+    expect(wrapper.text()).not.toContain("总任务清单");
+    expect(wrapper.text()).not.toContain("通过总任务清单进入任务样品分配管理");
+    expect(wrapper.find(".transfer-overview-page-title").exists()).toBe(false);
     expect(wrapper.text()).toContain("未入库");
     expect(wrapper.text()).toContain("已入库");
     expect(wrapper.text()).toContain("全部");

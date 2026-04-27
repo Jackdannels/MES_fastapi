@@ -36,7 +36,7 @@
 
       <template v-else-if="viewMode === 'overview'">
         <section class="card transfer-overview-shell">
-          <div class="transfer-overview-title-row">
+          <div v-if="showOverviewIntro" class="transfer-overview-title-row">
             <h2
               class="transfer-overview-page-title"
               :class="{ 'transfer-overview-page-title--compact': mode === 'pre-allocation' }"
@@ -46,7 +46,7 @@
           </div>
 
           <div class="transfer-overview-shell__head">
-            <div>
+            <div v-if="showOverviewIntro">
               <h2>总任务清单</h2>
               <div class="muted">{{ modeConfig.overviewHint }}</div>
             </div>
@@ -639,6 +639,7 @@ const switchModule = async (targetModule) => {
 const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
 const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
 const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
+const showOverviewIntro = computed(() => props.mode !== "pre-allocation");
 const taskTypeOptions = computed(() =>
   buildExperimentTypeOptions(taskOverview.value.map((task) => task.experimentTypeText || task.taskType)),
 );

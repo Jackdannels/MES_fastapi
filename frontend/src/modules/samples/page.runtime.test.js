@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import SamplesPage from "./page.vue";
@@ -101,9 +101,9 @@ const createWorkspacePayload = () => ({
 });
 
 const settle = async (wrapper) => {
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
   await wrapper.vm.$nextTick();
+  await flushPromises();
   await wrapper.vm.$nextTick();
 };
 
@@ -144,118 +144,15 @@ describe("SamplesPage runtime", () => {
     routerReplace.mockReset();
   });
 
-  test("renders pre-allocation workbench and keeps flow/staging panels while removing lifecycle trace", async () => {
+  test("keeps flow and staging panels without embedding the pre-allocation workbench", async () => {
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("样品预分装");
+    expect(wrapper.text()).not.toContain("样品预分装");
+    expect(wrapper.text()).not.toContain("总任务清单");
     expect(wrapper.text()).toContain("样品流转与状态");
     expect(wrapper.text()).toContain("暂存间派发");
     expect(wrapper.text()).not.toContain("样品全生命周期追踪");
-    expect(wrapper.text()).toContain("SYLU-2026-03-101");
-    expect(wrapper.text()).not.toContain("SYLU-2026-03-102");
-  });
-
-  test("pre-allocation detail hides confirm storage and uses reallocate label", async () => {
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.text()).toContain("任务样品分配管理");
-    expect(wrapper.text()).not.toContain("确认入库");
-    expect(wrapper.text()).toContain("重新分配");
-    expect(wrapper.get('[data-testid="transfer-save-trays"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').exists()).toBe(true);
-  });
-
-  test("pre-allocation becomes read-only after saving until reallocate is clicked", async () => {
-    const bootstrapPayload = createBootstrapPayload();
-    const editableWorkspace = {
-      ...createWorkspacePayload(),
-      experiments: [],
-      assignedTrays: [
-        {
-          ...createWorkspacePayload().assignedTrays[0],
-        },
-        {
-          trayId: 202,
-          trayNo: "SYLU-2026-03-101-TP-002",
-          trayType: "标准托盘",
-          trayStatus: "已预分配",
-          capacity: 2,
-          experimentLabels: [],
-          experimentCodes: [],
-          samples: [],
-          barcode: null,
-          barcodeData: null,
-        },
-      ],
-      trayInventory: [{ trayId: 203, trayNo: "STOCK-TP-003", trayType: "标准托盘", capacity: 2, currentTaskId: null }],
-    };
-    const savedWorkspace = {
-      ...editableWorkspace,
-      allocationSaved: true,
-    };
-    const reloadedWorkspace = {
-      ...editableWorkspace,
-      allocationSaved: false,
-    };
-    let workspaceState = editableWorkspace;
-
-    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
-      const url = String(input);
-      if (url.includes("/api/transfer-area/bootstrap")) {
-        return { ok: true, status: 200, json: async () => bootstrapPayload };
-      }
-      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
-        return { ok: true, status: 200, json: async () => workspaceState };
-      }
-      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
-        expect(options.method).toBe("POST");
-        workspaceState = savedWorkspace;
-        return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }) };
-      }
-      if (url.includes("/api/transfer-area/tasks/101/reload")) {
-        expect(options.method).toBe("POST");
-        workspaceState = reloadedWorkspace;
-        return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新分配", workspace: reloadedWorkspace }) };
-      }
-      if (url.includes("/api/storage")) {
-        return { ok: true, status: 200, json: async () => ({}) };
-      }
-      if (url.includes("/api/tasks")) {
-        return { ok: true, status: 200, json: async () => [] };
-      }
-      throw new Error(`Unhandled fetch: ${url}`);
-    }));
-
-    const wrapper = mount(SamplesPage);
-    await settle(wrapper);
-    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(false);
-    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').element.disabled).toBe(false);
-    expect(wrapper.findAll(".sample-tray-remove")[1].element.disabled).toBe(false);
-    expect(wrapper.get('[data-testid="transfer-tray-card-0"] .sample-tray-sample-tag').element.draggable).toBe(true);
-
-    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(true);
-    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').element.disabled).toBe(true);
-    expect(wrapper.findAll(".sample-tray-remove")[1].element.disabled).toBe(true);
-    expect(wrapper.get('[data-testid="transfer-tray-card-0"] .sample-tray-sample-tag').element.draggable).toBe(false);
-
-    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(false);
-    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').element.disabled).toBe(false);
-    expect(wrapper.findAll(".sample-tray-remove")[1].element.disabled).toBe(false);
-    expect(wrapper.get('[data-testid="transfer-tray-card-0"] .sample-tray-sample-tag').element.draggable).toBe(true);
   });
 
   test("samples flow task filter removes orphan legacy task codes that are no longer in the current task list", async () => {
