@@ -4,7 +4,7 @@
       <section class="card section tray-management-workspace" data-testid="samples-trays-workspace">
         <div class="tray-management-head">
           <div>
-            <h3>托盘管理</h3>
+            <h3>托盘信息</h3>
             <div class="muted" data-testid="samples-trays-counter">剩余托盘/总托盘数 {{ trayCounterText }}</div>
           </div>
           <label class="tray-management-filter tray-management-filter-emphasis">

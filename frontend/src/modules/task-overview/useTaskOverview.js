@@ -13,9 +13,11 @@ import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 const SCHEDULED_LABEL = "已排程";
 const UNSCHEDULED_LABEL = "未排程";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
-const TASK_COUNTER_LABEL = "已排程总任务数";
+const TASK_COUNTER_LABEL = "已排程/总任务数";
 const EXPERIMENT_COUNTER_LABEL = "已排程总实验数";
 const TRAY_COUNTER_LABEL = "剩余托盘/总托盘数";
+const TASK_SCHEDULE_FILTERS = new Set(["all", "scheduled", "unscheduled"]);
+const TASK_OVERVIEW_PAGE_SIZE = 5;
 const TASK_HIGHLIGHT_QUERY_KEY = "highlightTask";
 const TASK_HIGHLIGHT_CLASS = "is-highlighted";
 const TASK_HIGHLIGHT_DURATION_MS = 2200;
@@ -32,6 +34,7 @@ function getTodayDateValue(now = new Date()) {
 function filterTaskOverviewRows({
   rows,
   keyword,
+  scheduleFilter = "all",
   testTypeFilter,
   timeFilter,
   customStartDate,
@@ -42,6 +45,7 @@ function filterTaskOverviewRows({
   const query = String(keyword || "").trim().toLowerCase();
   const selectedType = String(testTypeFilter || "").trim();
   const selectedTime = String(timeFilter || "all");
+  const selectedScheduleFilter = TASK_SCHEDULE_FILTERS.has(String(scheduleFilter || "")) ? String(scheduleFilter || "") : "all";
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const ms7 = 7 * 24 * 60 * 60 * 1000;
   const ms30 = 30 * 24 * 60 * 60 * 1000;
@@ -94,6 +98,13 @@ function filterTaskOverviewRows({
     if (!matchesExperimentTypeFilter(selectedType, row?.taskType, row?.experimentSummary)) {
       return false;
     }
+    const isScheduled = Number(row?.scheduleCount || 0) > 0;
+    if (selectedScheduleFilter === "scheduled" && !isScheduled) {
+      return false;
+    }
+    if (selectedScheduleFilter === "unscheduled" && isScheduled) {
+      return false;
+    }
     if (!matchTime(row)) {
       return false;
     }
@@ -117,12 +128,23 @@ function filterTaskOverviewRows({
   });
 }
 
+function cycleTaskScheduleFilter(currentFilter) {
+  if (currentFilter === "scheduled") {
+    return "unscheduled";
+  }
+  if (currentFilter === "unscheduled") {
+    return "all";
+  }
+  return "scheduled";
+}
+
 // 构建任务视图和托盘视图顶部显示的汇总计数。
 function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTotal, viewMode }) {
   const rows = Array.isArray(filteredRows) ? filteredRows : [];
   const trays = Array.isArray(trayOverviewRows) ? trayOverviewRows : [];
   const total = Number(trayOverviewTotal) || 0;
   const scheduledTaskCount = rows.filter((row) => Number(row?.scheduleCount || 0) > 0).length;
+  const unscheduledTaskCount = rows.length - scheduledTaskCount;
   const scheduledExperimentCount = rows.reduce((sum, row) => sum + Number(row?.scheduledExperimentCount || 0), 0);
   const eligibleExperimentCount = rows.reduce((sum, row) => sum + Number(row?.eligibleExperimentCount || 0), 0);
   const remainingTrayCount = trays.filter((tray) => String(tray?.targetExperiment || "").trim() === UNASSIGNED_EXPERIMENT_LABEL).length;
@@ -137,6 +159,8 @@ function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTota
     overviewCounterValue: inTrayMode ? `${remainingTrayCount}/${total}` : `${scheduledTaskCount}/${rows.length}`,
     remainingTrayCount,
     scheduledTaskCount,
+    totalTaskCount: rows.length,
+    unscheduledTaskCount,
   };
 }
 
@@ -193,6 +217,8 @@ function useTaskOverview() {
   const customStartDate = ref(getTodayDateValue());
   const customEndDate = ref(getTodayDateValue());
   const testTypeFilter = ref("");
+  const taskScheduleFilter = ref("all");
+  const taskPage = ref(1);
   const rows = ref([]);
   let highlightTimer = null;
   let highlightedCardElement = null;
@@ -274,16 +300,34 @@ function useTaskOverview() {
     handleEditorGlobalClick(event, overviewRoot.value);
   };
 
-  const filteredRows = computed(() =>
+  const baseFilteredRows = computed(() =>
     filterTaskOverviewRows({
       rows: rows.value,
       keyword: keyword.value,
+      scheduleFilter: "all",
       testTypeFilter: testTypeFilter.value,
       timeFilter: timeFilter.value,
       customStartDate: customStartDate.value,
       customEndDate: customEndDate.value,
     })
   );
+  const filteredRows = computed(() =>
+    filterTaskOverviewRows({
+      rows: baseFilteredRows.value,
+      keyword: "",
+      scheduleFilter: taskScheduleFilter.value,
+      testTypeFilter: "",
+      timeFilter: "all",
+      customStartDate: "",
+      customEndDate: "",
+    })
+  );
+  const taskPageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / TASK_OVERVIEW_PAGE_SIZE)));
+  const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
+  const pagedRows = computed(() => filteredRows.value.slice(
+    (currentTaskPage.value - 1) * TASK_OVERVIEW_PAGE_SIZE,
+    currentTaskPage.value * TASK_OVERVIEW_PAGE_SIZE,
+  ));
 
   const testTypeOptions = computed(() => {
     // 下拉项统一只展示当前数据中存在的原子实验类型。
@@ -293,7 +337,7 @@ function useTaskOverview() {
   const taskTypeEditOptions = computed(() => testTypeOptions.value);
   const overviewMetrics = computed(() =>
     buildOverviewMetrics({
-      filteredRows: filteredRows.value,
+      filteredRows: baseFilteredRows.value,
       trayOverviewRows: trayOverviewRows.value,
       trayOverviewTotal,
       viewMode: viewMode.value,
@@ -304,6 +348,33 @@ function useTaskOverview() {
   const overviewCounterLabel = computed(() => overviewMetrics.value.overviewCounterLabel);
   const overviewCounterValue = computed(() => overviewMetrics.value.overviewCounterValue);
   const isTrayCounterAlert = computed(() => overviewMetrics.value.isTrayCounterAlert);
+  const unscheduledTaskCounterValue = computed(() => `${overviewMetrics.value.unscheduledTaskCount}/${overviewMetrics.value.totalTaskCount}`);
+
+  const taskScheduleCounterLabel = computed(() => {
+    if (taskScheduleFilter.value === "scheduled") {
+      return "已排程任务";
+    }
+    if (taskScheduleFilter.value === "unscheduled") {
+      return "未排程任务";
+    }
+    return TASK_COUNTER_LABEL;
+  });
+  const taskScheduleCounterValue = computed(() => (
+    taskScheduleFilter.value === "unscheduled" ? unscheduledTaskCounterValue.value : overviewCounterValue.value
+  ));
+
+  const cycleTaskScheduleFilterState = () => {
+    taskScheduleFilter.value = cycleTaskScheduleFilter(taskScheduleFilter.value);
+    taskPage.value = 1;
+  };
+
+  const setTaskPage = (page) => {
+    const nextPage = Number.parseInt(String(page ?? ""), 10);
+    if (!Number.isFinite(nextPage)) {
+      return;
+    }
+    taskPage.value = Math.min(Math.max(nextPage, 1), taskPageCount.value);
+  };
 
   const formatTraySummary = (row) => {
     const trays = Array.isArray(row?.trays) ? row.trays : [];
@@ -407,7 +478,13 @@ function useTaskOverview() {
       if (editingTaskCode.value) {
         cancelEdit();
       }
+      taskScheduleFilter.value = "all";
+      taskPage.value = 1;
     }
+  });
+
+  watch([keyword, timeFilter, customStartDate, customEndDate, testTypeFilter, taskScheduleFilter], () => {
+    taskPage.value = 1;
   });
 
   watch(
@@ -470,12 +547,20 @@ function useTaskOverview() {
     overviewCounterLabel,
     overviewCounterValue,
     overviewRoot,
+    currentTaskPage,
+    cycleTaskScheduleFilterState,
+    pagedRows,
     requestDeleteTask,
     resetDeleteConfirm,
     saveEdit,
     savingTaskCode,
     selectedTaskCode,
+    setTaskPage,
     taskTypeEditOptions,
+    taskPageCount,
+    taskScheduleCounterLabel,
+    taskScheduleCounterValue,
+    taskScheduleFilter,
     testTypeFilter,
     testTypeOptions,
     timeFilter,
@@ -489,6 +574,7 @@ function useTaskOverview() {
 export {
   applyRouteFiltersState,
   buildOverviewMetrics,
+  cycleTaskScheduleFilter,
   findTaskCardElement,
   filterTaskOverviewRows,
   getTodayDateValue,

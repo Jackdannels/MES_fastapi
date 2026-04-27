@@ -13,6 +13,13 @@
       :overview-counter-label="overviewCounterLabel"
       :overview-counter-value="overviewCounterValue"
       :is-tray-counter-alert="isTrayCounterAlert"
+      :task-schedule-counter-label="taskScheduleCounterLabel"
+      :task-schedule-counter-value="taskScheduleCounterValue"
+      :task-schedule-filter="taskScheduleFilter"
+      :current-task-page="currentTaskPage"
+      :task-page-count="taskPageCount"
+      @change-task-page="setTaskPage"
+      @cycle-task-schedule-filter="cycleTaskScheduleFilterState"
       @refresh="loadOverview"
     />
 
@@ -21,7 +28,7 @@
 
     <div v-else-if="viewMode === 'task'" class="task-overview-list">
       <TaskOverviewCard
-        v-for="(row, index) in filteredRows"
+        v-for="(row, index) in pagedRows"
         :key="row.taskCode"
         :delete-confirm="deleteConfirm"
         :deleting="deletingTaskCode === row.taskCode"
@@ -31,7 +38,7 @@
         :editing="isEditing(row.taskCode)"
         :format-tray-count="formatTrayCount"
         :format-tray-summary="formatTraySummary"
-        :index="index"
+        :index="(currentTaskPage - 1) * 5 + index"
         :row="row"
         :saving="savingTaskCode === row.taskCode"
         :selected="selectedTaskCode === row.taskCode"
@@ -86,12 +93,20 @@ const {
   overviewCounterLabel,
   overviewCounterValue,
   overviewRoot,
+  currentTaskPage,
+  cycleTaskScheduleFilterState,
+  pagedRows,
   requestDeleteTask,
   resetDeleteConfirm,
   saveEdit,
   savingTaskCode,
   selectedTaskCode,
+  setTaskPage,
   taskTypeEditOptions,
+  taskPageCount,
+  taskScheduleCounterLabel,
+  taskScheduleCounterValue,
+  taskScheduleFilter,
   testTypeFilter,
   testTypeOptions,
   timeFilter,

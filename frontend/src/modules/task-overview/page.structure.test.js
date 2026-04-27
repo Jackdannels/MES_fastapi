@@ -13,6 +13,7 @@ describe("TaskOverviewPage structure", () => {
     expect(source).toContain("TaskOverviewCard");
     expect(source).toContain("TaskOverviewTrayTable");
     expect(source).toContain("useTaskOverview");
+    expect(source).not.toContain('class="task-overview-pagination"');
     expect(source).not.toContain('class="task-overview-header"');
     expect(source).not.toContain('class="task-overview-actions"');
     expect(source).not.toContain('class="task-overview-card"');

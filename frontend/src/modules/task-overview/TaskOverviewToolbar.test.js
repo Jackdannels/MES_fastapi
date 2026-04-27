@@ -12,8 +12,11 @@ const mountToolbar = (props = {}) =>
       experimentCounterValue: "3/5",
       isTrayCounterAlert: false,
       keyword: "",
-      overviewCounterLabel: "已排程总任务数",
+      currentTaskPage: 1,
+      overviewCounterLabel: "已排程/总任务数",
       overviewCounterValue: "1/2",
+      taskPageCount: 3,
+      taskScheduleFilter: "all",
       testTypeFilter: "",
       testTypeOptions: ["冲击试验", "振动试验"],
       timeFilter: "all",
@@ -23,14 +26,26 @@ const mountToolbar = (props = {}) =>
   });
 
 describe("TaskOverviewToolbar", () => {
-  test("renders the mode switch beside the overview counter instead of inside the filter actions", () => {
+  test("renders primary module cards on the left without the legacy text heading", () => {
     const wrapper = mountToolbar();
 
-    expect(wrapper.find(".task-overview-heading .task-overview-mode-switch").exists()).toBe(true);
-    expect(wrapper.find(".task-overview-actions .task-overview-mode-switch").exists()).toBe(false);
-    expect(wrapper.findAll(".task-overview-counter")).toHaveLength(2);
+    expect(wrapper.find(".task-overview-heading").exists()).toBe(false);
+    expect(wrapper.find(".task-overview-module-cards").exists()).toBe(true);
+    expect(wrapper.findAll(".task-overview-module-card")).toHaveLength(2);
+    expect(wrapper.findAll(".task-overview-module-card b")).toHaveLength(0);
+    expect(wrapper.text()).not.toContain("从任务和托盘两个视角跟踪");
+  });
+
+  test("renders compact centered blue metric cards without helper descriptions", () => {
+    const wrapper = mountToolbar();
+
+    expect(wrapper.findAll(".task-overview-schedule-card")).toHaveLength(3);
+    expect(wrapper.findAll(".task-overview-schedule-card").every((node) => node.classes().includes("is-blue-tint"))).toBe(true);
+    expect(wrapper.text()).toContain("已排程/总任务数");
     expect(wrapper.text()).toContain("已排程总实验数");
     expect(wrapper.text()).toContain("3/5");
+    expect(wrapper.text()).not.toContain("默认显示所有任务");
+    expect(wrapper.text()).not.toContain("点击后仅显示已排程任务");
   });
 
   test("shows only one counter card in tray mode", () => {
@@ -42,7 +57,7 @@ describe("TaskOverviewToolbar", () => {
       viewMode: "tray",
     });
 
-    expect(wrapper.findAll(".task-overview-counter")).toHaveLength(1);
+    expect(wrapper.findAll(".task-overview-schedule-card")).toHaveLength(1);
     expect(wrapper.text()).not.toContain("已排程总实验数");
   });
 
@@ -64,11 +79,30 @@ describe("TaskOverviewToolbar", () => {
   test("emits view mode and refresh actions", async () => {
     const wrapper = mountToolbar();
 
-    await wrapper.findAll("button.tab-btn")[1].trigger("click");
+    await wrapper.findAll(".task-overview-module-card")[1].trigger("click");
     await wrapper.find("button.action-btn.secondary").trigger("click");
 
     expect(wrapper.emitted("update:viewMode")).toEqual([["tray"]]);
     expect(wrapper.emitted("refresh")).toEqual([[]]);
+  });
+
+  test("emits schedule filter cycle from the scheduled task card", async () => {
+    const wrapper = mountToolbar({ taskScheduleFilter: "all" });
+
+    await wrapper.get('[data-testid="task-overview-schedule-cycle"]').trigger("click");
+
+    expect(wrapper.emitted("cycle-task-schedule-filter")).toEqual([[]]);
+  });
+
+  test("places pagination in the filter toolbar", async () => {
+    const wrapper = mountToolbar({ currentTaskPage: 2, taskPageCount: 4 });
+
+    expect(wrapper.find(".task-overview-toolbar-pagination").exists()).toBe(true);
+    expect(wrapper.find(".task-overview-actions .task-list-pagination").exists()).toBe(true);
+
+    await wrapper.find('.task-overview-toolbar-pagination [data-page="3"]').trigger("click");
+
+    expect(wrapper.emitted("change-task-page")).toEqual([[3]]);
   });
 
   test("shows custom range inputs and emits filter updates", async () => {

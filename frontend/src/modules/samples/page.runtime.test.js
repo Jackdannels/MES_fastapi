@@ -148,6 +148,24 @@ describe("SamplesPage runtime", () => {
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
+    expect(wrapper.find(".samples-wide-title").exists()).toBe(false);
+    expect(wrapper.find(".samples-module-cards").exists()).toBe(true);
+    expect(wrapper.findAll(".samples-module-card")).toHaveLength(2);
+    expect(wrapper.findAll(".samples-module-card b")).toHaveLength(0);
+    expect(wrapper.findAll(".samples-module-card").every((node) => node.classes().includes("is-content-centered"))).toBe(true);
+    expect(wrapper.text()).toContain("样品信息");
+    expect(wrapper.text()).toContain("托盘信息");
+    expect(wrapper.text()).not.toContain("样品管理");
+    expect(wrapper.text()).not.toContain("托盘管理");
+    expect(wrapper.text()).not.toContain("样品流转、暂存间派发");
+    expect(wrapper.text()).not.toContain("托盘状态、流程图");
+    expect(wrapper.find(".samples-submode-strip").exists()).toBe(true);
+    expect(wrapper.findAll(".samples-submode-card")).toHaveLength(2);
+    expect(wrapper.findAll(".samples-submode-card").every((node) => node.classes().includes("is-content-centered"))).toBe(true);
+    expect(wrapper.text()).not.toContain("样品管理 / 当前功能");
+    expect(wrapper.text()).not.toContain("样品管理 / 子功能");
+    expect(wrapper.text()).not.toContain("查询流转状态、批量入库");
+    expect(wrapper.text()).not.toContain("派发暂存样品至目标实验室");
     expect(wrapper.text()).not.toContain("样品预分装");
     expect(wrapper.text()).not.toContain("总任务清单");
     expect(wrapper.text()).toContain("样品流转与状态");

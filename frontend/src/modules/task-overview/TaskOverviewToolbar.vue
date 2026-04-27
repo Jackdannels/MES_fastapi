@@ -1,30 +1,64 @@
 <template>
   <div class="task-overview-header">
-    <div class="task-overview-heading">
-      <h3>任务/托盘总览</h3>
-      <div class="task-overview-heading-metrics">
-        <div class="task-overview-counter" :class="{ 'is-alert': isTrayCounterAlert }">
-          <div class="task-overview-counter-label">{{ overviewCounterLabel }}</div>
-          <div class="task-overview-counter-value">{{ overviewCounterValue }}</div>
-        </div>
-        <div v-if="viewMode === 'task' && experimentCounterLabel" class="task-overview-counter">
-          <div class="task-overview-counter-label">{{ experimentCounterLabel }}</div>
-          <div class="task-overview-counter-value">{{ experimentCounterValue }}</div>
-        </div>
-        <div class="tabs task-overview-mode-switch">
-          <button class="tab-btn" :class="{ active: viewMode === 'task' }" type="button" @click="emit('update:viewMode', 'task')">
-            任务总览
-          </button>
-          <button class="tab-btn" :class="{ active: viewMode === 'tray' }" type="button" @click="emit('update:viewMode', 'tray')">
-            托盘总览
-          </button>
-        </div>
+    <div class="task-overview-topline">
+      <div class="task-overview-module-cards">
+        <button
+          class="task-overview-module-card"
+          :class="{ active: viewMode === 'task' }"
+          type="button"
+          @click="emit('update:viewMode', 'task')"
+        >
+          <span>
+            <strong>任务总览</strong>
+            <small>任务进度、排程状态</small>
+          </span>
+        </button>
+        <button
+          class="task-overview-module-card"
+          :class="{ active: viewMode === 'tray' }"
+          type="button"
+          @click="emit('update:viewMode', 'tray')"
+        >
+          <span>
+            <strong>托盘总览</strong>
+            <small>托盘占用、目标实验室</small>
+          </span>
+        </button>
       </div>
     </div>
+
+    <div class="task-overview-schedule-strip">
+      <div
+        v-if="viewMode === 'task'"
+        class="task-overview-schedule-card is-blue-tint"
+      >
+        <span>全部任务</span>
+        <strong>{{ totalTaskCount }}</strong>
+      </div>
+      <button
+        class="task-overview-schedule-card task-overview-schedule-card--interactive is-blue-tint"
+        :class="{
+          'is-scheduled': taskScheduleFilter === 'scheduled',
+          'is-unscheduled': taskScheduleFilter === 'unscheduled',
+          'is-alert': viewMode === 'tray' && isTrayCounterAlert,
+        }"
+        data-testid="task-overview-schedule-cycle"
+        type="button"
+        @click="viewMode === 'task' ? emit('cycle-task-schedule-filter') : null"
+      >
+        <span>{{ viewMode === 'task' ? taskScheduleCounterLabel : overviewCounterLabel }}</span>
+        <strong>{{ viewMode === 'task' ? taskScheduleCounterValue : overviewCounterValue }}</strong>
+      </button>
+      <div v-if="viewMode === 'task' && experimentCounterLabel" class="task-overview-schedule-card is-blue-tint">
+        <span>{{ experimentCounterLabel }}</span>
+        <strong>{{ experimentCounterValue }}</strong>
+      </div>
+    </div>
+
     <div class="task-overview-actions">
       <input
         :value="keywordInput"
-        class="search-input"
+        class="search-input task-overview-search-input"
         placeholder="按任务编号、任务类型或样品编号筛选"
         @compositionend="handleCompositionEnd"
         @compositionstart="handleCompositionStart"
@@ -58,12 +92,16 @@
         <option v-for="type in testTypeOptions" :key="type" :value="type">{{ type }}</option>
       </select>
       <button class="action-btn secondary" type="button" @click="emit('refresh')">刷新数据</button>
+      <div v-if="viewMode === 'task'" class="task-overview-toolbar-pagination">
+        <AppPagination :current-page="currentTaskPage" :page-count="taskPageCount" @change="emit('change-task-page', $event)" />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 
 const props = defineProps({
   customEndDate: {
@@ -73,6 +111,10 @@ const props = defineProps({
   customStartDate: {
     type: String,
     default: "",
+  },
+  currentTaskPage: {
+    type: Number,
+    default: 1,
   },
   experimentCounterLabel: {
     type: String,
@@ -98,6 +140,22 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  taskScheduleCounterLabel: {
+    type: String,
+    default: "已排程/总任务数",
+  },
+  taskScheduleCounterValue: {
+    type: String,
+    default: "",
+  },
+  taskScheduleFilter: {
+    type: String,
+    default: "all",
+  },
+  taskPageCount: {
+    type: Number,
+    default: 1,
+  },
   testTypeFilter: {
     type: String,
     default: "",
@@ -117,6 +175,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  "change-task-page",
+  "cycle-task-schedule-filter",
   "refresh",
   "update:customEndDate",
   "update:customStartDate",
@@ -128,6 +188,11 @@ const emit = defineEmits([
 
 const keywordInput = ref(props.keyword);
 const isComposing = ref(false);
+
+const totalTaskCount = computed(() => {
+  const segments = String(props.overviewCounterValue || "").split("/");
+  return segments[1] || props.overviewCounterValue || "0";
+});
 
 watch(
   () => props.keyword,

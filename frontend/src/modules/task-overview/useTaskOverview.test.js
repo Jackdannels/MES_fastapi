@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { applyRouteFiltersState, buildOverviewMetrics, filterTaskOverviewRows } from "./useTaskOverview";
+import { applyRouteFiltersState, buildOverviewMetrics, cycleTaskScheduleFilter, filterTaskOverviewRows } from "./useTaskOverview";
 
 // 这些 helper 测试主要保护任务总览页的筛选口径、顶部计数和路由恢复逻辑。
 describe("useTaskOverview helpers", () => {
@@ -124,6 +124,7 @@ describe("useTaskOverview helpers", () => {
       viewMode: "tray",
     });
 
+    expect(taskMetrics.overviewCounterLabel).toBe("已排程/总任务数");
     expect(taskMetrics.overviewCounterValue).toBe("1/2");
     expect(taskMetrics.experimentCounterLabel).toBe("已排程总实验数");
     expect(taskMetrics.experimentCounterValue).toBe("2/5");
@@ -133,6 +134,37 @@ describe("useTaskOverview helpers", () => {
     expect(trayMetrics.experimentCounterLabel).toBe("");
     expect(trayMetrics.experimentCounterValue).toBe("");
     expect(trayMetrics.isTrayCounterAlert).toBe(true);
+  });
+
+  test("filters rows by schedule filter and cycles task schedule filter states", () => {
+    const rows = [
+      { scheduleCount: 1, scheduleLabel: "已排程", taskCode: "TASK-001", taskType: "冲击试验", timeValue: "2026-03-08T10:00:00Z" },
+      { scheduleCount: 0, scheduleLabel: "未排程", taskCode: "TASK-002", taskType: "振动试验", timeValue: "2026-03-08T10:00:00Z" },
+    ];
+
+    expect(cycleTaskScheduleFilter("all")).toBe("scheduled");
+    expect(cycleTaskScheduleFilter("scheduled")).toBe("unscheduled");
+    expect(cycleTaskScheduleFilter("unscheduled")).toBe("all");
+    expect(filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "",
+      rows,
+      scheduleFilter: "scheduled",
+      testTypeFilter: "",
+      timeFilter: "all",
+      now: new Date("2026-03-10T12:00:00Z"),
+    }).map((row) => row.taskCode)).toEqual(["TASK-001"]);
+    expect(filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "",
+      rows,
+      scheduleFilter: "unscheduled",
+      testTypeFilter: "",
+      timeFilter: "all",
+      now: new Date("2026-03-10T12:00:00Z"),
+    }).map((row) => row.taskCode)).toEqual(["TASK-002"]);
   });
 
   test("applies route filters without dropping existing values", () => {

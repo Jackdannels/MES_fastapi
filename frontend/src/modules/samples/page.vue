@@ -1,24 +1,30 @@
 <template>
-  <div class="tabs section" data-testid="samples-page-tabs">
+  <section class="samples-wide-head section" data-testid="samples-page-tabs">
+    <div class="samples-module-cards">
     <button
-      class="tab-btn"
+      class="samples-module-card is-content-centered"
       :class="{ active: activePageTab === 'management' }"
       data-testid="samples-page-tab-management"
       type="button"
       @click="setActivePageTab('management')"
     >
-      样品管理
+      <span>
+        <strong>样品信息</strong>
+      </span>
     </button>
     <button
-      class="tab-btn"
+      class="samples-module-card is-content-centered"
       :class="{ active: activePageTab === 'trays' }"
       data-testid="samples-page-tab-trays"
       type="button"
       @click="setActivePageTab('trays')"
     >
-      托盘管理
+      <span>
+        <strong>托盘信息</strong>
+      </span>
     </button>
-  </div>
+    </div>
+  </section>
 
   <SamplesManagementPanel
     :hidden="activePageTab !== 'management'"

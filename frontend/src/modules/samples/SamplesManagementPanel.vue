@@ -1,23 +1,23 @@
 <template>
   <div class="samples-management-panel" :class="{ 'is-hidden': hidden }" data-testid="samples-management-panel">
-    <div class="tabs section">
+    <div class="samples-submode-strip section">
       <button
-        class="tab-btn"
+        class="samples-submode-card is-content-centered"
         :class="{ active: activeSamplesTab === 'sample-flow' }"
         data-testid="samples-tab-flow"
         type="button"
         @click="setActiveSamplesTab('sample-flow')"
       >
-        样品流转
+        <strong>样品流转</strong>
       </button>
       <button
-        class="tab-btn"
+        class="samples-submode-card is-content-centered"
         :class="{ active: activeSamplesTab === 'sample-staging' }"
         data-testid="samples-tab-staging"
         type="button"
         @click="setActiveSamplesTab('sample-staging')"
       >
-        暂存间
+        <strong>暂存间</strong>
       </button>
     </div>
 
