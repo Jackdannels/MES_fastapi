@@ -206,6 +206,7 @@ function useLaboratoryPage(options = {}) {
       tickTimer = window.setInterval(() => {
         tickNow.value = now || new Date();
       }, 1000);
+      window.addEventListener(SAMPLES_UPDATED_EVENT, load);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);
       window.addEventListener("wheel", handleRunningModalActivity, true);
@@ -221,6 +222,7 @@ function useLaboratoryPage(options = {}) {
       tickTimer = null;
     }
     if (typeof window !== "undefined") {
+      window.removeEventListener(SAMPLES_UPDATED_EVENT, load);
       window.removeEventListener("pointerdown", handleRunningModalActivity, true);
       window.removeEventListener("mousemove", handleRunningModalActivity, true);
       window.removeEventListener("wheel", handleRunningModalActivity, true);

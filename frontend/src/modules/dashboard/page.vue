@@ -1,7 +1,7 @@
 <template>
   <section class="grid cols-4 stagger">
     <div class="card">
-      <div class="muted">今日受理</div>
+      <div class="muted">已受理任务</div>
       <div class="kpi" id="dashboard-intake-count">{{ summaryCards.intakeCount }}</div>
       <div class="muted" id="dashboard-intake-note">{{ summaryCards.intakeNote }}</div>
     </div>

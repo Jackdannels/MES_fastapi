@@ -2,6 +2,7 @@ import loginModule from "./login";
 import dashboardModule from "./dashboard";
 import tasksModule from "./tasks";
 import taskOverviewModule from "./task-overview";
+import samplePreAllocationModule from "./sample-pre-allocation";
 import scheduleModule from "./schedule";
 import samplesModule from "./samples";
 import handoverSystemModule from "./handover-system";
@@ -9,6 +10,7 @@ import processModule from "./process";
 import devicesModule from "./devices";
 import dataModule from "./data";
 import systemModule from "./system";
+import taskHistoryModule from "./task-history";
 import visualizationModule from "./visualization";
 import stagingManagementModule from "./staging-management";
 import laboratoryModule from "./laboratory";
@@ -19,6 +21,7 @@ export const MODULES = [
   dashboardModule,
   tasksModule,
   taskOverviewModule,
+  samplePreAllocationModule,
   scheduleModule,
   samplesModule,
   handoverSystemModule,
@@ -26,6 +29,7 @@ export const MODULES = [
   devicesModule,
   dataModule,
   systemModule,
+  taskHistoryModule,
   visualizationModule,
   stagingManagementModule,
   laboratoryModule,

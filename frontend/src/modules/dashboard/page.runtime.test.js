@@ -45,6 +45,8 @@ describe("DashboardPage runtime", () => {
 
     const wrapper = mount(DashboardPage);
 
+    expect(wrapper.text()).toContain("已受理任务");
+    expect(wrapper.text()).not.toContain("今日受理");
     expect(wrapper.text()).toContain("外部 2 / 内部 1");
     expect(wrapper.text()).toContain("正在运行（实验）");
     expect(wrapper.text()).toContain("未排程实验计时");

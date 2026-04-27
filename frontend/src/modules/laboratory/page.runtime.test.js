@@ -225,6 +225,33 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
   });
 
+  test("reloads flow state when sample progress changes are broadcast", async () => {
+    await mountPage();
+    const storageGetCalls = () =>
+      fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+
+    expect(storageGetCalls()).toHaveLength(1);
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) =>
+        sample.task_code === "SYLU-2026-04-101"
+          ? {
+              ...sample,
+              status: "工装夹具安装",
+              trays: sample.trays.map((tray) => ({ ...tray, status: "工装夹具安装" })),
+            }
+          : sample,
+      ),
+    };
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(storageGetCalls()).toHaveLength(2);
+  });
+
   test("does not teleport any schedule button into the laboratory header actions", async () => {
     const mounted = await mountPage();
 

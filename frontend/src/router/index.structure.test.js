@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const routerPath = resolve(process.cwd(), "src/router/index.js");
+const modulesPath = resolve(process.cwd(), "src/modules/index.js");
 
 const extractRouteBlock = (source, routeName) => {
   const start = source.indexOf(`name: "${routeName}"`);
@@ -70,5 +71,12 @@ describe("router structure", () => {
     expect(dataBlock).not.toContain("legacyUi: true");
     expect(devicesBlock).not.toContain("legacyUi: true");
     expect(systemBlock).not.toContain("legacyUi: true");
+  });
+
+  test("registers sample pre-allocation and task history through the modules registry", () => {
+    const source = readFileSync(modulesPath, "utf8");
+
+    expect(source).toContain('from "./sample-pre-allocation"');
+    expect(source).toContain('from "./task-history"');
   });
 });
