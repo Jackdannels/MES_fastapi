@@ -100,12 +100,19 @@
         </article>
       </div>
 
+      <div v-if="laboratoryTaskNotice" class="laboratory-empty-hint" data-testid="laboratory-task-empty-hint">
+        {{ laboratoryTaskNotice }}
+      </div>
+
       <div class="laboratory-recent-tasks">
         <div class="laboratory-recent-tasks__header">
           <h4>最近安排任务</h4>
           <span class="muted">默认按最近安排任务执行，也可在查看任务中切换当前任务。</span>
         </div>
         <div class="laboratory-recent-tasks__list">
+          <div v-if="!recentTasks.length" class="laboratory-recent-task laboratory-recent-task--empty">
+            当前盐雾试验室暂无任务
+          </div>
           <article
             v-for="row in recentTasks"
             :key="`recent-${row.id}`"
@@ -177,7 +184,8 @@
                 :data-testid="`laboratory-tray-flow-step-${step.key}`"
                 :class="{ 'is-active': step.active, 'is-reached': step.reached }"
               >
-                {{ step.label }}
+                <span class="laboratory-flow-label">{{ step.label }}</span>
+                <span class="laboratory-flow-time">{{ formatFlowTime(step.time) }}</span>
               </li>
             </ol>
           </section>
@@ -205,7 +213,7 @@
               <th>当前任务</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody v-if="scheduleRows.length">
             <tr
               v-for="row in scheduleRows"
               :key="`${row.id}-task`"
@@ -241,6 +249,11 @@
               </td>
             </tr>
           </tbody>
+          <tbody v-else>
+            <tr>
+              <td colspan="7" class="laboratory-empty-table-cell">当前实验室暂无任务</td>
+            </tr>
+          </tbody>
         </table>
       </div>
       <template #footer>
@@ -248,7 +261,7 @@
           class="action-btn"
           data-testid="laboratory-confirm-current-task"
           type="button"
-          :disabled="runningInteractionLocked"
+          :disabled="runningInteractionLocked || !pendingTaskCode"
           @click="confirmCurrentTask"
         >
           确认当前任务
@@ -449,6 +462,7 @@ const {
   openTaskList,
   pendingTaskCode,
   progressMessage,
+  laboratoryTaskNotice,
   readyModalOpen,
   recentTasks,
   resetConfirmModalOpen,
@@ -467,4 +481,15 @@ const {
   taskListModalOpen,
   verifiedTrayCodes,
 } = useLaboratoryPage();
+
+const formatFlowTime = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  return normalized
+    .replace("T", " ")
+    .replace(/\.\d{1,6}/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+};
 </script>

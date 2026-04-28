@@ -385,6 +385,54 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
   return null;
 };
 
+const collectTaskTrayCodes = (snapshot, taskCode) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const codes = new Set();
+  asArray(snapshot[EXPERIMENT_TRAYS_KEY]).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    if (normalizeText(entry?.task_code) === normalizedTaskCode && trayCode) {
+      codes.add(trayCode);
+    }
+  });
+  asArray(snapshot[SAMPLES_KEY]).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+    asArray(sample?.trays).forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (trayCode) {
+        codes.add(trayCode);
+      }
+    });
+  });
+  return Array.from(codes);
+};
+
+const markReturnedTaskIfComplete = (snapshot, taskCode) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  if (!normalizedTaskCode) {
+    return;
+  }
+  const trayCodes = collectTaskTrayCodes(snapshot, normalizedTaskCode);
+  if (trayCodes.length === 0) {
+    return;
+  }
+  const eventMap = buildEventMap(snapshot[STAGING_EVENTS_KEY]);
+  const allReturned = trayCodes.every((trayCode) => normalizeText(eventMap.get(trayCode)?.at(-1)?.action) === "manufacturer_return");
+  if (!allReturned) {
+    return;
+  }
+  snapshot[TASKS_KEY] = asArray(snapshot[TASKS_KEY]).map((task) =>
+    normalizeText(task?.code) === normalizedTaskCode
+      ? {
+          ...task,
+          status: "厂家收回",
+          transfer_status: "厂家收回",
+        }
+      : task,
+  );
+};
+
 function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const tasks = asArray(snapshot[TASKS_KEY]);
   const schedules = asArray(snapshot[SCHEDULES_KEY]);
@@ -820,6 +868,7 @@ function applyZancunInventoryAction(input = {}) {
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples;
+    markReturnedTaskIfComplete(nextSnapshot, matchedRow.taskCode);
   }
 
   const nextRows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime });

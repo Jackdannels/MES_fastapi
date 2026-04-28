@@ -1,6 +1,7 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
+import { filterActiveTasks } from "@/lib/taskArchive";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 const SOURCE_EXTERNAL = "外部委托";
@@ -334,7 +335,7 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
 // 将存储中的任务和排程转换为任务页专用的表格行。
 function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMaybe) {
   const { samples, experiments, now } = resolveBuildTaskRowCollections(samplesOrNow, experimentsOrNow, nowMaybe);
-  const taskList = Array.isArray(tasks) ? tasks : [];
+  const taskList = filterActiveTasks(tasks, samples);
   const experimentsByTaskCode = new Map();
 
   (Array.isArray(experiments) ? experiments : []).forEach((experiment) => {

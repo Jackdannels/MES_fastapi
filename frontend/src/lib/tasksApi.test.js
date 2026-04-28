@@ -4,6 +4,7 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { createTask, deleteTask, readTasks, resetTasks, updateTask } from "./tasksApi";
 
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
+const TASKS_WITH_ARCHIVED_ENDPOINT = buildApiUrl("/api/tasks?includeArchived=true", getFrontendApiBaseUrl());
 const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 
@@ -47,6 +48,24 @@ describe("tasksApi", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
 
     await expect(readTasks()).rejects.toThrow("network");
+  });
+
+  test("can request archived tasks for history views", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ code: "TASK-RETURNED", status: "厂家收回" }],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tasks = await readTasks({ includeArchived: true });
+
+    expect(tasks).toEqual([{ code: "TASK-RETURNED", status: "厂家收回" }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      TASKS_WITH_ARCHIVED_ENDPOINT,
+      expect.objectContaining({
+        credentials: "include",
+      }),
+    );
   });
 
   test("creates, updates, and deletes tasks through the dedicated tasks endpoint without mutating local cache", async () => {

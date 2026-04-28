@@ -57,23 +57,6 @@ const parseCodeList = (value) =>
     ),
   );
 
-const pruneSamplesForCurrentTasks = (samples, tasks) => {
-  const taskCodes = new Set(
-    (Array.isArray(tasks) ? tasks : [])
-      .map((task) => String(task?.code ?? "").trim())
-      .filter(Boolean),
-  );
-  const normalizedSamples = Array.isArray(samples) ? samples : [];
-  if (taskCodes.size === 0) {
-    return normalizedSamples;
-  }
-  return normalizedSamples.filter((sample) => {
-    const taskCode = String(sample?.task_code ?? "").trim();
-    return !taskCode || taskCodes.has(taskCode);
-  });
-};
-
-const samplesChanged = (left, right) => JSON.stringify(left) !== JSON.stringify(right);
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
@@ -195,13 +178,7 @@ function useSamplesFlow() {
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      const prunedSamples = pruneSamplesForCurrentTasks(normalizedSamples, rawTasks.value);
-      rawSamples.value = prunedSamples;
-      if (samplesChanged(prunedSamples, normalizedSamples)) {
-        await persistSnapshot({
-          [STORAGE_KEYS.samples]: prunedSamples,
-        });
-      }
+      rawSamples.value = normalizedSamples;
       warning.value = "";
     } catch (error) {
       warning.value = buildFailureMessage("样品数据加载失败，请稍后重试", error);

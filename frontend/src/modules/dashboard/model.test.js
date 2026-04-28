@@ -71,7 +71,7 @@ describe("dashboard model", () => {
     );
   });
 
-  test("keeps manufacturer-returned tasks out of the unscheduled waiting count when no staging schedule exists", () => {
+  test("hides manufacturer-returned tasks from the central dashboard", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [
         {
@@ -87,12 +87,34 @@ describe("dashboard model", () => {
     });
 
     expect(viewModel.summaryCards.unscheduledCount).toBe(0);
-    expect(viewModel.taskRows[0]).toEqual(
-      expect.objectContaining({
-        code: "ICP-2026-001",
-        status: "厂家收回",
-      }),
-    );
+    expect(viewModel.taskRows).toEqual([]);
+  });
+
+  test("hides returned tasks from unscheduled experiment timers", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-119",
+          source: "内部新增",
+          status: "厂家收回",
+          transfer_status: "厂家收回",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-119",
+          experiment_code: "SYLU-2026-04-119-A",
+          experiment_name: "振动试验",
+          unscheduled_since: "2026-03-16T07:30:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([]);
   });
 
   test("counts formal schedules once per task instead of once per schedule record", () => {

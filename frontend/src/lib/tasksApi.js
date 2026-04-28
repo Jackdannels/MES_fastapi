@@ -2,8 +2,10 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
-async function readTasks() {
-  const response = await fetch(buildApiUrl("/api/tasks", API_BASE_URL), {
+async function readTasks(options = {}) {
+  const includeArchived = Boolean(options?.includeArchived);
+  const path = includeArchived ? "/api/tasks?includeArchived=true" : "/api/tasks";
+  const response = await fetch(buildApiUrl(path, API_BASE_URL), {
     headers: { Accept: "application/json" },
     credentials: "include",
   });

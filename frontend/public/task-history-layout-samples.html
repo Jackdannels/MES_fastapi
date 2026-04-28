@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>历史任务数据布局样例</title>
+    <style>
+      :root {
+        color: #10233f;
+        font-family: "Microsoft YaHei", Arial, sans-serif;
+        background: #edf3f8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      .page {
+        display: grid;
+        gap: 22px;
+      }
+
+      .sample {
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .card {
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+      }
+
+      .task-list {
+        padding: 16px;
+        min-height: 360px;
+      }
+
+      .task-row {
+        display: grid;
+        gap: 5px;
+        margin-top: 12px;
+        padding: 14px;
+        border: 1px solid #38bdf8;
+        border-radius: 8px;
+        background: #eff8ff;
+      }
+
+      .side {
+        display: grid;
+        gap: 16px;
+      }
+
+      .flow,
+      .detail {
+        padding: 16px;
+      }
+
+      .flow-head,
+      .tray-toolbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .strip,
+      .unified {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .step {
+        display: grid;
+        place-items: center;
+        gap: 7px;
+        min-height: 74px;
+        padding: 12px 10px;
+        border: 1px solid #86efac;
+        border-radius: 8px;
+        background: #dcfce7;
+        text-align: center;
+        font-weight: 800;
+      }
+
+      .step small {
+        color: #475569;
+        font-weight: 500;
+      }
+
+      .tray-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tray-tab {
+        padding: 8px 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #fff;
+        font-weight: 800;
+      }
+
+      .tray-tab.active {
+        border-color: #22c55e;
+        background: #ecfdf5;
+      }
+
+      .sample-summary {
+        display: grid;
+        justify-items: end;
+        max-width: 430px;
+        color: #475569;
+        font-size: 13px;
+        text-align: right;
+      }
+
+      .sample-summary strong {
+        color: #10233f;
+        line-height: 1.45;
+      }
+
+      .sample-code-list {
+        display: grid;
+        gap: 4px;
+        justify-content: end;
+      }
+
+      .sample-code-row {
+        display: grid;
+        grid-template-columns: repeat(3, max-content);
+        gap: 6px 12px;
+      }
+
+      .sample-code-row strong {
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      .option-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+
+      .badge {
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #e0f2fe;
+        color: #0369a1;
+        font-weight: 800;
+      }
+
+      .option-b .detail {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 14px;
+      }
+
+      .option-b .tray-toolbar {
+        display: grid;
+        gap: 12px;
+        align-content: start;
+      }
+
+      .option-b .sample-summary {
+        justify-items: start;
+        padding: 12px;
+        border: 1px solid #dbeafe;
+        border-radius: 8px;
+        background: #f8fbff;
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header>
+        <h1>历史任务数据布局样例</h1>
+        <p>时间已去除 +08:00 后缀，历史任务状态固定按已收回展示。</p>
+      </header>
+
+      <section class="option-a">
+        <div class="option-title">
+          <h2>方案 A：右上角样品摘要</h2>
+          <span class="badge">当前实现</span>
+        </div>
+        <div class="sample">
+          <aside class="card task-list">
+            <h3>历史任务数据</h3>
+            <div class="task-row">
+              <strong>SYLU-2026-03-001</strong>
+              <span>演示任务001</span>
+              <small>2 个托盘 · 6 个样品</small>
+            </div>
+          </aside>
+          <aside class="side">
+            <section class="card flow">
+              <div class="flow-head">
+                <h3>任务流程图</h3>
+                <span>厂家收回</span>
+              </div>
+              <div class="strip">
+                <div class="step">送至暂存间<small>2026-04-28 11:31:20</small></div>
+                <div class="step">已到达暂存间<small>2026-04-28 11:32:26</small></div>
+                <div class="step">厂家收回<small>2026-04-28 11:32:35</small></div>
+              </div>
+            </section>
+            <section class="card detail">
+              <div class="tray-toolbar">
+                <div class="tray-tabs">
+                  <button class="tray-tab">SYLU-2026-03-001-TP-001</button>
+                  <button class="tray-tab active">SYLU-2026-03-001-TP-002</button>
+                </div>
+                <div class="sample-summary">
+                  <span>包含样品</span>
+                  <div class="sample-code-list">
+                    <div class="sample-code-row">
+                      <strong>SYLU-2026-03-001-SP-001</strong>
+                      <strong>SYLU-2026-03-001-SP-002</strong>
+                      <strong>SYLU-2026-03-001-SP-003</strong>
+                    </div>
+                    <div class="sample-code-row">
+                      <strong>SYLU-2026-03-001-SP-004</strong>
+                      <strong>SYLU-2026-03-001-SP-005</strong>
+                      <strong>SYLU-2026-03-001-SP-006</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="unified">
+                <div class="step">样品运输中<small>-</small></div>
+                <div class="step">到货<small>-</small></div>
+                <div class="step">盐雾试验已完成<small>-</small></div>
+                <div class="step">四综合试验未完成<small>-</small></div>
+                <div class="step">厂家收回<small>2026-04-28 11:32:35</small></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="option-b">
+        <div class="option-title">
+          <h2>方案 B：右侧固定样品摘要栏</h2>
+          <span class="badge">备选</span>
+        </div>
+        <div class="sample">
+          <aside class="card task-list">
+            <h3>历史任务数据</h3>
+            <div class="task-row">
+              <strong>SYLU-2026-03-001</strong>
+              <span>演示任务001</span>
+              <small>2 个托盘 · 6 个样品</small>
+            </div>
+          </aside>
+          <aside class="side">
+            <section class="card flow">
+              <div class="flow-head">
+                <h3>任务流程图</h3>
+                <span>厂家收回</span>
+              </div>
+              <div class="strip">
+                <div class="step">送至暂存间<small>2026-04-28 11:31:20</small></div>
+                <div class="step">已到达暂存间<small>2026-04-28 11:32:26</small></div>
+                <div class="step">厂家收回<small>2026-04-28 11:32:35</small></div>
+              </div>
+            </section>
+            <section class="card detail">
+              <div>
+                <div class="tray-tabs">
+                  <button class="tray-tab">SYLU-2026-03-001-TP-001</button>
+                  <button class="tray-tab active">SYLU-2026-03-001-TP-002</button>
+                </div>
+                <div class="unified">
+                  <div class="step">样品运输中<small>-</small></div>
+                  <div class="step">到货<small>-</small></div>
+                  <div class="step">盐雾试验已完成<small>-</small></div>
+                  <div class="step">四综合试验未完成<small>-</small></div>
+                  <div class="step">厂家收回<small>2026-04-28 11:32:35</small></div>
+                </div>
+              </div>
+              <div class="sample-summary">
+                <span>包含样品</span>
+                <strong>SYLU-2026-03-001-SP-005 / SYLU-2026-03-001-SP-006</strong>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

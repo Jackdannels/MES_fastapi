@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
 TASK_STATUS_PENDING = "未入库"
 TASK_STATUS_STORED = "已入库"
+TASK_STATUS_RETURNED = "厂家收回"
 TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "已入库"
@@ -273,6 +274,10 @@ def ensure_task_samples(snapshot: dict[str, list[dict[str, Any]]], task: dict[st
 
 
 def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
+    if normalize_text(task.get("transfer_status")) == TASK_STATUS_RETURNED:
+        return False
+    if are_all_assigned_trays_returned(task_samples):
+        return False
     status_text = " ".join(
         [
             normalize_text(task.get("status")),
@@ -309,12 +314,27 @@ def started_experiment_status_for_task(task_samples: list[dict[str, Any]]) -> st
     return normalized_statuses[0] if normalized_statuses else ""
 
 
+def are_all_assigned_trays_returned(task_samples: list[dict[str, Any]]) -> bool:
+    tray_statuses: list[str] = []
+    for sample in task_samples:
+        sample_status = normalize_text(sample.get("status"))
+        for entry in as_list(sample.get("trays")):
+            tray_status = normalize_text(entry.get("status")) or sample_status
+            if normalize_text(entry.get("tray_code")) or tray_status:
+                tray_statuses.append(tray_status)
+    return bool(tray_statuses) and all(status == TASK_STATUS_RETURNED for status in tray_statuses)
+
+
 def reload_block_reason(task_samples: list[dict[str, Any]]) -> str:
     return "该任务已有托盘开始实验，不能重新入库。" if started_experiment_status_for_task(task_samples) else ""
 
 
 def transfer_status_for_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> str:
     explicit = normalize_text(task.get("transfer_status"))
+    if explicit == TASK_STATUS_RETURNED:
+        return TASK_STATUS_RETURNED
+    if are_all_assigned_trays_returned(task_samples):
+        return TASK_STATUS_RETURNED
     if explicit == TASK_STATUS_STORED:
         return TASK_STATUS_STORED
     if explicit == TASK_STATUS_PENDING:
@@ -571,6 +591,7 @@ def count_system_occupied_trays(all_samples: list[dict[str, Any]]) -> int:
         for sample in all_samples
         for entry in as_list(sample.get("trays"))
         if normalize_text(entry.get("tray_code"))
+        and normalize_text(entry.get("status") or sample.get("status")) != TASK_STATUS_RETURNED
     }
     return len(tray_codes)
 
@@ -586,6 +607,7 @@ def count_occupied_trays_excluding_task(
         if sample_key(sample) not in excluded_keys
         for entry in as_list(sample.get("trays"))
         if normalize_text(entry.get("tray_code"))
+        and normalize_text(entry.get("status") or sample.get("status")) != TASK_STATUS_RETURNED
     }
     return len(tray_codes)
 
@@ -761,6 +783,8 @@ def task_progress(
     task_samples: list[dict[str, Any]],
     experiments: list[dict[str, Any]],
 ) -> str:
+    if task_status == TASK_STATUS_RETURNED or are_all_assigned_trays_returned(task_samples):
+        return TASK_STATUS_RETURNED
     started_status = started_experiment_status_for_task(task_samples)
     if started_status:
         if not are_task_experiments_all_completed(task, experiments):
@@ -1072,7 +1096,11 @@ def read_bootstrap() -> dict[str, Any]:
 def read_task_workspace(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
+    if normalize_text(task.get("transfer_status")) == TASK_STATUS_RETURNED:
+        raise HTTPException(status_code=404, detail="任务已归档")
     task_samples, changed = ensure_task_samples(snapshot, task)
+    if are_all_assigned_trays_returned(task_samples):
+        raise HTTPException(status_code=404, detail="任务已归档")
     if repair_pending_tray_codes(task, task_samples):
         changed = True
     if changed:

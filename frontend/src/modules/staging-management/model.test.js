@@ -420,6 +420,24 @@ describe("staging-management model", () => {
     });
   });
 
+  test("manufacturer return marks the task archived when every assigned tray is returned", () => {
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "manufacturerReturn",
+      },
+      snapshot: createSnapshot(),
+    });
+
+    const updatedTask = result.snapshot[STORAGE_KEYS.tasks].find((task) => task.code === "SYLU-2026-04-102");
+
+    expect(updatedTask).toMatchObject({
+      status: "厂家收回",
+      transfer_status: "厂家收回",
+    });
+  });
+
   test("syncs fully completed tray samples into post-experiment staging on stock-in", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.experiments].push({

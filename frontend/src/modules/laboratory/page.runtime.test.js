@@ -225,6 +225,28 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
   });
 
+  test("disables comparison and shows guidance when the salt-spray lab has no tasks", async () => {
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.schedules]: [],
+    };
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("当前盐雾试验室暂无任务");
+    expect(mounted.text()).toContain("请先在排程看板安排任务");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.get('[data-testid="laboratory-task-list-modal"]').text()).toContain("当前实验室暂无任务");
+  });
+
   test("reloads flow state when sample progress changes are broadcast", async () => {
     await mountPage();
     const storageGetCalls = () =>

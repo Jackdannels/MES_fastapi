@@ -546,6 +546,7 @@ const persistInventoryResult = async (result) => {
   if (!result.error) {
     snapshot.value = result.snapshot;
     await writeStorageUpdates({
+      [STORAGE_KEYS.tasks]: result.snapshot[STORAGE_KEYS.tasks],
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
@@ -662,6 +663,7 @@ const confirmDetailAction = async () => {
   if (!result.error) {
     snapshot.value = result.snapshot;
     await writeStorageUpdates({
+      [STORAGE_KEYS.tasks]: result.snapshot[STORAGE_KEYS.tasks],
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });

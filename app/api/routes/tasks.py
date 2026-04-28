@@ -1,7 +1,7 @@
 from typing import Any
 import re
 
-from fastapi import APIRouter, Body, HTTPException, status
+from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
@@ -16,6 +16,7 @@ SNAPSHOT_KEYS = (
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
+RETURNED_STATUS = "厂家收回"
 
 
 def normalize_text(value: Any) -> str:
@@ -34,9 +35,53 @@ def load_snapshot(storage=None) -> dict[str, Any]:
     return snapshot
 
 
-def load_tasks() -> list[dict[str, Any]]:
-    tasks = load_snapshot().get("mes.tasks", [])
-    return [dict(task) for task in tasks] if isinstance(tasks, list) else []
+def as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def sample_task_code(sample: dict[str, Any]) -> str:
+    return normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("taskNo") or sample.get("task_no"))
+
+
+def task_code(task: dict[str, Any]) -> str:
+    return normalize_text(task.get("code") or task.get("task_code") or task.get("taskNo") or task.get("task_no") or task.get("id"))
+
+
+def has_returned_status(value: Any) -> bool:
+    return normalize_text(value) == RETURNED_STATUS
+
+
+def is_returned_task(task: dict[str, Any], samples: list[dict[str, Any]]) -> bool:
+    code = task_code(task)
+    tray_statuses: dict[str, str] = {}
+    for sample in samples:
+        if sample_task_code(sample) != code:
+            continue
+        sample_status = normalize_text(sample.get("status") or sample.get("flow_status"))
+        for index, tray in enumerate(as_list(sample.get("trays"))):
+            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or tray.get("tray_no")) or f"{code}-tray-{index + 1}"
+            tray_status = normalize_text(tray.get("status") or tray.get("tray_status") or tray.get("trayStatus") or sample_status)
+            if tray_code and tray_status:
+                tray_statuses[tray_code] = tray_status
+    if tray_statuses:
+        return all(has_returned_status(status) for status in tray_statuses.values())
+    return (
+        has_returned_status(task.get("transfer_status"))
+        or has_returned_status(task.get("transferStatus"))
+        or has_returned_status(task.get("status"))
+        or has_returned_status(task.get("displayStatus"))
+        or has_returned_status(task.get("display_status"))
+    )
+
+
+def load_tasks(include_archived: bool = False) -> list[dict[str, Any]]:
+    snapshot = load_snapshot()
+    tasks = snapshot.get("mes.tasks", [])
+    samples = [dict(sample) for sample in snapshot.get("mes.samples", [])] if isinstance(snapshot.get("mes.samples"), list) else []
+    task_list = [dict(task) for task in tasks] if isinstance(tasks, list) else []
+    if include_archived:
+        return task_list
+    return [task for task in task_list if not is_returned_task(task, samples)]
 
 
 def load_experiments() -> list[dict[str, Any]]:
@@ -194,8 +239,8 @@ def persist_task_experiments(task: dict[str, Any], existing_experiments: list[di
 
 
 @router.get("")
-def list_tasks() -> list[dict[str, Any]]:
-    return load_tasks()
+def list_tasks(include_archived: bool = Query(False, alias="includeArchived")) -> list[dict[str, Any]]:
+    return load_tasks(include_archived)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

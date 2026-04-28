@@ -100,6 +100,31 @@ describe("laboratory model", () => {
     });
   });
 
+  test("buildSaltSprayLaboratoryView keeps tray flow at the initial state when the lab has no task", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experiments: [],
+      now: NOW,
+      samples: [],
+      schedules: [],
+      tasks: [],
+    });
+
+    expect(view.currentTask).toBeNull();
+    expect(view.selectedTrayRow).toBeNull();
+    expect(view.currentTaskFlow.currentStatus).toBe("待排程");
+    expect(view.selectedTrayFlow.currentStatus).toBe("当前状态：样品运输中");
+    expect(view.selectedTrayFlow.steps[0]).toEqual(expect.objectContaining({
+      active: true,
+      label: "样品运输中",
+      reached: false,
+    }));
+    expect(view.selectedTrayFlow.steps[5]).toEqual(expect.objectContaining({
+      active: false,
+      label: "已到达实验室",
+      reached: false,
+    }));
+  });
+
   test("workflow gating follows compare then install then confirm", () => {
     const initial = createLaboratoryWorkflow();
     const compared = completeLaboratoryComparison(initial);

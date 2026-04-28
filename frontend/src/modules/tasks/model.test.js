@@ -127,7 +127,7 @@ describe("tasks model", () => {
     expect(rows[0].displayStatus).toBe("任务已完成");
   });
 
-  test("marks a task as returned only when all trays are returned to the manufacturer", () => {
+  test("hides a task from active intake rows when all trays are returned to the manufacturer", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "实验已经完成" }],
       [],
@@ -147,7 +147,7 @@ describe("tasks model", () => {
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("厂家收回");
+    expect(rows).toEqual([]);
   });
 
   test("keeps a task waiting when trays are only staged in the temporary room before experiment", () => {

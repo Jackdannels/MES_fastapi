@@ -10,6 +10,7 @@ import pytest
 
 import app.core.storage_backend as storage_backend_module
 from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data, run_demo_reset
+from app.core.storage_backend import normalize_storage_payload
 
 
 def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() -> None:
@@ -56,6 +57,116 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert snapshot["mes.experiment_samples"] == []
     assert snapshot["mes.streams"] == []
     assert snapshot["mes.conflicts"] == []
+
+
+def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_three() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-501",
+                "name": "自定义双实验任务",
+                "test_type": "盐雾试验 / 振动试验",
+                "test_types": ["盐雾试验", "振动试验"],
+                "experiment_count": 2,
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["experiment_count"] == 2
+    assert normalized["mes.tasks"][0]["experiment_codes"] == [
+        "SYLU-2026-04-501-A",
+        "SYLU-2026-04-501-B",
+    ]
+    assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
+
+
+def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_trays_are_reset() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-03-001",
+                "name": "已收回任务",
+                "status": "待排程",
+                "transfer_status": "已入库",
+                "experiment_codes": ["SYLU-2026-03-001-A"],
+                "experiment_count": 1,
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": "SYLU-2026-03-001-SP-001",
+                "task_code": "SYLU-2026-03-001",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "trays": [],
+            },
+            {
+                "code": "SYLU-2026-03-001-SP-002",
+                "task_code": "SYLU-2026-03-001",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "trays": [],
+            },
+        ],
+        "mes.experiments": [
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "experiment_name": "盐雾试验",
+                "status": "待排程",
+            }
+        ],
+        "mes.experiment_trays": [
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "tray_code": "SYLU-2026-03-001-TP-001",
+            }
+        ],
+        "mes.experiment_samples": [
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "sample_code": "SYLU-2026-03-001-SP-001",
+            },
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "sample_code": "SYLU-2026-03-001-SP-002",
+            },
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": "SYLU-2026-03-001-TP-001",
+                "task_code": "SYLU-2026-03-001",
+                "action": "manufacturer_return",
+                "time": "2026-04-28T03:32:34Z",
+                "target_lab": "厂家收回",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["status"] == "厂家收回"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["trays"] == [
+        {
+            "tray_code": "SYLU-2026-03-001-TP-001",
+            "sample_code": "SYLU-2026-03-001-SP-001",
+            "status": "厂家收回",
+            "quantity": 1,
+            "updated_at": "2026-04-28T03:32:34Z",
+        }
+    ]
 
 
 def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_devices() -> None:

@@ -412,17 +412,19 @@ function buildSaltSprayLaboratoryView({
     ? resolveTaskStatus(currentTaskRecord, schedules, samples, nowTime)
     : STATUS_WAITING;
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus);
-  const selectedTrayFlow = buildTrayFlowView({
-    currentExperimentCode: normalizeText(currentTask?.experimentCode),
-    experimentTrays,
-    experiments,
-    location: normalizeText(currentTask?.device) || labName,
-    samples,
-    schedules,
-    status: normalizeText(selectedTrayRow?.displayStatus) || normalizeText(selectedTrayRow?.trayStatus),
-    taskCode: normalizeText(currentTask?.taskCode),
-    trayCode: normalizeText(selectedTrayRow?.trayCode),
-  });
+  const selectedTrayFlow = selectedTrayRow
+    ? buildTrayFlowView({
+        currentExperimentCode: normalizeText(currentTask?.experimentCode),
+        experimentTrays,
+        experiments,
+        location: normalizeText(currentTask?.device) || labName,
+        samples,
+        schedules,
+        status: normalizeText(selectedTrayRow?.displayStatus) || normalizeText(selectedTrayRow?.trayStatus),
+        taskCode: normalizeText(currentTask?.taskCode),
+        trayCode: normalizeText(selectedTrayRow?.trayCode),
+      })
+    : buildTrayFlowView();
   const runningExperiment = buildRunningExperimentView({
     currentTask,
     now: now instanceof Date ? now : new Date(nowTime || Date.now()),

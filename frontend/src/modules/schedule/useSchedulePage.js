@@ -32,6 +32,7 @@ import {
   toLocalTimeValue,
   updateScheduleRecord,
 } from "./model";
+import { filterActiveTasks } from "@/lib/taskArchive";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
@@ -77,11 +78,25 @@ function useSchedulePage() {
     return detail ? `${prefix}，${detail}` : prefix;
   };
 
+  const activeTaskCodes = computed(() => {
+    if (!rawTasks.value.length) {
+      return null;
+    }
+    return new Set(filterActiveTasks(rawTasks.value, rawSamples.value).map((task) => normalizeText(task?.code)).filter(Boolean));
+  });
+  const activeSchedules = computed(() => {
+    if (!activeTaskCodes.value) {
+      return rawSchedules.value;
+    }
+    return rawSchedules.value.filter((schedule) => activeTaskCodes.value.has(normalizeText(schedule?.task_code)));
+  });
+
   const taskOptions = computed(() =>
     buildManualTaskOptions({
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
-      schedules: rawSchedules.value,
+      samples: rawSamples.value,
+      schedules: activeSchedules.value,
       tasks: rawTasks.value,
     }),
   );
@@ -90,7 +105,8 @@ function useSchedulePage() {
     buildExperimentOptions({
       taskCode: scheduleForm.value.task_code,
       experiments: rawExperiments.value,
-      schedules: rawSchedules.value,
+      samples: rawSamples.value,
+      schedules: activeSchedules.value,
       tasks: rawTasks.value,
     }),
   );
@@ -114,7 +130,7 @@ function useSchedulePage() {
     buildManualTimeSlotOptions({
       now: now.value,
       scheduleDate: scheduleForm.value.schedule_date,
-      schedules: rawSchedules.value,
+      schedules: activeSchedules.value,
     }),
   );
 
@@ -122,11 +138,11 @@ function useSchedulePage() {
     experimentTrays: rawExperimentTrays.value,
     experiments: rawExperiments.value,
     samples: rawSamples.value,
-    schedules: rawSchedules.value,
+    schedules: activeSchedules.value,
     tasks: rawTasks.value,
     now: now.value,
   }));
-  const conflictRows = computed(() => buildConflictRows({ schedules: rawSchedules.value }));
+  const conflictRows = computed(() => buildConflictRows({ schedules: activeSchedules.value, samples: rawSamples.value, tasks: rawTasks.value }));
   const pendingExceptionRows = computed(() =>
     rawConflicts.value.filter(
       (entry) => normalizeText(entry?.type) === "schedule_missed_start" && normalizeText(entry?.status) === "pending",
@@ -165,7 +181,7 @@ function useSchedulePage() {
     const todayKey = toLocalDateValue(now.value);
     return Array.from(
       new Set(
-        rawSchedules.value
+        activeSchedules.value
           .filter(
             (schedule) =>
               normalizeText(schedule?.device) === normalizedDevice &&
@@ -196,7 +212,7 @@ function useSchedulePage() {
       experimentTrays: rawExperimentTrays.value,
       now: now.value,
       samples: rawSamples.value,
-      schedules: rawSchedules.value,
+      schedules: activeSchedules.value,
       selectedTaskCode: normalizeText(scheduleForm.value.task_code),
       startDate: ganttStartDate.value,
       tasks: rawTasks.value,
@@ -207,7 +223,9 @@ function useSchedulePage() {
       experimentCode: scheduleForm.value.experiment_code,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
-      schedules: rawSchedules.value,
+      samples: rawSamples.value,
+      schedules: activeSchedules.value,
+      tasks: rawTasks.value,
       taskCode: scheduleForm.value.task_code,
     }),
   );
@@ -216,7 +234,8 @@ function useSchedulePage() {
       experimentTrays: rawExperimentTrays.value,
       now: now.value,
       samples: rawSamples.value,
-      schedules: rawSchedules.value,
+      schedules: activeSchedules.value,
+      tasks: rawTasks.value,
     }),
   );
   const selectedTaskDetail = computed(() => {
@@ -359,6 +378,7 @@ function useSchedulePage() {
       buildExperimentOptions({
         taskCode,
         experiments: rawExperiments.value,
+        samples: rawSamples.value,
         schedules,
         tasks: rawTasks.value,
       })[0]?.code || "";
@@ -396,7 +416,7 @@ function useSchedulePage() {
       experiment_code: normalizeText(scheduleForm.value.experiment_code),
       task_code: normalizeText(scheduleForm.value.task_code),
     };
-    const resolved = resolveScheduleTimes(scheduleForm.value, now.value, rawSchedules.value);
+    const resolved = resolveScheduleTimes(scheduleForm.value, now.value, activeSchedules.value);
     if (!resolved.error) {
       candidate.start_at = resolved.startAt.toISOString();
       candidate.end_at = resolved.endAt.toISOString();
@@ -405,7 +425,7 @@ function useSchedulePage() {
         candidate,
         experimentTrays: rawExperimentTrays.value,
         experiments: rawExperiments.value,
-        schedules: rawSchedules.value,
+        schedules: activeSchedules.value,
       });
       if (taskConflict) {
         pendingScheduleDraft.value = { ...scheduleForm.value };

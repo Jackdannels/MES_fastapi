@@ -243,14 +243,15 @@
                 <span>样品：{{ selectedTaskDetail.selectedTraySummary.sampleSummary }}</span>
               </div>
             </div>
-            <ol class="process-task-flow-list">
+            <ol class="process-task-flow-list process-task-flow-list--timed">
               <li
                 v-for="(step, index) in selectedTaskDetail?.selectedTrayFlow?.steps || []"
                 :key="step.key"
                 :data-flow-step="index"
                 :class="{ current: step.active, reached: step.reached }"
               >
-                {{ step.label }}
+                <span class="process-task-flow-label">{{ step.label }}</span>
+                <span class="process-task-flow-time">{{ formatFlowTime(step.time) }}</span>
               </li>
             </ol>
           </section>
@@ -331,6 +332,17 @@ const summaryItems = computed(() => [
   { count: scheduledCount.value, key: PROCESS_FILTERS.scheduled, label: "已排程" },
   { count: idleCount.value, key: PROCESS_FILTERS.idle, label: "空闲" },
 ]);
+
+const formatFlowTime = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  return normalized
+    .replace("T", " ")
+    .replace(/\.\d{1,6}/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+};
 </script>
 
 <style scoped>
@@ -699,6 +711,25 @@ const summaryItems = computed(() => [
 .process-task-flow-list li.current::before,
 .process-task-flow-list li.reached::before {
   background: rgba(34, 197, 94, 0.9);
+}
+
+.process-task-flow-list--timed li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+}
+
+.process-task-flow-label {
+  line-height: 1.35;
+}
+
+.process-task-flow-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {

@@ -50,4 +50,19 @@ describe("taskOverviewAlerts", () => {
 
     expect(hasAlert).toBe(false);
   });
+
+  test("ignores returned tasks when checking overdue waiting experiments", () => {
+    const now = Date.parse("2026-03-20T10:00:00.000Z");
+    const tasks = [{ code: "TASK-RETURNED", transfer_status: "厂家收回", status: "厂家收回" }];
+    const experiments = [
+      {
+        task_code: "TASK-RETURNED",
+        experiment_code: "TASK-RETURNED-A",
+        unscheduled_since: "2026-03-18T08:00:00.000Z",
+      },
+    ];
+
+    expect(hasOverdueWaitingExperiment(tasks, experiments, [], now)).toBe(false);
+    expect(findFirstOverdueWaitingTaskCode(tasks, experiments, [], now)).toBe("");
+  });
 });

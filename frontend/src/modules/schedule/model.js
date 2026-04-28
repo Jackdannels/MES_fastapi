@@ -1,6 +1,7 @@
 // 提供排程页所需的表单、看板行、甘特数据和增删改辅助函数。
 import { getLabsForTestType, TEST_LABS } from "@/lib/labs.js";
 import { buildExperimentTypeOptions, collectExperimentTypes } from "@/lib/experimentTypes";
+import { filterActiveTasks } from "@/lib/taskArchive";
 
 const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
@@ -20,6 +21,27 @@ const SLOT_BUFFER_MINUTES = 10;
 
 // 排程模块的大部分判断都依赖稳定字符串，因此先做统一规范化。
 const normalizeText = (value) => String(value ?? "").trim();
+
+const buildActiveTaskContext = (tasks, samples = []) => {
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  if (taskList.length === 0) {
+    return { activeTasks: [], activeTaskCodes: null };
+  }
+  const activeTasks = filterActiveTasks(taskList, samples);
+  return {
+    activeTasks,
+    activeTaskCodes: new Set(activeTasks.map((task) => normalizeText(task?.code)).filter(Boolean)),
+  };
+};
+
+const filterSchedulesForActiveTasks = ({ schedules, tasks, samples = [] }) => {
+  const scheduleList = Array.isArray(schedules) ? schedules : [];
+  const { activeTaskCodes } = buildActiveTaskContext(tasks, samples);
+  if (!activeTaskCodes) {
+    return scheduleList;
+  }
+  return scheduleList.filter((schedule) => activeTaskCodes.has(normalizeText(schedule?.task_code)));
+};
 
 const buildExperimentLabel = (experimentCode) => {
   const code = normalizeText(experimentCode);
@@ -986,17 +1008,21 @@ const formatOverlapRange = (startAt, endAt) => {
   return `${formatDateTime(start)} - ${formatDateTime(end)}`;
 };
 
-function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, experiments, experimentTrays }) {
+function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, experiments, experimentTrays, tasks = [], samples = [] }) {
   const normalizedTaskCode = normalizeText(taskCode);
   const selectedExperimentCode = normalizeText(experimentCode);
   if (!normalizedTaskCode) {
+    return [];
+  }
+  const { activeTaskCodes } = buildActiveTaskContext(tasks, samples);
+  if (activeTaskCodes && !activeTaskCodes.has(normalizedTaskCode)) {
     return [];
   }
 
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const trayMap = buildExperimentTrayMap(experimentTrays);
 
-  return (Array.isArray(schedules) ? schedules : [])
+  return filterSchedulesForActiveTasks({ schedules, tasks, samples })
     .filter((schedule) => {
       if (normalizeText(schedule?.task_code) !== normalizedTaskCode) {
         return false;
@@ -1102,13 +1128,15 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 
 // 构建看板页签使用的主排程表格行。
 function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = new Date() }) {
-  const taskList = Array.isArray(tasks) ? tasks : [];
+  const { activeTasks } = buildActiveTaskContext(tasks, samples);
+  const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+  const visibleSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples });
 
-  return (Array.isArray(schedules) ? schedules : [])
+  return visibleSchedules
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
       const experimentCode = normalizeText(schedule?.experiment_code);
@@ -1141,8 +1169,8 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
 }
 
 // 提取冲突排程对，用于告警条和冲突检查表格。
-function buildConflictRows({ schedules }) {
-  const scheduleList = (Array.isArray(schedules) ? schedules : [])
+function buildConflictRows({ schedules, tasks = [], samples = [] }) {
+  const scheduleList = filterSchedulesForActiveTasks({ schedules, tasks, samples })
     .filter((schedule) => !isRetentionDevice(schedule?.device))
     .map((schedule) => ({ ...schedule }));
   const byDevice = new Map();
@@ -1193,7 +1221,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
-  const visibleSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
+  const visibleSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples }).filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
     }
@@ -1454,17 +1482,21 @@ function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date(
 
 // 生成手动排程表单使用的下拉选项。
 function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, schedules }) {
+  const { activeTasks } = buildActiveTaskContext(tasks, samples);
+  const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : [];
+  const activeSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples });
   const pendingExperimentTaskCodes = new Set(
-    (Array.isArray(tasks) ? tasks : [])
+    taskList
       .map((task) => normalizeText(task?.code))
       .filter((taskCode) =>
         Boolean(
           taskCode &&
             buildExperimentOptions({
               experiments,
-              schedules,
+              samples,
+              schedules: activeSchedules,
               taskCode,
-              tasks,
+              tasks: taskList,
             }).length > 0,
         ),
       )
@@ -1472,7 +1504,7 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
   );
 
   // 正常排程页签优先显示仍有未排实验的任务。
-  return (Array.isArray(tasks) ? tasks : [])
+  return taskList
     .filter((task) => {
       const taskCode = normalizeText(task?.code);
       if (!taskCode) {
@@ -1527,9 +1559,9 @@ function resolveRetentionTimeState(now = new Date()) {
 }
 
 // 构建排程看板上方展示的汇总卡片。
-function buildSummaryCards({ schedules, samples = [], experimentTrays = [], now = new Date() }) {
-  const rows = buildScheduleRows({ schedules, tasks: [], samples, experimentTrays, now });
-  const conflictRows = buildConflictRows({ schedules });
+function buildSummaryCards({ schedules, tasks = [], samples = [], experimentTrays = [], now = new Date() }) {
+  const rows = buildScheduleRows({ schedules, tasks, samples, experimentTrays, now });
+  const conflictRows = buildConflictRows({ schedules, tasks, samples });
   return {
     changeCount: 0,
     conflictCount: conflictRows.length,
@@ -1586,9 +1618,16 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
   });
 }
 
-function buildExperimentOptions({ taskCode, experiments, schedules, tasks }) {
+function buildExperimentOptions({ taskCode, experiments, schedules, tasks, samples = [] }) {
+  const { activeTasks, activeTaskCodes } = buildActiveTaskContext(tasks, samples);
+  const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : tasks;
+  const normalizedTaskCode = normalizeText(taskCode);
+  if (activeTaskCodes && normalizedTaskCode && !activeTaskCodes.has(normalizedTaskCode)) {
+    return [];
+  }
+  const activeSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples });
   const scheduledExperimentCodes = new Set(
-    (Array.isArray(schedules) ? schedules : [])
+    activeSchedules
       .filter(
         (schedule) =>
           !isRetentionDevice(schedule?.device) &&
@@ -1598,7 +1637,7 @@ function buildExperimentOptions({ taskCode, experiments, schedules, tasks }) {
   );
 
   const seenLabels = new Set();
-  return buildExperimentCandidates({ taskCode, experiments, tasks })
+  return buildExperimentCandidates({ taskCode, experiments, tasks: taskList })
     .filter((experiment) => !scheduledExperimentCodes.has(normalizeText(experiment?.experiment_code)))
     .map((experiment) => ({
       code: normalizeText(experiment?.experiment_code),

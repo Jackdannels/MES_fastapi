@@ -12,6 +12,7 @@ import {
   buildGanttRows,
   buildManualTaskOptions,
   buildRetentionInternalRows,
+  buildScheduleRows,
   buildScheduleRescheduleForm,
   buildTaskScheduledOverlays,
   createScheduleRecord,
@@ -549,6 +550,64 @@ describe("schedulePageModel", () => {
     });
 
     expect(options.map((option) => option.code)).toEqual(["SYLU-2026-03-021"]);
+  });
+
+  test("active schedule views hide tasks whose assigned trays were returned", () => {
+    const tasks = [
+      { code: "TASK-ACTIVE", name: "活动任务", status: STATUS_WAITING, tray_codes: ["TASK-ACTIVE-TP-001"] },
+      { code: "TASK-RETURNED", name: "归档任务", status: "已排程", tray_codes: ["TASK-RETURNED-TP-001"] },
+    ];
+    const samples = [
+      {
+        code: "TASK-ACTIVE-SP-001",
+        task_code: "TASK-ACTIVE",
+        status: "已入库",
+        trays: [{ tray_code: "TASK-ACTIVE-TP-001", status: "已入库", quantity: 1 }],
+      },
+      {
+        code: "TASK-RETURNED-SP-001",
+        task_code: "TASK-RETURNED",
+        status: "厂家收回",
+        trays: [{ tray_code: "TASK-RETURNED-TP-001", status: "厂家收回", quantity: 1 }],
+      },
+    ];
+    const experiments = [
+      { task_code: "TASK-ACTIVE", experiment_code: "TASK-ACTIVE-A", experiment_name: "冲击试验" },
+      { task_code: "TASK-RETURNED", experiment_code: "TASK-RETURNED-A", experiment_name: "盐雾试验" },
+    ];
+    const schedules = [
+      {
+        id: "schedule-active",
+        task_code: "TASK-ACTIVE",
+        experiment_code: "TASK-ACTIVE-A",
+        device: "冲击一室",
+        start_at: "2099-03-20T08:00:00.000Z",
+        end_at: "2099-03-20T10:00:00.000Z",
+      },
+      {
+        id: "schedule-returned",
+        task_code: "TASK-RETURNED",
+        experiment_code: "TASK-RETURNED-A",
+        device: "盐雾试验室",
+        start_at: "2099-03-20T08:00:00.000Z",
+        end_at: "2099-03-20T10:00:00.000Z",
+      },
+    ];
+
+    const rows = buildScheduleRows({ experiments, samples, schedules, tasks });
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "盐雾试验室" }],
+      experiments,
+      samples,
+      schedules,
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      tasks,
+    });
+    const options = buildManualTaskOptions({ experiments, samples, schedules, tasks });
+
+    expect(rows.map((row) => row.taskCode)).toEqual(["TASK-ACTIVE"]);
+    expect(gantt.rows.flatMap((row) => row.slots.map((slot) => slot.scheduleId)).filter(Boolean)).toEqual(["schedule-active"]);
+    expect(options.map((option) => option.code)).toEqual(["TASK-ACTIVE"]);
   });
 
   test("buildScheduleRescheduleForm maps a stored schedule back into the top scheduling form", () => {

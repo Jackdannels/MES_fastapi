@@ -139,6 +139,40 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert len(remaining.json()[0]["experiment_codes"]) == 2
 
 
+def test_tasks_list_hides_returned_tasks_unless_archived_are_requested(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {"id": "task-active", "code": "TASK-ACTIVE", "name": "活跃任务", "status": "待排程"},
+            {"id": "task-returned", "code": "TASK-RETURNED", "name": "历史任务", "status": "厂家收回"},
+        ],
+        samples=[
+            {
+                "id": "sample-active",
+                "code": "TASK-ACTIVE-SP-001",
+                "task_code": "TASK-ACTIVE",
+                "status": "已入库",
+                "trays": [{"tray_code": "TASK-ACTIVE-TP-001", "status": "已入库"}],
+            },
+            {
+                "id": "sample-returned",
+                "code": "TASK-RETURNED-SP-001",
+                "task_code": "TASK-RETURNED",
+                "status": "厂家收回",
+                "trays": [{"tray_code": "TASK-RETURNED-TP-001", "status": "厂家收回"}],
+            },
+        ],
+    )
+
+    active = client.get("/api/tasks")
+    archived = client.get("/api/tasks?includeArchived=true")
+
+    assert active.status_code == 200
+    assert [item["code"] for item in active.json()] == ["TASK-ACTIVE"]
+    assert archived.status_code == 200
+    assert [item["code"] for item in archived.json()] == ["TASK-ACTIVE", "TASK-RETURNED"]
+
+
 def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch):
     client = build_client(monkeypatch, tasks=[])
 

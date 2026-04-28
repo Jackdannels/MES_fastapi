@@ -82,7 +82,27 @@ function useLaboratoryPage(options = {}) {
   const currentTask = computed(() => view.value.currentTask);
   const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
-  const actionState = computed(() => getLaboratoryActionState(workflow.value));
+  const hasLaboratoryTasks = computed(() => view.value.scheduleRows.length > 0);
+  const laboratoryTaskNotice = computed(() => {
+    if (!hasLaboratoryTasks.value) {
+      return "当前盐雾试验室暂无任务，请先在排程看板安排任务后再进行比对。";
+    }
+    if (!currentTask.value) {
+      return "请先在查看任务中选择一个任务，再开启实验流程。";
+    }
+    return "";
+  });
+  const actionState = computed(() => {
+    const state = getLaboratoryActionState(workflow.value);
+    if (!currentTask.value) {
+      return {
+        canCompare: false,
+        canInstallSample: false,
+        canMarkReady: false,
+      };
+    }
+    return state;
+  });
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value));
   const runningExperiment = computed(() => view.value.runningExperiment);
@@ -249,7 +269,7 @@ function useLaboratoryPage(options = {}) {
     taskListModalOpen.value = false;
   };
   const openCompare = async () => {
-    if (runningInteractionLocked.value) {
+    if (runningInteractionLocked.value || !actionState.value.canCompare) {
       return;
     }
     resetCompareState();
@@ -290,7 +310,7 @@ function useLaboratoryPage(options = {}) {
     }
   };
   const confirmCompare = async () => {
-    if (!canCompleteCompare.value) {
+    if (!currentTask.value || !canCompleteCompare.value) {
       return;
     }
     await persistCurrentTaskStep(LAB_COMPARE_STATUS, "任务比对");
@@ -298,6 +318,16 @@ function useLaboratoryPage(options = {}) {
     resetCompareState();
   };
   const submitCompareScan = () => {
+    if (!currentTask.value) {
+      compareFeedback.value = {
+        guidance: "当前实验室暂无可比对任务，请先选择任务。",
+        message: "无法比对",
+        ok: false,
+        tone: "error",
+      };
+      compareScanCode.value = "";
+      return;
+    }
     const result = validateLaboratoryTrayScan({
       allScheduleRows: view.value.allScheduleRows,
       currentTask: currentTask.value,
@@ -463,6 +493,7 @@ function useLaboratoryPage(options = {}) {
     canCompleteCompare,
     runningInteractionLocked,
     currentTask,
+    hasLaboratoryTasks,
     openCompare,
     openCompleteConfirm,
     openInstall,
@@ -475,6 +506,7 @@ function useLaboratoryPage(options = {}) {
     currentExperimentTrayRows: computed(() => view.value.currentExperimentTrayRows),
     pendingTaskCode,
     progressMessage,
+    laboratoryTaskNotice,
     readyModalOpen,
     recentTasks: computed(() => view.value.scheduleRows),
     resetConfirmModalOpen,

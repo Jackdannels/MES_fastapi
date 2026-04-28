@@ -708,6 +708,98 @@ def test_transfer_area_progress_stays_running_until_all_task_experiments_complet
     assert workspace.json()["task"]["taskProgress"] == "实验进行中"
 
 
+def test_transfer_area_hides_returned_tasks_from_active_views_even_with_unfinished_experiments(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": "experiment-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "experiment_name": "耐久试验",
+                "required_device": "耐久试验",
+                "status": "实验已完成",
+            },
+            {
+                "id": "experiment-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "experiment_name": "通电试验",
+                "required_device": "通电试验",
+                "status": "待排程",
+            },
+        ],
+    )
+
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "厂家收回"
+        sample["flow_status"] = "厂家收回"
+        sample["location"] = "厂家收回"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "厂家收回",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+
+    assert bootstrap.status_code == 200
+    task_nos = [item["taskNo"] for item in bootstrap.json()["taskOverview"]]
+    assert "SYLU-2026-03-102" not in task_nos
+
+    assert workspace.status_code == 404
+
+
+def test_transfer_area_bootstrap_hides_explicitly_returned_transfer_tasks(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    for task in tasks:
+        if task["code"] == "SYLU-2026-03-102":
+            task["transfer_status"] = "厂家收回"
+    storage.write("mes.tasks", tasks)
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+
+    assert bootstrap.status_code == 200
+    task_nos = [item["taskNo"] for item in bootstrap.json()["taskOverview"]]
+    assert "SYLU-2026-03-102" not in task_nos
+    assert workspace.status_code == 404
+
+
+def test_transfer_area_returned_trays_do_not_occupy_system_inventory(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "厂家收回"
+        sample["flow_status"] = "厂家收回"
+        sample["location"] = "厂家收回"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "厂家收回",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert workspace.status_code == 200
+    assert workspace.json()["task"]["remainingTrayCount"] == 20
+    assert len(workspace.json()["trayInventory"]) == 20
+
+
 def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_codes(monkeypatch):
     client, storage = build_client(monkeypatch)
 

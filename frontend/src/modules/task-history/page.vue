@@ -23,67 +23,84 @@
         </button>
       </aside>
 
-      <section class="card history-task-detail" data-testid="history-task-detail">
-        <template v-if="selectedTask">
-          <div class="history-detail-head">
-            <div>
-              <h3>{{ selectedTask.code }}</h3>
-              <div class="muted">{{ selectedTask.name || "-" }}</div>
-            </div>
-            <div class="history-status-pill">{{ selectedTask.status || "厂家收回" }}</div>
-          </div>
-
-          <section class="history-flow-section">
+      <aside class="history-task-side">
+        <section class="card history-task-flow-card history-task-flow-card--horizontal" data-testid="history-task-flow-card">
+          <template v-if="selectedTask">
             <div class="history-section-title">
-              <h4>任务流转信息</h4>
-              <span class="muted">按流程节点汇总最新时间</span>
+              <h4>任务流程图</h4>
+              <span class="muted">{{ selectedTask.status || "厂家收回" }}</span>
             </div>
-            <div class="history-flow-list">
-              <div v-for="step in selectedTask.taskFlow" :key="`task-${step.label}`" class="history-flow-item">
-                <span class="history-flow-dot"></span>
+            <div class="history-flow-strip">
+              <div v-for="step in selectedTask.taskFlow" :key="`task-${step.label}`" class="history-flow-strip-item">
                 <span class="history-flow-label">{{ step.label }}</span>
-                <span class="history-flow-time">{{ formatTime(step.time) }}</span>
+                <span class="history-flow-time">{{ formatHistoryTime(step.time) }}</span>
+                <span class="history-flow-dot"></span>
               </div>
             </div>
-          </section>
+          </template>
+          <div v-else class="history-empty muted">请选择左侧历史任务查看任务流转信息</div>
+        </section>
 
-          <section class="history-tray-section">
-            <div class="history-section-title">
-              <h4>当前分配托盘</h4>
-              <span class="muted">{{ selectedTask.trayCount }} 个托盘</span>
-            </div>
-            <div class="history-tray-tabs">
-              <button
-                v-for="tray in selectedTask.trays"
-                :key="tray.trayCode"
-                class="history-tray-tab"
-                :class="{ active: selectedTrayCode === tray.trayCode }"
-                :data-testid="`history-tray-${tray.trayCode}`"
-                type="button"
-                @click="selectTray(tray.trayCode)"
-              >
-                {{ tray.trayCode }}
-              </button>
-            </div>
-
-            <div v-if="selectedTray" class="history-tray-detail">
-              <div class="history-tray-summary">
-                <strong>{{ selectedTray.trayCode }}</strong>
-                <span>{{ selectedTray.status || "-" }}</span>
-                <span>{{ selectedTray.sampleCodes.join(" / ") || "暂无样品" }}</span>
-              </div>
-              <div class="history-flow-list history-flow-list--tray">
-                <div v-for="step in selectedTray.flowSteps" :key="`tray-${selectedTray.trayCode}-${step.label}`" class="history-flow-item">
-                  <span class="history-flow-dot"></span>
-                  <span class="history-flow-label">{{ step.label }}</span>
-                  <span class="history-flow-time">{{ formatTime(step.time) }}</span>
+        <section class="card history-task-detail history-task-detail-card" data-testid="history-task-detail">
+          <template v-if="selectedTask">
+            <section class="history-tray-section history-tray-picker">
+              <div class="history-tray-toolbar">
+                <div class="history-tray-tabs" aria-label="选择托盘">
+                  <button
+                    v-for="tray in selectedTask.trays"
+                    :key="tray.trayCode"
+                    class="history-tray-tab"
+                    :class="{ active: selectedTrayCode === tray.trayCode }"
+                    :data-testid="`history-tray-${tray.trayCode}`"
+                    type="button"
+                    @click="selectTray(tray.trayCode)"
+                  >
+                    {{ tray.trayCode }}
+                  </button>
+                </div>
+                <div v-if="selectedTray" class="history-tray-samples-summary">
+                  <span>包含样品</span>
+                  <div v-if="selectedTraySampleRows.length" class="history-tray-sample-list">
+                    <div
+                      v-for="(row, rowIndex) in selectedTraySampleRows"
+                      :key="`sample-row-${rowIndex}`"
+                      class="history-tray-sample-row"
+                    >
+                      <strong
+                        v-for="sampleCode in row"
+                        :key="sampleCode"
+                        class="history-tray-sample-code"
+                      >
+                        {{ sampleCode }}
+                      </strong>
+                    </div>
+                  </div>
+                  <strong v-else class="history-tray-sample-code">暂无样品</strong>
                 </div>
               </div>
-            </div>
-          </section>
-        </template>
-        <div v-else class="history-empty muted">请选择左侧历史任务查看托盘与流转信息</div>
-      </section>
+
+              <div v-if="selectedTray" class="history-tray-detail">
+                <div class="history-tray-unified-flow" data-testid="history-tray-unified-flow">
+                  <div class="history-tray-flow-current">{{ selectedTrayFlow.currentStatus }}</div>
+                  <div class="history-tray-flow-grid">
+                    <div
+                      v-for="(step, index) in selectedTrayFlow.steps"
+                      :key="step.key || `${step.label}-${index}`"
+                      class="history-tray-flow-step"
+                      :class="{ current: step.active, reached: step.reached }"
+                    >
+                      <span class="history-flow-label">{{ step.label }}</span>
+                      <span class="history-flow-time">{{ formatHistoryTime(step.time || resolveTrayStepTime(step.label)) }}</span>
+                      <span class="history-flow-dot"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </template>
+          <div v-else class="history-empty muted">请选择左侧历史任务查看托盘与流转信息</div>
+        </section>
+      </aside>
     </div>
   </section>
 </template>
@@ -94,6 +111,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTasks } from "@/lib/tasksApi";
+import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
 
 import { buildReturnedTaskHistoryView } from "./model";
 
@@ -102,15 +120,49 @@ const samples = ref([]);
 const loadError = ref("");
 const selectedTaskCode = ref("");
 const selectedTrayCode = ref("");
-const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
+const experiments = ref([]);
+const experimentTrays = ref([]);
+const schedules = ref([]);
+const { loadSnapshot } = useStorageSnapshot([
+  STORAGE_KEYS.samples,
+  STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.schedules,
+]);
 
 const historyView = computed(() => buildReturnedTaskHistoryView({
   tasks: tasks.value,
   samples: samples.value,
+  experiments: experiments.value,
+  experimentTrays: experimentTrays.value,
 }));
 const historyTasks = computed(() => historyView.value.tasks);
 const selectedTask = computed(() => historyTasks.value.find((task) => task.code === selectedTaskCode.value) || null);
 const selectedTray = computed(() => selectedTask.value?.trays.find((tray) => tray.trayCode === selectedTrayCode.value) || null);
+const selectedTraySampleRows = computed(() => {
+  const codes = Array.isArray(selectedTray.value?.sampleCodes) ? selectedTray.value.sampleCodes : [];
+  const rows = [];
+  for (let index = 0; index < codes.length; index += 3) {
+    rows.push(codes.slice(index, index + 3));
+  }
+  return rows;
+});
+const selectedTrayFlow = computed(() => {
+  if (!selectedTray.value) {
+    return buildTrayFlowView();
+  }
+  return buildTrayFlowView({
+    currentExperimentCode: "",
+    experimentTrays: experimentTrays.value,
+    experiments: experiments.value,
+    location: selectedTray.value.status,
+    samples: samples.value,
+    schedules: schedules.value,
+    status: selectedTray.value.status,
+    taskCode: selectedTask.value?.code,
+    trayCode: selectedTray.value.trayCode,
+  });
+});
 
 const selectTask = (taskCode) => {
   selectedTaskCode.value = taskCode;
@@ -120,7 +172,20 @@ const selectTray = (trayCode) => {
   selectedTrayCode.value = trayCode;
 };
 
-const formatTime = (value) => String(value || "-").replace("T", " ");
+const formatHistoryTime = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  return normalized
+    .replace("T", " ")
+    .replace(/\.\d{1,6}/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+};
+const resolveTrayStepTime = (label) => {
+  const matched = selectedTray.value?.flowSteps?.find((step) => step.label === label);
+  return matched?.time || "";
+};
 
 watch(historyTasks, (nextTasks) => {
   if (!nextTasks.length) {
@@ -146,11 +211,14 @@ watch(selectedTask, (task) => {
 onMounted(async () => {
   try {
     const [loadedTasks, snapshot] = await Promise.all([
-      readTasks(),
+      readTasks({ includeArchived: true }),
       loadSnapshot(),
     ]);
     tasks.value = Array.isArray(loadedTasks) ? loadedTasks : [];
     samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+    experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+    schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     loadError.value = "";
   } catch (error) {
     const detail = error instanceof Error ? error.message : "";
@@ -166,9 +234,15 @@ onMounted(async () => {
 
 .history-task-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.45fr);
   gap: 16px;
   align-items: start;
+}
+
+.history-task-side {
+  display: grid;
+  gap: 16px;
+  align-content: start;
 }
 
 .history-task-list,
@@ -176,10 +250,12 @@ onMounted(async () => {
   min-height: 420px;
 }
 
+.history-task-flow-card {
+  min-height: 148px;
+}
+
 .history-task-list__head,
-.history-detail-head,
-.history-section-title,
-.history-tray-summary {
+.history-section-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -223,17 +299,57 @@ onMounted(async () => {
   font-size: 13px;
 }
 
-.history-status-pill {
-  padding: 7px 12px;
-  border-radius: 999px;
-  background: #dcfce7;
-  color: #166534;
-  font-weight: 800;
-}
-
 .history-flow-section,
 .history-tray-section {
   margin-top: 24px;
+}
+
+.history-tray-section:first-child {
+  margin-top: 0;
+}
+
+.history-flow-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.history-flow-strip-item {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  min-height: 68px;
+  padding: 12px 10px 10px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  background: #dcfce7;
+  text-align: center;
+}
+
+.history-flow-strip-item::after {
+  content: "";
+  position: absolute;
+  left: calc(100% - 1px);
+  top: 50%;
+  width: 10px;
+  height: 2px;
+  background: #86efac;
+  transform: translateY(-50%);
+}
+
+.history-flow-strip-item:last-child::after {
+  display: none;
+}
+
+.history-flow-strip .history-flow-dot {
+  background: #22c55e;
+}
+
+.history-flow-strip .history-flow-time {
+  text-align: center;
+  font-size: 12px;
 }
 
 .history-flow-list {
@@ -253,11 +369,6 @@ onMounted(async () => {
   background: #f0f9ff;
 }
 
-.history-flow-list--tray .history-flow-item {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
-}
-
 .history-flow-dot {
   width: 9px;
   height: 9px;
@@ -265,12 +376,10 @@ onMounted(async () => {
   background: #0ea5e9;
 }
 
-.history-flow-list--tray .history-flow-dot {
-  background: #22c55e;
-}
-
 .history-flow-label {
   font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .history-flow-time {
@@ -283,7 +392,6 @@ onMounted(async () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
 }
 
 .history-tray-tab {
@@ -305,11 +413,126 @@ onMounted(async () => {
   margin-top: 14px;
 }
 
-.history-tray-summary {
+.history-tray-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(540px, max-content);
+  gap: 12px;
+  align-items: start;
+}
+
+.history-tray-samples-summary {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  padding: 8px 0;
+  color: #475569;
+  font-size: 13px;
+  text-align: right;
+}
+
+.history-tray-samples-summary span {
+  font-weight: 700;
+}
+
+.history-tray-sample-list {
+  display: grid;
+  gap: 4px;
+  justify-content: end;
+}
+
+.history-tray-sample-row {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 6px 12px;
+}
+
+.history-tray-sample-code {
+  max-width: 100%;
+  color: #10233f;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.history-tray-unified-flow {
+  margin-top: 12px;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #dbeafe;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #f8fbff;
+}
+
+.history-tray-flow-current {
+  color: #334155;
+  font-weight: 800;
+}
+
+.history-tray-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.history-tray-flow-step {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  min-height: 78px;
+  padding: 12px 10px 10px;
+  border: 1px solid #7dd3fc;
+  border-radius: 8px;
+  background: #e0f2fe;
+  text-align: center;
+}
+
+.history-tray-flow-step::after {
+  content: "";
+  position: absolute;
+  left: calc(100% - 1px);
+  top: 50%;
+  width: 10px;
+  height: 2px;
+  background: #7dd3fc;
+  transform: translateY(-50%);
+}
+
+.history-tray-flow-step:last-child::after {
+  display: none;
+}
+
+.history-tray-flow-step.reached,
+.history-tray-flow-step.current {
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+.history-tray-flow-step.reached::after,
+.history-tray-flow-step.current::after {
+  background: #86efac;
+}
+
+.history-tray-flow-step .history-flow-dot {
+  background: #38bdf8;
+}
+
+.history-tray-flow-step.reached .history-flow-dot,
+.history-tray-flow-step.current .history-flow-dot {
+  background: #22c55e;
+}
+
+.history-tray-flow-step.current .history-flow-label {
+  color: #052e16;
+}
+
+.history-tray-flow-step .history-flow-time {
+  min-height: 15px;
+  color: #475569;
+  font-size: 12px;
+  text-align: center;
+  white-space: normal;
 }
 
 .history-empty {
@@ -321,6 +544,18 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
+  .history-flow-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .history-flow-strip-item::after {
+    left: 50%;
+    top: calc(100% - 1px);
+    width: 2px;
+    height: 10px;
+    transform: translateX(-50%);
+  }
+
   .history-flow-item {
     grid-template-columns: 14px 1fr;
   }
@@ -328,6 +563,32 @@ onMounted(async () => {
   .history-flow-time {
     grid-column: 2;
     text-align: left;
+  }
+
+  .history-tray-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .history-tray-samples-summary {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .history-tray-sample-row {
+    grid-template-columns: 1fr;
+    justify-content: start;
+  }
+
+  .history-tray-flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-tray-flow-step::after {
+    left: 50%;
+    top: calc(100% - 1px);
+    width: 2px;
+    height: 10px;
+    transform: translateX(-50%);
   }
 }
 </style>

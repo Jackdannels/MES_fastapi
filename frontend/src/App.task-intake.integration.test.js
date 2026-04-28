@@ -62,12 +62,16 @@ describe("App task intake entry", () => {
     });
     vi.stubGlobal(
       "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          json: async () => ({}),
-          ok: false,
-        }),
-      ),
+      vi.fn((input) => {
+        const url = String(input);
+        if (url.includes("/api/tasks")) {
+          return Promise.resolve({ json: async () => [], ok: true, status: 200 });
+        }
+        if (url.includes("/api/storage")) {
+          return Promise.resolve({ json: async () => ({}), ok: true, status: 200 });
+        }
+        return Promise.resolve({ json: async () => ({}), ok: true, status: 200 });
+      }),
     );
   });
 
@@ -96,5 +100,6 @@ describe("App task intake entry", () => {
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(router.currentRoute.value.path).toBe("/tasks");
+    wrapper.unmount();
   });
 });

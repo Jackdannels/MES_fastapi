@@ -51,6 +51,20 @@ const parseTime = (value) => {
 };
 
 const isTaskStored = (task) => normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
+const isReturnedTaskRecord = (task, schedules) => {
+  const taskCode = normalizeText(task?.code);
+  const explicitReturned =
+    normalizeText(task?.transfer_status) === STATUS_RETENTION ||
+    normalizeStatusLabel(task?.status) === STATUS_RETENTION ||
+    normalizeStatusLabel(task?.displayStatus) === STATUS_RETENTION ||
+    normalizeStatusLabel(task?.display_status) === STATUS_RETENTION;
+  if (!explicitReturned) {
+    return false;
+  }
+  return !(Array.isArray(schedules) ? schedules : []).some(
+    (entry) => normalizeText(entry?.task_code) === taskCode && isRetentionDevice(entry?.device),
+  );
+};
 const hasFormalScheduleForExperiment = (schedules, taskCode, experimentCode) =>
   (Array.isArray(schedules) ? schedules : []).some(
     (entry) =>
@@ -145,7 +159,7 @@ function computeDeviceStatus(device, schedules, now = Date.now()) {
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
 function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, now = Date.now() }) {
-  const taskList = Array.isArray(tasks) ? tasks : [];
+  const taskList = (Array.isArray(tasks) ? tasks : []).filter((task) => !isReturnedTaskRecord(task, schedules));
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const deviceList = Array.isArray(devices) ? devices : [];
   const streamList = Array.isArray(streams) ? streams : [];

@@ -23,7 +23,6 @@
               <th>序号</th>
               <th>任务号</th>
               <th>托盘编号</th>
-              <th>任务信息</th>
               <th>当前状态</th>
               <th>样品数</th>
               <th>样品编号</th>
@@ -31,7 +30,7 @@
           </thead>
           <tbody>
             <tr v-if="filteredTrayRows.length === 0">
-              <td colspan="7" class="muted">暂无托盘数据</td>
+              <td colspan="6" class="muted">暂无托盘数据</td>
             </tr>
             <tr
               v-for="(row, index) in filteredTrayRows"
@@ -41,27 +40,48 @@
               @click="selectTray(row.trayCode)"
             >
               <td>{{ index + 1 }}</td>
-              <td :data-testid="`samples-trays-task-code-${index}`">{{ row.taskCode || "-" }}</td>
-              <td>{{ row.trayCode }}</td>
-              <td :data-testid="`samples-trays-task-${index}`">
-                <div>{{ row.taskCode || "-" }}</div>
-                <div class="muted">{{ row.taskName || row.testType || "-" }}</div>
+              <td :data-testid="`samples-trays-task-code-${index}`">
+                <div class="tray-code-stack">
+                  <span class="tray-code-line">{{ row.taskCode || "-" }}</span>
+                </div>
+              </td>
+              <td :data-testid="`samples-trays-tray-code-${index}`">
+                <div class="tray-code-stack">
+                  <span class="tray-code-line">{{ row.trayCode || "-" }}</span>
+                </div>
               </td>
               <td>
-                <select
-                  class="tray-status-select"
-                  :data-testid="`samples-trays-status-${index}`"
-                  :value="row.status"
-                  @click.stop
-                  @change="updateTrayStatus(row.trayCode, $event.target.value)"
-                >
-                  <option v-for="status in samplesFlow.trayStatusOptions" :key="status" :value="status">
-                    {{ status }}
-                  </option>
-                </select>
+                <div class="tray-current-status" :data-testid="`samples-trays-current-status-${index}`">
+                  {{ row.status || "-" }}
+                </div>
               </td>
               <td>{{ row.sampleCount }}</td>
-              <td class="tray-sample-summary">{{ row.sampleSummary || "-" }}</td>
+              <td class="tray-sample-summary" :data-testid="`samples-trays-sample-codes-${index}`">
+                <div class="tray-sample-lines" tabindex="0">
+                  <span
+                    v-for="sampleCode in visibleSampleCodes(row)"
+                    :key="`${row.trayCode}-${sampleCode}`"
+                    class="tray-sample-line"
+                    :class="{ 'is-ellipsis': sampleCode === SAMPLE_CODES_ELLIPSIS }"
+                  >
+                    {{ sampleCode }}
+                  </span>
+                  <div
+                    v-if="hasHiddenSampleCodes(row)"
+                    class="tray-sample-popover"
+                    :data-testid="`samples-trays-sample-popover-${index}`"
+                  >
+                    <strong>全部样品编号</strong>
+                    <span
+                      v-for="sampleCode in allSampleCodes(row)"
+                      :key="`${row.trayCode}-popover-${sampleCode}`"
+                      class="tray-sample-popover-line"
+                    >
+                      {{ sampleCode }}
+                    </span>
+                  </div>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -88,7 +108,7 @@
         <section class="sample-flow-card section">
           <div class="sample-flow-title">统一托盘流程图</div>
           <div class="sample-flow-status" data-testid="samples-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
-          <ol class="sample-flow-unified">
+          <ol class="sample-flow-unified sample-flow-unified--timed">
             <li
               v-for="(step, index) in selectedTrayFlow.steps"
               :key="step.key"
@@ -96,7 +116,8 @@
               :data-testid="`samples-tray-flow-step-${step.key}`"
               :class="{ current: step.active, reached: step.reached }"
             >
-              {{ step.label }}
+              <span class="sample-flow-label">{{ step.label }}</span>
+              <span class="sample-flow-time">{{ formatFlowTime(step.time) }}</span>
             </li>
           </ol>
         </section>
@@ -140,6 +161,18 @@ const TASK_FLOW_STEPS = [
   { key: "completed", label: STATUS_COMPLETED },
   { key: "returned", label: STATUS_RETENTION },
 ];
+const SAMPLE_CODES_ELLIPSIS = "...";
+const SAMPLE_CODES_VISIBLE_LIMIT = 5;
+const formatFlowTime = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  return normalized
+    .replace("T", " ")
+    .replace(/\.\d{1,6}/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+};
 
 const TASK_FLOW_INDEX = new Map(TASK_FLOW_STEPS.map((step, index) => [step.label, index]));
 
@@ -173,13 +206,31 @@ const trayCounterText = computed(() => {
   return `${getRemainingSystemTrayCount(occupiedCount)}/${SYSTEM_TRAY_TOTAL}`;
 });
 
-const selectTray = (trayCode) => {
-  selectedTrayCode.value = String(trayCode || "").trim();
+const allSampleCodes = (row) => {
+  if (Array.isArray(row?.sampleCodes)) {
+    return row.sampleCodes.map((code) => normalizeText(code)).filter(Boolean);
+  }
+  return normalizeText(row?.sampleSummary)
+    .split(/[、,，/]+/)
+    .map((code) => normalizeText(code))
+    .filter(Boolean);
 };
 
-const updateTrayStatus = async (trayCode, status) => {
-  selectTray(trayCode);
-  await props.samplesFlow.updateTrayStatusInline(trayCode, status);
+const hasHiddenSampleCodes = (row) => allSampleCodes(row).length > SAMPLE_CODES_VISIBLE_LIMIT;
+
+const visibleSampleCodes = (row) => {
+  const codes = allSampleCodes(row);
+  if (!codes.length) {
+    return ["-"];
+  }
+  if (codes.length <= SAMPLE_CODES_VISIBLE_LIMIT) {
+    return codes;
+  }
+  return [...codes.slice(0, SAMPLE_CODES_VISIBLE_LIMIT - 1), SAMPLE_CODES_ELLIPSIS];
+};
+
+const selectTray = (trayCode) => {
+  selectedTrayCode.value = String(trayCode || "").trim();
 };
 
 watch(

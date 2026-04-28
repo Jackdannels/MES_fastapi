@@ -96,6 +96,7 @@
               <option v-for="type in taskTypeOptions" :key="type" :value="type">{{ type }}</option>
             </select>
           </div>
+          <div v-if="feedback" class="form-alert" data-testid="transfer-overview-feedback">{{ feedback }}</div>
 
           <div class="transfer-table">
             <div class="transfer-table__head transfer-table__head--compact">
@@ -613,6 +614,8 @@ const fetchJson = async (path, options) => {
   return payload || {};
 };
 
+const isArchivedWorkspaceError = (error) => String(error instanceof Error ? error.message : error || "").includes("归档");
+
 const handleLogout = () => {
   exitDialogOpen.value = true;
 };
@@ -959,12 +962,31 @@ const applyWorkspace = (workspace) => {
   resetInteractiveState();
 };
 
+const clearWorkspace = () => {
+  selectedTaskId.value = null;
+  currentTask.value = null;
+  experiments.value = [];
+  draftExperimentTraySelections.value = {};
+  trayLimit.value = 4;
+  assignedTrays.value = [];
+  availableInventory.value = [];
+  allocationSaved.value = false;
+  activeAssignmentMode.value = "task";
+  barcodeModalVisible.value = false;
+  barcodePreviewItems.value = [];
+  resetInteractiveState();
+};
+
 const loadBootstrap = async () => {
   isBootstrapLoading.value = true;
   bootstrapError.value = "";
   try {
     const payload = await fetchJson("/api/transfer-area/bootstrap");
     taskOverview.value = (payload.taskOverview || []).map((task) => normalizeTaskRecord(task));
+    if (selectedTaskId.value && !taskOverview.value.some((task) => task.taskId === selectedTaskId.value)) {
+      clearWorkspace();
+      viewMode.value = "overview";
+    }
     pendingTaskCount.value = payload.pendingTaskCount || 0;
     storedTaskCount.value = payload.storedTaskCount || 0;
   } catch (error) {
@@ -1001,7 +1023,17 @@ const openTask = async (task) => {
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
   viewMode.value = "detail";
-  await loadWorkspace(task.taskId);
+  try {
+    await loadWorkspace(task.taskId);
+  } catch (error) {
+    if (!isArchivedWorkspaceError(error)) {
+      throw error;
+    }
+    feedback.value = error instanceof Error ? error.message : "任务已归档";
+    clearWorkspace();
+    viewMode.value = "overview";
+    await loadBootstrap();
+  }
 };
 
 const setTaskStatusFilter = (status) => {

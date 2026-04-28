@@ -69,4 +69,38 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.warning).toContain("样品数据加载失败");
     expect(wrapper.vm.sampleRows).toEqual([]);
   });
+
+  test("keeps archived task samples in storage while hiding them from the active sample flow", async () => {
+    mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-ACTIVE", name: "活动任务" }]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "TASK-ACTIVE-SP-001",
+          task_code: "TASK-ACTIVE",
+          status: "已入库",
+          trays: [{ tray_code: "TASK-ACTIVE-TP-001", status: "已入库", quantity: 1 }],
+        },
+        {
+          code: "TASK-RETURNED-SP-001",
+          task_code: "TASK-RETURNED",
+          status: "厂家收回",
+          trays: [{ tray_code: "TASK-RETURNED-TP-001", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(wrapper.vm.rawSamples.map((sample) => sample.code)).toEqual([
+      "TASK-ACTIVE-SP-001",
+      "TASK-RETURNED-SP-001",
+    ]);
+    expect(wrapper.vm.sampleRows.map((sample) => sample.code)).toEqual(["TASK-ACTIVE-SP-001"]);
+    expect(wrapper.vm.taskOptions).toEqual(["TASK-ACTIVE"]);
+  });
 });

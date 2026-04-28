@@ -12,6 +12,7 @@ CURRENT_SCHEMA_VERSION = 2
 MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
 RUNTIME_STORAGE_BACKEND = "mysql"
 UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
+RETURNED_STATUS = "厂家收回"
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -156,24 +157,35 @@ def _normalize_meta(value: Any) -> dict[str, Any]:
 
 def _resolve_experiment_count(task: dict[str, Any], explicit_count: int) -> int:
     if explicit_count > 0:
-        return max(explicit_count, MIN_EXPERIMENTS_PER_TASK)
+        return explicit_count
     raw_codes = task.get("experiment_codes")
     if isinstance(raw_codes, list):
         normalized_codes = [str(code or "").strip() for code in raw_codes if str(code or "").strip()]
         if normalized_codes:
-            return max(len(normalized_codes), MIN_EXPERIMENTS_PER_TASK)
+            return len(normalized_codes)
     try:
         explicit_task_count = int(task.get("experiment_count") or 0)
     except (TypeError, ValueError):
         explicit_task_count = 0
     if explicit_task_count > 0:
-        return max(explicit_task_count, MIN_EXPERIMENTS_PER_TASK)
+        return explicit_task_count
+    raw_types = task.get("test_types")
+    if isinstance(raw_types, list):
+        normalized_types = [str(item or "").strip() for item in raw_types if str(item or "").strip()]
+        if normalized_types:
+            return len(normalized_types)
     return MIN_EXPERIMENTS_PER_TASK
 
 
-def _build_experiment_types(task_type: str, count: int) -> list[str]:
-    base_type = str(task_type or "").strip()
+def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
+    base_type = str(task.get("test_type") or task.get("required_device") or task.get("name") or "").strip()
     types: list[str] = []
+    raw_types = task.get("test_types")
+    if isinstance(raw_types, list):
+        for candidate in raw_types:
+            normalized = str(candidate or "").strip()
+            if normalized and normalized not in types:
+                types.append(normalized)
     for candidate in re.split(r"[/、,，;；]+", base_type):
         normalized = candidate.strip()
         if normalized and normalized not in types:
@@ -246,10 +258,7 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
         ]
         desired_count = _resolve_experiment_count(task, len(existing_list))
         experiment_codes = _build_experiment_codes(task_code, desired_count, explicit_codes or existing_codes)
-        experiment_types = _build_experiment_types(
-            str(task.get("test_type") or task.get("required_device") or task.get("name") or "").strip(),
-            desired_count,
-        )
+        experiment_types = _build_experiment_types(task, desired_count)
         existing_by_code = {
             str(experiment.get("experiment_code") or "").strip(): dict(experiment)
             for experiment in existing_list
@@ -294,6 +303,207 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
     return normalized, changed
 
 
+def _latest_staging_events_by_tray(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    latest: dict[str, tuple[datetime | None, int, dict[str, Any]]] = {}
+    for index, event in enumerate(events):
+        tray_code = str(event.get("tray_code") or event.get("trayCode") or "").strip()
+        if not tray_code:
+            continue
+        event_time = _parse_storage_datetime(event.get("time") or event.get("created_at") or event.get("updated_at"))
+        current = latest.get(tray_code)
+        if current is None:
+            latest[tray_code] = (event_time, index, event)
+            continue
+        current_time, current_index, _current_event = current
+        if event_time and current_time:
+            if event_time >= current_time:
+                latest[tray_code] = (event_time, index, event)
+            continue
+        if event_time and not current_time:
+            latest[tray_code] = (event_time, index, event)
+            continue
+        if not event_time and not current_time and index >= current_index:
+            latest[tray_code] = (event_time, index, event)
+    return {tray_code: event for tray_code, (_time, _index, event) in latest.items()}
+
+
+def _append_return_history(sample: dict[str, Any], tray_code: str, event: dict[str, Any]) -> bool:
+    event_time = str(event.get("time") or event.get("created_at") or event.get("updated_at") or "").strip()
+    if not event_time:
+        return False
+    detail = f"{tray_code} {RETURNED_STATUS}"
+    history = sample.get("history") if isinstance(sample.get("history"), list) else []
+    if any(
+        str(entry.get("time") or "").strip() == event_time
+        and str(entry.get("detail") or "").strip() == detail
+        for entry in history
+        if isinstance(entry, dict)
+    ):
+        sample["history"] = history
+        return False
+    sample["history"] = [
+        {
+            "action": RETURNED_STATUS,
+            "status": RETURNED_STATUS,
+            "detail": detail,
+            "time": event_time,
+            "location": RETURNED_STATUS,
+            "owner": str(event.get("operator") or "").strip(),
+        },
+        *history,
+    ]
+    return True
+
+
+def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    tasks = [dict(task) for task in (payload.get("mes.tasks") if isinstance(payload.get("mes.tasks"), list) else [])]
+    samples = [dict(sample) for sample in (payload.get("mes.samples") if isinstance(payload.get("mes.samples"), list) else [])]
+    experiment_trays = [
+        dict(item)
+        for item in (payload.get("mes.experiment_trays") if isinstance(payload.get("mes.experiment_trays"), list) else [])
+    ]
+    staging_events = [
+        dict(item)
+        for item in (payload.get("mes.staging_events") if isinstance(payload.get("mes.staging_events"), list) else [])
+    ]
+    if not tasks or not staging_events:
+        return payload, False
+
+    latest_by_tray = _latest_staging_events_by_tray(staging_events)
+    if not latest_by_tray:
+        return payload, False
+
+    task_trays: dict[str, set[str]] = {}
+    sample_trays: dict[tuple[str, str], set[str]] = {}
+    task_sample_codes: dict[str, set[str]] = {}
+    task_tray_limits: dict[str, int] = {}
+
+    for task in tasks:
+        task_code = str(task.get("code") or task.get("task_code") or task.get("id") or "").strip()
+        if not task_code:
+            continue
+        try:
+            tray_limit = int(str(task.get("tray_limit") or "").strip())
+        except (TypeError, ValueError):
+            tray_limit = 0
+        task_tray_limits[task_code] = tray_limit if tray_limit > 0 else 4
+
+    for relation in experiment_trays:
+        task_code = str(relation.get("task_code") or "").strip()
+        tray_code = str(relation.get("tray_code") or "").strip()
+        if not task_code or not tray_code:
+            continue
+        task_trays.setdefault(task_code, set()).add(tray_code)
+
+    for sample in samples:
+        task_code = str(sample.get("task_code") or "").strip()
+        sample_code = str(sample.get("code") or sample.get("sample_code") or sample.get("id") or "").strip()
+        if task_code and sample_code:
+            task_sample_codes.setdefault(task_code, set()).add(sample_code)
+        for tray in sample.get("trays") if isinstance(sample.get("trays"), list) else []:
+            tray_code = str(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or "").strip()
+            if not task_code or not tray_code:
+                continue
+            task_trays.setdefault(task_code, set()).add(tray_code)
+            if sample_code:
+                sample_trays.setdefault((task_code, sample_code), set()).add(tray_code)
+
+    for task_code, tray_codes in task_trays.items():
+        if any(key[0] == task_code for key in sample_trays):
+            continue
+        sorted_samples = sorted(task_sample_codes.get(task_code, set()))
+        sorted_trays = sorted(tray_codes)
+        if not sorted_samples or not sorted_trays:
+            continue
+        tray_limit = task_tray_limits.get(task_code, 4)
+        for index, sample_code in enumerate(sorted_samples):
+            tray_index = min(index // tray_limit, len(sorted_trays) - 1)
+            sample_trays.setdefault((task_code, sample_code), set()).add(sorted_trays[tray_index])
+
+    returned_task_codes = {
+        task_code
+        for task_code, tray_codes in task_trays.items()
+        if tray_codes
+        and all(
+            str(latest_by_tray.get(tray_code, {}).get("action") or "").strip() == "manufacturer_return"
+            for tray_code in tray_codes
+        )
+    }
+    if not returned_task_codes:
+        return payload, False
+
+    changed = False
+    for task in tasks:
+        task_code = str(task.get("code") or task.get("task_code") or task.get("id") or "").strip()
+        if task_code not in returned_task_codes:
+            continue
+        if task.get("status") != RETURNED_STATUS:
+            task["status"] = RETURNED_STATUS
+            changed = True
+        if task.get("transfer_status") != RETURNED_STATUS:
+            task["transfer_status"] = RETURNED_STATUS
+            changed = True
+
+    for sample in samples:
+        task_code = str(sample.get("task_code") or "").strip()
+        sample_code = str(sample.get("code") or sample.get("sample_code") or sample.get("id") or "").strip()
+        if task_code not in returned_task_codes:
+            continue
+        tray_codes = sorted(sample_trays.get((task_code, sample_code), set()))
+        latest_return_time = ""
+        for tray_code in tray_codes:
+            event_time = str(latest_by_tray.get(tray_code, {}).get("time") or "").strip()
+            if event_time and event_time > latest_return_time:
+                latest_return_time = event_time
+        for field in ("status", "flow_status", "location"):
+            if sample.get(field) != RETURNED_STATUS:
+                sample[field] = RETURNED_STATUS
+                changed = True
+        if latest_return_time and sample.get("updated_at") != latest_return_time:
+            sample["updated_at"] = latest_return_time
+            changed = True
+        trays = [dict(tray) for tray in (sample.get("trays") if isinstance(sample.get("trays"), list) else [])]
+        trays_by_code = {
+            str(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or "").strip(): tray
+            for tray in trays
+            if str(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or "").strip()
+        }
+        for tray_code in tray_codes:
+            event = latest_by_tray.get(tray_code, {})
+            event_time = str(event.get("time") or event.get("created_at") or event.get("updated_at") or "").strip()
+            tray = trays_by_code.get(tray_code)
+            if tray is None:
+                trays.append(
+                    {
+                        "tray_code": tray_code,
+                        "sample_code": sample_code,
+                        "status": RETURNED_STATUS,
+                        "quantity": 1,
+                        "updated_at": event_time,
+                    }
+                )
+                changed = True
+            else:
+                if tray.get("status") != RETURNED_STATUS:
+                    tray["status"] = RETURNED_STATUS
+                    changed = True
+                if event_time and tray.get("updated_at") != event_time:
+                    tray["updated_at"] = event_time
+                    changed = True
+            if _append_return_history(sample, tray_code, event):
+                changed = True
+        if sample.get("trays") != trays:
+            sample["trays"] = trays
+            changed = True
+
+    if not changed:
+        return payload, False
+    normalized = dict(payload)
+    normalized["mes.tasks"] = tasks
+    normalized["mes.samples"] = samples
+    return normalized, True
+
+
 def _normalize_value(key: str, value: Any) -> Any:
     if key == "mes.samples" and isinstance(value, list):
         return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")
@@ -331,6 +541,9 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         changed = True
     normalized, experiment_changed = _ensure_task_experiment_rows(normalized)
     if experiment_changed:
+        changed = True
+    normalized, returned_changed = _apply_staging_returned_tasks(normalized)
+    if returned_changed:
         changed = True
     return normalized, changed
 

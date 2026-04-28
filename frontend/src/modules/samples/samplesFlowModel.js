@@ -1,4 +1,5 @@
 // 构建样品流转列表、暂存视图和更新辅助逻辑。
+import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
 const DEFAULT_LABELS = {
   intakeLocation: "\u63A5\u9A73\u533A",
   unpackingLocation: "\u62C6\u7BB1\u64CD\u4F5C\u95F4",
@@ -363,6 +364,11 @@ const buildTrayExperimentFlow = (input = {}) => {
       : null;
   const currentExperiment =
     explicitExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
+  const isSyntheticUnstartedCurrent =
+    normalizedStatus === "厂家收回"
+    && completedExperiments.length > 0
+    && startedUnfinishedExperiments.length === 0
+    && !explicitExperiment;
 
   if (!currentExperiment) {
     return completedExperiments.map((experiment, index) => ({
@@ -398,6 +404,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         code: currentExperiment.code,
         name: currentExperiment.name,
         state: "current",
+        unstarted: isSyntheticUnstartedCurrent,
         routeSteps: buildExperimentRouteSteps(),
         routeStatus,
       };
@@ -507,13 +514,17 @@ function buildSamplesTrayOverviewView(input = {}) {
       if (!trayCode) {
         return;
       }
+      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+      if (isReturnedTrayStatus(trayStatus)) {
+        return;
+      }
       if (!trayMap.has(trayCode)) {
         trayMap.set(trayCode, {
           trayCode,
           taskCode,
           taskName: task.name,
           testType: task.testType,
-          status: normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus),
+          status: trayStatus,
           sampleCodes: [],
         });
       }
@@ -522,7 +533,7 @@ function buildSamplesTrayOverviewView(input = {}) {
         row.sampleCodes.push(sampleCode);
       }
       if (!row.status) {
-        row.status = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+        row.status = trayStatus;
       }
     });
   });
@@ -549,7 +560,107 @@ function buildSamplesTrayOverviewView(input = {}) {
   return { rows };
 }
 
+const normalizeHistoryFlowLabel = (value, location = "") => {
+  const text = normalizeText(value);
+  if (!text) {
+    return "";
+  }
+  if (FLOW_STEP_KEY_BY_LABEL.has(text)) {
+    return text;
+  }
+  if (text === "运输中" || text === "已运输") {
+    return "样品运输中";
+  }
+  if (text === "实验完成" || text === "试验完成") {
+    return "实验已完成";
+  }
+  if (text === "放置实验后暂存" || text === "实验后暂存") {
+    return "放置实验后暂存间";
+  }
+  if (text === "收回" || text === "已收回" || text.includes("厂家收回")) {
+    return "厂家收回";
+  }
+  const matchedStep = SAMPLE_FLOW_STEPS.find((step) => text.includes(step.label));
+  if (matchedStep) {
+    return matchedStep.label;
+  }
+  const normalized = normalizeLifecycleStatus(location, text);
+  return FLOW_STEP_KEY_BY_LABEL.has(normalized) ? normalized : "";
+};
+
+const setLatestFlowTime = (timeMap, label, time) => {
+  const normalizedLabel = normalizeText(label);
+  const normalizedTime = normalizeText(time);
+  if (!normalizedLabel || !normalizedTime) {
+    return;
+  }
+  const existing = timeMap.get(normalizedLabel);
+  if (!existing || parseTimeValue(normalizedTime) >= parseTimeValue(existing)) {
+    timeMap.set(normalizedLabel, normalizedTime);
+  }
+};
+
+const hidePendingFlowStepTimes = (steps = []) => {
+  steps.forEach((step) => {
+    if (step && !step.active && !step.reached) {
+      step.time = "";
+    }
+  });
+  return steps;
+};
+
+const buildTrayFlowTimeMap = (input = {}) => {
+  const taskCode = normalizeText(input.taskCode);
+  const trayCode = normalizeText(input.trayCode);
+  const timeMap = new Map();
+  if (!trayCode) {
+    return timeMap;
+  }
+
+  (Array.isArray(input.samples) ? input.samples : []).forEach((sample) => {
+    if (taskCode && normalizeText(sample?.task_code) !== taskCode) {
+      return;
+    }
+    const trayEntries = asArray(sample?.trays).filter((tray) => normalizeText(tray?.tray_code) === trayCode);
+    if (trayEntries.length === 0) {
+      return;
+    }
+
+    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
+    if (parseTimeValue(sample?.created_at) > 0 && resolveFlowStatusRank("", sampleStatus) >= (FLOW_STEP_INDEX_BY_KEY.get("arrived") ?? 1)) {
+      setLatestFlowTime(timeMap, "到货", sample?.created_at);
+    }
+
+    trayEntries.forEach((tray) => {
+      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+      setLatestFlowTime(timeMap, trayStatus, tray?.updated_at || sample?.updated_at);
+    });
+
+    asArray(sample?.history).forEach((entry) => {
+      const time = entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp;
+      const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location || sample?.location);
+      const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location || sample?.location);
+      const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location || sample?.location);
+      [statusLabel, actionLabel, detailLabel].forEach((label) => setLatestFlowTime(timeMap, label, time));
+
+      const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
+      if (experimentEvent) {
+        const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
+        if (experimentStatus === "实验进行中" || experimentStatus === "实验中") {
+          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time);
+        }
+        if (experimentStatus === "实验已完成" || experimentStatus === "实验完成") {
+          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time);
+        }
+      }
+    });
+  });
+
+  return timeMap;
+};
+
 function buildTrayFlowView(input = {}) {
+  const stepTimeMap = buildTrayFlowTimeMap(input);
   const experimentFlow = Array.isArray(input.experimentFlow) && input.experimentFlow.length > 0
     ? input.experimentFlow
     : buildTrayExperimentFlow(input);
@@ -563,9 +674,11 @@ function buildTrayFlowView(input = {}) {
     const steps = [];
 
     const pushStep = (step) => {
+      const label = normalizeText(step?.label);
       steps.push({
         active: false,
         reached: false,
+        time: step?.time || stepTimeMap.get(label) || "",
         ...step,
       });
       return steps.length - 1;
@@ -581,9 +694,10 @@ function buildTrayFlowView(input = {}) {
       const pushExperimentStep = (experiment, index) => {
         const name = normalizeText(experiment?.name) || `实验${index + 1}`;
         const state = normalizeText(experiment?.state);
+        const labelState = state === "current" && experiment?.unstarted ? "pending" : state;
         return pushStep({
           key: `experiment-${state || "pending"}-${index}`,
-          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS[state] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
+          label: `${name}${EXPERIMENT_FLOW_STATUS_LABELS[labelState] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`,
           reached: state === "completed",
         });
       };
@@ -605,7 +719,7 @@ function buildTrayFlowView(input = {}) {
       const experimentName = normalizeText(activeExperiment?.name) || `实验${currentExperimentIndex + 1}`;
       const currentExperimentIndexInSteps = pushStep({
         key: `experiment-current-${currentExperimentIndex}`,
-        label: `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`,
+        label: `${experimentName}${activeExperiment?.unstarted ? EXPERIMENT_FLOW_STATUS_LABELS.pending : EXPERIMENT_FLOW_STATUS_LABELS.running}`,
       });
 
       experimentsAfterCurrent.forEach((experiment, index) => {
@@ -653,11 +767,19 @@ function buildTrayFlowView(input = {}) {
       } else if (normalizedRouteStatus === "厂家收回") {
         currentStatus = normalizedRouteStatus;
         activeIndex = returnedIndex;
-        routeIndexes.forEach((stepIndex) => {
-          steps[stepIndex].reached = true;
-        });
-        steps[currentExperimentIndexInSteps].reached = true;
-        steps[postTestStagingIndex].reached = true;
+        if (activeExperiment?.unstarted) {
+          routeIndexes.forEach((stepIndex, index) => {
+            if (index <= 1) {
+              steps[stepIndex].reached = true;
+            }
+          });
+        } else {
+          routeIndexes.forEach((stepIndex) => {
+            steps[stepIndex].reached = true;
+          });
+          steps[currentExperimentIndexInSteps].reached = true;
+          steps[postTestStagingIndex].reached = true;
+        }
       } else if (normalizedRouteStatus === "样品运输中") {
         currentStatus = normalizedRouteStatus;
         activeIndex = transportIndex;
@@ -723,6 +845,7 @@ function buildTrayFlowView(input = {}) {
     if (steps[activeIndex]) {
       steps[activeIndex].active = true;
     }
+    hidePendingFlowStepTimes(steps);
 
     return {
       trayCode,
@@ -737,17 +860,35 @@ function buildTrayFlowView(input = {}) {
   const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;
   const singleExperimentName = resolveSingleTrayExperimentName(input);
   const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
+  const singleExperimentEvent = singleExperimentName
+    ? resolveLatestExperimentEventMap({
+        taskCode: input.taskCode,
+        trayCode: input.trayCode,
+        samples: input.samples,
+      }).get(singleExperimentName)
+    : null;
+  const singleExperimentCompleted = normalizeLifecycleStatus("", singleExperimentEvent?.status) === "实验已完成";
+  const holdUncompletedSingleExperiment =
+    status === "厂家收回" && Boolean(singleExperimentName) && !singleExperimentCompleted;
+  const preExperimentReturnedReachedIndex = FLOW_STEP_INDEX_BY_KEY.get("arrived_staging") ?? 3;
 
   return {
     trayCode,
     status: displayStatus,
     currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${displayStatus}` : `当前状态：${displayStatus}`,
-    steps: SAMPLE_FLOW_STEPS.map((step, index) => ({
-      ...step,
-      label: buildSingleExperimentStatusLabel(singleExperimentName, step.label),
-      active: step.key === currentKey,
-      reached: index < currentIndex,
-    })),
+    steps: SAMPLE_FLOW_STEPS.map((step, index) => {
+      const label = buildSingleExperimentStatusLabel(singleExperimentName, step.label);
+      const active = step.key === currentKey;
+      const reached = holdUncompletedSingleExperiment ? index <= preExperimentReturnedReachedIndex : index < currentIndex;
+      const time = active || reached ? stepTimeMap.get(label) || stepTimeMap.get(step.label) || "" : "";
+      return {
+        ...step,
+        label,
+        time,
+        active,
+        reached,
+      };
+    }),
   };
 }
 
@@ -901,10 +1042,26 @@ const compareValue = (left, right, direction) => {
   return normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN") * factor;
 };
 
+const filterSamplesForActiveTasks = (samples, tasks) => {
+  const taskList = Array.isArray(tasks) ? tasks : [];
+  if (taskList.length === 0) {
+    return Array.isArray(samples) ? samples : [];
+  }
+  const activeTaskCodes = new Set(
+    filterActiveTasks(taskList, samples)
+      .map((task) => normalizeText(task?.code))
+      .filter(Boolean),
+  );
+  return (Array.isArray(samples) ? samples : []).filter((sample) => {
+    const taskCode = normalizeText(sample?.task_code);
+    return !taskCode || activeTaskCodes.has(taskCode);
+  });
+};
+
 // 在筛选和排序后构建分页样品流转表格。
 function buildSamplesFlowView(input = {}) {
-  const samples = Array.isArray(input.samples) ? input.samples.slice() : [];
   const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+  const samples = filterSamplesForActiveTasks(input.samples, tasks).slice();
   const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
   const sort = input.sort && typeof input.sort === "object" ? input.sort : {};
   const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 8;

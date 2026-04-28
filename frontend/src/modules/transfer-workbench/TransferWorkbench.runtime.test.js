@@ -447,6 +447,54 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("removes a task from the active workspace when the workspace endpoint reports it archived", async () => {
+    const initialBootstrap = createBootstrapPayload();
+    const archivedBootstrap = {
+      ...createBootstrapPayload(),
+      taskOverview: [createBootstrapPayload().taskOverview[1]],
+      pendingTaskCount: 0,
+      storedTaskCount: 1,
+    };
+    let bootstrapCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        bootstrapCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => (bootstrapCalls === 1 ? initialBootstrap : archivedBootstrap),
+        };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({ detail: "任务已归档" }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-101");
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-task-code"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("SYLU-2026-03-101");
+    expect(wrapper.text()).toContain("任务已归档");
+  });
+
   test.each([
     ["handover", { mode: "handover" }],
     ["pre-allocation", { embedded: true, mode: "pre-allocation", showHeader: false }],

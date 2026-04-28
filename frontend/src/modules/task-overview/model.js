@@ -1,5 +1,6 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
+import { filterActiveTasks } from "@/lib/taskArchive";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
@@ -280,9 +281,9 @@ function buildTaskRows({
   unscheduledLabel,
   now = Date.now(),
 }) {
-  const taskList = Array.isArray(tasks) ? tasks : [];
-  const experimentList = Array.isArray(experiments) ? experiments : [];
   const sampleList = Array.isArray(samples) ? samples : [];
+  const taskList = filterActiveTasks(tasks, sampleList);
+  const experimentList = Array.isArray(experiments) ? experiments : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const taskMap = new Map();
   const knownTaskCodes = new Set();
@@ -521,10 +522,11 @@ function buildTrayOverviewRows({
   const taskList = Array.isArray(tasks) ? tasks : [];
   const sampleList = Array.isArray(samples) ? samples : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
+  const activeTaskList = filterActiveTasks(taskList, sampleList);
 
   const taskTypeByCode = new Map();
   // 任务号到试验类型的映射用于给托盘视图补齐目标试验名称。
-  taskList.forEach((task) => {
+  activeTaskList.forEach((task) => {
     const code = String(task?.code || "").trim();
     if (!code) {
       return;

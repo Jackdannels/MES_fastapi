@@ -1,6 +1,7 @@
 import { SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 
 const RETURNED_STATUS = "厂家收回";
+const EXPERIMENT_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间"]);
 const FLOW_LABEL_ALIASES = new Map([
   ["运输中", "样品运输中"],
   ["已运输", "样品运输中"],
@@ -42,6 +43,13 @@ const resolveSampleTaskCode = (sample) => normalizeText(sample?.task_code || sam
 const resolveSampleCode = (sample) => normalizeText(sample?.code || sample?.sample_code || sample?.sampleNo || sample?.sample_no || sample?.id);
 const resolveTrayCode = (tray) => normalizeText(tray?.tray_code || tray?.trayCode || tray?.trayNo || tray?.tray_no || tray?.code || tray?.id);
 const resolveStatus = (value) => normalizeText(value?.status || value?.tray_status || value?.trayStatus || value?.sampleStatus);
+const resolveExperimentTaskCode = (experiment) => normalizeText(experiment?.task_code || experiment?.taskCode || experiment?.taskNo || experiment?.task_no);
+const resolveExperimentCode = (experiment) => normalizeText(experiment?.experiment_code || experiment?.experimentCode || experiment?.code || experiment?.id);
+const resolveExperimentName = (experiment) => normalizeText(experiment?.experiment_name || experiment?.experimentName || experiment?.required_device || experiment?.test_type || experiment?.name);
+const resolveExperimentStatus = (experiment) => normalizeText(experiment?.status || experiment?.experiment_status || experiment?.experimentStatus);
+const resolveExperimentTime = (experiment) => normalizeText(experiment?.completed_at || experiment?.completedAt || experiment?.updated_at || experiment?.updatedAt || experiment?.created_at || experiment?.createdAt);
+const resolveRelationTaskCode = (relation) => normalizeText(relation?.task_code || relation?.taskCode || relation?.taskNo || relation?.task_no);
+const resolveRelationExperimentCode = (relation) => normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experimentNo || relation?.experiment_no);
 
 const collectTrayRefs = (samples) => {
   const trayRefsByCode = new Map();
@@ -97,6 +105,54 @@ const collectFlowEntries = (samples) => {
   });
 };
 
+const filterTaskFlowForExperiments = (flowEntries, experiments) => {
+  if (!experiments.length) {
+    return flowEntries;
+  }
+  const allCompleted = experiments.every((experiment) => EXPERIMENT_COMPLETED_STATUSES.has(resolveExperimentStatus(experiment)));
+  if (allCompleted) {
+    return flowEntries;
+  }
+  return flowEntries.filter((entry) => entry.label !== "实验已完成");
+};
+
+const buildExperimentRows = (task, taskSamples, experiments, experimentTrays) => {
+  const taskCode = resolveTaskCode(task) || resolveSampleTaskCode(taskSamples[0]);
+  const taskExperiments = experiments
+    .filter((experiment) => resolveExperimentTaskCode(experiment) === taskCode)
+    .sort((left, right) => resolveExperimentCode(left).localeCompare(resolveExperimentCode(right), "zh-Hans-CN", { numeric: true }));
+  const relationsByExperimentCode = new Map();
+  experimentTrays.forEach((relation) => {
+    if (resolveRelationTaskCode(relation) !== taskCode) {
+      return;
+    }
+    const experimentCode = resolveRelationExperimentCode(relation);
+    const trayCode = resolveTrayCode(relation);
+    if (!experimentCode || !trayCode) {
+      return;
+    }
+    const trayCodes = relationsByExperimentCode.get(experimentCode) || [];
+    if (!trayCodes.includes(trayCode)) {
+      trayCodes.push(trayCode);
+    }
+    relationsByExperimentCode.set(experimentCode, trayCodes);
+  });
+
+  return taskExperiments.map((experiment) => {
+    const status = resolveExperimentStatus(experiment);
+    const completed = EXPERIMENT_COMPLETED_STATUSES.has(status);
+    return {
+      experimentCode: resolveExperimentCode(experiment),
+      experimentName: resolveExperimentName(experiment) || resolveExperimentCode(experiment) || "-",
+      rawStatus: status,
+      displayStatus: completed ? "已完成" : "未完成",
+      completed,
+      completedAt: completed ? resolveExperimentTime(experiment) : "",
+      trayCodes: (relationsByExperimentCode.get(resolveExperimentCode(experiment)) || []).sort((left, right) => left.localeCompare(right, "zh-Hans-CN", { numeric: true })),
+    };
+  });
+};
+
 const buildTrayRows = (samples) => {
   const trayRefsByCode = collectTrayRefs(samples);
   return Array.from(trayRefsByCode.entries())
@@ -114,18 +170,24 @@ const buildTrayRows = (samples) => {
     .sort((left, right) => left.trayCode.localeCompare(right.trayCode, "zh-Hans-CN", { numeric: true }));
 };
 
-const buildTaskRow = (task, samples) => {
+const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const code = resolveTaskCode(task) || resolveSampleTaskCode(samples[0]);
   const trays = buildTrayRows(samples);
+  const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
+  const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
+  const taskFlow = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
   return {
     id: task?.id || code,
     code,
     name: normalizeText(task?.name || task?.task_name || task?.test_type || task?.experiment_type),
-    status: normalizeText(task?.status || task?.transfer_status || task?.taskStatus) || RETURNED_STATUS,
+    status: RETURNED_STATUS,
     updatedAt: normalizeText(task?.updated_at || task?.created_at),
     sampleCount: samples.length,
     trayCount: trays.length,
-    taskFlow: collectFlowEntries(samples),
+    experimentCount: experimentRows.length,
+    experimentCompletedCount: completedCount,
+    experiments: experimentRows,
+    taskFlow,
     trays,
   };
 };
@@ -133,6 +195,8 @@ const buildTaskRow = (task, samples) => {
 function buildReturnedTaskHistoryView(input = {}) {
   const tasks = asArray(input.tasks);
   const samples = asArray(input.samples);
+  const experiments = asArray(input.experiments);
+  const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const samplesByTaskCode = new Map();
 
   samples.forEach((sample) => {
@@ -153,7 +217,7 @@ function buildReturnedTaskHistoryView(input = {}) {
       if (!hasAllAssignedTraysReturned(taskSamples)) {
         return null;
       }
-      return buildTaskRow(taskRecordsByCode.get(taskCode) || { code: taskCode }, taskSamples);
+      return buildTaskRow(taskRecordsByCode.get(taskCode) || { code: taskCode }, taskSamples, experiments, experimentTrays);
     })
     .filter(Boolean)
     .sort((left, right) => {

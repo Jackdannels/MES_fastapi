@@ -158,7 +158,7 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
-  test("buildTaskRows excludes manufacturer-returned tasks from scheduled experiment totals", () => {
+  test("buildTaskRows excludes manufacturer-returned tasks from active overview rows", () => {
     const rows = buildTaskRows({
       tasks: [{ code: "SYLU-2026-03-099", test_type: "冲击试验", status: "厂家收回" }],
       experiments: [
@@ -171,11 +171,7 @@ describe("taskOverviewModel", () => {
       unscheduledLabel: "待排程",
     });
 
-    expect(rows[0]).toMatchObject({
-      taskCode: "SYLU-2026-03-099",
-      eligibleExperimentCount: 0,
-      scheduledExperimentCount: 0,
-    });
+    expect(rows).toEqual([]);
   });
 
   test("buildTaskRows removes duplicate experiment types from overview summaries", () => {
@@ -254,6 +250,44 @@ describe("taskOverviewModel", () => {
 
     expect(rows[0].trayCode).toBe("SYLU-2026-03-001-TP-001");
     expect(rows[1].taskCode).toBe("-");
+  });
+
+  test("buildTrayOverviewRows resets returned task trays back to unassigned slots", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "SYLU-2026-03-001", test_type: "盐雾试验 / 四综合试验", status: "厂家收回", transfer_status: "厂家收回" }],
+      samples: [
+        {
+          task_code: "SYLU-2026-03-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "厂家收回" }],
+        },
+        {
+          task_code: "SYLU-2026-03-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "厂家收回" }],
+        },
+      ],
+      schedules: [],
+      totalSlots: 2,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        slotCode: "TP-001",
+        trayCode: "TP-001",
+        taskCode: "-",
+        targetExperiment: "未分配",
+      }),
+      expect.objectContaining({
+        slotCode: "TP-002",
+        trayCode: "TP-002",
+        taskCode: "-",
+        targetExperiment: "未分配",
+      }),
+    ]);
   });
 
   test("buildTaskRows keeps retention-only tasks unscheduled", () => {
@@ -459,6 +493,26 @@ describe("taskOverviewModel", () => {
         currentStatusLabel: "任务进行中（已完成1个实验）",
       }),
     );
+  });
+
+  test("buildTaskRows hides tasks whose assigned trays have all been returned", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "TASK-RETURNED", test_type: "盐雾试验", status: "厂家收回" }],
+      experiments: [{ task_code: "TASK-RETURNED", experiment_code: "TASK-RETURNED-A", experiment_name: "盐雾试验" }],
+      samples: [
+        {
+          task_code: "TASK-RETURNED",
+          code: "SP-001",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-001", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows).toEqual([]);
   });
 
   test("buildTaskRows restores missed sibling experiments to waiting when only another shared-tray experiment has history", () => {
