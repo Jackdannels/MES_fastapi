@@ -40,6 +40,8 @@ const addHours = (date, hours) => {
 
 // 所有输入字段统一走字符串规范化，减少 null / undefined 分支。
 const normalizeText = (value) => String(value ?? "").trim();
+const compareTaskCodes = (left, right) =>
+  normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 // 排程设备名带“暂存间”即视为暂存区，不参与正式实验状态判断。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
 // 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
@@ -353,47 +355,49 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
     experimentsByTaskCode.set(taskCode, current);
   });
 
-  return taskList.map((task, index) => {
-    // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
-    const { displayStatus, experimentProgress } = resolveTaskDisplayStatus(task, schedules, samples, experiments, now);
-    const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
-    const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
-    const fallbackType = normalizeText(task?.test_type);
-    const taskExperimentTypes = collectExperimentTypes(experimentTypes, fallbackType);
-    const experimentSummary = buildExperimentTypeSummary(taskExperimentTypes);
-    const experimentCount =
-      taskExperimentTypes.length ||
-      Number.parseInt(task?.experiment_count, 10) ||
-      (experimentSummary ? 1 : 0);
+  return taskList
+    .map((task, index) => {
+      // 列表行展示状态由排程实时推导，原始状态保留给数据层参考。
+      const { displayStatus, experimentProgress } = resolveTaskDisplayStatus(task, schedules, samples, experiments, now);
+      const taskCode = normalizeText(task?.code) || `TASK-${index + 1}`;
+      const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
+      const fallbackType = normalizeText(task?.test_type);
+      const taskExperimentTypes = collectExperimentTypes(experimentTypes, fallbackType);
+      const experimentSummary = buildExperimentTypeSummary(taskExperimentTypes);
+      const experimentCount =
+        taskExperimentTypes.length ||
+        Number.parseInt(task?.experiment_count, 10) ||
+        (experimentSummary ? 1 : 0);
 
-    return {
-      arrivalAt: formatDateTime(task?.arrival_at),
-      attachment: normalizeText(task?.attachment),
-      client: normalizeText(task?.client) || "内部部门",
-      code: taskCode,
-      conditions: normalizeText(task?.conditions),
-      contact: normalizeText(task?.contact),
-      contactInfo: normalizeText(task?.contact_info),
-      createdAt: normalizeText(task?.created_at),
-      displayStatus,
-      displayStatusLabel: buildTaskStatusLabel(displayStatus, experimentProgress),
-      dueAt: formatDateTime(task?.due_at),
-      id: normalizeText(task?.id) || `task-${index + 1}`,
-      name: normalizeText(task?.name),
-      priority: normalizeText(task?.priority) || "中",
-      remark: normalizeText(task?.remark),
-      requiredDevice: normalizeText(task?.required_device) || "-",
-      experimentCount,
-      experimentSummary,
-      sampleCount: normalizeText(task?.sample_count),
-      sampleType: normalizeText(task?.sample_type),
-      source: normalizeText(task?.source) || SOURCE_EXTERNAL,
-      status: normalizeTaskStatusLabel(task?.status) || STATUS_WAITING,
-      statusClass: statusClass(displayStatus),
-      testType: experimentSummary,
-      testTypes: taskExperimentTypes,
-    };
-  });
+      return {
+        arrivalAt: formatDateTime(task?.arrival_at),
+        attachment: normalizeText(task?.attachment),
+        client: normalizeText(task?.client) || "内部部门",
+        code: taskCode,
+        conditions: normalizeText(task?.conditions),
+        contact: normalizeText(task?.contact),
+        contactInfo: normalizeText(task?.contact_info),
+        createdAt: normalizeText(task?.created_at),
+        displayStatus,
+        displayStatusLabel: buildTaskStatusLabel(displayStatus, experimentProgress),
+        dueAt: formatDateTime(task?.due_at),
+        id: normalizeText(task?.id) || `task-${index + 1}`,
+        name: normalizeText(task?.name),
+        priority: normalizeText(task?.priority) || "中",
+        remark: normalizeText(task?.remark),
+        requiredDevice: normalizeText(task?.required_device) || "-",
+        experimentCount,
+        experimentSummary,
+        sampleCount: normalizeText(task?.sample_count),
+        sampleType: normalizeText(task?.sample_type),
+        source: normalizeText(task?.source) || SOURCE_EXTERNAL,
+        status: normalizeTaskStatusLabel(task?.status) || STATUS_WAITING,
+        statusClass: statusClass(displayStatus),
+        testType: experimentSummary,
+        testTypes: taskExperimentTypes,
+      };
+    })
+    .sort((left, right) => compareTaskCodes(left.code, right.code));
 }
 
 // 构建任务表格上方展示的汇总计数。

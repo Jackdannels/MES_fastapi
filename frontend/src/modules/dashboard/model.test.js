@@ -3,6 +3,26 @@ import { describe, expect, test } from "vitest";
 import { buildDashboardViewModel } from "./model";
 
 describe("dashboard model", () => {
+  test("orders task queue rows by task code ascending by default", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        { code: "SYLU-2026-03-003", source: "外部委托", status: "待排程" },
+        { code: "SYLU-2026-03-001", source: "外部委托", status: "待排程" },
+        { code: "SYLU-2026-03-002", source: "内部新增", status: "待排程" },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.taskRows.map((row) => row.code)).toEqual([
+      "SYLU-2026-03-001",
+      "SYLU-2026-03-002",
+      "SYLU-2026-03-003",
+    ]);
+  });
+
   test("treats retention-only schedules as unscheduled without a staging note suffix", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

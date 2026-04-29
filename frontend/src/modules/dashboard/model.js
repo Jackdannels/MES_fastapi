@@ -19,6 +19,8 @@ const RETENTION_LOCATION = "暂存间";
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
 const normalizeText = (value) => String(value ?? "").trim();
+const compareTaskCodes = (left, right) =>
+  normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 // 带“暂存间”标识的设备会被视为留样暂存位置，而非正式实验室。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
@@ -199,14 +201,16 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
           (streamList.reduce((sum, stream) => sum + Number.parseFloat(stream?.quality || 0), 0) / streamList.length) * 10
         ) / 10;
 
-  const taskRows = normalizedTasks.map((task, index) => ({
-    // 任务列表只保留总览页需要的最小字段集合。
-    code: normalizeText(task?.code) || "-",
-    index: index + 1,
-    source: normalizeText(task?.source) || "-",
-    status: normalizeText(task?.displayStatus) || STATUS_WAITING,
-    statusClass: task.statusClass,
-  }));
+  const taskRows = normalizedTasks
+    .map((task, index) => ({
+      // 任务列表只保留总览页需要的最小字段集合。
+      code: normalizeText(task?.code) || "-",
+      index: index + 1,
+      source: normalizeText(task?.source) || "-",
+      status: normalizeText(task?.displayStatus) || STATUS_WAITING,
+      statusClass: task.statusClass,
+    }))
+    .sort((left, right) => compareTaskCodes(left.code, right.code));
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
   const deviceItems = deviceList.map((device) => ({

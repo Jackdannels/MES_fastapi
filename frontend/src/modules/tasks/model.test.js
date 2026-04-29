@@ -16,6 +16,23 @@ describe("tasks model", () => {
     vi.useRealTimers();
   });
 
+  test("orders task rows by task code ascending by default", () => {
+    const rows = buildTaskRows(
+      [
+        { id: "task-3", code: "SYLU-2026-03-003", name: "任务三", status: "待排程" },
+        { id: "task-1", code: "SYLU-2026-03-001", name: "任务一", status: "待排程" },
+        { id: "task-2", code: "SYLU-2026-03-002", name: "任务二", status: "待排程" },
+      ],
+      [],
+    );
+
+    expect(rows.map((row) => row.code)).toEqual([
+      "SYLU-2026-03-001",
+      "SYLU-2026-03-002",
+      "SYLU-2026-03-003",
+    ]);
+  });
+
   test("marks a task as running when any tray is sent to the lab", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
