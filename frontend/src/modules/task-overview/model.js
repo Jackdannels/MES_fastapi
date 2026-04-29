@@ -1,7 +1,7 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { filterActiveTasks } from "@/lib/taskArchive";
-import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
+import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_WAITING = "待排程";
@@ -512,10 +512,11 @@ function buildTaskRows({
 // 构建托盘视图模式下逐槽位展示的托盘汇总数据。
 function buildTrayOverviewRows({
   tasks,
+  experiments = [],
+  experimentTrays = [],
   samples,
   schedules,
   totalSlots,
-  scheduledLabel,
   unscheduledLabel,
   unassignedExperimentLabel,
 }) {
@@ -534,8 +535,11 @@ function buildTrayOverviewRows({
     taskTypeByCode.set(code, String(task?.test_type || task?.name || "").trim());
   });
 
+  const experimentList = Array.isArray(experiments) ? experiments : [];
+  const experimentTrayList = Array.isArray(experimentTrays) ? experimentTrays : [];
+
   const scheduleByTaskCode = new Map();
-  // 同一任务可能有多次排程，托盘视图保留最近的一次正式实验室分配。
+  // 同一任务可能有多次排程，托盘视图只保留最近的一次正式排程作为流程上下文，不作为当前位置来源。
   scheduleList.forEach((entry) => {
     const taskCode = String(entry?.task_code || "").trim();
     if (!taskCode) {
@@ -547,23 +551,28 @@ function buildTrayOverviewRows({
     const device = String(entry?.device || "").trim();
     const ts = Date.parse(String(entry?.start_at || entry?.created_at || ""));
     const current = scheduleByTaskCode.get(taskCode);
-    const next = { device, ts: Number.isFinite(ts) ? ts : -1 };
+    const next = {
+      device,
+      experimentCode: normalizeText(entry?.experiment_code),
+      ts: Number.isFinite(ts) ? ts : -1,
+    };
     if (!current || next.ts >= current.ts) {
       scheduleByTaskCode.set(taskCode, next);
     }
   });
 
   const trayMap = new Map();
+  const summarizeUniqueTexts = (values, fallback = "-") => {
+    const unique = Array.from(new Set(values.map(normalizeText).filter(Boolean))).sort(compareText);
+    return unique.length ? unique.join("、") : fallback;
+  };
+
   sampleList.forEach((sample) => {
     const taskCode = String(sample?.task_code || "").trim();
     if (!taskCode || !taskTypeByCode.has(taskCode)) {
       return;
     }
     const targetExperiment = taskTypeByCode.get(taskCode) || "-";
-    const scheduleInfo = scheduleByTaskCode.get(taskCode);
-    const isScheduled = Boolean(scheduleInfo);
-    const scheduleStatus = isScheduled ? scheduledLabel : unscheduledLabel;
-    const lab = scheduleInfo?.device || "";
 
     (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
       const trayCode = String(tray?.tray_code || "").trim();
@@ -571,13 +580,27 @@ function buildTrayOverviewRows({
       if (!trayCode || trayMap.has(trayCode)) {
         return;
       }
+      const location = summarizeUniqueTexts([sample?.location]);
+      const status = normalizeLifecycleStatus(location, normalizeText(tray?.status) || normalizeText(sample?.status));
+      const scheduleInfo = scheduleByTaskCode.get(taskCode);
+      const currentStatus = buildTrayFlowView({
+        currentExperimentCode: scheduleInfo?.experimentCode || "",
+        experimentTrays: experimentTrayList,
+        experiments: experimentList,
+        location,
+        samples: sampleList,
+        schedules: scheduleList,
+        status,
+        taskCode,
+        trayCode,
+      }).status || status;
       trayMap.set(trayCode, {
         trayCode,
         taskCode,
         targetExperiment,
-        isScheduled,
-        scheduleStatus,
-        lab: isScheduled ? lab || "-" : "-",
+        currentLocation: location,
+        currentStatus,
+        hasTray: true,
       });
     });
   });
@@ -596,9 +619,9 @@ function buildTrayOverviewRows({
         trayCode: tray.trayCode,
         taskCode: tray.taskCode || "-",
         targetExperiment: tray.targetExperiment || "-",
-        isScheduled: tray.isScheduled,
-        scheduleStatus: tray.scheduleStatus,
-        lab: tray.lab || "-",
+        currentLocation: tray.currentLocation || "-",
+        currentStatus: tray.currentStatus || "-",
+        hasTray: true,
       };
     }
     // 空槽位用占位数据补齐，保证页面总是渲染 totalSlots 个槽位。
@@ -608,8 +631,9 @@ function buildTrayOverviewRows({
       taskCode: "-",
       targetExperiment: unassignedExperimentLabel,
       isScheduled: false,
-      scheduleStatus: unscheduledLabel,
-      lab: "-",
+      currentLocation: "-",
+      currentStatus: "-",
+      hasTray: false,
     };
   });
 }

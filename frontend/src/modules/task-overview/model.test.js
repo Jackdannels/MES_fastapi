@@ -197,7 +197,7 @@ describe("taskOverviewModel", () => {
     });
   });
 
-  test("buildTrayOverviewRows fills empty tray slots and uses latest schedule device", () => {
+  test("buildTrayOverviewRows fills empty tray slots and shows current status fields", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-1", test_type: "Thermal" }],
       samples: [
@@ -222,16 +222,51 @@ describe("taskOverviewModel", () => {
       trayCode: "TRAY-A",
       taskCode: "TASK-1",
       targetExperiment: "Thermal",
-      scheduleStatus: "Scheduled",
-      lab: "Lab-2",
+      currentLocation: "-",
+      currentStatus: "样品运输中",
     });
     expect(rows[1]).toMatchObject({
       slotCode: "TP-002",
       trayCode: "TP-002",
       taskCode: "-",
       targetExperiment: "Unassigned",
-      scheduleStatus: "Unscheduled",
+      currentLocation: "-",
+      currentStatus: "-",
     });
+  });
+
+  test("buildTrayOverviewRows shows strict current location instead of scheduled lab", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-1", test_type: "冲击试验" }],
+      samples: [
+        {
+          code: "SAMPLE-1",
+          task_code: "TASK-1",
+          location: "接驳区",
+          status: "已接收",
+          trays: [{ tray_code: "TRAY-A", status: "已接收" }],
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-1",
+          device: "冲击一室",
+          status: "已排程",
+          start_at: "2026-03-10T09:00:00Z",
+        },
+      ],
+      totalSlots: 1,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0]).toMatchObject({
+      currentLocation: "接驳区",
+      currentStatus: "到货",
+    });
+    expect(rows[0]).not.toHaveProperty("scheduleStatus");
+    expect(rows[0].lab).toBeUndefined();
   });
 
   test("buildTrayOverviewRows ignores orphan tray rows whose task no longer exists", () => {

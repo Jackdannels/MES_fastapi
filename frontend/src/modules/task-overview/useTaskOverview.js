@@ -235,10 +235,11 @@ function useTaskOverview() {
     });
 
   // 托盘视图和任务视图共享同一份底层快照，但会产出不同结构。
-  const buildTrayOverviewRows = (tasks, samples, schedules, experiments) =>
+  const buildTrayOverviewRows = (tasks, samples, schedules, experiments, experimentTrays) =>
     buildTrayOverviewRowsModel({
       tasks,
       experiments,
+      experimentTrays,
       samples,
       schedules,
       totalSlots: SYSTEM_TRAY_TOTAL,
@@ -250,7 +251,7 @@ function useTaskOverview() {
   const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = []) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
     rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays);
-    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments);
+    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays);
   };
 
   const {

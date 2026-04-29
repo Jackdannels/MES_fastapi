@@ -8,8 +8,8 @@
           <th>托盘编号</th>
           <th>任务编号</th>
           <th>目标实验</th>
-          <th>排程状态</th>
-          <th>实验室</th>
+          <th>当前状态</th>
+          <th>当前位置</th>
         </tr>
       </thead>
       <tbody>
@@ -19,11 +19,12 @@
           <td>{{ tray.taskCode }}</td>
           <td>{{ tray.targetExperiment }}</td>
           <td>
-            <span class="task-overview-schedule-chip" :class="tray.isScheduled ? 'is-scheduled' : 'is-unscheduled'">
-              {{ tray.scheduleStatus }}
+            <span v-if="hasCurrentStatus(tray)" class="task-overview-schedule-chip is-scheduled">
+              {{ tray.currentStatus }}
             </span>
+            <span v-else>-</span>
           </td>
-          <td>{{ tray.isScheduled ? tray.lab : "-" }}</td>
+          <td>{{ tray.currentLocation || "-" }}</td>
         </tr>
       </tbody>
     </table>
@@ -41,4 +42,9 @@ defineProps({
     default: 0,
   },
 });
+
+const hasCurrentStatus = (tray) => {
+  const status = String(tray?.currentStatus || "").trim();
+  return Boolean(status && status !== "-");
+};
 </script>
