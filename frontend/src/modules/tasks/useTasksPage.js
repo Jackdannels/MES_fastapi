@@ -79,12 +79,17 @@ function useTasksPage() {
   const editExperimentSummary = computed(() => buildExperimentTypeSummary(editForm.value.test_types));
   const editExperimentDraftSummary = computed(() => buildExperimentTypeSummary(editExperimentDraft.value));
 
-  const filteredRows = computed(() =>
+  const typeFilteredRows = computed(() =>
     allRows.value.filter((row) => {
-      // 两个下拉筛选先于表格搜索执行，缩小后续搜索数据集。
-      if (!matchesExperimentTypeFilter(selectedTestType.value, row.testType, row.experimentSummary)) {
-        return false;
-      }
+      // 实验类型先限定任务范围，状态选项和后续搜索都基于这个范围。
+      return matchesExperimentTypeFilter(selectedTestType.value, row.testType, row.experimentSummary);
+    }),
+  );
+
+  const scopedStatusOptions = computed(() => buildFilterOptions(typeFilteredRows.value).statusOptions);
+
+  const filteredRows = computed(() =>
+    typeFilteredRows.value.filter((row) => {
       if (selectedStatus.value && row.displayStatus !== selectedStatus.value) {
         return false;
       }
@@ -482,6 +487,12 @@ function useTasksPage() {
     currentPage.value = 1;
   });
 
+  watch(selectedTestType, () => {
+    if (selectedStatus.value && !scopedStatusOptions.value.includes(selectedStatus.value)) {
+      selectedStatus.value = "";
+    }
+  });
+
   watch(
     () => route.hash,
     (nextHash) => {
@@ -535,7 +546,7 @@ function useTasksPage() {
     saveDraft,
     selectedRow: taskDrawer.payload,
     setCurrentPage,
-    statusOptions: computed(() => filterOptions.value.statusOptions),
+    statusOptions: scopedStatusOptions,
     closeIntakeExperimentPicker,
     closeEditExperimentPicker,
     confirmIntakeExperimentPicker,

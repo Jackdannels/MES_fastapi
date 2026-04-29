@@ -11,8 +11,8 @@
 }
 
 /* 工具栏、卡片和表格在本页内做局部布局约束。 */
-.tasks-page .toolbar {
-  justify-content: space-between;
+.tasks-list-card .toolbar {
+  justify-content: flex-start;
 }
 
 .tasks-page .card {

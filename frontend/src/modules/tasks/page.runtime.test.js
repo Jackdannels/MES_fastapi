@@ -364,6 +364,82 @@ describe("TasksPage runtime", () => {
     expect(rows[0].text()).not.toContain("SYLU-2026-03-002");
   });
 
+  test("scopes status options and search results to the selected experiment type", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-impact-waiting",
+          code: "SYLU-2026-03-101",
+          name: "冲击待排任务",
+          test_type: "冲击试验",
+          status: "待排程",
+        }),
+        createTask({
+          id: "task-impact-scheduled",
+          code: "SYLU-2026-03-102",
+          name: "冲击已排任务",
+          test_type: "冲击试验",
+          status: "已排程",
+        }),
+        createTask({
+          id: "task-mold-running",
+          code: "SYLU-2026-03-103",
+          name: "霉菌进行任务",
+          test_type: "霉菌试验",
+          status: "任务进行中",
+        }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const typeSelect = wrapper.get("#task-list-filter-test-type");
+    const statusSelect = () => wrapper.get("#task-list-filter-status");
+    expect(statusSelect().text()).toContain("待排程");
+    expect(statusSelect().text()).toContain("已排程");
+    expect(statusSelect().text()).toContain("任务进行中");
+
+    await typeSelect.setValue("冲击试验");
+    await settle(wrapper);
+
+    expect(statusSelect().text()).toContain("待排程");
+    expect(statusSelect().text()).toContain("已排程");
+    expect(statusSelect().text()).not.toContain("任务进行中");
+
+    await statusSelect().setValue("已排程");
+    await settle(wrapper);
+    await wrapper.get("#task-list-search").setValue("SYLU-2026-03-102");
+    await settle(wrapper);
+
+    let rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text()).toContain("SYLU-2026-03-102");
+
+    await wrapper.get("#task-list-search").setValue("SYLU-2026-03-103");
+    await settle(wrapper);
+
+    rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows).toHaveLength(0);
+
+    await wrapper.get("#task-list-search").setValue("");
+    await settle(wrapper);
+    await typeSelect.setValue("霉菌试验");
+    await settle(wrapper);
+    expect(statusSelect().element.value).toBe("");
+    rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].text()).toContain("SYLU-2026-03-103");
+
+    await statusSelect().setValue("任务进行中");
+    await settle(wrapper);
+    await typeSelect.setValue("冲击试验");
+    await settle(wrapper);
+    expect(statusSelect().element.value).toBe("");
+    rows = wrapper.findAll("#task-table tbody tr");
+    expect(rows).toHaveLength(2);
+  });
+
   test("loads tasks from the dedicated tasks api while reading related collections from storage snapshot", async () => {
     const { fetchMock } = installApiFetchMock({
       tasks: [

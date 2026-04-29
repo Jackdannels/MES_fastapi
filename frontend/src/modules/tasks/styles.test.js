@@ -12,4 +12,12 @@ describe("tasks styles", () => {
     expect(source).toContain(".tasks-page .tasks-table thead th");
     expect(source).toContain("text-align: center;");
   });
+
+  test("keeps total task list filters grouped from the left", () => {
+    const source = readFileSync(stylesPath, "utf8");
+
+    expect(source).toContain(".tasks-list-card .toolbar");
+    expect(source).toContain("justify-content: flex-start;");
+    expect(source).not.toContain(".tasks-page .toolbar {\n  justify-content: space-between;");
+  });
 });
