@@ -9,6 +9,7 @@ from app.api.routes.device import router as device_router
 from app.api.routes.health import router as health_router
 from app.api.routes.manufactureplan import router as manufactureplan_router
 from app.api.routes.material import router as material_router
+from app.api.routes.mq import router as mq_router
 from app.api.routes.permissions import router as permissions_router
 from app.api.routes.person import router as person_router
 from app.api.routes.productcatalog import router as productcatalog_router
@@ -69,7 +70,7 @@ MODULES = (
     AppModule(key="system", spa_routes=("/system",)),
     AppModule(key="visualization", spa_routes=("/visualization",)),
     AppModule(key="staging-management", spa_routes=("/staging-management",)),
-    AppModule(key="laboratory", spa_routes=("/laboratory",)),
+    AppModule(key="laboratory", api_routers=(mq_router,), spa_routes=("/laboratory",)),
 )
 
 

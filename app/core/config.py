@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     MYSQL_AUTO_INIT_SCHEMA: bool = False
     MYSQL_AUTO_SEED_DEMO: bool = False
 
+    MQTT_ENABLED: bool = False
+    MQTT_HOST: str = "127.0.0.1"
+    MQTT_PORT: int = 1883
+    MQTT_USERNAME: str = "guest"
+    MQTT_PASSWORD: str = "guest"
+    MQTT_QOS: int = 1
+    MQTT_TOPIC_PREFIX: str = "mes/v1"
+
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
     DM_PORT: int = 5236

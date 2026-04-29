@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
+import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -22,6 +23,14 @@ import {
 const RUNNING_MODAL_RESTORE_MS = 10_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
+const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
+
+const countTrayRowSamples = (trayRows) =>
+  (Array.isArray(trayRows) ? trayRows : []).reduce((total, row) => {
+    const sampleCodes = Array.isArray(row?.sampleCodes) ? row.sampleCodes : [];
+    const quantity = Number(row?.quantity);
+    return total + (sampleCodes.length || (Number.isFinite(quantity) && quantity > 0 ? quantity : 1));
+  }, 0);
 
 function useLaboratoryPage(options = {}) {
   const now = options.now;
@@ -284,6 +293,29 @@ function useLaboratoryPage(options = {}) {
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim())
       .map((row) => String(row?.trayCode || "").trim())
       .filter(Boolean);
+  const getCurrentTaskTrayRowsByStatus = (status) =>
+    (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
+      .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
+  const publishLaboratoryMqSafely = async (publisher, payload) => {
+    try {
+      await publisher(payload);
+    } catch (error) {
+      console.warn(error);
+    }
+  };
+  const buildFixtureInstallPayload = () => {
+    const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
+    return {
+      labId: SALT_SPRAY_LAB_ID,
+      sampleCount: countTrayRowSamples(targetTrayRows),
+      sampleType: "",
+      taskId: currentTask.value?.taskCode || "",
+    };
+  };
+  const buildReadyPayload = () => ({
+    labId: SALT_SPRAY_LAB_ID,
+    taskId: currentTask.value?.taskCode || "",
+  });
   const persistCurrentTaskStep = async (nextStatus, historyAction) => {
     const targetTrayCodes =
       nextStatus === LAB_COMPARE_STATUS
@@ -354,8 +386,10 @@ function useLaboratoryPage(options = {}) {
       installModalOpen.value = false;
       return;
     }
+    const payload = buildFixtureInstallPayload();
     await persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
+    void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload);
   };
   const openReady = () => {
     if (runningInteractionLocked.value || !actionState.value.canMarkReady) {
@@ -371,9 +405,11 @@ function useLaboratoryPage(options = {}) {
       readyModalOpen.value = false;
       return;
     }
+    const payload = buildReadyPayload();
     await persistCurrentTaskStep(LAB_READY_STATUS, "实验确认");
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
+    void publishLaboratoryMqSafely(publishLaboratoryReady, payload);
   };
   const closeConfirmed = () => {
     confirmedModalOpen.value = false;

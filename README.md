@@ -31,6 +31,13 @@ MYSQL_PASSWORD=
 MYSQL_DATABASE=mes_single_branch
 MYSQL_AUTO_INIT_SCHEMA=false
 MYSQL_AUTO_SEED_DEMO=false
+MQTT_ENABLED=false
+MQTT_HOST=127.0.0.1
+MQTT_PORT=1883
+MQTT_USERNAME=guest
+MQTT_PASSWORD=guest
+MQTT_QOS=1
+MQTT_TOPIC_PREFIX=mes/v1
 ```
 
 ### 2. 准备前端环境文件
@@ -61,6 +68,7 @@ python scripts\run_local.py --reload --host 0.0.0.0 --port 8000
 
 - 当前默认是 API-only
 - 当前默认业务数据源是 MySQL
+- MQTT 默认关闭；如需向上位机真实发送消息，需先启动 RabbitMQ 并把 `MQTT_ENABLED=true`
 - 运行期只支持 MySQL 作为业务存储后端
 - 所以 `http://127.0.0.1:8000/` 返回 `404` 是正常现象
 

@@ -1,0 +1,27 @@
+import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+
+const API_BASE_URL = getFrontendApiBaseUrl();
+
+async function postLaboratoryMqCommand(path, payload) {
+  const response = await fetch(buildApiUrl(path, API_BASE_URL), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to publish laboratory MQ command: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+const publishLaboratoryFixtureInstall = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/fixture-install", payload);
+
+const publishLaboratoryReady = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/ready", payload);
+
+export { publishLaboratoryFixtureInstall, publishLaboratoryReady };

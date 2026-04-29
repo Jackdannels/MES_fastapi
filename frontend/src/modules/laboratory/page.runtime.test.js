@@ -194,6 +194,9 @@ describe("LaboratoryPage runtime", () => {
         }
         return { ok: true, status: 200, json: async () => snapshotState };
       }
+      if (url.includes("/api/mq/laboratory")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: false }) };
+      }
       throw new Error(`Unhandled fetch: ${url}`);
     }));
   });
@@ -638,6 +641,14 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
     await nextTick();
 
+    const fixtureInstallCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
+    expect(fixtureInstallCall).toBeDefined();
+    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual({
+      labId: "salt-spray-lab-01",
+      sampleCount: 1,
+      sampleType: "",
+      taskId: "SYLU-2026-04-101",
+    });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "工装夹具安装",
       status: "工装夹具安装",
@@ -660,6 +671,12 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
     await nextTick();
 
+    const readyCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/mq/laboratory/ready"));
+    expect(readyCall).toBeDefined();
+    expect(JSON.parse(String(readyCall[1].body))).toEqual({
+      labId: "salt-spray-lab-01",
+      taskId: "SYLU-2026-04-101",
+    });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "实验准备就绪",
       status: "实验准备就绪",
