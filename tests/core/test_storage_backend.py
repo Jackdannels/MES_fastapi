@@ -85,6 +85,32 @@ def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_th
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
 
 
+def test_normalize_storage_payload_uses_test_types_over_stale_experiment_count() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-502",
+                "name": "固定实验类型任务",
+                "test_type": "盐雾试验 / 振动试验",
+                "test_types": ["盐雾试验", "振动试验"],
+                "experiment_count": 5,
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["experiment_count"] == 2
+    assert normalized["mes.tasks"][0]["experiment_codes"] == [
+        "SYLU-2026-04-502-A",
+        "SYLU-2026-04-502-B",
+    ]
+    assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
+
+
 def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_trays_are_reset() -> None:
     payload = {
         "mes.tasks": [

@@ -217,6 +217,39 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
 
 
+def test_create_task_uses_test_types_count_over_stale_experiment_count(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+
+    created = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-109",
+            "code": "SYLU-2026-04-109",
+            "name": "固定实验类型任务",
+            "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
+            "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
+            "experiment_count": 5,
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert created.status_code == 201
+    assert created.json()["experiment_count"] == 3
+    assert created.json()["experiment_codes"] == [
+        "SYLU-2026-04-109-A",
+        "SYLU-2026-04-109-B",
+        "SYLU-2026-04-109-C",
+    ]
+    assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
+    assert [item["experiment_name"] for item in storage.read("mes.experiments")] == [
+        "冲击试验",
+        "盐雾试验",
+        "温度冲击试验",
+    ]
+
+
 def test_create_task_rejects_missing_empty_or_duplicate_test_types(monkeypatch):
     client = build_client(monkeypatch, tasks=[])
 

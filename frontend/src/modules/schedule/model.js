@@ -961,6 +961,21 @@ const resolveScheduleRowStatus = ({
   return STATUS_WAITING;
 };
 
+const scheduleIsCompleted = ({
+  experimentNameByCode = new Map(),
+  experimentTrayMap,
+  samples,
+  schedule,
+  trayExperimentCodeMap = new Map(),
+}) =>
+  resolveScheduleLifecycleState({
+    experimentNameByCode,
+    experimentTrayMap,
+    samples,
+    schedule,
+    trayExperimentCodeMap,
+  }).completed;
+
 const taskHasSavedTrayPlan = ({ task, samples, experimentTrays }) => {
   const taskCode = normalizeText(task?.code);
   if (!taskCode) {
@@ -1057,7 +1072,7 @@ function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, exper
     .map(({ sortTime, ...overlay }) => overlay);
 }
 
-function analyzeTaskTrayConflict({ candidate, schedules, experiments, experimentTrays }) {
+function analyzeTaskTrayConflict({ candidate, schedules, experiments, experimentTrays, samples = [] }) {
   const candidateTaskCode = normalizeText(candidate?.task_code);
   const candidateExperimentCode = normalizeText(candidate?.experiment_code);
   const candidateStart = parseDate(candidate?.start_at);
@@ -1074,6 +1089,7 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 
   const candidateTraySet = new Set(candidateTrayNos);
   const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
   const conflictSchedules = (Array.isArray(schedules) ? schedules : [])
     .filter((schedule) => {
       if (normalizeText(schedule?.task_code) !== candidateTaskCode) {
@@ -1083,6 +1099,9 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
         return false;
       }
       if (normalizeText(schedule?.experiment_code) === candidateExperimentCode) {
+        return false;
+      }
+      if (scheduleIsCompleted({ experimentNameByCode, experimentTrayMap: trayMap, samples, schedule, trayExperimentCodeMap })) {
         return false;
       }
       const scheduleStart = parseDate(schedule?.start_at);
@@ -1169,9 +1188,22 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
 }
 
 // 提取冲突排程对，用于告警条和冲突检查表格。
-function buildConflictRows({ schedules, tasks = [], samples = [] }) {
+function buildConflictRows({ schedules, tasks = [], samples = [], experiments = [], experimentTrays = [] }) {
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
   const scheduleList = filterSchedulesForActiveTasks({ schedules, tasks, samples })
     .filter((schedule) => !isRetentionDevice(schedule?.device))
+    .filter(
+      (schedule) =>
+        !scheduleIsCompleted({
+          experimentNameByCode,
+          experimentTrayMap,
+          samples,
+          schedule,
+          trayExperimentCodeMap,
+        }),
+    )
     .map((schedule) => ({ ...schedule }));
   const byDevice = new Map();
 
@@ -1559,9 +1591,9 @@ function resolveRetentionTimeState(now = new Date()) {
 }
 
 // 构建排程看板上方展示的汇总卡片。
-function buildSummaryCards({ schedules, tasks = [], samples = [], experimentTrays = [], now = new Date() }) {
-  const rows = buildScheduleRows({ schedules, tasks, samples, experimentTrays, now });
-  const conflictRows = buildConflictRows({ schedules, tasks, samples });
+function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = [], experimentTrays = [], now = new Date() }) {
+  const rows = buildScheduleRows({ schedules, tasks, samples, experiments, experimentTrays, now });
+  const conflictRows = buildConflictRows({ schedules, tasks, samples, experiments, experimentTrays });
   return {
     changeCount: 0,
     conflictCount: conflictRows.length,
@@ -1678,7 +1710,7 @@ function ensureStreamForSchedule(streams, schedule, now = new Date()) {
   return nextStreams;
 }
 
-function findScheduleConflicts({ schedules, candidate, ignoreId = "" }) {
+function findScheduleConflicts({ schedules, candidate, ignoreId = "", experiments = [], experimentTrays = [], samples = [] }) {
   const device = normalizeText(candidate?.device);
   if (!device || isRetentionDevice(device)) {
     return [];
@@ -1689,6 +1721,10 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "" }) {
     return [];
   }
 
+  const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
+  const experimentNameByCode = buildExperimentNameMap(experiments);
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+
   // 冲突检查排除自身编辑场景，只比较同设备且时间重叠的正式排程。
   return (Array.isArray(schedules) ? schedules : []).filter((schedule) => {
     if (normalizeText(schedule?.id) === normalizeText(ignoreId)) {
@@ -1697,13 +1733,16 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "" }) {
     if (normalizeText(schedule?.device) !== device) {
       return false;
     }
+    if (scheduleIsCompleted({ experimentNameByCode, experimentTrayMap, samples, schedule, trayExperimentCodeMap })) {
+      return false;
+    }
     const existingStart = parseDate(schedule?.start_at);
     const existingEnd = parseDate(schedule?.end_at);
     return existingStart && existingEnd && overlaps(startAt, endAt, existingStart, existingEnd);
   });
 }
 
-function createScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date() }) {
+function createScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
   const taskCode = normalizeText(form?.task_code);
   const device = normalizeText(form?.device);
   if (!taskCode || !device) {
@@ -1724,7 +1763,7 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
         start_at: resolved.startAt.toISOString(),
         task_code: taskCode,
   };
-  const conflicts = findScheduleConflicts({ candidate, schedules: nextSchedules });
+  const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules });
   if (conflicts.length > 0) {
     return { error: "排程冲突，请调整时间或实验室" };
   }
@@ -1749,7 +1788,7 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
     });
   }
 
-  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
     experiments,
@@ -1765,7 +1804,7 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
   return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function updateScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date() }) {
+function updateScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
   const scheduleId = normalizeText(form?.id);
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
   const target = nextSchedules.find((schedule) => normalizeText(schedule?.id) === scheduleId);
@@ -1791,7 +1830,7 @@ function updateScheduleRecord({ experiments, form, tasks, schedules, streams, no
     start_at: resolved.startAt.toISOString(),
     task_code: normalizeText(form?.task_code),
   };
-  const conflicts = findScheduleConflicts({ candidate, schedules: nextSchedules, ignoreId: scheduleId });
+  const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules, ignoreId: scheduleId });
   if (conflicts.length > 0) {
     return { error: "排程冲突，请调整时间或实验室" };
   }
@@ -1804,7 +1843,7 @@ function updateScheduleRecord({ experiments, form, tasks, schedules, streams, no
   target.planned_hours = candidate.planned_hours;
   target.status = isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED;
 
-  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
     experiments,

@@ -182,6 +182,59 @@ describe("schedulePageModel", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "冲击一室" }));
   });
 
+  test("completed experiments release same-device schedule conflict windows", () => {
+    const schedules = [
+      {
+        id: "schedule-completed",
+        task_code: "SYLU-2026-03-001",
+        experiment_code: "SYLU-2026-03-001-A",
+        device: "冲击一室",
+        start_at: "2099-03-20T08:00:00.000Z",
+        end_at: "2099-03-20T12:00:00.000Z",
+      },
+      {
+        id: "schedule-new",
+        task_code: "SYLU-2026-03-002",
+        experiment_code: "SYLU-2026-03-002-A",
+        device: "冲击一室",
+        start_at: "2099-03-20T09:00:00.000Z",
+        end_at: "2099-03-20T11:00:00.000Z",
+      },
+    ];
+    const experimentTrays = [
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-001" },
+    ];
+    const samples = [
+      {
+        code: "SYLU-2026-03-001-SP-001",
+        task_code: "SYLU-2026-03-001",
+        status: STATUS_COMPLETED,
+        trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+      },
+    ];
+
+    expect(buildConflictRows({ experimentTrays, samples, schedules })).toEqual([]);
+    expect(
+      createScheduleRecord({
+        experimentTrays,
+        form: {
+          custom_start: "09:00",
+          device: "冲击一室",
+          experiment_code: "SYLU-2026-03-002-A",
+          planned_hours: 2,
+          schedule_date: "2099-03-20",
+          task_code: "SYLU-2026-03-002",
+          time_slot: "custom",
+        },
+        now: new Date("2099-03-20T08:00:00"),
+        samples,
+        schedules: [schedules[0]],
+        streams: [],
+        tasks: [{ code: "SYLU-2026-03-002", test_type: "冲击试验" }],
+      }).error,
+    ).toBeUndefined();
+  });
+
   test("resolveTaskStatus keeps an active schedule as scheduled until the experiment is explicitly started", () => {
     expect(
       resolveTaskStatus(
@@ -842,6 +895,48 @@ describe("schedulePageModel", () => {
       experiments: [
         { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
         { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(result).toBe(null);
+  });
+
+  test("analyzeTaskTrayConflict ignores completed sibling experiment schedules", () => {
+    const result = analyzeTaskTrayConflict({
+      candidate: {
+        end_at: "2099-03-20T11:00:00.000Z",
+        experiment_code: "SYLU-2026-03-006-B",
+        start_at: "2099-03-20T09:00:00.000Z",
+        task_code: "SYLU-2026-03-006",
+      },
+      experimentTrays: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-001" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-006-SP-001",
+          task_code: "SYLU-2026-03-006",
+          status: STATUS_COMPLETED,
+          trays: [{ tray_code: "SYLU-2026-03-006-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+          history: [
+            { action: "实验完成", detail: "SYLU-2026-03-006 / 冲击试验 / 实验已完成", time: "2099-03-20T08:30:00.000Z" },
+          ],
+        },
       ],
       schedules: [
         {

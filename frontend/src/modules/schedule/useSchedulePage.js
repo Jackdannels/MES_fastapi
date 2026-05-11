@@ -142,7 +142,15 @@ function useSchedulePage() {
     tasks: rawTasks.value,
     now: now.value,
   }));
-  const conflictRows = computed(() => buildConflictRows({ schedules: activeSchedules.value, samples: rawSamples.value, tasks: rawTasks.value }));
+  const conflictRows = computed(() =>
+    buildConflictRows({
+      experimentTrays: rawExperimentTrays.value,
+      experiments: rawExperiments.value,
+      samples: rawSamples.value,
+      schedules: activeSchedules.value,
+      tasks: rawTasks.value,
+    }),
+  );
   const pendingExceptionRows = computed(() =>
     rawConflicts.value.filter(
       (entry) => normalizeText(entry?.type) === "schedule_missed_start" && normalizeText(entry?.status) === "pending",
@@ -232,6 +240,7 @@ function useSchedulePage() {
   const summaryCards = computed(() =>
     buildSummaryCards({
       experimentTrays: rawExperimentTrays.value,
+      experiments: rawExperiments.value,
       now: now.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,
@@ -425,6 +434,7 @@ function useSchedulePage() {
         candidate,
         experimentTrays: rawExperimentTrays.value,
         experiments: rawExperiments.value,
+        samples: rawSamples.value,
         schedules: activeSchedules.value,
       });
       if (taskConflict) {
@@ -437,8 +447,10 @@ function useSchedulePage() {
 
     const result = createScheduleRecord({
       experiments: rawExperiments.value,
+      experimentTrays: rawExperimentTrays.value,
       form: scheduleForm.value,
       now: now.value,
+      samples: rawSamples.value,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
       tasks: rawTasks.value,
@@ -560,8 +572,10 @@ function useSchedulePage() {
   const saveSchedule = async () => {
     const result = updateScheduleRecord({
       experiments: rawExperiments.value,
+      experimentTrays: rawExperimentTrays.value,
       form: editForm.value,
       now: now.value,
+      samples: rawSamples.value,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
       tasks: rawTasks.value,

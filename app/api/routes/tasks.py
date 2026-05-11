@@ -155,6 +155,8 @@ def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dic
 
 def build_experiment_types(task: dict[str, Any], count: int, existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
     experiment_types = extract_task_test_types(task, existing_experiments)
+    if isinstance(task.get("test_types"), list) and experiment_types:
+        return experiment_types
     while len(experiment_types) < count:
         experiment_types.append(f"实验{len(experiment_types) + 1}")
     return experiment_types[:count]
@@ -191,12 +193,15 @@ def build_task_experiments(task: dict[str, Any], existing_experiments: list[dict
     explicit_count = parse_int(task.get("experiment_count"))
     experiment_types = extract_task_test_types(task, existing_list)
 
-    desired_count = max(
-        explicit_count,
-        len(explicit_codes),
-        len(experiment_types),
-        len(existing_list),
-    )
+    if isinstance(task.get("test_types"), list) and experiment_types:
+        desired_count = len(experiment_types)
+    else:
+        desired_count = max(
+            explicit_count,
+            len(explicit_codes),
+            len(experiment_types),
+            len(existing_list),
+        )
     if desired_count <= 0:
         desired_count = 1
 

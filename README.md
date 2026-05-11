@@ -120,6 +120,125 @@ python scripts\trial_run.py --port 8021
 - `logout_status_code` 为 `204`
 - `post_logout_session_status_code` 为 `401`
 
+## RabbitMQ / MQTT 配置
+
+本项目通过 RabbitMQ 的 MQTT 插件向上位机/工控机发送实验室指令。RabbitMQ 作为消息中枢，MQTT 端口面向上位机，后续 LIMS 可继续通过 AMQP 或独立同步服务接入。
+
+当前已使用的端口：
+
+- `5672`：RabbitMQ AMQP 端口，预留给后端 worker、LIMS 同步等服务
+- `15672`：RabbitMQ 管理后台，默认地址 `http://127.0.0.1:15672/`
+- `1883`：RabbitMQ MQTT 插件端口，上位机/工控机连接该端口
+
+默认账号：
+
+```text
+guest / guest
+```
+
+后端 `.env` 中的 MQ 配置项如下：
+
+```env
+MQTT_ENABLED=false
+MQTT_HOST=127.0.0.1
+MQTT_PORT=1883
+MQTT_USERNAME=guest
+MQTT_PASSWORD=guest
+MQTT_QOS=1
+MQTT_TOPIC_PREFIX=mes/v1
+```
+
+配置说明：
+
+- `MQTT_ENABLED=false`：默认不真实发送 MQTT，页面流程仍可正常执行
+- `MQTT_ENABLED=true`：开启真实 MQTT 发送，要求 RabbitMQ 服务已启动且 MQTT 插件已启用
+- `MQTT_HOST` / `MQTT_PORT`：RabbitMQ MQTT 插件地址，开发环境通常是 `127.0.0.1:1883`
+- `MQTT_USERNAME` / `MQTT_PASSWORD`：MQTT 登录账号，开发环境默认 `guest/guest`
+- `MQTT_QOS=1`：至少一次投递；上位机侧需能接受重复消息或按任务状态幂等处理
+- `MQTT_TOPIC_PREFIX=mes/v1`：MQTT topic 前缀，后续接口升级时可通过版本号区分
+
+### RabbitMQ 服务检查
+
+打开终端执行：
+
+```powershell
+Get-Service RabbitMQ
+Test-NetConnection 127.0.0.1 -Port 15672
+Test-NetConnection 127.0.0.1 -Port 1883
+```
+
+预期：
+
+- `RabbitMQ` 服务状态为 `Running`
+- `15672` 返回 `TcpTestSucceeded: True`
+- `1883` 返回 `TcpTestSucceeded: True`
+
+如果插件未启用，可在 RabbitMQ 安装目录执行：
+
+```powershell
+$env:ERLANG_HOME = "C:\Program Files\Erlang OTP"
+$env:Path = "C:\Program Files\Erlang OTP\bin;$env:Path"
+& "C:\Program Files\RabbitMQ Server\rabbitmq_server-4.3.0\sbin\rabbitmq-plugins.bat" enable rabbitmq_management rabbitmq_mqtt
+Restart-Service RabbitMQ
+```
+
+### MES 发送给上位机的消息
+
+盐雾试验室操作台当前发送两类 MQTT 消息。
+
+安装夹具：
+
+- 页面触发点：盐雾操作台完成托盘比对后，点击 `样品安装` 弹窗中的 `安装完成`
+- 后端接口：`POST /api/mq/laboratory/fixture-install`
+- MQTT topic：`mes/v1/labs/salt-spray-lab-01/commands/fixture-install`
+- payload 示例：
+
+```json
+{
+  "cmd": "INSTALL_FIXTURE",
+  "taskId": "SYLU-2026-03-001",
+  "labId": "salt-spray-lab-01",
+  "sampleType": "",
+  "sampleCount": 8
+}
+```
+
+准备就绪：
+
+- 页面触发点：盐雾操作台点击 `确认准备就绪` 弹窗中的 `确认准备就绪`
+- 后端接口：`POST /api/mq/laboratory/ready`
+- MQTT topic：`mes/v1/labs/salt-spray-lab-01/commands/experiment-ready`
+- payload 示例：
+
+```json
+{
+  "cmd": "READY",
+  "taskId": "SYLU-2026-03-001",
+  "labId": "salt-spray-lab-01"
+}
+```
+
+当前规则：
+
+- `labId` 固定为 `salt-spray-lab-01`
+- `sampleType` 暂时发送空字符串
+- `sampleCount` 为本次已比对托盘关联样品数之和
+- MQTT 发送失败不会阻塞盐雾操作台的本地业务状态更新，失败信息会输出到前端控制台
+
+### 上位机订阅建议
+
+上位机可以订阅具体实验室指令：
+
+```text
+mes/v1/labs/salt-spray-lab-01/commands/#
+```
+
+也可以订阅所有 MES 下发指令：
+
+```text
+mes/v1/labs/+/commands/#
+```
+
 ## 初始化与迁移
 
 开发环境可以按配置启用自动建表或自动灌演示数据：

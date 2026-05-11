@@ -26,7 +26,6 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.streams",
     "mes.conflicts",
 )
-MIN_EXPERIMENTS_PER_TASK = 3
 EXPERIMENT_TYPE_OPTIONS: tuple[str, ...] = (
     "冲击试验",
     "振动试验",
@@ -156,25 +155,25 @@ def _normalize_meta(value: Any) -> dict[str, Any]:
 
 
 def _resolve_experiment_count(task: dict[str, Any], explicit_count: int) -> int:
-    if explicit_count > 0:
-        return explicit_count
+    raw_types = task.get("test_types")
+    if isinstance(raw_types, list):
+        normalized_types = [str(item or "").strip() for item in raw_types if str(item or "").strip()]
+        if normalized_types:
+            return len(normalized_types)
     raw_codes = task.get("experiment_codes")
     if isinstance(raw_codes, list):
         normalized_codes = [str(code or "").strip() for code in raw_codes if str(code or "").strip()]
         if normalized_codes:
             return len(normalized_codes)
+    if explicit_count > 0:
+        return explicit_count
     try:
         explicit_task_count = int(task.get("experiment_count") or 0)
     except (TypeError, ValueError):
         explicit_task_count = 0
     if explicit_task_count > 0:
         return explicit_task_count
-    raw_types = task.get("test_types")
-    if isinstance(raw_types, list):
-        normalized_types = [str(item or "").strip() for item in raw_types if str(item or "").strip()]
-        if normalized_types:
-            return len(normalized_types)
-    return MIN_EXPERIMENTS_PER_TASK
+    return 1
 
 
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:

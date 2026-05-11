@@ -180,6 +180,87 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards ignores active schedules whose experiment is already completed", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Impact Lab 1", testType: "冲击试验" }],
+      [{ code: "TASK-001", test_type: "冲击试验" }],
+      [
+        {
+          device: "Impact Lab 1",
+          end_at: "2026-04-09T12:00:00Z",
+          experiment_code: "TASK-001-A",
+          start_at: "2026-04-09T08:00:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      [],
+      Date.parse("2026-04-09T09:00:00Z"),
+      [
+        {
+          experiment_code: "TASK-001-A",
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+          task_code: "TASK-001",
+        },
+      ]
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        hasTask: false,
+        scheduleTime: "暂无排程",
+        status: "空闲",
+        statusClass: "is-idle",
+        taskCode: "-",
+        targetExperiment: "未分配",
+      })
+    );
+  });
+
+  test("buildProcessLabCards treats completed scoped trays as actual completion", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Impact Lab 1", testType: "冲击试验" }],
+      [{ code: "TASK-002", test_type: "冲击试验" }],
+      [
+        {
+          device: "Impact Lab 1",
+          end_at: "2026-04-09T12:00:00Z",
+          experiment_code: "TASK-002-A",
+          start_at: "2026-04-09T08:00:00Z",
+          task_code: "TASK-002",
+        },
+      ],
+      [
+        {
+          code: "TASK-002-SP-001",
+          task_code: "TASK-002",
+          status: "实验已完成",
+          trays: [{ tray_code: "TASK-002-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T09:00:00Z"),
+      [
+        {
+          experiment_code: "TASK-002-A",
+          experiment_name: "冲击试验",
+          status: "已排程",
+          task_code: "TASK-002",
+        },
+      ],
+      [
+        { task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" },
+      ]
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        hasTask: false,
+        status: "空闲",
+        taskCode: "-",
+      })
+    );
+  });
+
   test("buildProcessLabCards does not mark future labs running when shared trays are still located in the current lab", () => {
     const cards = buildProcessLabCards(
       [

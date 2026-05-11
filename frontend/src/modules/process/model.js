@@ -19,8 +19,11 @@ const compareText = (left, right) => String(left || "").localeCompare(String(rig
 const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
+const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
 const RUNNING_SAMPLE_STATUSES = new Set([STATUS_RUNNING, "实验中"]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -55,6 +58,155 @@ const resolveScheduledExperimentLabel = ({ experiments, fallback, schedule, task
 };
 
 // 构建过程管控页展示的实验室卡片集合。
+const parseExperimentHistoryDetail = (detail, taskCode) => {
+  const segments = String(detail ?? "")
+    .split(" / ")
+    .map((segment) => normalizeText(segment))
+    .filter(Boolean);
+  if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
+    return null;
+  }
+  return {
+    experimentName: segments[1],
+    status: segments[2],
+  };
+};
+
+const buildExperimentTrayCodeSet = ({ experimentTrays, experimentCode, taskCode }) =>
+  new Set(
+    asArray(experimentTrays)
+      .filter(
+        (entry) =>
+          normalizeText(entry?.task_code) === taskCode
+          && normalizeText(entry?.experiment_code) === experimentCode
+      )
+      .map((entry) => normalizeText(entry?.tray_code))
+      .filter(Boolean)
+  );
+
+const buildTrayExperimentCodeMap = (experimentTrays) => {
+  const trayMap = new Map();
+  asArray(experimentTrays).forEach((entry) => {
+    const trayCode = normalizeText(entry?.tray_code);
+    const experimentCode = normalizeText(entry?.experiment_code);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const current = trayMap.get(trayCode) || new Set();
+    current.add(experimentCode);
+    trayMap.set(trayCode, current);
+  });
+  return trayMap;
+};
+
+const collectScheduleSamples = ({ experimentTrays, samples, schedule }) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  const scopedTrayCodes = buildExperimentTrayCodeSet({ experimentTrays, experimentCode, taskCode });
+  const matchedSamples = asArray(samples).filter((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return false;
+    }
+    if (!scopedTrayCodes.size) {
+      return true;
+    }
+    return asArray(sample?.trays).some((tray) => scopedTrayCodes.has(normalizeText(tray?.tray_code)));
+  });
+
+  return {
+    experimentCode,
+    matchedSamples,
+    scopedTrayCodes,
+    taskCode,
+  };
+};
+
+const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, schedule, taskStatusMap }) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  if (!taskCode) {
+    return false;
+  }
+
+  if (!experimentCode) {
+    return taskStatusMap.get(taskCode) === TASK_STATUS_COMPLETED;
+  }
+
+  const matchedExperiment = asArray(experiments).find(
+    (experiment) =>
+      normalizeText(experiment?.task_code) === taskCode
+      && normalizeText(experiment?.experiment_code) === experimentCode
+  );
+  if (COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(matchedExperiment?.status))) {
+    return true;
+  }
+
+  const { matchedSamples, scopedTrayCodes } = collectScheduleSamples({ experimentTrays, samples, schedule });
+  if (!matchedSamples.length) {
+    return false;
+  }
+
+  const experimentName = normalizeText(matchedExperiment?.experiment_name);
+  if (experimentName) {
+    const latestHistoryBySample = new Map();
+    matchedSamples.forEach((sample) => {
+      const sampleCode = normalizeText(sample?.code);
+      if (!sampleCode) {
+        return;
+      }
+      asArray(sample?.history).forEach((entry) => {
+        const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+        if (!parsed || parsed.experimentName !== experimentName) {
+          return;
+        }
+        const eventTime = Date.parse(String(entry?.time || "")) || 0;
+        const existing = latestHistoryBySample.get(sampleCode);
+        if (!existing || eventTime >= existing.time) {
+          latestHistoryBySample.set(sampleCode, { status: parsed.status, time: eventTime });
+        }
+      });
+    });
+
+    if (latestHistoryBySample.size > 0) {
+      const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => entry.status);
+      return (
+        latestHistoryBySample.size === matchedSamples.length
+        && historyStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status))
+      );
+    }
+  }
+
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (hasSharedScopedTray) {
+    return false;
+  }
+
+  const statuses = [];
+  matchedSamples.forEach((sample) => {
+    const sampleTrays = asArray(sample?.trays);
+    if (!sampleTrays.length && !scopedTrayCodes.size) {
+      const sampleStatus = normalizeText(sample?.status);
+      if (sampleStatus) {
+        statuses.push(sampleStatus);
+      }
+      return;
+    }
+    sampleTrays.forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (scopedTrayCodes.size && !scopedTrayCodes.has(trayCode)) {
+        return;
+      }
+      const status = normalizeText(tray?.status) || normalizeText(sample?.status);
+      if (status) {
+        statuses.push(status);
+      }
+    });
+  });
+
+  return statuses.length > 0 && statuses.every((status) => COMPLETED_TRAY_STATUSES.has(status));
+};
+
 const experimentHasRunningTrays = ({ schedule, experimentTrays, samples }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
@@ -119,6 +271,16 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
       // 每个实验室只关注绑定到该实验室的排程，并优先看最近开始的记录。
       const labSchedules = scheduleList
         .filter((entry) => String(entry?.device || "").trim() === lab.name)
+        .filter(
+          (entry) =>
+            !scheduleExperimentIsCompleted({
+              experiments,
+              experimentTrays,
+              samples: sampleList,
+              schedule: entry,
+              taskStatusMap,
+            })
+        )
         .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
 
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
