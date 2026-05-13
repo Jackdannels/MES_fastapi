@@ -13,6 +13,9 @@ const LAB_COMPARE_STATUS = "已到达实验室";
 const LAB_INSTALL_STATUS = "工装夹具安装";
 const LAB_READY_STATUS = "实验准备就绪";
 const LAB_RESET_STATUS = "送至实验室";
+const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
+const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
+const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
   { key: "scheduled", label: STATUS_SCHEDULED },
@@ -96,6 +99,60 @@ const buildLaboratoryHistoryEntry = (sample, action, status, detail, now) => {
     time: now,
   });
   return history;
+};
+
+const resolvePreDispatchLocation = (status, location = "") => {
+  const normalizedLocation = normalizeText(location);
+  if (normalizedLocation) {
+    return normalizedLocation;
+  }
+  const normalizedStatus = normalizeText(status);
+  if (normalizedStatus === "到货" || normalizedStatus === "已接收") {
+    return "接驳区";
+  }
+  return PRE_DISPATCH_FALLBACK_LOCATION;
+};
+
+const resolvePreDispatchStatusFromLocation = (location) => {
+  const normalizedLocation = normalizeText(location);
+  if (normalizedLocation === PRE_DISPATCH_FALLBACK_LOCATION) {
+    return PRE_DISPATCH_FALLBACK_STATUS;
+  }
+  if (normalizedLocation === "接驳区" || normalizedLocation === "室外接驳区") {
+    return "到货";
+  }
+  return "";
+};
+
+const resolvePreDispatchSnapshot = (sample) => {
+  const history = asArray(sample?.history);
+  for (const entry of history) {
+    const status = normalizeText(entry?.status);
+    const location = normalizeText(entry?.location);
+    if (PRE_DISPATCH_STATUSES.has(status)) {
+      return {
+        location: resolvePreDispatchLocation(status, location),
+        status,
+      };
+    }
+    const statusFromLocation = resolvePreDispatchStatusFromLocation(location);
+    if (statusFromLocation) {
+      return {
+        location,
+        status: statusFromLocation,
+      };
+    }
+  }
+  return {
+    location: PRE_DISPATCH_FALLBACK_LOCATION,
+    status: PRE_DISPATCH_FALLBACK_STATUS,
+  };
+};
+
+const shouldRevertLaboratoryTrayStatus = (status) => {
+  const normalized = normalizeText(status);
+  const rank = resolveLaboratoryStatusRank(normalized);
+  return normalized === LAB_RESET_STATUS || (rank >= 1 && rank < 4);
 };
 
 const resolveLaboratoryStatusRank = (value) => {
@@ -795,6 +852,63 @@ function resetLaboratoryExperimentTrays({
   });
 }
 
+function revertLaboratoryTaskToPreDispatch({
+  samples = [],
+  currentTask = null,
+  now = new Date().toISOString(),
+}) {
+  if (!currentTask || !asArray(currentTask?.trayCodes).length) {
+    return asArray(samples);
+  }
+
+  const taskCode = normalizeText(currentTask?.taskCode);
+  const trayCodeSet = new Set(asArray(currentTask?.trayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
+  const experimentName = normalizeText(currentTask?.experimentName) || "-";
+
+  return asArray(samples).map((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return sample;
+    }
+
+    let restoreSnapshot = null;
+    let reverted = false;
+    const nextTrays = asArray(sample?.trays).map((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (!trayCodeSet.has(trayCode) || !shouldRevertLaboratoryTrayStatus(normalizeText(tray?.status) || normalizeText(sample?.status))) {
+        return { ...tray };
+      }
+      restoreSnapshot = restoreSnapshot || resolvePreDispatchSnapshot(sample);
+      reverted = true;
+      return {
+        ...tray,
+        status: restoreSnapshot.status,
+        updated_at: now,
+      };
+    });
+
+    if (!reverted || !restoreSnapshot) {
+      return sample;
+    }
+
+    const nextSample = {
+      ...sample,
+      flow_status: restoreSnapshot.status,
+      location: restoreSnapshot.location,
+      status: restoreSnapshot.status,
+      trays: nextTrays,
+      updated_at: now,
+    };
+    nextSample.history = buildLaboratoryHistoryEntry(
+      nextSample,
+      "任务切换撤回",
+      restoreSnapshot.status,
+      `${taskCode} / ${experimentName} / 撤回至${restoreSnapshot.status}`,
+      now,
+    );
+    return nextSample;
+  });
+}
+
 function buildLaboratoryChecklist(task) {
   if (!task) {
     return [];
@@ -892,5 +1006,6 @@ export {
   createLaboratoryWorkflow,
   getLaboratoryActionState,
   resetLaboratoryExperimentTrays,
+  revertLaboratoryTaskToPreDispatch,
   validateLaboratoryTrayScan,
 };

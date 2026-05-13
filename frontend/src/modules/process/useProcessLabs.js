@@ -474,6 +474,18 @@ function useProcessLabs(options = {}) {
       .sort((left, right) => left.trayCode.localeCompare(right.trayCode, "zh-Hans-CN"));
   };
 
+  const synchronizeTaskSamplesForTrayCodes = ({ taskCode, trayCodes, ...input }) => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    const scopedSamples = samples.value.filter((sample) => normalizeText(sample?.task_code) === normalizedTaskCode);
+    const syncedSamples = synchronizeSamplesForTrayCodes({
+      ...input,
+      samples: scopedSamples,
+      trayCodes,
+    }).samples;
+    const syncedByCode = new Map(syncedSamples.map((sample) => [normalizeText(sample?.code), sample]));
+    return samples.value.map((sample) => syncedByCode.get(normalizeText(sample?.code)) || sample);
+  };
+
   const buildStartExperimentState = (trayRows, options = {}) => {
     const rows = asArray(trayRows);
     const normalizedLabName = normalizeText(options.labName);
@@ -875,15 +887,15 @@ function useProcessLabs(options = {}) {
     const currentTime = Date.parse(timestamp);
     const targetSchedule = resolveScheduledRecordForLab(activeLab, taskCode, currentTime, detail?.activeExperimentCode);
     const startedExperimentName = detail?.targetExperiment || detail?.testType || "";
-    const nextSamples = synchronizeSamplesForTrayCodes({
+    const nextSamples = synchronizeTaskSamplesForTrayCodes({
       historyAction: "开始实验",
       historyDetail: `${taskCode} / ${startedExperimentName || "-"} / ${TRAY_STATUS_RUNNING} / 托盘：${startedTrayText}`,
       location: normalizeText(activeLab?.name),
       now: timestamp,
-      samples: samples.value,
       status: TRAY_STATUS_RUNNING,
+      taskCode,
       trayCodes: Array.from(startedTrayCodes),
-    }).samples;
+    });
 
     const nextTasks = tasks.value.map((task) =>
       normalizeText(task?.code) === taskCode

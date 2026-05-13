@@ -10,6 +10,7 @@ import {
   confirmLaboratoryExperiment,
   createLaboratoryWorkflow,
   getLaboratoryActionState,
+  revertLaboratoryTaskToPreDispatch,
   resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 } from "./model";
@@ -1084,6 +1085,84 @@ describe("laboratory model", () => {
       code: "SYLU-2026-04-401-SP-001",
       status: "实验准备就绪",
       trays: [expect.objectContaining({ tray_code: "TP-401-A", status: "实验准备就绪" })],
+    }));
+  });
+
+  test("revertLaboratoryTaskToPreDispatch restores each tray to its pre-outbound location from history", () => {
+    const updatedSamples = revertLaboratoryTaskToPreDispatch({
+      currentTask: {
+        device: "盐雾试验室",
+        experimentCode: "SYLU-2026-04-501-A",
+        experimentName: "盐雾试验",
+        taskCode: "SYLU-2026-04-501",
+        trayCodes: ["TP-STAGING", "TP-INTAKE"],
+      },
+      now: "2026-04-02T10:50:00.000Z",
+      samples: [
+        {
+          code: "SYLU-2026-04-501-SP-001",
+          flow_status: "已到达实验室",
+          history: [
+            { action: "任务比对", location: "盐雾试验室", status: "已到达实验室", time: "2026-04-02T10:40:00.000Z" },
+            { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T10:20:00.000Z" },
+            { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T09:10:00.000Z" },
+          ],
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-STAGING" }],
+        },
+        {
+          code: "SYLU-2026-04-501-SP-002",
+          flow_status: "工装夹具安装",
+          history: [
+            { action: "样品安装", location: "盐雾试验室", status: "工装夹具安装", time: "2026-04-02T10:45:00.000Z" },
+            { action: "接驳区扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T10:20:00.000Z" },
+            { action: "任务样品入库", location: "接驳区", status: "到货", time: "2026-04-02T08:30:00.000Z" },
+          ],
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "工装夹具安装",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TP-INTAKE" }],
+        },
+        {
+          code: "SYLU-2026-04-502-SP-001",
+          flow_status: "实验准备就绪",
+          history: [],
+          location: "盐雾试验室",
+          owner: "李工",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-04-502",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-B" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-STAGING" })],
+    }));
+    expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "SYLU-2026-04-501 / 盐雾试验 / 撤回至已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+    }));
+    expect(updatedSamples[1]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      location: "接驳区",
+      status: "到货",
+      trays: [expect.objectContaining({ status: "到货", tray_code: "TP-INTAKE" })],
+    }));
+    expect(updatedSamples[2]).toEqual(expect.objectContaining({
+      flow_status: "实验准备就绪",
+      location: "盐雾试验室",
+      status: "实验准备就绪",
+      trays: [expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-B" })],
     }));
   });
 });

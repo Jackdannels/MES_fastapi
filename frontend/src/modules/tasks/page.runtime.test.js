@@ -660,6 +660,46 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).not.toContain("任务提交失败");
   });
 
+  test("saves the intake form as a draft without creating a task", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('input[name="name"]').setValue("草稿任务");
+    await wrapper.get('input[name="sample_count"]').setValue("5");
+    await wrapper.get('input[name="client"]').setValue("草稿客户");
+    await wrapper.get('[data-testid="task-draft"]').trigger("click");
+    await settle(wrapper);
+
+    const createCalls = fetchMock.mock.calls.filter(([url, options = {}]) => url === TASKS_ENDPOINT && options.method === "POST");
+    expect(createCalls).toHaveLength(0);
+    expect(state.tasks).toHaveLength(0);
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.text()).toContain("任务草稿已保存");
+
+    await wrapper.get(".modal.is-open .modal-close").trigger("click");
+    await settle(wrapper);
+    expect(wrapper.find(".modal.is-open").exists()).toBe(false);
+
+    window.dispatchEvent(new CustomEvent("mes:open-task-intake"));
+    await settle(wrapper);
+
+    expect(wrapper.get('input[name="name"]').element.value).toBe("草稿任务");
+    expect(wrapper.get('input[name="sample_count"]').element.value).toBe("5");
+    expect(wrapper.get('input[name="client"]').element.value).toBe("草稿客户");
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("冲击试验");
+  });
+
   test("shows arrival time as a read-only field in intake and edit forms", async () => {
     installApiFetchMock({
       tasks: [
@@ -1077,6 +1117,59 @@ describe("TasksPage runtime", () => {
     expect(state.tasks[0].test_type).toContain("盐雾试验");
     expect(wrapper.text()).toContain("任务数据已重置");
     expect(wrapper.text()).toContain("盐雾试验 / 冲击试验 / 霉菌试验");
+  });
+
+  test("hides the reset feedback automatically after five seconds", async () => {
+    vi.useFakeTimers();
+    try {
+      installApiFetchMock({
+        tasks: [createTask()],
+        afterReset: {
+          tasks: [createTask({ id: "task-reset-1", name: "演示任务001" })],
+        },
+      });
+
+      const wrapper = mount(TasksPage);
+      await settle(wrapper);
+
+      window.dispatchEvent(new CustomEvent("mes:open-task-reset"));
+      await settle(wrapper);
+      await wrapper.get('[data-testid="task-reset-confirm"]').trigger("click");
+      await settle(wrapper);
+
+      expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      await settle(wrapper);
+
+      expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("hides the reset feedback when the user clicks elsewhere on the page", async () => {
+    installApiFetchMock({
+      tasks: [createTask()],
+      afterReset: {
+        tasks: [createTask({ id: "task-reset-1", name: "演示任务001" })],
+      },
+    });
+
+    const wrapper = mount(TasksPage, { attachTo: document.body });
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:open-task-reset"));
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-reset-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(true);
+
+    document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(false);
   });
 
   test("shows an explicit reset error when the reset request fails", async () => {

@@ -31,6 +31,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 const TASK_INTAKE_HASH = "#task-intake-modal";
 const TASK_RESET_EVENT = "mes:open-task-reset";
+const RESET_FEEDBACK_DISMISS_MS = 5000;
 
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
@@ -58,6 +59,7 @@ function useTasksPage() {
   const editWarning = ref("");
   const intakeExperimentDraft = ref([]);
   const editExperimentDraft = ref([]);
+  const savedIntakeDraft = ref(null);
   const selectedTestType = ref("");
   const selectedStatus = ref("");
 
@@ -66,6 +68,7 @@ function useTasksPage() {
   const editExperimentModal = useDialogState();
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
+  let resetFeedbackTimer = null;
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
@@ -137,6 +140,24 @@ function useTasksPage() {
     syncIntakeDerivedFields();
   };
 
+  const cloneIntakeForm = (form) => ({
+    ...createTaskIntakeForm(),
+    ...(form && typeof form === "object" ? form : {}),
+    test_types: Array.isArray(form?.test_types) ? [...form.test_types] : [],
+  });
+
+  const restoreIntakeDraft = () => {
+    if (!savedIntakeDraft.value) {
+      resetIntakeForm();
+      return;
+    }
+    intakeForm.value = cloneIntakeForm(savedIntakeDraft.value);
+    intakeExperimentDraft.value = [];
+    intakeExperimentModal.close();
+    intakeWarning.value = "";
+    syncIntakeDerivedFields();
+  };
+
   const removeTaskHash = () => {
     // 关闭弹窗时清掉 hash，避免刷新或后退时重复拉起受理弹窗。
     if (typeof window === "undefined" || window.location.hash !== TASK_INTAKE_HASH) {
@@ -147,7 +168,7 @@ function useTasksPage() {
   };
 
   const openIntakeModal = () => {
-    resetIntakeForm();
+    restoreIntakeDraft();
     intakeModal.openWith({ id: "task-intake-modal" });
   };
 
@@ -269,6 +290,38 @@ function useTasksPage() {
     return detail ? `${prefix}，${detail}` : prefix;
   };
 
+  const clearResetFeedbackTimer = () => {
+    if (resetFeedbackTimer) {
+      window.clearTimeout(resetFeedbackTimer);
+      resetFeedbackTimer = null;
+    }
+  };
+
+  const clearResetFeedback = () => {
+    clearResetFeedbackTimer();
+    resetFeedback.value = "";
+  };
+
+  const showResetFeedback = (message) => {
+    clearResetFeedbackTimer();
+    resetFeedback.value = message;
+    resetFeedbackTimer = window.setTimeout(() => {
+      resetFeedback.value = "";
+      resetFeedbackTimer = null;
+    }, RESET_FEEDBACK_DISMISS_MS);
+  };
+
+  const handleDocumentPointerDown = (event) => {
+    if (!resetFeedback.value) {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-testid="task-reset-feedback"]')) {
+      return;
+    }
+    clearResetFeedback();
+  };
+
   const readAllTasks = () => readTasks({ includeArchived: true });
 
   const persistRelated = async (updates) => {
@@ -312,6 +365,7 @@ function useTasksPage() {
     try {
       await createTask(nextTask);
       rawTasks.value = [nextTask, ...rawTasks.value];
+      savedIntakeDraft.value = null;
       closeIntakeModal();
       resetIntakeForm();
     } catch (error) {
@@ -337,7 +391,9 @@ function useTasksPage() {
   };
 
   const saveDraft = async () => {
-    await submitTask();
+    syncIntakeDerivedFields();
+    savedIntakeDraft.value = cloneIntakeForm(intakeForm.value);
+    intakeWarning.value = "任务草稿已保存";
   };
 
   const updateTask = async () => {
@@ -432,12 +488,12 @@ function useTasksPage() {
 
     resetting.value = true;
     resetError.value = "";
-    resetFeedback.value = "";
+    clearResetFeedback();
     try {
       const summary = await resetTasksByApi();
       resetModal.close();
       await loadTasksPage();
-      resetFeedback.value = `任务数据已重置，共重建 ${summary.task_count} 个任务。`;
+      showResetFeedback(`任务数据已重置，共重建 ${summary.task_count} 个任务。`);
     } catch (error) {
       resetError.value = buildFailureMessage("任务重置失败，请稍后重试", error);
     } finally {
@@ -520,13 +576,16 @@ function useTasksPage() {
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.addEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.addEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
+    document.addEventListener("pointerdown", handleDocumentPointerDown);
   });
 
   onBeforeUnmount(() => {
+    clearResetFeedbackTimer();
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.removeEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.removeEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
+    document.removeEventListener("pointerdown", handleDocumentPointerDown);
   });
 
   return {

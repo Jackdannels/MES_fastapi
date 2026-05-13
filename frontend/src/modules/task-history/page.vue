@@ -31,9 +31,16 @@
               <span class="muted">{{ selectedTask.status || "厂家收回" }}</span>
             </div>
             <div class="history-flow-strip">
-              <div v-for="step in selectedTask.taskFlow" :key="`task-${step.label}`" class="history-flow-strip-item">
+              <div
+                v-for="step in selectedTask.taskFlow"
+                :key="`task-${step.label}`"
+                class="history-flow-strip-item"
+              >
                 <span class="history-flow-label">{{ step.label }}</span>
-                <span class="history-flow-time">{{ formatHistoryTime(step.time) }}</span>
+                <span class="history-flow-time" :title="formatHistoryTime(step.time)">
+                  <span class="history-flow-time__date">{{ formatHistoryDatePart(step.time) }}</span>
+                  <span class="history-flow-time__clock">{{ formatHistoryClockPart(step.time) }}</span>
+                </span>
                 <span class="history-flow-dot"></span>
               </div>
             </div>
@@ -90,7 +97,17 @@
                       :class="{ current: step.active, reached: step.reached }"
                     >
                       <span class="history-flow-label">{{ step.label }}</span>
-                      <span class="history-flow-time">{{ formatHistoryTime(step.time || resolveTrayStepTime(step.label)) }}</span>
+                      <span
+                        class="history-flow-time"
+                        :title="formatHistoryTime(step.time || resolveTrayStepTime(step.label))"
+                      >
+                        <span class="history-flow-time__date">
+                          {{ formatHistoryDatePart(step.time || resolveTrayStepTime(step.label)) }}
+                        </span>
+                        <span class="history-flow-time__clock">
+                          {{ formatHistoryClockPart(step.time || resolveTrayStepTime(step.label)) }}
+                        </span>
+                      </span>
                       <span class="history-flow-dot"></span>
                     </div>
                   </div>
@@ -182,6 +199,20 @@ const formatHistoryTime = (value) => {
     .replace(/\.\d{1,6}/, "")
     .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
 };
+const formatHistoryDatePart = (value) => {
+  const formatted = formatHistoryTime(value);
+  if (formatted === "-") {
+    return formatted;
+  }
+  return formatted.split(" ")[0] || formatted;
+};
+const formatHistoryClockPart = (value) => {
+  const formatted = formatHistoryTime(value);
+  if (formatted === "-") {
+    return "";
+  }
+  return formatted.split(" ").slice(1).join(" ");
+};
 const resolveTrayStepTime = (label) => {
   const matched = selectedTray.value?.flowSteps?.find((step) => step.label === label);
   return matched?.time || "";
@@ -251,6 +282,8 @@ onMounted(async () => {
 }
 
 .history-task-flow-card {
+  container-name: history-task-flow;
+  container-type: inline-size;
   min-height: 148px;
 }
 
@@ -310,7 +343,7 @@ onMounted(async () => {
 
 .history-flow-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 142px), 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -320,6 +353,7 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   gap: 7px;
+  min-width: 0;
   min-height: 68px;
   padding: 12px 10px 10px;
   border: 1px solid #86efac;
@@ -348,7 +382,14 @@ onMounted(async () => {
 }
 
 .history-flow-strip .history-flow-time {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
   text-align: center;
+  text-overflow: ellipsis;
   font-size: 12px;
 }
 
@@ -377,15 +418,31 @@ onMounted(async () => {
 }
 
 .history-flow-label {
+  display: -webkit-box;
+  max-width: 100%;
   font-weight: 700;
   line-height: 1.35;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .history-flow-time {
   color: #475569;
   text-align: right;
   white-space: nowrap;
+}
+
+.history-flow-time__date,
+.history-flow-time__clock {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-flow-time__clock {
+  flex-shrink: 0;
 }
 
 .history-tray-tabs {
@@ -480,6 +537,7 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   gap: 7px;
+  min-width: 0;
   min-height: 78px;
   padding: 12px 10px 10px;
   border: 1px solid #7dd3fc;
@@ -528,11 +586,18 @@ onMounted(async () => {
 }
 
 .history-tray-flow-step .history-flow-time {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  justify-content: center;
+  gap: 4px;
+  overflow: hidden;
   min-height: 15px;
   color: #475569;
   font-size: 12px;
   text-align: center;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-empty {
@@ -589,6 +654,12 @@ onMounted(async () => {
     width: 2px;
     height: 10px;
     transform: translateX(-50%);
+  }
+}
+
+@container history-task-flow (max-width: 520px) {
+  .history-flow-strip .history-flow-time__clock {
+    display: none;
   }
 }
 </style>

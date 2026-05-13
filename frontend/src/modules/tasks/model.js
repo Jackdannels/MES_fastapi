@@ -13,7 +13,7 @@ const STATUS_COMPLETED = "任务已完成";
 const STATUS_RETENTION = "厂家收回";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
-const RETENTION_LOCATION = "暂存间";
+const TEMPORARY_STAGING_DEVICE_KEYWORD = "暂存间";
 const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
 const LEGACY_STATUS_RUNNING = "实验中";
@@ -23,7 +23,6 @@ const ACTIVE_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_R
 const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT, "放置实验后暂存间", "厂家收回"]);
 const COMPLETED_EXPERIMENT_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
-const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
 const RANDOM_PRIORITIES = ["高", "中", "低"];
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
@@ -61,8 +60,8 @@ const validateTaskSampleCount = (value) => {
   }
   return "";
 };
-// 排程设备名带“暂存间”即视为暂存区，不参与正式实验状态判断。
-const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
+// 兼容历史脏数据：旧版本可能残留暂存间“排程”记录，当前业务中暂存间只是临时放置位置。
+const isLegacyTemporaryStagingSchedule = (value) => normalizeText(value).includes(TEMPORARY_STAGING_DEVICE_KEYWORD);
 // 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
 const normalizeTaskStatusLabel = (value) => {
   const normalized = normalizeText(value);
@@ -255,9 +254,6 @@ const aggregateTaskStatusFromSamples = (task, samples) => {
   if (trayStatuses.some((status) => ACTIVE_TRAY_STATUSES.has(status))) {
     return STATUS_RUNNING;
   }
-  if (trayStatuses.every((status) => PRE_RETENTION_TRAY_STATUSES.has(status))) {
-    return STATUS_WAITING;
-  }
 
   return "";
 };
@@ -337,16 +333,11 @@ function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
   );
 
   // 正式实验室排程只能说明“已排程”，不能自动说明“实验中”。
-  const scheduledEntry = relatedSchedules.find((schedule) => !isRetentionDevice(schedule?.device));
+  const scheduledEntry = relatedSchedules.find((schedule) => !isLegacyTemporaryStagingSchedule(schedule?.device));
   if (scheduledEntry) {
     return STATUS_SCHEDULED;
   }
 
-  // 再判断是否仅处于暂存间状态。
-  const retentionEntry = relatedSchedules.find((schedule) => isRetentionDevice(schedule?.device));
-  if (retentionEntry) {
-    return STATUS_WAITING;
-  }
   if (rawStatus === "已受理") {
     return STATUS_WAITING;
   }

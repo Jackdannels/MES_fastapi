@@ -2,6 +2,21 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
+async function readErrorDetail(response) {
+  try {
+    const payload = await response.json();
+    return typeof payload?.detail === "string" ? payload.detail.trim() : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function throwApiError(response, message) {
+  const detail = await readErrorDetail(response);
+  const suffix = detail ? `，${detail}` : "";
+  throw new Error(`${message}: ${response.status} ${response.statusText}${suffix}`);
+}
+
 async function readTasks(options = {}) {
   const includeArchived = Boolean(options?.includeArchived);
   const path = includeArchived ? "/api/tasks?includeArchived=true" : "/api/tasks";
@@ -10,7 +25,7 @@ async function readTasks(options = {}) {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(`Failed to read tasks: ${response.status} ${response.statusText}`);
+    await throwApiError(response, "Failed to read tasks");
   }
   const tasks = await response.json();
   return Array.isArray(tasks) ? tasks : [];
@@ -28,7 +43,7 @@ async function createTask(task) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to create task: ${response.status} ${response.statusText}`);
+    await throwApiError(response, "Failed to create task");
   }
   return response.json();
 }
@@ -45,7 +60,7 @@ async function updateTask(taskId, task) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to update task ${taskId}: ${response.status} ${response.statusText}`);
+    await throwApiError(response, `Failed to update task ${taskId}`);
   }
   return response.json();
 }
@@ -56,7 +71,7 @@ async function deleteTask(taskId) {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(`Failed to delete task ${taskId}: ${response.status} ${response.statusText}`);
+    await throwApiError(response, `Failed to delete task ${taskId}`);
   }
 }
 
@@ -67,7 +82,7 @@ async function resetTasks() {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(`Failed to reset tasks: ${response.status} ${response.statusText}`);
+    await throwApiError(response, "Failed to reset tasks");
   }
   return response.json();
 }

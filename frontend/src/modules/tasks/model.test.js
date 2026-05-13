@@ -185,7 +185,37 @@ describe("tasks model", () => {
     expect(rows[0].displayStatus).toBe("待排程");
   });
 
-  test("treats retention-only schedules as unscheduled instead of returned", () => {
+  test("keeps a formally scheduled task scheduled when its trays are temporarily staged", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "SYLU-2026-05-023", name: "盐雾试验", status: "待排程" }],
+      [
+        {
+          id: "schedule-lab-1",
+          task_code: "SYLU-2026-05-023",
+          experiment_code: "SYLU-2026-05-023-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-13T09:00:00.000Z",
+          end_at: "2026-05-13T11:00:00.000Z",
+        },
+      ],
+      [
+        {
+          code: "SYLU-2026-05-023-SP-001",
+          task_code: "SYLU-2026-05-023",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "SYLU-2026-05-023-TP-001", status: "已到达暂存间", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({
+      code: "SYLU-2026-05-023",
+      displayStatus: "已排程",
+    }));
+  });
+
+  test("ignores legacy temporary staging schedule records instead of marking the task scheduled", () => {
     const rows = buildTaskRows(
       [
         {
@@ -226,7 +256,7 @@ describe("tasks model", () => {
     );
   });
 
-  test("treats retention devices as unscheduled even when the stored schedule status is stale", () => {
+  test("ignores stale legacy temporary staging schedule status values", () => {
     const rows = buildTaskRows(
       [
         {

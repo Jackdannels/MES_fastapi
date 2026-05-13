@@ -304,6 +304,90 @@ describe("useProcessLabs", () => {
     vi.useRealTimers();
   });
 
+  test("starting an experiment only updates samples from the selected task when tray codes overlap", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-11T08:00:00Z"));
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-a",
+          device: "盐雾试验室",
+          end_at: "2026-03-11T10:00:00Z",
+          experiment_code: "TASK-A-EXP",
+          start_at: "2026-03-11T08:00:00Z",
+          task_code: "TASK-A",
+        },
+        {
+          id: "schedule-b",
+          device: "盐雾试验室",
+          end_at: "2026-03-11T11:00:00Z",
+          experiment_code: "TASK-B-EXP",
+          start_at: "2026-03-11T08:30:00Z",
+          task_code: "TASK-B",
+        },
+      ],
+      "mes.tasks": [
+        { code: "TASK-A", name: "任务A", status: "已排程", test_type: "盐雾试验" },
+        { code: "TASK-B", name: "任务B", status: "已排程", test_type: "盐雾试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-A", experiment_code: "TASK-A-EXP", experiment_name: "盐雾试验-A" },
+        { task_code: "TASK-B", experiment_code: "TASK-B-EXP", experiment_name: "盐雾试验-B" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-A", experiment_code: "TASK-A-EXP", tray_code: "TP-SHARED" },
+        { task_code: "TASK-B", experiment_code: "TASK-B-EXP", tray_code: "TP-SHARED" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-A",
+          task_code: "TASK-A",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-SHARED", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+        {
+          code: "SP-B",
+          task_code: "TASK-B",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-SHARED", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+    setSelectedTaskForLab("盐雾试验室", "TASK-B", "TASK-B-EXP");
+    await startExperiment(labCards.value[0]);
+
+    const persistedSamples = persistSnapshot.mock.calls[0][0]["mes.samples"];
+    expect(persistedSamples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SP-A",
+          status: "实验准备就绪",
+          trays: [expect.objectContaining({ tray_code: "TP-SHARED", status: "实验准备就绪" })],
+        }),
+        expect.objectContaining({
+          code: "SP-B",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TP-SHARED", status: "实验进行中" })],
+        }),
+      ]),
+    );
+    vi.useRealTimers();
+  });
+
   test("dispatches samples-updated after starting an experiment so tray management refreshes immediately", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [

@@ -392,6 +392,402 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
   });
 
+  test("closes the compare modal after each completed tray during consecutive tray comparisons", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples][0] = {
+      ...snapshotState[STORAGE_KEYS.samples][0],
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: snapshotState[STORAGE_KEYS.samples][0].trays.map((tray) => ({
+        ...tray,
+        status: "送至实验室",
+      })),
+    };
+    const storageWrites = [];
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/storage")) {
+        if ((options.method || "GET") === "PUT") {
+          const payload = JSON.parse(String(options.body || "{}"));
+          snapshotState = {
+            ...snapshotState,
+            ...payload,
+          };
+          return new Promise((resolve) => {
+            storageWrites.push(() => resolve({ ok: true, status: 200, json: async () => ({ ok: true }) }));
+          });
+        }
+        return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      if (url.includes("/api/mq/laboratory")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: false }) };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    storageWrites.shift()();
+    await nextTick();
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-002");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    storageWrites.shift()();
+    await nextTick();
+    await nextTick();
+  });
+
+  test("reverts the previous task to pre-dispatch state when the next task completes comparison", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T09:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T08:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [
+          { quantity: 1, status: "送至实验室", tray_code: "TP-001" },
+          { quantity: 1, status: "送至实验室", tray_code: "TP-002" },
+        ],
+      },
+      {
+        code: "SYLU-2026-04-201-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T11:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T10:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "李工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-201",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-101" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0].trays).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: "已到达实验室", tray_code: "TP-001" }),
+        expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" }),
+      ]),
+    );
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-101");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: expect.arrayContaining([
+        expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-001" }),
+        expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-002" }),
+      ]),
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "SYLU-2026-04-101 / 盐雾试验-A / 撤回至已到达暂存间",
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-101" })],
+    }));
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+    await nextTick();
+    for (let index = 0; index < 5 && mounted.get('[data-testid="laboratory-ready"]').attributes("disabled") !== undefined; index += 1) {
+      await Promise.resolve();
+      await nextTick();
+    }
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await nextTick();
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+    await nextTick();
+
+    const fixtureInstallCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
+    const readyCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/ready"));
+    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({ taskId: "SYLU-2026-04-201" }));
+    expect(JSON.parse(String(readyCall[1].body))).toEqual(expect.objectContaining({ taskId: "SYLU-2026-04-201" }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "实验准备就绪",
+      status: "实验准备就绪",
+      trays: [expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-101" })],
+    }));
+  });
+
+  test("keeps the first pending task as the revert target when switching through an un-compared task", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.tasks] = [
+      ...snapshotState[STORAGE_KEYS.tasks],
+      { code: "SYLU-2026-04-401", name: "盐雾端子", test_type: "盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiments] = [
+      ...snapshotState[STORAGE_KEYS.experiments],
+      { task_code: "SYLU-2026-04-401", experiment_code: "SYLU-2026-04-401-A", experiment_name: "盐雾试验-C" },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      ...snapshotState[STORAGE_KEYS.experiment_trays],
+      { task_code: "SYLU-2026-04-401", experiment_code: "SYLU-2026-04-401-A", tray_code: "TP-401" },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      ...snapshotState[STORAGE_KEYS.schedules],
+      {
+        id: "schedule-6",
+        task_code: "SYLU-2026-04-401",
+        experiment_code: "SYLU-2026-04-401-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T14:30:00.000Z",
+        end_at: "2026-04-02T15:00:00.000Z",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T09:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T08:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-201-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T11:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T10:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "李工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-201",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-101" }],
+      },
+      {
+        code: "SYLU-2026-04-401-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T14:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T13:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "周工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-401",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-401" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-401");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-001" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "送至实验室",
+      location: "盐雾试验室",
+      status: "送至实验室",
+      trays: [expect.objectContaining({ status: "送至实验室", tray_code: "TP-101" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][2]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-401" })],
+    }));
+  });
+
+  test("reverts both compared earlier tasks when a third task completes comparison", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.tasks] = [
+      ...snapshotState[STORAGE_KEYS.tasks],
+      { code: "SYLU-2026-04-401", name: "盐雾端子", test_type: "盐雾试验" },
+    ];
+    snapshotState[STORAGE_KEYS.experiments] = [
+      ...snapshotState[STORAGE_KEYS.experiments],
+      { task_code: "SYLU-2026-04-401", experiment_code: "SYLU-2026-04-401-A", experiment_name: "盐雾试验-C" },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      ...snapshotState[STORAGE_KEYS.experiment_trays],
+      { task_code: "SYLU-2026-04-401", experiment_code: "SYLU-2026-04-401-A", tray_code: "TP-401" },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      ...snapshotState[STORAGE_KEYS.schedules],
+      {
+        id: "schedule-6",
+        task_code: "SYLU-2026-04-401",
+        experiment_code: "SYLU-2026-04-401-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T14:30:00.000Z",
+        end_at: "2026-04-02T15:00:00.000Z",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T09:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T08:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-201-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T11:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T10:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "李工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-201",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-101" }],
+      },
+      {
+        code: "SYLU-2026-04-401-SP-001",
+        flow_status: "送至实验室",
+        history: [
+          { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-04-02T14:20:00.000Z" },
+          { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T13:30:00.000Z" },
+        ],
+        location: "盐雾试验室",
+        owner: "周工",
+        status: "送至实验室",
+        task_code: "SYLU-2026-04-401",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-401" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-101");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-401");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-001" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-101" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][2]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-401" })],
+    }));
+  });
+
   test("does not allow completed experiment trays to be added to comparison", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [

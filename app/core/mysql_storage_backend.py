@@ -48,6 +48,17 @@ def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def parse_varchar_length(column: dict[str, Any] | None) -> int:
+    column_type = normalize_text((column or {}).get("Type")).lower()
+    matched = re.match(r"varchar\((\d+)\)", column_type)
+    if not matched:
+        return 0
+    try:
+        return int(matched.group(1))
+    except ValueError:
+        return 0
+
+
 def derive_task_code_from_sample_code(sample_code: Any) -> str:
     text = normalize_text(sample_code)
     match = SAMPLE_TASK_CODE_PATTERN.match(text)
@@ -829,6 +840,15 @@ class MySQLMesStorageBackend(StorageBackend):
                 cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'tray_limit'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_task ADD COLUMN tray_limit INT NULL AFTER sample_count")
+                cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'task_type'")
+                if parse_varchar_length(cursor.fetchone()) < 200:
+                    cursor.execute("ALTER TABLE biz_task MODIFY COLUMN task_type VARCHAR(200) NOT NULL")
+                cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'required_device'")
+                required_device_column = cursor.fetchone()
+                if required_device_column is None:
+                    cursor.execute("ALTER TABLE biz_task ADD COLUMN required_device VARCHAR(200) NULL AFTER due_time")
+                elif parse_varchar_length(required_device_column) < 200:
+                    cursor.execute("ALTER TABLE biz_task MODIFY COLUMN required_device VARCHAR(200) NULL")
                 cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'experiment_no'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_schedule ADD COLUMN experiment_no VARCHAR(50) NULL AFTER task_no")

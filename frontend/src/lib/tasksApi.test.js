@@ -132,6 +132,22 @@ describe("tasksApi", () => {
     expect(window.localStorage.getItem("mes.tasks")).toBeNull();
   });
 
+  test("includes backend detail when task mutations fail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        json: async () => ({ detail: "任务编号已存在" }),
+      }),
+    );
+
+    await expect(createTask({ code: "SYLU-2026-03-009" })).rejects.toThrow(
+      "Failed to create task: 400 Bad Request，任务编号已存在",
+    );
+  });
+
   test("resets tasks through the dedicated reset endpoint without mutating local cache", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

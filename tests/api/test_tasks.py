@@ -221,6 +221,43 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
 
 
+def test_create_and_update_task_accept_all_experiment_types(monkeypatch):
+    all_types = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"]
+    client = build_client(monkeypatch, tasks=[])
+
+    created = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-115",
+            "code": "SYLU-2026-04-115",
+            "name": "全实验类型任务",
+            "sample_count": "3",
+            "test_type": " / ".join(all_types),
+            "test_types": all_types,
+            "required_device": " / ".join(all_types),
+            "status": "待排程",
+        },
+    )
+    updated = client.put(
+        "/api/tasks/SYLU-2026-04-115",
+        json={
+            **created.json(),
+            "name": "全实验类型任务-修改",
+            "test_type": " / ".join(all_types),
+            "test_types": all_types,
+            "required_device": " / ".join(all_types),
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert created.status_code == 201
+    assert updated.status_code == 200
+    assert updated.json()["experiment_count"] == len(all_types)
+    assert storage.read("mes.tasks")[0]["test_types"] == all_types
+    assert [item["experiment_name"] for item in storage.read("mes.experiments")] == all_types
+
+
 def test_create_task_rejects_code_that_already_exists_on_returned_archived_task(monkeypatch):
     client = build_client(
         monkeypatch,

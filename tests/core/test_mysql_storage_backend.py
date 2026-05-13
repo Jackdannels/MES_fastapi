@@ -84,6 +84,65 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     assert storage_item["tray_limit"] == 2
 
 
+def test_ensure_schema_extensions_expands_task_type_for_all_experiment_summary(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(50)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            self.committed = True
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    assert any(
+        statement == "ALTER TABLE biz_task MODIFY COLUMN task_type VARCHAR(200) NOT NULL"
+        for statement in connection.cursor_instance.statements
+    )
+    assert connection.committed is True
+
+
 def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
     storage_schedule = {
         "id": "schedule-1",
@@ -900,15 +959,14 @@ def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_mi
     normalized = normalize_storage_payload(payload)
 
     assert normalized["mes.tasks"][0]["code"] == "SYLU-2026-04-105"
-    assert normalized["mes.tasks"][0]["experiment_codes"] == ["SYLU-2026-04-105-A", "SYLU-2026-04-105-B", "SYLU-2026-04-105-C"]
+    assert normalized["mes.tasks"][0]["experiment_codes"] == ["SYLU-2026-04-105-A"]
     assert normalized["mes.samples"][0]["code"] == "SYLU-2026-04-105-SP-001"
     assert normalized["mes.samples"][0]["trays"][0]["tray_code"] == "SYLU-2026-04-105-TP-001"
     assert normalized["mes.schedules"][0]["experiment_code"] == "SYLU-2026-04-105-A"
     assert normalized["mes.experiment_trays"][0]["tray_code"] == "SYLU-2026-04-105-TP-001"
     assert normalized["mes.streams"][0]["task_code"] == "SYLU-2026-04-105"
     assert normalized["mes.experiments"][0]["experiment_name"] == "高低温湿热试验"
-    assert normalized["mes.experiments"][1]["experiment_name"] == "冲击试验"
-    assert normalized["mes.experiments"][2]["experiment_name"] == "振动试验"
+    assert len(normalized["mes.experiments"]) == 1
     assert normalized["mes.meta"]["schema_version"] == 2
 
 

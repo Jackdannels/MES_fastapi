@@ -51,6 +51,9 @@ CALL add_column_if_missing('mes_single_branch', 'biz_task', 'conditions_text',
 CALL add_column_if_missing('mes_single_branch', 'biz_task', 'attachment_path',
   'ALTER TABLE biz_task ADD COLUMN attachment_path VARCHAR(500) NULL AFTER conditions_text');
 
+ALTER TABLE biz_task MODIFY COLUMN task_type VARCHAR(200) NOT NULL;
+ALTER TABLE biz_task MODIFY COLUMN required_device VARCHAR(200) NULL;
+
 CALL add_column_if_missing('mes_single_branch', 'biz_sample', 'batch_no',
   'ALTER TABLE biz_sample ADD COLUMN batch_no VARCHAR(100) NULL AFTER sample_name');
 CALL add_column_if_missing('mes_single_branch', 'biz_sample', 'arrival_time',

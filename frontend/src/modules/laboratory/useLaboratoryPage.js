@@ -16,6 +16,7 @@ import {
   LAB_INSTALL_STATUS,
   LAB_READY_STATUS,
   getLaboratoryActionState,
+  revertLaboratoryTaskToPreDispatch,
   resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 } from "./model";
@@ -23,6 +24,7 @@ import {
 const RUNNING_MODAL_RESTORE_MS = 10_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
+const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 
 const countTrayRowSamples = (trayRows) =>
@@ -56,6 +58,7 @@ function useLaboratoryPage(options = {}) {
   const selectedTaskCode = ref("");
   const selectedTrayCode = ref("");
   const pendingTaskCode = ref("");
+  const pendingRevertTask = ref(null);
   const compareScanCode = ref("");
   const compareScanInputRef = ref(null);
   const compareFeedback = ref(null);
@@ -73,6 +76,7 @@ function useLaboratoryPage(options = {}) {
   const tickNow = ref(now || new Date());
   let tickTimer = null;
   let runningModalRestoreTimer = null;
+  let samplesPersistQueue = null;
 
   const view = computed(() =>
     buildSaltSprayLaboratoryView({
@@ -215,6 +219,13 @@ function useLaboratoryPage(options = {}) {
     verifiedTrayCodes.value = [];
   };
 
+  const taskSelectionKey = (task) => String(task?.experimentKey || task?.id || task?.taskCode || "").trim();
+
+  const taskHasSwitchRevertibleTrays = (task) =>
+    (Array.isArray(task?.trayRows) ? task.trayRows : []).some((row) =>
+      SWITCH_REVERTIBLE_TRAY_STATUSES.has(String(row?.trayStatus || row?.displayStatus || "").trim()),
+    );
+
   const load = async () => {
     loading.value = true;
     try {
@@ -316,7 +327,24 @@ function useLaboratoryPage(options = {}) {
     labId: SALT_SPRAY_LAB_ID,
     taskId: currentTask.value?.taskCode || "",
   });
-  const persistCurrentTaskStep = async (nextStatus, historyAction) => {
+  const persistSamples = (nextSamples) => {
+    const writeSamples = () =>
+      persistSnapshot({
+        [STORAGE_KEYS.samples]: nextSamples,
+      });
+    const persistOperation = samplesPersistQueue
+      ? samplesPersistQueue.catch(() => {}).then(writeSamples)
+      : writeSamples();
+    const trackedOperation = persistOperation.finally(() => {
+      if (samplesPersistQueue === trackedOperation) {
+        samplesPersistQueue = null;
+      }
+    });
+    samplesPersistQueue = trackedOperation;
+    return persistOperation;
+  };
+  const persistCurrentTaskStep = async (nextStatus, historyAction, options = {}) => {
+    const actionTime = new Date().toISOString();
     const targetTrayCodes =
       nextStatus === LAB_COMPARE_STATUS
         ? verifiedTrayCodes.value
@@ -325,18 +353,24 @@ function useLaboratoryPage(options = {}) {
           : nextStatus === LAB_READY_STATUS
             ? getCurrentTaskTrayCodesByStatus(LAB_INSTALL_STATUS)
             : currentTask.value?.trayCodes;
+    const baseSamples =
+      options.revertTask && nextStatus === LAB_COMPARE_STATUS
+        ? revertLaboratoryTaskToPreDispatch({
+            currentTask: options.revertTask,
+            now: actionTime,
+            samples: samples.value,
+          })
+        : samples.value;
     const nextSamples = applyLaboratoryTaskStep({
       currentTask: currentTask.value,
       historyAction,
       nextStatus,
-      now: new Date().toISOString(),
-      samples: samples.value,
+      now: actionTime,
+      samples: baseSamples,
       targetTrayCodes,
     });
     samples.value = nextSamples;
-    await persistSnapshot({
-      [STORAGE_KEYS.samples]: nextSamples,
-    });
+    await persistSamples(nextSamples);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
@@ -345,8 +379,12 @@ function useLaboratoryPage(options = {}) {
     if (!currentTask.value || !canCompleteCompare.value) {
       return;
     }
-    await persistCurrentTaskStep(LAB_COMPARE_STATUS, "任务比对");
+    const revertTask = pendingRevertTask.value;
     compareModalOpen.value = false;
+    await persistCurrentTaskStep(LAB_COMPARE_STATUS, "任务比对", { revertTask });
+    if (revertTask && taskSelectionKey(pendingRevertTask.value) === taskSelectionKey(revertTask)) {
+      pendingRevertTask.value = null;
+    }
     resetCompareState();
   };
   const submitCompareScan = () => {
@@ -445,9 +483,7 @@ function useLaboratoryPage(options = {}) {
       samples: samples.value,
     });
     samples.value = nextSamples;
-    await persistSnapshot({
-      [STORAGE_KEYS.samples]: nextSamples,
-    });
+    await persistSamples(nextSamples);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
@@ -478,9 +514,7 @@ function useLaboratoryPage(options = {}) {
       samples: samples.value,
     });
     samples.value = nextSamples;
-    await persistSnapshot({
-      [STORAGE_KEYS.samples]: nextSamples,
-    });
+    await persistSamples(nextSamples);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
@@ -490,6 +524,15 @@ function useLaboratoryPage(options = {}) {
   const confirmCurrentTask = () => {
     if (!pendingTaskCode.value || runningInteractionLocked.value) {
       return;
+    }
+    const previousTask = currentTask.value;
+    const nextSelectionKey = String(pendingTaskCode.value || "").trim();
+    const previousSelectionKey = taskSelectionKey(previousTask);
+    const pendingRevertKey = taskSelectionKey(pendingRevertTask.value);
+    if (pendingRevertKey && pendingRevertKey === nextSelectionKey) {
+      pendingRevertTask.value = null;
+    } else if (previousSelectionKey && previousSelectionKey !== nextSelectionKey && taskHasSwitchRevertibleTrays(previousTask)) {
+      pendingRevertTask.value = previousTask;
     }
     selectedTaskCode.value = pendingTaskCode.value;
     resetCompareState();
