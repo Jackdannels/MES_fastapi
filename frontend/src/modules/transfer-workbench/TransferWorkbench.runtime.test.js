@@ -447,6 +447,64 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("assigns every experiment to the only tray after increasing tray limit to one-tray layout", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    let allocationRequest = null;
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        allocationRequest = JSON.parse(String(options.body || "{}"));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            message: "托盘分配已保存",
+            workspace: { ...workspacePayload, allocationSaved: true },
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-tray-limit-input"]').setValue("6");
+    await wrapper.get('[data-testid="transfer-tray-limit-input"]').trigger("change");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(1);
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeUndefined();
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(allocationRequest).toEqual(expect.objectContaining({
+      trayLimit: 6,
+      experimentTrays: [
+        { experimentCode: "SYLU-2026-03-101-A", trayIds: [1001] },
+        { experimentCode: "SYLU-2026-03-101-B", trayIds: [1001] },
+      ],
+    }));
+  });
+
   test("removes a task from the active workspace when the workspace endpoint reports it archived", async () => {
     const initialBootstrap = createBootstrapPayload();
     const archivedBootstrap = {

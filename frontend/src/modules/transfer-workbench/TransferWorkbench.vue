@@ -831,6 +831,14 @@ const clearExperimentAssignments = () => {
   rebuildTrayExperimentLabels();
 };
 
+const resetExperimentAssignmentsForTrayLayout = () => {
+  const onlyTrayNo = assignedTrays.value.length === 1 ? assignedTrays.value[0]?.trayNo : "";
+  draftExperimentTraySelections.value = Object.fromEntries(
+    experiments.value.map((experiment) => [experiment.experimentCode, onlyTrayNo ? [onlyTrayNo] : []]),
+  );
+  rebuildTrayExperimentLabels();
+};
+
 const traySerialFromCode = (trayCode) => {
   const text = String(trayCode || "").trim();
   const taskMatch = text.match(TASK_TRAY_CODE_PATTERN);
@@ -887,7 +895,7 @@ const createEditableTray = (trayRef, limit, samples = []) => {
 const refreshEditableTrayState = (message = "") => {
   assignedTrays.value = normalizeEditableTrays(assignedTrays.value, trayLimit.value);
   availableInventory.value = buildInventorySlots(availableInventory.value.length, trayLimit.value);
-  clearExperimentAssignments();
+  resetExperimentAssignmentsForTrayLayout();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
   lockedOperationHint.value = "";
@@ -916,7 +924,7 @@ const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, me
   activeTrayIndex.value = -1;
   armedTrayIndex.value = -1;
   clearSelectedSample();
-  clearExperimentAssignments();
+  resetExperimentAssignmentsForTrayLayout();
   barcodePrintConfirmed.value = false;
   allocationSaved.value = false;
   lockedOperationHint.value = "";
