@@ -120,12 +120,20 @@
               <div v-if="selectedTaskDetail?.availableTasks?.length > 1" class="process-task-switch-list">
                 <button
                   v-for="taskOption in selectedTaskDetail.availableTasks"
-                  :key="taskOption.taskCode"
+                  :key="taskOption.selectionKey || taskOption.taskCode"
                   class="process-task-switch-button"
-                  :class="{ 'is-active': selectedTaskDetail?.code === taskOption.taskCode }"
+                  :class="{
+                    'is-active':
+                      selectedTaskDetail?.code === taskOption.taskCode
+                      && (!taskOption.experimentCode || selectedTaskDetail?.activeExperimentCode === taskOption.experimentCode),
+                  }"
                   type="button"
                   :data-testid="`process-switch-task-${taskOption.taskCode}`"
-                  @click="setSelectedTaskForLab(selectedTaskDetail?.labName, taskOption.taskCode)"
+                  @click="
+                    taskOption.experimentCode
+                      ? setSelectedTaskForLab(selectedTaskDetail?.labName, taskOption.taskCode, taskOption.experimentCode)
+                      : setSelectedTaskForLab(selectedTaskDetail?.labName, taskOption.taskCode)
+                  "
                 >
                   <strong>{{ taskOption.taskCode }}</strong>
                   <span>{{ taskOption.experimentName || "-" }}</span>

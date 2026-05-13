@@ -447,6 +447,8 @@
   font-weight: 700;
   color: #0f172a;
   line-height: 1.35;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .laboratory-modal-body {
@@ -498,6 +500,13 @@
 .laboratory-task-list-card th,
 .laboratory-task-list-card td {
   white-space: nowrap;
+}
+
+.laboratory-task-list-card td:nth-child(3),
+.laboratory-task-list-card td:nth-child(4) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .laboratory-task-list-card tbody td {

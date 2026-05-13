@@ -1264,14 +1264,8 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
       experimentNameByCode,
       trayExperimentCodeMap,
     });
-    const endAt = parseDate(schedule?.end_at);
-    if (!lifecycleState.started) {
-      return true;
-    }
-    if (!lifecycleState.completed) {
-      return true;
-    }
-    return !endAt || endAt >= now;
+    // 实验实际完成后立即释放甘特占用，不再等到计划结束时间。
+    return !lifecycleState.completed;
   });
   const anchorDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
   // 如果视图窗口内的默认天数不足以覆盖最新排程，会自动向后扩展。

@@ -15,6 +15,7 @@ router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 TASK_STATUS_PENDING = "未入库"
 TASK_STATUS_STORED = "已入库"
 TASK_STATUS_RETURNED = "厂家收回"
+RETURNED_REENTRY_BLOCK_REASON = "该任务已厂家收回，不能重新入库。"
 TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "已入库"
@@ -325,8 +326,26 @@ def are_all_assigned_trays_returned(task_samples: list[dict[str, Any]]) -> bool:
     return bool(tray_statuses) and all(status == TASK_STATUS_RETURNED for status in tray_statuses)
 
 
-def reload_block_reason(task_samples: list[dict[str, Any]]) -> str:
+def is_returned_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
+    return normalize_text(task.get("transfer_status")) == TASK_STATUS_RETURNED or are_all_assigned_trays_returned(task_samples)
+
+
+def returned_task_block_reason(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> str:
+    return RETURNED_REENTRY_BLOCK_REASON if is_returned_task(task, task_samples) else ""
+
+
+def reload_block_reason(task_samples: list[dict[str, Any]], task: dict[str, Any] | None = None) -> str:
+    if task is not None:
+        current_returned_reason = returned_task_block_reason(task, task_samples)
+        if current_returned_reason:
+            return current_returned_reason
     return "该任务已有托盘开始实验，不能重新入库。" if started_experiment_status_for_task(task_samples) else ""
+
+
+def ensure_task_not_returned(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:
+    current_returned_reason = returned_task_block_reason(task, task_samples)
+    if current_returned_reason:
+        raise HTTPException(status_code=400, detail=current_returned_reason)
 
 
 def transfer_status_for_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> str:
@@ -837,7 +856,7 @@ def serialize_workspace(
     max_assignable_count = max_assignable_tray_count(global_samples, task_samples)
     required_tray_count = sum(1 for tray in assigned_trays if tray["samples"])
     tray_capacity_exceeded = required_tray_count > max_assignable_count
-    current_reload_block_reason = reload_block_reason(task_samples)
+    current_reload_block_reason = reload_block_reason(task_samples, task)
     tray_capacity_message = (
         f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。"
         if tray_capacity_exceeded
@@ -1119,6 +1138,9 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
 def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
+    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    if is_returned_task(task, task_samples):
+        raise HTTPException(status_code=404, detail="任务已归档")
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
 
@@ -1127,6 +1149,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
     snapshot = read_snapshot()
     task, tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    ensure_task_not_returned(task, task_samples)
     if transfer_status_for_task(task, task_samples) != TASK_STATUS_STORED:
         raise HTTPException(status_code=400, detail="该托盘尚未确认入库，不能出库")
 
@@ -1197,6 +1220,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
+    ensure_task_not_returned(task, task_samples)
     sample_map = {sample_key(sample): sample for sample in task_samples}
     requested_ids = [sample_id for tray in request.trays for sample_id in tray.sample_ids]
     requested_tray_count = sum(1 for tray in request.trays if tray.sample_ids)
@@ -1310,6 +1334,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
+    ensure_task_not_returned(task, task_samples)
     if not task_arrival_time(task):
         raise HTTPException(status_code=400, detail="样品尚未送达接驳区，不能打印条形码")
 
@@ -1370,6 +1395,7 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
+    ensure_task_not_returned(task, task_samples)
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
 
     if not assigned_trays:
@@ -1426,7 +1452,7 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
-    current_reload_block_reason = reload_block_reason(task_samples)
+    current_reload_block_reason = reload_block_reason(task_samples, task)
     if current_reload_block_reason:
         raise HTTPException(status_code=400, detail=current_reload_block_reason)
     snapshot["experiment_trays"] = [

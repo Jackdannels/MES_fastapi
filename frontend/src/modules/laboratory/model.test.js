@@ -87,6 +87,59 @@ describe("laboratory model", () => {
     );
   });
 
+  test("buildSaltSprayLaboratoryView removes completed experiments from the task list before their planned end time", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", tray_code: "SYLU-2026-05-005-TP-001" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", tray_code: "SYLU-2026-05-006-TP-001" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", experiment_name: "盐雾试验" },
+      ],
+      now: new Date("2026-05-05T09:00:00.000Z"),
+      samples: [
+        {
+          code: "SYLU-2026-05-005-SP-001",
+          task_code: "SYLU-2026-05-005",
+          status: "实验已完成",
+          trays: [{ quantity: 1, status: "实验已完成", tray_code: "SYLU-2026-05-005-TP-001" }],
+        },
+        {
+          code: "SYLU-2026-05-006-SP-001",
+          task_code: "SYLU-2026-05-006",
+          status: "实验准备就绪",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "SYLU-2026-05-006-TP-001" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-005",
+          task_code: "SYLU-2026-05-005",
+          experiment_code: "SYLU-2026-05-005-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-05T08:00:00.000Z",
+          end_at: "2026-05-05T12:00:00.000Z",
+        },
+        {
+          id: "schedule-006",
+          task_code: "SYLU-2026-05-006",
+          experiment_code: "SYLU-2026-05-006-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-05T09:30:00.000Z",
+          end_at: "2026-05-05T12:30:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: "SYLU-2026-05-005", name: "盐雾已完成", test_type: "盐雾试验" },
+        { code: "SYLU-2026-05-006", name: "盐雾待执行", test_type: "盐雾试验" },
+      ],
+    });
+
+    expect(view.scheduleRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-05-006"]);
+    expect(view.currentTask).toEqual(expect.objectContaining({ taskCode: "SYLU-2026-05-006" }));
+  });
+
   test("buildLaboratorySummary counts today's salt-spray schedules and overdue undone tasks", () => {
     const summary = buildLaboratorySummary([
       { endAt: "2026-04-02T08:30:00.000Z", startAt: "2026-04-02T07:00:00.000Z", taskCode: "A" },
@@ -104,7 +157,15 @@ describe("laboratory model", () => {
     const view = buildSaltSprayLaboratoryView({
       experiments: [],
       now: NOW,
-      samples: [],
+      samples: [
+        {
+          code: "SP-001",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ tray_code: "TP-001", quantity: 1, status: "送至实验室" }],
+        },
+      ],
       schedules: [],
       tasks: [],
     });
@@ -210,6 +271,62 @@ describe("laboratory model", () => {
         trayRows: [expect.objectContaining({ trayCode: "TP-001" })],
       }),
     );
+  });
+
+  test("buildSaltSprayLaboratoryView selects a specific experiment when one task has multiple salt spray schedules", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", tray_code: "TP-B" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-A", experiment_name: "盐雾试验-A" },
+        { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", experiment_name: "盐雾试验-B" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-A",
+          task_code: "SYLU-2026-04-301",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-A" }],
+        },
+        {
+          code: "SP-B",
+          task_code: "SYLU-2026-04-301",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-B" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-a",
+          task_code: "SYLU-2026-04-301",
+          experiment_code: "SYLU-2026-04-301-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-b",
+          task_code: "SYLU-2026-04-301",
+          experiment_code: "SYLU-2026-04-301-B",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T12:00:00.000Z",
+          end_at: "2026-04-02T13:00:00.000Z",
+        },
+      ],
+      selectedTaskCode: "SYLU-2026-04-301::SYLU-2026-04-301-B",
+      tasks: [{ code: "SYLU-2026-04-301", name: "同任务多盐雾", test_type: "盐雾试验-A / 盐雾试验-B" }],
+    });
+
+    expect(view.currentTask).toEqual(
+      expect.objectContaining({
+        experimentCode: "SYLU-2026-04-301-B",
+        experimentName: "盐雾试验-B",
+        taskCode: "SYLU-2026-04-301",
+        trayCodes: ["TP-B"],
+      }),
+    );
+    expect(view.selectedTrayRow).toEqual(expect.objectContaining({ trayCode: "TP-B" }));
   });
 
   test("buildSaltSprayLaboratoryView keeps task flow scheduled until any tray truly starts the experiment", () => {
@@ -416,7 +533,15 @@ describe("laboratory model", () => {
         { task_code: "SYLU-2026-04-201", experiment_code: "SYLU-2026-04-201-A", experiment_name: "盐雾试验-B" },
       ],
       now: NOW,
-      samples: [],
+      samples: [
+        {
+          code: "SP-001",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ tray_code: "TP-001", quantity: 1, status: "送至实验室" }],
+        },
+      ],
       schedules: [
         {
           id: "schedule-1",
@@ -527,6 +652,54 @@ describe("laboratory model", () => {
       trayCode: "TP-002",
     }));
   });
+
+  test.each(["已入库", "到货", ""])(
+    "validateLaboratoryTrayScan rejects current task trays that have not been dispatched from transfer area: %s",
+    (trayStatus) => {
+      const view = buildSaltSprayLaboratoryView({
+        experimentTrays: [
+          { task_code: "SYLU-2026-05-701", experiment_code: "SYLU-2026-05-701-A", tray_code: "TP-NOT-DISPATCHED" },
+        ],
+        experiments: [
+          { task_code: "SYLU-2026-05-701", experiment_code: "SYLU-2026-05-701-A", experiment_name: "盐雾试验" },
+        ],
+        now: NOW,
+        samples: [
+          {
+            code: "SP-NOT-DISPATCHED",
+            location: "接驳区",
+            owner: "王工",
+            status: trayStatus,
+            task_code: "SYLU-2026-05-701",
+            trays: [{ tray_code: "TP-NOT-DISPATCHED", quantity: 1, status: trayStatus }],
+          },
+        ],
+        schedules: [
+          {
+            id: "schedule-not-dispatched",
+            task_code: "SYLU-2026-05-701",
+            experiment_code: "SYLU-2026-05-701-A",
+            device: "盐雾试验室",
+            start_at: "2026-05-13T09:00:00.000Z",
+            end_at: "2026-05-13T11:00:00.000Z",
+          },
+        ],
+        tasks: [{ code: "SYLU-2026-05-701", name: "未出库任务", test_type: "盐雾试验" }],
+      });
+
+      expect(validateLaboratoryTrayScan({
+        currentTask: view.currentTask,
+        scanCode: "TP-NOT-DISPATCHED",
+        scheduleRows: view.scheduleRows,
+      })).toEqual(expect.objectContaining({
+        guidance: "请先在接驳间完成出库并送至实验室。",
+        message: "托盘尚未出库",
+        ok: false,
+        tone: "error",
+        trayCode: "TP-NOT-DISPATCHED",
+      }));
+    },
+  );
 
   test("validateLaboratoryTrayScan rejects current task trays that already passed comparison", () => {
     const view = buildSaltSprayLaboratoryView({

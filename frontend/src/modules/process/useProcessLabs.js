@@ -1,7 +1,7 @@
 // 围绕实验室占用情况和任务下钻构建过程管控页状态。
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
-import { PROCESS_LABS, buildProcessLabCards } from "./model";
+import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
@@ -183,8 +183,40 @@ function useProcessLabs(options = {}) {
     schedules.value
       .filter((entry) => normalizeText(entry?.device) === normalizeText(labName))
       .sort((left, right) => parseScheduleTime(left?.start_at) - parseScheduleTime(right?.start_at));
-  const resolveSelectedTaskCodeForLab = (labName, fallback = "") =>
-    normalizeText(selectedTaskCodeByLab.value[normalizeText(labName)]) || normalizeText(fallback);
+  const isCompletedSchedule = (schedule) =>
+    scheduleExperimentIsCompleted({
+      experiments: experiments.value,
+      experimentTrays: experimentTrays.value,
+      samples: samples.value,
+      schedule,
+      taskStatusMap: new Map(),
+    });
+  const buildExperimentSelectionKey = (taskCode, experimentCode = "") => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    const normalizedExperimentCode = normalizeText(experimentCode);
+    return normalizedExperimentCode ? `${normalizedTaskCode}::${normalizedExperimentCode}` : normalizedTaskCode;
+  };
+  const parseExperimentSelectionKey = (value) => {
+    const normalized = normalizeText(value);
+    const separatorIndex = normalized.indexOf("::");
+    if (separatorIndex === -1) {
+      return { experimentCode: "", taskCode: normalized };
+    }
+    return {
+      experimentCode: normalized.slice(separatorIndex + 2),
+      taskCode: normalized.slice(0, separatorIndex),
+    };
+  };
+  const resolveSelectedTaskForLab = (labName, fallbackTaskCode = "", fallbackExperimentCode = "") => {
+    const selected = normalizeText(selectedTaskCodeByLab.value[normalizeText(labName)]);
+    if (selected) {
+      return parseExperimentSelectionKey(selected);
+    }
+    return {
+      experimentCode: normalizeText(fallbackExperimentCode),
+      taskCode: normalizeText(fallbackTaskCode),
+    };
+  };
 
   const getTaskSamples = (taskCode) => samples.value.filter((sample) => normalizeText(sample?.task_code) === taskCode);
   const getTransferWorkspace = (taskCode) => transferWorkspaceByTaskCode.value[taskCode] || null;
@@ -205,16 +237,19 @@ function useProcessLabs(options = {}) {
   const buildAvailableTasksForLab = (labName) => {
     const rows = [];
     const seen = new Set();
-    getLabSchedules(labName).forEach((schedule) => {
+    getLabSchedules(labName).filter((schedule) => !isCompletedSchedule(schedule)).forEach((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
-      if (!taskCode || seen.has(taskCode)) {
+      const experimentCode = normalizeText(schedule?.experiment_code);
+      const selectionKey = buildExperimentSelectionKey(taskCode, experimentCode);
+      if (!taskCode || seen.has(selectionKey)) {
         return;
       }
-      seen.add(taskCode);
+      seen.add(selectionKey);
       rows.push({
-        experimentCode: normalizeText(schedule?.experiment_code),
-        experimentName: getScheduledExperimentName(taskCode, normalizeText(schedule?.experiment_code)),
+        experimentCode,
+        experimentName: getScheduledExperimentName(taskCode, experimentCode),
         scheduleTime: `${toText(schedule?.start_at)} - ${toText(schedule?.end_at)}`,
+        selectionKey,
         taskCode,
       });
     });
@@ -459,6 +494,24 @@ function useProcessLabs(options = {}) {
     };
   };
 
+  const findStartableScheduleForLab = (labName) => {
+    let candidate = null;
+    const labSchedules = getLabSchedules(labName).filter((schedule) => !isCompletedSchedule(schedule));
+    for (const schedule of labSchedules) {
+      const taskCode = normalizeText(schedule?.task_code);
+      const experimentCode = normalizeText(schedule?.experiment_code);
+      const task = findTaskByCode(taskCode);
+      const actionState = buildStartExperimentState(buildTrayRows(taskCode, task, experimentCode), { labName });
+      if (actionState.runningTrayCount > 0) {
+        return null;
+      }
+      if (!candidate && actionState.canStartExperiment) {
+        candidate = schedule;
+      }
+    }
+    return candidate;
+  };
+
   const resolveScheduledRecordForLab = (lab, taskCode, currentTime, experimentCode = "") => {
     const normalizedTaskCode = normalizeText(taskCode);
     const normalizedLabName = normalizeText(lab?.name);
@@ -470,6 +523,7 @@ function useProcessLabs(options = {}) {
           && normalizeText(entry?.task_code) === normalizedTaskCode
           && (!normalizedExperimentCode || normalizeText(entry?.experiment_code) === normalizedExperimentCode),
       )
+      .filter((entry) => !isCompletedSchedule(entry))
       .sort((left, right) => parseScheduleTime(left?.start_at) - parseScheduleTime(right?.start_at));
 
     const activeSchedule = relatedSchedules.find((entry) => {
@@ -492,12 +546,21 @@ function useProcessLabs(options = {}) {
       tasks.value.find((item) => normalizeText(item?.code) === taskCode) ||
       tasks.value.find((item) => normalizeText(item?.required_device) === normalizeText(lab?.testType)) ||
       null;
+    const activeExperimentCodeFromLab = normalizeText(lab?.experimentCode);
     const relatedSchedules = schedules.value
       .filter((entry) => normalizeText(entry?.device) === normalizeText(lab?.name))
+      .filter((entry) => !isCompletedSchedule(entry))
       .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
     const schedule =
-      relatedSchedules.find((entry) => normalizeText(entry?.task_code) === taskCode) || relatedSchedules[0] || null;
-    const activeExperimentCode = normalizeText(schedule?.experiment_code);
+      relatedSchedules.find(
+        (entry) =>
+          normalizeText(entry?.task_code) === taskCode
+          && (!activeExperimentCodeFromLab || normalizeText(entry?.experiment_code) === activeExperimentCodeFromLab),
+      )
+      || relatedSchedules.find((entry) => normalizeText(entry?.task_code) === taskCode)
+      || relatedSchedules[0]
+      || null;
+    const activeExperimentCode = activeExperimentCodeFromLab || normalizeText(schedule?.experiment_code);
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     const hasScopedExperimentTrays = collectExperimentTrayCodes(taskCode, activeExperimentCode).length > 0;
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task, activeExperimentCode);
@@ -564,16 +627,27 @@ function useProcessLabs(options = {}) {
   };
 
   const enrichLabCard = (lab) => {
-    const selectedTaskCode = resolveSelectedTaskCodeForLab(lab?.name, lab?.taskCode);
-    const sourceSchedules = selectedTaskCode
-      ? schedules.value.filter(
-          (entry) =>
-            normalizeText(entry?.device) === normalizeText(lab?.name) && normalizeText(entry?.task_code) === selectedTaskCode,
-        )
-      : schedules.value;
-    const scopedLab =
-      buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value)[0]
-      || lab;
+    const normalizedLabName = normalizeText(lab?.name);
+    const explicitSelection = normalizeText(selectedTaskCodeByLab.value[normalizedLabName]);
+    const selectedTask = resolveSelectedTaskForLab(lab?.name, lab?.taskCode, lab?.experimentCode);
+    const buildScopedLab = (taskCode, experimentCode) => {
+      const sourceSchedules = taskCode
+        ? schedules.value.filter(
+            (entry) =>
+              normalizeText(entry?.device) === normalizedLabName
+              && normalizeText(entry?.task_code) === taskCode
+              && (!experimentCode || normalizeText(entry?.experiment_code) === experimentCode),
+          )
+        : schedules.value;
+      return (
+        buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value)[0]
+        || lab
+      );
+    };
+    let scopedLab = buildScopedLab(selectedTask.taskCode, selectedTask.experimentCode);
+    if (!scopedLab?.hasTask && explicitSelection) {
+      scopedLab = buildScopedLab(normalizeText(lab?.taskCode), normalizeText(lab?.experimentCode));
+    }
 
     if (!scopedLab?.hasTask) {
       return {
@@ -586,12 +660,27 @@ function useProcessLabs(options = {}) {
       };
     }
 
-    const taskCode = normalizeText(scopedLab.taskCode);
-    const task = findTaskByCode(taskCode);
-    const schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue());
-    const activeExperimentCode = normalizeText(schedule?.experiment_code);
-    const scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
-    const actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
+    let taskCode = normalizeText(scopedLab.taskCode);
+    let task = findTaskByCode(taskCode);
+    let schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue(), normalizeText(scopedLab?.experimentCode));
+    let activeExperimentCode = normalizeText(schedule?.experiment_code) || normalizeText(scopedLab?.experimentCode);
+    let scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
+    let actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
+
+    if (!explicitSelection && !actionState.canStartExperiment && actionState.runningTrayCount === 0) {
+      const startableSchedule = findStartableScheduleForLab(scopedLab?.name);
+      const startableTaskCode = normalizeText(startableSchedule?.task_code);
+      const startableExperimentCode = normalizeText(startableSchedule?.experiment_code);
+      if (startableTaskCode && (startableTaskCode !== taskCode || startableExperimentCode !== activeExperimentCode)) {
+        scopedLab = buildScopedLab(startableTaskCode, startableExperimentCode);
+        taskCode = normalizeText(scopedLab.taskCode);
+        task = findTaskByCode(taskCode);
+        schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue(), normalizeText(scopedLab?.experimentCode));
+        activeExperimentCode = normalizeText(schedule?.experiment_code) || normalizeText(scopedLab?.experimentCode);
+        scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
+        actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
+      }
+    }
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     const hasScheduledTask = Boolean(scopedLab?.hasTask);
     const status = actionState.runningTrayCount > 0 ? TRAY_STATUS_RUNNING : hasScheduledTask ? "已排程" : "空闲";
@@ -605,6 +694,7 @@ function useProcessLabs(options = {}) {
       startDisabledReason: actionState.startDisabledReason,
       status,
       statusClass,
+      experimentCode: activeExperimentCode,
       targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
     };
   };
@@ -726,12 +816,13 @@ function useProcessLabs(options = {}) {
     refreshSelectedTaskDetail(normalizeText(trayCode));
   };
 
-  const setSelectedTaskForLab = (labName, taskCode) => {
+  const setSelectedTaskForLab = (labName, taskCode, experimentCode = "") => {
     const normalizedLabName = normalizeText(labName);
     const normalizedTaskCode = normalizeText(taskCode);
+    const selectionKey = buildExperimentSelectionKey(normalizedTaskCode, experimentCode);
     selectedTaskCodeByLab.value = {
       ...selectedTaskCodeByLab.value,
-      [normalizedLabName]: normalizedTaskCode,
+      [normalizedLabName]: selectionKey,
     };
     rebuildLabCards();
     if (selectedTaskLabName.value === normalizedLabName) {

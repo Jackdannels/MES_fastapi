@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from datetime import datetime
 
 import pytest
 
@@ -14,19 +15,25 @@ from app.core.storage_backend import normalize_storage_payload
 
 
 def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() -> None:
-    snapshot = build_demo_reset_snapshot()
+    current_time = datetime(2026, 5, 13, 9, 30, 0)
+    snapshot = build_demo_reset_snapshot(now=current_time)
 
     tasks = snapshot["mes.tasks"]
     samples = snapshot["mes.samples"]
     experiments = snapshot["mes.experiments"]
 
     assert len(tasks) == 20
-    assert [task["code"] for task in tasks] == [f"SYLU-2026-03-{index:03d}" for index in range(1, 21)]
+    assert [task["code"] for task in tasks] == [f"SYLU-2026-05-{index:03d}" for index in range(1, 21)]
+    assert tasks[0]["created_at"].startswith("2026-05-13T")
+    assert tasks[0]["arrival_at"].startswith("2026-05-13")
+    assert tasks[0]["due_at"].startswith("2026-05-20")
     assert all(task["source"] == "外部委托" for task in tasks[:10])
     assert all(task["source"] == "内部新增" for task in tasks[10:])
     assert all(task["status"] == "待排程" for task in tasks)
     assert all(task["experiment_count"] == 3 for task in tasks)
+    assert all(len(task["test_types"]) == 3 for task in tasks)
     assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in tasks)
+    assert all("盐雾试验" in task["test_types"] for task in tasks)
     assert all(len(set(str(task["test_type"]).split(" / "))) == 3 for task in tasks)
 
     assert len(experiments) == 60
@@ -48,9 +55,10 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all(len(task_samples) > 4 for task_samples in samples_by_task.values())
 
     for task in tasks:
-        assert re.fullmatch(r"SYLU-2026-03-\d{3}", task["code"])
+        assert re.fullmatch(r"SYLU-2026-05-\d{3}", task["code"])
         assert task["experiment_count"] == 3
         assert len(task["experiment_codes"]) == 3
+        assert task["test_type"] == " / ".join(task["test_types"])
 
     assert snapshot["mes.schedules"] == []
     assert snapshot["mes.experiment_trays"] == []
@@ -81,6 +89,30 @@ def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_th
     assert normalized["mes.tasks"][0]["experiment_codes"] == [
         "SYLU-2026-04-501-A",
         "SYLU-2026-04-501-B",
+    ]
+    assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
+
+
+def test_normalize_storage_payload_splits_legacy_test_type_without_expanding_to_three() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-503",
+                "name": "旧双实验任务",
+                "test_type": "盐雾试验 / 振动试验",
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["experiment_count"] == 2
+    assert normalized["mes.tasks"][0]["experiment_codes"] == [
+        "SYLU-2026-04-503-A",
+        "SYLU-2026-04-503-B",
     ]
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
 
@@ -195,6 +227,74 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
     ]
 
 
+def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_stock_in_followed() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-03-001",
+                "name": "已收回任务",
+                "sample_count": 1,
+                "test_types": ["盐雾试验"],
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": "SYLU-2026-03-001-SP-001",
+                "task_code": "SYLU-2026-03-001",
+                "status": "已到达暂存间",
+                "flow_status": "已到达暂存间",
+                "location": "恒温恒湿间（暂存间）",
+                "trays": [
+                    {
+                        "tray_code": "SYLU-2026-03-001-TP-001",
+                        "status": "已到达暂存间",
+                    }
+                ],
+            }
+        ],
+        "mes.experiments": [
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "experiment_name": "盐雾试验",
+                "status": "待排程",
+            }
+        ],
+        "mes.experiment_trays": [
+            {
+                "task_code": "SYLU-2026-03-001",
+                "experiment_code": "SYLU-2026-03-001-A",
+                "tray_code": "SYLU-2026-03-001-TP-001",
+            }
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": "SYLU-2026-03-001-TP-001",
+                "task_code": "SYLU-2026-03-001",
+                "action": "manufacturer_return",
+                "time": "2026-04-28T03:32:34Z",
+                "target_lab": "厂家收回",
+            },
+            {
+                "tray_code": "SYLU-2026-03-001-TP-001",
+                "task_code": "SYLU-2026-03-001",
+                "action": "stock_in",
+                "time": "2026-04-28T03:40:00Z",
+            },
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["status"] == "厂家收回"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["trays"][0]["updated_at"] == "2026-04-28T03:32:34Z"
+
+
 def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_devices() -> None:
     writes = {}
 
@@ -229,7 +329,8 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in snapshot["mes.samples"])
     assert all(experiment["status"] == "待排程" for experiment in snapshot["mes.experiments"])
     assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
-    assert writes["mes.tasks"][0]["code"] == "SYLU-2026-03-001"
+    today = datetime.now()
+    assert writes["mes.tasks"][0]["code"] == f"SYLU-{today.year}-{today.month:02d}-001"
 
 
 def test_run_demo_reset_returns_summary_counts() -> None:

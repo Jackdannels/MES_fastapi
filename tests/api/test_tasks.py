@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -106,6 +108,7 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "霉菌试验",
+            "sample_count": "2",
             "test_type": "霉菌试验 / 盐雾试验",
             "test_types": ["霉菌试验", "盐雾试验"],
             "status": "待排程",
@@ -182,6 +185,7 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
             "id": "SYLU-2026-04-105",
             "code": "SYLU-2026-04-105",
             "name": "高低温湿热试验-批次E",
+            "sample_count": "3",
             "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
             "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
             "required_device": "冲击试验 / 盐雾试验 / 温度冲击试验",
@@ -217,6 +221,51 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
 
 
+def test_create_task_rejects_code_that_already_exists_on_returned_archived_task(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-returned",
+                "code": "SYLU-2026-05-001",
+                "name": "已收回任务",
+                "status": "厂家收回",
+                "transfer_status": "厂家收回",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+            }
+        ],
+        samples=[
+            {
+                "id": "sample-returned",
+                "code": "SYLU-2026-05-001-SP-001",
+                "task_code": "SYLU-2026-05-001",
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "trays": [{"tray_code": "SYLU-2026-05-001-TP-001", "status": "厂家收回"}],
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "id": "task-new",
+            "code": "SYLU-2026-05-001",
+            "name": "新任务",
+            "sample_count": "2",
+            "test_type": "振动试验",
+            "test_types": ["振动试验"],
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "任务编号已存在"}
+    assert [task["id"] for task in client.app.state.storage.read("mes.tasks")] == ["task-returned"]
+
+
 def test_create_task_uses_test_types_count_over_stale_experiment_count(monkeypatch):
     client = build_client(monkeypatch, tasks=[])
 
@@ -226,6 +275,7 @@ def test_create_task_uses_test_types_count_over_stale_experiment_count(monkeypat
             "id": "SYLU-2026-04-109",
             "code": "SYLU-2026-04-109",
             "name": "固定实验类型任务",
+            "sample_count": "3",
             "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
             "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
             "experiment_count": 5,
@@ -294,6 +344,67 @@ def test_create_task_rejects_missing_empty_or_duplicate_test_types(monkeypatch):
     assert duplicate.json() == {"detail": "test_types must not contain duplicates"}
 
 
+def test_create_task_rejects_invalid_sample_count(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+    base_payload = {
+        "id": "SYLU-2026-04-110",
+        "code": "SYLU-2026-04-110",
+        "name": "样品数量校验",
+        "test_type": "冲击试验",
+        "test_types": ["冲击试验"],
+        "status": "待排程",
+    }
+
+    missing = client.post("/api/tasks", json=base_payload)
+    non_integer = client.post("/api/tasks", json={**base_payload, "sample_count": "1.5"})
+    negative = client.post("/api/tasks", json={**base_payload, "sample_count": "-1"})
+    too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "100"})
+    valid = client.post("/api/tasks", json={**base_payload, "sample_count": "99"})
+
+    assert missing.status_code == 400
+    assert missing.json() == {"detail": "请填写样品数量"}
+    assert non_integer.status_code == 400
+    assert non_integer.json() == {"detail": "样品数量必须为整数"}
+    assert negative.status_code == 400
+    assert negative.json() == {"detail": "样品数量至少为 1"}
+    assert too_many.status_code == 400
+    assert too_many.json() == {"detail": "样品数量最多为 99"}
+    assert valid.status_code == 201
+
+
+def test_update_task_rejects_invalid_sample_count(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "SYLU-2026-04-111",
+                "code": "SYLU-2026-04-111",
+                "name": "样品数量校验",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "status": "待排程",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/SYLU-2026-04-111",
+        json={
+            "id": "SYLU-2026-04-111",
+            "code": "SYLU-2026-04-111",
+            "name": "样品数量校验",
+            "sample_count": "0",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "样品数量至少为 1"}
+
+
 def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch):
     client = build_client(
         monkeypatch,
@@ -315,6 +426,7 @@ def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch)
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "新任务",
+            "sample_count": "2",
             "test_type": "振动试验 / 盐雾试验",
             "test_types": ["振动试验", "盐雾试验"],
             "status": "待排程",
@@ -339,6 +451,7 @@ def test_update_task_keeps_experiment_metadata_in_sync(monkeypatch):
                 "id": "SYLU-2026-04-105",
                 "code": "SYLU-2026-04-105",
                 "name": "高低温湿热试验-批次E",
+                "sample_count": "3",
                 "test_type": "高低温湿热试验",
                 "required_device": "高低温湿热试验",
                 "status": "待排程",
@@ -475,6 +588,11 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert response.json()["sample_count"] == len(storage.read("mes.samples"))
     assert response.json()["sample_count"] > 100
     assert len(storage.read("mes.tasks")) == 20
+    today = datetime.now()
+    assert storage.read("mes.tasks")[0]["code"] == f"SYLU-{today.year}-{today.month:02d}-001"
+    assert storage.read("mes.tasks")[0]["arrival_at"].startswith(f"{today.year}-{today.month:02d}-{today.day:02d}")
+    assert all(len(task["test_types"]) == 3 for task in storage.read("mes.tasks"))
+    assert all(task["test_type"] == " / ".join(task["test_types"]) for task in storage.read("mes.tasks"))
     assert all(task["status"] == "待排程" for task in storage.read("mes.tasks"))
     assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in storage.read("mes.tasks"))
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in storage.read("mes.samples"))

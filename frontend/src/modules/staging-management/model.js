@@ -753,6 +753,31 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
+  const hasReturnedMarker =
+    normalizeText(matchedRow.status) === "厂家收回" ||
+    nextSnapshot[STAGING_EVENTS_KEY].some(
+      (event) => normalizeText(event?.tray_code) === normalizedCode && normalizeText(event?.action) === "manufacturer_return",
+    ) ||
+    nextSnapshot[SAMPLES_KEY].some(
+      (sample) =>
+        normalizeText(sample?.task_code) === normalizeText(matchedRow.taskCode) &&
+        (normalizeText(sample?.status) === "厂家收回" ||
+          asArray(sample?.trays).some(
+            (tray) => normalizeText(tray?.tray_code) === normalizedCode && normalizeText(tray?.status) === "厂家收回",
+          )),
+    ) ||
+    nextSnapshot[TASKS_KEY].some(
+      (task) => normalizeText(task?.code || task?.task_code || task?.id) === normalizeText(matchedRow.taskCode) && normalizeText(task?.transfer_status) === "厂家收回",
+    );
+
+  if (actionMode === "stockIn" && hasReturnedMarker) {
+    return {
+      error: "该托盘已厂家收回，不能再次入库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
   if (actionMode === "manufacturerReturn" && !isCurrentStagingStatus(matchedRow.status)) {
     return {
       error: "该托盘尚未完成暂存间扫码入库。",

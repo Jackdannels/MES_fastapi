@@ -165,12 +165,17 @@
 }
 
 .process-lab-row span {
+  flex: 0 0 auto;
   color: var(--muted);
 }
 
 .process-lab-row strong {
+  min-width: 0;
   text-align: right;
   font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* 底部操作按钮平分卡片宽度，便于快速进入处理。 */

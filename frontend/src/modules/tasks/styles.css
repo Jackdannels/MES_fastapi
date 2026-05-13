@@ -68,6 +68,13 @@
   width: 14%;
 }
 
+.tasks-table__cell--due-at {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
 .tasks-table__col--status,
 .tasks-table__cell--status {
   width: 10%;

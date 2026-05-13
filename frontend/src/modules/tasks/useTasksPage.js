@@ -25,6 +25,7 @@ import {
   normalizeText,
   syncTaskSamples,
   updateTaskRecord,
+  validateTaskSampleCount,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
@@ -268,6 +269,8 @@ function useTasksPage() {
     return detail ? `${prefix}，${detail}` : prefix;
   };
 
+  const readAllTasks = () => readTasks({ includeArchived: true });
+
   const persistRelated = async (updates) => {
     // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
     await persistSnapshot(updates);
@@ -297,6 +300,11 @@ function useTasksPage() {
       intakeWarning.value = "请选择至少一个试验类型";
       return;
     }
+    const sampleCountWarning = validateTaskSampleCount(intakeForm.value.sample_count);
+    if (sampleCountWarning) {
+      intakeWarning.value = sampleCountWarning;
+      return;
+    }
 
     const nextTask = createTaskRecord(intakeForm.value, rawTasks.value);
     // 任务创建后立即同步样品编号，保持任务与样品侧数据一致。
@@ -321,7 +329,7 @@ function useTasksPage() {
     }
 
     try {
-      rawTasks.value = await readTasks();
+      rawTasks.value = await readAllTasks();
       loadError.value = "";
     } catch (error) {
       loadError.value = buildFailureMessage("任务已创建，但任务列表刷新失败，请刷新后确认", error);
@@ -335,6 +343,11 @@ function useTasksPage() {
   const updateTask = async () => {
     if (Array.isArray(editForm.value.test_types)) {
       editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
+    }
+    const sampleCountWarning = validateTaskSampleCount(editForm.value.sample_count);
+    if (sampleCountWarning) {
+      editWarning.value = sampleCountWarning;
+      return;
     }
     const { previousCode, tasks } = updateTaskRecord(rawTasks.value, editForm.value);
     const updatedTask = tasks.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
@@ -364,7 +377,7 @@ function useTasksPage() {
 
     closeTaskDrawer();
     try {
-      rawTasks.value = await readTasks();
+      rawTasks.value = await readAllTasks();
       loadError.value = "";
     } catch (error) {
       loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
@@ -405,7 +418,7 @@ function useTasksPage() {
 
     closeTaskDrawer();
     try {
-      rawTasks.value = await readTasks();
+      rawTasks.value = await readAllTasks();
       loadError.value = "";
     } catch (error) {
       loadError.value = buildFailureMessage("任务已删除，但任务列表刷新失败，请刷新后确认", error);
@@ -434,7 +447,7 @@ function useTasksPage() {
 
   const loadTasksPage = async () => {
     try {
-      const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+      const [tasks, snapshot] = await Promise.all([readAllTasks(), loadSnapshot()]);
       rawTasks.value = Array.isArray(tasks) ? tasks : [];
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];

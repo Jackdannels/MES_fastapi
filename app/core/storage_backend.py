@@ -173,7 +173,19 @@ def _resolve_experiment_count(task: dict[str, Any], explicit_count: int) -> int:
         explicit_task_count = 0
     if explicit_task_count > 0:
         return explicit_task_count
+    legacy_types = _split_experiment_type_text(task.get("test_type") or task.get("required_device"))
+    if legacy_types:
+        return len(legacy_types)
     return 1
+
+
+def _split_experiment_type_text(value: Any) -> list[str]:
+    types: list[str] = []
+    for candidate in re.split(r"[/、,，;；]+", str(value or "")):
+        normalized = candidate.strip()
+        if normalized and normalized not in types:
+            types.append(normalized)
+    return types
 
 
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
@@ -185,8 +197,7 @@ def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
             normalized = str(candidate or "").strip()
             if normalized and normalized not in types:
                 types.append(normalized)
-    for candidate in re.split(r"[/、,，;；]+", base_type):
-        normalized = candidate.strip()
+    for normalized in _split_experiment_type_text(base_type):
         if normalized and normalized not in types:
             types.append(normalized)
     for experiment_type in EXPERIMENT_TYPE_OPTIONS:
@@ -368,8 +379,14 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
     if not tasks or not staging_events:
         return payload, False
 
-    latest_by_tray = _latest_staging_events_by_tray(staging_events)
-    if not latest_by_tray:
+    returned_by_tray = _latest_staging_events_by_tray(
+        [
+            event
+            for event in staging_events
+            if str(event.get("action") or "").strip() == "manufacturer_return"
+        ]
+    )
+    if not returned_by_tray:
         return payload, False
 
     task_trays: dict[str, set[str]] = {}
@@ -423,10 +440,7 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         task_code
         for task_code, tray_codes in task_trays.items()
         if tray_codes
-        and all(
-            str(latest_by_tray.get(tray_code, {}).get("action") or "").strip() == "manufacturer_return"
-            for tray_code in tray_codes
-        )
+        and all(tray_code in returned_by_tray for tray_code in tray_codes)
     }
     if not returned_task_codes:
         return payload, False
@@ -451,7 +465,7 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         tray_codes = sorted(sample_trays.get((task_code, sample_code), set()))
         latest_return_time = ""
         for tray_code in tray_codes:
-            event_time = str(latest_by_tray.get(tray_code, {}).get("time") or "").strip()
+            event_time = str(returned_by_tray.get(tray_code, {}).get("time") or "").strip()
             if event_time and event_time > latest_return_time:
                 latest_return_time = event_time
         for field in ("status", "flow_status", "location"):
@@ -468,7 +482,7 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
             if str(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or "").strip()
         }
         for tray_code in tray_codes:
-            event = latest_by_tray.get(tray_code, {})
+            event = returned_by_tray.get(tray_code, {})
             event_time = str(event.get("time") or event.get("created_at") or event.get("updated_at") or "").strip()
             tray = trays_by_code.get(tray_code)
             if tray is None:

@@ -27,6 +27,8 @@ const PRE_RETENTION_TRAY_STATUSES = new Set(["送至暂存间", "已到达暂存
 const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
 const RANDOM_PRIORITIES = ["高", "中", "低"];
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
+const MIN_SAMPLE_COUNT = 1;
+const MAX_SAMPLE_COUNT = 99;
 
 // 本地随机演示数据在候选数组中抽取一个元素。
 const randomFrom = (items) => items[Math.floor(Math.random() * items.length)] || "";
@@ -42,6 +44,23 @@ const addHours = (date, hours) => {
 const normalizeText = (value) => String(value ?? "").trim();
 const compareTaskCodes = (left, right) =>
   normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
+const validateTaskSampleCount = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return "请填写样品数量";
+  }
+  if (!/^-?\d+$/.test(normalized)) {
+    return "样品数量必须为整数";
+  }
+  const parsed = Number.parseInt(normalized, 10);
+  if (parsed < MIN_SAMPLE_COUNT) {
+    return "样品数量至少为 1";
+  }
+  if (parsed > MAX_SAMPLE_COUNT) {
+    return "样品数量最多为 99";
+  }
+  return "";
+};
 // 排程设备名带“暂存间”即视为暂存区，不参与正式实验状态判断。
 const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
 // 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
@@ -780,4 +799,5 @@ export {
   syncTaskSamples,
   toDateTimeLocalValue,
   updateTaskRecord,
+  validateTaskSampleCount,
 };

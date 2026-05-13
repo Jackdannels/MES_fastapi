@@ -332,6 +332,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
       }
 
       return {
+        experimentCode: String(nextSchedule?.experiment_code || "").trim(),
         name: lab.name,
         scheduleTime: nextSchedule
           ? `${formatDateTime(nextSchedule.start_at)} - ${formatDateTime(nextSchedule.end_at)}`
@@ -364,4 +365,4 @@ const buildTaskOverviewPath = ({ taskCode, testType } = {}) => {
   return query ? `/task-overview?${query}` : "/task-overview";
 };
 
-export { PROCESS_LABS, buildProcessLabCards, buildTaskOverviewPath };
+export { PROCESS_LABS, buildProcessLabCards, buildTaskOverviewPath, scheduleExperimentIsCompleted };

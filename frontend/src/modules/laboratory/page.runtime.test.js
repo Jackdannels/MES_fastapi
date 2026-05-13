@@ -361,6 +361,16 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("compares trays against the current task and shows green/red feedback", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples][0] = {
+      ...snapshotState[STORAGE_KEYS.samples][0],
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: snapshotState[STORAGE_KEYS.samples][0].trays.map((tray) => ({
+        ...tray,
+        status: "送至实验室",
+      })),
+    };
     const mounted = await mountPage();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
@@ -597,19 +607,19 @@ describe("LaboratoryPage runtime", () => {
         code: "SYLU-2026-04-101-SP-001",
         location: "盐雾试验室",
         owner: "王工",
-        status: "到货",
-        flow_status: "到货",
+        status: "送至实验室",
+        flow_status: "送至实验室",
         task_code: "SYLU-2026-04-101",
-        trays: [{ quantity: 1, status: "到货", tray_code: "TP-001" }],
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
       },
       {
         code: "SYLU-2026-04-101-SP-002",
         location: "接驳区",
         owner: "王工",
-        status: "到货",
-        flow_status: "到货",
+        status: "送至实验室",
+        flow_status: "送至实验室",
         task_code: "SYLU-2026-04-101",
-        trays: [{ quantity: 1, status: "到货", tray_code: "TP-002" }],
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-002" }],
       },
     ];
     let mounted = await mountPage();
@@ -628,9 +638,9 @@ describe("LaboratoryPage runtime", () => {
       trays: expect.arrayContaining([expect.objectContaining({ status: "已到达实验室", tray_code: "TP-001" })]),
     }));
     expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
-      flow_status: "到货",
-      status: "到货",
-      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+      flow_status: "送至实验室",
+      status: "送至实验室",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
     expect(mounted.text()).toContain("当前任务已完成部分托盘比对，可继续比对或开始样品安装");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
@@ -655,9 +665,9 @@ describe("LaboratoryPage runtime", () => {
       trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
     }));
     expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
-      flow_status: "到货",
-      status: "到货",
-      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+      flow_status: "送至实验室",
+      status: "送至实验室",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
     expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
@@ -683,9 +693,9 @@ describe("LaboratoryPage runtime", () => {
       trays: expect.arrayContaining([expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-001" })]),
     }));
     expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
-      flow_status: "到货",
-      status: "到货",
-      trays: expect.arrayContaining([expect.objectContaining({ status: "到货", tray_code: "TP-002" })]),
+      flow_status: "送至实验室",
+      status: "送至实验室",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
     expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(3);

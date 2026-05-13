@@ -353,7 +353,7 @@ def test_transfer_area_dispatch_rejects_duplicate_outbound(monkeypatch):
     assert second.json()["detail"] == "该托盘已送往目标位置，请勿重复操作"
 
 
-def test_transfer_area_workspace_backfills_three_experiments_for_sylu_task_when_storage_has_none(monkeypatch):
+def test_transfer_area_workspace_backfills_experiments_from_legacy_test_type_when_storage_has_none(monkeypatch):
     client, storage = build_client(monkeypatch)
     storage.write("mes.experiments", [])
 
@@ -364,9 +364,8 @@ def test_transfer_area_workspace_backfills_three_experiments_for_sylu_task_when_
     assert [item["experimentCode"] for item in payload["experiments"]] == [
         "SYLU-2026-03-101-A",
         "SYLU-2026-03-101-B",
-        "SYLU-2026-03-101-C",
     ]
-    assert len({item["experimentName"] for item in payload["experiments"]}) == 3
+    assert [item["experimentName"] for item in payload["experiments"]] == ["盐雾试验", "振动试验"]
 
 
 def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypatch):
@@ -773,6 +772,113 @@ def test_transfer_area_bootstrap_hides_explicitly_returned_transfer_tasks(monkey
     task_nos = [item["taskNo"] for item in bootstrap.json()["taskOverview"]]
     assert "SYLU-2026-03-102" not in task_nos
     assert workspace.status_code == 404
+
+
+def test_transfer_area_rejects_reload_for_explicitly_returned_transfer_task(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    for task in tasks:
+        if task["code"] == "SYLU-2026-03-102":
+            task["transfer_status"] = "厂家收回"
+    storage.write("mes.tasks", tasks)
+
+    response = client.post("/api/transfer-area/tasks/task-102/reload")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+
+
+def test_transfer_area_rejects_reload_when_all_assigned_trays_were_returned(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "厂家收回"
+        sample["flow_status"] = "厂家收回"
+        sample["location"] = "厂家收回"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "厂家收回",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    response = client.post("/api/transfer-area/tasks/task-102/reload")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+
+
+def test_transfer_area_rejects_all_reentry_actions_for_explicitly_returned_task(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    for task in tasks:
+        if task["code"] == "SYLU-2026-03-102":
+            task["transfer_status"] = "厂家收回"
+    storage.write("mes.tasks", tasks)
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [{"trayId": 1001, "sampleIds": ["sample-5", "sample-6"]}],
+    }
+
+    dispatch_lookup = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+    allocated = client.post("/api/transfer-area/tasks/task-102/allocate", json=allocation)
+    printed = client.post("/api/transfer-area/tasks/task-102/print-barcodes", json={"barcodeType": "CODE128"})
+    confirmed = client.post("/api/transfer-area/tasks/task-102/confirm-storage")
+
+    assert dispatch_lookup.status_code == 404
+    assert dispatch_lookup.json()["detail"] == "任务已归档"
+    assert allocated.status_code == 400
+    assert allocated.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    assert printed.status_code == 400
+    assert printed.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    assert confirmed.status_code == 400
+    assert confirmed.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    stored_task = next(task for task in storage.read("mes.tasks") if task["code"] == "SYLU-2026-03-102")
+    assert stored_task["transfer_status"] == "厂家收回"
+
+
+def test_transfer_area_rejects_all_reentry_actions_when_all_assigned_trays_were_returned(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["status"] = "厂家收回"
+        sample["flow_status"] = "厂家收回"
+        sample["location"] = "厂家收回"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "厂家收回",
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [{"trayId": 1001, "sampleIds": ["sample-5", "sample-6"]}],
+    }
+
+    dispatch_lookup = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+    allocated = client.post("/api/transfer-area/tasks/task-102/allocate", json=allocation)
+    printed = client.post("/api/transfer-area/tasks/task-102/print-barcodes", json={"barcodeType": "CODE128"})
+    confirmed = client.post("/api/transfer-area/tasks/task-102/confirm-storage")
+
+    assert dispatch_lookup.status_code == 404
+    assert dispatch_lookup.json()["detail"] == "任务已归档"
+    assert allocated.status_code == 400
+    assert allocated.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    assert printed.status_code == 400
+    assert printed.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    assert confirmed.status_code == 400
+    assert confirmed.json()["detail"] == "该任务已厂家收回，不能重新入库。"
+    stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "厂家收回" for sample in stored_samples)
+    assert all(sample["trays"][0]["status"] == "厂家收回" for sample in stored_samples)
 
 
 def test_transfer_area_returned_trays_do_not_occupy_system_inventory(monkeypatch):

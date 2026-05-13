@@ -9,6 +9,7 @@ import {
   createTaskIntakeForm,
   createTaskRecord,
   updateTaskRecord,
+  validateTaskSampleCount,
 } from "./model";
 
 describe("tasks model", () => {
@@ -293,6 +294,14 @@ describe("tasks model", () => {
     );
   });
 
+  test("validateTaskSampleCount requires an integer from 1 to 99", () => {
+    expect(validateTaskSampleCount("")).toBe("请填写样品数量");
+    expect(validateTaskSampleCount("1.5")).toBe("样品数量必须为整数");
+    expect(validateTaskSampleCount("-1")).toBe("样品数量至少为 1");
+    expect(validateTaskSampleCount("100")).toBe("样品数量最多为 99");
+    expect(validateTaskSampleCount("3")).toBe("");
+  });
+
   test("createTaskRecord derives test_type from the selected experiment array in order", () => {
     const task = createTaskRecord(
       {
@@ -513,6 +522,19 @@ describe("tasks model", () => {
         "2026-03-27T09:15:00",
       ),
     ).toBe("SYLU-2026-03-004");
+  });
+
+  test("buildTaskCode counts returned archived task codes when generating the next sequence", () => {
+    expect(
+      buildTaskCode(
+        "振动试验",
+        [
+          { code: "SYLU-2026-05-001", status: "厂家收回", transfer_status: "厂家收回" },
+          { code: "SYLU-2026-05-002", status: "待排程" },
+        ],
+        "2026-05-13T09:15:00",
+      ),
+    ).toBe("SYLU-2026-05-003");
   });
 
   test("createTaskRecord auto-generates a SYLU code when the form code is empty", () => {

@@ -438,6 +438,37 @@ describe("staging-management model", () => {
     });
   });
 
+  test("rejects stock-in after a tray has been returned to manufacturer", () => {
+    const returnedResult = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "manufacturerReturn",
+      },
+      snapshot: createSnapshot(),
+    });
+    const stockInCountBefore = returnedResult.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in").length;
+
+    const result = applyZancunInventoryAction({
+      now: "2026-04-01T13:00:00",
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "stockIn",
+      },
+      snapshot: returnedResult.snapshot,
+    });
+
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001");
+
+    expect(result.error).toBe("该托盘已厂家收回，不能再次入库。");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in")).toHaveLength(stockInCountBefore);
+    expect(updatedSample).toMatchObject({
+      location: "厂家收回",
+      status: "厂家收回",
+      flow_status: "厂家收回",
+    });
+  });
+
   test("syncs fully completed tray samples into post-experiment staging on stock-in", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.experiments].push({

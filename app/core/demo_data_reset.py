@@ -7,28 +7,28 @@ from typing import Any
 from app.core.storage_backend import EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
-TASK_CODE_PREFIX = "SYLU-2026-03-"
 MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
 
 
-def _task_code(index: int) -> str:
-    return f"{TASK_CODE_PREFIX}{index:03d}"
+def _task_code(index: int, base_time: datetime) -> str:
+    return f"SYLU-{base_time.year}-{base_time.month:02d}-{index:03d}"
 
 
 def _task_source(index: int) -> str:
     return "外部委托" if index <= 10 else "内部新增"
 
 
-def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: datetime | None = None) -> dict[str, Any]:
     rng = random.SystemRandom()
     snapshot = dict(base_snapshot or {})
     tasks: list[dict[str, Any]] = []
     samples: list[dict[str, Any]] = []
     experiments: list[dict[str, Any]] = []
-    base_time = datetime(2026, 3, 1, 8, 0, 0)
+    current_time = now or datetime.now()
+    base_time = current_time.replace(hour=8, minute=0, second=0, microsecond=0)
 
     for index in range(1, TASK_COUNT + 1):
-        task_code = _task_code(index)
+        task_code = _task_code(index, base_time)
         remaining_experiment_types = [
             experiment_type for experiment_type in EXPERIMENT_TYPE_OPTIONS if experiment_type != MANDATORY_EXPERIMENT_TYPE
         ]
@@ -52,6 +52,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None) -> di
                 "sample_count": str(sample_count),
                 "sample_type": "",
                 "test_type": " / ".join(experiment_types),
+                "test_types": experiment_types,
                 "required_device": experiment_types[0],
                 "due_at": due_at,
                 "arrival_at": arrival_at,

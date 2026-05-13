@@ -181,6 +181,13 @@
   justify-content: flex-end;
 }
 
+#schedule-table td:nth-child(5),
+#schedule-table td:nth-child(6) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .schedule-task-overlays__list {
   display: grid;
   gap: 10px;

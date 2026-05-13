@@ -3,6 +3,7 @@ import { reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "../../lib/apiBase.js";
+import { TEST_PREFIX_MAP } from "../../lib/labs.js";
 import TasksPage from "./page.vue";
 
 const SCHEDULES_KEY = "mes.schedules";
@@ -13,6 +14,9 @@ const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
+const buildCurrentMonthFirstTaskCode = () =>
+  `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-001`;
+const ALL_EXPERIMENT_TYPES = Object.keys(TEST_PREFIX_MAP);
 
 const routeState = reactive({ hash: "" });
 
@@ -21,6 +25,23 @@ vi.mock("vue-router", () => ({
 }));
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const isReturnedTask = (task, samples = []) => {
+  const taskCode = String(task?.code ?? task?.task_code ?? task?.id ?? "").trim();
+  const trayStatuses = samples
+    .filter((sample) => String(sample?.task_code ?? "").trim() === taskCode)
+    .flatMap((sample) =>
+      (Array.isArray(sample?.trays) ? sample.trays : []).map((tray) =>
+        String(tray?.status ?? sample?.status ?? sample?.flow_status ?? "").trim(),
+      ),
+    )
+    .filter(Boolean);
+  if (trayStatuses.length > 0) {
+    return trayStatuses.every((status) => status === "厂家收回");
+  }
+  return ["transfer_status", "transferStatus", "status", "displayStatus", "display_status"].some(
+    (key) => String(task?.[key] ?? "").trim() === "厂家收回",
+  );
+};
 
 const createTask = (overrides = {}) => ({
   id: "task-1",
@@ -59,11 +80,14 @@ const createTasksPageFetchMock = ({
   const fetchMock = vi.fn((url, options = {}) => {
     const method = options.method ?? "GET";
 
-    if (url === TASKS_ENDPOINT && method === "GET") {
+    if ((url === TASKS_ENDPOINT || url === `${TASKS_ENDPOINT}?includeArchived=true`) && method === "GET") {
+      const tasks = url.includes("includeArchived=true")
+        ? state.tasks
+        : state.tasks.filter((task) => !isReturnedTask(task, state.samples));
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => clone(state.tasks),
+        json: async () => clone(tasks),
       });
     }
 
@@ -467,7 +491,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("温度冲击 / 振动 / 盐雾");
     expect(wrapper.text()).not.toContain("设备要求");
     expect(fetchMock).toHaveBeenCalledWith(
-      TASKS_ENDPOINT,
+      `${TASKS_ENDPOINT}?includeArchived=true`,
       expect.objectContaining({
         credentials: "include",
       }),
@@ -528,7 +552,9 @@ describe("TasksPage runtime", () => {
 
     const codeInput = wrapper.get('input[name="code"]');
 
-    expect(codeInput.element.value).toBe("SYLU-2026-04-001");
+    const expectedTaskCode = buildCurrentMonthFirstTaskCode();
+
+    expect(codeInput.element.value).toBe(expectedTaskCode);
     expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("冲击试验 / 盐雾试验");
     expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).not.toContain("→");
     expect(wrapper.find('input[name="required_device"]').exists()).toBe(false);
@@ -542,12 +568,96 @@ describe("TasksPage runtime", () => {
     expect(state.tasks).toHaveLength(2);
     expect(state.tasks[0]).toEqual(
       expect.objectContaining({
-        code: "SYLU-2026-04-001",
+        code: expectedTaskCode,
         name: "冲击试验-批次B",
         test_type: "冲击试验 / 盐雾试验",
         test_types: ["冲击试验", "盐雾试验"],
       }),
     );
+  });
+
+  test("uses archived returned task codes when generating a new intake task number", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-returned",
+          code: "SYLU-2026-05-001",
+          status: "厂家收回",
+          transfer_status: "厂家收回",
+        }),
+      ],
+      samples: [
+        {
+          id: "sample-returned",
+          code: "SYLU-2026-05-001-SP-001",
+          task_code: "SYLU-2026-05-001",
+          status: "厂家收回",
+          flow_status: "厂家收回",
+          trays: [{ tray_code: "SYLU-2026-05-001-TP-001", status: "厂家收回" }],
+        },
+      ],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('input[name="code"]').element.value).toBe("SYLU-2026-05-002");
+
+    await wrapper.get('input[name="name"]').setValue("归档后新任务");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${TASKS_ENDPOINT}?includeArchived=true`,
+      expect.objectContaining({
+        credentials: "include",
+      }),
+    );
+    expect(state.tasks[0]).toEqual(
+      expect.objectContaining({
+        code: "SYLU-2026-05-002",
+        name: "归档后新任务",
+      }),
+    );
+  });
+
+  test("submits an intake task after selecting all experiment types", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    for (const experimentType of ALL_EXPERIMENT_TYPES) {
+      await wrapper.get(`[data-testid="task-intake-test-type-option-${experimentType}"]`).trigger("click");
+    }
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="name"]').setValue("全实验新增任务");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    const createTaskCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST",
+    );
+    const payload = JSON.parse(createTaskCall[1].body);
+
+    expect(payload.test_types).toHaveLength(ALL_EXPERIMENT_TYPES.length);
+    expect(payload.test_types).toEqual(expect.arrayContaining(ALL_EXPERIMENT_TYPES));
+    expect(payload.test_type).toContain("冲击试验");
+    expect(payload.test_type).toContain("霉菌试验");
+    expect(wrapper.text()).not.toContain("任务提交失败");
   });
 
   test("shows arrival time as a read-only field in intake and edit forms", async () => {
@@ -673,6 +783,48 @@ describe("TasksPage runtime", () => {
     );
   });
 
+  test("updates a task after selecting all experiment types", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-edit-all",
+          code: "SYLU-2026-03-088",
+          name: "待全选任务",
+          sample_count: 2,
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+        }),
+      ],
+      samples: [],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    for (const experimentType of ALL_EXPERIMENT_TYPES) {
+      const option = wrapper.get(`[data-testid="task-edit-test-type-option-${experimentType}"]`);
+      if (!option.classes().includes("is-selected")) {
+        await option.trigger("click");
+      }
+    }
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-edit-all") && options?.method === "PUT",
+    );
+    const payload = JSON.parse(updateCall[1].body);
+
+    expect(payload.test_types).toHaveLength(ALL_EXPERIMENT_TYPES.length);
+    expect(payload.test_types).toEqual(expect.arrayContaining(ALL_EXPERIMENT_TYPES));
+    expect(payload.required_device).toContain("高低温湿热试验");
+    expect(wrapper.text()).not.toContain("任务更新失败");
+  });
+
   test("creates a random task when the intake form is submitted with all default empty values", async () => {
     const { state } = installApiFetchMock({
       tasks: [],
@@ -761,7 +913,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("SYLU-2026-04-001");
+    expect(wrapper.text()).toContain(buildCurrentMonthFirstTaskCode());
     expect(wrapper.find(".modal.is-open").exists()).toBe(false);
     expect(wrapper.text()).toContain("任务列表刷新失败");
   });
@@ -781,6 +933,30 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("请选择至少一个试验类型");
+  });
+
+  test("requires a sample count before submitting a non-pristine intake form", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="name"]').setValue("冲击试验-批次E");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请填写样品数量");
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      TASKS_ENDPOINT,
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   test("keeps the trigger summary unchanged when the experiment picker is cancelled", async () => {
@@ -924,7 +1100,7 @@ describe("TasksPage runtime", () => {
   test("sample update event reloads tasks and refreshes the open drawer arrival time", async () => {
     let taskLoadCount = 0;
     const fetchMock = vi.fn((url) => {
-      if (url === TASKS_ENDPOINT) {
+      if (url === `${TASKS_ENDPOINT}?includeArchived=true`) {
         taskLoadCount += 1;
         return Promise.resolve({
           ok: true,

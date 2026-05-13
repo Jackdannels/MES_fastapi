@@ -271,7 +271,7 @@ function useLaboratoryPage(options = {}) {
     scheduleModalOpen.value = false;
   };
   const openTaskList = () => {
-    pendingTaskCode.value = currentTask.value?.taskCode || "";
+    pendingTaskCode.value = currentTask.value?.experimentKey || currentTask.value?.taskCode || "";
     taskListModalOpen.value = true;
   };
   const closeTaskList = () => {
@@ -551,8 +551,8 @@ function useLaboratoryPage(options = {}) {
     runningModalVisible,
     scheduleModalOpen,
     scheduleRows: computed(() => view.value.scheduleRows),
-    setPendingTaskCode: (taskCode) => {
-      pendingTaskCode.value = String(taskCode ?? "");
+    setPendingTaskCode: (taskKey) => {
+      pendingTaskCode.value = String(taskKey ?? "");
     },
     summary,
     submitCompareScan,

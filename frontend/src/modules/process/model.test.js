@@ -113,6 +113,7 @@ describe("processLabModel", () => {
 
     expect(cards[0]).toEqual(
       expect.objectContaining({
+        experimentCode: "TASK-001-B",
         targetExperiment: "高低温湿热试验",
       })
     );

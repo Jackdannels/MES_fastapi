@@ -897,6 +897,144 @@ describe("useProcessLabs", () => {
     expect(selectedTaskDetail.value.trayCodes).not.toContain("SYLU-2026-03-006-TP-002");
   });
 
+  test("removes completed experiments from the process task switch list", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-005",
+          device: "盐雾试验室",
+          end_at: "2026-05-05T12:00:00Z",
+          experiment_code: "SYLU-2026-05-005-A",
+          start_at: "2026-05-05T08:00:00Z",
+          task_code: "SYLU-2026-05-005",
+        },
+        {
+          id: "schedule-006",
+          device: "盐雾试验室",
+          end_at: "2026-05-05T13:00:00Z",
+          experiment_code: "SYLU-2026-05-006-A",
+          start_at: "2026-05-05T09:30:00Z",
+          task_code: "SYLU-2026-05-006",
+        },
+      ],
+      "mes.tasks": [
+        { code: "SYLU-2026-05-005", name: "任务005", status: "已排程", test_type: "盐雾试验" },
+        { code: "SYLU-2026-05-006", name: "任务006", status: "已排程", test_type: "盐雾试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", experiment_name: "盐雾试验" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", tray_code: "SYLU-2026-05-005-TP-001" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", tray_code: "SYLU-2026-05-006-TP-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-05-005-SP-001",
+          task_code: "SYLU-2026-05-005",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-05-005-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-05-006-SP-001",
+          task_code: "SYLU-2026-05-006",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-05-006-TP-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-05-05T09:00:00Z"),
+    });
+
+    await loadLabStatus();
+    await openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value.availableTasks.map((task) => task.taskCode)).toEqual(["SYLU-2026-05-006"]);
+  });
+
+  test("defaults the process card to a ready experiment when the current schedule is not startable", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-a",
+          device: "盐雾试验室",
+          end_at: "2026-04-03T11:00:00Z",
+          experiment_code: "SYLU-2026-04-701-A",
+          start_at: "2026-04-03T08:00:00Z",
+          task_code: "SYLU-2026-04-701",
+        },
+        {
+          id: "schedule-b",
+          device: "盐雾试验室",
+          end_at: "2026-04-03T13:00:00Z",
+          experiment_code: "SYLU-2026-04-701-B",
+          start_at: "2026-04-03T12:00:00Z",
+          task_code: "SYLU-2026-04-701",
+        },
+      ],
+      "mes.tasks": [
+        { code: "SYLU-2026-04-701", name: "同任务多实验", status: "已排程", test_type: "盐雾试验-A / 盐雾试验-B" },
+      ],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-A", experiment_name: "盐雾试验-A" },
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-B", experiment_name: "盐雾试验-B" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-B", tray_code: "TP-B" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-A",
+          task_code: "SYLU-2026-04-701",
+          location: "盐雾试验室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TP-A", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SP-B",
+          task_code: "SYLU-2026-04-701",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-B", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-04-03T09:00:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: true,
+      experimentCode: "SYLU-2026-04-701-B",
+      readyTrayCount: 1,
+      targetExperiment: "盐雾试验-B",
+    });
+
+    await openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value).toMatchObject({
+      activeExperimentCode: "SYLU-2026-04-701-B",
+      readyTrayCount: 1,
+      targetExperiment: "盐雾试验-B",
+      trayCodes: ["TP-B"],
+    });
+  });
+
   test("starts only ready trays from the selected experiment and leaves other experiment trays untouched", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T08:00:00Z"));

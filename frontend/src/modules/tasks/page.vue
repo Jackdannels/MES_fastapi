@@ -113,7 +113,7 @@
         </div>
         <div class="form-field">
           <label>样品数量</label>
-          <input v-model="intakeForm.sample_count" type="number" name="sample_count" placeholder="例如：12" />
+          <input v-model="intakeForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
         </div>
         <div class="form-field">
           <label>样品类型</label>
@@ -248,7 +248,7 @@
       </div>
       <div class="form-field">
         <label>样品数量</label>
-        <input v-model="editForm.sample_count" type="number" name="sample_count" placeholder="例如：12" />
+        <input v-model="editForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
       </div>
       <div class="form-field">
         <label>样品类型</label>

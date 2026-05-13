@@ -17,6 +17,8 @@ SNAPSHOT_KEYS = (
     "mes.experiment_samples",
 )
 RETURNED_STATUS = "厂家收回"
+MIN_SAMPLE_COUNT = 1
+MAX_SAMPLE_COUNT = 99
 
 
 def normalize_text(value: Any) -> str:
@@ -97,6 +99,14 @@ def find_task_index(tasks: list[dict[str, Any]], task_id: str) -> int:
     return -1
 
 
+def ensure_unique_task_code(tasks: list[dict[str, Any]], code: Any) -> None:
+    normalized_code = normalize_text(code)
+    if not normalized_code:
+        return
+    if any(normalize_text(task.get("code")) == normalized_code for task in tasks):
+        raise HTTPException(status_code=400, detail="任务编号已存在")
+
+
 def filter_related_rows(rows: Any, task_code: str) -> list[dict[str, Any]]:
     if not isinstance(rows, list):
         return []
@@ -109,6 +119,20 @@ def parse_int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return parsed if parsed > 0 else 0
+
+
+def validate_sample_count(value: Any) -> str:
+    normalized = normalize_text(value)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="请填写样品数量")
+    if not re.fullmatch(r"-?\d+", normalized):
+        raise HTTPException(status_code=400, detail="样品数量必须为整数")
+    parsed = int(normalized)
+    if parsed < MIN_SAMPLE_COUNT:
+        raise HTTPException(status_code=400, detail="样品数量至少为 1")
+    if parsed > MAX_SAMPLE_COUNT:
+        raise HTTPException(status_code=400, detail="样品数量最多为 99")
+    return str(parsed)
 
 
 def collect_unique_texts(*values: Any) -> list[str]:
@@ -258,6 +282,8 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if "test_types" not in next_task:
         raise HTTPException(status_code=400, detail="test_types is required")
     next_task["test_types"] = parse_test_types(next_task.get("test_types"))
+    next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
+    ensure_unique_task_code(tasks, next_task.get("code"))
     next_experiments = persist_task_experiments(next_task)
     tasks.insert(0, next_task)
     snapshot["mes.tasks"] = tasks
@@ -282,6 +308,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         raise HTTPException(status_code=404, detail="Task not found")
     previous_task = dict(tasks[task_index])
     updated_task = {**tasks[task_index], **dict(payload)}
+    updated_task["sample_count"] = validate_sample_count(updated_task.get("sample_count"))
     all_experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == normalize_text(previous_task.get("code"))]
     next_experiments = persist_task_experiments(updated_task, existing_experiments)

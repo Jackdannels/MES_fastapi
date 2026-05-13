@@ -255,6 +255,33 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
   });
 
+  test("stock-in scan rejects trays that have already been returned to manufacturer", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.staging_events]: [
+        ...createSnapshot()[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-102-return",
+          tray_code: "SYLU-2026-04-102-TP-001",
+          task_code: "SYLU-2026-04-102",
+          action: "manufacturer_return",
+          time: "2026-04-01T11:30:00",
+          target_lab: "厂家收回",
+        },
+      ],
+    };
+    const stockInCountBefore = remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in").length;
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-scan-modal"]').text()).toContain("该托盘已厂家收回，不能再次入库。");
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in")).toHaveLength(stockInCountBefore);
+  });
+
   test("stock-out scan only writes outbound state after selecting a target lab", async () => {
     const mounted = await mountPage();
 

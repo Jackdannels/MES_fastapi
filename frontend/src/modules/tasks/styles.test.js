@@ -20,4 +20,14 @@ describe("tasks styles", () => {
     expect(source).toContain("justify-content: flex-start;");
     expect(source).not.toContain(".tasks-page .toolbar {\n  justify-content: space-between;");
   });
+
+  test("allows task due time cells to wrap instead of overflowing when zoomed", () => {
+    const source = readFileSync(stylesPath, "utf8");
+
+    const dueAtRule = source.slice(source.indexOf(".tasks-table__cell--due-at"));
+
+    expect(dueAtRule).toContain("white-space: normal;");
+    expect(dueAtRule).toContain("overflow-wrap: anywhere;");
+    expect(dueAtRule).toContain("word-break: break-word;");
+  });
 });

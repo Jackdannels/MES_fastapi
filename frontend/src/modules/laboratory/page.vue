@@ -117,11 +117,11 @@
             v-for="row in recentTasks"
             :key="`recent-${row.id}`"
             class="laboratory-recent-task"
-            :class="{ 'is-current': currentTask && currentTask.taskCode === row.taskCode }"
+            :class="{ 'is-current': currentTask && currentTask.experimentKey === row.experimentKey }"
           >
             <div class="laboratory-recent-task__head">
               <strong class="laboratory-recent-task__code">{{ row.taskCode }}</strong>
-              <span v-if="currentTask && currentTask.taskCode === row.taskCode" class="pill">当前任务</span>
+              <span v-if="currentTask && currentTask.experimentKey === row.experimentKey" class="pill">当前任务</span>
             </div>
             <div class="laboratory-recent-task__experiment muted">{{ row.experimentName }}</div>
             <div class="laboratory-recent-task__time">{{ row.dateTimeRange }}</div>
@@ -219,8 +219,8 @@
               :key="`${row.id}-task`"
               class="laboratory-task-list-row"
               :class="{
-                'is-current': currentTask && currentTask.taskCode === row.taskCode,
-                'is-pending': pendingTaskCode === row.taskCode && (!currentTask || currentTask.taskCode !== row.taskCode),
+                'is-current': currentTask && currentTask.experimentKey === row.experimentKey,
+                'is-pending': pendingTaskCode === row.experimentKey && (!currentTask || currentTask.experimentKey !== row.experimentKey),
               }"
               :data-testid="`laboratory-task-row-${row.taskCode}`"
             >
@@ -242,9 +242,9 @@
                   :data-testid="`laboratory-select-task-${row.taskCode}`"
                   type="button"
                   :disabled="runningInteractionLocked"
-                  @click="setPendingTaskCode(row.taskCode)"
+                  @click="setPendingTaskCode(row.experimentKey)"
                 >
-                  {{ pendingTaskCode === row.taskCode ? "已选中" : "选择任务" }}
+                  {{ pendingTaskCode === row.experimentKey ? "已选中" : "选择任务" }}
                 </button>
               </td>
             </tr>
