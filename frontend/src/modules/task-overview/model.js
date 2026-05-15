@@ -487,7 +487,7 @@ function buildTaskRows({
       const currentStatusLabel = buildTaskStatusLabel(currentStatus, experimentProgress);
       const experimentSummary =
         row.experiments.length > 0
-          ? buildExperimentTypeSummary(row.experiments.map((experiment) => experiment.experimentName))
+          ? buildExperimentTypeSummary(row.experiments.map((experiment) => experiment.requiredDevice || experiment.experimentName))
           : buildExperimentTypeSummary(row.taskType);
 
       return {

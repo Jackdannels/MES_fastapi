@@ -155,7 +155,7 @@
             placeholder="请扫描或输入托盘编号"
           />
         </div>
-        <div class="form-alert" :class="{ 'is-hidden': !scanWarning }">{{ scanWarning }}</div>
+        <AppFeedback :message="scanWarning" tone="warning" @close="scanWarning = ''" />
       </div>
       <template #footer>
         <button class="action-btn zancun-scan-complete-btn" data-testid="zancun-scan-complete" type="button" @click="completeScan">
@@ -180,25 +180,30 @@
         </article>
 
         <article
+          v-for="(destination, index) in activeDetail.targetDestinations"
+          :key="`${destination.targetExperimentCode || index}-${destination.targetLab}`"
           class="zancun-destination-card"
-          :class="{ 'is-disabled': activeDetail.targetIsFallback }"
-          data-testid="zancun-destination-card"
+          :class="{ 'is-disabled': !destination.scheduled, 'is-recommended': destination.preferred }"
+          :data-testid="`zancun-destination-card-${index}`"
         >
           <div class="zancun-destination-card__main">
-            <h4>{{ activeDetail.targetLab || "暂无目标实验室" }}</h4>
-            <div class="muted">{{ activeDetail.targetExperimentName || "待确认实验" }}</div>
-            <div v-if="activeDetail.targetUnavailableReason" class="muted zancun-destination-warning">
-              {{ activeDetail.targetUnavailableReason }}
+            <h4>{{ destination.targetLab || "暂无目标实验室" }}</h4>
+            <div class="muted">
+              {{ destination.targetExperimentName || "待确认实验" }}
+              <span v-if="destination.preferred" class="pill">推荐</span>
+            </div>
+            <div v-if="destination.targetUnavailableReason" class="muted zancun-destination-warning">
+              {{ destination.targetUnavailableReason }}
             </div>
           </div>
           <button
             class="action-btn secondary zancun-destination-card__action"
-            data-testid="zancun-destination-submit"
+            :data-testid="`zancun-destination-submit-${index}`"
             type="button"
-            :disabled="!activeDetail.targetLab || activeDetail.targetIsFallback"
-            @click="confirmDestinationAction"
+            :disabled="!destination.targetLab || !destination.scheduled"
+            @click="confirmDestinationAction(destination)"
           >
-            送至{{ activeDetail.targetLab || "目标实验室" }}
+            送至{{ destination.targetLab || "目标实验室" }}
           </button>
         </article>
 
@@ -306,6 +311,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
@@ -451,6 +457,7 @@ const activeDetail = reactive({
   isPostExperimentInbound: false,
   targetExperimentCode: "",
   targetExperimentName: "",
+  targetDestinations: [],
   targetIsFallback: false,
   targetLab: "",
   targetUnavailableReason: "",
@@ -475,6 +482,7 @@ const resetDetail = () => {
   activeDetail.isPostExperimentInbound = false;
   activeDetail.targetExperimentCode = "";
   activeDetail.targetExperimentName = "";
+  activeDetail.targetDestinations = [];
   activeDetail.targetIsFallback = false;
   activeDetail.targetLab = "";
   activeDetail.targetUnavailableReason = "";
@@ -601,8 +609,9 @@ const cancelDestinationAction = () => {
   closeDestinationModal();
 };
 
-const confirmDestinationAction = async () => {
-  if (activeDetail.targetIsFallback) {
+const confirmDestinationAction = async (destination = null) => {
+  const target = destination || activeDetail.targetDestinations?.[0] || activeDetail;
+  if (!target?.scheduled) {
     return;
   }
   const result = applyZancunInventoryAction({
@@ -610,9 +619,9 @@ const confirmDestinationAction = async () => {
     payload: {
       code: activeDetail.trayCode,
       mode: "stockOut",
-      targetExperimentCode: activeDetail.targetExperimentCode,
-      targetExperimentName: activeDetail.targetExperimentName,
-      targetLab: activeDetail.targetLab,
+      targetExperimentCode: target.targetExperimentCode,
+      targetExperimentName: target.targetExperimentName,
+      targetLab: target.targetLab,
     },
     snapshot: snapshot.value,
   });

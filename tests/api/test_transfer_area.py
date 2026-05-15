@@ -511,6 +511,30 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
     assert printed.json()["barcodes"][0]["barcodeContent"] == "SYLU-2026-03-101-TP-001"
 
 
+def test_transfer_area_allocate_accepts_unified_sample_limit_99(monkeypatch):
+    client, _storage = build_client(monkeypatch)
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": 99,
+        "trays": [
+            {
+                "trayId": workspace["assignedTrays"][0]["trayId"],
+                "sampleIds": [
+                    sample["sampleId"]
+                    for tray in workspace["assignedTrays"]
+                    for sample in tray["samples"]
+                ],
+            }
+        ],
+        "experimentTrays": [],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert allocated.status_code == 200
+    assert allocated.json()["workspace"]["task"]["trayLimit"] == 99
+
+
 def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monkeypatch):
     client, _storage = build_client(monkeypatch)
 

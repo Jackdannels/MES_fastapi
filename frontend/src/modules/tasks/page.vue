@@ -38,7 +38,7 @@
       />
     </div>
     <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ loadError }}</div>
-    <div v-if="resetFeedback" class="form-alert" data-testid="task-reset-feedback">{{ resetFeedback }}</div>
+    <AppFeedback :message="resetFeedback" tone="success" data-testid="task-reset-feedback" @close="resetFeedback = ''" />
     <table class="table tasks-table" id="task-table">
       <thead>
         <tr>
@@ -159,7 +159,7 @@
         <button class="action-btn" data-testid="task-submit" type="button" @click="submitTask">提交受理</button>
         <button class="action-btn secondary" data-testid="task-draft" type="button" @click="saveDraft">保存草稿</button>
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !intakeWarning }" data-task-warning>{{ intakeWarning }}</div>
+      <AppFeedback :message="intakeWarning" tone="warning" data-task-warning @close="intakeWarning = ''" />
     </form>
   </AppModal>
 
@@ -209,7 +209,7 @@
     <div v-if="resetModalOpen" data-testid="task-reset-modal">
       <p>确认后将清空当前数据库中的所有任务相关数据，并重建为新的演示基线。</p>
       <p>重置后所有任务都会回到待排程，所有样品都会回到运输中。</p>
-      <div v-if="resetError" class="form-alert">{{ resetError }}</div>
+      <AppFeedback :message="resetError" tone="error" @close="resetError = ''" />
     </div>
     <template #footer>
       <button class="action-btn danger" data-testid="task-reset-confirm" type="button" :disabled="resetting" @click="resetTasks">
@@ -295,7 +295,7 @@
       <button class="action-btn" data-testid="task-update" type="button" @click="updateTask">保存修改</button>
       <button class="action-btn secondary" data-testid="task-delete" type="button" @click="deleteTask">删除任务</button>
     </div>
-    <div class="form-alert" :class="{ 'is-hidden': !editWarning }" data-task-edit-warning>{{ editWarning }}</div>
+    <AppFeedback :message="editWarning" tone="warning" data-task-edit-warning @close="editWarning = ''" />
   </AppDrawer>
 
   <AppModal :open="editExperimentModalOpen" title="选择试验类型" @close="closeEditExperimentPicker">
@@ -344,6 +344,7 @@
 
 <script setup>
 import AppDrawer from "@/components/shared/AppDrawer.vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useTasksPage } from "./useTasksPage";

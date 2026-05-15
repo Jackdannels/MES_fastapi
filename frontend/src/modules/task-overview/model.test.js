@@ -197,6 +197,48 @@ describe("taskOverviewModel", () => {
     });
   });
 
+  test("buildTaskRows keeps experiment names separate from experiment type summaries", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-03-099",
+          test_type: "盐雾试验 / 振动试验",
+          status: "待排程",
+          sample_count: 1,
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-099",
+          experiment_code: "SYLU-2026-03-099-A",
+          experiment_name: "A实验",
+          required_device: "盐雾试验",
+          status: "待排程",
+        },
+        {
+          task_code: "SYLU-2026-03-099",
+          experiment_code: "SYLU-2026-03-099-B",
+          experiment_name: "新增实验名称",
+          required_device: "振动试验",
+          status: "待排程",
+        },
+      ],
+      samples: [{ task_code: "SYLU-2026-03-099", code: "SYLU-2026-03-099-SP-001", trays: [] }],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0]).toMatchObject({
+      experimentSummary: "盐雾试验 / 振动试验",
+      taskType: "盐雾试验 / 振动试验",
+    });
+    expect(rows[0].experiments).toEqual([
+      expect.objectContaining({ experimentName: "A实验", requiredDevice: "盐雾试验" }),
+      expect.objectContaining({ experimentName: "新增实验名称", requiredDevice: "振动试验" }),
+    ]);
+  });
+
   test("buildTrayOverviewRows fills empty tray slots and shows current status fields", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-1", test_type: "Thermal" }],

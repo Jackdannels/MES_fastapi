@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 
+import { useFeedback } from "@/composables/useFeedback";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
@@ -13,13 +14,13 @@ const readErrorMessage = async (response) => {
 };
 
 function useTransferDispatch() {
+  const feedbackState = useFeedback();
   const state = reactive({
     scanCode: "",
     loading: false,
     submitting: false,
     tray: null,
     destinations: [],
-    feedback: "",
   });
 
   const fetchTrayDispatch = async (trayCode) => {
@@ -39,10 +40,19 @@ function useTransferDispatch() {
     state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : fallbackDestinations;
   };
 
+  const resetDispatch = () => {
+    state.scanCode = "";
+    state.loading = false;
+    state.submitting = false;
+    state.tray = null;
+    state.destinations = [];
+    feedbackState.clear();
+  };
+
   const lookupTray = async () => {
     const trayCode = normalizeText(state.scanCode);
     if (!trayCode) {
-      state.feedback = "请输入或扫描托盘编号。";
+      feedbackState.show("请输入或扫描托盘编号。", "warning");
       return false;
     }
 
@@ -50,12 +60,12 @@ function useTransferDispatch() {
     try {
       const payload = await fetchTrayDispatch(trayCode);
       applyDispatchPayload(payload);
-      state.feedback = "";
+      feedbackState.clear();
       return true;
     } catch (error) {
       state.tray = null;
       state.destinations = [];
-      state.feedback = error instanceof Error ? error.message : "托盘查询失败，请重试。";
+      feedbackState.show(error instanceof Error ? error.message : "托盘查询失败，请重试。", "error");
       return false;
     } finally {
       state.loading = false;
@@ -72,11 +82,11 @@ function useTransferDispatch() {
   const submitDestination = async (destination) => {
     const trayCode = normalizeText(state.tray?.trayNo || state.scanCode);
     if (!trayCode) {
-      state.feedback = "请先扫描托盘编号。";
+      feedbackState.show("请先扫描托盘编号。", "warning");
       return false;
     }
     if (!canSelectDestination(destination)) {
-      state.feedback = "当前候选位置尚未排程，不能直接出库。";
+      feedbackState.show("当前候选位置尚未排程，不能直接出库。", "warning");
       return false;
     }
 
@@ -99,14 +109,14 @@ function useTransferDispatch() {
       }
       const payload = await response.json();
       applyDispatchPayload(payload, state.destinations);
-      state.feedback = normalizeText(payload?.message) || "托盘出库状态已更新。";
+      feedbackState.show(normalizeText(payload?.message) || "托盘出库状态已更新。", "success");
       const refreshedPayload = await fetchTrayDispatch(trayCode);
       applyDispatchPayload(refreshedPayload, state.destinations);
       state.scanCode = "";
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
       return true;
     } catch (error) {
-      state.feedback = error instanceof Error ? error.message : "托盘出库失败，请重试。";
+      feedbackState.show(error instanceof Error ? error.message : "托盘出库失败，请重试。", "error");
       return false;
     } finally {
       state.submitting = false;
@@ -115,7 +125,11 @@ function useTransferDispatch() {
 
   return {
     canSelectDestination,
+    clearFeedback: feedbackState.clear,
+    feedbackMessage: feedbackState.message,
+    feedbackTone: feedbackState.tone,
     lookupTray,
+    resetDispatch,
     state,
     submitDestination,
   };

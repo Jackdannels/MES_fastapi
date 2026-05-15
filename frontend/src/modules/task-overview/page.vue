@@ -44,6 +44,7 @@
         :selected="selectedTaskCode === row.taskCode"
         :task-type-edit-options="taskTypeEditOptions"
         @cancel-edit="cancelEdit"
+        @clear-edit-feedback="clearEditFeedback"
         @confirm-delete="confirmDeleteTask"
         @dblclick-card="handleCardDblClick"
         @generate-codes="generateCodesByCount"
@@ -68,6 +69,7 @@ import { useTaskOverview } from "./useTaskOverview";
 
 const {
   cancelEdit,
+  clearEditFeedback,
   confirmDeleteTask,
   customEndDate,
   customStartDate,

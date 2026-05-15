@@ -10,7 +10,7 @@
         </select>
       </label>
     </div>
-    <div class="form-alert" :class="{ 'is-hidden': !errorMessage }">{{ errorMessage }}</div>
+    <AppFeedback :message="errorMessage" tone="warning" @close="errorMessage = ''" />
     <template #footer>
       <button class="action-btn secondary" data-testid="module-exit-cancel" type="button" @click="handleClose">取消</button>
       <button class="action-btn danger" data-testid="module-exit-logout" type="button" @click="handleLogout">彻底退出</button>
@@ -21,6 +21,7 @@
 
 <script setup>
 import { ref, watch } from "vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 
 import { MODULE_OPTIONS } from "@/lib/moduleCatalog";
 import AppModal from "./AppModal.vue";

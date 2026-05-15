@@ -26,13 +26,14 @@
           {{ submitting ? "登录中..." : "登录" }}
         </button>
       </form>
-      <div v-if="errorMessage" class="form-alert">{{ errorMessage }}</div>
+      <AppFeedback :message="errorMessage" tone="error" @close="errorMessage = ''" />
     </div>
   </section>
 </template>
 
 <script setup>
 import { useRoute, useRouter } from "vue-router";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { loginWithCredentials, resolveModuleHome } from "@/auth";
 import { useLoginForm } from "./useLoginForm";
 

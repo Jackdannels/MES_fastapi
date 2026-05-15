@@ -96,7 +96,12 @@
               <option v-for="type in taskTypeOptions" :key="type" :value="type">{{ type }}</option>
             </select>
           </div>
-          <div v-if="feedback" class="form-alert" data-testid="transfer-overview-feedback">{{ feedback }}</div>
+          <AppFeedback
+            :message="feedback"
+            :tone="feedbackTone"
+            data-testid="transfer-overview-feedback"
+            @close="clearWorkbenchFeedback"
+          />
 
           <div class="transfer-table">
             <div class="transfer-table__head transfer-table__head--compact">
@@ -241,7 +246,7 @@
                 <div class="transfer-tray-limit-toolbar">
                   <span class="transfer-tray-limit-toolbar__label">统一上限</span>
                   <div class="transfer-tray-limit-stepper">
-                    <input data-testid="transfer-tray-limit-input" type="number" min="1" step="1" :disabled="taskEditingLocked" :value="trayLimit" @change="setTrayLimit($event.target.value)" />
+                    <input data-testid="transfer-tray-limit-input" type="number" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :value="trayLimit" @change="setTrayLimit($event.target.value)" />
                     <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="decreaseTrayLimit">-</button>
                     <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="increaseTrayLimit">+</button>
                   </div>
@@ -376,7 +381,12 @@
               </div>
             </div>
 
-            <div class="form-alert" :class="{ 'is-hidden': !feedback }">{{ feedback }}</div>
+            <AppFeedback
+              :message="feedback"
+              :tone="feedbackTone"
+              data-testid="transfer-detail-feedback"
+              @close="clearWorkbenchFeedback"
+            />
           </section>
         </section>
       </template>
@@ -432,10 +442,12 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { useFeedback } from "@/composables/useFeedback";
 import { buildCode128Svg } from "../handover-system/barcode.js";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";
@@ -460,6 +472,7 @@ const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "已入库";
 const TASK_TRAY_CODE_PATTERN = /-TP-(\d+)$/;
+const MAX_TRAY_LIMIT = 99;
 
 const activeWorkbenchView = ref("overview");
 const viewMode = ref("overview");
@@ -485,7 +498,11 @@ const selectedSampleTrayIndex = ref(-1);
 const isBootstrapLoading = ref(false);
 const bootstrapError = ref("");
 const allocationSaved = ref(false);
-const feedback = ref("");
+const workbenchFeedback = useFeedback();
+const feedback = workbenchFeedback.message;
+const feedbackTone = workbenchFeedback.tone;
+const showWorkbenchFeedback = workbenchFeedback.show;
+const clearWorkbenchFeedback = workbenchFeedback.clear;
 const printingAllBarcodes = ref(false);
 const barcodeModalVisible = ref(false);
 const barcodePreviewItems = ref([]);
@@ -585,6 +602,37 @@ const normalizeTaskRecord = (task) => ({
   taskStatus: normalizeTaskStatus(task?.taskStatus),
 });
 
+const normalizeTrayLimit = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Math.min(MAX_TRAY_LIMIT, Math.max(1, Number.isFinite(parsed) ? parsed : 1));
+};
+
+const formatApiErrorDetail = (detail) => {
+  if (typeof detail === "string") {
+    return detail.trim();
+  }
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item.trim();
+        }
+        if (item && typeof item === "object") {
+          const path = Array.isArray(item.loc) ? item.loc.join(".") : "";
+          const message = String(item.msg || item.message || item.detail || "").trim();
+          return [path, message].filter(Boolean).join(": ");
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("；");
+  }
+  if (detail && typeof detail === "object") {
+    return String(detail.message || detail.msg || detail.detail || "").trim();
+  }
+  return "";
+};
+
 const updateOverviewTaskStatus = (taskId, status, progress) => {
   const normalizedStatus = normalizeTaskStatus(status);
   taskOverview.value = taskOverview.value.map((task) => (
@@ -609,7 +657,7 @@ const fetchJson = async (path, options) => {
     payload = null;
   }
   if (!response.ok) {
-    throw new Error(payload?.detail || payload?.message || `请求失败（${response.status}）`);
+    throw new Error(formatApiErrorDetail(payload?.detail) || formatApiErrorDetail(payload?.message) || `请求失败（${response.status}）`);
   }
   return payload || {};
 };
@@ -900,12 +948,12 @@ const refreshEditableTrayState = (message = "") => {
   allocationSaved.value = false;
   lockedOperationHint.value = "";
   if (message) {
-    feedback.value = message;
+    showWorkbenchFeedback(message, "info");
   }
 };
 
 const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, message = "" } = {}) => {
-  const normalizedLimit = Math.max(1, Number.parseInt(limit, 10) || 1);
+  const normalizedLimit = normalizeTrayLimit(limit);
   const orderedSamples = collectOrderedSamples();
   const requiredCount = Math.max(1, Math.ceil(orderedSamples.length / normalizedLimit));
   const totalTrayPoolCount = Math.max(requiredCount, assignedTrays.value.length + availableInventory.value.length);
@@ -929,7 +977,7 @@ const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, me
   allocationSaved.value = false;
   lockedOperationHint.value = "";
   if (message) {
-    feedback.value = message;
+    showWorkbenchFeedback(message, "info");
   }
 };
 
@@ -950,7 +998,7 @@ const applyWorkspace = (workspace) => {
   draftExperimentTraySelections.value = Object.fromEntries(
     experiments.value.map((experiment) => [experiment.experimentCode, [...(experiment.assignedTrayNos || [])]]),
   );
-  trayLimit.value = workspace?.task?.trayLimit || 4;
+  trayLimit.value = normalizeTrayLimit(workspace?.task?.trayLimit || 4);
   assignedTrays.value = (workspace?.assignedTrays || []).map((tray) => ({
     ...tray,
     samples: Array.isArray(tray.samples)
@@ -1027,7 +1075,7 @@ const loadWorkspace = async (taskId = selectedTaskId.value) => {
 
 const openTask = async (task) => {
   selectedTaskId.value = task.taskId;
-  feedback.value = "";
+  clearWorkbenchFeedback();
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
   viewMode.value = "detail";
@@ -1037,7 +1085,7 @@ const openTask = async (task) => {
     if (!isArchivedWorkspaceError(error)) {
       throw error;
     }
-    feedback.value = error instanceof Error ? error.message : "任务已归档";
+    showWorkbenchFeedback(error instanceof Error ? error.message : "任务已归档", "error");
     clearWorkspace();
     viewMode.value = "overview";
     await loadBootstrap();
@@ -1053,7 +1101,15 @@ const setActiveWorkbenchView = (nextView) => {
   if (props.mode !== "handover") {
     return;
   }
-  activeWorkbenchView.value = nextView === "dispatch" ? "dispatch" : "overview";
+  const resolvedView = nextView === "dispatch" ? "dispatch" : "overview";
+  if (activeWorkbenchView.value === "dispatch" && resolvedView !== "dispatch") {
+    transferDispatch.resetDispatch();
+  }
+  activeWorkbenchView.value = resolvedView;
+  if (resolvedView === "overview") {
+    barcodeModalVisible.value = false;
+    viewMode.value = "overview";
+  }
 };
 
 const reloadBootstrap = async () => {
@@ -1170,18 +1226,19 @@ const setActiveTray = (index) => {
 
 const setTrayLimit = (value) => {
   if (taskEditingLocked.value) return;
-  const nextLimit = Math.max(1, Number.parseInt(value, 10) || 1);
+  const nextLimit = normalizeTrayLimit(value);
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 
 const increaseTrayLimit = () => {
   if (taskEditingLocked.value) return;
-  rebalanceTrayLayout({ limit: trayLimit.value + 1, message: `已按统一上限 ${trayLimit.value + 1} 重新分配托盘。` });
+  const nextLimit = normalizeTrayLimit(trayLimit.value + 1);
+  rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 
 const decreaseTrayLimit = () => {
   if (taskEditingLocked.value) return;
-  const nextLimit = Math.max(1, trayLimit.value - 1);
+  const nextLimit = normalizeTrayLimit(trayLimit.value - 1);
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 
@@ -1208,7 +1265,7 @@ const placeSelectedSampleToTray = (targetIndex) => {
   const targetTray = assignedTrays.value[targetIndex];
   if (!sourceTray || !targetTray || sourceTray === targetTray) return;
   if (targetTray.samples.length >= trayLimit.value) {
-    feedback.value = "目标托盘已达到上限。";
+    showWorkbenchFeedback("目标托盘已达到上限。", "warning");
     return;
   }
   const sampleIndex = sourceTray.samples.findIndex((sample) => sample.sampleId === selectedSampleId.value);
@@ -1283,11 +1340,11 @@ const handleTrayDrop = (targetIndex) => {
 const addInventoryTray = () => {
   if (taskEditingLocked.value) return;
   if (trayCapacityExceeded.value) {
-    feedback.value = trayCapacityWarning.value;
+    showWorkbenchFeedback(trayCapacityWarning.value, "warning");
     return;
   }
   if (availableInventory.value.length <= 0) {
-    feedback.value = "当前没有可用空托盘。";
+    showWorkbenchFeedback("当前没有可用空托盘。", "warning");
     return;
   }
   assignedTrays.value = normalizeEditableTrays(assignedTrays.value, trayLimit.value);
@@ -1314,7 +1371,7 @@ const removeTray = (index) => {
     return;
   }
   if (assignedTrays.value.length <= minimumTrayCount.value) {
-    feedback.value = "当前托盘数量已是最小值，不能继续删除。";
+    showWorkbenchFeedback("当前托盘数量已是最小值，不能继续删除。", "warning");
     return;
   }
   rebalanceTrayLayout({
@@ -1361,7 +1418,7 @@ const resolveBarcodeDisplayNo = (barcode, tray) => String(
 const persistAllocation = async (showMessage = true) => {
   if (!selectedTaskId.value || isStoredTask.value) return false;
   if (trayCapacityExceeded.value) {
-    if (showMessage) feedback.value = trayCapacityWarning.value;
+    if (showMessage) showWorkbenchFeedback(trayCapacityWarning.value, "warning");
     return false;
   }
   try {
@@ -1371,11 +1428,11 @@ const persistAllocation = async (showMessage = true) => {
       body: JSON.stringify(buildAllocationPayload()),
     });
     applyWorkspace(payload.workspace);
-    if (showMessage) feedback.value = payload.message;
+    if (showMessage) showWorkbenchFeedback(payload.message, "success");
     return true;
   } catch (error) {
     if (showMessage) {
-      feedback.value = error instanceof Error ? error.message : "托盘分配保存失败，请重试。";
+      showWorkbenchFeedback(error instanceof Error ? error.message : "托盘分配保存失败，请重试。", "error");
     }
     return false;
   }
@@ -1488,18 +1545,18 @@ const printBarcodePreview = async () => {
 
 const confirmBarcodePrint = async () => {
   if (!barcodePreviewItems.value.length) {
-    feedback.value = "当前没有可打印的条码。";
+    showWorkbenchFeedback("当前没有可打印的条码。", "warning");
     return;
   }
   try {
     await printBarcodePreview();
   } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "打印失败，请重试。";
+    showWorkbenchFeedback(error instanceof Error ? error.message : "打印失败，请重试。", "error");
     return;
   }
   barcodePrintConfirmed.value = true;
   barcodeModalVisible.value = false;
-  feedback.value = "已发起条码打印。";
+  showWorkbenchFeedback("已发起条码打印。", "success");
 };
 
 const printAllTrayBarcodes = async () => {
@@ -1534,7 +1591,7 @@ const printAllTrayBarcodes = async () => {
     });
     barcodePrintConfirmed.value = false;
     barcodeModalVisible.value = true;
-    feedback.value = payload.message;
+    showWorkbenchFeedback(payload.message, "success");
   } finally {
     printingAllBarcodes.value = false;
   }
@@ -1556,7 +1613,7 @@ const confirmStorage = async () => {
   if (confirmedTaskId) {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
   }
-  feedback.value = payload.message;
+  showWorkbenchFeedback(payload.message, "success");
   await loadBootstrap();
   if (confirmedTaskId) {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
@@ -1566,16 +1623,16 @@ const confirmStorage = async () => {
 
 const reloadWorkspace = async () => {
   if (!canResetWorkspace.value) return;
-  feedback.value = "";
+  clearWorkbenchFeedback();
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
   const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
   applyWorkspace(payload.workspace);
   activeTrayIndex.value = -1;
   updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印条形码");
-  feedback.value = props.mode === "pre-allocation"
+  showWorkbenchFeedback(props.mode === "pre-allocation"
     ? (payload?.workspace?.task?.taskStatus === storedStatus ? "已入库任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
-    : payload.message;
+    : payload.message, payload?.workspace?.task?.taskStatus === storedStatus ? "warning" : "success");
   await loadBootstrap();
   taskStatusFilter.value = pendingStatus;
 };

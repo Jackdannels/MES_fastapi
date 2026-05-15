@@ -90,8 +90,8 @@
       </div>
     </div>
 
-    <div v-if="editError" class="form-alert">{{ editError }}</div>
-    <div v-if="editMessage" class="task-overview-success">{{ editMessage }}</div>
+    <AppFeedback v-if="editError" :message="editError" tone="error" @close="emit('clear-edit-feedback')" />
+    <AppFeedback v-if="editMessage" :message="editMessage" tone="success" @close="emit('clear-edit-feedback')" />
 
     <div class="form-actions">
       <button
@@ -156,9 +156,11 @@
 
 <script setup>
 import { computed } from "vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 
 const emit = defineEmits([
   "cancel-edit",
+  "clear-edit-feedback",
   "confirm-delete",
   "generate-codes",
   "request-delete",

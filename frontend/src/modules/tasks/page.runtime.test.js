@@ -1119,7 +1119,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("盐雾试验 / 冲击试验 / 霉菌试验");
   });
 
-  test("hides the reset feedback automatically after five seconds", async () => {
+  test("hides the reset feedback automatically after ten seconds", async () => {
     vi.useFakeTimers();
     try {
       installApiFetchMock({
@@ -1139,7 +1139,11 @@ describe("TasksPage runtime", () => {
 
       expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(true);
 
-      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(9999);
+      await settle(wrapper);
+      expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1);
       await settle(wrapper);
 
       expect(wrapper.find('[data-testid="task-reset-feedback"]').exists()).toBe(false);

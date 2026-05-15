@@ -343,6 +343,31 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.text()).toContain("总任务清单");
   });
 
+  test("handover overview nav returns from a hidden task detail to the task list", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-task-code"]').text()).toBe("SYLU-2026-03-101");
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="handover-nav-overview"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="transfer-task-code"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("总任务清单");
+    expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
+  });
+
   test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     const wrapper = mount(TransferWorkbench, {
@@ -388,6 +413,37 @@ describe("TransferWorkbench runtime", () => {
       && (options.method || "GET") === "GET"
     )).toHaveLength(2);
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
+    wrapper.unmount();
+  });
+
+  test("handover dispatch state is reset after leaving and re-entering dispatch view", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.find('[data-testid="transfer-dispatch-result"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="transfer-dispatch-destination-1"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
+
+    await wrapper.get('[data-testid="handover-nav-overview"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("");
+    expect(wrapper.find('[data-testid="transfer-dispatch-result"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
     wrapper.unmount();
   });
 
@@ -503,6 +559,59 @@ describe("TransferWorkbench runtime", () => {
         { experimentCode: "SYLU-2026-03-101-B", trayIds: [1001] },
       ],
     }));
+  });
+
+  test("keeps unified sample limit capped at 99 and renders validation details as readable text", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            detail: [
+              {
+                loc: ["body", "trayLimit"],
+                msg: "Input should be less than or equal to 99",
+              },
+            ],
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    const limitInput = wrapper.get('[data-testid="transfer-tray-limit-input"]');
+    expect(limitInput.attributes("max")).toBe("99");
+
+    await limitInput.setValue("99");
+    await limitInput.trigger("change");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).not.toContain("[object Object]");
+    expect(wrapper.text()).toContain("body.trayLimit: Input should be less than or equal to 99");
   });
 
   test("removes a task from the active workspace when the workspace endpoint reports it archived", async () => {
@@ -751,7 +860,12 @@ describe("TransferWorkbench runtime", () => {
       expect.stringContaining("/api/transfer-area/tasks/201/confirm-storage"),
       expect.objectContaining({ method: "POST" }),
     );
-    expect(wrapper.text()).toContain("任务已确认入库");
+    const feedback = wrapper.get('[data-testid="transfer-detail-feedback"]');
+    expect(feedback.text()).toContain("任务已确认入库");
+    expect(feedback.classes()).toContain("app-feedback--success");
+
+    await feedback.trigger("click");
+    expect(wrapper.find('[data-testid="transfer-detail-feedback"]').exists()).toBe(false);
   });
 
   test("overview task type filter shows only atomic experiment types and matches tasks containing the selected type", async () => {

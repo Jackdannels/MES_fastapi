@@ -702,6 +702,54 @@ describe("laboratory model", () => {
     },
   );
 
+  test("validateLaboratoryTrayScan points to staging when the current tray is still in staging", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-702", experiment_code: "SYLU-2026-05-702-A", tray_code: "TP-STAGING" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-702", experiment_code: "SYLU-2026-05-702-A", experiment_name: "盐雾试验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-STAGING",
+          location: "恒温恒湿间（暂存间）",
+          owner: "王工",
+          status: "已到达暂存间",
+          task_code: "SYLU-2026-05-702",
+          trays: [{ tray_code: "TP-STAGING", quantity: 1, status: "已到达暂存间" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-staging",
+          task_code: "SYLU-2026-05-702",
+          experiment_code: "SYLU-2026-05-702-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-13T09:00:00.000Z",
+          end_at: "2026-05-13T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-05-702", name: "暂存间未出库任务", test_type: "盐雾试验" }],
+    });
+
+    const result = validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-STAGING",
+      scheduleRows: view.scheduleRows,
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      guidance: "请先在暂存间完成出库并送至实验室。",
+      message: "托盘尚未出库",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-STAGING",
+    }));
+    expect(result.guidance).not.toContain("接驳间");
+  });
+
   test("validateLaboratoryTrayScan rejects current task trays that already passed comparison", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [

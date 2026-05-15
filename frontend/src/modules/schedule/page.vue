@@ -93,7 +93,7 @@
         <button class="action-btn" type="button" data-testid="schedule-submit" @click="submitSchedule">{{ uiText.confirmSchedule }}</button>
         <button class="action-btn secondary" type="button" @click="resetScheduleForm">{{ uiText.clear }}</button>
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !scheduleWarning }">{{ scheduleWarning }}</div>
+      <AppFeedback :message="scheduleWarning" tone="warning" @close="scheduleWarning = ''" />
     </form>
   </section>
 
@@ -580,9 +580,7 @@
         <label>{{ uiText.startTime }}</label>
         <input v-model="editForm.custom_start" type="time" name="custom_start" :min="editCustomStartMinTime" />
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !editWarning }" style="grid-column: 1 / -1;">
-        {{ editWarning }}
-      </div>
+      <AppFeedback :message="editWarning" tone="warning" style="grid-column: 1 / -1;" @close="editWarning = ''" />
       <div class="form-actions" style="grid-column: 1 / -1;">
         <button class="action-btn" type="button" data-testid="schedule-update" @click="saveSchedule">{{ uiText.saveChanges }}</button>
         <button class="action-btn secondary" type="button" data-testid="schedule-delete" @click="removeSchedule">
@@ -597,6 +595,7 @@
 import { Teleport, computed } from "vue";
 
 import AppDrawer from "@/components/shared/AppDrawer.vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useSchedulePage } from "./useSchedulePage";
 

@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>统一提示框设计方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef6fb;
+        --panel: #ffffff;
+        --panel-soft: #f8fbfd;
+        --border: #d8e4ef;
+        --text: #14213d;
+        --muted: #64748b;
+        --blue: #2563eb;
+        --green: #15803d;
+        --red: #b91c1c;
+        --amber: #b45309;
+        --info-bg: #eff6ff;
+        --success-bg: #ecfdf3;
+        --error-bg: #fff1f2;
+        --warning-bg: #fffbeb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+        background: radial-gradient(circle at 25% 0%, #dff2ff 0, transparent 36%), var(--bg);
+        color: var(--text);
+      }
+
+      .shell {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 28px 22px 56px;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 30px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        font-size: 18px;
+      }
+
+      h3 {
+        font-size: 15px;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.76);
+        color: #334155;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+        gap: 18px;
+      }
+
+      .section {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
+      }
+
+      .section + .section {
+        margin-top: 18px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+
+      .alert-stack {
+        display: grid;
+        gap: 10px;
+      }
+
+      .feedback {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: start;
+        min-height: 48px;
+        padding: 11px 12px;
+        border: 1px solid;
+        border-radius: 8px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .feedback strong {
+        display: block;
+        margin-bottom: 2px;
+        font-size: 13px;
+      }
+
+      .feedback__icon,
+      .feedback__close {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        font-weight: 800;
+      }
+
+      .feedback__close {
+        border: 0;
+        background: rgba(255, 255, 255, 0.55);
+        color: inherit;
+      }
+
+      .feedback--success {
+        border-color: rgba(22, 163, 74, 0.32);
+        background: var(--success-bg);
+        color: var(--green);
+      }
+
+      .feedback--error {
+        border-color: rgba(225, 29, 72, 0.3);
+        background: var(--error-bg);
+        color: var(--red);
+      }
+
+      .feedback--warning {
+        border-color: rgba(217, 119, 6, 0.32);
+        background: var(--warning-bg);
+        color: var(--amber);
+      }
+
+      .feedback--info {
+        border-color: rgba(37, 99, 235, 0.26);
+        background: var(--info-bg);
+        color: var(--blue);
+      }
+
+      .progress {
+        height: 3px;
+        margin-top: 7px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.12);
+      }
+
+      .progress span {
+        display: block;
+        width: 64%;
+        height: 100%;
+        border-radius: inherit;
+        background: currentColor;
+      }
+
+      .before-after {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      .mock-page {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel-soft);
+      }
+
+      .mock-toolbar,
+      .mock-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .mock-input {
+        height: 32px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        background: #fff;
+      }
+
+      .mock-input.is-wide {
+        flex: 1;
+      }
+
+      .mock-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        padding: 0 12px;
+        border: 1px solid #bfdbfe;
+        border-radius: 6px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .legacy-alert {
+        padding: 10px 12px;
+        border: 1px solid rgba(244, 63, 94, 0.35);
+        border-radius: 8px;
+        background: rgba(244, 63, 94, 0.16);
+        color: #14213d;
+        font-size: 12px;
+      }
+
+      .table {
+        display: grid;
+        gap: 8px;
+      }
+
+      .table-row {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr) 92px;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .tone-list,
+      .scope-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .scope-item {
+        display: grid;
+        grid-template-columns: 82px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 11px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fff;
+        font-size: 13px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #f1f5f9;
+        color: #334155;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .tag.success {
+        background: #dcfce7;
+        color: #166534;
+      }
+
+      .tag.error {
+        background: #ffe4e6;
+        color: #be123c;
+      }
+
+      .tag.warning {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
+      .tag.info {
+        background: #dbeafe;
+        color: #1d4ed8;
+      }
+
+      .flow {
+        display: grid;
+        gap: 10px;
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+      }
+
+      .flow-step span:first-child {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        background: #e0f2fe;
+        color: #0369a1;
+        font-weight: 800;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: #f1f5f9;
+        color: #0f172a;
+        font-family: Consolas, Monaco, monospace;
+        font-size: 12px;
+      }
+
+      @media (max-width: 900px) {
+        header,
+        .grid,
+        .before-after {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>统一提示框设计方案</h1>
+          <p class="muted">目标：所有临时提示默认显示 10 秒，支持点击提示框关闭；成功、错误、警告、信息用不同语义样式，避免“任务已入库”成功消息变成红色常驻提示。</p>
+        </div>
+        <span class="pill">等待确认后实施</span>
+      </header>
+
+      <div class="grid">
+        <div>
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>接驳工作台主问题</h2>
+                <p class="muted">当前成功消息使用红色 <code>.form-alert</code>，且没有定时消失和关闭入口。</p>
+              </div>
+            </div>
+            <div class="before-after">
+              <div class="mock-page">
+                <h3>当前表现</h3>
+                <div class="mock-toolbar">
+                  <div class="mock-input is-wide"></div>
+                  <span class="mock-btn">确认入库</span>
+                </div>
+                <div class="legacy-alert">任务已确认入库</div>
+                <p class="muted">红色、常驻、不可关闭，容易被理解成错误。</p>
+              </div>
+              <div class="mock-page">
+                <h3>建议表现</h3>
+                <div class="mock-toolbar">
+                  <div class="mock-input is-wide"></div>
+                  <span class="mock-btn">确认入库</span>
+                </div>
+                <div class="feedback feedback--success" role="button" aria-label="点击关闭提示">
+                  <span class="feedback__icon">✓</span>
+                  <div>
+                    <strong>任务已确认入库</strong>
+                    <span>10 秒后自动消失，也可以点击提示框立即关闭。</span>
+                    <div class="progress"><span></span></div>
+                  </div>
+                  <button class="feedback__close" type="button">×</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>统一组件形态</h2>
+                <p class="muted">临时提示统一用 <code>AppFeedback</code>，业务持续状态仍保留原状态样式。</p>
+              </div>
+            </div>
+            <div class="alert-stack">
+              <div class="feedback feedback--success">
+                <span class="feedback__icon">✓</span>
+                <div><strong>保存成功</strong><span>托盘分配已保存。</span><div class="progress"><span></span></div></div>
+                <button class="feedback__close" type="button">×</button>
+              </div>
+              <div class="feedback feedback--error">
+                <span class="feedback__icon">!</span>
+                <div><strong>操作失败</strong><span>托盘分配保存失败，请重试。</span><div class="progress"><span></span></div></div>
+                <button class="feedback__close" type="button">×</button>
+              </div>
+              <div class="feedback feedback--warning">
+                <span class="feedback__icon">!</span>
+                <div><strong>需要处理</strong><span>当前候选位置尚未排程，不能直接出库。</span><div class="progress"><span></span></div></div>
+                <button class="feedback__close" type="button">×</button>
+              </div>
+              <div class="feedback feedback--info">
+                <span class="feedback__icon">i</span>
+                <div><strong>状态更新</strong><span>已按统一上限 99 重新分配托盘。</span><div class="progress"><span></span></div></div>
+                <button class="feedback__close" type="button">×</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>交互规则</h2>
+                <p class="muted">默认行为保持一致，特殊业务场景显式声明例外。</p>
+              </div>
+            </div>
+            <div class="flow">
+              <div class="flow-step"><span>1</span><p class="muted"><strong>显示：</strong>调用 <code>showFeedback(message, tone)</code> 后立即显示。</p></div>
+              <div class="flow-step"><span>2</span><p class="muted"><strong>自动消失：</strong>默认 10000ms 后清空；新提示出现会重置计时。</p></div>
+              <div class="flow-step"><span>3</span><p class="muted"><strong>点击关闭：</strong>点击提示框或右侧关闭按钮都调用 <code>clearFeedback()</code>。</p></div>
+              <div class="flow-step"><span>4</span><p class="muted"><strong>保留例外：</strong>加载失败、业务红点、逾期高亮、容量不足这种持续状态不自动消失。</p></div>
+            </div>
+          </section>
+        </div>
+
+        <aside>
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>替换范围</h2>
+                <p class="muted">先修主路径，再替换同类临时提示。</p>
+              </div>
+            </div>
+            <div class="scope-list">
+              <div class="scope-item"><span class="tag success">第一批</span><p>接驳工作台 <code>feedback</code>、样品出库 <code>state.feedback</code>、任务总览编辑 <code>editError/editMessage</code></p></div>
+              <div class="scope-item"><span class="tag warning">第二批</span><p>暂存间扫码、排程警告、样品流转/托盘管理、任务受理表单提示</p></div>
+              <div class="scope-item"><span class="tag info">第三批</span><p>实验室比对、过程管控提示，按弹窗/页面上下文适配</p></div>
+              <div class="scope-item"><span class="tag error">不替换</span><p>加载失败、逾期未排程红色高亮、导航红点、托盘余量告警、确认弹窗</p></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>实现接口</h2>
+                <p class="muted">小范围抽象，避免各页面重复写 timer。</p>
+              </div>
+            </div>
+            <div class="table">
+              <div class="table-row"><strong>组件</strong><span><code>AppFeedback.vue</code></span><span class="tag info">UI</span></div>
+              <div class="table-row"><strong>状态</strong><span><code>useFeedback()</code></span><span class="tag info">hook</span></div>
+              <div class="table-row"><strong>默认</strong><span><code>autoDismissMs: 10000</code></span><span class="tag success">10s</span></div>
+              <div class="table-row"><strong>关闭</strong><span><code>@click=&quot;clear&quot;</code></span><span class="tag success">支持</span></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <div>
+                <h2>验收点</h2>
+                <p class="muted">确认后实施时会补回归测试。</p>
+              </div>
+            </div>
+            <div class="tone-list">
+              <p class="muted">接驳“确认入库”显示绿色成功提示，不再是红色。</p>
+              <p class="muted">所有临时提示默认 10 秒后消失。</p>
+              <p class="muted">点击提示框即可关闭。</p>
+              <p class="muted">持续业务告警不被误清除。</p>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </body>
+</html>

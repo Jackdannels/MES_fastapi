@@ -263,10 +263,13 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
   };
 };
 
-const buildNotDispatchedComparisonResult = (trayCode) => {
+const buildNotDispatchedComparisonResult = (trayCode, tray = null) => {
   const normalizedTrayCode = normalizeText(trayCode);
+  const location = normalizeText(tray?.currentLocation || tray?.location);
+  const status = normalizeText(tray?.trayStatus || tray?.displayStatus);
+  const sourceLabel = location.includes("暂存间") || status.includes("暂存间") ? "暂存间" : "接驳间";
   return {
-    guidance: "请先在接驳间完成出库并送至实验室。",
+    guidance: `请先在${sourceLabel}完成出库并送至实验室。`,
     message: "托盘尚未出库",
     ok: false,
     tone: "error",
@@ -479,7 +482,7 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
   const trayRows = [];
   const indexByTrayCode = new Map();
 
-  const pushRow = (trayCode, sampleCode = "", quantity = "", owner = "") => {
+  const pushRow = (trayCode, sampleCode = "", quantity = "", owner = "", location = "") => {
     const normalizedTrayCode = normalizeText(trayCode);
     if (!normalizedTrayCode) {
       return;
@@ -496,10 +499,14 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
       if (!current.quantity && quantity) {
         current.quantity = quantity;
       }
+      if (!current.currentLocation && location) {
+        current.currentLocation = location;
+      }
       return;
     }
     indexByTrayCode.set(normalizedTrayCode, trayRows.length);
     trayRows.push({
+      currentLocation: normalizeText(location),
       displayStatus: "",
       owner: normalizeText(owner),
       quantity: quantity || "",
@@ -515,13 +522,14 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
   asArray(relatedSamples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code);
     const owner = normalizeText(sample?.owner);
+    const location = normalizeText(sample?.location);
     asArray(sample?.trays).forEach((tray) => {
       const trayCode = normalizeText(tray?.tray_code);
       const quantity = tray?.quantity ?? "";
       if (scopedTrayCodes.length > 0 && !scopedTrayCodes.includes(trayCode)) {
         return;
       }
-      pushRow(trayCode, sampleCode, quantity, owner);
+      pushRow(trayCode, sampleCode, quantity, owner, location);
       const row = trayRows[indexByTrayCode.get(trayCode)];
       const currentRank = resolveLaboratoryStatusRank(row?.trayStatus);
       const nextStatus = normalizeText(tray?.status);
@@ -950,7 +958,7 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
       return buildBlockedComparisonResult(normalizedScanCode, trayStatus);
     }
     if (trayStatus !== LAB_RESET_STATUS) {
-      return buildNotDispatchedComparisonResult(normalizedScanCode);
+      return buildNotDispatchedComparisonResult(normalizedScanCode, matchedTray);
     }
     return {
       guidance: `${normalizedScanCode} 属于当前任务 ${currentTask.taskCode}`,

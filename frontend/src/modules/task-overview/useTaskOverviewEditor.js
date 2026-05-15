@@ -4,6 +4,7 @@ import { ref } from "vue";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { deleteTask as deleteTaskByApi } from "@/lib/tasksApi";
+import { useFeedback } from "@/composables/useFeedback";
 
 // 删除确认弹窗需要独立维护一份快照统计，避免实时值抖动。
 const createEmptyDeleteConfirm = () => ({
@@ -138,8 +139,10 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
   const savingTaskCode = ref("");
   const deletingTaskCode = ref("");
   const deleteConfirm = ref(createEmptyDeleteConfirm());
-  const editError = ref("");
-  const editMessage = ref("");
+  const editErrorFeedback = useFeedback({ defaultTone: "error" });
+  const editMessageFeedback = useFeedback({ defaultTone: "success" });
+  const editError = editErrorFeedback.message;
+  const editMessage = editMessageFeedback.message;
   const editForm = ref(createEmptyEditForm());
 
   const resetDeleteConfirm = () => {
@@ -147,8 +150,18 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
   };
 
   const clearEditFeedback = () => {
-    editError.value = "";
-    editMessage.value = "";
+    editErrorFeedback.clear();
+    editMessageFeedback.clear();
+  };
+
+  const showEditError = (message) => {
+    editMessageFeedback.clear();
+    editErrorFeedback.show(message, "error");
+  };
+
+  const showEditMessage = (message) => {
+    editErrorFeedback.clear();
+    editMessageFeedback.show(message, "success");
   };
 
   // 某张卡片是否处于编辑态，以任务号作为唯一标识。
@@ -255,7 +268,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
     const taskCode = String(editForm.value.taskCode || "").trim();
     const count = normalizeCount(editForm.value.sampleCount);
     if (!taskCode) {
-      editError.value = "Missing task code. Unable to generate sample codes.";
+      showEditError("Missing task code. Unable to generate sample codes.");
       return;
     }
     clearEditFeedback();
@@ -282,8 +295,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
 
     const nextTaskType = String(editForm.value.taskType || "").trim();
     if (!nextTaskType) {
-      editError.value = "Task type is required.";
-      editMessage.value = "";
+      showEditError("Task type is required.");
       return;
     }
 
@@ -299,7 +311,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const experimentTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       const taskIndex = tasks.findIndex((task) => String(task?.code || "").trim() === code);
       if (taskIndex < 0) {
-        editError.value = `Task ${code} was not found.`;
+        showEditError(`Task ${code} was not found.`);
         return;
       }
 
@@ -341,7 +353,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       // 阻止不同任务之间复用同一个样品编号。
       const duplicateWithOthers = finalCodes.filter((sampleCode) => otherTaskCodeSet.has(sampleCode));
       if (duplicateWithOthers.length > 0) {
-        editError.value = `Sample codes already in use: ${duplicateWithOthers.join(", ")}`;
+        showEditError(`Sample codes already in use: ${duplicateWithOthers.join(", ")}`);
         return;
       }
 
@@ -430,7 +442,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       editForm.value.sampleCount = finalCodes.length;
       editForm.value.sampleCodesText = finalCodes.join("\n");
       editForm.value.experiments = normalizedExperiments;
-      editMessage.value = `Task ${code} was updated.`;
+      showEditMessage(`Task ${code} was updated.`);
     } finally {
       savingTaskCode.value = "";
     }
@@ -449,8 +461,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const streams = snapshot[STORAGE_KEYS.streams];
       const taskExists = tasks.some((task) => String(task?.code || "").trim() === code);
       if (!taskExists) {
-        editError.value = `Task ${code} was not found.`;
-      editMessage.value = "";
+        showEditError(`Task ${code} was not found.`);
       return;
     }
 
@@ -506,8 +517,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       selectedTaskCode.value = "";
       cancelEdit();
     } catch (error) {
-      editError.value = error instanceof Error ? error.message : `Task ${code} could not be deleted.`;
-      editMessage.value = "";
+      showEditError(error instanceof Error ? error.message : `Task ${code} could not be deleted.`);
     } finally {
       deletingTaskCode.value = "";
       resetDeleteConfirm();
@@ -535,6 +545,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
     requestDeleteTask,
     confirmDeleteTask,
     updateEditForm,
+    clearEditFeedback,
   };
 }
 

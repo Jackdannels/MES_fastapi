@@ -31,7 +31,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 const TASK_INTAKE_HASH = "#task-intake-modal";
 const TASK_RESET_EVENT = "mes:open-task-reset";
-const RESET_FEEDBACK_DISMISS_MS = 5000;
+const RESET_FEEDBACK_DISMISS_MS = 10000;
 
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {

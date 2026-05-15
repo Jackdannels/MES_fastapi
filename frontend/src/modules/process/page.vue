@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    <div v-if="processActionMessage" class="process-control-feedback">{{ processActionMessage }}</div>
+    <AppFeedback :message="processActionMessage" tone="info" @close="processActionMessage = ''" />
     <div v-if="loading" class="muted">正在加载实验室状态...</div>
     <div v-else-if="visibleLabCards.length === 0" class="process-lab-empty muted">当前筛选下暂无实验室。</div>
     <div v-else class="process-lab-grid">
@@ -304,6 +304,7 @@
 <script setup>
 import { computed } from "vue";
 
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { PROCESS_FILTERS, useProcessLabs } from "./useProcessLabs";
 
 defineOptions({

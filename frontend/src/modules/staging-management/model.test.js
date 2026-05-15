@@ -245,10 +245,39 @@ describe("staging-management model", () => {
     expect(detail.targetExperimentName).toBe("振动试验");
   });
 
+  test("stock-out detail lists all non-staging target labs and recommends the nearest scheduled lab", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => (
+      schedule.id === "schedule-102-next-lab"
+        ? { ...schedule, start_at: "2026-04-01T12:30:00", end_at: "2026-04-01T15:30:00" }
+        : schedule
+    ));
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
+
+    expect(detail.targetDestinations).toEqual([
+      expect.objectContaining({
+        preferred: true,
+        scheduled: true,
+        targetExperimentCode: "SYLU-2026-04-102-B",
+        targetLab: "盐雾试验室",
+      }),
+      expect.objectContaining({
+        preferred: false,
+        scheduled: true,
+        targetExperimentCode: "SYLU-2026-04-102-A",
+        targetLab: "振动一室",
+      }),
+    ]);
+    expect(detail.targetDestinations.map((destination) => destination.targetLab)).not.toContain("恒温恒湿间（暂存间）");
+    expect(detail.targetLab).toBe("盐雾试验室");
+  });
+
   test("marks unscheduled fallback destinations as unavailable stock-out targets", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].filter(
-      (schedule) => schedule.experiment_code !== "SYLU-2026-04-102-A" || schedule.device.includes("暂存间"),
+      (schedule) => schedule.device.includes("暂存间"),
     );
 
     const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
@@ -271,6 +300,32 @@ describe("staging-management model", () => {
       }),
     );
     expect(result.error).toBe("当前实验未排程，仅作为托底目标，暂不可出库。");
+  });
+
+  test("stock-out detail keeps scheduled targets selectable when another target is unscheduled", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].filter(
+      (schedule) => schedule.experiment_code !== "SYLU-2026-04-102-A" || schedule.device.includes("暂存间"),
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
+
+    expect(detail.targetDestinations).toEqual([
+      expect.objectContaining({
+        scheduled: true,
+        targetExperimentCode: "SYLU-2026-04-102-B",
+        targetLab: "盐雾试验室",
+      }),
+      expect.objectContaining({
+        scheduled: false,
+        targetExperimentCode: "SYLU-2026-04-102-A",
+        targetIsFallback: true,
+        targetLab: "振动一室",
+      }),
+    ]);
+    expect(detail.targetLab).toBe("盐雾试验室");
+    expect(detail.targetUnavailableReason).toBe("");
   });
 
   test("treats experiment-completed trays as valid staging stock-in candidates", () => {

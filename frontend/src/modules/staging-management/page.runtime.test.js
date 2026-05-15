@@ -295,7 +295,7 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.get('[data-testid="zancun-destination-modal"]').text()).toContain("振动一室");
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out")).toHaveLength(1);
 
-    await mounted.get('[data-testid="zancun-destination-submit"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
 
     expect(mounted.text()).toContain("今日已出库2");
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
@@ -319,6 +319,44 @@ describe("StagingManagementPage runtime", () => {
     expect(destinationModal.text()).not.toContain("恒温恒湿间（暂存间）");
   });
 
+  test("stock-out destination modal lists multiple target labs and highlights the nearest schedule", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        { id: "exp-102-b", task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-B", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        { id: "rel-102-b", task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-B", tray_code: "SYLU-2026-04-102-TP-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        ...createSnapshot()[STORAGE_KEYS.schedules],
+        {
+          id: "schedule-102-b",
+          task_code: "SYLU-2026-04-102",
+          experiment_code: "SYLU-2026-04-102-B",
+          experiment_name: "盐雾试验",
+          device: "盐雾试验室",
+          start_at: "2026-04-01T12:30:00",
+          end_at: "2026-04-01T15:30:00",
+        },
+      ],
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const cards = mounted.findAll('[data-testid^="zancun-destination-card-"]');
+    expect(cards).toHaveLength(2);
+    expect(cards[0].text()).toContain("盐雾试验室");
+    expect(cards[0].text()).toContain("推荐");
+    expect(cards[1].text()).toContain("振动一室");
+    expect(mounted.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeUndefined();
+  });
+
   test("stock-out scan shows fallback lab as disabled when the experiment is not scheduled", async () => {
     remoteSnapshot = {
       ...createSnapshot(),
@@ -335,7 +373,7 @@ describe("StagingManagementPage runtime", () => {
     const destinationModal = mounted.get('[data-testid="zancun-destination-modal"]');
     expect(destinationModal.classes()).toContain("is-open");
     expect(destinationModal.text()).toContain("当前实验未排程，仅作为托底目标，暂不可出库。");
-    expect(destinationModal.get('[data-testid="zancun-destination-submit"]').attributes("disabled")).toBeDefined();
+    expect(destinationModal.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeDefined();
   });
 
   test("manufacturer return opens a danger confirmation modal when experiments remain unfinished", async () => {

@@ -20,6 +20,7 @@ TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
+MAX_TRAY_LIMIT = 99
 SYSTEM_TRAY_TOTAL = 20
 EXCLUDED_TASK_STATUS_KEYWORDS = (
     "实验中",
@@ -81,7 +82,7 @@ class ExperimentTrayAllocationPayload(BaseModel):
 
 
 class TaskAllocationRequest(BaseModel):
-    tray_limit: int = Field(default=DEFAULT_TRAY_LIMIT, alias="trayLimit", ge=1, le=12)
+    tray_limit: int = Field(default=DEFAULT_TRAY_LIMIT, alias="trayLimit", ge=1, le=MAX_TRAY_LIMIT)
     trays: list[TrayAllocationPayload] = Field(default_factory=list)
     experiment_trays: list[ExperimentTrayAllocationPayload] = Field(default_factory=list, alias="experimentTrays")
 
@@ -385,7 +386,9 @@ def task_tray_limit(task: dict[str, Any]) -> int:
         parsed = int(str(raw).strip())
     except (TypeError, ValueError):
         parsed = 0
-    return parsed if parsed > 0 else DEFAULT_TRAY_LIMIT
+    if parsed <= 0:
+        return DEFAULT_TRAY_LIMIT
+    return min(parsed, MAX_TRAY_LIMIT)
 
 
 def task_arrival_time(task: dict[str, Any]) -> str:

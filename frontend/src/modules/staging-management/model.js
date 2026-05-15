@@ -246,11 +246,11 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
   });
 };
 
-const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, experimentTrays }) => {
+const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays }) => {
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
   if (!taskCode || !trayCode) {
-    return null;
+    return [];
   }
 
   const experimentMap = buildExperimentMap(experiments);
@@ -263,7 +263,7 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     return !experimentName || !completedExperimentNames.has(experimentName);
   };
 
-  const nextExperiment = asArray(experiments).find((experiment) => {
+  const candidateExperiments = asArray(experiments).filter((experiment) => {
     const experimentCode = normalizeText(experiment?.experiment_code);
     return (
       normalizeText(experiment?.task_code) === taskCode
@@ -272,8 +272,11 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
     );
   });
 
-  if (nextExperiment) {
-    const nextExperimentCode = normalizeText(nextExperiment?.experiment_code);
+  const scheduledCandidates = [];
+  const fallbackCandidates = [];
+
+  candidateExperiments.forEach((experiment) => {
+    const nextExperimentCode = normalizeText(experiment?.experiment_code);
     const scheduledDestinations = asArray(schedules)
       .filter((schedule) => {
         const device = normalizeText(schedule?.device);
@@ -288,61 +291,94 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
 
     const scheduled = scheduledDestinations[0];
     if (scheduled) {
-      return {
+      scheduledCandidates.push({
+        preferred: false,
+        scheduled: true,
         targetExperimentCode: nextExperimentCode,
-        targetExperimentName: resolveExperimentName(nextExperiment, scheduled?.experiment_name),
+        targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
         targetIsFallback: false,
         targetLab: normalizeText(scheduled?.device),
         targetScheduleStartAt: normalizeText(scheduled?.start_at),
         targetScheduleEndAt: normalizeText(scheduled?.end_at),
         targetUnavailableReason: "",
-      };
+      });
+      return;
     }
 
-    const requiredDevice = normalizeText(nextExperiment?.required_device);
+    const requiredDevice = normalizeText(experiment?.required_device);
     if (requiredDevice && !isStagingDestination(requiredDevice)) {
-      return {
+      fallbackCandidates.push({
+        preferred: false,
+        scheduled: false,
         targetExperimentCode: nextExperimentCode,
-        targetExperimentName: resolveExperimentName(nextExperiment),
+        targetExperimentName: resolveExperimentName(experiment),
         targetIsFallback: true,
         targetLab: requiredDevice,
         targetScheduleStartAt: "",
         targetScheduleEndAt: "",
         targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-      };
+      });
+    }
+  });
+
+  scheduledCandidates.sort(
+    (left, right) =>
+      parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
+      || normalizeText(left?.targetLab).localeCompare(normalizeText(right?.targetLab), "zh-Hans-CN"),
+  );
+  if (scheduledCandidates.length) {
+    const earliest = parseTimeValue(scheduledCandidates[0]?.targetScheduleStartAt);
+    const earliestCount = scheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
+    if (earliestCount === 1) {
+      scheduledCandidates[0].preferred = true;
     }
   }
+  const directScheduledCandidates = scheduledCandidates.length || trayExperimentCodes.size > 0
+    ? []
+    : asArray(schedules)
+      .filter((schedule) => {
+        const experimentCode = normalizeText(schedule?.experiment_code);
+        const device = normalizeText(schedule?.device);
+        return (
+          normalizeText(schedule?.task_code) === taskCode
+          && device
+          && !isStagingDestination(device)
+          && acceptsExperimentCode(experimentCode)
+          && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
+        );
+      })
+      .map((schedule) => {
+        const experimentCode = normalizeText(schedule?.experiment_code);
+        const experiment = experimentMap.get(experimentCode);
+        return {
+          preferred: false,
+          scheduled: true,
+          targetExperimentCode: experimentCode,
+          targetExperimentName: resolveExperimentName(experiment, schedule?.experiment_name),
+          targetIsFallback: false,
+          targetLab: normalizeText(schedule?.device),
+          targetScheduleStartAt: normalizeText(schedule?.start_at),
+          targetScheduleEndAt: normalizeText(schedule?.end_at),
+          targetUnavailableReason: "",
+        };
+      })
+    .sort((left, right) => parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt));
 
-  const scheduledDestinations = asArray(schedules)
-    .filter((schedule) => {
-      const experimentCode = normalizeText(schedule?.experiment_code);
-      const device = normalizeText(schedule?.device);
-      return (
-        normalizeText(schedule?.task_code) === taskCode
-        && device
-        && !isStagingDestination(device)
-        && acceptsExperimentCode(experimentCode)
-        && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
-      );
-    })
-    .sort((left, right) => parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at));
-
-  const scheduled = scheduledDestinations[0];
-  if (scheduled) {
-    const experimentCode = normalizeText(scheduled?.experiment_code);
-    const experiment = experimentMap.get(experimentCode);
-    return {
-      targetExperimentCode: experimentCode,
-      targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
-      targetIsFallback: false,
-      targetLab: normalizeText(scheduled?.device),
-      targetScheduleStartAt: normalizeText(scheduled?.start_at),
-      targetScheduleEndAt: normalizeText(scheduled?.end_at),
-      targetUnavailableReason: "",
-    };
+  if (directScheduledCandidates.length) {
+    const earliest = parseTimeValue(directScheduledCandidates[0]?.targetScheduleStartAt);
+    const earliestCount = directScheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
+    if (earliestCount === 1) {
+      directScheduledCandidates[0].preferred = true;
+    }
+    return directScheduledCandidates;
   }
 
-  const fallbackExperiment = asArray(experiments).find((experiment) => {
+  if (scheduledCandidates.length || fallbackCandidates.length || trayExperimentCodes.size > 0) {
+    return [...scheduledCandidates, ...fallbackCandidates];
+  }
+
+  const fallbackCandidatesByExperiment = asArray(experiments)
+    .filter((experiment) => {
     const experimentCode = normalizeText(experiment?.experiment_code);
     const requiredDevice = normalizeText(experiment?.required_device);
     return (
@@ -352,26 +388,27 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
       && acceptsExperimentCode(experimentCode)
       && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
     );
-  });
-  if (fallbackExperiment) {
-    return {
-      targetExperimentCode: normalizeText(fallbackExperiment?.experiment_code),
-      targetExperimentName: resolveExperimentName(fallbackExperiment),
+  })
+    .map((experiment) => ({
+      preferred: false,
+      scheduled: false,
+      targetExperimentCode: normalizeText(experiment?.experiment_code),
+      targetExperimentName: resolveExperimentName(experiment),
       targetIsFallback: true,
-      targetLab: normalizeText(fallbackExperiment?.required_device),
+      targetLab: normalizeText(experiment?.required_device),
       targetScheduleStartAt: "",
       targetScheduleEndAt: "",
       targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-    };
-  }
-
-  if (trayExperimentCodes.size > 0) {
-    return null;
+    }));
+  if (fallbackCandidatesByExperiment.length) {
+    return fallbackCandidatesByExperiment;
   }
 
   const fallbackLab = getLabsForTestType(row?.testType)[0] || "";
   if (fallbackLab && !isStagingDestination(fallbackLab)) {
-    return {
+    return [{
+      preferred: false,
+      scheduled: false,
       targetExperimentCode: "",
       targetExperimentName: normalizeText(row?.testType),
       targetIsFallback: true,
@@ -379,10 +416,10 @@ const resolveTrayTargetDestination = ({ row, samples, schedules, experiments, ex
       targetScheduleStartAt: "",
       targetScheduleEndAt: "",
       targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-    };
+    }];
   }
 
-  return null;
+  return [];
 };
 
 const collectTaskTrayCodes = (snapshot, taskCode) => {
@@ -522,13 +559,18 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         (event) => normalizeText(event?.action) === "stock_out" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );
 
-      const targetDestination = resolveTrayTargetDestination({
+      const targetDestinations = resolveTrayTargetDestinations({
         experiments,
         experimentTrays,
         row,
         samples,
         schedules,
       });
+      const targetDestination =
+        targetDestinations.find((destination) => destination.preferred)
+        || targetDestinations.find((destination) => destination.scheduled)
+        || targetDestinations[0]
+        || null;
 
       return {
         id: row.id,
@@ -549,6 +591,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         targetExperimentName: targetDestination?.targetExperimentName || "",
         targetIsFallback: Boolean(targetDestination?.targetIsFallback),
         targetLab: targetDestination?.targetLab || "",
+        targetDestinations,
         targetScheduleEndAt: targetDestination?.targetScheduleEndAt || "",
         targetScheduleStartAt: targetDestination?.targetScheduleStartAt || "",
         targetUnavailableReason: targetDestination?.targetUnavailableReason || "",
@@ -802,7 +845,7 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  if (actionMode === "stockOut" && !normalizeText(matchedRow.targetLab)) {
+  if (actionMode === "stockOut" && !asArray(matchedRow.targetDestinations).length && !normalizeText(matchedRow.targetLab)) {
     return {
       error: "未找到该托盘可出库的目标实验室。",
       row: null,
@@ -810,18 +853,30 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  if (actionMode === "stockOut" && normalizeText(matchedRow.targetUnavailableReason)) {
+  const selectedTargetLab = normalizeText(payload.targetLab);
+  const selectedTargetExperimentCode = normalizeText(payload.targetExperimentCode);
+  const targetDestinations = asArray(matchedRow.targetDestinations);
+  const selectedDestination = targetDestinations.find((destination) => (
+    normalizeText(destination?.targetLab) === selectedTargetLab
+    && (!selectedTargetExperimentCode || normalizeText(destination?.targetExperimentCode) === selectedTargetExperimentCode)
+  )) || null;
+  if (actionMode === "stockOut" && !selectedTargetLab) {
     return {
-      error: matchedRow.targetUnavailableReason,
+      error: "请选择目标实验室后再出库。",
       row: null,
       snapshot: nextSnapshot,
     };
   }
-
-  const selectedTargetLab = normalizeText(payload.targetLab);
-  if (actionMode === "stockOut" && !selectedTargetLab) {
+  if (actionMode === "stockOut" && targetDestinations.length && !selectedDestination) {
     return {
-      error: "请选择目标实验室后再出库。",
+      error: "请选择有效的目标实验室后再出库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+  if (actionMode === "stockOut" && (selectedDestination ? !selectedDestination.scheduled : normalizeText(matchedRow.targetUnavailableReason))) {
+    return {
+      error: normalizeText(selectedDestination?.targetUnavailableReason) || matchedRow.targetUnavailableReason,
       row: null,
       snapshot: nextSnapshot,
     };
@@ -845,8 +900,8 @@ function applyZancunInventoryAction(input = {}) {
         }
       : actionMode === "stockOut"
       ? {
-          target_experiment_code: normalizeText(matchedRow.targetExperimentCode),
-          target_experiment_name: normalizeText(matchedRow.targetExperimentName),
+          target_experiment_code: normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode),
+          target_experiment_name: normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName),
           target_lab: selectedTargetLab,
         }
       : {}),

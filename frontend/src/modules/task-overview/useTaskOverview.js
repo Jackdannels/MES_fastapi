@@ -275,6 +275,7 @@ function useTaskOverview() {
     requestDeleteTask,
     confirmDeleteTask,
     updateEditForm,
+    clearEditFeedback,
   } = useTaskOverviewEditor({
     loadSnapshot,
     persistSnapshot,
@@ -531,6 +532,7 @@ function useTaskOverview() {
     editError,
     editForm,
     editMessage,
+    clearEditFeedback,
     experimentCounterLabel,
     experimentCounterValue,
     filteredRows,

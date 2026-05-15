@@ -41,6 +41,7 @@
         :saving="saving"
         :task-type-edit-options="taskTypeEditOptions"
         @cancel-edit="emit('cancel-edit')"
+        @clear-edit-feedback="emit('clear-edit-feedback')"
         @confirm-delete="emit('confirm-delete', $event)"
         @generate-codes="emit('generate-codes')"
         @request-delete="emit('request-delete', $event)"
@@ -120,6 +121,7 @@ defineProps({
 
 const emit = defineEmits([
   "cancel-edit",
+  "clear-edit-feedback",
   "confirm-delete",
   "dblclick-card",
   "generate-codes",

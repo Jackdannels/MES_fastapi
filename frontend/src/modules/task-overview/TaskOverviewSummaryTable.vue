@@ -76,7 +76,7 @@ const experimentLines = computed(() => {
     return experiments.map((experiment, index) => ({
       key: experiment?.experimentCode || `experiment-${index}`,
       isOverdueWaiting: Boolean(experiment?.isOverdueWaiting),
-      label: experiment?.experimentName || experiment?.experimentCode || "-",
+      label: experiment?.requiredDevice || experiment?.experimentName || experiment?.experimentCode || "-",
       status: experiment?.displayStatus || props.row?.currentStatus || props.row?.scheduleLabel || "-",
     }));
   }

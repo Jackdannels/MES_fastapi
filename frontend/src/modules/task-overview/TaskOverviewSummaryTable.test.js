@@ -134,4 +134,32 @@ describe("TaskOverviewSummaryTable", () => {
 
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
+
+  test("renders experiment types as content without treating experiment names as types", () => {
+    const wrapper = mount(TaskOverviewSummaryTable, {
+      props: {
+        formatTrayCount: () => "未分配",
+        formatTraySummary: () => "未分配托盘",
+        row: {
+          currentStatus: "待排程",
+          experimentCount: 2,
+          experimentSummary: "盐雾试验 / 振动试验",
+          experiments: [
+            { experimentCode: "TASK-010-A", experimentName: "A实验", requiredDevice: "盐雾试验", displayStatus: "待排程" },
+            { experimentCode: "TASK-010-B", experimentName: "新增实验名称", requiredDevice: "振动试验", displayStatus: "待排程" },
+          ],
+          plannedCount: 1,
+          sampleCount: 1,
+          scheduleCount: 0,
+          scheduleLabel: "待排程",
+          trays: [],
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("盐雾试验");
+    expect(wrapper.text()).toContain("振动试验");
+    expect(wrapper.text()).not.toContain("A实验");
+    expect(wrapper.text()).not.toContain("新增实验名称");
+  });
 });

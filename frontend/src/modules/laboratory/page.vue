@@ -294,16 +294,17 @@
           </label>
           <button class="action-btn" data-testid="laboratory-compare-scan-submit" type="button" @click="submitCompareScan">扫码确认</button>
         </div>
-        <div
+        <AppFeedback
           v-if="compareFeedback"
-          class="laboratory-compare-feedback"
-          :class="compareFeedback.tone === 'success' ? 'is-success' : 'is-error'"
+          :message="compareFeedback.message"
+          :tone="compareFeedback.tone === 'success' ? 'success' : 'error'"
           :data-tone="compareFeedback.tone"
           data-testid="laboratory-compare-feedback"
+          @close="compareFeedback = null"
         >
           <strong>{{ compareFeedback.message }}</strong>
           <div>{{ compareFeedback.guidance }}</div>
-        </div>
+        </AppFeedback>
       </div>
       <template #footer>
         <button class="action-btn" :disabled="!canCompleteCompare" data-testid="laboratory-compare-complete" type="button" @click="confirmCompare">比对完成</button>
@@ -419,6 +420,7 @@
 <script setup>
 import { Teleport } from "vue";
 
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useLaboratoryPage } from "./useLaboratoryPage";
 

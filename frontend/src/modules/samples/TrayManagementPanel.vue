@@ -85,7 +85,7 @@
             </tr>
           </tbody>
         </table>
-        <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
+        <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
       </section>
 
       <aside class="tray-management-sidebar" data-testid="samples-trays-flows">
@@ -129,6 +129,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { SYSTEM_TRAY_TOTAL, getRemainingSystemTrayCount } from "@/lib/trayCapacity";
 import { buildTrayFlowView } from "./samplesFlowModel";
 import {

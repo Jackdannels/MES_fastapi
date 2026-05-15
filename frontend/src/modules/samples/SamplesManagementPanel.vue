@@ -138,7 +138,7 @@
           </tr>
         </tbody>
       </table>
-      <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
     </section>
 
     <section class="card section" :class="{ 'is-hidden': activeSamplesTab !== 'sample-staging' }" data-testid="samples-staging-panel">
@@ -225,7 +225,7 @@
           清空输入
         </button>
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
     </section>
 
     <AppModal :open="samplesFlow.batchModalOpen" title="批量入库" @close="samplesFlow.closeBatchModal">
@@ -252,7 +252,7 @@
           ></textarea>
         </div>
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
       <template #footer>
         <button class="action-btn" type="button" data-testid="samples-flow-batch-submit" @click="samplesFlow.submitSamplesFlowBatch">
           确认入库
@@ -284,7 +284,7 @@
           ></textarea>
         </div>
       </div>
-      <div class="form-alert" :class="{ 'is-hidden': !samplesFlow.warning }">{{ samplesFlow.warning }}</div>
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
       <template #footer>
         <button class="action-btn" type="button" data-testid="samples-flow-detail-save" @click="samplesFlow.saveSampleDetail">
           保存修改
@@ -298,6 +298,7 @@
 <script setup>
 import { useTabState } from "@/composables/useTabState";
 import AppDrawer from "@/components/shared/AppDrawer.vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 

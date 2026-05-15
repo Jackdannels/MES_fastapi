@@ -33,9 +33,12 @@
       </button>
     </div>
 
-    <div v-if="dispatchState.state.feedback" class="form-alert" data-testid="transfer-dispatch-feedback">
-      {{ dispatchState.state.feedback }}
-    </div>
+    <AppFeedback
+      :message="dispatchState.feedbackMessage.value"
+      :tone="dispatchState.feedbackTone.value"
+      data-testid="transfer-dispatch-feedback"
+      @close="dispatchState.clearFeedback"
+    />
 
     <section v-if="dispatchState.state.tray" class="card section" data-testid="transfer-dispatch-result">
       <article class="transfer-dispatch-summary-card" data-testid="transfer-dispatch-tray-summary">
@@ -135,6 +138,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
 
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 
 const props = defineProps({
