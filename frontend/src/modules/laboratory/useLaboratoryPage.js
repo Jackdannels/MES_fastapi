@@ -26,6 +26,7 @@ const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
+const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
 
 const countTrayRowSamples = (trayRows) =>
   (Array.isArray(trayRows) ? trayRows : []).reduce((total, row) => {
@@ -67,6 +68,8 @@ function useLaboratoryPage(options = {}) {
   const taskListModalOpen = ref(false);
   const compareModalOpen = ref(false);
   const installModalOpen = ref(false);
+  const fixtureConfirmModalOpen = ref(false);
+  const fixtureConfirmCountdown = ref(0);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
   const resetConfirmModalOpen = ref(false);
@@ -76,6 +79,7 @@ function useLaboratoryPage(options = {}) {
   const tickNow = ref(now || new Date());
   let tickTimer = null;
   let runningModalRestoreTimer = null;
+  let fixtureConfirmTimer = null;
   let samplesPersistQueue = null;
 
   const view = computed(() =>
@@ -135,6 +139,12 @@ function useLaboratoryPage(options = {}) {
     if (runningModalRestoreTimer && typeof window !== "undefined") {
       window.clearTimeout(runningModalRestoreTimer);
       runningModalRestoreTimer = null;
+    }
+  };
+  const clearFixtureConfirmTimer = () => {
+    if (fixtureConfirmTimer && typeof window !== "undefined") {
+      window.clearInterval(fixtureConfirmTimer);
+      fixtureConfirmTimer = null;
     }
   };
 
@@ -270,6 +280,7 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener("keydown", handleRunningModalActivity, true);
     }
     clearRunningModalRestoreTimer();
+    clearFixtureConfirmTimer();
   });
 
   const openScheduleBoard = () => {
@@ -375,6 +386,48 @@ function useLaboratoryPage(options = {}) {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
   };
+  const persistFixtureReadyForTask = async ({ taskCode, trayCodes }) => {
+    const targetTaskCode = String(taskCode || "").trim();
+    const targetTrayCodes = new Set((Array.isArray(trayCodes) ? trayCodes : []).map((code) => String(code || "").trim()).filter(Boolean));
+    if (!targetTaskCode || targetTrayCodes.size === 0) {
+      return;
+    }
+    const nextSamples = samples.value.map((sample) => {
+      if (String(sample?.task_code || "").trim() !== targetTaskCode || !Array.isArray(sample?.trays)) {
+        return sample;
+      }
+      return {
+        ...sample,
+        trays: sample.trays.map((tray) =>
+          targetTrayCodes.has(String(tray?.tray_code || "").trim()) && String(tray?.status || "").trim() === LAB_INSTALL_STATUS
+            ? { ...tray, fixtureReady: true, fixture_ready: true }
+            : tray,
+        ),
+      };
+    });
+    samples.value = nextSamples;
+    await persistSamples(nextSamples);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    }
+  };
+  const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
+    clearFixtureConfirmTimer();
+    fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
+    fixtureConfirmModalOpen.value = true;
+    if (typeof window === "undefined") {
+      return;
+    }
+    fixtureConfirmTimer = window.setInterval(() => {
+      fixtureConfirmCountdown.value = Math.max(0, fixtureConfirmCountdown.value - 1);
+      if (fixtureConfirmCountdown.value > 0) {
+        return;
+      }
+      clearFixtureConfirmTimer();
+      fixtureConfirmModalOpen.value = false;
+      void persistFixtureReadyForTask({ taskCode, trayCodes });
+    }, 1000);
+  };
   const confirmCompare = async () => {
     if (!currentTask.value || !canCompleteCompare.value) {
       return;
@@ -425,8 +478,11 @@ function useLaboratoryPage(options = {}) {
       return;
     }
     const payload = buildFixtureInstallPayload();
+    const targetTaskCode = currentTask.value?.taskCode || "";
+    const targetTrayCodes = getCurrentTaskTrayCodesByStatus(LAB_COMPARE_STATUS);
     await persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
+    startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
     void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload);
   };
   const openReady = () => {
@@ -549,6 +605,8 @@ function useLaboratoryPage(options = {}) {
     closeCompare,
     closeConfirmed,
     closeInstall,
+    fixtureConfirmCountdown,
+    fixtureConfirmModalOpen,
     closeReady,
     closeResetConfirm,
     closeResetDanger,

@@ -187,11 +187,12 @@ describe("laboratory model", () => {
     }));
   });
 
-  test("workflow gating follows compare then install then confirm", () => {
+  test("workflow gating waits for host fixture ready before confirm", () => {
     const initial = createLaboratoryWorkflow();
     const compared = completeLaboratoryComparison(initial);
     const installed = completeLaboratoryInstallation(compared);
-    const confirmed = confirmLaboratoryExperiment(installed);
+    const fixtureReady = { ...installed, fixtureReadyDone: true };
+    const confirmed = confirmLaboratoryExperiment(fixtureReady);
 
     expect(getLaboratoryActionState(initial)).toEqual({
       canCompare: true,
@@ -206,6 +207,11 @@ describe("laboratory model", () => {
     expect(getLaboratoryActionState(installed)).toEqual({
       canCompare: false,
       canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(getLaboratoryActionState(fixtureReady)).toEqual({
+      canCompare: false,
+      canInstallSample: false,
       canMarkReady: true,
     });
     expect(confirmed.experimentConfirmed).toBe(true);
@@ -216,6 +222,59 @@ describe("laboratory model", () => {
       canInstallSample: false,
       canMarkReady: false,
     });
+  });
+
+  test("installed tray rows require fixtureReady before ready action unlocks", () => {
+    const waiting = buildLaboratoryWorkflowFromTask({
+      trayRows: [{ fixtureReady: false, trayCode: "TP-001", trayStatus: "工装夹具安装" }],
+    });
+    const ready = buildLaboratoryWorkflowFromTask({
+      trayRows: [{ fixtureReady: true, trayCode: "TP-001", trayStatus: "工装夹具安装" }],
+    });
+
+    expect(getLaboratoryActionState(waiting).canMarkReady).toBe(false);
+    expect(getLaboratoryActionState(ready).canMarkReady).toBe(true);
+  });
+
+  test("buildSaltSprayLaboratoryView unlocks ready when loaded tray has fixture_ready", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-002" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", experiment_name: "盐雾试验-A" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SYLU-2026-04-101-SP-001",
+          location: "盐雾试验室",
+          status: "工装夹具安装",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TP-001", fixture_ready: true }],
+        },
+        {
+          code: "SYLU-2026-04-101-SP-002",
+          location: "接驳区",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-002" }],
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-04-101", name: "盐雾连接器", test_type: "盐雾试验" }],
+    });
+
+    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask)).canMarkReady).toBe(true);
   });
 
   test("buildSaltSprayLaboratoryView supports selecting a later scheduled task and exposes detailed tray rows", () => {
@@ -961,7 +1020,7 @@ describe("laboratory model", () => {
     expect(getLaboratoryActionState(workflow)).toEqual({
       canCompare: false,
       canInstallSample: false,
-      canMarkReady: true,
+      canMarkReady: false,
     });
   });
 

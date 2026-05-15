@@ -67,6 +67,33 @@ CALL add_column_if_missing('mes_single_branch', 'biz_sample', 'location_desc',
 CALL add_column_if_missing('mes_single_branch', 'biz_sample', 'flow_status',
   'ALTER TABLE biz_sample ADD COLUMN flow_status VARCHAR(30) NULL AFTER location_desc');
 
+CREATE TABLE IF NOT EXISTS biz_experiment (
+  experiment_id BIGINT NOT NULL AUTO_INCREMENT,
+  experiment_no VARCHAR(50) NOT NULL,
+  task_id BIGINT NULL,
+  task_no VARCHAR(50) NOT NULL,
+  experiment_name VARCHAR(100) NOT NULL,
+  required_device VARCHAR(100) NULL,
+  priority TINYINT NULL,
+  planned_hours DECIMAL(10,2) NULL,
+  experiment_status VARCHAR(30) NULL,
+  unscheduled_since DATETIME NULL,
+  actual_start_time DATETIME NULL,
+  actual_end_time DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (experiment_id),
+  UNIQUE KEY uk_biz_experiment_no (experiment_no),
+  KEY idx_biz_experiment_task_no (task_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL add_column_if_missing('mes_single_branch', 'biz_experiment', 'unscheduled_since',
+  'ALTER TABLE biz_experiment ADD COLUMN unscheduled_since DATETIME NULL AFTER experiment_status');
+CALL add_column_if_missing('mes_single_branch', 'biz_experiment', 'actual_start_time',
+  'ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL AFTER unscheduled_since');
+CALL add_column_if_missing('mes_single_branch', 'biz_experiment', 'actual_end_time',
+  'ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL AFTER actual_start_time');
+
 DROP PROCEDURE IF EXISTS add_column_if_missing;
 
 CREATE TABLE IF NOT EXISTS sys_config (
@@ -173,6 +200,96 @@ CREATE TABLE IF NOT EXISTS biz_data_stream (
   KEY idx_biz_data_stream_task_no (task_no),
   CONSTRAINT fk_biz_data_stream_task FOREIGN KEY (task_id) REFERENCES biz_task(task_id),
   CONSTRAINT fk_biz_data_stream_equipment FOREIGN KEY (equipment_id) REFERENCES md_equipment(equipment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_experiment_tray (
+  relation_id BIGINT NOT NULL AUTO_INCREMENT,
+  experiment_no VARCHAR(50) NOT NULL,
+  task_no VARCHAR(50) NOT NULL,
+  tray_no VARCHAR(80) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (relation_id),
+  UNIQUE KEY uk_biz_experiment_tray_unique (experiment_no, tray_no),
+  KEY idx_biz_experiment_tray_task_no (task_no),
+  KEY idx_biz_experiment_tray_tray_no (tray_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_experiment_sample (
+  relation_id BIGINT NOT NULL AUTO_INCREMENT,
+  experiment_no VARCHAR(50) NOT NULL,
+  task_no VARCHAR(50) NOT NULL,
+  sample_no VARCHAR(80) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (relation_id),
+  UNIQUE KEY uk_biz_experiment_sample_unique (experiment_no, sample_no),
+  KEY idx_biz_experiment_sample_task_no (task_no),
+  KEY idx_biz_experiment_sample_sample_no (sample_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_mq_message_log (
+  message_log_id BIGINT NOT NULL AUTO_INCREMENT,
+  message_id VARCHAR(100) NULL,
+  direction VARCHAR(20) NOT NULL,
+  topic VARCHAR(255) NOT NULL,
+  message_type VARCHAR(50) NOT NULL,
+  correlation_id VARCHAR(100) NULL,
+  lab_code VARCHAR(50) NULL,
+  task_no VARCHAR(50) NULL,
+  experiment_no VARCHAR(50) NULL,
+  qos TINYINT NULL,
+  retain_flag TINYINT NOT NULL DEFAULT 0,
+  payload_json JSON NULL,
+  process_status VARCHAR(30) NOT NULL DEFAULT 'RECEIVED',
+  error_code VARCHAR(50) NULL,
+  error_message VARCHAR(1000) NULL,
+  received_at DATETIME NULL,
+  processed_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (message_log_id),
+  UNIQUE KEY uk_biz_mq_message_id (message_id),
+  KEY idx_biz_mq_topic_time (topic, created_at),
+  KEY idx_biz_mq_task_exp (task_no, experiment_no),
+  KEY idx_biz_mq_status (process_status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_experiment_event (
+  experiment_event_id BIGINT NOT NULL AUTO_INCREMENT,
+  event_type VARCHAR(50) NOT NULL,
+  task_no VARCHAR(50) NOT NULL,
+  experiment_no VARCHAR(50) NULL,
+  lab_code VARCHAR(50) NULL,
+  success_id VARCHAR(100) NULL,
+  event_time DATETIME NULL,
+  message_id VARCHAR(100) NULL,
+  message_log_id BIGINT NULL,
+  payload_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (experiment_event_id),
+  UNIQUE KEY uk_biz_experiment_event_message (message_id),
+  KEY idx_biz_experiment_event_task_exp (task_no, experiment_no),
+  KEY idx_biz_experiment_event_time (event_type, event_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_experiment_result (
+  experiment_result_id BIGINT NOT NULL AUTO_INCREMENT,
+  task_no VARCHAR(50) NOT NULL,
+  experiment_no VARCHAR(50) NOT NULL,
+  lab_code VARCHAR(50) NULL,
+  result_time DATETIME NOT NULL,
+  conclusion VARCHAR(50) NULL,
+  summary TEXT NULL,
+  result_payload_json JSON NOT NULL,
+  message_id VARCHAR(100) NULL,
+  message_log_id BIGINT NULL,
+  status VARCHAR(30) NULL DEFAULT 'RECEIVED',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (experiment_result_id),
+  UNIQUE KEY uk_biz_experiment_result_message (message_id),
+  KEY idx_biz_experiment_result_exp (experiment_no),
+  KEY idx_biz_experiment_result_task (task_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS biz_sample_event (

@@ -1,0 +1,71 @@
+{
+  "name": "MES与上位机MQTT接口定义",
+  "version": "1.0",
+  "encoding": "UTF-8",
+  "payloadFormat": "JSON",
+  "topicPrefix": "mes/v1",
+  "send": [
+    {
+      "name": "安装夹具，校验信息",
+      "direction": "MES_TO_HOST",
+      "topic": "mes/v1/labs/{labId}/commands/fixture-install",
+      "payload": {
+        "messageType": "INSTALL_FIXTURE",
+        "taskId": "任务id",
+        "labId": "实验室id",
+        "sampleType": "样品类型",
+        "sampleCount": 0
+      }
+    }
+  ],
+  "receive": [
+    {
+      "name": "夹具安装完成，启动准备就绪",
+      "direction": "HOST_TO_MES",
+      "topic": "mes/v1/labs/{labId}/events/fixture-ready",
+      "payload": {
+        "messageType": "FIXTURE_READY",
+        "taskId": "任务id",
+        "labId": "实验室id",
+        "successId": "成功id"
+      }
+    },
+    {
+      "name": "实验开始时间",
+      "direction": "HOST_TO_MES",
+      "topic": "mes/v1/labs/{labId}/events/experiment-started",
+      "payload": {
+        "messageType": "EXPERIMENT_STARTED",
+        "taskId": "任务id",
+        "experimentId": "实验id",
+        "labId": "实验室id",
+        "time": "2026-05-16T09:30:00+08:00"
+      }
+    },
+    {
+      "name": "实验结束时间",
+      "direction": "HOST_TO_MES",
+      "topic": "mes/v1/labs/{labId}/events/experiment-ended",
+      "payload": {
+        "messageType": "EXPERIMENT_ENDED",
+        "taskId": "任务id",
+        "experimentId": "实验id",
+        "labId": "实验室id",
+        "time": "2026-05-16T11:30:00+08:00"
+      }
+    },
+    {
+      "name": "结果接收",
+      "direction": "HOST_TO_MES",
+      "topic": "mes/v1/labs/{labId}/events/experiment-result",
+      "payload": {
+        "messageType": "EXPERIMENT_RESULT",
+        "taskId": "任务id",
+        "experimentId": "实验id",
+        "labId": "实验室id",
+        "time": "2026-05-16T11:31:00+08:00",
+        "resultPackage": {}
+      }
+    }
+  ]
+}

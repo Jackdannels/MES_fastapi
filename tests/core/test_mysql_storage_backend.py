@@ -143,6 +143,71 @@ def test_ensure_schema_extensions_expands_task_type_for_all_experiment_summary(m
     assert connection.committed is True
 
 
+def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if "SHOW COLUMNS FROM biz_experiment LIKE 'actual_start_time'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment LIKE 'actual_end_time'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            self.committed = True
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert any("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_mq_message_log" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_experiment_event" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_experiment_result" in statement for statement in statements)
+    assert connection.committed is True
+
+
 def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
     storage_schedule = {
         "id": "schedule-1",
@@ -800,6 +865,105 @@ def test_build_storage_sample_item_preserves_tray_status() -> None:
     )
 
     assert storage_item["trays"][0]["status"] == "实验进行中"
+
+
+def test_build_storage_sample_item_preserves_fixture_ready_marker() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 102,
+            "sample_no": "SYLU-2026-03-003-SP-001",
+            "task_no": "SYLU-2026-03-003",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "盐雾试验室",
+            "sample_status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-03-17 09:00:00",
+            "updated_at": "2026-03-17 09:00:00",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-03-003-TP-001",
+                "tray_code": "SYLU-2026-03-003-TP-001",
+                "sample_code": "SYLU-2026-03-003-SP-001",
+                "quantity": 1,
+                "status": "工装夹具安装",
+                "fixture_ready": True,
+                "created_at": "2026-03-17 09:00:00",
+                "updated_at": "2026-03-17 09:00:00",
+            }
+        ],
+    )
+
+    assert storage_item["trays"][0]["fixture_ready"] is True
+    assert storage_item["trays"][0]["fixtureReady"] is True
+
+
+def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self._result = []
+
+        def execute(self, statement, params=None):
+            if "FROM biz_sample s" in statement:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "sample_no": "SYLU-2026-03-003-SP-001",
+                        "task_no": "SYLU-2026-03-003",
+                        "sample_type": "",
+                        "batch_no": "",
+                        "arrival_time": None,
+                        "quantity": 1,
+                        "storage_condition": "",
+                        "barcode_no": "",
+                        "location_desc": "盐雾试验室",
+                        "sample_status": "工装夹具安装",
+                        "flow_status": "工装夹具安装",
+                        "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    }
+                ]
+            elif "FROM biz_tray_item" in statement:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "task_no": "SYLU-2026-03-003",
+                        "tray_code": "SYLU-2026-03-003-TP-001",
+                        "sample_code": "SYLU-2026-03-003-SP-001",
+                        "quantity": 1,
+                        "status": "工装夹具安装",
+                        "test_state": "",
+                        "tray_status": "",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    }
+                ]
+            elif "FROM biz_experiment_event" in statement:
+                self._result = [{"task_no": "SYLU-2026-03-003"}]
+            elif "FROM biz_sample_event" in statement:
+                self._result = []
+            else:
+                self._result = []
+
+        def fetchall(self):
+            return self._result
+
+    samples = backend._load_samples(_Cursor())
+
+    assert samples[0]["trays"][0]["fixture_ready"] is True
+    assert samples[0]["trays"][0]["fixtureReady"] is True
 
 
 def test_replace_samples_persists_real_tray_item_status() -> None:

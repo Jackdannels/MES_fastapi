@@ -175,6 +175,14 @@ const resolveLaboratoryStatusRank = (value) => {
   return 0;
 };
 
+const isFixtureReady = (value) => {
+  if (value === true) {
+    return true;
+  }
+  const normalized = normalizeText(value).toLowerCase();
+  return ["1", "true", "yes", "ready", "fixture_ready", "夹具安装完成"].includes(normalized);
+};
+
 const buildBlockedComparisonResult = (trayCode, status) => {
   const normalizedTrayCode = normalizeText(trayCode);
   const normalizedStatus = normalizeText(status);
@@ -482,7 +490,7 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
   const trayRows = [];
   const indexByTrayCode = new Map();
 
-  const pushRow = (trayCode, sampleCode = "", quantity = "", owner = "", location = "") => {
+  const pushRow = (trayCode, sampleCode = "", quantity = "", owner = "", location = "", fixtureReady = false) => {
     const normalizedTrayCode = normalizeText(trayCode);
     if (!normalizedTrayCode) {
       return;
@@ -502,6 +510,7 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
       if (!current.currentLocation && location) {
         current.currentLocation = location;
       }
+      current.fixtureReady = current.fixtureReady || isFixtureReady(fixtureReady);
       return;
     }
     indexByTrayCode.set(normalizedTrayCode, trayRows.length);
@@ -511,6 +520,7 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
       owner: normalizeText(owner),
       quantity: quantity || "",
       sampleCodes: sampleCode ? [sampleCode] : [],
+      fixtureReady: isFixtureReady(fixtureReady),
       trayStatus: "",
       trayCode: normalizedTrayCode,
     });
@@ -529,7 +539,7 @@ const collectTrayRows = ({ experimentTrayCodeMap, experimentKey, relatedSamples 
       if (scopedTrayCodes.length > 0 && !scopedTrayCodes.includes(trayCode)) {
         return;
       }
-      pushRow(trayCode, sampleCode, quantity, owner, location);
+      pushRow(trayCode, sampleCode, quantity, owner, location, tray?.fixtureReady ?? tray?.fixture_ready);
       const row = trayRows[indexByTrayCode.get(trayCode)];
       const currentRank = resolveLaboratoryStatusRank(row?.trayStatus);
       const nextStatus = normalizeText(tray?.status);
@@ -692,6 +702,7 @@ function createLaboratoryWorkflow() {
   return {
     comparisonDone: false,
     experimentConfirmed: false,
+    fixtureReadyDone: false,
     hasCompared: false,
     hasInstalled: false,
     installationDone: false,
@@ -701,11 +712,14 @@ function createLaboratoryWorkflow() {
 function buildLaboratoryWorkflowFromTask(task) {
   const trayRows = asArray(task?.trayRows);
   const trayRanks = trayRows.map((row) => resolveLaboratoryStatusRank(row?.trayStatus));
+  const installedWaitingReadyRows = trayRows.filter((row) => resolveLaboratoryStatusRank(row?.trayStatus) === 2);
   const hasCompared = trayRanks.some((rank) => rank >= 1);
   const comparisonDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 1);
   const hasInstalled = trayRanks.some((rank) => rank >= 2 && rank < 5);
   const installationDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 2);
   const experimentConfirmed = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 3);
+  const fixtureReadyDone =
+    installedWaitingReadyRows.length > 0 && installedWaitingReadyRows.every((row) => row?.fixtureReady === true);
   const workflow = {
     comparisonDone,
     experimentConfirmed,
@@ -714,6 +728,9 @@ function buildLaboratoryWorkflowFromTask(task) {
     installationDone,
   };
   Object.defineProperties(workflow, {
+    fixtureReadyDone: {
+      value: fixtureReadyDone,
+    },
     hasComparedWaitingInstall: {
       value: trayRanks.some((rank) => rank === 1),
     },
@@ -744,10 +761,13 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
   const hasInProgressPreparation = Object.prototype.hasOwnProperty.call(workflow, "hasInProgressPreparation")
     ? workflow.hasInProgressPreparation
     : Boolean(workflow.hasInstalled);
+  const fixtureReadyDone = Object.prototype.hasOwnProperty.call(workflow, "fixtureReadyDone")
+    ? workflow.fixtureReadyDone
+    : false;
   return {
     canCompare: !workflow.comparisonDone && !hasInProgressPreparation,
     canInstallSample: Boolean(hasComparedWaitingInstall),
-    canMarkReady: Boolean(hasInstalledWaitingReady),
+    canMarkReady: Boolean(hasInstalledWaitingReady && fixtureReadyDone),
   };
 }
 
@@ -771,17 +791,19 @@ function completeLaboratoryInstallation(workflow = createLaboratoryWorkflow()) {
     hasCompared: true,
     hasInstalled: true,
     installationDone: true,
+    fixtureReadyDone: false,
     experimentConfirmed: false,
   };
 }
 
 function confirmLaboratoryExperiment(workflow = createLaboratoryWorkflow()) {
-  if (!(workflow.hasInstalled || workflow.installationDone)) {
+  if (!(workflow.hasInstalled || workflow.installationDone) || !workflow.fixtureReadyDone) {
     return { ...workflow };
   }
   return {
     comparisonDone: true,
     experimentConfirmed: true,
+    fixtureReadyDone: true,
     hasCompared: true,
     hasInstalled: true,
     installationDone: true,
@@ -794,6 +816,9 @@ function buildLaboratoryProgressMessage(workflow, currentTask) {
   }
   if (workflow.experimentConfirmed) {
     return "当前任务已确认全部托盘实验准备就绪";
+  }
+  if (workflow.hasInstalledWaitingReady && !workflow.fixtureReadyDone) {
+    return "当前任务已完成夹具安装，等待上位机确认夹具安装完成";
   }
   if (workflow.hasInstalled && !workflow.installationDone) {
     return "当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪";

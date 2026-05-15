@@ -321,6 +321,13 @@
       </template>
     </AppModal>
 
+    <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="等待上位机确认" @close="() => {}">
+      <div class="laboratory-modal-body laboratory-prompt-card">
+        <p>正在等待上位机确认夹具安装完成。</p>
+        <strong data-testid="laboratory-fixture-confirm-countdown">{{ fixtureConfirmCountdown }}</strong>
+      </div>
+    </AppModal>
+
     <AppModal :open="readyModalOpen" data-testid="laboratory-ready-modal" title="确认实验准备就绪" @close="closeReady">
       <div class="laboratory-modal-body laboratory-prompt-card">
         <p>确定当前盐雾试验室任务已完成实验准备，并将状态更新为实验准备就绪。</p>
@@ -451,6 +458,8 @@ const {
   confirmInstall,
   confirmReady,
   confirmedModalOpen,
+  fixtureConfirmCountdown,
+  fixtureConfirmModalOpen,
   currentExperimentTrayRows,
   currentTask,
   currentTaskFlow,

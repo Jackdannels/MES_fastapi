@@ -182,9 +182,20 @@ $env:Path = "C:\Program Files\Erlang OTP\bin;$env:Path"
 Restart-Service RabbitMQ
 ```
 
+### 实验室 MQTT 接口协议
+
+接口 JSON 见 `docs/mqtt-interface-definition.json`。该文件由桌面原始接口文件 `MQ接口定义.txt` 整理而来，只保留双方当前商议的发送、接收消息和对应 topic。
+
+本次夹具安装流程的关键约束：
+
+- 实验室界面点击 `安装夹具` 后，MES 发送 `INSTALL_FIXTURE`
+- PLC/上位机检测夹具安装完成后，正式流程向 MES 回传 `FIXTURE_READY`
+- 当前未直接连接上位机时，MES 前端在安装夹具后弹出 3 秒等待确认倒计时，倒计时结束后兼容解锁 `确认准备就绪` 按钮
+- `READY` 仍作为兼容指令保留，但不再作为夹具安装完成的判断依据
+
 ### MES 发送给上位机的消息
 
-盐雾试验室操作台当前发送两类 MQTT 消息。
+盐雾试验室操作台当前保留两类 MES 到上位机的 MQTT 消息。
 
 安装夹具：
 
@@ -203,11 +214,12 @@ Restart-Service RabbitMQ
 }
 ```
 
-准备就绪：
+准备就绪（兼容指令）：
 
 - 页面触发点：盐雾操作台点击 `确认准备就绪` 弹窗中的 `确认准备就绪`
 - 后端接口：`POST /api/mq/laboratory/ready`
 - MQTT topic：`mes/v1/labs/salt-spray-lab-01/commands/experiment-ready`
+- 说明：该指令只表示 MES 已确认当前任务准备就绪；按钮能否点击取决于上位机先前回传的 `FIXTURE_READY`
 - payload 示例：
 
 ```json
@@ -224,6 +236,40 @@ Restart-Service RabbitMQ
 - `sampleType` 暂时发送空字符串
 - `sampleCount` 为本次已比对托盘关联样品数之和
 - MQTT 发送失败不会阻塞盐雾操作台的本地业务状态更新，失败信息会输出到前端控制台
+
+### 上位机发送给 MES 的消息
+
+上位机需要向 MES 回传以下事件：
+
+- 夹具安装完成：`mes/v1/labs/{labId}/events/fixture-ready`，`messageType=FIXTURE_READY`
+- 实验开始：`mes/v1/labs/{labId}/events/experiment-started`，`messageType=EXPERIMENT_STARTED`
+- 实验结束：`mes/v1/labs/{labId}/events/experiment-ended`，`messageType=EXPERIMENT_ENDED`
+- 实验结果：`mes/v1/labs/{labId}/events/experiment-result`，`messageType=EXPERIMENT_RESULT`
+
+调试接口：
+
+```text
+POST /api/mq/laboratory/events/{event_name}
+```
+
+其中 `FIXTURE_READY` 示例 payload：
+
+```json
+{
+  "protocol": "MES_LAB_MQTT",
+  "version": "1.0",
+  "messageId": "HOST-READY-20260516-0001",
+  "correlationId": "MES-INSTALL-20260516-0001",
+  "messageType": "FIXTURE_READY",
+  "taskId": "SYLU-2026-03-001",
+  "labId": "salt-spray-lab-01",
+  "successId": "PLC-OK-001",
+  "sentAt": "2026-05-16T09:31:01+08:00",
+  "occurredAt": "2026-05-16T09:31:00+08:00"
+}
+```
+
+MES 会记录 `biz_mq_message_log` 和 `biz_experiment_event`，并在实验室页面读取样品托盘时合并 `fixture_ready=true`，从而解锁准备就绪按钮。
 
 ### 上位机订阅建议
 

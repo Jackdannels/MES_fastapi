@@ -181,6 +181,13 @@ def parse_bool_flag(value: Any) -> int:
     return 1 if text in {"1", "true", "yes"} else 0
 
 
+def parse_fixture_ready_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = normalize_text(value).lower()
+    return text in {"1", "true", "yes", "ready", "fixture_ready", "夹具安装完成"}
+
+
 def parse_date_value(value: Any) -> date | None:
     text = normalize_text(value)
     if not text:
@@ -759,6 +766,8 @@ def build_storage_sample_item(
             "sample_code": normalize_text(tray.get("sample_code") or row.get("sample_no")),
             "quantity": 0 if tray.get("quantity") in (None, "") else int(tray.get("quantity")),
             "status": normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status")),
+            "fixture_ready": parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))),
+            "fixtureReady": parse_fixture_ready_flag(tray.get("fixtureReady", tray.get("fixture_ready"))),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
         }
@@ -876,6 +885,12 @@ class MySQLMesStorageBackend(StorageBackend):
                 cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'unscheduled_since'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_experiment ADD COLUMN unscheduled_since DATETIME NULL AFTER experiment_status")
+                cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'actual_start_time'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL AFTER unscheduled_since")
+                cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'actual_end_time'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL AFTER actual_start_time")
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS biz_experiment_tray (
@@ -905,6 +920,79 @@ class MySQLMesStorageBackend(StorageBackend):
                       UNIQUE KEY uk_biz_experiment_sample_unique (experiment_no, sample_no),
                       KEY idx_biz_experiment_sample_task_no (task_no),
                       KEY idx_biz_experiment_sample_sample_no (sample_no)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS biz_mq_message_log (
+                      message_log_id BIGINT NOT NULL AUTO_INCREMENT,
+                      message_id VARCHAR(100) NULL,
+                      direction VARCHAR(20) NOT NULL,
+                      topic VARCHAR(255) NOT NULL,
+                      message_type VARCHAR(50) NOT NULL,
+                      correlation_id VARCHAR(100) NULL,
+                      lab_code VARCHAR(50) NULL,
+                      task_no VARCHAR(50) NULL,
+                      experiment_no VARCHAR(50) NULL,
+                      qos TINYINT NULL,
+                      retain_flag TINYINT NOT NULL DEFAULT 0,
+                      payload_json JSON NULL,
+                      process_status VARCHAR(30) NOT NULL DEFAULT 'RECEIVED',
+                      error_code VARCHAR(50) NULL,
+                      error_message VARCHAR(1000) NULL,
+                      received_at DATETIME NULL,
+                      processed_at DATETIME NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      PRIMARY KEY (message_log_id),
+                      UNIQUE KEY uk_biz_mq_message_id (message_id),
+                      KEY idx_biz_mq_topic_time (topic, created_at),
+                      KEY idx_biz_mq_task_exp (task_no, experiment_no),
+                      KEY idx_biz_mq_status (process_status)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS biz_experiment_event (
+                      experiment_event_id BIGINT NOT NULL AUTO_INCREMENT,
+                      event_type VARCHAR(50) NOT NULL,
+                      task_no VARCHAR(50) NOT NULL,
+                      experiment_no VARCHAR(50) NULL,
+                      lab_code VARCHAR(50) NULL,
+                      success_id VARCHAR(100) NULL,
+                      event_time DATETIME NULL,
+                      message_id VARCHAR(100) NULL,
+                      message_log_id BIGINT NULL,
+                      payload_json JSON NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      PRIMARY KEY (experiment_event_id),
+                      UNIQUE KEY uk_biz_experiment_event_message (message_id),
+                      KEY idx_biz_experiment_event_task_exp (task_no, experiment_no),
+                      KEY idx_biz_experiment_event_time (event_type, event_time)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS biz_experiment_result (
+                      experiment_result_id BIGINT NOT NULL AUTO_INCREMENT,
+                      task_no VARCHAR(50) NOT NULL,
+                      experiment_no VARCHAR(50) NOT NULL,
+                      lab_code VARCHAR(50) NULL,
+                      result_time DATETIME NOT NULL,
+                      conclusion VARCHAR(50) NULL,
+                      summary TEXT NULL,
+                      result_payload_json JSON NOT NULL,
+                      message_id VARCHAR(100) NULL,
+                      message_log_id BIGINT NULL,
+                      status VARCHAR(30) NULL DEFAULT 'RECEIVED',
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (experiment_result_id),
+                      UNIQUE KEY uk_biz_experiment_result_message (message_id),
+                      KEY idx_biz_experiment_result_exp (experiment_no),
+                      KEY idx_biz_experiment_result_task (task_no)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                     """
                 )
@@ -1861,19 +1949,37 @@ class MySQLMesStorageBackend(StorageBackend):
 
         cursor.execute(
             f"""
-            SELECT ti.sample_id, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.status,
+            SELECT ti.sample_id, t.task_no, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.status,
                    tr.test_state, tr.tray_status, ti.created_at, ti.updated_at
             FROM biz_tray_item ti
             JOIN biz_tray tr ON tr.tray_id = ti.tray_id
             JOIN biz_sample s ON s.sample_id = ti.sample_id
+            LEFT JOIN biz_task t ON t.task_id = s.task_id
             WHERE ti.sample_id IN ({placeholders})
             ORDER BY ti.created_at DESC, tr.tray_no ASC
             """,
             sample_ids,
         )
         tray_rows = cursor.fetchall()
+        task_nos = sorted({normalize_text(row.get("task_no")) for row in sample_rows if normalize_text(row.get("task_no"))})
+        fixture_ready_task_nos: set[str] = set()
+        if task_nos:
+            task_placeholders = ", ".join(["%s"] * len(task_nos))
+            cursor.execute(
+                f"""
+                SELECT DISTINCT task_no
+                FROM biz_experiment_event
+                WHERE event_type = 'FIXTURE_READY'
+                  AND task_no IN ({task_placeholders})
+                """,
+                task_nos,
+            )
+            fixture_ready_task_nos = {normalize_text(row.get("task_no")) for row in cursor.fetchall()}
         tray_map: Dict[int, list[dict[str, Any]]] = {}
         for row in tray_rows:
+            if normalize_text(row.get("task_no")) in fixture_ready_task_nos:
+                row["fixture_ready"] = True
+                row["fixtureReady"] = True
             tray_map.setdefault(row["sample_id"], []).append(row)
 
         cursor.execute(

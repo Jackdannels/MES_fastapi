@@ -18,6 +18,23 @@ const toDisplayedDateTime = (value) => {
   const date = new Date(value);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${toDisplayedTime(value)}`;
 };
+const flushPageUpdates = async (cycles = 4) => {
+  for (let index = 0; index < cycles; index += 1) {
+    await Promise.resolve();
+  }
+  await nextTick();
+};
+const storageGetCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+const waitForStorageGetCount = async (count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (storageGetCalls().length >= count) {
+      return;
+    }
+  }
+  expect(storageGetCalls()).toHaveLength(count);
+};
 
 const createSnapshot = () => ({
   [STORAGE_KEYS.tasks]: [
@@ -252,8 +269,6 @@ describe("LaboratoryPage runtime", () => {
 
   test("reloads flow state when sample progress changes are broadcast", async () => {
     await mountPage();
-    const storageGetCalls = () =>
-      fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
 
     expect(storageGetCalls()).toHaveLength(1);
 
@@ -271,8 +286,7 @@ describe("LaboratoryPage runtime", () => {
     };
 
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    await Promise.resolve();
-    await nextTick();
+    await waitForStorageGetCount(2);
 
     expect(storageGetCalls()).toHaveLength(2);
   });
@@ -535,10 +549,12 @@ describe("LaboratoryPage runtime", () => {
     await Promise.resolve();
     await nextTick();
     await nextTick();
-    for (let index = 0; index < 5 && mounted.get('[data-testid="laboratory-ready"]').attributes("disabled") !== undefined; index += 1) {
-      await Promise.resolve();
-      await nextTick();
-    }
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
+    vi.advanceTimersByTime(3000);
+    await flushPageUpdates();
+
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await nextTick();
@@ -1044,6 +1060,8 @@ describe("LaboratoryPage runtime", () => {
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await Promise.resolve();
+    await Promise.resolve();
     await nextTick();
     await nextTick();
 
@@ -1065,12 +1083,19 @@ describe("LaboratoryPage runtime", () => {
       status: "送至实验室",
       trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
+    expect(mounted.text()).toContain("当前任务已完成夹具安装，等待上位机确认夹具安装完成");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await nextTick();
     expect(mounted.find('[data-testid="laboratory-install-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
+    vi.advanceTimersByTime(3000);
+    await flushPageUpdates();
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
@@ -1094,7 +1119,7 @@ describe("LaboratoryPage runtime", () => {
       trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
     expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
-    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(3);
+    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(4);
 
     mounted.unmount();
     wrapper = undefined;
