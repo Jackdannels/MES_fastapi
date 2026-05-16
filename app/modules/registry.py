@@ -9,6 +9,7 @@ from app.api.routes.device import router as device_router
 from app.api.routes.health import router as health_router
 from app.api.routes.manufactureplan import router as manufactureplan_router
 from app.api.routes.material import router as material_router
+from app.api.routes.master_data import router as master_data_router
 from app.api.routes.mq import router as mq_router
 from app.api.routes.permissions import router as permissions_router
 from app.api.routes.person import router as person_router
@@ -39,6 +40,7 @@ class AppModule:
 MODULES = (
     AppModule(key="auth", api_routers=(auth_router,), spa_routes=("/login",)),
     AppModule(key="dashboard", api_routers=(health_router,), spa_routes=("/",)),
+    AppModule(key="master-data", api_routers=(master_data_router,)),
     AppModule(key="task-overview", spa_routes=("/task-overview",)),
     AppModule(
         key="tasks",

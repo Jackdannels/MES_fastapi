@@ -66,6 +66,96 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({ active: true }));
   });
 
+  test("buildTrayFlowView labels tray experiment requirements by test type instead of experiment name", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-101-TP-001",
+      taskCode: "SYLU-2026-03-101",
+      currentExperimentCode: "SYLU-2026-03-101-A",
+      status: "实验进行中",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-A",
+          experiment_name: "高低温湿热试验2",
+          required_device: "高低温湿热试验",
+        },
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-B",
+          experiment_name: "冲击试验2",
+          required_device: "冲击试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-A",
+          tray_code: "SYLU-2026-03-101-TP-001",
+        },
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-B",
+          tray_code: "SYLU-2026-03-101-TP-001",
+        },
+      ],
+    });
+
+    expect(view.steps.map((step) => step.label)).toContain("高低温湿热试验进行中");
+    expect(view.steps.map((step) => step.label)).toContain("冲击试验未完成");
+    expect(view.steps.map((step) => step.label)).not.toContain("高低温湿热试验2进行中");
+    expect(view.steps.map((step) => step.label)).not.toContain("冲击试验2未完成");
+  });
+
+  test("buildTrayFlowView matches experiment history by test type while displaying test type labels", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-102-TP-001",
+      taskCode: "SYLU-2026-03-102",
+      status: "实验进行中",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-102",
+          experiment_code: "SYLU-2026-03-102-A",
+          experiment_name: "高低温湿热试验2",
+          required_device: "高低温湿热试验",
+        },
+        {
+          task_code: "SYLU-2026-03-102",
+          experiment_code: "SYLU-2026-03-102-B",
+          experiment_name: "冲击试验2",
+          required_device: "冲击试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-102",
+          experiment_code: "SYLU-2026-03-102-A",
+          tray_code: "SYLU-2026-03-102-TP-001",
+        },
+        {
+          task_code: "SYLU-2026-03-102",
+          experiment_code: "SYLU-2026-03-102-B",
+          tray_code: "SYLU-2026-03-102-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-03-102-SP-001",
+          task_code: "SYLU-2026-03-102",
+          trays: [{ quantity: 1, tray_code: "SYLU-2026-03-102-TP-001", status: "实验进行中" }],
+          history: [
+            { detail: "SYLU-2026-03-102 / 冲击试验 / 实验进行中", time: "2026-04-21T11:00:00.000Z" },
+            { detail: "SYLU-2026-03-102 / 高低温湿热试验 / 实验已完成", time: "2026-04-21T10:00:00.000Z" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "高低温湿热试验已完成")).toEqual(
+      expect.objectContaining({ reached: true }),
+    );
+    expect(view.steps.map((step) => step.label)).toContain("冲击试验进行中");
+  });
+
   test("buildTrayFlowView exposes tray flow step times including arrival", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",
@@ -815,6 +905,64 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView does not copy post-test staging time to pre-test staging when tray skipped pre-staging", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-001-TP-001",
+      taskCode: "SYLU-2026-05-001",
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-A",
+          experiment_type: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-A",
+          tray_code: "SYLU-2026-05-001-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-001-SP-001",
+          task_code: "SYLU-2026-05-001",
+          location: "恒温恒湿间（实验后暂存间）",
+          status: "厂家收回",
+          trays: [
+            {
+              tray_code: "SYLU-2026-05-001-TP-001",
+              status: "已到达暂存间",
+              quantity: 1,
+              updated_at: "2026-05-16T13:50:15+08:00",
+            },
+          ],
+          history: [
+            { time: "2026-05-16T13:30:04+08:00", status: "送至实验室" },
+            { time: "2026-05-16T13:49:47+08:00", status: "已到达实验室" },
+            { time: "2026-05-16T13:49:54+08:00", detail: "SYLU-2026-05-001 / 盐雾试验 / 实验已完成" },
+            {
+              time: "2026-05-16T13:50:15+08:00",
+              location: "恒温恒湿间（实验后暂存间）",
+              status: "已到达暂存间",
+              action: "放置实验后暂存间",
+            },
+            { time: "2026-05-16T13:50:19+08:00", status: "厂家收回" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "放置实验后暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-05-16T13:50:15+08:00" }),
+    );
+  });
+
   test("exports the canonical tray status options in the approved flow order", () => {
     expect(TRAY_STATUS_OPTIONS).toEqual([
       "样品运输中",
@@ -841,8 +989,22 @@ describe("samplesFlowModel", () => {
   test("buildSamplesFlowView filters sorts and paginates samples", () => {
     const view = buildSamplesFlowView({
       samples: [
-        { code: "SP-002", task_code: "SZH-2", status: "到货", location: "接驳区", owner: "张三", trays: [] },
-        { code: "SP-001", task_code: "SZH-1", status: "已到达实验室", location: "振动一室", owner: "李四", trays: [] },
+        {
+          code: "SP-002",
+          task_code: "SZH-2",
+          status: "到货",
+          location: "接驳区",
+          owner: "张三",
+          trays: [{ tray_code: "TP-002", status: "到货", quantity: 1 }],
+        },
+        {
+          code: "SP-001",
+          task_code: "SZH-1",
+          status: "已到达实验室",
+          location: "振动一室",
+          owner: "李四",
+          trays: [{ tray_code: "TP-001", status: "已到达实验室", quantity: 1 }],
+        },
       ],
       filters: { query: "SP-00", taskCode: "", status: "" },
       sort: { key: "code", direction: "asc" },
@@ -853,6 +1015,7 @@ describe("samplesFlowModel", () => {
     expect(view.rows).toHaveLength(2);
     expect(view.rows[0].code).toBe("SP-001");
     expect(view.rows[1].code).toBe("SP-002");
+    expect(view.rows[0].trayCodesText).toBe("TP-001");
     expect(view.totalPages).toBe(1);
   });
 
@@ -892,19 +1055,73 @@ describe("samplesFlowModel", () => {
     expect(result.sample.history[0].detail).toBe("进入实验前检查完成");
   });
 
-  test("buildSamplesStagingView only returns samples still waiting in pre-retention area", () => {
+  test("buildSamplesStagingView returns current pre and post retention samples for read-only viewing", () => {
     const view = buildSamplesStagingView({
       samples: [
-        { code: "SP-001", task_code: "SZH-1", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", owner: "张三" },
-        { code: "SP-002", task_code: "SZH-1", location: "振动一室", status: "已到达实验室", owner: "李四" },
+        {
+          code: "SP-001",
+          task_code: "SZH-1",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          owner: "张三",
+          trays: [{ tray_code: "TP-001", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "SZH-1",
+          location: "恒温恒湿间（实验后暂存间）",
+          status: "放置实验后暂存间",
+          owner: "李四",
+          trays: [{ tray_code: "TP-002", quantity: 1 }],
+        },
+        { code: "SP-003", task_code: "SZH-1", location: "振动一室", status: "已到达实验室", owner: "李四" },
       ],
       query: "",
       selectedCodes: ["SP-001"],
     });
 
-    expect(view.rows).toHaveLength(1);
-    expect(view.rows[0].code).toBe("SP-001");
-    expect(view.rows[0].selected).toBe(true);
+    expect(view.rows.map((row) => row.code)).toEqual(["SP-001", "SP-002"]);
+    expect(view.rows[0].trayCodesText).toBe("TP-001");
+    expect(view.rows[1].trayCodesText).toBe("TP-002");
+  });
+
+  test("buildSamplesStagingView filters staging samples by task and status with pagination", () => {
+    const view = buildSamplesStagingView({
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "TASK-A",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-001", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "TASK-A",
+          location: "恒温恒湿间（实验后暂存间）",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "TP-002", quantity: 1 }],
+        },
+        {
+          code: "SP-003",
+          task_code: "TASK-B",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-003", quantity: 1 }],
+        },
+      ],
+      filters: { taskCode: "TASK-A", status: "已到达暂存间" },
+      page: 1,
+      pageSize: 1,
+    });
+
+    expect(view.rows.map((row) => row.code)).toEqual(["SP-001"]);
+    expect(view.count).toBe(1);
+    expect(view.totalCount).toBe(1);
+    expect(view.totalPages).toBe(1);
+    expect(view.currentPage).toBe(1);
+    expect(view.taskOptions).toEqual(["TASK-A", "TASK-B"]);
+    expect(view.statusOptions).toEqual(["放置实验后暂存间", "已到达暂存间"]);
   });
 
   test("dispatchStagingSamples moves staging samples to target lab and appends history", () => {

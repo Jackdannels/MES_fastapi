@@ -32,6 +32,10 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "LoginPage",
+});
+
 import { useRoute, useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { loginWithCredentials, resolveModuleHome } from "@/auth";

@@ -1,12 +1,178 @@
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { useProcessLabs } from "./useProcessLabs";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
+const masterDataMocks = vi.hoisted(() => ({
+  readMasterLabs: vi.fn(async () => []),
+}));
+
+vi.mock("@/lib/masterDataApi", () => ({
+  readMasterLabs: masterDataMocks.readMasterLabs,
+}));
+
 // 过程管控页的风险点在于：实验室卡片、抽屉详情和托盘汇总必须来自同一份快照口径。
 describe("useProcessLabs", () => {
+  beforeEach(() => {
+    masterDataMocks.readMasterLabs.mockReset();
+    masterDataMocks.readMasterLabs.mockResolvedValue([]);
+  });
+
+  test("uses enabled formal master labs for process cards when explicit labs are not provided", async () => {
+    masterDataMocks.readMasterLabs.mockResolvedValue([
+      { code: "LAB_CUSTOM", name: "自定义疲劳实验室", type: "实验室", testTypeName: "疲劳试验", status: 1 },
+      { code: "AREA_STAGING_PRE", name: "恒温恒湿间（暂存间）", type: "暂存间", testTypeName: "", status: 1 },
+      { code: "LAB_DISABLED", name: "停用实验室", type: "实验室", testTypeName: "盐雾试验", status: 0 },
+    ]);
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "自定义疲劳实验室",
+          end_at: "2026-03-10T13:00:00Z",
+          start_at: "2026-03-10T12:00:00Z",
+          task_code: "TASK-CUSTOM",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-CUSTOM", test_type: "疲劳试验" }],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      loadSnapshot,
+      now: Date.parse("2026-03-10T10:00:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(masterDataMocks.readMasterLabs).toHaveBeenCalledTimes(1);
+    expect(labCards.value).toEqual([
+      expect.objectContaining({
+        name: "自定义疲劳实验室",
+        statusClass: "is-scheduled",
+        taskCode: "TASK-CUSTOM",
+        testType: "疲劳试验",
+      }),
+    ]);
+  });
+
+  test("keeps canonical salt spray lab when master labs are present but incomplete", async () => {
+    masterDataMocks.readMasterLabs.mockResolvedValue([
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ]);
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      loadSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value.map((lab) => lab.name)).toContain("冲击一室");
+    expect(labCards.value.map((lab) => lab.name)).toContain("盐雾试验室");
+  });
+
+  test("does not duplicate canonical labs when master labs already include them", async () => {
+    masterDataMocks.readMasterLabs.mockResolvedValue([
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ]);
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      loadSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value.filter((lab) => lab.name === "盐雾试验室")).toHaveLength(1);
+  });
+
+  test("does not read master labs when explicit process labs are provided", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "显式实验室", testType: "显式试验" }],
+      loadSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(masterDataMocks.readMasterLabs).not.toHaveBeenCalled();
+    expect(labCards.value.map((lab) => lab.name)).toEqual(["显式实验室"]);
+  });
+
+  test("falls back to static process labs when master labs cannot be loaded", async () => {
+    masterDataMocks.readMasterLabs.mockRejectedValue(new Error("offline"));
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      loadSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(masterDataMocks.readMasterLabs).toHaveBeenCalledTimes(1);
+    expect(labCards.value.map((lab) => lab.name)).toContain("盐雾试验室");
+    expect(labCards.value.length).toBeGreaterThan(1);
+  });
+
+  test("falls back to static process labs when master labs contain no formal laboratory", async () => {
+    masterDataMocks.readMasterLabs.mockResolvedValue([
+      { code: "AREA_STAGING_PRE", name: "恒温恒湿间（暂存间）", type: "暂存间", testTypeName: "", status: 1 },
+    ]);
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      loadSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value.map((lab) => lab.name)).toContain("盐雾试验室");
+    expect(labCards.value.length).toBeGreaterThan(1);
+  });
+
   test("reloads lab status when sample progress changes are broadcast", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [],

@@ -7,16 +7,6 @@ const storageApiPath = resolve(process.cwd(), "src/lib/storageApi.js");
 const traceModelPath = resolve(process.cwd(), "src/modules/samples/sampleTraceModel.js");
 const storageBackendPath = resolve(process.cwd(), "../app/core/storage_backend.py");
 
-const blockedTokens = [
-  "鏍峰搧缂栧彿閲嶆帓",
-  "鏍峰搧缁戝畾浠诲姟",
-  "鏍峰搧鐧昏",
-  "浠诲姟 ",
-  "閫佽揪鏆傚瓨闂",
-  "閫佽嚦鏆傚瓨闂",
-  "鎺ラ┏鍖",
-];
-
 describe("sample utf8 sanitization", () => {
   test("moves sample sanitization logic to backend storage instead of frontend render helpers", () => {
     const storageApiSource = readFileSync(storageApiPath, "utf8");

@@ -41,7 +41,7 @@
         </div>
         <div class="form-field">
           <label>{{ uiText.scheduleDate }}</label>
-          <input v-model="scheduleForm.schedule_date" type="date" name="schedule_date" />
+          <PickerOnlyInput v-model="scheduleForm.schedule_date" type="date" name="schedule_date" />
         </div>
         <div class="form-field">
           <label>{{ uiText.timeSlot }}</label>
@@ -86,7 +86,7 @@
         </div>
         <div class="form-field" :class="{ 'is-hidden': scheduleForm.time_slot !== 'custom' }">
           <label>{{ uiText.startTime }}</label>
-          <input v-model="scheduleForm.custom_start" type="time" name="custom_start" :min="scheduleCustomStartMinTime" />
+          <PickerOnlyInput v-model="scheduleForm.custom_start" type="time" name="custom_start" :min="scheduleCustomStartMinTime" />
         </div>
       </div>
       <div class="form-actions">
@@ -179,30 +179,7 @@
           </tr>
           <tr v-for="row in ganttView.rows" :key="row.device">
             <td class="gantt-sticky">
-              <div v-if="getDeviceScheduleNavigation(row.device).hasSchedules" class="gantt-lab-cell">
-                <button
-                  class="gantt-lab-nav"
-                  type="button"
-                  :disabled="!getDeviceScheduleNavigation(row.device).canPrevious"
-                  :aria-label="uiText.previousLabSchedule"
-                  :title="uiText.previousLabSchedule"
-                  @click="jumpDeviceSchedule(row.device, 'previous')"
-                >
-                  &lsaquo;
-                </button>
-                <span class="gantt-lab-name">{{ row.device }}</span>
-                <button
-                  class="gantt-lab-nav"
-                  type="button"
-                  :disabled="!getDeviceScheduleNavigation(row.device).canNext"
-                  :aria-label="uiText.nextLabSchedule"
-                  :title="uiText.nextLabSchedule"
-                  @click="jumpDeviceSchedule(row.device, 'next')"
-                >
-                  &rsaquo;
-                </button>
-              </div>
-              <template v-else>{{ row.device }}</template>
+              <span class="gantt-lab-name">{{ row.device }}</span>
             </td>
             <td
               v-for="segment in row.segments"
@@ -533,7 +510,7 @@
       </div>
       <div class="form-field">
         <label>{{ uiText.scheduleDate }}</label>
-        <input v-model="editForm.schedule_date" type="date" name="schedule_date" />
+        <PickerOnlyInput v-model="editForm.schedule_date" type="date" name="schedule_date" />
       </div>
       <div class="form-field">
         <label>{{ uiText.timeSlot }}</label>
@@ -578,7 +555,7 @@
       </div>
       <div class="form-field" :class="{ 'is-hidden': editForm.time_slot !== 'custom' }">
         <label>{{ uiText.startTime }}</label>
-        <input v-model="editForm.custom_start" type="time" name="custom_start" :min="editCustomStartMinTime" />
+        <PickerOnlyInput v-model="editForm.custom_start" type="time" name="custom_start" :min="editCustomStartMinTime" />
       </div>
       <AppFeedback :message="editWarning" tone="warning" style="grid-column: 1 / -1;" @close="editWarning = ''" />
       <div class="form-actions" style="grid-column: 1 / -1;">
@@ -592,11 +569,16 @@
 </template>
 
 <script setup>
-import { Teleport, computed } from "vue";
+defineOptions({
+  name: "SchedulePage",
+});
+
+import { computed } from "vue";
 
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useSchedulePage } from "./useSchedulePage";
 
 const uiText = {
@@ -695,8 +677,6 @@ const {
   exceptionModalOpen,
   experimentOptions,
   ganttView,
-  getDeviceScheduleNavigation,
-  jumpDeviceSchedule,
   showNextGanttWindow,
   showPreviousGanttWindow,
   manualLabOptions,

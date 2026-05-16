@@ -1,6 +1,6 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
-import { filterActiveTasks } from "@/lib/taskArchive";
+import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
 import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
@@ -364,10 +364,19 @@ function buildTaskRows({
         if (!trayCode) {
           return;
         }
+        const status = normalizeLifecycleStatus(sample?.location, tray?.status || sample?.status);
+        if (
+          isReturnedTrayStatus(status)
+          || isReturnedTrayStatus(tray?.status)
+          || isReturnedTrayStatus(sample?.status)
+          || isReturnedTrayStatus(sample?.location)
+        ) {
+          return;
+        }
         row.trays.push({
           trayCode,
           sampleCode,
-          status: normalizeLifecycleStatus(sample?.location, tray?.status || sample?.status),
+          status,
           quantity: normalizeQuantity(tray?.quantity),
         });
       });
@@ -517,7 +526,6 @@ function buildTrayOverviewRows({
   samples,
   schedules,
   totalSlots,
-  unscheduledLabel,
   unassignedExperimentLabel,
 }) {
   const taskList = Array.isArray(tasks) ? tasks : [];
@@ -582,6 +590,14 @@ function buildTrayOverviewRows({
       }
       const location = summarizeUniqueTexts([sample?.location]);
       const status = normalizeLifecycleStatus(location, normalizeText(tray?.status) || normalizeText(sample?.status));
+      if (
+        isReturnedTrayStatus(status)
+        || isReturnedTrayStatus(tray?.status)
+        || isReturnedTrayStatus(sample?.status)
+        || isReturnedTrayStatus(location)
+      ) {
+        return;
+      }
       const scheduleInfo = scheduleByTaskCode.get(taskCode);
       const currentStatus = buildTrayFlowView({
         currentExperimentCode: scheduleInfo?.experimentCode || "",

@@ -230,6 +230,35 @@ describe("dashboard model", () => {
     expect(viewModel.summaryCards.deviceCount).toBe(2);
   });
 
+  test("adds device status dot classes from the resolved device state", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      experiments: [],
+      streams: [],
+      devices: [
+        { code: "LAB-AVAILABLE", status: "可用" },
+        { code: "LAB-MAINTAIN", status: "维护" },
+        { code: "LAB-DISABLED", status: "停用" },
+        { code: "LAB-RUNNING", status: "可用" },
+      ],
+      schedules: [
+        {
+          device: "LAB-RUNNING",
+          start_at: "2026-03-17T09:00:00.000Z",
+          end_at: "2026-03-17T11:00:00.000Z",
+        },
+      ],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "LAB-AVAILABLE", status: "可用", dotClass: "timeline-dot--available" }),
+      expect.objectContaining({ code: "LAB-MAINTAIN", status: "维护", dotClass: "timeline-dot--attention" }),
+      expect.objectContaining({ code: "LAB-DISABLED", status: "停用", dotClass: "timeline-dot--disabled" }),
+      expect.objectContaining({ code: "LAB-RUNNING", status: "任务进行中", dotClass: "timeline-dot--running" }),
+    ]);
+  });
+
   test("replaces data channel output with unscheduled experiment timers", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

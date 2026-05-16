@@ -169,7 +169,7 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.text()).not.toContain("样品预分装");
     expect(wrapper.text()).not.toContain("总任务清单");
     expect(wrapper.text()).toContain("样品流转与状态");
-    expect(wrapper.text()).toContain("暂存间派发");
+    expect(wrapper.text()).toContain("暂存间样品");
     expect(wrapper.text()).not.toContain("样品全生命周期追踪");
   });
 

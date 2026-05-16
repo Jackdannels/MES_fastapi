@@ -15,8 +15,8 @@ describe("DashboardPage runtime", () => {
     useDashboardPageMock.mockReturnValue({
       currentPage: ref(1),
       deviceItems: computed(() => [
-        { code: "LAB-01", status: "可用" },
-        { code: "LAB-02", status: "使用中" },
+        { code: "LAB-01", status: "可用", dotClass: "timeline-dot--available" },
+        { code: "LAB-02", status: "使用中", dotClass: "timeline-dot--running" },
       ]),
       pageCount: computed(() => 1),
       pagedTaskRows: computed(() => [
@@ -50,12 +50,16 @@ describe("DashboardPage runtime", () => {
     expect(wrapper.text()).toContain("外部 2 / 内部 1");
     expect(wrapper.text()).toContain("正在运行（实验）");
     expect(wrapper.text()).toContain("未排程实验计时");
+    expect(wrapper.text()).toContain("设备状态");
+    expect(wrapper.text()).not.toContain("设备空闲");
     expect(wrapper.text()).not.toContain("数据通道");
     expect(wrapper.text()).not.toContain("实验中任务");
     expect(wrapper.text()).toContain("25:30:00");
     expect(wrapper.text()).toContain("T-001 / 振动试验");
     expect(wrapper.text()).not.toContain("T-001-A");
     expect(wrapper.text()).toContain("LAB-01");
+    expect(wrapper.find("#dashboard-device-list .timeline-dot--available").exists()).toBe(true);
+    expect(wrapper.find("#dashboard-device-list .timeline-dot--running").exists()).toBe(true);
     expect(wrapper.get("#dashboard-unscheduled-count").text()).toBe("1");
     expect(wrapper.find(".dashboard-unscheduled-title.is-overdue").exists()).toBe(true);
     expect(wrapper.find(".dashboard-unscheduled-timer.is-overdue").exists()).toBe(true);
@@ -85,6 +89,9 @@ describe("DashboardPage runtime", () => {
     });
 
     const wrapper = mount(DashboardPage);
+
+    expect(wrapper.find('.dashboard-task-pagination [data-page="prev"]').exists()).toBe(false);
+    expect(wrapper.find('.dashboard-task-pagination [data-page="next"]').exists()).toBe(false);
 
     await wrapper.get('.dashboard-task-pagination button[data-page="2"]').trigger("click");
 

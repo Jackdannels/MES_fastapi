@@ -4,6 +4,8 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP PROCEDURE IF EXISTS add_column_if_missing;
+DROP PROCEDURE IF EXISTS add_index_if_missing;
+DROP PROCEDURE IF EXISTS add_unique_index_if_missing;
 
 DELIMITER $$
 CREATE PROCEDURE add_column_if_missing(
@@ -24,6 +26,57 @@ BEGIN
     PREPARE stmt FROM @ddl;
     EXECUTE stmt;
     DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+
+CREATE PROCEDURE add_index_if_missing(
+  IN p_schema_name VARCHAR(64),
+  IN p_table_name VARCHAR(64),
+  IN p_index_name VARCHAR(64),
+  IN p_ddl TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = p_schema_name
+      AND TABLE_NAME = p_table_name
+      AND INDEX_NAME = p_index_name
+  ) THEN
+    SET @ddl = p_ddl;
+    PREPARE stmt FROM @ddl;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END $$
+
+CREATE PROCEDURE add_unique_index_if_missing(
+  IN p_schema_name VARCHAR(64),
+  IN p_table_name VARCHAR(64),
+  IN p_index_name VARCHAR(64),
+  IN p_duplicate_check_sql TEXT,
+  IN p_ddl TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = p_schema_name
+      AND TABLE_NAME = p_table_name
+      AND INDEX_NAME = p_index_name
+  ) THEN
+    SET @duplicate_count = 0;
+    SET @duplicate_sql = p_duplicate_check_sql;
+    PREPARE duplicate_stmt FROM @duplicate_sql;
+    EXECUTE duplicate_stmt;
+    DEALLOCATE PREPARE duplicate_stmt;
+
+    IF @duplicate_count = 0 THEN
+      SET @ddl = p_ddl;
+      PREPARE stmt FROM @ddl;
+      EXECUTE stmt;
+      DEALLOCATE PREPARE stmt;
+    END IF;
   END IF;
 END $$
 DELIMITER ;
@@ -53,6 +106,183 @@ CALL add_column_if_missing('mes_single_branch', 'biz_task', 'attachment_path',
 
 ALTER TABLE biz_task MODIFY COLUMN task_type VARCHAR(200) NOT NULL;
 ALTER TABLE biz_task MODIFY COLUMN required_device VARCHAR(200) NULL;
+
+CREATE TABLE IF NOT EXISTS md_test_type (
+  test_type_id BIGINT NOT NULL AUTO_INCREMENT,
+  test_type_code VARCHAR(50) NOT NULL,
+  test_type_name VARCHAR(100) NOT NULL,
+  test_category VARCHAR(50) NULL,
+  default_duration_hour DECIMAL(10,2) NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  remark VARCHAR(300) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (test_type_id),
+  UNIQUE KEY uk_md_test_type_code (test_type_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS md_lab (
+  lab_id BIGINT NOT NULL AUTO_INCREMENT,
+  lab_code VARCHAR(50) NOT NULL,
+  lab_name VARCHAR(100) NOT NULL,
+  lab_type VARCHAR(30) NULL,
+  test_type_id BIGINT NULL,
+  dept_id BIGINT NULL,
+  manager_user_id BIGINT NULL,
+  capacity INT NULL,
+  location_desc VARCHAR(200) NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  remark VARCHAR(300) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (lab_id),
+  UNIQUE KEY uk_md_lab_code (lab_code),
+  KEY idx_md_lab_test_type (test_type_id),
+  CONSTRAINT fk_md_lab_test_type FOREIGN KEY (test_type_id) REFERENCES md_test_type(test_type_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CALL add_column_if_missing('mes_single_branch', 'md_test_type', 'test_category',
+  'ALTER TABLE md_test_type ADD COLUMN test_category VARCHAR(50) NULL AFTER test_type_name');
+CALL add_column_if_missing('mes_single_branch', 'md_test_type', 'default_duration_hour',
+  'ALTER TABLE md_test_type ADD COLUMN default_duration_hour DECIMAL(10,2) NULL AFTER test_category');
+CALL add_column_if_missing('mes_single_branch', 'md_test_type', 'status',
+  'ALTER TABLE md_test_type ADD COLUMN status TINYINT NOT NULL DEFAULT 1 AFTER default_duration_hour');
+CALL add_column_if_missing('mes_single_branch', 'md_test_type', 'remark',
+  'ALTER TABLE md_test_type ADD COLUMN remark VARCHAR(300) NULL AFTER status');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'lab_type',
+  'ALTER TABLE md_lab ADD COLUMN lab_type VARCHAR(30) NULL AFTER lab_name');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'test_type_id',
+  'ALTER TABLE md_lab ADD COLUMN test_type_id BIGINT NULL AFTER lab_type');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'dept_id',
+  'ALTER TABLE md_lab ADD COLUMN dept_id BIGINT NULL AFTER test_type_id');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'manager_user_id',
+  'ALTER TABLE md_lab ADD COLUMN manager_user_id BIGINT NULL AFTER dept_id');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'capacity',
+  'ALTER TABLE md_lab ADD COLUMN capacity INT NULL AFTER manager_user_id');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'location_desc',
+  'ALTER TABLE md_lab ADD COLUMN location_desc VARCHAR(200) NULL AFTER capacity');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'status',
+  'ALTER TABLE md_lab ADD COLUMN status TINYINT NOT NULL DEFAULT 1 AFTER location_desc');
+CALL add_column_if_missing('mes_single_branch', 'md_lab', 'remark',
+  'ALTER TABLE md_lab ADD COLUMN remark VARCHAR(300) NULL AFTER status');
+
+CALL add_unique_index_if_missing('mes_single_branch', 'md_test_type', 'uk_md_test_type_code',
+  'SELECT COUNT(*) INTO @duplicate_count FROM (SELECT test_type_code FROM md_test_type WHERE test_type_code IS NOT NULL AND test_type_code <> '''' GROUP BY test_type_code HAVING COUNT(*) > 1 LIMIT 1) duplicated_codes',
+  'ALTER TABLE md_test_type ADD UNIQUE KEY uk_md_test_type_code (test_type_code)');
+CALL add_unique_index_if_missing('mes_single_branch', 'md_lab', 'uk_md_lab_code',
+  'SELECT COUNT(*) INTO @duplicate_count FROM (SELECT lab_code FROM md_lab WHERE lab_code IS NOT NULL AND lab_code <> '''' GROUP BY lab_code HAVING COUNT(*) > 1 LIMIT 1) duplicated_codes',
+  'ALTER TABLE md_lab ADD UNIQUE KEY uk_md_lab_code (lab_code)');
+CALL add_index_if_missing('mes_single_branch', 'md_lab', 'idx_md_lab_test_type',
+  'ALTER TABLE md_lab ADD INDEX idx_md_lab_test_type (test_type_id)');
+
+INSERT INTO md_test_type (
+  test_type_code, test_type_name, test_category, default_duration_hour, status, remark
+)
+SELECT seed.test_type_code, seed.test_type_name, seed.test_category, seed.default_duration_hour, seed.status, seed.remark
+FROM (
+  SELECT 'CJ' AS test_type_code, '冲击试验' AS test_type_name, '力学试验' AS test_category, NULL AS default_duration_hour, 1 AS status, 'FRONTEND_MASTER_DATA' AS remark
+  UNION ALL SELECT 'ZD', '振动试验', '力学试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'SZH', '四综合试验', '综合试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'WDC', '温度冲击试验', '环境试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'GDW', '高低温湿热试验', '环境试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'YW', '盐雾试验', '环境试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'MJ', '霉菌试验', '环境试验', NULL, 1, 'FRONTEND_MASTER_DATA'
+) seed
+WHERE NOT EXISTS (
+  SELECT 1 FROM md_test_type existing_type WHERE existing_type.test_type_code = seed.test_type_code
+);
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_IMPACT_1', '冲击一室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'CJ'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_IMPACT_1');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_IMPACT_2', '冲击二室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'CJ'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_IMPACT_2');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_VIBRATION_1', '振动一室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'ZD'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_VIBRATION_1');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_VIBRATION_2', '振动二室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'ZD'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_VIBRATION_2');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_COMPREHENSIVE', '四综合实验室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'SZH'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_COMPREHENSIVE');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_TEMP_SHOCK_1', '温度冲击一室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'WDC'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_TEMP_SHOCK_1');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_TEMP_SHOCK_2', '温度冲击二室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'WDC'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_TEMP_SHOCK_2');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_HOT_HUMID', '高低温湿热一室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'GDW'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_HOT_HUMID');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_SALT', '盐雾试验室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'YW'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_SALT');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
+SELECT 'LAB_MOLD', '霉菌试验室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'MJ'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_MOLD');
+
+INSERT INTO md_lab (lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark)
+SELECT seed.lab_code, seed.lab_name, seed.lab_type, NULL, seed.capacity, seed.location_desc, seed.status, seed.remark
+FROM (
+  SELECT 'AREA_STAGING_PRE' AS lab_code, '恒温恒湿间（暂存间）' AS lab_name, '暂存间' AS lab_type, 0 AS capacity, '' AS location_desc, 1 AS status, 'FRONTEND_MASTER_DATA' AS remark
+  UNION ALL SELECT 'AREA_STAGING_POST', '恒温恒湿间（实验后暂存间）', '暂存间', 0, '', 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'AREA_UNBOX', '拆箱操作间', '操作区', 0, '', 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'AREA_OUTDOOR_HANDOVER', '室外接驳区', '接驳区', 0, '', 1, 'FRONTEND_MASTER_DATA'
+) seed
+WHERE NOT EXISTS (
+  SELECT 1 FROM md_lab existing_lab WHERE existing_lab.lab_code = seed.lab_code
+);
 
 CALL add_column_if_missing('mes_single_branch', 'biz_sample', 'batch_no',
   'ALTER TABLE biz_sample ADD COLUMN batch_no VARCHAR(100) NULL AFTER sample_name');
@@ -469,7 +699,7 @@ SELECT
   NOW()
 FROM (
   SELECT 'SCH-20260317-001' AS schedule_no, 'CJ-2024-001' AS task_no, '试验排程' AS schedule_type,
-         'LAB_IMPACT' AS lab_code, 'EQ-IM-001' AS equipment_code, NULL AS temp_room_code,
+         'LAB_IMPACT_1' AS lab_code, 'EQ-IM-001' AS equipment_code, NULL AS temp_room_code,
          'Impact Rig 1' AS device_name, '2026-03-17 09:00:00' AS schedule_start_time,
          '2026-03-17 17:00:00' AS schedule_end_time, 8.00 AS planned_hours, '已排程' AS schedule_status,
          0 AS is_retention, 'admin' AS created_by_username, 'Impact task planned schedule' AS remark

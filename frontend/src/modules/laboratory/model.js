@@ -820,6 +820,9 @@ function buildLaboratoryProgressMessage(workflow, currentTask) {
   if (workflow.hasInstalledWaitingReady && !workflow.fixtureReadyDone) {
     return "当前任务已完成夹具安装，等待上位机确认夹具安装完成";
   }
+  if (workflow.hasInstalledWaitingReady && workflow.fixtureReadyDone) {
+    return "夹具安装完成，可确认实验准备就绪";
+  }
   if (workflow.hasInstalled && !workflow.installationDone) {
     return "当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪";
   }

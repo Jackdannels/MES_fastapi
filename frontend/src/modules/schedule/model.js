@@ -1,6 +1,6 @@
 // 提供排程页所需的表单、看板行、甘特数据和增删改辅助函数。
-import { getLabsForTestType, TEST_LABS } from "@/lib/labs.js";
-import { buildExperimentTypeOptions, collectExperimentTypes } from "@/lib/experimentTypes";
+import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { filterActiveTasks } from "@/lib/taskArchive";
 
 const STATUS_WAITING = "待排程";
@@ -228,7 +228,6 @@ const createId = (prefix) => {
 };
 
 const SLOT_SEQUENCE = ["am", "pm"];
-const HALF_DAY_MS = 12 * 60 * 60 * 1000;
 const HALF_DAY_HOURS = 12;
 
 // 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
@@ -296,13 +295,6 @@ const getSlotState = ({ startAt, endAt, now, started = false, completed = false 
     return { state: "running", className: "gantt-slot busy running" };
   }
   return { state: "busy", className: "gantt-slot busy" };
-};
-
-// 计算视图窗口需要覆盖多少天，以便甘特图自动延展。
-const getDaySpan = (startDate, endDate) => {
-  const startValue = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
-  const endValue = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime();
-  return Math.floor((endValue - startValue) / (24 * 60 * 60 * 1000));
 };
 
 // 手动排程默认落在“当前时刻之后最近一个合法时段”。
@@ -633,10 +625,77 @@ const sortTextList = (values) =>
 
 const DEFAULT_TASK_COLOR = "#1d4ed8";
 
-const resolveLabCandidates = (value) => {
+const getMasterLabName = (lab) =>
+  normalizeText(lab?.name || lab?.labName || lab?.lab_name || lab?.code || lab?.labCode || lab?.lab_code);
+
+const getMasterLabType = (lab) => normalizeText(lab?.type || lab?.labType || lab?.lab_type);
+
+const getMasterLabTestTypeKeys = (lab) =>
+  [
+    lab?.testTypeName,
+    lab?.test_type_name,
+    lab?.testType,
+    lab?.test_type,
+    lab?.testTypeCode,
+    lab?.test_type_code,
+  ]
+    .map((value) => normalizeText(value))
+    .filter(Boolean);
+
+const FORMAL_TEST_TYPE_KEYS = new Set(
+  Object.entries(TEST_PREFIX_MAP).flatMap(([testTypeName, testTypeCode]) => [testTypeName, testTypeCode]),
+);
+
+const isMasterLabEnabled = (lab) => ![0, "0", false].includes(lab?.status);
+
+const isMasterLabCandidate = (lab) => {
+  const name = getMasterLabName(lab);
+  const labType = getMasterLabType(lab).toLowerCase();
+  const hasFormalTestType = getMasterLabTestTypeKeys(lab).some((key) => FORMAL_TEST_TYPE_KEYS.has(key));
+  return (
+    Boolean(name) &&
+    hasFormalTestType &&
+    !isRetentionDevice(name) &&
+    !["retention", "staging"].some((keyword) => labType.includes(keyword)) &&
+    !labType.includes(RETENTION_KEYWORD)
+  );
+};
+
+const getMasterLabCandidates = (masterLabs) =>
+  (Array.isArray(masterLabs) ? masterLabs : []).filter((lab) => isMasterLabEnabled(lab) && isMasterLabCandidate(lab));
+
+const resolveMasterLabCandidates = (value, masterLabs) => {
+  const normalizedValue = normalizeText(value);
+  const labs = getMasterLabCandidates(masterLabs);
+  if (!normalizedValue || labs.length === 0) {
+    return [];
+  }
+  if (labs.some((lab) => getMasterLabName(lab) === normalizedValue)) {
+    return [normalizedValue];
+  }
+  const matchedLabs = labs
+    .filter((lab) => getMasterLabTestTypeKeys(lab).includes(normalizedValue))
+    .map((lab) => getMasterLabName(lab));
+  return Array.from(new Set(matchedLabs));
+};
+
+const getMasterLabNames = (masterLabs) =>
+  Array.from(
+    new Set(
+      getMasterLabCandidates(masterLabs)
+        .filter((lab) => getMasterLabTestTypeKeys(lab).length > 0)
+        .map((lab) => getMasterLabName(lab)),
+    ),
+  );
+
+const resolveLabCandidates = (value, masterLabs = []) => {
   const normalizedValue = normalizeText(value);
   if (!normalizedValue) {
     return [];
+  }
+  const masterLabCandidates = resolveMasterLabCandidates(normalizedValue, masterLabs);
+  if (masterLabCandidates.length > 0) {
+    return masterLabCandidates;
   }
   if (TEST_LABS.includes(normalizedValue)) {
     return [normalizedValue];
@@ -665,16 +724,17 @@ const resolveTaskColor = (taskCode) => {
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 };
 
-const buildSelectedTaskLabSet = ({ selectedTaskCode, experiments, schedules, tasks }) => {
+const buildSelectedTaskLabSet = ({ selectedTaskCode, experiments, schedules, tasks, masterLabs = [] }) => {
   const normalizedTaskCode = normalizeText(selectedTaskCode);
   if (!normalizedTaskCode) {
     return null;
   }
 
   const labs = new Set();
-  buildExperimentCandidates({ taskCode: normalizedTaskCode, experiments, tasks }).forEach((experiment) => {
-    resolveLabCandidates(experiment?.required_device).forEach((lab) => labs.add(lab));
-  });
+  buildExperimentCandidates({ taskCode: normalizedTaskCode, experiments, tasks })
+    .forEach((experiment) => {
+      resolveLabCandidates(experiment?.required_device, masterLabs).forEach((lab) => labs.add(lab));
+    });
 
   (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
     if (normalizeText(schedule?.task_code) !== normalizedTaskCode) {
@@ -761,9 +821,30 @@ const buildExperimentNameMap = (experiments) =>
   new Map(
     (Array.isArray(experiments) ? experiments : []).map((experiment) => [
       normalizeText(experiment?.experiment_code),
-      normalizeText(experiment?.experiment_name),
+      resolveExperimentTypeLabel(experiment),
     ]),
   );
+
+const isLikelyLabDestination = (value) => /室$/.test(normalizeText(value));
+
+const resolveExperimentTypeLabel = (experiment) => {
+  const explicitType =
+    normalizeText(experiment?.experiment_type)
+    || normalizeText(experiment?.experimentType)
+    || normalizeText(experiment?.test_type)
+    || normalizeText(experiment?.testType);
+  if (explicitType) {
+    return explicitType;
+  }
+  const requiredDevice = normalizeText(experiment?.required_device) || normalizeText(experiment?.requiredDevice);
+  if (requiredDevice && !isLikelyLabDestination(requiredDevice)) {
+    return requiredDevice;
+  }
+  return normalizeText(experiment?.experiment_name)
+    || normalizeText(experiment?.experimentName)
+    || normalizeText(experiment?.name)
+    || requiredDevice;
+};
 
 const formatScheduleWindow = (startAt, endAt) => {
   const startLabel = formatDateTime(startAt);
@@ -839,7 +920,7 @@ const collectScheduleMatchedSamples = ({ schedule, samples, experimentTrayMap })
 };
 
 const collectScheduleTrayStatuses = ({ schedule, samples, experimentTrayMap }) => {
-  const { matchedSamples, scopedTrayCodes, taskCode } = collectScheduleMatchedSamples({ schedule, samples, experimentTrayMap });
+  const { matchedSamples, scopedTrayCodes } = collectScheduleMatchedSamples({ schedule, samples, experimentTrayMap });
   const statuses = [];
 
   matchedSamples.forEach((sample) => {
@@ -1069,7 +1150,11 @@ function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, exper
       };
     })
     .sort((left, right) => left.sortTime - right.sortTime)
-    .map(({ sortTime, ...overlay }) => overlay);
+    .map((overlay) => {
+      const nextOverlay = { ...overlay };
+      delete nextOverlay.sortTime;
+      return nextOverlay;
+    });
 }
 
 function analyzeTaskTrayConflict({ candidate, schedules, experiments, experimentTrays, samples = [] }) {
@@ -1249,7 +1334,7 @@ function buildConflictRows({ schedules, tasks = [], samples = [], experiments = 
 }
 
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
-function buildGanttRows({ schedules, devices, experiments = [], experimentTrays = [], samples = [], tasks = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+function buildGanttRows({ schedules, experiments = [], experimentTrays = [], samples = [], tasks = [], masterLabs = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
@@ -1282,7 +1367,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
     new Set(
       []
         .concat(TEST_LABS)
-        .concat((Array.isArray(devices) ? devices : []).map((device) => normalizeText(device?.code || device?.name)))
+        .concat(getMasterLabNames(masterLabs))
         .concat(visibleSchedules.map((schedule) => normalizeText(schedule?.device))),
     ),
   )
@@ -1294,6 +1379,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
     schedules: visibleSchedules,
     selectedTaskCode,
     tasks,
+    masterLabs,
   });
   const deviceCodes = selectedTaskLabs && selectedTaskLabs.size > 0
     ? baseDeviceCodes.filter((device) => selectedTaskLabs.has(device))
@@ -1447,7 +1533,11 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
 
     return {
       device,
-      segments: segments.map(({ signature, ...segment }) => segment),
+      segments: segments.map((segment) => {
+        const nextSegment = { ...segment };
+        delete nextSegment.signature;
+        return nextSegment;
+      }),
       slots,
     };
   });
@@ -1456,7 +1546,7 @@ function buildGanttRows({ schedules, devices, experiments = [], experimentTrays 
 }
 
 // 构建留样面板中等待暂存的任务和样品行数据。
-function buildRetentionInternalRows({ tasks, samples, schedules, now = new Date() }) {
+function buildRetentionInternalRows({ tasks, schedules, now = new Date() }) {
   const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
   const nonRetentionCodes = new Set(
     (Array.isArray(schedules) ? schedules : [])
@@ -1546,13 +1636,13 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
     })
     .map((task) => ({
       code: normalizeText(task?.code),
-      label: `${normalizeText(task?.code)}${normalizeText(task?.name) ? ` ${normalizeText(task?.name)}` : ""}`.trim(),
+      label: normalizeText(task?.code),
       testType: normalizeText(task?.test_type),
     }));
 }
 
-function buildLabOptions({ testType, selectedDevice = "" }) {
-  let labs = normalizeText(testType) ? resolveLabCandidates(normalizeText(testType)) : [];
+function buildLabOptions({ testType, selectedDevice = "", masterLabs = [] }) {
+  let labs = normalizeText(testType) ? resolveLabCandidates(normalizeText(testType), masterLabs) : [];
   if (selectedDevice && !labs.includes(selectedDevice)) {
     labs = [...labs, selectedDevice];
   }
@@ -1665,13 +1755,17 @@ function buildExperimentOptions({ taskCode, experiments, schedules, tasks, sampl
   const seenLabels = new Set();
   return buildExperimentCandidates({ taskCode, experiments, tasks: taskList })
     .filter((experiment) => !scheduledExperimentCodes.has(normalizeText(experiment?.experiment_code)))
-    .map((experiment) => ({
-      code: normalizeText(experiment?.experiment_code),
-      fullCode: normalizeText(experiment?.experiment_code),
-      label: normalizeText(experiment?.experiment_name) || normalizeText(experiment?.required_device) || normalizeText(experiment?.experiment_code),
-      requiredDevice: normalizeText(experiment?.required_device) || normalizeText(experiment?.experiment_name),
-      taskCode: normalizeText(experiment?.task_code),
-    }))
+    .map((experiment) => {
+      const experimentCode = normalizeText(experiment?.experiment_code);
+      const typeLabel = resolveExperimentTypeLabel(experiment) || experimentCode;
+      return {
+        code: experimentCode,
+        fullCode: experimentCode,
+        label: typeLabel,
+        requiredDevice: normalizeText(experiment?.required_device) || typeLabel,
+        taskCode: normalizeText(experiment?.task_code),
+      };
+    })
     .filter((option) => {
       const label = normalizeText(option.label);
       if (!label || seenLabels.has(label)) {

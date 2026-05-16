@@ -10,6 +10,7 @@ import {
   buildConflictRows,
   buildExperimentOptions,
   buildGanttRows,
+  buildLabOptions,
   buildManualTaskOptions,
   buildRetentionInternalRows,
   buildScheduleRows,
@@ -180,6 +181,43 @@ describe("schedulePageModel", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "冲击一室" }));
+  });
+
+  test("buildLabOptions uses master lab rows for the selected test type", () => {
+    const result = buildLabOptions({
+      masterLabs: [
+        { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+        { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
+        { code: "LAB_IMPACT_1", name: "冲击三室", type: "实验室", testTypeName: "冲击试验" },
+      ],
+      testType: "盐雾试验",
+    });
+
+    expect(result).toEqual(["盐雾试验室"]);
+  });
+
+  test("buildLabOptions falls back to static labs when master labs are unavailable", () => {
+    expect(buildLabOptions({ masterLabs: [], testType: "盐雾试验" })).toContain("盐雾试验室");
+  });
+
+  test("buildLabOptions falls back to static labs when master labs have no matching test type", () => {
+    const result = buildLabOptions({
+      masterLabs: [{ code: "LAB_IMPACT_1", name: "冲击三室", type: "实验室", testTypeName: "冲击试验" }],
+      testType: "盐雾试验",
+    });
+
+    expect(result).toContain("盐雾试验室");
+    expect(result).not.toContain("冲击三室");
+  });
+
+  test("buildLabOptions preserves the selected device outside master lab candidates", () => {
+    const result = buildLabOptions({
+      masterLabs: [{ code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" }],
+      selectedDevice: "历史盐雾室",
+      testType: "盐雾试验",
+    });
+
+    expect(result).toEqual(["盐雾试验室", "历史盐雾室"]);
   });
 
   test("completed experiments release same-device schedule conflict windows", () => {
@@ -557,6 +595,30 @@ describe("schedulePageModel", () => {
     expect(options.map((option) => option.label)).toEqual(["盐雾试验", "冲击试验"]);
   });
 
+  test("buildExperimentOptions displays experiment type instead of experiment name", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-03-009",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-009",
+          experiment_code: "SYLU-2026-03-009-A",
+          experiment_name: "高低温湿热试验2",
+          required_device: "高低温湿热试验",
+        },
+      ],
+      schedules: [],
+      tasks: [],
+    });
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        code: "SYLU-2026-03-009-A",
+        label: "高低温湿热试验",
+        requiredDevice: "高低温湿热试验",
+      }),
+    ]);
+  });
+
   test("buildManualTaskOptions only keeps unpacking tasks that already have a saved tray plan", () => {
     const options = buildManualTaskOptions({
       activeTab: "unpacking",
@@ -580,6 +642,11 @@ describe("schedulePageModel", () => {
     });
 
     expect(options.map((option) => option.code)).toEqual([
+      "SYLU-2026-03-010",
+      "SYLU-2026-03-011",
+      "SYLU-2026-03-012",
+    ]);
+    expect(options.map((option) => option.label)).toEqual([
       "SYLU-2026-03-010",
       "SYLU-2026-03-011",
       "SYLU-2026-03-012",
@@ -1089,6 +1156,94 @@ describe("schedulePageModel", () => {
     });
 
     expect(gantt.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室", "振动二室"]);
+  });
+
+  test("buildGanttRows keeps all selected task experiment labs even when an experiment is selected", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "振动一室" }, { code: "盐雾试验室" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", required_device: "冲击一室" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", required_device: "振动试验" },
+      ],
+      schedules: [
+        { id: "schedule-1", task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", device: "冲击一室", start_at: "2099-03-20T08:00:00.000Z", end_at: "2099-03-20T10:00:00.000Z" },
+      ],
+      selectedExperimentCode: "SYLU-2026-03-006-B",
+      selectedTaskCode: "SYLU-2026-03-006",
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      tasks: [{ code: "SYLU-2026-03-006", test_type: "冲击试验 / 振动试验" }],
+    });
+
+    expect(gantt.rows.map((row) => row.device)).toEqual(["冲击一室", "振动一室", "振动二室"]);
+  });
+
+  test("buildGanttRows scopes selected task rows with master lab data", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "盐雾试验室" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-009", experiment_code: "SYLU-2026-03-009-A", required_device: "盐雾试验" },
+      ],
+      masterLabs: [
+        { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+        { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
+      ],
+      schedules: [],
+      selectedTaskCode: "SYLU-2026-03-009",
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      tasks: [{ code: "SYLU-2026-03-009", test_type: "盐雾试验" }],
+    });
+
+    expect(gantt.rows.map((row) => row.device)).toEqual(["盐雾试验室"]);
+  });
+
+  test("buildGanttRows does not add unrelated master resources to base rows", () => {
+    const gantt = buildGanttRows({
+      devices: [],
+      masterLabs: [
+        { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+        { code: "AREA_DOCK", name: "室外接驳区", type: "操作区" },
+      ],
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows.map((row) => row.device)).toContain("盐雾试验室");
+    expect(gantt.rows.map((row) => row.device)).not.toContain("室外接驳区");
+  });
+
+  test("buildGanttRows ignores legacy idle devices when master labs are available", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "Impact Lab" }, { code: "Vibration Lab" }, { code: "Salt Spray Lab" }],
+      masterLabs: [
+        { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验" },
+        { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+      ],
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows.map((row) => row.device)).not.toEqual(
+      expect.arrayContaining(["Impact Lab", "Vibration Lab", "Salt Spray Lab"]),
+    );
+  });
+
+  test("buildGanttRows ignores legacy English master labs outside current test types", () => {
+    const gantt = buildGanttRows({
+      devices: [],
+      masterLabs: [
+        { code: "LAB_IMPACT", name: "Impact Lab", type: "LAB", testTypeCode: "TT_IMPACT", testTypeName: "Impact Test" },
+        { code: "LAB_VIB", name: "Vibration Lab", type: "LAB", testTypeCode: "TT_VIB", testTypeName: "Vibration Test" },
+        { code: "LAB_SALT_OLD", name: "Salt Spray Lab", type: "LAB", testTypeCode: "TT_SALT", testTypeName: "Salt Spray Test" },
+        { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeCode: "YW", testTypeName: "盐雾试验" },
+      ],
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    expect(gantt.rows.map((row) => row.device)).toContain("盐雾试验室");
+    expect(gantt.rows.map((row) => row.device)).not.toEqual(
+      expect.arrayContaining(["Impact Lab", "Vibration Lab", "Salt Spray Lab"]),
+    );
   });
 
   test("buildGanttRows keeps one stable color per task across labs", () => {

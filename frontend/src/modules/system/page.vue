@@ -103,6 +103,10 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "SystemPage",
+});
+
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useSystemPage } from "./useSystemPage";

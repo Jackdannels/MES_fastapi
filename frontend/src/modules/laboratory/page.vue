@@ -26,8 +26,8 @@
     <section class="card section laboratory-control-card">
       <div class="laboratory-control-header">
         <div>
-          <h3>盐雾试验室操作台</h3>
-          <p class="muted">当前实验室固定为盐雾试验室，任务与实验准备流程按现有项目数据口径展示。</p>
+          <h3>{{ labName }}操作台</h3>
+          <p class="muted">当前实验室为{{ labName }}，任务与实验准备流程按现有项目数据口径展示。</p>
         </div>
         <button
           class="laboratory-reset-button"
@@ -111,7 +111,7 @@
         </div>
         <div class="laboratory-recent-tasks__list">
           <div v-if="!recentTasks.length" class="laboratory-recent-task laboratory-recent-task--empty">
-            当前盐雾试验室暂无任务
+            当前{{ labName }}暂无任务
           </div>
           <article
             v-for="row in recentTasks"
@@ -137,7 +137,7 @@
               <div>
                 <div class="laboratory-flow-card__title">任务流程图</div>
                 <div class="muted">
-                  {{ currentTask ? `${currentTask.taskCode} / ${currentTask.experimentName}` : "当前盐雾试验室暂无排程" }}
+                  {{ currentTask ? `${currentTask.taskCode} / ${currentTask.experimentName}` : `当前${labName}暂无排程` }}
                 </div>
               </div>
             </div>
@@ -273,7 +273,7 @@
       <div class="laboratory-modal-body">
         <div class="laboratory-compare-head">
           <h4>即将进行实验任务的详细清单</h4>
-          <span class="pill">盐雾试验室</span>
+          <span class="pill">{{ labName }}</span>
         </div>
         <div class="laboratory-checklist-card">
           <div v-for="item in checklist" :key="item.label" class="laboratory-checklist-item">
@@ -313,7 +313,7 @@
 
     <AppModal :open="installModalOpen" data-testid="laboratory-install-modal" title="样品安装" @close="closeInstall">
       <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>请安装样品，并确认盐雾试验室当前任务已准备完成。</p>
+        <p>请安装样品，并确认{{ labName }}当前任务已准备完成。</p>
       </div>
       <template #footer>
         <button class="action-btn secondary" data-testid="laboratory-install-cancel" type="button" @click="closeInstall">取消</button>
@@ -321,16 +321,32 @@
       </template>
     </AppModal>
 
-    <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="等待上位机确认" @close="() => {}">
-      <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>正在等待上位机确认夹具安装完成。</p>
-        <strong data-testid="laboratory-fixture-confirm-countdown">{{ fixtureConfirmCountdown }}</strong>
+    <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="夹具安装确认中" @close="() => {}">
+      <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-status-card">
+        <div class="laboratory-fixture-status-card__head">
+          <span class="laboratory-fixture-status-card__eyebrow">等待上位机确认</span>
+          <strong>{{ currentTask?.taskCode || "-" }}</strong>
+          <span>{{ labName }}</span>
+        </div>
+        <div class="laboratory-fixture-countdown" aria-live="polite">
+          <strong data-testid="laboratory-fixture-confirm-countdown">{{ fixtureConfirmCountdown }}</strong>
+          <span>秒</span>
+        </div>
+        <p>夹具安装信号已发送，正在等待上位机返回安装完成确认。</p>
+      </div>
+    </AppModal>
+
+    <AppModal :open="fixtureConfirmSuccessModalOpen" data-testid="laboratory-fixture-success-modal" title="夹具安装完成" @close="() => {}">
+      <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-success-card">
+        <div class="laboratory-fixture-success-card__mark">OK</div>
+        <strong>上位机已确认夹具安装完成</strong>
+        <p>准备就绪按钮已解锁，可继续确认实验准备状态。</p>
       </div>
     </AppModal>
 
     <AppModal :open="readyModalOpen" data-testid="laboratory-ready-modal" title="确认实验准备就绪" @close="closeReady">
       <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>确定当前盐雾试验室任务已完成实验准备，并将状态更新为实验准备就绪。</p>
+        <p>确定当前{{ labName }}任务已完成实验准备，并将状态更新为实验准备就绪。</p>
       </div>
       <template #footer>
         <button class="action-btn secondary" data-testid="laboratory-ready-cancel" type="button" @click="closeReady">取消</button>
@@ -425,7 +441,9 @@
 </template>
 
 <script setup>
-import { Teleport } from "vue";
+defineOptions({
+  name: "LaboratoryPage",
+});
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
@@ -460,11 +478,13 @@ const {
   confirmedModalOpen,
   fixtureConfirmCountdown,
   fixtureConfirmModalOpen,
+  fixtureConfirmSuccessModalOpen,
   currentExperimentTrayRows,
   currentTask,
   currentTaskFlow,
   hideRunningModal,
   installModalOpen,
+  labName,
   openCompleteConfirm,
   openCompare,
   openInstall,
@@ -490,7 +510,6 @@ const {
   summary,
   submitCompareScan,
   taskListModalOpen,
-  verifiedTrayCodes,
 } = useLaboratoryPage();
 
 const formatFlowTime = (value) => {

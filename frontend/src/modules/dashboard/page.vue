@@ -13,7 +13,7 @@
     <div class="card">
       <div class="muted">待排程</div>
       <div class="kpi" id="dashboard-unscheduled-count">{{ summaryCards.unscheduledCount }}</div>
-      <div class="muted">需设备空闲</div>
+      <div class="muted">需设备可用</div>
     </div>
     <div class="card">
       <div class="muted">正在运行（实验）</div>
@@ -31,7 +31,12 @@
       <div class="dashboard-task-header">
         <h3>任务队列</h3>
         <div class="dashboard-task-pagination" id="dashboard-task-pagination">
-          <AppPagination :current-page="currentPage" :page-count="pageCount" @change="setCurrentPage" />
+          <AppPagination
+            :current-page="currentPage"
+            :page-count="pageCount"
+            :show-step-controls="false"
+            @change="setCurrentPage"
+          />
         </div>
       </div>
       <div v-if="loadError" class="form-alert" data-testid="dashboard-load-error">{{ loadError }}</div>
@@ -57,10 +62,10 @@
       </table>
     </div>
     <div class="card">
-      <h3>设备空闲</h3>
+      <h3>设备状态</h3>
       <div class="timeline" id="dashboard-device-list">
         <div v-for="device in deviceItems" :key="device.code" class="timeline-item">
-          <div class="timeline-dot"></div>
+          <div class="timeline-dot" :class="device.dotClass"></div>
           <div>
             <div>{{ device.code }}</div>
             <div class="muted">{{ device.status }}</div>
@@ -85,6 +90,10 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "DashboardPage",
+});
+
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useDashboardPage } from "./useDashboardPage";
 

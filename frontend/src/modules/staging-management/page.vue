@@ -309,6 +309,10 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "StagingManagementPage",
+});
+
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
@@ -520,12 +524,6 @@ const cancelScan = () => {
   scanModalOpen.value = false;
   scanWarning.value = "";
   resetScanForm();
-};
-
-const openDetailModal = (detail, mode) => {
-  Object.assign(activeDetail, detail);
-  activeDetailMode.value = mode === "stockOut" ? "stockOut" : "stockIn";
-  detailModalOpen.value = true;
 };
 
 const openDestinationModal = (detail) => {

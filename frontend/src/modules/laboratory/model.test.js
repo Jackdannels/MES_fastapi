@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyLaboratoryTaskStep,
   buildLaboratorySummary,
+  buildLaboratoryProgressMessage,
   buildLaboratoryWorkflowFromTask,
   buildSaltSprayLaboratoryView,
   completeLaboratoryComparison,
@@ -234,6 +235,8 @@ describe("laboratory model", () => {
 
     expect(getLaboratoryActionState(waiting).canMarkReady).toBe(false);
     expect(getLaboratoryActionState(ready).canMarkReady).toBe(true);
+    expect(buildLaboratoryProgressMessage(waiting, { taskCode: "SYLU-2026-04-101" })).toBe("当前任务已完成夹具安装，等待上位机确认夹具安装完成");
+    expect(buildLaboratoryProgressMessage(ready, { taskCode: "SYLU-2026-04-101" })).toBe("夹具安装完成，可确认实验准备就绪");
   });
 
   test("buildSaltSprayLaboratoryView unlocks ready when loaded tray has fixture_ready", () => {

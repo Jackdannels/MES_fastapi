@@ -10,9 +10,12 @@ const SCHEDULES_KEY = "mes.schedules";
 const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
+const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
+const EXPERIMENT_SAMPLES_KEY = "mes.experiment_samples";
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const MASTER_TEST_TYPES_ENDPOINT = buildApiUrl("/api/master/test-types", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 const buildCurrentMonthFirstTaskCode = () =>
   `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-001`;
@@ -60,12 +63,51 @@ const createTask = (overrides = {}) => ({
   ...overrides,
 });
 
+const buildMockTaskExperiments = (task, existingExperiments = []) => {
+  const taskCode = String(task?.code ?? task?.id ?? "").trim();
+  const testTypes = Array.isArray(task?.test_types)
+    ? task.test_types.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : String(task?.test_type ?? "")
+      .split("/")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  const desiredCount = testTypes.length || 1;
+  const existingCodes = existingExperiments
+    .map((experiment) => String(experiment?.experiment_code ?? "").trim())
+    .filter(Boolean);
+  const payloadCodes = Array.isArray(task?.experiment_codes)
+    ? task.experiment_codes.map((code) => String(code ?? "").trim()).filter(Boolean)
+    : [];
+  const seedCodes = payloadCodes.length > 0 ? payloadCodes : existingCodes;
+  const codes = [];
+  seedCodes.forEach((code) => {
+    if (code && !codes.includes(code) && codes.length < desiredCount) {
+      codes.push(code);
+    }
+  });
+  while (codes.length < desiredCount) {
+    codes.push(`${taskCode}-${String.fromCharCode(65 + codes.length)}`);
+  }
+  return codes.slice(0, desiredCount).map((experimentCode, index) => ({
+    id: experimentCode,
+    task_code: taskCode,
+    experiment_code: experimentCode,
+    experiment_name: testTypes[index] ?? `实验${index + 1}`,
+    required_device: testTypes[index] ?? `实验${index + 1}`,
+    status: task?.status ?? "待排程",
+  }));
+};
+
 const createTasksPageFetchMock = ({
   tasks = [],
   schedules = [],
   samples = [],
   streams = [],
   experiments = [],
+  experimentTrays = [],
+  experimentSamples = [],
+  testTypes = ALL_EXPERIMENT_TYPES.map((name) => ({ name })),
+  testTypesError = null,
   afterReset = null,
   resetError = null,
 } = {}) => {
@@ -75,6 +117,8 @@ const createTasksPageFetchMock = ({
     samples: clone(samples),
     streams: clone(streams),
     experiments: clone(experiments),
+    experimentTrays: clone(experimentTrays),
+    experimentSamples: clone(experimentSamples),
   };
 
   const fetchMock = vi.fn((url, options = {}) => {
@@ -130,7 +174,17 @@ const createTasksPageFetchMock = ({
     if (url.startsWith(buildTaskEndpoint("")) && method === "PUT") {
       const taskId = url.slice(buildTaskEndpoint("").length);
       const nextTask = JSON.parse(options.body ?? "{}");
+      const previousTask = state.tasks.find((task) => task.id === taskId);
+      const previousTaskCode = String(previousTask?.code ?? "").trim();
+      const nextTaskCode = String(nextTask?.code ?? previousTaskCode).trim();
+      const existingTaskExperiments = state.experiments.filter(
+        (experiment) => String(experiment?.task_code ?? "").trim() === previousTaskCode,
+      );
       state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(nextTask) : task));
+      state.experiments = [
+        ...state.experiments.filter((experiment) => String(experiment?.task_code ?? "").trim() !== previousTaskCode),
+        ...buildMockTaskExperiments({ ...nextTask, code: nextTaskCode }, existingTaskExperiments),
+      ];
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -156,7 +210,24 @@ const createTasksPageFetchMock = ({
           [SAMPLES_KEY]: clone(state.samples),
           [STREAMS_KEY]: clone(state.streams),
           [EXPERIMENTS_KEY]: clone(state.experiments),
+          [EXPERIMENT_TRAYS_KEY]: clone(state.experimentTrays),
+          [EXPERIMENT_SAMPLES_KEY]: clone(state.experimentSamples),
         }),
+      });
+    }
+
+    if (url === MASTER_TEST_TYPES_ENDPOINT && method === "GET") {
+      if (testTypesError) {
+        return Promise.resolve({
+          ok: false,
+          status: testTypesError.status ?? 500,
+          statusText: testTypesError.statusText ?? "Master Data Failed",
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => clone(testTypes),
       });
     }
 
@@ -173,6 +244,12 @@ const createTasksPageFetchMock = ({
       }
       if (Array.isArray(updates[EXPERIMENTS_KEY])) {
         state.experiments = clone(updates[EXPERIMENTS_KEY]);
+      }
+      if (Array.isArray(updates[EXPERIMENT_TRAYS_KEY])) {
+        state.experimentTrays = clone(updates[EXPERIMENT_TRAYS_KEY]);
+      }
+      if (Array.isArray(updates[EXPERIMENT_SAMPLES_KEY])) {
+        state.experimentSamples = clone(updates[EXPERIMENT_SAMPLES_KEY]);
       }
       return Promise.resolve({
         ok: true,
@@ -576,6 +653,48 @@ describe("TasksPage runtime", () => {
     );
   });
 
+  test("uses master test type options for intake selections when available", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "dirty-task-type",
+          code: "SYLU-2026-05-002",
+          name: "演示任务002",
+          test_type: "演示任务002",
+          test_types: ["演示任务002"],
+          required_device: "演示任务002",
+        }),
+      ],
+      samples: [],
+      testTypes: [{ code: "CUSTOM", name: "自定义试验" }],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-自定义试验"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="task-intake-test-type-option-演示任务002"]').exists()).toBe(false);
+  });
+
+  test("falls back to built-in intake experiment options when master data fails", async () => {
+    installApiFetchMock({
+      tasks: [],
+      samples: [],
+      testTypesError: { status: 503, statusText: "Unavailable" },
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').exists()).toBe(true);
+  });
+
   test("uses archived returned task codes when generating a new intake task number", async () => {
     const { fetchMock, state } = installApiFetchMock({
       tasks: [
@@ -821,6 +940,397 @@ describe("TasksPage runtime", () => {
         test_types: ["盐雾试验", "霉菌试验"],
       }),
     );
+  });
+
+  test("refreshes experiment metadata after changing three experiment types to one", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-edit-three-to-one",
+          code: "SYLU-2026-05-003",
+          name: "三实验改一实验",
+          sample_count: 8,
+          test_type: "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+          test_types: ["温度冲击试验", "高低温湿热试验", "盐雾试验"],
+          required_device: "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+          experiment_codes: ["SYLU-2026-05-003-A", "SYLU-2026-05-003-B", "SYLU-2026-05-003-C"],
+          experiment_count: 3,
+        }),
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-A",
+          experiment_name: "温度冲击试验",
+          required_device: "温度冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-B",
+          experiment_name: "高低温湿热试验",
+          required_device: "高低温湿热试验",
+        },
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-C",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get("td.tasks-table__cell--summary .tasks-table__summary-text").text()).toBe(
+      "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+    );
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-温度冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-高低温湿热试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-四综合试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    const summary = wrapper.get("td.tasks-table__cell--summary .tasks-table__summary-text").text();
+    expect(summary).toBe("四综合试验");
+    expect(summary).not.toContain("温度冲击试验");
+    expect(summary).not.toContain("高低温湿热试验");
+    expect(summary).not.toContain("盐雾试验");
+  });
+
+  test("blocks experiment type changes after transfer storage is confirmed", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-storage-confirmed",
+          code: "SYLU-2026-05-004",
+          name: "已确认到货任务",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+          transfer_status: "已入库",
+        }),
+      ],
+      samples: [
+        {
+          id: "SYLU-2026-05-004-SP-001",
+          code: "SYLU-2026-05-004-SP-001",
+          task_code: "SYLU-2026-05-004",
+          status: "已入库",
+          flow_status: "已入库",
+          trays: [{ tray_code: "SYLU-2026-05-004-TP-001", status: "已入库" }],
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("该任务样品已在接驳区确认到货，不允许更改实验类型");
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-storage-confirmed") && options?.method === "PUT")).toBe(
+      false,
+    );
+  });
+
+  test("confirms and removes schedules for deleted scheduled experiment types", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-scheduled-removal",
+          code: "SYLU-2026-05-005",
+          name: "删除已排程实验",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+          required_device: "冲击试验 / 盐雾试验",
+          experiment_codes: ["SYLU-2026-05-005-A", "SYLU-2026-05-005-B"],
+          experiment_count: 2,
+        }),
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-005",
+          experiment_code: "SYLU-2026-05-005-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-05-005",
+          experiment_code: "SYLU-2026-05-005-B",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "SCH-KEEP",
+          task_code: "SYLU-2026-05-005",
+          experiment_code: "SYLU-2026-05-005-A",
+          device: "冲击一室",
+          status: "已排程",
+        },
+        {
+          id: "SCH-REMOVE",
+          task_code: "SYLU-2026-05-005",
+          experiment_code: "SYLU-2026-05-005-B",
+          device: "盐雾试验室",
+          status: "已排程",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-B", tray_code: "TP-B" },
+      ],
+      experimentSamples: [
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", sample_code: "SP-A" },
+        { task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-B", sample_code: "SP-B" },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-scheduled-removal-confirm"]').text()).toContain(
+      "修改的实验类型涉及已排程实验，确定修改后将同步删除对应排程信息",
+    );
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-scheduled-removal") && options?.method === "PUT")).toBe(
+      false,
+    );
+
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-scheduled-removal") && options?.method === "PUT",
+    );
+    expect(JSON.parse(updateCall[1].body)).toEqual(
+      expect.objectContaining({
+        test_types: ["冲击试验"],
+        confirm_remove_scheduled_experiments: true,
+      }),
+    );
+    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
+    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", tray_code: "TP-A" }]);
+    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", sample_code: "SP-A" }]);
+  });
+
+  test("removes scheduled experiment links by the original task code when task code also changes", async () => {
+    const { state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-code-change-removal",
+          code: "SYLU-2026-05-015",
+          name: "改号并删除实验",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+          required_device: "冲击试验 / 盐雾试验",
+          experiment_codes: ["SYLU-2026-05-015-A", "SYLU-2026-05-015-B"],
+          experiment_count: 2,
+        }),
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-015",
+          experiment_code: "SYLU-2026-05-015-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-05-015",
+          experiment_code: "SYLU-2026-05-015-B",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "SCH-KEEP",
+          task_code: "SYLU-2026-05-015",
+          experiment_code: "SYLU-2026-05-015-A",
+          device: "冲击一室",
+          status: "已排程",
+        },
+        {
+          id: "SCH-REMOVE",
+          task_code: "SYLU-2026-05-015",
+          experiment_code: "SYLU-2026-05-015-B",
+          device: "盐雾试验室",
+          status: "已排程",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-B", tray_code: "TP-B" },
+      ],
+      experimentSamples: [
+        { task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", sample_code: "SP-A" },
+        { task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-B", sample_code: "SP-B" },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('input[name="code"]').setValue("SYLU-2026-05-099");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
+    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", tray_code: "TP-A" }]);
+    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", sample_code: "SP-A" }]);
+  });
+
+  test("keeps schedules for a retained experiment when deleting an earlier experiment type", async () => {
+    const { state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-remove-first",
+          code: "SYLU-2026-05-006",
+          name: "删除前序实验",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+          required_device: "冲击试验 / 盐雾试验",
+          experiment_codes: ["SYLU-2026-05-006-A", "SYLU-2026-05-006-B"],
+          experiment_count: 2,
+        }),
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", experiment_name: "冲击试验", required_device: "冲击试验" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", experiment_name: "盐雾试验", required_device: "盐雾试验" },
+      ],
+      schedules: [
+        { id: "SCH-REMOVE", task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", device: "冲击一室", status: "已排程" },
+        { id: "SCH-KEEP", task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", device: "盐雾试验室", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", tray_code: "TP-B" },
+      ],
+      experimentSamples: [
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-A", sample_code: "SP-A" },
+        { task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", sample_code: "SP-B" },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
+    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", tray_code: "TP-B" }]);
+    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", sample_code: "SP-B" }]);
+  });
+
+  test("cancels scheduled experiment removal without saving or clearing schedules", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-cancel-removal",
+          code: "SYLU-2026-05-007",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+          required_device: "冲击试验 / 盐雾试验",
+          experiment_codes: ["SYLU-2026-05-007-A", "SYLU-2026-05-007-B"],
+        }),
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-A", experiment_name: "冲击试验", required_device: "冲击试验" },
+        { task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", experiment_name: "盐雾试验", required_device: "盐雾试验" },
+      ],
+      schedules: [
+        { id: "SCH-REMOVE", task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", device: "盐雾试验室", status: "已排程" },
+      ],
+      experimentTrays: [{ task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", tray_code: "TP-B" }],
+      experimentSamples: [{ task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", sample_code: "SP-B" }],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-cancel"]').trigger("click");
+    await settle(wrapper);
+
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-cancel-removal") && options?.method === "PUT")).toBe(
+      false,
+    );
+    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-REMOVE"]);
+    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", tray_code: "TP-B" }]);
+    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-007", experiment_code: "SYLU-2026-05-007-B", sample_code: "SP-B" }]);
+  });
+
+  test("does not save a task edit when all experiment types are cleared", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-edit-empty-types",
+          code: "SYLU-2026-05-002",
+          name: "演示任务002",
+          sample_count: 7,
+          test_type: "盐雾试验",
+          test_types: ["盐雾试验"],
+          required_device: "盐雾试验",
+          status: "任务进行中",
+        }),
+      ],
+      samples: [],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请选择至少一个试验类型");
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-edit-empty-types") && options?.method === "PUT")).toBe(
+      false,
+    );
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("请选择试验类型");
   });
 
   test("updates a task after selecting all experiment types", async () => {

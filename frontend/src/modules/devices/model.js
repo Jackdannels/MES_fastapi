@@ -96,7 +96,7 @@ const isScheduleExperimentRunning = (schedule, deviceCode, samples = [], experim
 };
 
 // 根据实际实验运行状态和维护标记推导设备当前状态。
-function resolveDeviceStatus(device, schedules, now = new Date(), samples = [], experimentTrays = []) {
+function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = []) {
   const deviceCode = normalizeText(device?.code);
   const runningSchedule = asArray(schedules).find((schedule) =>
     isScheduleExperimentRunning(schedule, deviceCode, samples, experimentTrays),
@@ -124,10 +124,11 @@ function resolveStatusClass(status) {
 
 // 将存储中的设备记录转换成设备页表格行。
 function buildDeviceRows(devices, schedules, now = new Date(), samples = [], experimentTrays = []) {
+  void now;
   const deviceList = Array.isArray(devices) ? devices : [];
   return deviceList.map((device, index) => {
     // 设备状态优先以实际运行托盘推导结果为准，再回退到设备自身状态。
-    const status = resolveDeviceStatus(device, schedules, now, samples, experimentTrays);
+    const status = resolveDeviceStatus(device, schedules, samples, experimentTrays);
     return {
       acquisitionEnabled: normalizeText(device?.acquisition_enabled) || "启用",
       code: normalizeText(device?.code) || `DEVICE-${index + 1}`,

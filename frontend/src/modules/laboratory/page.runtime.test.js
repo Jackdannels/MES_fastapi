@@ -9,6 +9,7 @@ import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 let wrapper;
 let pageHeader;
 let headerActions;
+let masterLabsState;
 let snapshotState;
 const toDisplayedTime = (value) => {
   const date = new Date(value);
@@ -26,6 +27,19 @@ const flushPageUpdates = async (cycles = 4) => {
 };
 const storageGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+const masterLabsGetCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
+const waitForInitialLaboratoryLoad = async (storageCount, masterLabCount) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (storageGetCalls().length >= storageCount && masterLabsGetCalls().length >= masterLabCount) {
+      await flushPageUpdates();
+      return;
+    }
+  }
+  expect(storageGetCalls()).toHaveLength(storageCount);
+  expect(masterLabsGetCalls()).toHaveLength(masterLabCount);
+};
 const waitForStorageGetCount = async (count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -34,6 +48,15 @@ const waitForStorageGetCount = async (count) => {
     }
   }
   expect(storageGetCalls()).toHaveLength(count);
+};
+const waitForReadyButtonEnabled = async (mounted) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (mounted.get('[data-testid="laboratory-ready"]').attributes("disabled") === undefined) {
+      return;
+    }
+  }
+  expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
 };
 
 const createSnapshot = () => ({
@@ -131,6 +154,8 @@ const createSnapshot = () => ({
 });
 
 const mountPage = async () => {
+  const expectedStorageGetCalls = storageGetCalls().length + 1;
+  const expectedMasterLabsGetCalls = masterLabsGetCalls().length + 1;
   pageHeader = document.createElement("header");
   pageHeader.className = "page-header";
   pageHeader.innerHTML = `
@@ -149,14 +174,13 @@ const mountPage = async () => {
   headerActions = pageHeader.querySelector(".header-actions");
 
   wrapper = mount(LaboratoryPage, { attachTo: document.body });
-  await Promise.resolve();
-  await Promise.resolve();
-  await nextTick();
-  await nextTick();
+  await waitForInitialLaboratoryLoad(expectedStorageGetCalls, expectedMasterLabsGetCalls);
   return wrapper;
 };
 
 const mountPageInsideShell = async () => {
+  const expectedStorageGetCalls = storageGetCalls().length + 1;
+  const expectedMasterLabsGetCalls = masterLabsGetCalls().length + 1;
   const Shell = {
     components: { LaboratoryPage },
     template: `
@@ -177,10 +201,7 @@ const mountPageInsideShell = async () => {
     `,
   };
   wrapper = mount(Shell, { attachTo: document.body });
-  await Promise.resolve();
-  await Promise.resolve();
-  await nextTick();
-  await nextTick();
+  await waitForInitialLaboratoryLoad(expectedStorageGetCalls, expectedMasterLabsGetCalls);
   return wrapper;
 };
 
@@ -198,8 +219,12 @@ describe("LaboratoryPage runtime", () => {
       },
     });
     snapshotState = createSnapshot();
+    masterLabsState = [];
     vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
       const url = String(input);
+      if (url.includes("/api/master/labs")) {
+        return { ok: true, status: 200, json: async () => masterLabsState };
+      }
       if (url.includes("/api/storage")) {
         if ((options.method || "GET") === "PUT") {
           const payload = JSON.parse(String(options.body || "{}"));
@@ -243,6 +268,62 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
+  });
+
+  test("uses the canonical salt-spray master lab to filter laboratory schedules", async () => {
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室（东区）", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-001", name: "盐雾东区任务", test_type: "盐雾试验" },
+        { code: "SYLU-2026-06-002", name: "旧盐雾任务", test_type: "盐雾试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", experiment_name: "盐雾试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-A", tray_code: "TP-SALT-2" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", tray_code: "TP-SALT-OLD" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-001-SP-001",
+          location: "盐雾试验室（东区）",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-06-001",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-SALT-2" }],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-master-salt",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-A",
+          device: "盐雾试验室（东区）",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-old-salt",
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T12:00:00.000Z",
+          end_at: "2026-04-02T13:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("盐雾试验室（东区）操作台");
+    expect(mounted.text()).toContain("SYLU-2026-06-001");
+    expect(mounted.text()).not.toContain("SYLU-2026-06-002");
   });
 
   test("disables comparison and shows guidance when the salt-spray lab has no tasks", async () => {
@@ -553,8 +634,14 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
     vi.advanceTimersByTime(3000);
-    await flushPageUpdates();
+    await waitForReadyButtonEnabled(mounted);
 
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-fixture-success-modal"]').text()).toContain("上位机已确认夹具安装完成");
+    vi.advanceTimersByTime(1000);
+    await flushPageUpdates();
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await nextTick();
@@ -1095,6 +1182,11 @@ describe("LaboratoryPage runtime", () => {
     vi.advanceTimersByTime(3000);
     await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-fixture-success-modal"]').text()).toContain("上位机已确认夹具安装完成");
+    vi.advanceTimersByTime(1000);
+    await flushPageUpdates();
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
@@ -1293,7 +1385,7 @@ describe("LaboratoryPage runtime", () => {
       },
     ];
 
-    const mounted = await mountPage();
+    await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
 
     document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1390,7 +1482,7 @@ describe("LaboratoryPage runtime", () => {
       },
     ];
 
-    const mounted = await mountPage();
+    await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));

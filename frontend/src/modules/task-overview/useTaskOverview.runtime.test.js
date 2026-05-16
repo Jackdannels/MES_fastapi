@@ -3,6 +3,7 @@ import { defineComponent, reactive, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  readMasterTestTypes: vi.fn(),
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
   routerReplace: vi.fn(() => Promise.resolve()),
@@ -27,6 +28,10 @@ vi.mock("@/composables/useStorageSnapshot", () => ({
     loadSnapshot: mocks.loadSnapshot,
     persistSnapshot: mocks.persistSnapshot,
   }),
+}));
+
+vi.mock("@/lib/masterDataApi", () => ({
+  readMasterTestTypes: mocks.readMasterTestTypes,
 }));
 
 vi.mock("./useTaskOverviewEditor", () => ({
@@ -79,6 +84,7 @@ describe("useTaskOverview runtime", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     reactiveRoute.query = { highlightTask: "SYLU-2026-03-002" };
+    mocks.readMasterTestTypes.mockReset();
     mocks.loadSnapshot.mockResolvedValue({
       "mes.tasks": [
         {
@@ -100,6 +106,9 @@ describe("useTaskOverview runtime", () => {
         },
       ],
     });
+    mocks.readMasterTestTypes.mockResolvedValue([
+      { code: "CUSTOM_FATIGUE", name: "自定义疲劳试验" },
+    ]);
     mocks.persistSnapshot.mockReset();
     mocks.routerReplace.mockReset();
   });
@@ -127,5 +136,13 @@ describe("useTaskOverview runtime", () => {
     });
 
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
+  test("uses master test types for task edit options even when current rows do not contain them", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(mocks.readMasterTestTypes).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.taskTypeEditOptions).toEqual(expect.arrayContaining(["自定义疲劳试验"]));
   });
 });

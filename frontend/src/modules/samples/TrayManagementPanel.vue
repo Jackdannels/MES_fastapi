@@ -85,7 +85,7 @@
             </tr>
           </tbody>
         </table>
-        <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
+        <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.clearWarning" />
       </section>
 
       <aside class="tray-management-sidebar" data-testid="samples-trays-flows">

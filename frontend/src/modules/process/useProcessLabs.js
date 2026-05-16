@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   buildTrayFlowView,
@@ -50,6 +51,37 @@ const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const API_BASE_URL = getFrontendApiBaseUrl();
 
+const normalizeMasterProcessLabs = (rows) =>
+  asArray(rows)
+    .filter((lab) => Number(lab?.status ?? 1) !== 0)
+    .map((lab) => ({
+      name: normalizeText(lab?.name || lab?.lab_name),
+      testType: normalizeText(lab?.testTypeName || lab?.test_type_name || lab?.testType || lab?.test_type),
+      type: normalizeText(lab?.type || lab?.lab_type),
+    }))
+    .filter((lab) => lab.name && lab.testType && lab.type === "实验室")
+    .map((lab) => ({
+      name: lab.name,
+      testType: lab.testType,
+    }));
+
+const mergeProcessLabsWithStaticFallback = (masterLabs, fallbackLabs) => {
+  if (!asArray(masterLabs).length) {
+    return fallbackLabs;
+  }
+  const fallbackNames = new Set(asArray(fallbackLabs).map((lab) => normalizeText(lab?.name)).filter(Boolean));
+  const overlapsStaticProcessLabs = masterLabs.some((lab) => fallbackNames.has(normalizeText(lab?.name)));
+  if (!overlapsStaticProcessLabs) {
+    return masterLabs;
+  }
+  const existingNames = new Set(masterLabs.map((lab) => normalizeText(lab?.name)).filter(Boolean));
+  const missingFallbackLabs = asArray(fallbackLabs).filter((lab) => {
+    const name = normalizeText(lab?.name);
+    return name && !existingNames.has(name);
+  });
+  return [...masterLabs, ...missingFallbackLabs];
+};
+
 // 任务名称里如果带“批次 / batch”后缀，抽屉标题会裁掉这部分噪音。
 const sanitizeTaskDisplayName = (value, fallback = "-") => {
   let normalized = String(value ?? "").trim();
@@ -60,20 +92,6 @@ const sanitizeTaskDisplayName = (value, fallback = "-") => {
     normalized = normalized.replace(pattern, "").trim();
   });
   return normalized || fallback;
-};
-
-const appendSampleHistory = (sample, action, detail = "", now = new Date().toISOString()) => {
-  const history = Array.isArray(sample?.history) ? sample.history.slice() : [];
-  history.unshift({
-    action,
-    detail,
-    id: `process-event-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    location: normalizeText(sample?.location),
-    owner: normalizeText(sample?.owner),
-    status: normalizeText(sample?.status),
-    time: now,
-  });
-  return history;
 };
 
 const summarizeUniqueTexts = (values, fallback = "-") => {
@@ -123,7 +141,9 @@ const resolveScheduleDurationHours = (schedule) => {
 
 // 加载快照数据，并输出实验室卡片及当前任务的抽屉详情。
 function useProcessLabs(options = {}) {
-  const labs = Array.isArray(options.labs) ? options.labs : PROCESS_LABS;
+  const hasExplicitLabs = Array.isArray(options.labs);
+  const fallbackLabs = hasExplicitLabs ? options.labs : PROCESS_LABS;
+  const processLabs = ref(fallbackLabs);
   const storage =
     options.storage ||
     useStorageSnapshot([
@@ -713,7 +733,7 @@ function useProcessLabs(options = {}) {
 
   const rebuildLabCards = () => {
     labCards.value = buildProcessLabCards(
-      labs,
+      processLabs.value,
       tasks.value,
       schedules.value,
       samples.value,
@@ -761,7 +781,16 @@ function useProcessLabs(options = {}) {
   const loadLabStatus = async () => {
     loading.value = true;
     try {
-      const snapshot = await loadSnapshot();
+      const [snapshot, masterLabs] = await Promise.all([
+        loadSnapshot(),
+        hasExplicitLabs ? Promise.resolve([]) : readMasterLabs().catch(() => []),
+      ]);
+      if (!hasExplicitLabs) {
+        const normalizedMasterLabs = normalizeMasterProcessLabs(masterLabs);
+        processLabs.value = normalizedMasterLabs.length
+          ? mergeProcessLabsWithStaticFallback(normalizedMasterLabs, fallbackLabs)
+          : fallbackLabs;
+      }
       tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];

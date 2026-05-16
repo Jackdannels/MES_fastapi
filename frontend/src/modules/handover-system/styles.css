@@ -13,6 +13,12 @@
   background: transparent;
 }
 
+.transfer-area-screen.is-embedded .transfer-overview-shell {
+  height: calc(100vh - 172px);
+  min-height: 720px;
+  max-height: 960px;
+}
+
 .transfer-area-shell {
   width: min(1760px, 100%);
   margin: 0 auto;
@@ -174,6 +180,7 @@
 .transfer-table__body {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .transfer-table__head,
@@ -829,6 +836,11 @@
 
   .transfer-overview-shell {
     min-height: auto;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-overview-shell {
+    height: auto;
+    max-height: none;
   }
 
   .transfer-overview-kpis,

@@ -25,7 +25,6 @@ import {
   normalizeText,
   isManualScheduleSelectionLegal,
   resolveLegalManualScheduleState,
-  resolveRetentionTimeState,
   resolveScheduleTimes,
   STATUS_SCHEDULED,
   toLocalDateValue,
@@ -33,6 +32,7 @@ import {
   updateScheduleRecord,
 } from "./model";
 import { filterActiveTasks } from "@/lib/taskArchive";
+import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
@@ -56,6 +56,7 @@ function useSchedulePage() {
   const rawSchedules = ref([]);
   const rawStreams = ref([]);
   const rawTasks = ref([]);
+  const masterLabs = ref([]);
   const scheduleForm = ref(createManualScheduleForm());
   const editForm = ref(createScheduleEditForm());
   const scheduleWarning = ref("");
@@ -122,6 +123,7 @@ function useSchedulePage() {
   // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
   const manualLabOptions = computed(() =>
     buildLabOptions({
+      masterLabs: masterLabs.value,
       selectedDevice: normalizeText(scheduleForm.value.device),
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
     }),
@@ -218,6 +220,7 @@ function useSchedulePage() {
       devices: rawDevices.value,
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
+      masterLabs: masterLabs.value,
       now: now.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,
@@ -666,7 +669,11 @@ function useSchedulePage() {
 
   const loadSchedulePage = async () => {
     try {
-      const snapshot = await loadSnapshot();
+      const [snapshot, loadedMasterLabs] = await Promise.all([
+        loadSnapshot(),
+        readMasterLabs().catch(() => []),
+      ]);
+      masterLabs.value = Array.isArray(loadedMasterLabs) ? loadedMasterLabs : [];
       rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
       rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
@@ -677,6 +684,7 @@ function useSchedulePage() {
       rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       resetScheduleForm();
     } catch (error) {
+      masterLabs.value = [];
       scheduleWarning.value = buildFailureMessage("排程数据加载失败，请稍后重试", error);
     }
   };
@@ -790,6 +798,7 @@ function useSchedulePage() {
         normalizeText(item?.experiment_code) === normalizeText(schedule?.experiment_code || editForm.value.experiment_code),
     );
     return buildLabOptions({
+      masterLabs: masterLabs.value,
       selectedDevice,
       testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
     });

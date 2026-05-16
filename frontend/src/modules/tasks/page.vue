@@ -14,7 +14,7 @@
     <div class="card">
       <div class="muted">待排程</div>
       <div class="kpi" id="task-unscheduled-count">{{ metrics.unscheduledLabel }}</div>
-      <div class="muted">需设备空闲</div>
+      <div class="muted">需设备可用</div>
     </div>
   </section>
 
@@ -134,11 +134,11 @@
         </div>
         <div class="form-field">
           <label>期望完成时间</label>
-          <input v-model="intakeForm.due_at" type="datetime-local" name="due_at" />
+          <PickerOnlyInput v-model="intakeForm.due_at" type="datetime-local" name="due_at" />
         </div>
         <div class="form-field">
           <label>到样时间</label>
-          <input v-model="intakeForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+          <PickerOnlyInput v-model="intakeForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
           <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
@@ -269,11 +269,11 @@
       </div>
       <div class="form-field">
         <label>期望完成时间</label>
-        <input v-model="editForm.due_at" type="datetime-local" name="due_at" />
+        <PickerOnlyInput v-model="editForm.due_at" type="datetime-local" name="due_at" />
       </div>
       <div class="form-field">
         <label>到样时间</label>
-        <input v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+        <PickerOnlyInput v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
         <div class="helper">以样品管理确认入库时间为准，重新入库会覆盖</div>
       </div>
       <div class="form-field">
@@ -339,23 +339,45 @@
       </button>
     </template>
   </AppModal>
+
+  <AppModal :open="scheduledExperimentRemovalModalOpen" title="确认修改实验类型" @close="closeScheduledExperimentRemovalConfirm">
+    <div class="tasks-danger-confirmation" data-testid="task-scheduled-removal-confirm">
+      <strong>排程信息将同步删除</strong>
+      <p>修改的实验类型涉及已排程实验，确定修改后将同步删除对应排程信息</p>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" data-testid="task-scheduled-removal-confirm-cancel" type="button" @click="closeScheduledExperimentRemovalConfirm">
+        取消
+      </button>
+      <button class="action-btn danger" data-testid="task-scheduled-removal-confirm-ok" type="button" @click="confirmScheduledExperimentRemoval">
+        确定修改
+      </button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
 <script setup>
+defineOptions({
+  name: "TasksPage",
+});
+
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useTasksPage } from "./useTasksPage";
 
 const {
   closeIntakeModal,
   closeTaskDrawer,
+  closeScheduledExperimentRemovalConfirm,
   currentPage,
   deleteTask,
   closeEditExperimentPicker,
   confirmEditExperimentPicker,
+  confirmScheduledExperimentRemoval,
   editExperimentDraft,
   editExperimentDraftSummary,
   editExperimentModalOpen,
@@ -383,6 +405,7 @@ const {
   resetModalOpen,
   resetTasks,
   resetting,
+  scheduledExperimentRemovalModalOpen,
   saveDraft,
   setCurrentPage,
   statusOptions,
@@ -501,6 +524,30 @@ const {
   border-color: rgba(56, 189, 248, 0.45);
   background: rgba(56, 189, 248, 0.18);
   color: #0f172a;
+}
+
+.tasks-danger-confirmation {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(255, 241, 242, 0.96);
+  color: #b91c1c;
+}
+
+.tasks-danger-confirmation strong,
+.tasks-danger-confirmation p {
+  margin: 0;
+}
+
+.tasks-danger-confirmation strong {
+  font-size: 15px;
+}
+
+.tasks-danger-confirmation p {
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 @media (max-width: 820px) {

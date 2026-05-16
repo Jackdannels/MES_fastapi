@@ -53,9 +53,6 @@
             {{ status }}
           </option>
         </select>
-        <button class="action-btn" type="button" data-testid="samples-flow-open-batch" @click="samplesFlow.openBatchModal">
-          批量入库
-        </button>
         <AppPagination :current-page="samplesFlow.currentPage" :page-count="samplesFlow.pageCount" @change="samplesFlow.setPage" />
       </div>
       <table class="table">
@@ -81,10 +78,10 @@
             <th
               data-sort
               data-testid="samples-flow-sort-tray"
-              :data-sort-dir="samplesFlow.sortKey === 'trayCount' ? samplesFlow.sortDirection : ''"
-              @click="samplesFlow.toggleSamplesFlowSort('trayCount')"
+              :data-sort-dir="samplesFlow.sortKey === 'trayCodesText' ? samplesFlow.sortDirection : ''"
+              @click="samplesFlow.toggleSamplesFlowSort('trayCodesText')"
             >
-              托盘数
+              托盘编号
             </th>
             <th
               data-sort
@@ -93,14 +90,6 @@
               @click="samplesFlow.toggleSamplesFlowSort('location')"
             >
               当前位置
-            </th>
-            <th
-              data-sort
-              data-testid="samples-flow-sort-owner"
-              :data-sort-dir="samplesFlow.sortKey === 'owner' ? samplesFlow.sortDirection : ''"
-              @click="samplesFlow.toggleSamplesFlowSort('owner')"
-            >
-              责任人
             </th>
             <th
               data-sort
@@ -115,15 +104,14 @@
         </thead>
         <tbody>
           <tr v-if="samplesFlow.rows.length === 0">
-            <td colspan="8" class="muted">暂无样品数据</td>
+            <td colspan="7" class="muted">暂无样品数据</td>
           </tr>
           <tr v-for="(row, index) in samplesFlow.rows" :key="row.id || row.code">
             <td>{{ (samplesFlow.currentPage - 1) * 8 + index + 1 }}</td>
             <td>{{ row.task_code || "-" }}</td>
             <td>{{ row.code || "-" }}</td>
-            <td>{{ row.trayCount }}</td>
+            <td class="sample-flow-tray-code">{{ row.trayCodesText || "-" }}</td>
             <td>{{ row.location || "-" }}</td>
-            <td>{{ row.owner || "-" }}</td>
             <td><span :class="row.statusClass">{{ row.status || "-" }}</span></td>
             <td>
               <button
@@ -138,166 +126,128 @@
           </tr>
         </tbody>
       </table>
-      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.clearWarning" />
     </section>
 
     <section class="card section" :class="{ 'is-hidden': activeSamplesTab !== 'sample-staging' }" data-testid="samples-staging-panel">
-      <h3>暂存间派发</h3>
+      <h3>暂存间样品</h3>
       <div class="toolbar">
-        <div class="muted" data-testid="samples-staging-count">暂存间未试验样品 {{ samplesFlow.stagingCount }}</div>
+        <div class="muted" data-testid="samples-staging-count">当前暂存样品 {{ samplesFlow.stagingCount }}</div>
         <input
           :value="samplesFlow.stagingQuery"
           class="search-input"
           data-testid="samples-staging-search"
-          placeholder="筛选样品/任务/状态"
+          placeholder="筛选任务/样品/位置/状态"
           @input="samplesFlow.setStagingQuery($event.target.value)"
         />
+        <select
+          class="search-input"
+          data-testid="samples-staging-task-filter"
+          :value="samplesFlow.stagingSelectedTaskCode"
+          @change="samplesFlow.setStagingTaskFilter($event.target.value)"
+        >
+          <option value="">全部任务</option>
+          <option v-for="taskCode in samplesFlow.stagingTaskOptions" :key="taskCode" :value="taskCode">
+            {{ taskCode }}
+          </option>
+        </select>
+        <select
+          class="search-input"
+          data-testid="samples-staging-status-filter"
+          :value="samplesFlow.stagingSelectedStatus"
+          @change="samplesFlow.setStagingStatusFilter($event.target.value)"
+        >
+          <option value="">全部状态</option>
+          <option v-for="status in samplesFlow.stagingStatusOptions" :key="status" :value="status">
+            {{ status }}
+          </option>
+        </select>
+        <AppPagination :current-page="samplesFlow.stagingCurrentPage" :page-count="samplesFlow.stagingPageCount" @change="samplesFlow.setStagingPage" />
       </div>
       <table class="table" data-testid="samples-staging-table">
         <thead>
           <tr>
-            <th style="width: 56px;">
-              <input
-                :checked="samplesFlow.stagingAllSelected"
-                data-testid="samples-staging-select-all"
-                type="checkbox"
-                @change="samplesFlow.toggleAllStagingSelection($event.target.checked)"
-              />
-            </th>
             <th>序号</th>
-            <th>样品编号</th>
             <th>任务</th>
+            <th>样品编号</th>
+            <th>托盘编号</th>
             <th>当前位置</th>
             <th>状态</th>
-            <th>责任人</th>
+            <th>操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="samplesFlow.stagingRows.length === 0">
-            <td colspan="7" class="muted">暂无可派发样品</td>
+            <td colspan="7" class="muted">暂无暂存间样品</td>
           </tr>
           <tr v-for="(row, index) in samplesFlow.stagingRows" :key="row.id || row.code">
-            <td>
-              <input
-                :checked="row.selected"
-                :data-testid="`samples-staging-select-${index}`"
-                type="checkbox"
-                @change="samplesFlow.toggleStagingSelection(row.code, $event.target.checked)"
-              />
-            </td>
-            <td>{{ index + 1 }}</td>
-            <td>{{ row.code || "-" }}</td>
+            <td>{{ (samplesFlow.stagingCurrentPage - 1) * 8 + index + 1 }}</td>
             <td>{{ row.task_code || "-" }}</td>
+            <td>{{ row.code || "-" }}</td>
+            <td class="sample-flow-tray-code">{{ row.trayCodesText || "-" }}</td>
             <td>{{ row.location || "-" }}</td>
             <td><span :class="row.statusClass">{{ row.status || "-" }}</span></td>
-            <td>{{ row.owner || "-" }}</td>
+            <td>
+              <button
+                class="action-btn secondary"
+                type="button"
+                :data-testid="`samples-staging-detail-${index}`"
+                @click="samplesFlow.openSampleDetail(row.id || row.code)"
+              >
+                详情
+              </button>
+            </td>
           </tr>
         </tbody>
       </table>
-      <div class="form-grid section">
-        <div class="form-field">
-          <label>派发样品</label>
-          <textarea
-            v-model="samplesFlow.stagingForm.codes"
-            data-testid="samples-staging-codes"
-            placeholder="输入或扫描样品编号；也可直接勾选上方样品"
-          ></textarea>
-        </div>
-        <div class="form-field">
-          <label>目标实验室</label>
-          <select v-model="samplesFlow.stagingForm.targetLab" data-testid="samples-staging-target-lab">
-            <option value="">请选择实验室</option>
-            <option v-for="lab in samplesFlow.stagingLabOptions" :key="lab" :value="lab">
-              {{ lab }}
-            </option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>责任人</label>
-          <input v-model="samplesFlow.stagingForm.owner" data-testid="samples-staging-owner" type="text" placeholder="负责人姓名" />
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="action-btn" data-testid="samples-staging-submit" type="button" @click="samplesFlow.submitStagingDispatch">
-          派发至实验室
-        </button>
-        <button class="action-btn secondary" data-testid="samples-staging-reset" type="button" @click="samplesFlow.resetStaging">
-          清空输入
-        </button>
-      </div>
-      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.clearWarning" />
     </section>
 
-    <AppModal :open="samplesFlow.batchModalOpen" title="批量入库" @close="samplesFlow.closeBatchModal">
-      <div class="form-grid">
-        <div class="form-field">
-          <label>入库位置</label>
-          <select v-model="samplesFlow.batchForm.location" data-testid="samples-flow-batch-location">
-            <option value="">请选择实验室</option>
-            <option v-for="location in samplesFlow.locationOptions" :key="location" :value="location">
-              {{ location }}
-            </option>
-          </select>
+    <AppModal
+      :open="samplesFlow.detailDrawerOpen"
+      class="sample-detail-flow-modal"
+      title="样品流程图"
+      @close="samplesFlow.closeSampleDetail"
+    >
+      <div class="sample-detail-flow-head">
+        <div>
+          <span class="sample-detail-flow-label">样品编号</span>
+          <strong data-testid="samples-flow-detail-code">{{ samplesFlow.detailForm.code || "-" }}</strong>
         </div>
-        <div class="form-field">
-          <label>责任人</label>
-          <input v-model="samplesFlow.batchForm.owner" data-testid="samples-flow-batch-owner" type="text" placeholder="负责人姓名" />
-        </div>
-        <div class="form-field" style="grid-column: 1 / -1;">
-          <label>样品列表</label>
-          <textarea
-            v-model="samplesFlow.batchForm.codes"
-            data-testid="samples-flow-batch-codes"
-            placeholder="输入或扫描多个样品编号"
-          ></textarea>
+        <div>
+          <span class="sample-detail-flow-label">托盘编号</span>
+          <strong data-testid="samples-flow-detail-tray-code">{{ samplesFlow.detailSampleTrayCode || "-" }}</strong>
         </div>
       </div>
-      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
+      <section class="sample-flow-card sample-detail-flow-card">
+        <div class="sample-flow-title">统一托盘流程图</div>
+        <div class="sample-flow-status" data-testid="samples-flow-detail-flow-status">
+          {{ samplesFlow.detailSampleTrayFlow?.currentStatus || "当前样品未绑定托盘" }}
+        </div>
+        <ol v-if="samplesFlow.detailSampleTrayFlow?.steps?.length" class="sample-flow-unified sample-flow-unified--timed">
+          <li
+            v-for="(step, index) in samplesFlow.detailSampleTrayFlow?.steps || []"
+            :key="step.key"
+            :data-flow-step="index"
+            :data-testid="`samples-flow-detail-flow-step-${step.key}`"
+            :class="{ current: step.active, reached: step.reached }"
+          >
+            <span class="sample-flow-label">{{ step.label }}</span>
+            <span class="sample-flow-time">{{ formatFlowTime(step.time) }}</span>
+          </li>
+        </ol>
+        <div v-else class="muted">当前样品未绑定托盘，暂无流程图。</div>
+      </section>
+      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.clearWarning" />
       <template #footer>
-        <button class="action-btn" type="button" data-testid="samples-flow-batch-submit" @click="samplesFlow.submitSamplesFlowBatch">
-          确认入库
-        </button>
-        <button class="action-btn secondary" type="button" @click="samplesFlow.closeBatchModal">取消</button>
-      </template>
-    </AppModal>
-
-    <AppDrawer :open="samplesFlow.detailDrawerOpen" title="样品详情" @close="samplesFlow.closeSampleDetail">
-      <div class="form-grid">
-        <div class="form-field">
-          <label>样品编号</label>
-          <input :value="samplesFlow.detailForm.code" data-testid="samples-flow-detail-code" type="text" readonly />
-        </div>
-        <div class="form-field">
-          <label>状态</label>
-          <select v-model="samplesFlow.detailForm.status" data-testid="samples-flow-detail-status">
-            <option v-for="status in samplesFlow.detailStatusOptions" :key="status" :value="status">
-              {{ status }}
-            </option>
-          </select>
-        </div>
-        <div class="form-field" style="grid-column: 1 / -1;">
-          <label>流转备注</label>
-          <textarea
-            v-model="samplesFlow.detailForm.remark"
-            data-testid="samples-flow-detail-remark"
-            placeholder="更新流转信息"
-          ></textarea>
-        </div>
-      </div>
-      <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.warning = ''" />
-      <template #footer>
-        <button class="action-btn" type="button" data-testid="samples-flow-detail-save" @click="samplesFlow.saveSampleDetail">
-          保存修改
-        </button>
         <button class="action-btn secondary" type="button" @click="samplesFlow.closeSampleDetail">取消</button>
       </template>
-    </AppDrawer>
+    </AppModal>
   </div>
 </template>
 
 <script setup>
 import { useTabState } from "@/composables/useTabState";
-import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -312,6 +262,17 @@ defineProps({
     required: true,
   },
 });
+
+const formatFlowTime = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return "-";
+  }
+  return normalized
+    .replace("T", " ")
+    .replace(/\.\d{1,6}/, "")
+    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
+};
 
 const { activeTab: activeSamplesTab, setActiveTab: setActiveSamplesTab } = useTabState("sample-flow");
 </script>

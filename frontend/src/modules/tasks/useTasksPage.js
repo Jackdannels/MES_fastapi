@@ -5,12 +5,12 @@ import { useRoute } from "vue-router";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
-import { buildExperimentTypeOptions, buildExperimentTypeSummary, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
+import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { createTask, deleteTask as deleteTaskByApi, readTasks, resetTasks as resetTasksByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
-  STATUS_WAITING,
   buildFilterOptions,
   buildTaskCode,
   buildTaskEditForm,
@@ -42,6 +42,8 @@ function useTasksPage() {
     STORAGE_KEYS.samples,
     STORAGE_KEYS.streams,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.experiment_samples,
   ]);
 
   const rawTasks = ref([]);
@@ -49,6 +51,9 @@ function useTasksPage() {
   const rawSamples = ref([]);
   const rawStreams = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentTrays = ref([]);
+  const rawExperimentSamples = ref([]);
+  const masterTestTypes = ref([]);
   const loadError = ref("");
   const resetFeedback = ref("");
   const resetError = ref("");
@@ -59,6 +64,7 @@ function useTasksPage() {
   const editWarning = ref("");
   const intakeExperimentDraft = ref([]);
   const editExperimentDraft = ref([]);
+  const scheduledExperimentRemovalDraft = ref(null);
   const savedIntakeDraft = ref(null);
   const selectedTestType = ref("");
   const selectedStatus = ref("");
@@ -66,6 +72,7 @@ function useTasksPage() {
   const intakeModal = useDialogState();
   const intakeExperimentModal = useDialogState();
   const editExperimentModal = useDialogState();
+  const scheduledExperimentRemovalModal = useDialogState();
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
   let resetFeedbackTimer = null;
@@ -73,8 +80,17 @@ function useTasksPage() {
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
+  const masterTestTypeOptions = computed(() =>
+    buildExperimentTypeOptions(
+      masterTestTypes.value
+        .map((entry) => normalizeText(entry?.name || entry?.testTypeName))
+        .filter(Boolean),
+    ),
+  );
   const experimentTypeOptions = computed(() =>
-    buildExperimentTypeOptions(Object.keys(TEST_PREFIX_MAP), filterOptions.value.testTypeOptions),
+    buildExperimentTypeOptions(
+      masterTestTypeOptions.value.length > 0 ? masterTestTypeOptions.value : Object.keys(TEST_PREFIX_MAP),
+    ),
   );
   const intakeExperimentTypeOptions = experimentTypeOptions;
   const editExperimentTypeOptions = experimentTypeOptions;
@@ -258,7 +274,9 @@ function useTasksPage() {
   const closeTaskDrawer = () => {
     taskDrawer.close();
     editExperimentModal.close();
+    scheduledExperimentRemovalModal.close();
     editExperimentDraft.value = [];
+    scheduledExperimentRemovalDraft.value = null;
   };
 
   const syncModalWithHash = (hashValue) => {
@@ -288,6 +306,79 @@ function useTasksPage() {
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
     return detail ? `${prefix}，${detail}` : prefix;
+  };
+
+  const taskCodeOf = (task) => normalizeText(task?.task_code || task?.code || task?.taskNo || task?.id);
+
+  const experimentCodeOf = (entry) => normalizeText(entry?.experiment_code || entry?.experimentCode);
+
+  const experimentLabelOf = (entry) =>
+    normalizeText(entry?.experiment_name || entry?.experiment_type || entry?.required_device);
+
+  const arraysEqual = (left, right) => {
+    const leftItems = collectExperimentTypes(left);
+    const rightItems = collectExperimentTypes(right);
+    return leftItems.length === rightItems.length && leftItems.every((item, index) => item === rightItems[index]);
+  };
+
+  const isStorageConfirmedStatus = (value) => normalizeText(value) === "已入库";
+
+  const taskStorageConfirmed = (task, samples) => {
+    const taskCode = taskCodeOf(task);
+    if (isStorageConfirmedStatus(task?.transfer_status || task?.transferStatus)) {
+      return true;
+    }
+    return (Array.isArray(samples) ? samples : []).some((sample) => {
+      if (taskCodeOf(sample) !== taskCode) {
+        return false;
+      }
+      if (isStorageConfirmedStatus(sample?.status) || isStorageConfirmedStatus(sample?.flow_status)) {
+        return true;
+      }
+      return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) =>
+        isStorageConfirmedStatus(tray?.status || tray?.tray_status || tray?.trayStatus),
+      );
+    });
+  };
+
+  const isRetentionSchedule = (schedule) => normalizeText(schedule?.device).includes("暂存间");
+
+  const resolveAffectedExperimentCodes = (taskCode, nextExperimentTypes) => {
+    const taskExperiments = rawExperiments.value.filter((experiment) => taskCodeOf(experiment) === taskCode);
+    const nextTypes = collectExperimentTypes(nextExperimentTypes);
+    const remainingTypeCounts = new Map();
+    nextTypes.forEach((type) => {
+      remainingTypeCounts.set(type, (remainingTypeCounts.get(type) || 0) + 1);
+    });
+    const affected = new Set();
+    taskExperiments.forEach((experiment) => {
+      const code = experimentCodeOf(experiment);
+      if (!code) {
+        return;
+      }
+      const label = experimentLabelOf(experiment);
+      const remainingCount = remainingTypeCounts.get(label) || 0;
+      if (remainingCount > 0) {
+        remainingTypeCounts.set(label, remainingCount - 1);
+      } else {
+        affected.add(code);
+      }
+    });
+    return affected;
+  };
+
+  const resolveScheduledExperimentRemoval = (taskCode, nextExperimentTypes) => {
+    const affectedCodes = resolveAffectedExperimentCodes(taskCode, nextExperimentTypes);
+    const schedules = rawSchedules.value.filter(
+      (schedule) =>
+        taskCodeOf(schedule) === taskCode
+        && affectedCodes.has(experimentCodeOf(schedule))
+        && !isRetentionSchedule(schedule),
+    );
+    return {
+      affectedCodes,
+      schedules,
+    };
   };
 
   const clearResetFeedbackTimer = () => {
@@ -335,6 +426,12 @@ function useTasksPage() {
     }
     if (Array.isArray(updates[STORAGE_KEYS.streams])) {
       rawStreams.value = updates[STORAGE_KEYS.streams];
+    }
+    if (Array.isArray(updates[STORAGE_KEYS.experiment_trays])) {
+      rawExperimentTrays.value = updates[STORAGE_KEYS.experiment_trays];
+    }
+    if (Array.isArray(updates[STORAGE_KEYS.experiment_samples])) {
+      rawExperimentSamples.value = updates[STORAGE_KEYS.experiment_samples];
     }
   };
 
@@ -396,9 +493,70 @@ function useTasksPage() {
     intakeWarning.value = "任务草稿已保存";
   };
 
+  const closeScheduledExperimentRemovalConfirm = () => {
+    scheduledExperimentRemovalModal.close();
+    scheduledExperimentRemovalDraft.value = null;
+  };
+
+  const performTaskUpdate = async (draft, options = {}) => {
+    const { previousCode, tasks, updatedTask, affectedCodes = new Set() } = draft;
+    const confirmRemoval = Boolean(options.confirmRemoveScheduledExperiments);
+
+    try {
+      await updateTaskByApi(
+        editForm.value.id,
+        confirmRemoval
+          ? { ...updatedTask, confirm_remove_scheduled_experiments: true }
+          : updatedTask,
+      );
+      rawTasks.value = tasks;
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+      return;
+    }
+
+    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
+    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
+    const relatedUpdates = {
+      [STORAGE_KEYS.samples]: nextSamples,
+    };
+    if (affectedCodes.size > 0) {
+      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map((code) => normalizeText(code)).filter(Boolean));
+      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
+        (schedule) => !(taskCodesToClean.has(taskCodeOf(schedule)) && affectedCodes.has(experimentCodeOf(schedule))),
+      );
+      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
+        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
+      );
+      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
+        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
+      );
+    }
+    try {
+      await persistRelated(relatedUpdates);
+    } catch (error) {
+      closeTaskDrawer();
+      loadError.value = buildFailureMessage("任务已更新，但关联数据保存失败，请刷新后确认", error);
+      return;
+    }
+
+    closeTaskDrawer();
+    closeScheduledExperimentRemovalConfirm();
+    try {
+      await loadTasksPage();
+      loadError.value = "";
+    } catch (error) {
+      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
+    }
+  };
+
   const updateTask = async () => {
     if (Array.isArray(editForm.value.test_types)) {
       editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
+    }
+    if (!Array.isArray(editForm.value.test_types) || editForm.value.test_types.length === 0) {
+      editWarning.value = "请选择至少一个试验类型";
+      return;
     }
     const sampleCountWarning = validateTaskSampleCount(editForm.value.sample_count);
     if (sampleCountWarning) {
@@ -410,34 +568,42 @@ function useTasksPage() {
     if (!updatedTask) {
       return;
     }
-
-    try {
-      await updateTaskByApi(editForm.value.id, updatedTask);
-      rawTasks.value = tasks;
-    } catch (error) {
-      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
+    const originalTypes = collectExperimentTypes(originalTask?.test_types, originalTask?.test_type);
+    const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
+    const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);
+    if (experimentTypesChanged && taskStorageConfirmed(originalTask, rawSamples.value)) {
+      editWarning.value = "该任务样品已在接驳区确认到货，不允许更改实验类型";
       return;
     }
 
-    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
-    try {
-      await persistRelated({
-        [STORAGE_KEYS.samples]: nextSamples,
+    const scheduledRemoval = experimentTypesChanged
+      ? resolveScheduledExperimentRemoval(taskCodeOf(originalTask), nextTypes)
+      : { affectedCodes: new Set(), schedules: [] };
+    const draft = {
+      previousCode,
+      tasks,
+      updatedTask,
+      affectedCodes: scheduledRemoval.affectedCodes,
+    };
+    if (scheduledRemoval.schedules.length > 0) {
+      scheduledExperimentRemovalDraft.value = draft;
+      scheduledExperimentRemovalModal.openWith({
+        id: "task-scheduled-removal-confirm",
+        schedules: scheduledRemoval.schedules,
       });
-    } catch (error) {
-      closeTaskDrawer();
-      loadError.value = buildFailureMessage("任务已更新，但关联数据保存失败，请刷新后确认", error);
       return;
     }
 
-    closeTaskDrawer();
-    try {
-      rawTasks.value = await readAllTasks();
-      loadError.value = "";
-    } catch (error) {
-      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
+    await performTaskUpdate(draft);
+  };
+
+  const confirmScheduledExperimentRemoval = async () => {
+    if (!scheduledExperimentRemovalDraft.value) {
+      closeScheduledExperimentRemovalConfirm();
+      return;
     }
+    await performTaskUpdate(scheduledExperimentRemovalDraft.value, { confirmRemoveScheduledExperiments: true });
   };
 
   const deleteTask = async () => {
@@ -503,12 +669,19 @@ function useTasksPage() {
 
   const loadTasksPage = async () => {
     try {
-      const [tasks, snapshot] = await Promise.all([readAllTasks(), loadSnapshot()]);
+      const [tasks, snapshot, testTypes] = await Promise.all([
+        readAllTasks(),
+        loadSnapshot(),
+        readMasterTestTypes().catch(() => []),
+      ]);
       rawTasks.value = Array.isArray(tasks) ? tasks : [];
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
       rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+      rawExperimentSamples.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_samples]) ? snapshot[STORAGE_KEYS.experiment_samples] : [];
+      masterTestTypes.value = Array.isArray(testTypes) ? testTypes : [];
       loadError.value = "";
       if (taskDrawer.open.value) {
         const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
@@ -591,7 +764,9 @@ function useTasksPage() {
   return {
     closeIntakeModal,
     closeResetModal,
+    closeScheduledExperimentRemovalConfirm,
     closeTaskDrawer,
+    confirmScheduledExperimentRemoval,
     currentPage,
     deleteTask,
     editForm,
@@ -615,6 +790,7 @@ function useTasksPage() {
     resetModalOpen: resetModal.open,
     resetTasks,
     resetting,
+    scheduledExperimentRemovalModalOpen: scheduledExperimentRemovalModal.open,
     saveDraft,
     selectedRow: taskDrawer.payload,
     setCurrentPage,

@@ -2,6 +2,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
+import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -18,6 +19,7 @@ import {
   getLaboratoryActionState,
   revertLaboratoryTaskToPreDispatch,
   resetLaboratoryExperimentTrays,
+  SALT_SPRAY_LAB,
   validateLaboratoryTrayScan,
 } from "./model";
 
@@ -27,6 +29,35 @@ const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
+const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
+
+const normalizeText = (value) => String(value ?? "").trim();
+
+const createDefaultLaboratoryConfig = () => ({
+  labId: SALT_SPRAY_LAB_ID,
+  labName: SALT_SPRAY_LAB,
+});
+
+const resolveLaboratoryConfig = (masterLabs = []) => {
+  const enabledLabs = (Array.isArray(masterLabs) ? masterLabs : []).filter((lab) => {
+    if (Number(lab?.status ?? 1) === 0) {
+      return false;
+    }
+    const type = normalizeText(lab?.type || lab?.lab_type);
+    return !type || type === "实验室";
+  });
+  const matchedLab =
+    enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT")
+    || enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === SALT_SPRAY_LAB);
+  if (!matchedLab) {
+    return createDefaultLaboratoryConfig();
+  }
+  const labName = normalizeText(matchedLab?.name || matchedLab?.lab_name);
+  return {
+    labId: normalizeText(matchedLab?.mqttLabId || matchedLab?.mqtt_lab_id) || SALT_SPRAY_LAB_ID,
+    labName: labName || SALT_SPRAY_LAB,
+  };
+};
 
 const countTrayRowSamples = (trayRows) =>
   (Array.isArray(trayRows) ? trayRows : []).reduce((total, row) => {
@@ -50,6 +81,7 @@ function useLaboratoryPage(options = {}) {
   const persistSnapshot = options.persistSnapshot || storage.persistSnapshot || (async () => {});
 
   const loading = ref(false);
+  const laboratoryConfig = ref(createDefaultLaboratoryConfig());
   const tasks = ref([]);
   const schedules = ref([]);
   const experiments = ref([]);
@@ -69,6 +101,7 @@ function useLaboratoryPage(options = {}) {
   const compareModalOpen = ref(false);
   const installModalOpen = ref(false);
   const fixtureConfirmModalOpen = ref(false);
+  const fixtureConfirmSuccessModalOpen = ref(false);
   const fixtureConfirmCountdown = ref(0);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
@@ -80,6 +113,7 @@ function useLaboratoryPage(options = {}) {
   let tickTimer = null;
   let runningModalRestoreTimer = null;
   let fixtureConfirmTimer = null;
+  let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
 
   const view = computed(() =>
@@ -90,6 +124,7 @@ function useLaboratoryPage(options = {}) {
       samples: samples.value,
       selectedTaskCode: selectedTaskCode.value,
       selectedTrayCode: selectedTrayCode.value,
+      labName: laboratoryConfig.value.labName,
       schedules: schedules.value,
       tasks: tasks.value,
     }),
@@ -102,7 +137,7 @@ function useLaboratoryPage(options = {}) {
   const hasLaboratoryTasks = computed(() => view.value.scheduleRows.length > 0);
   const laboratoryTaskNotice = computed(() => {
     if (!hasLaboratoryTasks.value) {
-      return "当前盐雾试验室暂无任务，请先在排程看板安排任务后再进行比对。";
+      return `当前${laboratoryConfig.value.labName}暂无任务，请先在排程看板安排任务后再进行比对。`;
     }
     if (!currentTask.value) {
       return "请先在查看任务中选择一个任务，再开启实验流程。";
@@ -145,6 +180,12 @@ function useLaboratoryPage(options = {}) {
     if (fixtureConfirmTimer && typeof window !== "undefined") {
       window.clearInterval(fixtureConfirmTimer);
       fixtureConfirmTimer = null;
+    }
+  };
+  const clearFixtureConfirmSuccessTimer = () => {
+    if (fixtureConfirmSuccessTimer && typeof window !== "undefined") {
+      window.clearTimeout(fixtureConfirmSuccessTimer);
+      fixtureConfirmSuccessTimer = null;
     }
   };
 
@@ -239,7 +280,11 @@ function useLaboratoryPage(options = {}) {
   const load = async () => {
     loading.value = true;
     try {
-      const snapshot = await loadSnapshot();
+      const [snapshot, masterLabs] = await Promise.all([
+        loadSnapshot(),
+        readMasterLabs().catch(() => []),
+      ]);
+      laboratoryConfig.value = resolveLaboratoryConfig(masterLabs);
       tasks.value = Array.isArray(snapshot?.[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
@@ -281,6 +326,7 @@ function useLaboratoryPage(options = {}) {
     }
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
   });
 
   const openScheduleBoard = () => {
@@ -328,14 +374,14 @@ function useLaboratoryPage(options = {}) {
   const buildFixtureInstallPayload = () => {
     const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
     return {
-      labId: SALT_SPRAY_LAB_ID,
+      labId: laboratoryConfig.value.labId,
       sampleCount: countTrayRowSamples(targetTrayRows),
       sampleType: "",
       taskId: currentTask.value?.taskCode || "",
     };
   };
   const buildReadyPayload = () => ({
-    labId: SALT_SPRAY_LAB_ID,
+    labId: laboratoryConfig.value.labId,
     taskId: currentTask.value?.taskCode || "",
   });
   const persistSamples = (nextSamples) => {
@@ -413,6 +459,8 @@ function useLaboratoryPage(options = {}) {
   };
   const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
     clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
+    fixtureConfirmSuccessModalOpen.value = false;
     fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
     fixtureConfirmModalOpen.value = true;
     if (typeof window === "undefined") {
@@ -425,6 +473,11 @@ function useLaboratoryPage(options = {}) {
       }
       clearFixtureConfirmTimer();
       fixtureConfirmModalOpen.value = false;
+      fixtureConfirmSuccessModalOpen.value = true;
+      fixtureConfirmSuccessTimer = window.setTimeout(() => {
+        fixtureConfirmSuccessModalOpen.value = false;
+        fixtureConfirmSuccessTimer = null;
+      }, FIXTURE_CONFIRM_SUCCESS_MS);
       void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
   };
@@ -607,6 +660,7 @@ function useLaboratoryPage(options = {}) {
     closeInstall,
     fixtureConfirmCountdown,
     fixtureConfirmModalOpen,
+    fixtureConfirmSuccessModalOpen,
     closeReady,
     closeResetConfirm,
     closeResetDanger,
@@ -626,6 +680,7 @@ function useLaboratoryPage(options = {}) {
     confirmedModalOpen,
     hideRunningModal,
     installModalOpen,
+    labName: computed(() => laboratoryConfig.value.labName),
     loading,
     canCompleteCompare,
     runningInteractionLocked,

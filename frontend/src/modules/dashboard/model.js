@@ -159,6 +159,23 @@ function computeDeviceStatus(device, schedules, now = Date.now()) {
   return normalizeText(device?.status) || "可用";
 }
 
+function resolveDeviceDotClass(status) {
+  const normalized = normalizeText(status);
+  if (isRunningStatus(normalized) || normalized === "使用中") {
+    return "timeline-dot--running";
+  }
+  if (normalized === "可用" || normalized === "空闲") {
+    return "timeline-dot--available";
+  }
+  if (normalized === "停用" || normalized === "禁用") {
+    return "timeline-dot--disabled";
+  }
+  if (normalized.includes("维护") || normalized.includes("校准") || normalized.includes("故障")) {
+    return "timeline-dot--attention";
+  }
+  return "timeline-dot--available";
+}
+
 // 生成中控总览页组合函数直接消费的完整视图模型。
 function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, now = Date.now() }) {
   const taskList = (Array.isArray(tasks) ? tasks : []).filter((task) => !isReturnedTaskRecord(task, schedules));
@@ -194,13 +211,6 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   }).length;
   const scheduledCount = normalizedTasks.filter((task) => formalScheduledTaskCodes.has(normalizeText(task?.code))).length;
   const gapCount = streamList.filter((stream) => normalizeText(stream?.status).includes("缺口")).length;
-  const averageQuality =
-    streamList.length === 0
-      ? 0
-      : Math.round(
-          (streamList.reduce((sum, stream) => sum + Number.parseFloat(stream?.quality || 0), 0) / streamList.length) * 10
-        ) / 10;
-
   const taskRows = normalizedTasks
     .map((task, index) => ({
       // 任务列表只保留总览页需要的最小字段集合。
@@ -213,10 +223,14 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
     .sort((left, right) => compareTaskCodes(left.code, right.code));
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
-  const deviceItems = deviceList.map((device) => ({
-    code: normalizeText(device?.code) || "-",
-    status: computeDeviceStatus(device, scheduleList, now),
-  }));
+  const deviceItems = deviceList.map((device) => {
+    const deviceStatus = computeDeviceStatus(device, scheduleList, now);
+    return {
+      code: normalizeText(device?.code) || "-",
+      dotClass: resolveDeviceDotClass(deviceStatus),
+      status: deviceStatus,
+    };
+  });
 
   const unscheduledExperimentItems = experimentList
     .map((experiment) => {

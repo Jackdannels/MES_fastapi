@@ -152,6 +152,14 @@ def build_client(monkeypatch):
     return TestClient(app), storage
 
 
+def valid_task_101_experiment_trays(first_tray_id=1001, second_tray_id=1002):
+    return [
+        {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [first_tray_id]},
+        {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [first_tray_id, second_tray_id]},
+        {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [second_tray_id]},
+    ]
+
+
 def seed_task_102_dispatch_data(storage, schedules):
     storage.write(
         "mes.experiments",
@@ -197,6 +205,24 @@ def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(m
     assert payload["taskOverview"][0]["experimentTypeText"] == "盐雾试验 / 振动试验 / 温度冲击试验"
     assert payload["pendingTaskCount"] == 1
     assert payload["storedTaskCount"] == 1
+
+
+def test_transfer_area_bootstrap_uses_required_device_as_task_experiment_type(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    experiments = storage.read("mes.experiments")
+    experiments[1] = {
+        **experiments[1],
+        "experiment_name": "高低温湿热试验2",
+        "required_device": "高低温湿热试验",
+    }
+    storage.write("mes.experiments", experiments)
+
+    response = client.get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    task_row = next(item for item in response.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-101")
+    assert task_row["experimentTypeText"] == "盐雾试验 / 高低温湿热试验 / 温度冲击试验"
+    assert "高低温湿热试验2" not in task_row["experimentTypeText"]
 
 
 def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypatch):
@@ -418,9 +444,9 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
             for tray in workspace["assignedTrays"]
         ],
         "experimentTrays": [
-            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [1001]},
-            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [1001, 1002]},
-            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [1002]},
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
         ],
     }
 
@@ -454,12 +480,20 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
 
 def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignments(monkeypatch):
     client, storage = build_client(monkeypatch)
+    experiments = storage.read("mes.experiments")
+    experiments[1] = {
+        **experiments[1],
+        "experiment_name": "高低温湿热试验2",
+        "required_device": "高低温湿热试验",
+    }
+    storage.write("mes.experiments", experiments)
 
     workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
 
     assert workspace.status_code == 200
     workspace_payload = workspace.json()
     assert [item["experimentCode"] for item in workspace_payload["experiments"]] == ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B", "SYLU-2026-03-101-C"]
+    assert [item["experimentName"] for item in workspace_payload["experiments"]] == ["盐雾试验", "高低温湿热试验", "温度冲击试验"]
     assert workspace_payload["assignedTrays"][0]["experimentLabels"] == []
 
     allocation = {
@@ -482,8 +516,8 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
     assert allocated_payload["experiments"][0]["assignedTrayCount"] == 1
     assert allocated_payload["experiments"][1]["assignedTrayCount"] == 2
     assert allocated_payload["experiments"][2]["assignedTrayCount"] == 1
-    assert allocated_payload["assignedTrays"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
-    assert allocated_payload["assignedTrays"][1]["experimentLabels"] == ["振动试验", "温度冲击试验"]
+    assert allocated_payload["assignedTrays"][0]["experimentLabels"] == ["盐雾试验", "高低温湿热试验"]
+    assert allocated_payload["assignedTrays"][1]["experimentLabels"] == ["高低温湿热试验", "温度冲击试验"]
     assert allocated_payload["assignedTrays"][0]["samples"][0]["experimentCodes"] == ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B"]
     assert allocated_payload["assignedTrays"][1]["samples"][0]["experimentCodes"] == ["SYLU-2026-03-101-B", "SYLU-2026-03-101-C"]
     assert storage.read("mes.experiment_trays") == [
@@ -506,9 +540,30 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
     printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
 
     assert printed.status_code == 200
-    assert printed.json()["barcodes"][0]["experimentLabels"] == ["盐雾试验", "振动试验"]
+    assert printed.json()["barcodes"][0]["experimentLabels"] == ["盐雾试验", "高低温湿热试验"]
     assert printed.json()["barcodes"][0]["barcodeNo"] == "SYLU-2026-03-101-TP-001"
     assert printed.json()["barcodes"][0]["barcodeContent"] == "SYLU-2026-03-101-TP-001"
+
+
+def test_transfer_area_allocate_rejects_incomplete_experiment_tray_assignments(monkeypatch):
+    client, _storage = build_client(monkeypatch)
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [1001]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [1001]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [1001]},
+        ],
+    }
+
+    response = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "有样品的托盘必须至少分配一个实验"
 
 
 def test_transfer_area_allocate_accepts_unified_sample_limit_99(monkeypatch):
@@ -526,7 +581,11 @@ def test_transfer_area_allocate_accepts_unified_sample_limit_99(monkeypatch):
                 ],
             }
         ],
-        "experimentTrays": [],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+        ],
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
@@ -547,6 +606,11 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
                 "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
             }
             for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
         ],
     }
 
@@ -585,6 +649,11 @@ def test_transfer_area_confirm_storage_sets_unscheduled_since_only_for_experimen
             }
             for tray in workspace["assignedTrays"]
         ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+        ],
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
@@ -612,6 +681,7 @@ def test_transfer_area_allows_second_tray_dispatch_when_transfer_flag_is_missing
             {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
             {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
         ],
+        "experimentTrays": valid_task_101_experiment_trays(),
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
@@ -969,6 +1039,7 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
             {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
             {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
         ],
+        "experimentTrays": valid_task_101_experiment_trays(),
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)

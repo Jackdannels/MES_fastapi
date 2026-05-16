@@ -1,7 +1,6 @@
 import { STORAGE_KEYS } from "./storageKeys";
 import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 
-const RUNNING_STATUSES = new Set(["实验进行中", "实验中"]);
 const STARTED_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 const COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 

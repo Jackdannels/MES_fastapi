@@ -17,6 +17,8 @@ const mountToolbar = (props = {}) =>
       overviewCounterValue: "1/2",
       taskPageCount: 3,
       taskScheduleFilter: "all",
+      trayTaskFilter: "",
+      trayTaskOptions: ["SYLU-2026-03-101", "SYLU-2026-03-102"],
       testTypeFilter: "",
       testTypeOptions: ["冲击试验", "振动试验"],
       timeFilter: "all",
@@ -59,6 +61,24 @@ describe("TaskOverviewToolbar", () => {
 
     expect(wrapper.findAll(".task-overview-schedule-card")).toHaveLength(1);
     expect(wrapper.text()).not.toContain("已排程总实验数");
+  });
+
+  test("shows tray task filter in tray mode and emits its update", async () => {
+    const wrapper = mountToolbar({
+      experimentCounterLabel: "",
+      experimentCounterValue: "",
+      overviewCounterLabel: "剩余托盘/总托盘数",
+      overviewCounterValue: "1/20",
+      viewMode: "tray",
+    });
+
+    const taskSelect = wrapper.get('[data-testid="task-overview-tray-task-filter"]');
+    expect(taskSelect.text()).toContain("全部任务");
+    expect(taskSelect.text()).toContain("SYLU-2026-03-101");
+
+    await taskSelect.setValue("SYLU-2026-03-102");
+
+    expect(wrapper.emitted("update:trayTaskFilter")).toEqual([["SYLU-2026-03-102"]]);
   });
 
   test("defers keyword updates until composition ends and trims the committed value", async () => {
@@ -119,6 +139,8 @@ describe("TaskOverviewToolbar", () => {
     await inputs[1].setValue("2026-03-09");
 
     expect(inputs).toHaveLength(2);
+    expect(inputs[0].attributes("max")).toBe("2026-03-10");
+    expect(inputs[1].attributes("min")).toBe("2026-03-01");
     expect(wrapper.emitted("update:keyword")).toEqual([["TASK-001"]]);
     expect(wrapper.emitted("update:testTypeFilter")).toEqual([["振动试验"]]);
     expect(wrapper.emitted("update:customStartDate")).toEqual([["2026-03-02"]]);

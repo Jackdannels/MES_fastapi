@@ -103,4 +103,35 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.sampleRows.map((sample) => sample.code)).toEqual(["TASK-ACTIVE-SP-001"]);
     expect(wrapper.vm.taskOptions).toEqual(["TASK-ACTIVE"]);
   });
+
+  test("opens sample detail with the same tray flow data as the bound tray", async () => {
+    mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-001", name: "任务A", test_type: "盐雾试验" }]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "SP-001",
+          task_code: "TASK-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-001", status: "实验进行中", quantity: 1 }],
+          history: [{ action: "托盘状态更新", status: "实验进行中", time: "2026-04-28T11:31:20+08:00" }],
+        },
+      ],
+      "mes.experiments": [{ task_code: "TASK-001", experiment_code: "EXP-001", experiment_type: "盐雾试验" }],
+      "mes.experiment_trays": [{ task_code: "TASK-001", experiment_code: "EXP-001", tray_code: "TP-001" }],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openDetailDrawer("SP-001");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.detailDrawerOpen).toBe(true);
+    expect(wrapper.vm.detailSampleTrayCode).toBe("TP-001");
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-001 | 当前状态：盐雾试验进行中");
+    expect(wrapper.vm.detailSampleTrayFlow.steps.find((step) => step.key === "running")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
 });

@@ -6,3 +6,9 @@
   </section>
   </div>
 </template>
+
+<script setup>
+defineOptions({
+  name: "VisualizationPage",
+});
+</script>

@@ -95,12 +95,6 @@ const normalizeExperimentStatusLabel = (value) => {
   return normalized;
 };
 
-// 时间比较统一提前解析成时间戳，无法解析时返回 NaN。
-const parseTime = (value) => {
-  const parsed = Date.parse(String(value || ""));
-  return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
 const resolveBuildTaskRowsArgs = (samplesOrNow, nowMaybe) => {
   if (Array.isArray(samplesOrNow)) {
     return {
@@ -318,7 +312,7 @@ const resolveTaskDisplayStatus = (task, schedules, samples, experiments, now) =>
 
 // 根据当前排程时间推导任务表格中显示的任务状态。
 function resolveTaskStatus(task, schedules, samplesOrNow, nowMaybe) {
-  const { samples, now } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
+  const { samples } = resolveBuildTaskRowsArgs(samplesOrNow, nowMaybe);
   const taskCode = normalizeText(task?.code);
   const aggregatedStatus = aggregateTaskStatusFromSamples(task, samples);
   if (aggregatedStatus) {

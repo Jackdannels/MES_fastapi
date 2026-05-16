@@ -503,6 +503,47 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("pre-allocation overview renders page numbers between previous and next controls", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = Array.from({ length: 30 }, (_, index) => ({
+      ...bootstrapPayload.taskOverview[0],
+      taskId: 100 + index,
+      seq: index + 1,
+      taskNo: `SYLU-2026-03-${String(index + 1).padStart(3, "0")}`,
+    }));
+    bootstrapPayload.pendingTaskCount = 30;
+    bootstrapPayload.storedTaskCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    expect(wrapper.find(".transfer-overview-pagination .task-list-pagination").exists()).toBe(true);
+    expect(wrapper.findAll(".transfer-overview-pagination [data-page]").map((node) => node.attributes("data-page"))).toEqual([
+      "prev",
+      "1",
+      "2",
+      "3",
+      "4",
+      "ellipsis",
+      "10",
+      "next",
+    ]);
+  });
+
   test("assigns every experiment to the only tray after increasing tray limit to one-tray layout", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();
@@ -559,6 +600,54 @@ describe("TransferWorkbench runtime", () => {
         { experimentCode: "SYLU-2026-03-101-B", trayIds: [1001] },
       ],
     }));
+  });
+
+  test("blocks saving when a loaded tray has no assigned experiment", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    workspacePayload.experiments = [
+      { experimentCode: "SYLU-2026-03-101-A", experimentName: "盐雾试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+      { experimentCode: "SYLU-2026-03-101-B", experimentName: "振动试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+      { experimentCode: "SYLU-2026-03-101-C", experimentName: "温度冲击试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+    ];
+    workspacePayload.assignedTrays = workspacePayload.assignedTrays.map((tray, index) => ({
+      ...tray,
+      experimentCodes: index === 0
+        ? ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B", "SYLU-2026-03-101-C"]
+        : [],
+      experimentLabels: index === 0
+        ? ["盐雾试验", "振动试验", "温度冲击试验"]
+        : [],
+    }));
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        throw new Error("save should stay blocked");
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("有样品的托盘必须至少分配一个实验");
   });
 
   test("keeps unified sample limit capped at 99 and renders validation details as readable text", async () => {
@@ -751,6 +840,58 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="transfer-locked-operation-hint"]').text()).toBe("托盘已保存，若想更改请重新入库");
+  });
+
+  test("pre-allocation experiment tabs and tray labels prefer experiment types over experiment names", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview[0] = {
+      ...bootstrapPayload.taskOverview[0],
+      taskType: "盐雾试验 / 高低温湿热试验",
+      experimentTypeText: "盐雾试验 / 高低温湿热试验",
+    };
+    const workspacePayload = createWorkspacePayload();
+    workspacePayload.task = {
+      ...workspacePayload.task,
+      taskType: "盐雾试验 / 高低温湿热试验",
+      experimentTypeText: "盐雾试验 / 高低温湿热试验",
+    };
+    workspacePayload.experiments = [
+      { experimentCode: "SYLU-2026-03-101-A", experimentName: "盐雾试验-A", requiredDevice: "盐雾试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+      { experimentCode: "SYLU-2026-03-101-B", experimentName: "高低温湿热试验2", requiredDevice: "高低温湿热试验", assignedTrayNos: ["SYLU-2026-03-101-TP-002"] },
+    ];
+    workspacePayload.assignedTrays = workspacePayload.assignedTrays.map((tray, index) => ({
+      ...tray,
+      experimentCodes: [workspacePayload.experiments[index].experimentCode],
+      experimentLabels: [workspacePayload.experiments[index].experimentName],
+    }));
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').text()).toBe("盐雾试验");
+    expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-B"]').text()).toBe("高低温湿热试验");
+    expect(wrapper.text()).not.toContain("高低温湿热试验2");
+    expect(wrapper.text()).not.toContain("盐雾试验-A");
   });
 
   test("handover mode allows confirming a centrally pre-allocated task without a received time", async () => {

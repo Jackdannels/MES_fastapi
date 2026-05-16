@@ -7,6 +7,7 @@
       v-model:custom-start-date="customStartDate"
       v-model:custom-end-date="customEndDate"
       v-model:test-type-filter="testTypeFilter"
+      v-model:tray-task-filter="trayTaskFilter"
       :experiment-counter-label="experimentCounterLabel"
       :experiment-counter-value="experimentCounterValue"
       :test-type-options="testTypeOptions"
@@ -18,6 +19,7 @@
       :task-schedule-filter="taskScheduleFilter"
       :current-task-page="currentTaskPage"
       :task-page-count="taskPageCount"
+      :tray-task-options="trayTaskOptions"
       @change-task-page="setTaskPage"
       @cycle-task-schedule-filter="cycleTaskScheduleFilterState"
       @refresh="loadOverview"
@@ -57,11 +59,15 @@
       />
     </div>
 
-    <TaskOverviewTrayTable v-else :tray-overview-rows="trayOverviewRows" :tray-overview-total="trayOverviewTotal" />
+    <TaskOverviewTrayTable v-else :tray-overview-rows="filteredTrayOverviewRows" :tray-overview-total="trayOverviewTotal" />
   </section>
 </template>
 
 <script setup>
+defineOptions({
+  name: "TaskOverviewPage",
+});
+
 import TaskOverviewCard from "./TaskOverviewCard.vue";
 import TaskOverviewToolbar from "./TaskOverviewToolbar.vue";
 import TaskOverviewTrayTable from "./TaskOverviewTrayTable.vue";
@@ -81,6 +87,7 @@ const {
   experimentCounterLabel,
   experimentCounterValue,
   filteredRows,
+  filteredTrayOverviewRows,
   formatTrayCount,
   formatTraySummary,
   generateCodesByCount,
@@ -112,8 +119,9 @@ const {
   testTypeFilter,
   testTypeOptions,
   timeFilter,
-  trayOverviewRows,
   trayOverviewTotal,
+  trayTaskFilter,
+  trayTaskOptions,
   updateEditForm,
   viewMode,
 } = useTaskOverview();

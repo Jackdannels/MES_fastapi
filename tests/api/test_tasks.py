@@ -381,6 +381,462 @@ def test_create_task_rejects_missing_empty_or_duplicate_test_types(monkeypatch):
     assert duplicate.json() == {"detail": "test_types must not contain duplicates"}
 
 
+def test_update_task_rejects_empty_test_types_without_falling_back_to_task_name(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-empty-types",
+                "code": "SYLU-2026-05-002",
+                "name": "演示任务002",
+                "sample_count": "7",
+                "test_type": "盐雾试验 / 霉菌试验 / 高低温湿热试验",
+                "test_types": ["盐雾试验", "霉菌试验", "高低温湿热试验"],
+                "required_device": "盐雾试验 / 霉菌试验 / 高低温湿热试验",
+                "status": "任务进行中",
+            }
+        ],
+        experiments=[
+            {
+                "id": "EXP-A",
+                "task_code": "SYLU-2026-05-002",
+                "experiment_code": "SYLU-2026-05-002-A",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-empty-types",
+        json={
+            "id": "task-empty-types",
+            "code": "SYLU-2026-05-002",
+            "name": "演示任务002",
+            "sample_count": "7",
+            "test_type": "",
+            "test_types": [],
+            "required_device": "",
+            "status": "任务进行中",
+        },
+    )
+
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "test_types must contain at least one experiment type"}
+    assert stored_task["test_types"] == ["盐雾试验", "霉菌试验", "高低温湿热试验"]
+    assert "演示任务002" not in stored_task["test_type"]
+
+
+def test_update_task_replaces_stale_experiment_metadata_when_test_types_change(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-replace-types",
+                "code": "SYLU-2026-05-003",
+                "name": "三实验改一实验",
+                "sample_count": "8",
+                "test_type": "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+                "test_types": ["温度冲击试验", "高低温湿热试验", "盐雾试验"],
+                "required_device": "温度冲击试验 / 高低温湿热试验 / 盐雾试验",
+                "experiment_codes": [
+                    "SYLU-2026-05-003-A",
+                    "SYLU-2026-05-003-B",
+                    "SYLU-2026-05-003-C",
+                ],
+                "experiment_count": 3,
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-003-A",
+                "task_code": "SYLU-2026-05-003",
+                "experiment_code": "SYLU-2026-05-003-A",
+                "experiment_name": "温度冲击试验",
+                "required_device": "温度冲击试验",
+            },
+            {
+                "id": "SYLU-2026-05-003-B",
+                "task_code": "SYLU-2026-05-003",
+                "experiment_code": "SYLU-2026-05-003-B",
+                "experiment_name": "高低温湿热试验",
+                "required_device": "高低温湿热试验",
+            },
+            {
+                "id": "SYLU-2026-05-003-C",
+                "task_code": "SYLU-2026-05-003",
+                "experiment_code": "SYLU-2026-05-003-C",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            },
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-replace-types",
+        json={
+            "id": "task-replace-types",
+            "code": "SYLU-2026-05-003",
+            "name": "三实验改一实验",
+            "sample_count": "8",
+            "test_type": "四综合试验",
+            "test_types": ["四综合试验"],
+            "required_device": "四综合试验",
+            "experiment_codes": [
+                "SYLU-2026-05-003-A",
+                "SYLU-2026-05-003-B",
+                "SYLU-2026-05-003-C",
+            ],
+            "experiment_count": 3,
+            "status": "待排程",
+        },
+    )
+
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+    stored_experiments = client.app.state.storage.read("mes.experiments")
+
+    assert response.status_code == 200
+    assert stored_task["test_type"] == "四综合试验"
+    assert stored_task["test_types"] == ["四综合试验"]
+    assert stored_task["required_device"] == "四综合试验"
+    assert stored_task["experiment_count"] == 1
+    assert stored_task["experiment_codes"] == ["SYLU-2026-05-003-A"]
+    assert stored_experiments == [
+        {
+            "id": "SYLU-2026-05-003-A",
+            "task_code": "SYLU-2026-05-003",
+            "experiment_code": "SYLU-2026-05-003-A",
+            "experiment_name": "四综合试验",
+            "required_device": "四综合试验",
+            "priority": "",
+            "status": "待排程",
+        }
+    ]
+
+
+def test_update_task_rejects_test_type_change_after_storage_confirmed(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-storage-confirmed",
+                "code": "SYLU-2026-05-004",
+                "name": "已确认入库任务",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "transfer_status": "已入库",
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-004-A",
+                "task_code": "SYLU-2026-05-004",
+                "experiment_code": "SYLU-2026-05-004-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+            }
+        ],
+        samples=[
+            {
+                "id": "SYLU-2026-05-004-SP-001",
+                "code": "SYLU-2026-05-004-SP-001",
+                "task_code": "SYLU-2026-05-004",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "trays": [{"tray_code": "SYLU-2026-05-004-TP-001", "status": "已入库"}],
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-storage-confirmed",
+        json={
+            "id": "task-storage-confirmed",
+            "code": "SYLU-2026-05-004",
+            "name": "已确认入库任务",
+            "sample_count": "2",
+            "test_type": "盐雾试验",
+            "test_types": ["盐雾试验"],
+            "required_device": "盐雾试验",
+            "transfer_status": "已入库",
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "该任务样品已在接驳区确认到货，不允许更改实验类型"}
+    assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验"]
+    assert storage.read("mes.experiments")[0]["experiment_name"] == "冲击试验"
+
+
+def test_update_task_requires_confirmation_before_removing_scheduled_experiment(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-scheduled-removal",
+                "code": "SYLU-2026-05-005",
+                "name": "删除已排程实验",
+                "sample_count": "3",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "experiment_codes": ["SYLU-2026-05-005-A", "SYLU-2026-05-005-B"],
+                "experiment_count": 2,
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-005-A",
+                "task_code": "SYLU-2026-05-005",
+                "experiment_code": "SYLU-2026-05-005-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+            },
+            {
+                "id": "SYLU-2026-05-005-B",
+                "task_code": "SYLU-2026-05-005",
+                "experiment_code": "SYLU-2026-05-005-B",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            },
+        ],
+        schedules=[
+            {
+                "id": "SCH-KEEP",
+                "task_code": "SYLU-2026-05-005",
+                "experiment_code": "SYLU-2026-05-005-A",
+                "device": "冲击一室",
+            },
+            {
+                "id": "SCH-REMOVE",
+                "task_code": "SYLU-2026-05-005",
+                "experiment_code": "SYLU-2026-05-005-B",
+                "device": "盐雾试验室",
+            },
+        ],
+        experiment_trays=[
+            {"task_code": "SYLU-2026-05-005", "experiment_code": "SYLU-2026-05-005-A", "tray_code": "TP-A"},
+            {"task_code": "SYLU-2026-05-005", "experiment_code": "SYLU-2026-05-005-B", "tray_code": "TP-B"},
+        ],
+        experiment_samples=[
+            {"task_code": "SYLU-2026-05-005", "experiment_code": "SYLU-2026-05-005-A", "sample_code": "SP-A"},
+            {"task_code": "SYLU-2026-05-005", "experiment_code": "SYLU-2026-05-005-B", "sample_code": "SP-B"},
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-scheduled-removal",
+        json={
+            "id": "task-scheduled-removal",
+            "code": "SYLU-2026-05-005",
+            "name": "删除已排程实验",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "experiment_codes": ["SYLU-2026-05-005-A", "SYLU-2026-05-005-B"],
+            "experiment_count": 2,
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
+    assert response.json()["detail"]["affected_schedules"] == [
+        {
+            "id": "SCH-REMOVE",
+            "experiment_code": "SYLU-2026-05-005-B",
+            "device": "盐雾试验室",
+            "start_at": "",
+            "end_at": "",
+        }
+    ]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-KEEP", "SCH-REMOVE"]
+    assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验"]
+
+
+def test_update_task_confirmed_scheduled_experiment_removal_cleans_related_rows(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-confirm-removal",
+                "code": "SYLU-2026-05-006",
+                "name": "确认删除已排程实验",
+                "sample_count": "3",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "experiment_codes": ["SYLU-2026-05-006-A", "SYLU-2026-05-006-B"],
+                "experiment_count": 2,
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-006-A",
+                "task_code": "SYLU-2026-05-006",
+                "experiment_code": "SYLU-2026-05-006-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+            },
+            {
+                "id": "SYLU-2026-05-006-B",
+                "task_code": "SYLU-2026-05-006",
+                "experiment_code": "SYLU-2026-05-006-B",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            },
+        ],
+        schedules=[
+            {"id": "SCH-KEEP", "task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "device": "冲击一室"},
+            {"id": "SCH-REMOVE", "task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-B", "device": "盐雾试验室"},
+            {"id": "SCH-OTHER", "task_code": "OTHER", "experiment_code": "OTHER-A", "device": "盐雾试验室"},
+        ],
+        experiment_trays=[
+            {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "tray_code": "TP-A"},
+            {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-B", "tray_code": "TP-B"},
+        ],
+        experiment_samples=[
+            {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "sample_code": "SP-A"},
+            {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-B", "sample_code": "SP-B"},
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-confirm-removal",
+        json={
+            "id": "task-confirm-removal",
+            "code": "SYLU-2026-05-006",
+            "name": "确认删除已排程实验",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "experiment_codes": ["SYLU-2026-05-006-A", "SYLU-2026-05-006-B"],
+            "experiment_count": 2,
+            "status": "待排程",
+            "confirm_remove_scheduled_experiments": True,
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert response.status_code == 200
+    assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验"]
+    assert [item["experiment_code"] for item in storage.read("mes.experiments")] == ["SYLU-2026-05-006-A"]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-KEEP", "SCH-OTHER"]
+    assert storage.read("mes.experiment_trays") == [
+        {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "tray_code": "TP-A"}
+    ]
+    assert storage.read("mes.experiment_samples") == [
+        {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "sample_code": "SP-A"}
+    ]
+
+
+def test_update_task_string_false_does_not_confirm_scheduled_experiment_removal(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-string-confirm",
+                "code": "SYLU-2026-05-007",
+                "name": "字符串确认值",
+                "sample_count": "3",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "experiment_codes": ["SYLU-2026-05-007-A", "SYLU-2026-05-007-B"],
+                "experiment_count": 2,
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {"id": "SYLU-2026-05-007-A", "task_code": "SYLU-2026-05-007", "experiment_code": "SYLU-2026-05-007-A", "experiment_name": "冲击试验"},
+            {"id": "SYLU-2026-05-007-B", "task_code": "SYLU-2026-05-007", "experiment_code": "SYLU-2026-05-007-B", "experiment_name": "盐雾试验"},
+        ],
+        schedules=[
+            {"id": "SCH-REMOVE", "task_code": "SYLU-2026-05-007", "experiment_code": "SYLU-2026-05-007-B", "device": "盐雾试验室"}
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-string-confirm",
+        json={
+            "id": "task-string-confirm",
+            "code": "SYLU-2026-05-007",
+            "name": "字符串确认值",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "experiment_codes": ["SYLU-2026-05-007-A", "SYLU-2026-05-007-B"],
+            "experiment_count": 2,
+            "status": "待排程",
+            "confirm_remove_scheduled_experiments": "false",
+        },
+    )
+
+    assert response.status_code == 409
+    assert [item["id"] for item in client.app.state.storage.read("mes.schedules")] == ["SCH-REMOVE"]
+
+
+def test_update_task_uses_task_id_when_code_is_missing_for_scheduled_removal(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "TASK-NO-CODE",
+                "name": "无任务编号旧数据",
+                "sample_count": "3",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "experiment_codes": ["TASK-NO-CODE-A", "TASK-NO-CODE-B"],
+                "experiment_count": 2,
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {"id": "TASK-NO-CODE-A", "task_code": "TASK-NO-CODE", "experiment_code": "TASK-NO-CODE-A", "experiment_name": "冲击试验"},
+            {"id": "TASK-NO-CODE-B", "task_code": "TASK-NO-CODE", "experiment_code": "TASK-NO-CODE-B", "experiment_name": "盐雾试验"},
+        ],
+        schedules=[
+            {"id": "SCH-REMOVE", "task_code": "TASK-NO-CODE", "experiment_code": "TASK-NO-CODE-B", "device": "盐雾试验室"}
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/TASK-NO-CODE",
+        json={
+            "id": "TASK-NO-CODE",
+            "name": "无任务编号旧数据",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "experiment_codes": ["TASK-NO-CODE-A", "TASK-NO-CODE-B"],
+            "experiment_count": 2,
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["affected_schedules"][0]["id"] == "SCH-REMOVE"
+
+
 def test_create_task_rejects_invalid_sample_count(monkeypatch):
     client = build_client(monkeypatch, tasks=[])
     base_payload = {

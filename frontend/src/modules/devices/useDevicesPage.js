@@ -7,7 +7,6 @@ import { useTableControls } from "@/composables/useTableControls";
 import {
   appendDevice,
   appendPoint,
-  buildDeviceForm,
   buildDeviceMetrics,
   buildDeviceRows,
   buildLocationOptions,

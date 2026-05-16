@@ -193,10 +193,7 @@
 
           <div class="card transfer-overview-pagination">
             <div class="muted">第 {{ currentTaskPage }} / {{ taskPageCount }} 页，共 {{ filteredTaskOverview.length }} 条任务</div>
-            <div class="transfer-overview-pagination__actions">
-              <button class="action-btn secondary" type="button" :disabled="currentTaskPage <= 1" @click="changePage(-1)">上一页</button>
-              <button class="action-btn secondary" type="button" :disabled="currentTaskPage >= taskPageCount" @click="changePage(1)">下一页</button>
-            </div>
+            <AppPagination :current-page="currentTaskPage" :page-count="taskPageCount" @change="setTaskPage" />
           </div>
         </section>
       </template>
@@ -228,7 +225,7 @@
                 type="button"
                 @click.stop="setAssignmentMode(experiment.experimentCode)"
               >
-                {{ experiment.experimentName }}
+                {{ resolveExperimentDisplayName(experiment) }}
               </button>
             </div>
           </section>
@@ -276,6 +273,7 @@
             </div>
 
             <div v-if="trayCapacityExceeded" class="form-alert" data-testid="transfer-tray-capacity-warning">{{ trayCapacityWarning }}</div>
+            <div v-else-if="allocationValidationMessage" class="form-alert" data-testid="transfer-allocation-validation">{{ allocationValidationMessage }}</div>
 
             <div
               v-if="selectionHintText"
@@ -443,6 +441,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
@@ -471,7 +470,6 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "已入库";
-const TASK_TRAY_CODE_PATTERN = /-TP-(\d+)$/;
 const MAX_TRAY_LIMIT = 99;
 
 const activeWorkbenchView = ref("overview");
@@ -566,6 +564,14 @@ const normalizeTaskStatus = (status) => {
   if (text.includes(pendingStatus)) return pendingStatus;
   return text;
 };
+
+const normalizeText = (value) => String(value || "").trim();
+
+const resolveExperimentDisplayName = (experiment) =>
+  normalizeText(experiment?.requiredDevice || experiment?.required_device || experiment?.experimentType || experiment?.experiment_type)
+  || normalizeText(experiment?.experimentName || experiment?.experiment_name)
+  || normalizeText(experiment?.experimentCode || experiment?.experiment_code)
+  || "实验";
 
 const encodeHtml = (value) => String(value || "").replace(/[&"<>]/g, (char) => XML_ESCAPE_MAP[char] || char);
 
@@ -736,11 +742,10 @@ const remainingTrayCount = computed(() => availableInventory.value.length);
 const totalAssignedSampleCount = computed(() => assignedTrays.value.reduce((sum, tray) => sum + tray.samples.length, 0));
 const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
 const loadedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0).length);
-const printedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0 && tray.barcode?.barcodeNo).length);
 const isStoredTask = computed(() => normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus);
 const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
 const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
-const currentExperimentName = computed(() => experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)?.experimentName || "实验");
+const currentExperimentName = computed(() => resolveExperimentDisplayName(experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)));
 const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
 const experimentSelectionLocked = computed(() => allocationReadOnly.value);
 const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
@@ -767,15 +772,48 @@ const canPrint = computed(() => (
   && Boolean(currentTask.value?.receivedTime)
   && loadedTrayCount.value > 0
   && allocationSaved.value
-  && experiments.value.every((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0)
+  && hasCompleteExperimentTrayAllocation.value
   && !trayCapacityExceeded.value
 ));
+const loadedTrayNos = computed(() => assignedTrays.value
+  .filter((tray) => Array.isArray(tray.samples) && tray.samples.length > 0)
+  .map((tray) => tray.trayNo));
+const requiresExperimentTrayAllocation = computed(() => props.mode === "pre-allocation" && experiments.value.length > 0);
+const everyExperimentHasTray = computed(() => experiments.value.every((experiment) => (
+  (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0
+)));
+const everyLoadedTrayHasExperiment = computed(() => loadedTrayNos.value.every((trayNo) => (
+  experiments.value.some((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).includes(trayNo))
+)));
+const hasCompleteExperimentTrayAllocation = computed(() => (
+  loadedTrayNos.value.length > 0
+  && (!requiresExperimentTrayAllocation.value || (everyExperimentHasTray.value && everyLoadedTrayHasExperiment.value))
+));
+const allocationValidationMessage = computed(() => {
+  if (!selectedTaskId.value || isStoredTask.value || allocationSaved.value) {
+    return "";
+  }
+  if (trayCapacityExceeded.value) {
+    return trayCapacityWarning.value;
+  }
+  if (!requiresExperimentTrayAllocation.value) {
+    return "";
+  }
+  if (!everyExperimentHasTray.value) {
+    return "每个实验都必须至少分配一个托盘。";
+  }
+  if (!everyLoadedTrayHasExperiment.value) {
+    return "有样品的托盘必须至少分配一个实验。";
+  }
+  return "";
+});
 const canSaveAllocation = computed(() => (
   Boolean(selectedTaskId.value)
   && !isStoredTask.value
   && !allocationSaved.value
   && !trayCapacityExceeded.value
-  && experiments.value.every((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0)
+  && (props.mode === "pre-allocation" || !isExperimentMode.value)
+  && hasCompleteExperimentTrayAllocation.value
 ));
 const canConfirm = computed(() => (
   Boolean(selectedTaskId.value)
@@ -804,7 +842,6 @@ const canResetWorkspace = computed(() => {
   }
   return true;
 });
-const trayPreviewText = computed(() => assignedTrays.value.map((tray) => `${tray.trayNo} | ${tray.samples.length} / ${trayLimit.value} | ${tray.samples.map((sample) => sample.sampleNo).join(" / ") || "暂无样品"}`).join("\n"));
 const trayPreviewRows = computed(() => assignedTrays.value.map((tray) => ({
   trayNo: tray.trayNo,
   loadText: `${tray.samples.length} / ${trayLimit.value}`,
@@ -859,7 +896,7 @@ const clearFilters = () => {
 const currentTaskCode = computed(() => String(currentTask.value?.taskNo || "").trim());
 
 const rebuildTrayExperimentLabels = () => {
-  const experimentNameMap = Object.fromEntries(experiments.value.map((experiment) => [experiment.experimentCode, experiment.experimentName]));
+  const experimentNameMap = Object.fromEntries(experiments.value.map((experiment) => [experiment.experimentCode, resolveExperimentDisplayName(experiment)]));
   assignedTrays.value = assignedTrays.value.map((tray) => {
     const experimentCodes = Object.entries(draftExperimentTraySelections.value)
       .filter(([, trayNos]) => Array.isArray(trayNos) && trayNos.includes(tray.trayNo))
@@ -872,13 +909,6 @@ const rebuildTrayExperimentLabels = () => {
   });
 };
 
-const clearExperimentAssignments = () => {
-  draftExperimentTraySelections.value = Object.fromEntries(
-    experiments.value.map((experiment) => [experiment.experimentCode, []]),
-  );
-  rebuildTrayExperimentLabels();
-};
-
 const resetExperimentAssignmentsForTrayLayout = () => {
   const onlyTrayNo = assignedTrays.value.length === 1 ? assignedTrays.value[0]?.trayNo : "";
   draftExperimentTraySelections.value = Object.fromEntries(
@@ -887,19 +917,8 @@ const resetExperimentAssignmentsForTrayLayout = () => {
   rebuildTrayExperimentLabels();
 };
 
-const traySerialFromCode = (trayCode) => {
-  const text = String(trayCode || "").trim();
-  const taskMatch = text.match(TASK_TRAY_CODE_PATTERN);
-  if (taskMatch) return Number.parseInt(taskMatch[1], 10);
-  return 0;
-};
-
 const encodeTaskTrayId = (serial) => 1000 + serial;
 const sampleSort = (left, right) => String(left?.sampleNo || "").localeCompare(String(right?.sampleNo || ""));
-const sortTrayRefs = (trays) => trays.slice().sort((left, right) => (
-  traySerialFromCode(left?.trayNo) - traySerialFromCode(right?.trayNo)
-  || String(left?.trayNo || "").localeCompare(String(right?.trayNo || ""))
-));
 
 const createTaskTrayRef = (serial, limit) => ({
   trayId: encodeTaskTrayId(serial),
@@ -952,7 +971,7 @@ const refreshEditableTrayState = (message = "") => {
   }
 };
 
-const rebalanceTrayLayout = ({ limit = trayLimit.value, excludeTrayId = null, message = "" } = {}) => {
+const rebalanceTrayLayout = ({ limit = trayLimit.value, message = "" } = {}) => {
   const normalizedLimit = normalizeTrayLimit(limit);
   const orderedSamples = collectOrderedSamples();
   const requiredCount = Math.max(1, Math.ceil(orderedSamples.length / normalizedLimit));
@@ -1116,8 +1135,9 @@ const reloadBootstrap = async () => {
   await loadBootstrap();
 };
 
-const changePage = (offset) => {
-  taskPage.value = Math.min(taskPageCount.value, Math.max(1, taskPage.value + offset));
+const setTaskPage = (page) => {
+  const nextPage = Number.parseInt(page, 10);
+  taskPage.value = Math.min(taskPageCount.value, Math.max(1, Number.isFinite(nextPage) ? nextPage : 1));
 };
 
 const toggleOverviewTaskNoSort = () => {
@@ -1376,7 +1396,6 @@ const removeTray = (index) => {
   }
   rebalanceTrayLayout({
     limit: trayLimit.value,
-    excludeTrayId: tray.trayId,
     message: `已删除 ${tray.trayNo}，并自动重新分配样品。`,
   });
 };
@@ -1417,8 +1436,9 @@ const resolveBarcodeDisplayNo = (barcode, tray) => String(
 
 const persistAllocation = async (showMessage = true) => {
   if (!selectedTaskId.value || isStoredTask.value) return false;
-  if (trayCapacityExceeded.value) {
-    if (showMessage) showWorkbenchFeedback(trayCapacityWarning.value, "warning");
+  if (!canSaveAllocation.value) {
+    const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
+    if (showMessage) showWorkbenchFeedback(message, "warning");
     return false;
   }
   try {
@@ -1528,12 +1548,16 @@ const printBarcodePreview = async () => {
   if (typeof frameWindow.focus === "function") {
     try {
       frameWindow.focus();
-    } catch {}
+    } catch {
+      // Some embedded print frames cannot receive focus; printing can continue.
+    }
   }
   if (typeof frameWindow.print === "function") {
     try {
       frameWindow.print();
-    } catch {}
+    } catch {
+      // Browser print dialogs may be blocked in tests or restricted contexts.
+    }
   }
 
   window.setTimeout(() => {
@@ -1563,7 +1587,7 @@ const printAllTrayBarcodes = async () => {
   if (!canPrint.value) return;
   printingAllBarcodes.value = true;
   try {
-    if (!isStoredTask.value) {
+    if (!isStoredTask.value && !allocationSaved.value) {
       const saved = await persistAllocation(false);
       if (!saved) return;
     }

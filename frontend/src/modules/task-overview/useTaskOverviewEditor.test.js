@@ -15,6 +15,7 @@ const createEditor = (overrides = {}) => {
     persistSnapshot,
     replaceOverview,
     deleteTask,
+    experimentTypeOptions: overrides.experimentTypeOptions,
   });
 
   return {
@@ -28,6 +29,26 @@ const createEditor = (overrides = {}) => {
 
 // 这里重点守护任务总览内联编辑的两个高风险点：样品编号重排和级联删除。
 describe("useTaskOverviewEditor", () => {
+  test("builds default experiments from provided master test type options", () => {
+    const { openEdit, editForm } = createEditor({
+      experimentTypeOptions: ["自定义疲劳试验", "盐雾试验"],
+    });
+
+    openEdit({
+      taskCode: "TASK-001",
+      taskType: "冲击试验",
+      sampleCount: 1,
+      sampleCodes: ["TASK-001-SP-001"],
+      experiments: [],
+    });
+
+    expect(editForm.value.experiments.map((experiment) => experiment.requiredDevice)).toEqual([
+      "自定义疲劳试验",
+      "盐雾试验",
+      "自定义疲劳试验",
+    ]);
+  });
+
   test("saveEdit accepts semicolon-delimited sample codes", async () => {
     // 用户可能用中英文分号批量粘贴样品号，这里验证解析兼容性。
     const snapshot = {

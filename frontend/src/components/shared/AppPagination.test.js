@@ -32,7 +32,7 @@ describe("AppPagination", () => {
     expect(wrapper.emitted("change")).toEqual([[3]]);
   });
 
-  test("renders every page when page count is ten or less", () => {
+  test("uses ellipsis when page count reaches ten", () => {
     const wrapper = mount(AppPagination, {
       props: {
         currentPage: 5,
@@ -43,21 +43,49 @@ describe("AppPagination", () => {
     expect(wrapper.findAll("button[data-page]").map((node) => node.attributes("data-page"))).toEqual([
       "prev",
       "1",
-      "2",
-      "3",
+      "4",
+      "5",
+      "6",
+      "10",
+      "next",
+    ]);
+    expect(wrapper.findAll('[data-page="ellipsis"]')).toHaveLength(2);
+  });
+
+  test("uses ellipsis when page count reaches seven and keeps page slots stable near the end", async () => {
+    const wrapper = mount(AppPagination, {
+      props: {
+        currentPage: 7,
+        pageCount: 7,
+      },
+    });
+
+    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
+      "prev",
+      "1",
+      "ellipsis",
       "4",
       "5",
       "6",
       "7",
-      "8",
-      "9",
-      "10",
       "next",
     ]);
-    expect(wrapper.text()).not.toContain("...");
+
+    await wrapper.setProps({ currentPage: 6 });
+
+    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
+      "prev",
+      "1",
+      "ellipsis",
+      "4",
+      "5",
+      "6",
+      "7",
+      "next",
+    ]);
   });
 
-  test("uses ellipsis around the current five-page window for long pagination", () => {
+  test("uses ellipsis around a compact current window for long pagination", () => {
     const wrapper = mount(AppPagination, {
       props: {
         currentPage: 15,
@@ -69,11 +97,9 @@ describe("AppPagination", () => {
       "prev",
       "1",
       "ellipsis",
-      "13",
       "14",
       "15",
       "16",
-      "17",
       "ellipsis",
       "23",
       "next",
@@ -92,12 +118,32 @@ describe("AppPagination", () => {
       "prev",
       "1",
       "ellipsis",
-      "19",
       "20",
       "21",
       "22",
       "23",
       "next",
     ]);
+  });
+
+  test("can render numbers only while keeping ellipsis behavior", () => {
+    const wrapper = mount(AppPagination, {
+      props: {
+        currentPage: 5,
+        pageCount: 10,
+        showStepControls: false,
+      },
+    });
+
+    expect(wrapper.find('[data-page="prev"]').exists()).toBe(false);
+    expect(wrapper.find('[data-page="next"]').exists()).toBe(false);
+    expect(wrapper.findAll("button[data-page]").map((node) => node.attributes("data-page"))).toEqual([
+      "1",
+      "4",
+      "5",
+      "6",
+      "10",
+    ]);
+    expect(wrapper.findAll('[data-page="ellipsis"]')).toHaveLength(2);
   });
 });

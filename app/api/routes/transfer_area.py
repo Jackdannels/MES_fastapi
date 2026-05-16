@@ -684,7 +684,7 @@ def build_task_experiment_rows(
         rows.append(
             {
                 "experimentCode": experiment_code,
-                "experimentName": normalize_text(experiment.get("experiment_name")),
+                "experimentName": experiment_type_label(experiment),
                 "requiredDevice": normalize_text(experiment.get("required_device")),
                 "assignedTrayNos": assigned_tray_nos,
                 "assignedTrayCount": len(assigned_tray_nos),
@@ -693,13 +693,17 @@ def build_task_experiment_rows(
     return rows
 
 
+def experiment_type_label(experiment: dict[str, Any]) -> str:
+    return normalize_text(experiment.get("required_device")) or normalize_text(experiment.get("experiment_name"))
+
+
 def build_tray_experiment_labels(
     task: dict[str, Any],
     experiments: list[dict[str, Any]],
     experiment_trays: list[dict[str, Any]],
 ) -> dict[str, list[str]]:
     experiment_name_map = {
-        normalize_text(experiment.get("experiment_code")): normalize_text(experiment.get("experiment_name"))
+        normalize_text(experiment.get("experiment_code")): experiment_type_label(experiment)
         for experiment in experiments
         if normalize_text(experiment.get("task_code")) == task_code(task)
     }
@@ -724,7 +728,7 @@ def build_experiment_summary(task: dict[str, Any], experiments: list[dict[str, A
     for experiment in experiments:
         if normalize_text(experiment.get("task_code")) != task_code_value:
             continue
-        label = normalize_text(experiment.get("experiment_name")) or normalize_text(experiment.get("required_device"))
+        label = experiment_type_label(experiment)
         if label and label not in labels:
             labels.append(label)
     return " / ".join(labels)
@@ -1238,6 +1242,33 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
             status_code=400,
             detail=f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。",
         )
+    loaded_tray_ids = {tray.tray_id for tray in request.trays if tray.sample_ids}
+    task_experiment_codes = {
+        normalize_text(experiment.get("experiment_code"))
+        for experiment in snapshot["experiments"]
+        if normalize_text(experiment.get("task_code")) == task_code(task)
+        and normalize_text(experiment.get("experiment_code"))
+    }
+    if task_experiment_codes:
+        seen_experiment_codes: set[str] = set()
+        selected_loaded_tray_ids: set[int] = set()
+        for selection in request.experiment_trays:
+            experiment_code = normalize_text(selection.experiment_code)
+            if not experiment_code:
+                continue
+            if experiment_code not in task_experiment_codes or experiment_code in seen_experiment_codes:
+                raise HTTPException(status_code=400, detail="实验托盘分配信息不完整")
+            seen_experiment_codes.add(experiment_code)
+            selected_tray_ids = set(selection.tray_ids)
+            if not selected_tray_ids:
+                raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
+            if not selected_tray_ids.issubset(loaded_tray_ids):
+                raise HTTPException(status_code=400, detail="实验托盘分配引用了无效托盘")
+            selected_loaded_tray_ids.update(selected_tray_ids)
+        if seen_experiment_codes != task_experiment_codes:
+            raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
+        if loaded_tray_ids and selected_loaded_tray_ids != loaded_tray_ids:
+            raise HTTPException(status_code=400, detail="有样品的托盘必须至少分配一个实验")
 
     for sample in task_samples:
         clear_transfer_history(sample)

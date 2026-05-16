@@ -9,7 +9,7 @@ export const route = {
   component: Page,
   meta: {
     title: "样品/托盘信息",
-    subtitle: "管理样品预分装、托盘状态、流转记录与暂存间派发。",
+    subtitle: "管理样品预分装、托盘状态、流转记录与暂存间样品查看。",
     module: "central",
   },
 };

@@ -123,6 +123,10 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "TaskHistoryPage",
+});
+
 import { computed, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";

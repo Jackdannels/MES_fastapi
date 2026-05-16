@@ -19,6 +19,7 @@ describe("handover system styles", () => {
     const source = readFileSync(stylesPath, "utf8");
 
     expect(source).toMatch(/\.transfer-overview-shell\s*\{[^}]*grid-template-rows:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/i);
+    expect(source).toMatch(/\.transfer-area-screen\.is-embedded\s+\.transfer-overview-shell\s*\{[^}]*height:\s*calc\(100vh\s*-\s*172px\)/i);
     expect(source).toMatch(/\.transfer-overview-pagination\s*\{[^}]*margin-top:\s*auto/i);
   });
 

@@ -622,6 +622,42 @@
   white-space: nowrap;
 }
 
+.sample-flow-tray-code {
+  max-width: 240px;
+  word-break: break-word;
+}
+
+.sample-detail-flow-modal .modal-content {
+  width: min(960px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.sample-detail-flow-head {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.sample-detail-flow-head > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.sample-detail-flow-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sample-detail-flow-card {
+  box-shadow: none;
+}
+
 .tray-current-status {
   display: flex;
   align-items: center;
@@ -889,5 +925,9 @@
   .sample-outbound-panel {
     width: 100%;
     margin-left: 0;
+  }
+
+  .sample-detail-flow-head {
+    grid-template-columns: 1fr;
   }
 }

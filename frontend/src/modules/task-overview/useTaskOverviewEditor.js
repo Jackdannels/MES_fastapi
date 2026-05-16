@@ -1,5 +1,5 @@
 // 封装任务总览卡片的内联编辑和删除行为。
-import { ref } from "vue";
+import { ref, unref } from "vue";
 
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -33,6 +33,14 @@ const compareText = (left, right) => String(left || "").localeCompare(String(rig
 const EXPERIMENT_TYPE_OPTIONS = Object.freeze(Object.keys(TEST_PREFIX_MAP));
 const DEFAULT_EXPERIMENT_COUNT = 3;
 
+const normalizeExperimentTypeOptions = (options) => {
+  const values = Array.isArray(options) ? options : [];
+  const normalized = values
+    .map((type) => String(type || "").trim())
+    .filter(Boolean);
+  return normalized.length ? normalized : EXPERIMENT_TYPE_OPTIONS;
+};
+
 // 样品编号文本支持按换行、空白和中英文分隔符拆分。
 const splitCodeText = (value) =>
   String(value || "")
@@ -53,11 +61,12 @@ const uniqueCodes = (codes) => {
   return output;
 };
 
-const resolveExperimentType = ({ currentType = "", taskType = "", occupiedTypes = [] }) => {
+const resolveExperimentType = ({ currentType = "", taskType = "", occupiedTypes = [], experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS }) => {
   const normalizedCurrentType = String(currentType || "").trim();
   if (normalizedCurrentType) {
     return normalizedCurrentType;
   }
+  const availableTypes = normalizeExperimentTypeOptions(experimentTypeOptions);
   const normalizedTaskType = String(taskType || "").trim();
   const excludedTypes = new Set(
     [normalizedTaskType]
@@ -65,11 +74,11 @@ const resolveExperimentType = ({ currentType = "", taskType = "", occupiedTypes 
       .map((type) => String(type || "").trim())
       .filter(Boolean),
   );
-  const nextType = EXPERIMENT_TYPE_OPTIONS.find((type) => !excludedTypes.has(type));
-  return nextType || EXPERIMENT_TYPE_OPTIONS[0] || normalizedTaskType;
+  const nextType = availableTypes.find((type) => !excludedTypes.has(type));
+  return nextType || availableTypes[0] || normalizedTaskType;
 };
 
-const normalizeExperimentDraft = (taskCode, experiment, index = 0, existingExperiments = [], taskType = "") => {
+const normalizeExperimentDraft = (taskCode, experiment, index = 0, existingExperiments = [], taskType = "", experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS) => {
   const safeTaskCode = String(taskCode || "").trim();
   const suffix = String.fromCharCode(65 + index);
   const experimentCode = String(experiment?.experimentCode || "").trim() || `${safeTaskCode}-${suffix}`;
@@ -77,6 +86,7 @@ const normalizeExperimentDraft = (taskCode, experiment, index = 0, existingExper
     currentType: experiment?.requiredDevice || experiment?.required_device,
     occupiedTypes: (Array.isArray(existingExperiments) ? existingExperiments : []).map((item) => item?.requiredDevice || item?.required_device),
     taskType,
+    experimentTypeOptions,
   });
   const explicitExperimentName = String(experiment?.experimentName || "").trim();
   return {
@@ -88,7 +98,7 @@ const normalizeExperimentDraft = (taskCode, experiment, index = 0, existingExper
   };
 };
 
-const buildDefaultExperiments = (taskCode, taskType) => {
+const buildDefaultExperiments = (taskCode, taskType, experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS) => {
   if (!taskCode) {
     return [];
   }
@@ -103,6 +113,7 @@ const buildDefaultExperiments = (taskCode, taskType) => {
         index,
         drafts,
         taskType,
+        experimentTypeOptions,
       ),
     );
   }
@@ -133,7 +144,7 @@ const buildGeneratedSampleCodes = (taskCode, count, occupiedCodes = new Set()) =
 };
 
 // 跟踪当前选中卡片，并将任务和样品编辑结果写回存储。
-function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview, deleteTask = deleteTaskByApi }) {
+function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview, deleteTask = deleteTaskByApi, experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS }) {
   const selectedTaskCode = ref("");
   const editingTaskCode = ref("");
   const savingTaskCode = ref("");
@@ -163,6 +174,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
     editErrorFeedback.clear();
     editMessageFeedback.show(message, "success");
   };
+  const getExperimentTypeOptions = () => normalizeExperimentTypeOptions(unref(experimentTypeOptions));
 
   // 某张卡片是否处于编辑态，以任务号作为唯一标识。
   const isEditing = (taskCode) => editingTaskCode.value === String(taskCode || "").trim();
@@ -188,9 +200,9 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       sampleCodesText: (Array.isArray(row?.sampleCodes) ? row.sampleCodes : []).join("\n"),
       experiments: Array.isArray(row?.experiments) && row.experiments.length
         ? row.experiments.map((experiment, index) =>
-            normalizeExperimentDraft(code, experiment, index, row.experiments.slice(0, index), row?.taskType)
+            normalizeExperimentDraft(code, experiment, index, row.experiments.slice(0, index), row?.taskType, getExperimentTypeOptions())
           )
-        : buildDefaultExperiments(code, row?.taskType),
+        : buildDefaultExperiments(code, row?.taskType, getExperimentTypeOptions()),
     };
   };
 
@@ -318,10 +330,10 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const normalizedExperiments = (
         Array.isArray(editForm.value.experiments) && editForm.value.experiments.length
           ? editForm.value.experiments
-          : buildDefaultExperiments(code, nextTaskType)
+          : buildDefaultExperiments(code, nextTaskType, getExperimentTypeOptions())
       )
         .map((experiment, index, experimentList) =>
-          normalizeExperimentDraft(code, experiment, index, experimentList.slice(0, index), nextTaskType)
+          normalizeExperimentDraft(code, experiment, index, experimentList.slice(0, index), nextTaskType, getExperimentTypeOptions())
         )
         .filter((experiment) => experiment.experimentCode);
 

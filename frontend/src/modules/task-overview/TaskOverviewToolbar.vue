@@ -73,23 +73,35 @@
         <option value="custom">自定义</option>
       </select>
       <div v-if="timeFilter === 'custom'" class="task-overview-custom-range">
-        <input
-          :value="customStartDate"
+        <PickerOnlyInput
+          :model-value="customStartDate"
           class="search-input"
+          :max="customEndDate || undefined"
           type="date"
-          @input="emit('update:customStartDate', $event.target.value)"
+          @update:model-value="emit('update:customStartDate', $event)"
         />
         <span class="task-overview-range-sep">至</span>
-        <input
-          :value="customEndDate"
+        <PickerOnlyInput
+          :model-value="customEndDate"
           class="search-input"
+          :min="customStartDate || undefined"
           type="date"
-          @input="emit('update:customEndDate', $event.target.value)"
+          @update:model-value="emit('update:customEndDate', $event)"
         />
       </div>
       <select :value="testTypeFilter" class="search-input" @change="emit('update:testTypeFilter', $event.target.value)">
         <option value="">全部实验类型</option>
         <option v-for="type in testTypeOptions" :key="type" :value="type">{{ type }}</option>
+      </select>
+      <select
+        v-if="viewMode === 'tray'"
+        :value="trayTaskFilter"
+        class="search-input"
+        data-testid="task-overview-tray-task-filter"
+        @change="emit('update:trayTaskFilter', $event.target.value)"
+      >
+        <option value="">全部任务</option>
+        <option v-for="taskCode in trayTaskOptions" :key="taskCode" :value="taskCode">{{ taskCode }}</option>
       </select>
       <button class="action-btn secondary" type="button" @click="emit('refresh')">刷新数据</button>
       <div v-if="viewMode === 'task'" class="task-overview-toolbar-pagination">
@@ -102,6 +114,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 
 const props = defineProps({
   customEndDate: {
@@ -152,6 +165,14 @@ const props = defineProps({
     type: String,
     default: "all",
   },
+  trayTaskFilter: {
+    type: String,
+    default: "",
+  },
+  trayTaskOptions: {
+    type: Array,
+    default: () => [],
+  },
   taskPageCount: {
     type: Number,
     default: 1,
@@ -183,6 +204,7 @@ const emit = defineEmits([
   "update:keyword",
   "update:testTypeFilter",
   "update:timeFilter",
+  "update:trayTaskFilter",
   "update:viewMode",
 ]);
 

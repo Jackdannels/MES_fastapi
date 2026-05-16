@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
+  readMasterLabs: vi.fn(),
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
@@ -12,6 +13,10 @@ vi.mock("@/composables/useStorageSnapshot", () => ({
     loadSnapshot: mocks.loadSnapshot,
     persistSnapshot: mocks.persistSnapshot,
   }),
+}));
+
+vi.mock("@/lib/masterDataApi", () => ({
+  readMasterLabs: mocks.readMasterLabs,
 }));
 
 import { RETENTION_DEVICE, STATUS_SCHEDULED, STATUS_WAITING } from "./model";
@@ -82,12 +87,14 @@ describe("useSchedulePage", () => {
     vi.setSystemTime(new Date("2099-03-19T09:00:00"));
     mocks.loadSnapshot.mockResolvedValue(buildSnapshot());
     mocks.persistSnapshot.mockResolvedValue(undefined);
+    mocks.readMasterLabs.mockResolvedValue([]);
   });
 
   afterEach(() => {
     vi.useRealTimers();
     mocks.loadSnapshot.mockReset();
     mocks.persistSnapshot.mockReset();
+    mocks.readMasterLabs.mockReset();
   });
 
   test("opens a partial conflict confirmation before persisting a new schedule", async () => {
@@ -319,6 +326,41 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.activeTab).toBeUndefined();
     expect(wrapper.vm.showRetentionPanel).toBeUndefined();
     expect(wrapper.vm.manualLabOptions).not.toContain(RETENTION_DEVICE);
+  });
+
+  test("loads master labs into manual lab options", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.tasks"][0].test_type = "盐雾试验";
+    snapshot["mes.experiments"][1].required_device = "盐雾试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+      { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual(["盐雾试验室"]);
+  });
+
+  test("falls back to static lab options when master labs fail to load", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.experiments"][1].required_device = "冲击试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockRejectedValueOnce(new Error("offline"));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleWarning).toBe("");
+    expect(wrapper.vm.manualLabOptions).toContain("冲击一室");
   });
 
   test("surfaces snapshot load failures on the scheduling form instead of rejecting", async () => {

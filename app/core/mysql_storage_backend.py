@@ -23,11 +23,13 @@ from app.core.storage_backend import (
     normalize_experiment_status_text,
     normalize_task_status_text,
 )
+from app.core.master_data import DEFAULT_LABS, DEFAULT_TEST_TYPES
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
 STORAGE_MARKER = "FRONTEND_STORAGE"
 SAMPLE_META_PREFIX = f"{STORAGE_MARKER}:SAMPLE:"
 TRAY_META_PREFIX = f"{STORAGE_MARKER}:TRAY"
+FIXTURE_READY_COMPAT_MESSAGE_PREFIX = f"{STORAGE_MARKER}:FIXTURE_READY:"
 RELATIONAL_STORAGE_KEYS = (
     "mes.tasks",
     "mes.schedules",
@@ -838,6 +840,40 @@ class MySQLMesStorageBackend(StorageBackend):
             cursorclass=DictCursor,
         )
 
+    def list_test_types(self) -> list[dict[str, Any]]:
+        self._ensure_schema_extensions()
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                      test_type_id, test_type_code, test_type_name, test_category,
+                      default_duration_hour, status, remark
+                    FROM md_test_type
+                    WHERE COALESCE(status, 1) = 1
+                    ORDER BY test_type_id
+                    """
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
+    def list_labs(self) -> list[dict[str, Any]]:
+        self._ensure_schema_extensions()
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                      l.lab_id, l.lab_code, l.lab_name, l.lab_type, l.test_type_id,
+                      tt.test_type_code, tt.test_type_name, l.capacity, l.location_desc,
+                      l.status, l.remark
+                    FROM md_lab l
+                    LEFT JOIN md_test_type tt ON tt.test_type_id = l.test_type_id
+                    WHERE COALESCE(l.status, 1) = 1
+                    ORDER BY l.lab_id
+                    """
+                )
+                return [dict(row) for row in cursor.fetchall()]
+
     def _ensure_schema_extensions(self) -> None:
         if self._schema_initialized:
             return
@@ -858,6 +894,126 @@ class MySQLMesStorageBackend(StorageBackend):
                     cursor.execute("ALTER TABLE biz_task ADD COLUMN required_device VARCHAR(200) NULL AFTER due_time")
                 elif parse_varchar_length(required_device_column) < 200:
                     cursor.execute("ALTER TABLE biz_task MODIFY COLUMN required_device VARCHAR(200) NULL")
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS md_test_type (
+                      test_type_id BIGINT NOT NULL AUTO_INCREMENT,
+                      test_type_code VARCHAR(50) NOT NULL,
+                      test_type_name VARCHAR(100) NOT NULL,
+                      test_category VARCHAR(50) NULL,
+                      default_duration_hour DECIMAL(10,2) NULL,
+                      status TINYINT NOT NULL DEFAULT 1,
+                      remark VARCHAR(300) NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (test_type_id),
+                      UNIQUE KEY uk_md_test_type_code (test_type_code)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS md_lab (
+                      lab_id BIGINT NOT NULL AUTO_INCREMENT,
+                      lab_code VARCHAR(50) NOT NULL,
+                      lab_name VARCHAR(100) NOT NULL,
+                      lab_type VARCHAR(30) NULL,
+                      test_type_id BIGINT NULL,
+                      dept_id BIGINT NULL,
+                      manager_user_id BIGINT NULL,
+                      capacity INT NULL,
+                      location_desc VARCHAR(200) NULL,
+                      status TINYINT NOT NULL DEFAULT 1,
+                      remark VARCHAR(300) NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (lab_id),
+                      UNIQUE KEY uk_md_lab_code (lab_code),
+                      KEY idx_md_lab_test_type (test_type_id),
+                      CONSTRAINT fk_md_lab_test_type FOREIGN KEY (test_type_id) REFERENCES md_test_type(test_type_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                master_columns = (
+                    ("md_test_type", "test_category", "ALTER TABLE md_test_type ADD COLUMN test_category VARCHAR(50) NULL AFTER test_type_name"),
+                    (
+                        "md_test_type",
+                        "default_duration_hour",
+                        "ALTER TABLE md_test_type ADD COLUMN default_duration_hour DECIMAL(10,2) NULL AFTER test_category",
+                    ),
+                    ("md_test_type", "status", "ALTER TABLE md_test_type ADD COLUMN status TINYINT NOT NULL DEFAULT 1 AFTER default_duration_hour"),
+                    ("md_test_type", "remark", "ALTER TABLE md_test_type ADD COLUMN remark VARCHAR(300) NULL AFTER status"),
+                    ("md_lab", "lab_type", "ALTER TABLE md_lab ADD COLUMN lab_type VARCHAR(30) NULL AFTER lab_name"),
+                    ("md_lab", "test_type_id", "ALTER TABLE md_lab ADD COLUMN test_type_id BIGINT NULL AFTER lab_type"),
+                    ("md_lab", "dept_id", "ALTER TABLE md_lab ADD COLUMN dept_id BIGINT NULL AFTER test_type_id"),
+                    ("md_lab", "manager_user_id", "ALTER TABLE md_lab ADD COLUMN manager_user_id BIGINT NULL AFTER dept_id"),
+                    ("md_lab", "capacity", "ALTER TABLE md_lab ADD COLUMN capacity INT NULL AFTER manager_user_id"),
+                    ("md_lab", "location_desc", "ALTER TABLE md_lab ADD COLUMN location_desc VARCHAR(200) NULL AFTER capacity"),
+                    ("md_lab", "status", "ALTER TABLE md_lab ADD COLUMN status TINYINT NOT NULL DEFAULT 1 AFTER location_desc"),
+                    ("md_lab", "remark", "ALTER TABLE md_lab ADD COLUMN remark VARCHAR(300) NULL AFTER status"),
+                )
+                for table_name, column_name, ddl in master_columns:
+                    cursor.execute(f"SHOW COLUMNS FROM {table_name} LIKE '{column_name}'")
+                    if cursor.fetchone() is None:
+                        cursor.execute(ddl)
+                master_indexes = (
+                    (
+                        "md_test_type",
+                        "uk_md_test_type_code",
+                        "ALTER TABLE md_test_type ADD UNIQUE KEY uk_md_test_type_code (test_type_code)",
+                        "test_type_code",
+                    ),
+                    ("md_lab", "uk_md_lab_code", "ALTER TABLE md_lab ADD UNIQUE KEY uk_md_lab_code (lab_code)", "lab_code"),
+                    ("md_lab", "idx_md_lab_test_type", "ALTER TABLE md_lab ADD INDEX idx_md_lab_test_type (test_type_id)", ""),
+                )
+                for table_name, index_name, ddl, unique_column in master_indexes:
+                    cursor.execute(f"SHOW INDEX FROM {table_name} WHERE Key_name = '{index_name}'")
+                    if cursor.fetchone() is None:
+                        if unique_column:
+                            cursor.execute(
+                                f"""
+                                SELECT {unique_column}, COUNT(*) AS row_count
+                                FROM {table_name}
+                                WHERE {unique_column} IS NOT NULL AND {unique_column} <> ''
+                                GROUP BY {unique_column}
+                                HAVING COUNT(*) > 1
+                                LIMIT 1
+                                """
+                            )
+                            if cursor.fetchone() is not None:
+                                continue
+                        cursor.execute(ddl)
+                seed_test_type_sql = """
+                    INSERT INTO md_test_type (
+                      test_type_code, test_type_name, test_category, default_duration_hour, status, remark
+                    )
+                    SELECT
+                      %(test_type_code)s, %(test_type_name)s, %(test_category)s, %(default_duration_hour)s, %(status)s, %(remark)s
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM md_test_type WHERE test_type_code = %(test_type_code)s
+                    )
+                    """
+                for row in DEFAULT_TEST_TYPES:
+                    cursor.execute(seed_test_type_sql, dict(row))
+                seed_lab_sql = """
+                    INSERT INTO md_lab (
+                      lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+                    )
+                    SELECT
+                      %(lab_code)s,
+                      %(lab_name)s,
+                      %(lab_type)s,
+                      (SELECT test_type_id FROM md_test_type WHERE test_type_code = %(test_type_code)s),
+                      %(capacity)s,
+                      %(location_desc)s,
+                      %(status)s,
+                      %(remark)s
+                    WHERE NOT EXISTS (
+                      SELECT 1 FROM md_lab WHERE lab_code = %(lab_code)s
+                    )
+                    """
+                for row in DEFAULT_LABS:
+                    cursor.execute(seed_lab_sql, dict(row))
                 cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'experiment_no'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_schedule ADD COLUMN experiment_no VARCHAR(50) NULL AFTER task_no")
@@ -1120,6 +1276,29 @@ class MySQLMesStorageBackend(StorageBackend):
                 task_nos,
             )
             task_map = {row["task_no"]: row["task_id"] for row in cursor.fetchall()}
+        device_names = sorted({row["device_name"] for row in rows if row["device_name"]})
+        lab_map: Dict[str, int] = {}
+        if device_names:
+            placeholders = ", ".join(["%s"] * len(device_names))
+            cursor.execute(
+                f"""
+                SELECT lab_id, lab_code, lab_name
+                FROM md_lab
+                WHERE COALESCE(status, 1) = 1
+                  AND (lab_name IN ({placeholders}) OR lab_code IN ({placeholders}))
+                """,
+                [*device_names, *device_names],
+            )
+            for row in cursor.fetchall():
+                lab_id = row.get("lab_id")
+                if lab_id is None:
+                    continue
+                lab_name = normalize_text(row.get("lab_name"))
+                lab_code = normalize_text(row.get("lab_code"))
+                if lab_name:
+                    lab_map[lab_name] = lab_id
+                if lab_code:
+                    lab_map[lab_code] = lab_id
         cursor.executemany(
             """
             INSERT INTO biz_schedule (
@@ -1127,7 +1306,7 @@ class MySQLMesStorageBackend(StorageBackend):
               device_name, schedule_start_time, schedule_end_time, planned_hours, schedule_status,
               is_retention, created_by, remark
             ) VALUES (
-              %(schedule_no)s, %(task_id)s, %(task_no)s, %(experiment_no)s, %(schedule_type)s, NULL, NULL, NULL,
+              %(schedule_no)s, %(task_id)s, %(task_no)s, %(experiment_no)s, %(schedule_type)s, %(lab_id)s, NULL, NULL,
               %(device_name)s, %(schedule_start_time)s, %(schedule_end_time)s, %(planned_hours)s, %(schedule_status)s,
               %(is_retention)s, NULL, %(remark)s
             )
@@ -1136,6 +1315,7 @@ class MySQLMesStorageBackend(StorageBackend):
               task_no = VALUES(task_no),
               experiment_no = VALUES(experiment_no),
               schedule_type = VALUES(schedule_type),
+              lab_id = VALUES(lab_id),
               device_name = VALUES(device_name),
               schedule_start_time = VALUES(schedule_start_time),
               schedule_end_time = VALUES(schedule_end_time),
@@ -1144,7 +1324,7 @@ class MySQLMesStorageBackend(StorageBackend):
               is_retention = VALUES(is_retention),
               remark = VALUES(remark)
             """,
-            [{**row, "task_id": task_map.get(row["task_no"])} for row in rows],
+            [{**row, "task_id": task_map.get(row["task_no"]), "lab_id": lab_map.get(row["device_name"])} for row in rows],
         )
 
     def _replace_experiments(self, cursor, experiments: list[dict[str, Any]]) -> None:
@@ -1787,6 +1967,73 @@ class MySQLMesStorageBackend(StorageBackend):
                 )
                 """,
                 tray_item_rows,
+            )
+
+        managed_task_nos = sorted(
+            {
+                normalize_text(sample.get("task_code"))
+                for sample in managed_samples
+                if normalize_text(sample.get("task_code"))
+            }
+        )
+        if managed_task_nos:
+            placeholders = ", ".join(["%s"] * len(managed_task_nos))
+            cursor.execute(
+                f"""
+                DELETE FROM biz_experiment_event
+                WHERE event_type = 'FIXTURE_READY'
+                  AND message_id LIKE %s
+                  AND task_no IN ({placeholders})
+                """,
+                [f"{FIXTURE_READY_COMPAT_MESSAGE_PREFIX}%", *managed_task_nos],
+            )
+
+        fixture_ready_task_times: Dict[str, datetime] = {}
+        for sample in managed_samples:
+            task_no = normalize_text(sample.get("task_code"))
+            if not task_no:
+                continue
+            for tray in sample.get("trays") or []:
+                if not parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))):
+                    continue
+                event_time = (
+                    parse_storage_datetime(tray.get("updated_at"))
+                    or parse_storage_datetime(sample.get("updated_at"))
+                    or datetime.now(timezone.utc).replace(tzinfo=None)
+                )
+                current_time = fixture_ready_task_times.get(task_no)
+                if current_time is None or event_time > current_time:
+                    fixture_ready_task_times[task_no] = event_time
+
+        if fixture_ready_task_times:
+            cursor.executemany(
+                """
+                INSERT INTO biz_experiment_event (
+                  event_type, task_no, experiment_no, lab_code, success_id, event_time,
+                  message_id, message_log_id, payload_json
+                ) VALUES (
+                  'FIXTURE_READY', %(task_no)s, NULL, NULL, NULL, %(event_time)s,
+                  %(message_id)s, NULL, %(payload_json)s
+                )
+                ON DUPLICATE KEY UPDATE
+                  event_time = VALUES(event_time),
+                  payload_json = VALUES(payload_json)
+                """,
+                [
+                    {
+                        "task_no": task_no,
+                        "event_time": event_time,
+                        "message_id": f"{FIXTURE_READY_COMPAT_MESSAGE_PREFIX}{task_no}",
+                        "payload_json": json.dumps(
+                            {
+                                "source": "frontend_fixture_countdown",
+                                "taskNo": task_no,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                    for task_no, event_time in fixture_ready_task_times.items()
+                ],
             )
 
         if sample_primary_tray_id:

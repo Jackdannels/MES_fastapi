@@ -22,6 +22,8 @@ let storageState = {};
 let fetchMock = null;
 let pageHeader = null;
 let headerActions = null;
+let masterLabsState = [];
+let masterLabsShouldFail = false;
 
 const buildDateParts = (offsetDays = 0) => {
   const date = new Date();
@@ -44,6 +46,8 @@ const getStorage = (key) => JSON.parse(JSON.stringify(storageState[key] ?? []));
 
 const resetStorage = () => {
   storageState = {};
+  masterLabsState = [];
+  masterLabsShouldFail = false;
 };
 
 const installStorageFetchMock = () => {
@@ -73,16 +77,32 @@ const installStorageFetchMock = () => {
       };
     }
 
+    if (url.endsWith("/api/master/labs") && method === "GET") {
+      if (masterLabsShouldFail) {
+        return {
+          ok: false,
+          status: 500,
+          statusText: "Server Error",
+          json: async () => ({ message: "Server Error" }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => JSON.parse(JSON.stringify(masterLabsState)),
+      };
+    }
+
     throw new Error(`Unhandled fetch: ${method} ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
 };
 
 const settle = async (wrapper) => {
-  await Promise.resolve();
-  await Promise.resolve();
-  await wrapper.vm.$nextTick();
-  await wrapper.vm.$nextTick();
+  for (let index = 0; index < 4; index += 1) {
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+  }
 };
 
 const installHeaderActions = () => {
@@ -447,6 +467,7 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.text()).toContain("当前任务已排程");
     expect(wrapper.text()).toContain("冲击试验");
     expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-001");
+    expect(wrapper.find(".gantt-lab-nav").exists()).toBe(false);
   });
 
   test("shows a partial conflict modal and does not persist when scheduling is canceled", async () => {
@@ -674,6 +695,57 @@ describe("SchedulePage runtime", () => {
     expect(ganttRows).toHaveLength(2);
     expect(ganttRows[0].text()).toContain(PRIMARY_LAB);
     expect(ganttRows[1].text()).toContain(SECONDARY_LAB);
+  });
+
+  test("uses master lab data in the manual device selector", async () => {
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+      { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
+    ];
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "盐雾试验", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "exp-1", task_code: "SYLU-2026-01-001", experiment_code: "SYLU-2026-01-001-A", experiment_name: "盐雾试验", required_device: "盐雾试验" },
+    ]);
+    setStorage(DEVICES_KEY, []);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
+    await settle(wrapper);
+
+    const deviceSelectText = wrapper.get('select[name="device"]').text();
+    const deviceOptions = wrapper.findAll('select[name="device"] option').map((option) => option.text());
+    expect(deviceSelectText).toContain("盐雾试验室");
+    expect(deviceSelectText).not.toContain(RETENTION_DEVICE);
+    expect(deviceOptions.filter((option) => option === "盐雾试验室")).toHaveLength(1);
+  });
+
+  test("keeps static lab options when the master labs endpoint fails", async () => {
+    masterLabsShouldFail = true;
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Task A", test_type: "盐雾试验", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "exp-1", task_code: "SYLU-2026-01-001", experiment_code: "SYLU-2026-01-001-A", experiment_name: "盐雾试验", required_device: "盐雾试验" },
+    ]);
+    setStorage(DEVICES_KEY, []);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
+    await settle(wrapper);
+
+    expect(wrapper.get('select[name="device"]').text()).toContain("盐雾试验室");
   });
 
   test("filters gantt rows to the selected task labs", async () => {

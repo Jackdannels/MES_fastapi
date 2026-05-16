@@ -4,6 +4,8 @@ import { useRoute, useRouter } from "vue-router";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { TEST_PREFIX_MAP } from "@/lib/labs";
+import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
@@ -15,7 +17,7 @@ const UNSCHEDULED_LABEL = "未排程";
 const UNASSIGNED_EXPERIMENT_LABEL = "未分配";
 const TASK_COUNTER_LABEL = "已排程/总任务数";
 const EXPERIMENT_COUNTER_LABEL = "已排程总实验数";
-const TRAY_COUNTER_LABEL = "剩余托盘/总托盘数";
+const TRAY_COUNTER_LABEL = "已用托盘/总托盘数";
 const TASK_SCHEDULE_FILTERS = new Set(["all", "scheduled", "unscheduled"]);
 const TASK_OVERVIEW_PAGE_SIZE = 5;
 const TASK_HIGHLIGHT_QUERY_KEY = "highlightTask";
@@ -72,15 +74,12 @@ function filterTaskOverviewRows({
       return new Date(rowTime).getFullYear() === now.getFullYear();
     }
     if (selectedTime === "custom") {
-      // 自定义区间允许开始结束倒置，内部会自动交换。
       const rawStart = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : Number.NaN;
       const rawEnd = customEndDate ? new Date(`${customEndDate}T23:59:59`).getTime() : Number.NaN;
-      let start = Number.isFinite(rawStart) ? rawStart : null;
-      let end = Number.isFinite(rawEnd) ? rawEnd : null;
+      const start = Number.isFinite(rawStart) ? rawStart : null;
+      const end = Number.isFinite(rawEnd) ? rawEnd : null;
       if (start !== null && end !== null && start > end) {
-        const temp = start;
-        start = end;
-        end = temp;
+        return false;
       }
       if (start !== null && rowTime < start) {
         return false;
@@ -128,6 +127,44 @@ function filterTaskOverviewRows({
   });
 }
 
+function filterTrayOverviewRows({ rows, keyword, testTypeFilter, taskFilter }) {
+  const rowList = Array.isArray(rows) ? rows : [];
+  const query = String(keyword || "").trim().toLowerCase();
+  const selectedType = String(testTypeFilter || "").trim();
+  const selectedTask = String(taskFilter || "").trim();
+
+  return rowList.filter((row) => {
+    if (selectedTask && String(row?.taskCode || "").trim() !== selectedTask) {
+      return false;
+    }
+    if (!matchesExperimentTypeFilter(selectedType, row?.targetExperiment, row?.targetExperiment)) {
+      return false;
+    }
+    if (!query) {
+      return true;
+    }
+    const text = [
+      row?.slotCode,
+      row?.trayCode,
+      row?.taskCode,
+      row?.targetExperiment,
+      row?.currentStatus,
+      row?.currentLocation,
+    ].join(" ").toLowerCase();
+    return text.includes(query);
+  });
+}
+
+function buildTrayTaskFilterOptions(rows) {
+  const taskCodes = (Array.isArray(rows) ? rows : [])
+    .map((row) => String(row?.taskCode || "").trim())
+    .filter((taskCode) => taskCode && taskCode !== "-");
+  return Array.from(new Set(taskCodes)).sort((left, right) => left.localeCompare(right, "zh-Hans-CN", {
+    numeric: true,
+    sensitivity: "base",
+  }));
+}
+
 function cycleTaskScheduleFilter(currentFilter) {
   if (currentFilter === "scheduled") {
     return "unscheduled";
@@ -147,7 +184,8 @@ function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTota
   const unscheduledTaskCount = rows.length - scheduledTaskCount;
   const scheduledExperimentCount = rows.reduce((sum, row) => sum + Number(row?.scheduledExperimentCount || 0), 0);
   const eligibleExperimentCount = rows.reduce((sum, row) => sum + Number(row?.eligibleExperimentCount || 0), 0);
-  const remainingTrayCount = trays.filter((tray) => String(tray?.targetExperiment || "").trim() === UNASSIGNED_EXPERIMENT_LABEL).length;
+  const usedTrayCount = trays.filter((tray) => tray?.hasTray === true).length;
+  const remainingTrayCount = Math.max(total - usedTrayCount, 0);
   const inTrayMode = viewMode === "tray";
 
   return {
@@ -156,7 +194,7 @@ function buildOverviewMetrics({ filteredRows, trayOverviewRows, trayOverviewTota
     // 托盘模式下剩余托盘过少时给顶部计数器加预警态。
     isTrayCounterAlert: inTrayMode && remainingTrayCount <= 2,
     overviewCounterLabel: inTrayMode ? TRAY_COUNTER_LABEL : TASK_COUNTER_LABEL,
-    overviewCounterValue: inTrayMode ? `${remainingTrayCount}/${total}` : `${scheduledTaskCount}/${rows.length}`,
+    overviewCounterValue: inTrayMode ? `${usedTrayCount}/${total}` : `${scheduledTaskCount}/${rows.length}`,
     remainingTrayCount,
     scheduledTaskCount,
     totalTaskCount: rows.length,
@@ -218,8 +256,10 @@ function useTaskOverview() {
   const customEndDate = ref(getTodayDateValue());
   const testTypeFilter = ref("");
   const taskScheduleFilter = ref("all");
+  const trayTaskFilter = ref("");
   const taskPage = ref(1);
   const rows = ref([]);
+  const masterTestTypeOptions = ref([]);
   let highlightTimer = null;
   let highlightedCardElement = null;
 
@@ -254,6 +294,19 @@ function useTaskOverview() {
     trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays);
   };
 
+  const testTypeOptions = computed(() => {
+    // 筛选项仍只展示当前数据中实际出现的原子实验类型。
+    return buildExperimentTypeOptions(rows.value.map((row) => row?.experimentSummary || row?.taskType));
+  });
+
+  const taskTypeEditOptions = computed(() => {
+    const options = buildExperimentTypeOptions(masterTestTypeOptions.value, testTypeOptions.value);
+    if (options.length) {
+      return options;
+    }
+    return Object.keys(TEST_PREFIX_MAP);
+  });
+
   const {
     selectedTaskCode,
     editingTaskCode,
@@ -280,12 +333,19 @@ function useTaskOverview() {
     loadSnapshot,
     persistSnapshot,
     replaceOverview,
+    experimentTypeOptions: taskTypeEditOptions,
   });
 
   const loadOverview = async () => {
     loading.value = true;
     try {
-      const snapshot = await loadSnapshot();
+      const [snapshot, masterTestTypes] = await Promise.all([
+        loadSnapshot(),
+        readMasterTestTypes().catch(() => []),
+      ]);
+      masterTestTypeOptions.value = (Array.isArray(masterTestTypes) ? masterTestTypes : [])
+        .map((item) => String(item?.name || item?.testTypeName || item?.test_type_name || "").trim())
+        .filter(Boolean);
       replaceOverview(
         snapshot[STORAGE_KEYS.tasks],
         snapshot[STORAGE_KEYS.samples],
@@ -324,6 +384,15 @@ function useTaskOverview() {
       customEndDate: "",
     })
   );
+  const filteredTrayOverviewRows = computed(() =>
+    filterTrayOverviewRows({
+      rows: trayOverviewRows.value,
+      keyword: keyword.value,
+      testTypeFilter: testTypeFilter.value,
+      taskFilter: trayTaskFilter.value,
+    })
+  );
+  const trayTaskOptions = computed(() => buildTrayTaskFilterOptions(trayOverviewRows.value));
   const taskPageCount = computed(() => Math.max(1, Math.ceil(filteredRows.value.length / TASK_OVERVIEW_PAGE_SIZE)));
   const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
   const pagedRows = computed(() => filteredRows.value.slice(
@@ -331,12 +400,6 @@ function useTaskOverview() {
     currentTaskPage.value * TASK_OVERVIEW_PAGE_SIZE,
   ));
 
-  const testTypeOptions = computed(() => {
-    // 下拉项统一只展示当前数据中存在的原子实验类型。
-    return buildExperimentTypeOptions(rows.value.map((row) => row?.experimentSummary || row?.taskType));
-  });
-
-  const taskTypeEditOptions = computed(() => testTypeOptions.value);
   const overviewMetrics = computed(() =>
     buildOverviewMetrics({
       filteredRows: baseFilteredRows.value,
@@ -481,12 +544,19 @@ function useTaskOverview() {
         cancelEdit();
       }
       taskScheduleFilter.value = "all";
+      trayTaskFilter.value = "";
       taskPage.value = 1;
     }
   });
 
   watch([keyword, timeFilter, customStartDate, customEndDate, testTypeFilter, taskScheduleFilter], () => {
     taskPage.value = 1;
+  });
+
+  watch(trayTaskOptions, (options) => {
+    if (trayTaskFilter.value && !options.includes(trayTaskFilter.value)) {
+      trayTaskFilter.value = "";
+    }
   });
 
   watch(
@@ -536,6 +606,7 @@ function useTaskOverview() {
     experimentCounterLabel,
     experimentCounterValue,
     filteredRows,
+    filteredTrayOverviewRows,
     formatTrayCount,
     formatTraySummary,
     generateCodesByCount,
@@ -569,6 +640,8 @@ function useTaskOverview() {
     timeFilter,
     trayOverviewRows,
     trayOverviewTotal,
+    trayTaskFilter,
+    trayTaskOptions,
     updateEditForm,
     viewMode,
   };
@@ -577,9 +650,11 @@ function useTaskOverview() {
 export {
   applyRouteFiltersState,
   buildOverviewMetrics,
+  buildTrayTaskFilterOptions,
   cycleTaskScheduleFilter,
   findTaskCardElement,
   filterTaskOverviewRows,
+  filterTrayOverviewRows,
   getTodayDateValue,
   useTaskOverview,
 };

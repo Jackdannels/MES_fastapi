@@ -78,11 +78,11 @@
       </div>
       <div class="form-field">
         <label>开始时间</label>
-        <input v-model="reportForm.rangeStart" type="datetime-local" name="range_start" />
+        <PickerOnlyInput v-model="reportForm.rangeStart" type="datetime-local" name="range_start" :max="reportForm.rangeEnd || undefined" />
       </div>
       <div class="form-field">
         <label>结束时间</label>
-        <input v-model="reportForm.rangeEnd" type="datetime-local" name="range_end" />
+        <PickerOnlyInput v-model="reportForm.rangeEnd" type="datetime-local" name="range_end" :min="reportForm.rangeStart || undefined" />
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
         <label>异常说明</label>
@@ -127,8 +127,13 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "DataPage",
+});
+
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDataPage } from "./useDataPage";
 
 const {

@@ -367,6 +367,37 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTrayOverviewRows releases returned trays while keeping active trays occupied", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "SYLU-2026-03-002", test_type: "冲击试验", status: "任务进行中" }],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "SYLU-2026-03-002",
+          status: "实验进行中",
+          location: "冲击一室",
+          trays: [{ tray_code: "TP-ACTIVE", status: "实验进行中" }],
+        },
+        {
+          code: "SP-002",
+          task_code: "SYLU-2026-03-002",
+          status: "厂家收回",
+          location: "厂家收回",
+          trays: [{ tray_code: "TP-RETURNED", status: "厂家收回" }],
+        },
+      ],
+      schedules: [],
+      totalSlots: 2,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.map((row) => row.trayCode)).toEqual(["TP-ACTIVE", "TP-002"]);
+    expect(rows[0]).toMatchObject({ hasTray: true, taskCode: "SYLU-2026-03-002" });
+    expect(rows[1]).toMatchObject({ hasTray: false, taskCode: "-", targetExperiment: "未分配" });
+  });
+
   test("buildTaskRows keeps retention-only tasks unscheduled", () => {
     const rows = buildTaskRows({
       tasks: [
@@ -590,6 +621,34 @@ describe("taskOverviewModel", () => {
     });
 
     expect(rows).toEqual([]);
+  });
+
+  test("buildTaskRows releases returned trays from active task tray summaries", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "TASK-MIXED", test_type: "冲击试验", status: "任务进行中" }],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "TASK-MIXED",
+          status: "实验进行中",
+          location: "冲击一室",
+          trays: [{ tray_code: "TP-ACTIVE", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "TASK-MIXED",
+          status: "厂家收回",
+          location: "厂家收回",
+          trays: [{ tray_code: "TP-RETURNED", status: "厂家收回", quantity: 1 }],
+        },
+      ],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-ACTIVE"]);
   });
 
   test("buildTaskRows restores missed sibling experiments to waiting when only another shared-tray experiment has history", () => {

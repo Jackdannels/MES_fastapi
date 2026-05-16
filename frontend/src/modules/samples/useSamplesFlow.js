@@ -8,10 +8,12 @@ import { formatLocalDateTime } from "@/lib/dateTime.js";
 import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
   DETAIL_STATUS_OPTIONS,
+  buildTrayFlowView,
   buildSamplesFlowView,
   buildSamplesTrayOverviewView,
   buildSamplesStagingView,
   dispatchStagingSamples,
+  getSampleTrayList,
   normalizeSamplesSnapshot,
   submitSamplesBatchIntake,
   TRAY_STATUS_OPTIONS,
@@ -82,6 +84,9 @@ function useSamplesFlow() {
   const currentPage = ref(1);
   const pageSize = 8;
   const stagingQuery = ref("");
+  const stagingSelectedTaskCode = ref("");
+  const stagingSelectedStatus = ref("");
+  const stagingCurrentPage = ref(1);
   const stagingSelectedCodes = ref([]);
 
   const batchModal = useDialogState();
@@ -138,14 +143,52 @@ function useSamplesFlow() {
   const stagingView = computed(() =>
     buildSamplesStagingView({
       labels: DEFAULT_LABELS,
-      query: stagingQuery.value,
+      filters: {
+        query: stagingQuery.value,
+        taskCode: stagingSelectedTaskCode.value,
+        status: stagingSelectedStatus.value,
+      },
+      page: stagingCurrentPage.value,
+      pageSize,
       samples: rawSamples.value,
       selectedCodes: stagingSelectedCodes.value,
     }),
   );
   const stagingRows = computed(() => stagingView.value.rows);
   const stagingCount = computed(() => stagingView.value.count);
+  const stagingPageCount = computed(() => stagingView.value.totalPages);
+  const stagingTaskOptions = computed(() => stagingView.value.taskOptions);
+  const stagingStatusOptions = computed(() => stagingView.value.statusOptions);
   const stagingLabOptions = computed(() => stagingView.value.labOptions);
+  const detailSample = computed(() => detailDrawer.payload.value || null);
+  const detailSampleTray = computed(() => getSampleTrayList(detailSample.value)[0] || null);
+  const detailSampleTrayCode = computed(() => String(detailSampleTray.value?.tray_code || "").trim());
+  const detailSampleTrayRow = computed(() =>
+    trayRows.value.find((row) => String(row?.trayCode || "").trim() === detailSampleTrayCode.value) || null,
+  );
+  const detailSampleTrayFlow = computed(() => {
+    const trayCode = detailSampleTrayCode.value;
+    const sample = detailSample.value;
+    if (!sample || !trayCode) {
+      return {
+        currentStatus: "当前样品未绑定托盘",
+        steps: [],
+      };
+    }
+    const trayRow = detailSampleTrayRow.value;
+    const status = String(trayRow?.status || detailSampleTray.value?.status || sample?.status || "").trim();
+    return buildTrayFlowView({
+      currentExperimentCode: "",
+      experimentTrays: rawExperimentTrays.value,
+      experiments: rawExperiments.value,
+      location: status === "已到达暂存间" ? DEFAULT_LABELS.preRetentionLocation : "",
+      samples: rawSamples.value,
+      schedules: rawSchedules.value,
+      taskCode: String(trayRow?.taskCode || sample?.task_code || "").trim(),
+      trayCode,
+      status,
+    });
+  });
   const stagingAllSelected = computed(
     () => stagingRows.value.length > 0 && stagingRows.value.every((row) => row.selected),
   );
@@ -163,6 +206,10 @@ function useSamplesFlow() {
   const buildFailureMessage = (prefix, error) => {
     const detail = String(error instanceof Error ? error.message : "").trim();
     return detail ? `${prefix}，${detail}` : prefix;
+  };
+
+  const clearWarning = () => {
+    warning.value = "";
   };
 
   const load = async () => {
@@ -230,6 +277,25 @@ function useSamplesFlow() {
 
   const setStagingQuery = (value) => {
     stagingQuery.value = String(value ?? "");
+    stagingCurrentPage.value = 1;
+  };
+
+  const setStagingTaskFilter = (value) => {
+    stagingSelectedTaskCode.value = String(value ?? "");
+    stagingCurrentPage.value = 1;
+  };
+
+  const setStagingStatusFilter = (value) => {
+    stagingSelectedStatus.value = String(value ?? "");
+    stagingCurrentPage.value = 1;
+  };
+
+  const setStagingPage = (page) => {
+    const nextPage = Number.parseInt(String(page ?? ""), 10);
+    if (!Number.isFinite(nextPage)) {
+      return;
+    }
+    stagingCurrentPage.value = Math.min(Math.max(nextPage, 1), stagingPageCount.value);
   };
 
   const resetStaging = () => {
@@ -452,11 +518,15 @@ function useSamplesFlow() {
   return {
     batchForm,
     batchModalOpen: batchModal.open,
+    clearWarning,
     closeBatchModal,
     closeDetailDrawer,
     currentPage,
     detailDrawerOpen: detailDrawer.open,
     detailForm,
+    detailSample,
+    detailSampleTrayCode,
+    detailSampleTrayFlow,
     detailStatusOptions: DETAIL_STATUS_OPTIONS,
     loading,
     locationOptions,
@@ -476,17 +546,26 @@ function useSamplesFlow() {
     setPage,
     setQuery,
     setStatusFilter,
+    setStagingPage,
     setStagingQuery,
+    setStagingStatusFilter,
+    setStagingTaskFilter,
     setTaskFilter,
     trayRows,
     trayStatusOptions: TRAY_STATUS_OPTIONS,
     stagingAllSelected,
     stagingCount,
+    stagingCurrentPage,
     stagingForm,
     stagingLabOptions,
+    stagingPageCount,
     stagingQuery,
     stagingRows,
     stagingSelectedCodes,
+    stagingSelectedStatus,
+    stagingSelectedTaskCode,
+    stagingStatusOptions,
+    stagingTaskOptions,
     sortDirection,
     sortKey,
     statusOptions,

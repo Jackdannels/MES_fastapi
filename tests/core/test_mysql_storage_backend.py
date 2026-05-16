@@ -200,12 +200,207 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     backend._ensure_schema_extensions()
 
     statements = connection.cursor_instance.statements
+    assert any("CREATE TABLE IF NOT EXISTS md_test_type" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS md_lab" in statement for statement in statements)
+    assert sum(1 for statement in statements if "INSERT INTO md_test_type" in statement and "WHERE NOT EXISTS" in statement) == 7
+    assert sum(1 for statement in statements if "INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement) == 14
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_mq_message_log" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_experiment_event" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_experiment_result" in statement for statement in statements)
     assert connection.committed is True
+
+
+def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if "SHOW COLUMNS FROM md_lab LIKE 'test_type_id'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM md_test_type LIKE 'test_category'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            pass
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert any("ALTER TABLE md_test_type ADD COLUMN test_category VARCHAR(50) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE md_lab ADD COLUMN test_type_id BIGINT NULL" in statement for statement in statements)
+
+
+def test_ensure_schema_extensions_adds_missing_master_data_indexes(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if statement.startswith("SHOW INDEX FROM md_test_type WHERE Key_name = 'uk_md_test_type_code'"):
+                self._result = None
+            elif statement.startswith("SHOW INDEX FROM md_lab WHERE Key_name = 'uk_md_lab_code'"):
+                self._result = None
+            elif statement.startswith("SHOW INDEX FROM md_lab WHERE Key_name = 'idx_md_lab_test_type'"):
+                self._result = None
+            elif "HAVING COUNT(*) > 1" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            pass
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert any("ALTER TABLE md_test_type ADD UNIQUE KEY uk_md_test_type_code (test_type_code)" in statement for statement in statements)
+    assert any("ALTER TABLE md_lab ADD UNIQUE KEY uk_md_lab_code (lab_code)" in statement for statement in statements)
+    assert any("ALTER TABLE md_lab ADD INDEX idx_md_lab_test_type (test_type_id)" in statement for statement in statements)
+
+
+def test_ensure_schema_extensions_skips_unique_master_data_indexes_when_duplicates_exist(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if statement.startswith("SHOW INDEX FROM md_test_type WHERE Key_name = 'uk_md_test_type_code'"):
+                self._result = None
+            elif statement.startswith("SHOW INDEX FROM md_lab WHERE Key_name = 'uk_md_lab_code'"):
+                self._result = None
+            elif "FROM md_test_type" in statement and "HAVING COUNT(*) > 1" in statement:
+                self._result = {"test_type_code": "YW", "row_count": 2}
+            elif "FROM md_lab" in statement and "HAVING COUNT(*) > 1" in statement:
+                self._result = {"lab_code": "LAB_SALT", "row_count": 2}
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            pass
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert not any("ALTER TABLE md_test_type ADD UNIQUE KEY uk_md_test_type_code" in statement for statement in statements)
+    assert not any("ALTER TABLE md_lab ADD UNIQUE KEY uk_md_lab_code" in statement for statement in statements)
+    assert any("INSERT INTO md_test_type" in statement and "WHERE NOT EXISTS" in statement for statement in statements)
+    assert any("INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement for statement in statements)
 
 
 def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
@@ -1027,6 +1222,73 @@ def test_replace_samples_persists_real_tray_item_status() -> None:
     assert tray_item_call[0]["status"] == "实验进行中"
 
 
+def test_replace_samples_persists_fixture_ready_as_compat_experiment_event() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.execute_calls = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.execute_calls.append((statement, params))
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 1, "task_no": "SYLU-2026-03-003"}]
+            elif "SELECT sample_id, sample_no, task_id FROM biz_sample" in statement:
+                self._result = [{"sample_id": 11, "sample_no": "SYLU-2026-03-003-SP-001", "task_id": 1}]
+            elif "SELECT tray_id, tray_no FROM biz_tray" in statement:
+                self._result = [{"tray_id": 21, "tray_no": "SYLU-2026-03-003-TP-001"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_samples(
+        cursor,
+        [
+            {
+                "code": "SYLU-2026-03-003-SP-001",
+                "task_code": "SYLU-2026-03-003",
+                "status": "工装夹具安装",
+                "flow_status": "工装夹具安装",
+                "location": "盐雾试验室",
+                "updated_at": "2026-04-09T10:22:30Z",
+                "trays": [
+                    {
+                        "tray_code": "SYLU-2026-03-003-TP-001",
+                        "sample_code": "SYLU-2026-03-003-SP-001",
+                        "quantity": 1,
+                        "status": "工装夹具安装",
+                        "fixture_ready": True,
+                        "updated_at": "2026-04-09T10:22:30Z",
+                    }
+                ],
+                "history": [],
+            }
+        ],
+    )
+
+    assert any("DELETE FROM biz_experiment_event" in sql for sql, _params in cursor.execute_calls)
+    fixture_event_rows = next(
+        rows
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_experiment_event" in sql
+    )
+    assert fixture_event_rows[0]["task_no"] == "SYLU-2026-03-003"
+    assert fixture_event_rows[0]["message_id"] == "FRONTEND_STORAGE:FIXTURE_READY:SYLU-2026-03-003"
+    assert "frontend_fixture_countdown" in fixture_event_rows[0]["payload_json"]
+
+
 def test_replace_schedules_backfills_task_id_from_task_no() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -1073,6 +1335,61 @@ def test_replace_schedules_backfills_task_id_from_task_no() -> None:
         if "INSERT INTO biz_schedule" in sql
     )
     assert schedule_call[0]["task_id"] == 12773
+
+
+def test_replace_schedules_backfills_lab_id_from_device_name() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executed = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.executed.append((statement, params))
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 12773, "task_no": "SYLU-2026-03-002"}]
+            elif "SELECT lab_id, lab_code, lab_name FROM md_lab" in statement:
+                self._result = [{"lab_id": 9, "lab_code": "LAB_SALT", "lab_name": "盐雾试验室"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_schedules(
+        cursor,
+        [
+            {
+                "id": "schedule-1",
+                "task_code": "SYLU-2026-03-002",
+                "experiment_code": "SYLU-2026-03-002-A",
+                "device": "盐雾试验室",
+                "start_at": "2026-04-09T10:05:38Z",
+                "end_at": "2026-04-09T13:35:38Z",
+                "status": "已排程",
+            }
+        ],
+    )
+
+    assert any("FROM md_lab" in statement for statement, _params in cursor.executed)
+    schedule_sql, schedule_call = next(
+        (sql, rows)
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_schedule" in sql
+    )
+    assert "%(lab_id)s" in schedule_sql
+    assert "lab_id = VALUES(lab_id)" in schedule_sql
+    assert schedule_call[0]["lab_id"] == 9
 
 
 def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_migration() -> None:

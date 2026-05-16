@@ -63,7 +63,7 @@
         </div>
         <div class="form-field">
           <label>下次校准时间</label>
-          <input v-model="deviceForm.next_cal" type="date" name="next_cal" />
+          <PickerOnlyInput v-model="deviceForm.next_cal" type="date" name="next_cal" />
         </div>
         <div class="form-field">
           <label>采集启用</label>
@@ -261,7 +261,7 @@
       </div>
       <div class="form-field">
         <label>最近校准</label>
-        <input v-model="maintenanceForm.latestCalibration" type="date" />
+        <PickerOnlyInput v-model="maintenanceForm.latestCalibration" type="date" />
       </div>
       <div class="form-field">
         <label>维护类型</label>
@@ -281,8 +281,13 @@
 </template>
 
 <script setup>
+defineOptions({
+  name: "DevicesPage",
+});
+
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDevicesPage } from "./useDevicesPage";
 
 const {
