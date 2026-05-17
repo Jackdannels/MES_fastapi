@@ -138,7 +138,7 @@ describe("useTaskOverview runtime", () => {
     HTMLElement.prototype.scrollIntoView = originalScrollIntoView;
   });
 
-  test("uses master test types for task edit options even when current rows do not contain them", async () => {
+  test("uses master test types for readonly detail options even when current rows do not contain them", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 

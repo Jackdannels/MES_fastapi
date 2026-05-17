@@ -1,4 +1,4 @@
-// 负责任务总览页的筛选、计数器和编辑交互逻辑。
+// 负责任务总览页的筛选、计数器和只读详情交互逻辑。
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
@@ -9,7 +9,6 @@ import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
-
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
 const SCHEDULED_LABEL = "已排程";
@@ -310,7 +309,6 @@ function useTaskOverview() {
   const {
     selectedTaskCode,
     editingTaskCode,
-    savingTaskCode,
     deletingTaskCode,
     deleteConfirm,
     editError,
@@ -319,16 +317,9 @@ function useTaskOverview() {
     isEditing,
     openEdit,
     cancelEdit,
-    resetDeleteConfirm,
     handleCardClick,
     handleCardDblClick,
     handleGlobalClick: handleEditorGlobalClick,
-    generateCodesByCount,
-    saveEdit,
-    requestDeleteTask,
-    confirmDeleteTask,
-    updateEditForm,
-    clearEditFeedback,
   } = useTaskOverviewEditor({
     loadSnapshot,
     persistSnapshot,
@@ -538,7 +529,7 @@ function useTaskOverview() {
 
   watch(viewMode, (nextValue) => {
     if (nextValue !== "task") {
-      // 离开任务视图时清空选中卡片和编辑态，避免托盘视图残留交互状态。
+      // 离开任务视图时清空选中卡片，避免托盘视图残留交互状态。
       selectedTaskCode.value = "";
       if (editingTaskCode.value) {
         cancelEdit();
@@ -594,7 +585,6 @@ function useTaskOverview() {
 
   return {
     cancelEdit,
-    confirmDeleteTask,
     customEndDate,
     customStartDate,
     deleteConfirm,
@@ -602,14 +592,12 @@ function useTaskOverview() {
     editError,
     editForm,
     editMessage,
-    clearEditFeedback,
     experimentCounterLabel,
     experimentCounterValue,
     filteredRows,
     filteredTrayOverviewRows,
     formatTrayCount,
     formatTraySummary,
-    generateCodesByCount,
     handleCardClick,
     handleCardDblClick,
     isEditing,
@@ -624,10 +612,6 @@ function useTaskOverview() {
     currentTaskPage,
     cycleTaskScheduleFilterState,
     pagedRows,
-    requestDeleteTask,
-    resetDeleteConfirm,
-    saveEdit,
-    savingTaskCode,
     selectedTaskCode,
     setTaskPage,
     taskTypeEditOptions,
@@ -642,7 +626,6 @@ function useTaskOverview() {
     trayOverviewTotal,
     trayTaskFilter,
     trayTaskOptions,
-    updateEditForm,
     viewMode,
   };
 }

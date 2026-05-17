@@ -385,6 +385,27 @@
   font-weight: 600;
 }
 
+.task-overview-readonly-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.9);
+  font-size: 13px;
+}
+
+.task-overview-readonly-meta span {
+  color: var(--muted);
+}
+
+.task-overview-readonly-meta strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
 .task-overview-edit-btn {
   padding: 6px 12px;
   font-size: 12px;

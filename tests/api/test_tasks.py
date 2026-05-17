@@ -429,6 +429,54 @@ def test_update_task_rejects_empty_test_types_without_falling_back_to_task_name(
     assert "演示任务002" not in stored_task["test_type"]
 
 
+def test_update_task_name_does_not_become_an_experiment_type(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-rename",
+                "code": "SYLU-2026-05-020",
+                "name": "旧任务名称",
+                "sample_count": "3",
+                "test_type": "盐雾试验",
+                "required_device": "盐雾试验",
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-020-A",
+                "task_code": "SYLU-2026-05-020",
+                "experiment_code": "SYLU-2026-05-020-A",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-rename",
+        json={
+            "id": "task-rename",
+            "code": "SYLU-2026-05-020",
+            "name": "只修改任务名称",
+            "sample_count": "3",
+            "test_type": "盐雾试验",
+            "required_device": "盐雾试验",
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "只修改任务名称"
+    assert response.json()["test_type"] == "盐雾试验"
+    assert response.json()["test_types"] == ["盐雾试验"]
+    assert "只修改任务名称" not in response.json()["test_type"]
+    assert [experiment["experiment_name"] for experiment in storage.read("mes.experiments")] == ["盐雾试验"]
+
+
 def test_update_task_replaces_stale_experiment_metadata_when_test_types_change(monkeypatch):
     client = build_client(
         monkeypatch,
@@ -850,18 +898,27 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
 
     missing = client.post("/api/tasks", json=base_payload)
     non_integer = client.post("/api/tasks", json={**base_payload, "sample_count": "1.5"})
+    zero = client.post("/api/tasks", json={**base_payload, "sample_count": "0"})
     negative = client.post("/api/tasks", json={**base_payload, "sample_count": "-1"})
     too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "100"})
-    valid = client.post("/api/tasks", json={**base_payload, "sample_count": "99"})
+    one_sample = client.post("/api/tasks", json={**base_payload, "sample_count": "1"})
+    valid = client.post(
+        "/api/tasks",
+        json={**base_payload, "id": "SYLU-2026-04-110-B", "code": "SYLU-2026-04-110-B", "sample_count": "99"},
+    )
 
     assert missing.status_code == 400
     assert missing.json() == {"detail": "请填写样品数量"}
     assert non_integer.status_code == 400
     assert non_integer.json() == {"detail": "样品数量必须为整数"}
+    assert zero.status_code == 400
+    assert zero.json() == {"detail": "样品数量至少为 1"}
     assert negative.status_code == 400
     assert negative.json() == {"detail": "样品数量至少为 1"}
     assert too_many.status_code == 400
     assert too_many.json() == {"detail": "样品数量最多为 99"}
+    assert one_sample.status_code == 201
+    assert one_sample.json()["sample_count"] == "1"
     assert valid.status_code == 201
 
 
@@ -896,6 +953,57 @@ def test_update_task_rejects_invalid_sample_count(monkeypatch):
 
     assert response.status_code == 400
     assert response.json() == {"detail": "样品数量至少为 1"}
+
+
+def test_update_task_sample_count_shrinks_related_samples(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-shrink-samples",
+                "code": "SYLU-2026-04-112",
+                "name": "样品数量降低",
+                "sample_count": "4",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "status": "待排程",
+            }
+        ],
+        samples=[
+            {
+                "id": f"sample-{index}",
+                "code": f"SYLU-2026-04-112-SP-{index:03d}",
+                "task_code": "SYLU-2026-04-112",
+                "status": "运输中",
+            }
+            for index in range(1, 5)
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-shrink-samples",
+        json={
+            "id": "task-shrink-samples",
+            "code": "SYLU-2026-04-112",
+            "name": "样品数量降低",
+            "sample_count": "2",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    samples = [
+        sample for sample in client.app.state.storage.read("mes.samples")
+        if sample.get("task_code") == "SYLU-2026-04-112"
+    ]
+
+    assert response.status_code == 200
+    assert response.json()["sample_count"] == "2"
+    assert [sample["code"] for sample in samples] == [
+        "SYLU-2026-04-112-SP-001",
+        "SYLU-2026-04-112-SP-002",
+    ]
 
 
 def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch):

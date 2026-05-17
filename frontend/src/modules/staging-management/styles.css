@@ -103,8 +103,39 @@ body:has(.staging-management-page) .page-header h1 {
   gap: 10px;
 }
 
+.zancun-inventory-pagination,
+.zancun-inventory-column__pagination,
+.zancun-current-staging-pagination,
+.zancun-planned-inbound-pagination {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 46px;
+  color: var(--muted);
+}
+
+.zancun-inventory-column__head .zancun-console-pagination,
+.zancun-inventory-column__head .zancun-inventory-pagination,
+.zancun-inventory-column__head .zancun-inventory-column__pagination,
+.zancun-inventory-column__head .zancun-current-staging-pagination,
+.zancun-inventory-column__head .zancun-planned-inbound-pagination {
+  margin-left: auto;
+}
+
+.zancun-console-pagination .muted,
+.zancun-inventory-pagination .muted,
+.zancun-inventory-column__pagination .muted,
+.zancun-current-staging-pagination .muted,
+.zancun-planned-inbound-pagination .muted {
+  white-space: nowrap;
+}
+
 .zancun-console-list {
+  --zancun-console-slot-height: 72px;
   display: grid;
+  grid-auto-rows: minmax(var(--zancun-console-slot-height), auto);
   gap: 10px;
 }
 
@@ -140,7 +171,7 @@ body:has(.staging-management-page) .page-header h1 {
 }
 
 .zancun-console-slot {
-  min-height: 72px;
+  min-height: var(--zancun-console-slot-height, 72px);
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -148,6 +179,24 @@ body:has(.staging-management-page) .page-header h1 {
   display: grid;
   gap: 8px;
   align-content: center;
+}
+
+.zancun-console-slot--placeholder,
+.zancun-console-slot.is-placeholder,
+.zancun-console-placeholder {
+  height: var(--zancun-console-slot-height, 72px);
+  min-height: var(--zancun-console-slot-height, 72px);
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.46);
+  color: #94a3b8;
+  box-shadow: none;
+}
+
+.zancun-console-slot--placeholder .zancun-console-slot__empty,
+.zancun-console-slot.is-placeholder .zancun-console-slot__empty,
+.zancun-console-placeholder .zancun-console-slot__empty {
+  color: #94a3b8;
 }
 
 .zancun-console-slot__main,

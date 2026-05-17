@@ -104,6 +104,10 @@
   gap: 8px;
 }
 
+.laboratory-running-show-all {
+  justify-self: start;
+}
+
 .laboratory-running-actions {
   display: flex;
   justify-content: flex-end;
@@ -118,10 +122,6 @@
 .laboratory-running-complete-prompt {
   display: grid;
   gap: 8px;
-  padding: 14px 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  background: rgba(255, 251, 235, 0.96);
 }
 
 .laboratory-running-complete-prompt p {
@@ -486,6 +486,82 @@
   max-height: calc(min(88vh, 980px) - 140px);
 }
 
+.laboratory-full-content-modal.modal {
+  z-index: 70;
+}
+
+.laboratory-full-content-modal .modal-content {
+  width: min(980px, 94vw);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  padding: 22px;
+}
+
+.laboratory-full-content-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.laboratory-full-content-summary span,
+.laboratory-more-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.laboratory-full-tray-list {
+  display: grid;
+  gap: 10px;
+}
+
+.laboratory-full-tray-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.36fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.laboratory-full-tray-row strong,
+.laboratory-full-tray-row span {
+  display: block;
+}
+
+.laboratory-full-tray-row strong {
+  margin-bottom: 6px;
+  color: #0f172a;
+}
+
+.laboratory-full-tray-row span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.laboratory-full-sample-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.laboratory-full-sample-list span {
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+  padding: 5px 9px;
+  color: #0f172a;
+  font-weight: 700;
+  word-break: break-all;
+}
+
 .laboratory-empty-table-cell {
   padding: 28px 16px;
   text-align: center;
@@ -675,8 +751,8 @@
 }
 
 .laboratory-task-tray-list--grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(210px, max-content));
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: start;
   gap: 10px;
@@ -698,6 +774,19 @@
   color: #1d4ed8;
   font-size: 15px;
   font-weight: 700;
+}
+
+.laboratory-inline-link {
+  appearance: none;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .laboratory-compare-scan {

@@ -231,9 +231,21 @@
               <td>{{ row.sampleCount }}</td>
               <td>
                 <div class="laboratory-task-tray-list laboratory-task-tray-list--grid">
-                  <div v-for="tray in row.trayRows" :key="`${row.id}-${tray.trayCode}`" class="laboratory-task-tray-row">
+                  <div v-for="tray in previewItems(row.trayRows, TASK_TRAY_PREVIEW_LIMIT)" :key="`${row.id}-${tray.trayCode}`" class="laboratory-task-tray-row">
                     <span class="laboratory-tray-chip">{{ tray.trayCode }}</span>
                   </div>
+                  <span v-if="overflowCount(row.trayRows, TASK_TRAY_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
+                    +{{ overflowCount(row.trayRows, TASK_TRAY_PREVIEW_LIMIT) }}
+                  </span>
+                  <button
+                    v-if="overflowCount(row.trayRows, TASK_TRAY_PREVIEW_LIMIT) > 0"
+                    class="laboratory-inline-link"
+                    :data-testid="`laboratory-task-row-show-all-${row.taskCode}`"
+                    type="button"
+                    @click="openTaskRowFullContent(row)"
+                  >
+                    查看全部
+                  </button>
                 </div>
               </td>
               <td>
@@ -321,6 +333,40 @@
       </template>
     </AppModal>
 
+    <AppModal
+      :open="fullContentModalOpen"
+      class="laboratory-full-content-modal"
+      data-testid="laboratory-full-content-modal"
+      title="全部托盘与样品"
+      @close="closeFullContentModal"
+    >
+      <div class="laboratory-modal-body">
+        <div class="laboratory-full-content-summary">
+          <span>任务编号：{{ fullContentDetail?.taskCode || "-" }}</span>
+          <span>实验：{{ fullContentDetail?.experimentName || "-" }}</span>
+          <span>托盘：{{ fullContentDetail?.trayRows?.length || 0 }}</span>
+          <span>样品：{{ fullContentDetail?.sampleCodes?.length || 0 }}</span>
+        </div>
+        <div class="laboratory-full-tray-list">
+          <article
+            v-for="tray in fullContentDetail?.trayRows || []"
+            :key="`full-${tray.trayCode}`"
+            class="laboratory-full-tray-row"
+            :data-testid="`laboratory-full-tray-row-${tray.trayCode}`"
+          >
+            <div>
+              <strong>{{ tray.trayCode }}</strong>
+              <span>{{ tray.trayStatus || tray.displayStatus || "-" }}</span>
+            </div>
+            <div class="laboratory-full-sample-list">
+              <span v-for="sampleCode in tray.sampleCodes || []" :key="`${tray.trayCode}-${sampleCode}`">{{ sampleCode }}</span>
+              <span v-if="!(tray.sampleCodes || []).length" class="muted">暂无样品编号</span>
+            </div>
+          </article>
+        </div>
+      </div>
+    </AppModal>
+
     <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="夹具安装确认中" @close="() => {}">
       <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-status-card">
         <div class="laboratory-fixture-status-card__head">
@@ -406,16 +452,45 @@
             <div>
               <strong>运行托盘</strong>
               <div class="laboratory-running-tags">
-                <span v-for="trayCode in runningExperiment.trayCodes" :key="`running-tray-${trayCode}`" class="laboratory-tray-chip">{{ trayCode }}</span>
+                <span
+                  v-for="trayCode in previewItems(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT)"
+                  :key="`running-tray-${trayCode}`"
+                  class="laboratory-tray-chip"
+                  :data-testid="`laboratory-running-tray-chip-${trayCode}`"
+                >
+                  {{ trayCode }}
+                </span>
+                <span v-if="overflowCount(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
+                  +{{ overflowCount(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) }}
+                </span>
               </div>
             </div>
             <div>
               <strong>对应样品</strong>
               <div class="laboratory-running-tags">
-                <span v-for="sampleCode in runningExperiment.sampleCodes" :key="`running-sample-${sampleCode}`" class="laboratory-tray-chip">{{ sampleCode }}</span>
+                <span
+                  v-for="sampleCode in previewItems(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT)"
+                  :key="`running-sample-${sampleCode}`"
+                  class="laboratory-tray-chip"
+                  :data-testid="`laboratory-running-sample-chip-${sampleCode}`"
+                >
+                  {{ sampleCode }}
+                </span>
+                <span v-if="overflowCount(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
+                  +{{ overflowCount(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) }}
+                </span>
               </div>
             </div>
           </div>
+          <button
+            v-if="runningExperiment.trayCodes.length > RUNNING_TRAY_PREVIEW_LIMIT || runningExperiment.sampleCodes.length > RUNNING_SAMPLE_PREVIEW_LIMIT"
+            class="laboratory-inline-link laboratory-running-show-all"
+            data-testid="laboratory-running-show-all"
+            type="button"
+            @click="openRunningFullContent"
+          >
+            查看全部
+          </button>
           <div class="laboratory-running-modal__hint muted">
             <span>点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。</span>
             <span v-if="runningExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
@@ -423,8 +498,9 @@
           <div v-if="completePromptVisible" class="laboratory-running-complete-prompt" data-testid="laboratory-complete-prompt">
             <p><strong>任务编号</strong> {{ runningExperiment.taskCode }}</p>
             <p><strong>实验名称</strong> {{ runningExperiment.experimentName }}</p>
-            <p><strong>托盘</strong> {{ runningExperiment.trayCodes.join("、") || "-" }}</p>
-            <p><strong>样品</strong> {{ runningExperiment.sampleCodes.join("、") || "-" }}</p>
+            <p><strong>托盘</strong> {{ runningExperiment.trayCodes.length }} 个</p>
+            <p><strong>样品</strong> {{ runningExperiment.sampleCodes.length }} 个</p>
+            <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
             <p>确认后将把当前盐雾实验更新为实验已完成。</p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
@@ -447,7 +523,12 @@ defineOptions({
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import { computed, ref } from "vue";
 import { useLaboratoryPage } from "./useLaboratoryPage";
+
+const TASK_TRAY_PREVIEW_LIMIT = 3;
+const RUNNING_TRAY_PREVIEW_LIMIT = 3;
+const RUNNING_SAMPLE_PREVIEW_LIMIT = 5;
 
 const {
   actionState,
@@ -511,6 +592,52 @@ const {
   submitCompareScan,
   taskListModalOpen,
 } = useLaboratoryPage();
+
+const fullContentModalOpen = ref(false);
+const fullContentDetail = ref(null);
+
+const previewItems = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
+const overflowCount = (items, limit) => Math.max(0, (Array.isArray(items) ? items.length : 0) - limit);
+const uniqueValues = (items) => Array.from(new Set((Array.isArray(items) ? items : []).map((item) => String(item || "").trim()).filter(Boolean)));
+
+const buildFullContentDetail = ({ experimentName, sampleCount, taskCode, trayRows }) => {
+  const rows = Array.isArray(trayRows) ? trayRows : [];
+  return {
+    experimentName: String(experimentName || "").trim(),
+    sampleCodes: uniqueValues(rows.flatMap((row) => (Array.isArray(row?.sampleCodes) ? row.sampleCodes : []))),
+    sampleCount: Number.isFinite(Number(sampleCount)) ? Number(sampleCount) : 0,
+    taskCode: String(taskCode || "").trim(),
+    trayRows: rows,
+  };
+};
+
+const openTaskRowFullContent = (row) => {
+  fullContentDetail.value = buildFullContentDetail({
+    experimentName: row?.experimentName,
+    sampleCount: row?.sampleCount,
+    taskCode: row?.taskCode,
+    trayRows: row?.trayRows,
+  });
+  fullContentModalOpen.value = true;
+};
+
+const runningFullContent = computed(() =>
+  buildFullContentDetail({
+    experimentName: runningExperiment.value?.experimentName,
+    sampleCount: runningExperiment.value?.sampleCodes?.length || 0,
+    taskCode: runningExperiment.value?.taskCode,
+    trayRows: runningExperiment.value?.trayRows,
+  })
+);
+
+const openRunningFullContent = () => {
+  fullContentDetail.value = runningFullContent.value;
+  fullContentModalOpen.value = true;
+};
+
+const closeFullContentModal = () => {
+  fullContentModalOpen.value = false;
+};
 
 const formatFlowTime = (value) => {
   const normalized = String(value || "").trim();

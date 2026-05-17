@@ -159,7 +159,7 @@
                 }"
               >
                 <button
-                  v-for="trayCode in selectedTaskDetail.trayCodes"
+                  v-for="trayCode in previewTrayCodes"
                   :key="trayCode"
                   class="process-task-tray-chip process-task-tray-chip-emphasis"
                   :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === trayCode }"
@@ -168,6 +168,16 @@
                   @click="selectTaskTray(trayCode)"
                 >
                   {{ trayCode }}
+                </button>
+                <span v-if="hiddenTrayCodeCount > 0" class="process-task-more-count">+{{ hiddenTrayCodeCount }}</span>
+                <button
+                  v-if="hiddenTrayCodeCount > 0"
+                  class="process-task-more-button"
+                  data-testid="process-show-all-trays"
+                  type="button"
+                  @click="openTaskFullList"
+                >
+                  查看全部
                 </button>
               </div>
             </section>
@@ -180,12 +190,16 @@
                 data-testid="process-selected-tray-sample-list"
               >
                 <div
-                  v-for="sampleCode in selectedTaskDetail.selectedTraySummary.sampleCodes"
+                  v-for="sampleCode in previewSelectedSampleCodes"
                   :key="sampleCode"
                   class="process-task-sample-code-row"
                   :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
                 >
                   {{ sampleCode }}
+                </div>
+                <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
+                  <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
+                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
                 </div>
               </div>
               <div v-else class="muted">当前托盘暂无样品编号。</div>
@@ -200,7 +214,7 @@
               <div class="process-task-summary-title">当前实验托盘</div>
               <div v-if="selectedTaskDetail?.runningTrayRows?.length" class="process-task-tray-list">
                 <button
-                  v-for="tray in selectedTaskDetail.runningTrayRows"
+                  v-for="tray in previewRunningTrayRows"
                   :key="tray.trayCode"
                   class="process-task-tray-row"
                   :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
@@ -212,6 +226,10 @@
                   <span>{{ tray.status }}</span>
                   <span>{{ tray.sampleSummary }}</span>
                 </button>
+                <div v-if="hiddenRunningTrayCount > 0" class="process-task-more-line">
+                  <span class="process-task-more-count">+{{ hiddenRunningTrayCount }}</span>
+                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+                </div>
               </div>
               <div v-else class="muted">当前无实验进行中托盘。</div>
             </section>
@@ -220,7 +238,7 @@
               <div class="process-task-summary-title">待下一轮托盘</div>
               <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list">
                 <button
-                  v-for="tray in selectedTaskDetail.remainingTrayRows"
+                  v-for="tray in previewRemainingTrayRows"
                   :key="tray.trayCode"
                   class="process-task-tray-row"
                   :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
@@ -232,6 +250,10 @@
                   <span>{{ tray.status }}</span>
                   <span>{{ tray.sampleSummary }}</span>
                 </button>
+                <div v-if="hiddenRemainingTrayCount > 0" class="process-task-more-line">
+                  <span class="process-task-more-count">+{{ hiddenRemainingTrayCount }}</span>
+                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+                </div>
               </div>
               <div v-else class="muted">当前无待下一轮托盘。</div>
             </section>
@@ -264,6 +286,44 @@
             </ol>
           </section>
         </aside>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal process-task-full-modal" :class="{ 'is-open': taskFullListOpen }" data-testid="process-task-full-list-modal">
+    <div class="modal-backdrop" @click="closeTaskFullList"></div>
+    <div class="modal-content process-task-full-modal-content">
+      <div class="modal-header process-task-modal-header">
+        <div>
+          <div class="muted process-task-modal-eyebrow">完整清单</div>
+          <strong>全部托盘与样品</strong>
+        </div>
+        <button class="modal-close" type="button" @click="closeTaskFullList">关闭</button>
+      </div>
+      <div class="process-task-full-summary">
+        <span>任务编号：{{ selectedTaskDetail?.code || "-" }}</span>
+        <span>托盘：{{ allTaskTrayRows.length }}</span>
+        <span>样品：{{ allTaskSampleCount }}</span>
+      </div>
+      <div class="process-task-full-list">
+        <button
+          v-for="tray in allTaskTrayRows"
+          :key="tray.trayCode"
+          class="process-task-full-row"
+          :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
+          type="button"
+          :data-testid="`process-full-tray-row-${tray.trayCode}`"
+          @click="selectTaskTray(tray.trayCode)"
+        >
+          <div>
+            <strong>{{ tray.trayCode }}</strong>
+            <span>{{ tray.status || tray.flowStatus || "-" }}</span>
+          </div>
+          <div class="process-task-full-samples">
+            <span v-for="sampleCode in tray.sampleCodes || []" :key="`${tray.trayCode}-${sampleCode}`">{{ sampleCode }}</span>
+            <span v-if="!(tray.sampleCodes || []).length" class="muted">暂无样品编号</span>
+          </div>
+        </button>
       </div>
     </div>
   </div>
@@ -302,7 +362,7 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { PROCESS_FILTERS, useProcessLabs } from "./useProcessLabs";
@@ -341,6 +401,63 @@ const summaryItems = computed(() => [
   { count: scheduledCount.value, key: PROCESS_FILTERS.scheduled, label: "已排程" },
   { count: idleCount.value, key: PROCESS_FILTERS.idle, label: "空闲" },
 ]);
+
+const TASK_TRAY_PREVIEW_LIMIT = 5;
+const TASK_ROW_PREVIEW_LIMIT = 3;
+const TASK_SAMPLE_PREVIEW_LIMIT = 5;
+const taskFullListOpen = ref(false);
+
+const takePreview = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
+const hiddenCount = (items, limit) => Math.max(0, (Array.isArray(items) ? items.length : 0) - limit);
+
+const previewTrayCodes = computed(() => takePreview(selectedTaskDetail.value?.trayCodes, TASK_TRAY_PREVIEW_LIMIT));
+const hiddenTrayCodeCount = computed(() => hiddenCount(selectedTaskDetail.value?.trayCodes, TASK_TRAY_PREVIEW_LIMIT));
+const previewSelectedSampleCodes = computed(() => takePreview(selectedTaskDetail.value?.selectedTraySummary?.sampleCodes, TASK_SAMPLE_PREVIEW_LIMIT));
+const hiddenSelectedSampleCount = computed(() => hiddenCount(selectedTaskDetail.value?.selectedTraySummary?.sampleCodes, TASK_SAMPLE_PREVIEW_LIMIT));
+const previewRunningTrayRows = computed(() => takePreview(selectedTaskDetail.value?.runningTrayRows, TASK_ROW_PREVIEW_LIMIT));
+const hiddenRunningTrayCount = computed(() => hiddenCount(selectedTaskDetail.value?.runningTrayRows, TASK_ROW_PREVIEW_LIMIT));
+const previewRemainingTrayRows = computed(() => takePreview(selectedTaskDetail.value?.remainingTrayRows, TASK_ROW_PREVIEW_LIMIT));
+const hiddenRemainingTrayCount = computed(() => hiddenCount(selectedTaskDetail.value?.remainingTrayRows, TASK_ROW_PREVIEW_LIMIT));
+
+const allTaskTrayRows = computed(() => {
+  const detail = selectedTaskDetail.value || {};
+  const rows = Array.isArray(detail.trayRows) && detail.trayRows.length
+    ? detail.trayRows
+    : [
+        ...(Array.isArray(detail.runningTrayRows) ? detail.runningTrayRows : []),
+        ...(Array.isArray(detail.remainingTrayRows) ? detail.remainingTrayRows : []),
+        ...(Array.isArray(detail.completedTrayRows) ? detail.completedTrayRows : []),
+      ];
+  const seen = new Set();
+  return rows.filter((row) => {
+    const trayCode = String(row?.trayCode || "").trim();
+    if (!trayCode || seen.has(trayCode)) {
+      return false;
+    }
+    seen.add(trayCode);
+    return true;
+  });
+});
+const allTaskSampleCount = computed(() => {
+  const samples = new Set();
+  allTaskTrayRows.value.forEach((row) => {
+    (Array.isArray(row.sampleCodes) ? row.sampleCodes : []).forEach((sampleCode) => {
+      const normalized = String(sampleCode || "").trim();
+      if (normalized) {
+        samples.add(normalized);
+      }
+    });
+  });
+  return samples.size;
+});
+
+const openTaskFullList = () => {
+  taskFullListOpen.value = true;
+};
+
+const closeTaskFullList = () => {
+  taskFullListOpen.value = false;
+};
 
 const formatFlowTime = (value) => {
   const normalized = String(value || "").trim();
@@ -558,6 +675,40 @@ const formatFlowTime = (value) => {
   word-break: break-all;
 }
 
+.process-task-more-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.process-task-more-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(14, 116, 144, 0.08);
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.process-task-more-button {
+  appearance: none;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(14, 116, 144, 0.28);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .process-task-sample-hint {
   margin-top: 12px;
   font-size: 12px;
@@ -637,6 +788,84 @@ const formatFlowTime = (value) => {
 .process-task-tray-row span {
   font-size: 12px;
   color: var(--muted);
+}
+
+.process-task-full-modal-content {
+  width: min(980px, 94vw);
+  max-height: min(760px, 86vh);
+  overflow: auto;
+  padding: 22px;
+}
+
+.process-task-full-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.process-task-full-summary span {
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 6px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.process-task-full-list {
+  display: grid;
+  gap: 10px;
+}
+
+.process-task-full-row {
+  appearance: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.process-task-full-row.is-selected {
+  border-color: rgba(14, 116, 144, 0.65);
+  box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.12);
+}
+
+.process-task-full-row strong,
+.process-task-full-row span {
+  display: block;
+}
+
+.process-task-full-row strong {
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.process-task-full-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-task-full-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.process-task-full-samples span {
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+  padding: 5px 9px;
+  color: var(--text);
+  font-weight: 600;
+  word-break: break-all;
 }
 
 .process-task-flow-card {

@@ -227,6 +227,83 @@ def validate_sample_count(value: Any) -> str:
     return str(parsed)
 
 
+def task_sample_code(task_code_value: str, index: int) -> str:
+    return f"{task_code_value}-SP-{index:03d}"
+
+
+def sample_sort_key(sample: dict[str, Any]) -> tuple[int, str, str]:
+    code = normalize_text(sample.get("code"))
+    matched = re.search(r"-SP-(\d+)$", code)
+    serial = int(matched.group(1)) if matched else MAX_SAMPLE_COUNT + 1
+    return (serial, code, normalize_text(sample.get("id")))
+
+
+def build_task_sample(task: dict[str, Any], code: str) -> dict[str, Any]:
+    return {
+        "id": code,
+        "code": code,
+        "task_code": task_code(task),
+        "sample_type": normalize_text(task.get("sample_type")),
+        "batch_no": "",
+        "arrival_at": normalize_text(task.get("arrival_at")),
+        "quantity": "1",
+        "storage_condition": "",
+        "barcode": "",
+        "remark": "",
+        "location": "",
+        "owner": "",
+        "status": "运输中",
+        "flow_status": "运输中",
+        "trays": [],
+        "history": [],
+    }
+
+
+def migrate_task_sample_code(sample: dict[str, Any], previous_task_code: str, next_task_code: str) -> None:
+    if not previous_task_code or previous_task_code == next_task_code:
+        return
+    sample["task_code"] = next_task_code
+    matched = re.fullmatch(rf"{re.escape(previous_task_code)}-SP-(\d{{3}})", normalize_text(sample.get("code")))
+    if matched:
+        sample["code"] = task_sample_code(next_task_code, int(matched.group(1)))
+        if normalize_text(sample.get("id")) == f"{previous_task_code}-SP-{matched.group(1)}":
+            sample["id"] = sample["code"]
+
+
+def sync_task_samples(samples: list[dict[str, Any]], task: dict[str, Any], previous_task_code: str = "") -> list[dict[str, Any]]:
+    next_task_code = task_code(task)
+    if not next_task_code:
+        return [dict(sample) for sample in samples]
+    planned_count = parse_int(task.get("sample_count"))
+    if planned_count <= 0:
+        return [dict(sample) for sample in samples if sample_task_code(dict(sample)) != next_task_code]
+
+    old_task_code = normalize_text(previous_task_code) or next_task_code
+    normalized_samples = [dict(sample) for sample in samples]
+    for sample in normalized_samples:
+        if sample_task_code(sample) == old_task_code:
+            migrate_task_sample_code(sample, old_task_code, next_task_code)
+
+    related_samples = sorted(
+        [sample for sample in normalized_samples if sample_task_code(sample) == next_task_code],
+        key=sample_sort_key,
+    )
+    other_samples = [sample for sample in normalized_samples if sample_task_code(sample) != next_task_code]
+    next_samples = other_samples + related_samples[:planned_count]
+    existing_codes = {normalize_text(sample.get("code")) for sample in next_samples if normalize_text(sample.get("code"))}
+
+    serial = 1
+    while len(next_samples) - len(other_samples) < planned_count:
+        code = task_sample_code(next_task_code, serial)
+        serial += 1
+        if code in existing_codes:
+            continue
+        next_samples.append(build_task_sample(task, code))
+        existing_codes.add(code)
+
+    return next_samples
+
+
 def collect_unique_texts(*values: Any) -> list[str]:
     collected: list[str] = []
     for value in values:
@@ -265,7 +342,6 @@ def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dic
         *split_experiment_summary(task.get("test_type")),
         *(experiment.get("experiment_name") for experiment in existing_list),
         *split_experiment_summary(task.get("required_device")),
-        task.get("name"),
     )
 
 
@@ -385,6 +461,7 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     next_experiments = persist_task_experiments(next_task)
     tasks.insert(0, next_task)
     snapshot["mes.tasks"] = tasks
+    snapshot["mes.samples"] = sync_task_samples([dict(sample) for sample in snapshot.get("mes.samples", [])], next_task)
     snapshot["mes.experiments"] = experiments + next_experiments
     storage.write_many(snapshot)
     return next_task
@@ -434,6 +511,11 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         )
     tasks[task_index] = updated_task
     snapshot["mes.tasks"] = tasks
+    snapshot["mes.samples"] = sync_task_samples(
+        [dict(sample) for sample in snapshot.get("mes.samples", [])],
+        updated_task,
+        previous_task_code,
+    )
     snapshot["mes.experiments"] = [
         experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) != previous_task_code
     ] + next_experiments

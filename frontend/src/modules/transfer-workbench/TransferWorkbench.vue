@@ -192,7 +192,6 @@
           </div>
 
           <div class="card transfer-overview-pagination">
-            <div class="muted">第 {{ currentTaskPage }} / {{ taskPageCount }} 页，共 {{ filteredTaskOverview.length }} 条任务</div>
             <AppPagination :current-page="currentTaskPage" :page-count="taskPageCount" @change="setTaskPage" />
           </div>
         </section>

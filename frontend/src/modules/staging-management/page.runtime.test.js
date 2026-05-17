@@ -107,6 +107,46 @@ const createSnapshot = () => ({
   ],
 });
 
+const createTrayFixture = (sequence, { status = "送至暂存间", quantity = 1 } = {}) => {
+  const paddedSequence = String(sequence).padStart(3, "0");
+  const taskCode = `SYLU-2026-04-${paddedSequence}`;
+  const trayCode = `${taskCode}-TP-001`;
+
+  return {
+    sample: {
+      id: `sample-${paddedSequence}`,
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: `测试员${paddedSequence}`,
+      location: "恒温恒湿间（暂存间）",
+      status,
+      trays: [{ tray_code: trayCode, status, quantity }],
+    },
+    task: {
+      id: `task-${paddedSequence}`,
+      code: taskCode,
+      test_type: "回归测试",
+      sample_type: "组件",
+      source: "内部新增",
+    },
+  };
+};
+
+const withExtraTrayFixtures = (snapshot, fixtures) => {
+  const createdFixtures = fixtures.map((fixture) => createTrayFixture(fixture.sequence, fixture));
+  return {
+    ...snapshot,
+    [STORAGE_KEYS.tasks]: [
+      ...snapshot[STORAGE_KEYS.tasks],
+      ...createdFixtures.map((fixture) => fixture.task),
+    ],
+    [STORAGE_KEYS.samples]: [
+      ...snapshot[STORAGE_KEYS.samples],
+      ...createdFixtures.map((fixture) => fixture.sample),
+    ],
+  };
+};
+
 const mountPage = async () => {
   headerActions = document.createElement("div");
   headerActions.className = "header-actions";
@@ -177,7 +217,7 @@ describe("StagingManagementPage runtime", () => {
     vi.useRealTimers();
   });
 
-  test("renders real SYLU task codes in the two-column tray panel and paginates extra trays", async () => {
+  test("renders real SYLU task codes in the two-column tray panel", async () => {
     const mounted = await mountPage();
 
     expect(mounted.text()).toContain("SYLU-2026-04-101");
@@ -185,12 +225,8 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.text()).toContain("今日已入库1");
     expect(mounted.text()).toContain("今日已出库1");
     expect(mounted.findAll('[data-testid="zancun-current-staging-row"]')).toHaveLength(1);
-    expect(mounted.findAll('[data-testid="zancun-planned-inbound-row"]')).toHaveLength(3);
+    expect(mounted.findAll('[data-testid="zancun-planned-inbound-row"]')).toHaveLength(4);
     expect(mounted.text()).toContain("SYLU-2026-04-105-TP-001");
-    expect(mounted.text()).not.toContain("SYLU-2026-04-106-TP-001");
-
-    await mounted.get('[data-testid="zancun-console-next-page"]').trigger("click");
-
     expect(mounted.text()).toContain("SYLU-2026-04-106-TP-001");
   });
 
@@ -205,6 +241,79 @@ describe("StagingManagementPage runtime", () => {
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-102-TP-001");
     expect(currentColumn.text()).toContain("SYLU-2026-04-102-TP-001");
     expect(currentColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
+  });
+
+  test("inventory column totals are counted from all filtered rows instead of the visible page", async () => {
+    remoteSnapshot = withExtraTrayFixtures(createSnapshot(), [
+      { sequence: 107, status: "送至暂存间" },
+      { sequence: 108, status: "送至暂存间" },
+      { sequence: 109, status: "已到达暂存间" },
+      { sequence: 110, status: "已到达暂存间" },
+    ]);
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] .pill').text()).toBe("当前在库 3");
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] .pill').text()).toBe("待入库 6");
+  });
+
+  test("inventory columns render five fixed slots with empty placeholders on short pages", async () => {
+    const mounted = await mountPage();
+    const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
+    const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
+
+    expect(currentColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+  });
+
+  test("current staging and planned inbound lists paginate independently", async () => {
+    remoteSnapshot = withExtraTrayFixtures(createSnapshot(), [
+      { sequence: 107, status: "送至暂存间" },
+      { sequence: 108, status: "送至暂存间" },
+      { sequence: 109, status: "已到达暂存间" },
+      { sequence: 110, status: "已到达暂存间" },
+      { sequence: 111, status: "已到达暂存间" },
+      { sequence: 112, status: "已到达暂存间" },
+      { sequence: 113, status: "已到达暂存间" },
+    ]);
+    const mounted = await mountPage();
+    const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
+    const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
+
+    expect(currentColumn.text()).toContain("SYLU-2026-04-112-TP-001");
+    expect(currentColumn.text()).not.toContain("SYLU-2026-04-113-TP-001");
+    expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
+    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
+
+    await currentColumn.get('[data-testid="zancun-current-staging-pagination"] [data-page="next"]').trigger("click");
+
+    expect(currentColumn.text()).toContain("SYLU-2026-04-113-TP-001");
+    expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
+    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
+
+    await plannedColumn.get('[data-testid="zancun-planned-inbound-pagination"] [data-page="next"]').trigger("click");
+
+    expect(plannedColumn.text()).toContain("SYLU-2026-04-108-TP-001");
+    expect(currentColumn.text()).toContain("SYLU-2026-04-113-TP-001");
+  });
+
+  test("planned inbound list backfills from the next page after one tray is stocked in", async () => {
+    remoteSnapshot = withExtraTrayFixtures(createSnapshot(), [
+      { sequence: 107, status: "送至暂存间" },
+      { sequence: 108, status: "送至暂存间" },
+    ]);
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"]').text()).not.toContain("SYLU-2026-04-108-TP-001");
+
+    await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
+    expect(plannedColumn.text()).toContain("SYLU-2026-04-108-TP-001");
   });
 
   test("clicking KPI cards filters the inventory columns without opening scan modals", async () => {

@@ -101,3 +101,54 @@
 .tasks-edit-form {
   margin-bottom: 14px;
 }
+
+.tasks-intake-modal .modal-content,
+.tasks-task-detail-modal .modal-content {
+  width: min(1040px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.tasks-sample-codes-modal .modal-content {
+  width: min(760px, 92vw);
+}
+
+.tasks-sample-preview {
+  min-width: 0;
+}
+
+.tasks-sample-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.tasks-sample-preview__list {
+  display: grid;
+  gap: 6px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.9);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.tasks-sample-preview__list span {
+  overflow-wrap: anywhere;
+}
+
+.tasks-sample-codes-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.tasks-sample-codes-editor__textarea {
+  min-height: 220px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  line-height: 1.5;
+}

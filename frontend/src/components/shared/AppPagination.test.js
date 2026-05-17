@@ -4,22 +4,25 @@ import { describe, expect, test } from "vitest";
 import AppPagination from "./AppPagination.vue";
 
 describe("AppPagination", () => {
-  test("renders active and disabled pagination states", () => {
+  test("renders compact page status without individual page buttons", () => {
     const wrapper = mount(AppPagination, {
       props: {
-        currentPage: 1,
-        pageCount: 3,
+        currentPage: 4,
+        pageCount: 12,
       },
     });
 
-    const previousButton = wrapper.get('button[data-page="prev"]');
-    const currentButton = wrapper.get('button[data-page="1"]');
-
-    expect(previousButton.attributes("disabled")).toBeDefined();
-    expect(currentButton.classes()).toContain("active");
+    expect(wrapper.text()).toContain("第 4 / 12 页");
+    expect(wrapper.get('button[data-page="prev"]').text()).toBe("‹");
+    expect(wrapper.get('button[data-page="next"]').text()).toBe("›");
+    expect(wrapper.get('button[data-page="prev"]').attributes("aria-label")).toBe("上一页");
+    expect(wrapper.get('button[data-page="next"]').attributes("aria-label")).toBe("下一页");
+    expect(wrapper.find('button[data-page="4"]').exists()).toBe(false);
+    expect(wrapper.find('[data-page="ellipsis"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pagination-jump-input"]').exists()).toBe(true);
   });
 
-  test("emits page change when a target page is clicked", async () => {
+  test("emits previous and next page changes", async () => {
     const wrapper = mount(AppPagination, {
       props: {
         currentPage: 2,
@@ -27,106 +30,63 @@ describe("AppPagination", () => {
       },
     });
 
-    await wrapper.get('button[data-page="3"]').trigger("click");
+    await wrapper.get('button[data-page="prev"]').trigger("click");
+    await wrapper.get('button[data-page="next"]').trigger("click");
 
-    expect(wrapper.emitted("change")).toEqual([[3]]);
+    expect(wrapper.emitted("change")).toEqual([[1], [3]]);
   });
 
-  test("uses ellipsis when page count reaches ten", () => {
-    const wrapper = mount(AppPagination, {
+  test("disables step buttons at the edges", () => {
+    const firstPage = mount(AppPagination, {
       props: {
-        currentPage: 5,
-        pageCount: 10,
+        currentPage: 1,
+        pageCount: 3,
+      },
+    });
+    const lastPage = mount(AppPagination, {
+      props: {
+        currentPage: 3,
+        pageCount: 3,
       },
     });
 
-    expect(wrapper.findAll("button[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "4",
-      "5",
-      "6",
-      "10",
-      "next",
-    ]);
-    expect(wrapper.findAll('[data-page="ellipsis"]')).toHaveLength(2);
+    expect(firstPage.get('button[data-page="prev"]').attributes("disabled")).toBeDefined();
+    expect(lastPage.get('button[data-page="next"]').attributes("disabled")).toBeDefined();
   });
 
-  test("uses ellipsis when page count reaches seven and keeps page slots stable near the end", async () => {
+  test("jumps to a typed page and clamps out-of-range values", async () => {
     const wrapper = mount(AppPagination, {
       props: {
-        currentPage: 7,
-        pageCount: 7,
+        currentPage: 4,
+        pageCount: 12,
       },
     });
 
-    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "ellipsis",
-      "4",
-      "5",
-      "6",
-      "7",
-      "next",
-    ]);
+    await wrapper.get('[data-testid="pagination-jump-input"]').setValue("8");
+    await wrapper.get('[data-testid="pagination-jump-submit"]').trigger("click");
+    await wrapper.get('[data-testid="pagination-jump-input"]').setValue("99");
+    await wrapper.get('[data-testid="pagination-jump-submit"]').trigger("click");
 
-    await wrapper.setProps({ currentPage: 6 });
-
-    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "ellipsis",
-      "4",
-      "5",
-      "6",
-      "7",
-      "next",
-    ]);
+    expect(wrapper.emitted("change")).toEqual([[8], [12]]);
   });
 
-  test("uses ellipsis around a compact current window for long pagination", () => {
+  test("submits jump input with Enter and syncs when current page changes", async () => {
     const wrapper = mount(AppPagination, {
       props: {
-        currentPage: 15,
-        pageCount: 23,
+        currentPage: 4,
+        pageCount: 12,
       },
     });
 
-    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "ellipsis",
-      "14",
-      "15",
-      "16",
-      "ellipsis",
-      "23",
-      "next",
-    ]);
+    await wrapper.get('[data-testid="pagination-jump-input"]').setValue("6");
+    await wrapper.get('[data-testid="pagination-jump-input"]').trigger("keydown.enter");
+    await wrapper.setProps({ currentPage: 7 });
+
+    expect(wrapper.emitted("change")).toEqual([[6]]);
+    expect(wrapper.get('[data-testid="pagination-jump-input"]').element.value).toBe("7");
   });
 
-  test("collapses the trailing ellipsis near the final page", () => {
-    const wrapper = mount(AppPagination, {
-      props: {
-        currentPage: 21,
-        pageCount: 23,
-      },
-    });
-
-    expect(wrapper.findAll("[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "ellipsis",
-      "20",
-      "21",
-      "22",
-      "23",
-      "next",
-    ]);
-  });
-
-  test("can render numbers only while keeping ellipsis behavior", () => {
+  test("can hide step controls while keeping status and jump controls", () => {
     const wrapper = mount(AppPagination, {
       props: {
         currentPage: 5,
@@ -137,13 +97,7 @@ describe("AppPagination", () => {
 
     expect(wrapper.find('[data-page="prev"]').exists()).toBe(false);
     expect(wrapper.find('[data-page="next"]').exists()).toBe(false);
-    expect(wrapper.findAll("button[data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "1",
-      "4",
-      "5",
-      "6",
-      "10",
-    ]);
-    expect(wrapper.findAll('[data-page="ellipsis"]')).toHaveLength(2);
+    expect(wrapper.text()).toContain("第 5 / 10 页");
+    expect(wrapper.find('[data-testid="pagination-jump-input"]').exists()).toBe(true);
   });
 });

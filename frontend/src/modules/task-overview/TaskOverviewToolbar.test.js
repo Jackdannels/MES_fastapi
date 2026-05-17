@@ -83,7 +83,7 @@ describe("TaskOverviewToolbar", () => {
 
   test("defers keyword updates until composition ends and trims the committed value", async () => {
     const wrapper = mountToolbar();
-    const input = wrapper.find('input[placeholder="按任务编号、任务类型或样品编号筛选"]');
+    const input = wrapper.find('input[placeholder="按任务编号、试验内容或样品编号筛选"]');
 
     await input.trigger("compositionstart");
     input.element.value = " TASK-001 ";
@@ -120,7 +120,10 @@ describe("TaskOverviewToolbar", () => {
     expect(wrapper.find(".task-overview-toolbar-pagination").exists()).toBe(true);
     expect(wrapper.find(".task-overview-actions .task-list-pagination").exists()).toBe(true);
 
-    await wrapper.find('.task-overview-toolbar-pagination [data-page="3"]').trigger("click");
+    expect(wrapper.get('.task-overview-toolbar-pagination [data-testid="pagination-status"]').text()).toBe("第 2 / 4 页");
+
+    await wrapper.get('.task-overview-toolbar-pagination [data-testid="pagination-jump-input"]').setValue("3");
+    await wrapper.get('.task-overview-toolbar-pagination [data-testid="pagination-jump-submit"]').trigger("click");
 
     expect(wrapper.emitted("change-task-page")).toEqual([[3]]);
   });
@@ -133,7 +136,7 @@ describe("TaskOverviewToolbar", () => {
     });
 
     const inputs = wrapper.findAll('input[type="date"]');
-    await wrapper.find('input[placeholder="按任务编号、任务类型或样品编号筛选"]').setValue(" TASK-001 ");
+    await wrapper.find('input[placeholder="按任务编号、试验内容或样品编号筛选"]').setValue(" TASK-001 ");
     await wrapper.findAll("select.search-input")[1].setValue("振动试验");
     await inputs[0].setValue("2026-03-02");
     await inputs[1].setValue("2026-03-09");

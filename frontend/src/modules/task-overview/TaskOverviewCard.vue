@@ -21,11 +21,15 @@
             @click.stop="emit('open-edit', row)"
             @dblclick.stop
           >
-            {{ editing ? "收起编辑" : "编辑任务" }}
+            {{ editing ? "收起详情" : "查看详情" }}
           </button>
         </div>
         <div v-if="selected" class="task-overview-card-hint">
-          {{ editing ? "当前正处于编辑模式，请正确修改填写信息" : "已选中任务，双击可进入编辑" }}
+          已进入详情模式，所有信息只读
+        </div>
+        <div class="task-overview-readonly-meta">
+          <span>任务编号</span>
+          <strong>{{ row.taskCode || "-" }}</strong>
         </div>
         <TaskOverviewSummaryTable :format-tray-count="formatTrayCount" :format-tray-summary="formatTraySummary" :row="row" />
       </div>
@@ -37,17 +41,11 @@
         :edit-error="editError"
         :edit-form="editForm"
         :edit-message="editMessage"
+        readonly
         :row="row"
         :saving="saving"
         :task-type-edit-options="taskTypeEditOptions"
         @cancel-edit="emit('cancel-edit')"
-        @clear-edit-feedback="emit('clear-edit-feedback')"
-        @confirm-delete="emit('confirm-delete', $event)"
-        @generate-codes="emit('generate-codes')"
-        @request-delete="emit('request-delete', $event)"
-        @reset-delete-confirm="emit('reset-delete-confirm')"
-        @save-edit="emit('save-edit', $event)"
-        @update-edit-form="emit('update-edit-form', $event)"
       />
 
       <TaskOverviewSampleCodes :sample-codes="row.sampleCodes" />
@@ -76,8 +74,10 @@ defineProps({
   editForm: {
     type: Object,
     default: () => ({
+      experiments: [],
       sampleCodesText: "",
       sampleCount: 0,
+      taskCode: "",
       taskType: "",
     }),
   },
@@ -121,15 +121,8 @@ defineProps({
 
 const emit = defineEmits([
   "cancel-edit",
-  "clear-edit-feedback",
-  "confirm-delete",
   "dblclick-card",
-  "generate-codes",
   "open-edit",
-  "request-delete",
-  "reset-delete-confirm",
-  "save-edit",
   "select",
-  "update-edit-form",
 ]);
 </script>

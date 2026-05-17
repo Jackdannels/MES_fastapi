@@ -298,7 +298,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(0);
   });
 
-  test("renders task rows, filters visible tasks, and opens the task drawer from API data", async () => {
+  test("renders task rows, filters visible tasks, and opens the centered task detail modal from API data", async () => {
     installApiFetchMock({
       tasks: [
         createTask(),
@@ -333,8 +333,48 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
 
-    expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
+    expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-detail-modal"].modal.is-open').exists()).toBe(true);
     expect(wrapper.text()).toContain("任务详情");
+  });
+
+  test("shows five sample codes in task detail and edits sample codes in a separate modal", async () => {
+    const { state } = installApiFetchMock({
+      tasks: [createTask({ sample_count: 6 })],
+      samples: Array.from({ length: 6 }, (_, index) => ({
+        id: `sample-${index + 1}`,
+        code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
+        task_code: "SYLU-2026-03-001",
+        status: "样品运输中",
+      })),
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+
+    const preview = wrapper.get('[data-testid="task-detail-sample-code-preview"]');
+    expect(preview.text()).toContain("SYLU-2026-03-001-SP-001");
+    expect(preview.text()).toContain("SYLU-2026-03-001-SP-005");
+    expect(preview.text()).not.toContain("SYLU-2026-03-001-SP-006");
+
+    await wrapper.get('[data-testid="open-sample-codes-editor"]').trigger("click");
+    expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="task-sample-codes-textarea"]').setValue(
+      "SYLU-2026-03-001-SP-101\nSYLU-2026-03-001-SP-102",
+    );
+    await wrapper.get('[data-testid="task-sample-codes-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(state.samples.filter((sample) => sample.task_code === "SYLU-2026-03-001").map((sample) => sample.code)).toEqual([
+      "SYLU-2026-03-001-SP-101",
+      "SYLU-2026-03-001-SP-102",
+    ]);
+    expect(state.tasks[0].sample_count).toBe(2);
+    expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-101");
   });
 
   test("updates the sort arrow direction on repeated header clicks", async () => {
@@ -840,7 +880,7 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await settle(wrapper);
 
-    const drawerArrivalInput = wrapper.find(".drawer input[name='arrival_at']");
+    const drawerArrivalInput = wrapper.find('[data-testid="task-detail-modal"] input[name="arrival_at"]');
     expect(drawerArrivalInput.element.readOnly).toBe(true);
   });
 
@@ -1704,7 +1744,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.find('[data-testid="task-reset-modal"]').exists()).toBe(true);
   });
 
-  test("sample update event reloads tasks and refreshes the open drawer arrival time", async () => {
+  test("sample update event reloads tasks and refreshes the open detail modal arrival time", async () => {
     let taskLoadCount = 0;
     const fetchMock = vi.fn((url) => {
       if (url === `${TASKS_ENDPOINT}?includeArchived=true`) {
@@ -1751,7 +1791,7 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await settle(wrapper);
 
-    const arrivalInput = () => wrapper.find(".drawer input[name='arrival_at']");
+    const arrivalInput = () => wrapper.find('[data-testid="task-detail-modal"] input[name="arrival_at"]');
     expect(arrivalInput().element.value).toBe("");
 
     window.dispatchEvent(new CustomEvent("mes:samples-updated"));

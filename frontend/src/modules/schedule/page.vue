@@ -587,7 +587,7 @@ const uiText = {
   afternoonSlot: "下午（12:00-18:00）",
   cancelConflictSchedule: "取消排程",
   changeRequest: "变更申请",
-  clear: "清空",
+  clear: "重置",
   conflictAlert: "冲突提醒",
   conflictCandidateLabel: "当前实验：",
   conflictList: "待解决冲突",

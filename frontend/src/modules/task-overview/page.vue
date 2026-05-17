@@ -42,20 +42,12 @@
         :format-tray-summary="formatTraySummary"
         :index="(currentTaskPage - 1) * 5 + index"
         :row="row"
-        :saving="savingTaskCode === row.taskCode"
         :selected="selectedTaskCode === row.taskCode"
         :task-type-edit-options="taskTypeEditOptions"
         @cancel-edit="cancelEdit"
-        @clear-edit-feedback="clearEditFeedback"
-        @confirm-delete="confirmDeleteTask"
         @dblclick-card="handleCardDblClick"
-        @generate-codes="generateCodesByCount"
         @open-edit="openEdit"
-        @request-delete="requestDeleteTask"
-        @reset-delete-confirm="resetDeleteConfirm"
-        @save-edit="saveEdit"
         @select="handleCardClick"
-        @update-edit-form="updateEditForm"
       />
     </div>
 
@@ -75,8 +67,6 @@ import { useTaskOverview } from "./useTaskOverview";
 
 const {
   cancelEdit,
-  clearEditFeedback,
-  confirmDeleteTask,
   customEndDate,
   customStartDate,
   deleteConfirm,
@@ -90,7 +80,6 @@ const {
   filteredTrayOverviewRows,
   formatTrayCount,
   formatTraySummary,
-  generateCodesByCount,
   handleCardClick,
   handleCardDblClick,
   isEditing,
@@ -105,10 +94,6 @@ const {
   currentTaskPage,
   cycleTaskScheduleFilterState,
   pagedRows,
-  requestDeleteTask,
-  resetDeleteConfirm,
-  saveEdit,
-  savingTaskCode,
   selectedTaskCode,
   setTaskPage,
   taskTypeEditOptions,
@@ -122,7 +107,6 @@ const {
   trayOverviewTotal,
   trayTaskFilter,
   trayTaskOptions,
-  updateEditForm,
   viewMode,
 } = useTaskOverview();
 </script>

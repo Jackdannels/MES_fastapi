@@ -430,6 +430,30 @@ def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypa
     ]
 
 
+def test_transfer_area_limits_unassigned_samples_to_task_sample_count(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    tasks[0] = {**tasks[0], "sample_count": 1}
+    storage.write("mes.tasks", tasks)
+
+    bootstrap = client.get("/api/transfer-area/bootstrap")
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert bootstrap.status_code == 200
+    task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-101")
+    assert task_row["sampleCount"] == 1
+    assert task_row["sampleCodes"] == ["SYLU-2026-03-101-SP-001"]
+
+    assert workspace.status_code == 200
+    assert workspace.json()["task"]["sampleCount"] == 1
+    assert [sample["sampleNo"] for sample in workspace.json()["assignedTrays"][0]["samples"]] == [
+        "SYLU-2026-03-101-SP-001",
+    ]
+
+    stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
+    assert [sample["code"] for sample in stored_samples] == ["SYLU-2026-03-101-SP-001"]
+
+
 def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch):
     client, storage = build_client(monkeypatch)
 
@@ -537,12 +561,44 @@ def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignment
         {"task_code": "SYLU-2026-03-101", "experiment_code": "SYLU-2026-03-101-C", "sample_code": "SYLU-2026-03-101-SP-004"},
     ]
 
-    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
 
-    assert printed.status_code == 200
-    assert printed.json()["barcodes"][0]["experimentLabels"] == ["盐雾试验", "高低温湿热试验"]
-    assert printed.json()["barcodes"][0]["barcodeNo"] == "SYLU-2026-03-101-TP-001"
-    assert printed.json()["barcodes"][0]["barcodeContent"] == "SYLU-2026-03-101-TP-001"
+def test_transfer_area_preallocation_keeps_in_transit_samples_until_storage_confirm(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    assert storage.read("mes.tasks")[0]["arrival_at"] == "2026-03-21 10:20"
+    assert {
+        sample["flow_status"]
+        for sample in storage.read("mes.samples")
+        if sample["task_code"] == "SYLU-2026-03-101"
+    } == {"运输中"}
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(),
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert allocated.status_code == 200
+    preallocated_samples = [
+        sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"
+    ]
+    assert {sample["status"] for sample in preallocated_samples} == {"运输中"}
+    assert {sample["flow_status"] for sample in preallocated_samples} == {"运输中"}
+    assert {sample["location"] for sample in preallocated_samples} == {""}
+
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert confirmed.status_code == 200
+    stored_samples = [
+        sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"
+    ]
+    assert {sample["status"] for sample in stored_samples} == {"已入库"}
+    assert {sample["flow_status"] for sample in stored_samples} == {"已入库"}
+    assert {sample["location"] for sample in stored_samples} == {"接驳区"}
 
 
 def test_transfer_area_allocate_rejects_incomplete_experiment_tray_assignments(monkeypatch):

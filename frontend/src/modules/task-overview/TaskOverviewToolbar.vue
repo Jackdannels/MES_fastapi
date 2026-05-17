@@ -59,7 +59,7 @@
       <input
         :value="keywordInput"
         class="search-input task-overview-search-input"
-        placeholder="按任务编号、任务类型或样品编号筛选"
+        placeholder="按任务编号、试验内容或样品编号筛选"
         @compositionend="handleCompositionEnd"
         @compositionstart="handleCompositionStart"
         @input="handleInput"

@@ -503,7 +503,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
-  test("pre-allocation overview renders page numbers between previous and next controls", async () => {
+  test("pre-allocation overview renders compact page status and jump controls", async () => {
     const bootstrapPayload = createBootstrapPayload();
     bootstrapPayload.taskOverview = Array.from({ length: 30 }, (_, index) => ({
       ...bootstrapPayload.taskOverview[0],
@@ -532,16 +532,9 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.find(".transfer-overview-pagination .task-list-pagination").exists()).toBe(true);
-    expect(wrapper.findAll(".transfer-overview-pagination [data-page]").map((node) => node.attributes("data-page"))).toEqual([
-      "prev",
-      "1",
-      "2",
-      "3",
-      "4",
-      "ellipsis",
-      "10",
-      "next",
-    ]);
+    expect(wrapper.findAll(".transfer-overview-pagination [data-page]").map((node) => node.attributes("data-page"))).toEqual(["prev", "next"]);
+    expect(wrapper.get('.transfer-overview-pagination [data-testid="pagination-status"]').text()).toBe("第 1 / 10 页");
+    expect(wrapper.find(".transfer-overview-pagination [data-testid='pagination-jump-input']").exists()).toBe(true);
   });
 
   test("assigns every experiment to the only tray after increasing tray limit to one-tray layout", async () => {

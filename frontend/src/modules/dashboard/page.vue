@@ -26,7 +26,7 @@
     </div>
   </section>
 
-  <section class="grid cols-3 section">
+  <section class="grid cols-3 section dashboard-main-grid">
     <div class="card">
       <div class="dashboard-task-header">
         <h3>任务队列</h3>
@@ -34,7 +34,6 @@
           <AppPagination
             :current-page="currentPage"
             :page-count="pageCount"
-            :show-step-controls="false"
             @change="setCurrentPage"
           />
         </div>

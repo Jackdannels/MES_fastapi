@@ -22,8 +22,16 @@ const mountCard = (props = {}) =>
       deleting: false,
       editError: "",
       editForm: {
+        experiments: [
+          {
+            experimentCode: "TASK-001-A",
+            experimentName: "A实验",
+            requiredDevice: "冲击试验",
+          },
+        ],
         sampleCodesText: "TASK-001-SP-001",
         sampleCount: 1,
+        taskCode: "TASK-001",
         taskType: "冲击试验",
       },
       editMessage: "",
@@ -40,19 +48,20 @@ const mountCard = (props = {}) =>
   });
 
 describe("TaskOverviewCard", () => {
-  test("emits card-level actions", async () => {
+  test("renders as a readonly detail card and emits selection actions", async () => {
     const wrapper = mountCard({ selected: true });
 
     await wrapper.trigger("click");
     await wrapper.trigger("dblclick");
-    await wrapper.find(".task-overview-edit-btn").trigger("click");
 
     expect(wrapper.emitted("select")).toEqual([[baseRow]]);
     expect(wrapper.emitted("dblclick-card")).toEqual([[baseRow]]);
-    expect(wrapper.emitted("open-edit")).toEqual([[baseRow]]);
+    expect(wrapper.find(".task-overview-edit-btn").exists()).toBe(true);
+    expect(wrapper.find(".task-overview-editor").exists()).toBe(false);
+    expect(wrapper.text()).toContain("已进入详情模式，所有信息只读");
   });
 
-  test("renders editor state and emits editor actions", async () => {
+  test("renders the old detail panel style as readonly when expanded", async () => {
     const wrapper = mountCard({
       deleteConfirm: {
         sampleCount: 2,
@@ -67,23 +76,16 @@ describe("TaskOverviewCard", () => {
       saving: false,
     });
 
-    await wrapper.find('button[title="generate-codes"]').trigger("click");
-    await wrapper.find('button[title="save-edit"]').trigger("click");
-    await wrapper.find('button[title="request-delete"]').trigger("click");
-    await wrapper.find('button[title="confirm-delete"]').trigger("click");
-    await wrapper.find('button[title="reset-delete-confirm"]').trigger("click");
-    await wrapper.find('button[title="cancel-edit"]').trigger("click");
-    await wrapper.find("select.search-input").setValue("振动试验");
-
     expect(wrapper.find(".task-overview-editor").exists()).toBe(true);
-    expect(wrapper.text()).toContain("字段错误");
-    expect(wrapper.text()).toContain("已保存");
-    expect(wrapper.emitted("generate-codes")).toEqual([[]]);
-    expect(wrapper.emitted("save-edit")).toEqual([["TASK-001"]]);
-    expect(wrapper.emitted("request-delete")).toEqual([["TASK-001"]]);
-    expect(wrapper.emitted("confirm-delete")).toEqual([["TASK-001"]]);
-    expect(wrapper.emitted("reset-delete-confirm")).toEqual([[]]);
-    expect(wrapper.emitted("cancel-edit")).toEqual([[]]);
-    expect(wrapper.emitted("update-edit-form")).toEqual([[{ taskType: "振动试验" }]]);
+    expect(wrapper.find(".task-overview-edit-btn").text()).toBe("收起详情");
+    expect(wrapper.find("select.search-input").exists()).toBe(false);
+    expect(wrapper.find('button[title="save-edit"]').exists()).toBe(false);
+    expect(wrapper.find('button[title="generate-codes"]').exists()).toBe(false);
+    expect(wrapper.find('button[title="request-delete"]').exists()).toBe(false);
+    expect(wrapper.find('input[readonly]').exists()).toBe(true);
+    expect(wrapper.find("textarea").element.readOnly).toBe(true);
+    expect(wrapper.text()).toContain("任务编号");
+    expect(wrapper.text()).not.toContain("字段错误");
+    expect(wrapper.text()).not.toContain("已保存");
   });
 });

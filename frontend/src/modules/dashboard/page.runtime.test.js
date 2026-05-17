@@ -90,10 +90,12 @@ describe("DashboardPage runtime", () => {
 
     const wrapper = mount(DashboardPage);
 
-    expect(wrapper.find('.dashboard-task-pagination [data-page="prev"]').exists()).toBe(false);
-    expect(wrapper.find('.dashboard-task-pagination [data-page="next"]').exists()).toBe(false);
+    expect(wrapper.find('.dashboard-task-pagination [data-page="prev"]').exists()).toBe(true);
+    expect(wrapper.find('.dashboard-task-pagination [data-page="next"]').exists()).toBe(true);
+    expect(wrapper.get('.dashboard-task-pagination [data-testid="pagination-status"]').text()).toBe("第 1 / 3 页");
 
-    await wrapper.get('.dashboard-task-pagination button[data-page="2"]').trigger("click");
+    await wrapper.get('.dashboard-task-pagination [data-testid="pagination-jump-input"]').setValue("2");
+    await wrapper.get('.dashboard-task-pagination [data-testid="pagination-jump-submit"]').trigger("click");
 
     expect(setCurrentPage).toHaveBeenCalledWith(2);
   });

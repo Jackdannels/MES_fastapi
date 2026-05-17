@@ -35,55 +35,43 @@
             data-testid="zancun-console-search"
             placeholder="筛选任务编号/托盘编号/责任人"
           />
-          <div class="zancun-console-pagination">
-            <button
-              class="action-btn secondary"
-              data-testid="zancun-console-prev-page"
-              type="button"
-              :disabled="overviewCurrentPage <= 1"
-              @click="setOverviewPage(overviewCurrentPage - 1)"
-            >
-              上一页
-            </button>
-            <span class="muted">第 {{ overviewCurrentPage }} / {{ overviewPageCount }} 页</span>
-            <button
-              class="action-btn secondary"
-              data-testid="zancun-console-next-page"
-              type="button"
-              :disabled="overviewCurrentPage >= overviewPageCount"
-              @click="setOverviewPage(overviewCurrentPage + 1)"
-            >
-              下一页
-            </button>
-          </div>
         </div>
 
         <div class="zancun-inventory-columns">
           <section class="zancun-inventory-column" data-testid="zancun-current-staging-column">
             <div class="zancun-inventory-column__head">
               <h4>暂存间样品</h4>
-              <span class="pill">当前在库 {{ currentStagingRows.length }}</span>
+              <span class="pill">当前在库 {{ currentStagingTotalCount }}</span>
+              <AppPagination
+                class="zancun-current-staging-pagination"
+                data-testid="zancun-current-staging-pagination"
+                :current-page="currentStagingCurrentPage"
+                :page-count="currentStagingPageCount"
+                @change="setCurrentStagingPage"
+              />
             </div>
             <div class="zancun-console-list">
               <div
-                v-for="row in currentStagingRows"
-                :key="row.id"
-                class="zancun-console-slot"
-                data-testid="zancun-current-staging-row"
+                v-for="slot in currentStagingSlots"
+                :key="slot.key"
+                :class="['zancun-console-slot', { 'zancun-console-slot--placeholder': !slot.row }]"
+                :data-testid="slot.row ? 'zancun-current-staging-row' : undefined"
               >
-                <div class="zancun-console-slot__main">
-                  <strong>{{ row.trayCode }}</strong>
-                  <span class="muted">{{ row.taskCode }}</span>
+                <template v-if="slot.row">
+                  <div class="zancun-console-slot__main">
+                    <strong>{{ slot.row.trayCode }}</strong>
+                    <span class="muted">{{ slot.row.taskCode }}</span>
+                  </div>
+                  <div class="zancun-console-slot__meta">
+                    <span>{{ slot.row.sampleType }}</span>
+                    <span>数量 {{ slot.row.quantity }}</span>
+                    <span>{{ slot.row.location }}</span>
+                    <span :class="slot.row.statusClass">{{ slot.row.status }}</span>
+                  </div>
+                </template>
+                <div v-else class="zancun-console-slot__empty muted">
+                  {{ slot.emptyMessage }}
                 </div>
-                <div class="zancun-console-slot__meta">
-                  <span>{{ row.sampleType }}</span>
-                  <span>数量 {{ row.quantity }}</span>
-                  <span>{{ row.location }}</span>
-                  <span :class="row.statusClass">{{ row.status }}</span>
-                </div>
-              </div>
-              <div v-if="currentStagingRows.length === 0" class="zancun-console-slot">
-                <div class="zancun-console-slot__empty muted">当前页暂无暂存间样品</div>
               </div>
             </div>
           </section>
@@ -91,28 +79,37 @@
           <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
             <div class="zancun-inventory-column__head">
               <h4>计划入库</h4>
-              <span class="pill">待入库 {{ plannedInboundRows.length }}</span>
+              <span class="pill">待入库 {{ plannedInboundTotalCount }}</span>
+              <AppPagination
+                class="zancun-planned-inbound-pagination"
+                data-testid="zancun-planned-inbound-pagination"
+                :current-page="overviewCurrentPage"
+                :page-count="overviewPageCount"
+                @change="setOverviewPage"
+              />
             </div>
             <div class="zancun-console-list">
               <div
-                v-for="row in plannedInboundRows"
-                :key="row.id"
-                class="zancun-console-slot"
-                data-testid="zancun-planned-inbound-row"
+                v-for="slot in plannedInboundSlots"
+                :key="slot.key"
+                :class="['zancun-console-slot', { 'zancun-console-slot--placeholder': !slot.row }]"
+                :data-testid="slot.row ? 'zancun-planned-inbound-row' : undefined"
               >
-                <div class="zancun-console-slot__main">
-                  <strong>{{ row.trayCode }}</strong>
-                  <span class="muted">{{ row.taskCode }}</span>
+                <template v-if="slot.row">
+                  <div class="zancun-console-slot__main">
+                    <strong>{{ slot.row.trayCode }}</strong>
+                    <span class="muted">{{ slot.row.taskCode }}</span>
+                  </div>
+                  <div class="zancun-console-slot__meta">
+                    <span>{{ slot.row.sampleType }}</span>
+                    <span>数量 {{ slot.row.quantity }}</span>
+                    <span>{{ slot.row.location }}</span>
+                    <span :class="slot.row.statusClass">{{ slot.row.status }}</span>
+                  </div>
+                </template>
+                <div v-else class="zancun-console-slot__empty muted">
+                  {{ slot.emptyMessage }}
                 </div>
-                <div class="zancun-console-slot__meta">
-                  <span>{{ row.sampleType }}</span>
-                  <span>数量 {{ row.quantity }}</span>
-                  <span>{{ row.location }}</span>
-                  <span :class="row.statusClass">{{ row.status }}</span>
-                </div>
-              </div>
-              <div v-if="plannedInboundRows.length === 0" class="zancun-console-slot">
-                <div class="zancun-console-slot__empty muted">当前页暂无计划入库托盘</div>
               </div>
             </div>
           </section>
@@ -317,6 +314,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -342,6 +340,7 @@ const overviewQuery = ref("");
 const activeMetricMode = ref("all");
 const overviewCurrentPage = ref(1);
 const overviewPageSize = 5;
+const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
 
@@ -359,8 +358,8 @@ const overviewView = computed(() =>
       metricMode: activeMetricMode.value,
       query: overviewQuery.value,
     },
-    page: overviewCurrentPage.value,
-    pageSize: overviewPageSize,
+    page: 1,
+    pageSize: Math.max(overviewSourceRows.value.length, 1),
     rows: overviewSourceRows.value,
     sort: {
       direction: "asc",
@@ -409,26 +408,69 @@ const activeMetricLabel = computed(() => {
 });
 
 const overviewRows = computed(() => overviewView.value.rows);
-const overviewPageCount = computed(() => overviewView.value.pageCount);
 const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value));
-const currentStagingRows = computed(() => inventorySections.value.currentStagingRows);
-const plannedInboundRows = computed(() => inventorySections.value.plannedInboundRows);
+const currentStagingAllRows = computed(() => inventorySections.value.currentStagingRows);
+const plannedInboundAllRows = computed(() => inventorySections.value.plannedInboundRows);
+const currentStagingTotalCount = computed(() => currentStagingAllRows.value.length);
+const plannedInboundTotalCount = computed(() => plannedInboundAllRows.value.length);
+const resolvePageCount = (totalCount) => Math.max(1, Math.ceil(totalCount / overviewPageSize));
+const normalizePage = (page, pageCount) => {
+  const parsedPage = Number.parseInt(String(page ?? 1), 10);
+  const safePage = Number.isFinite(parsedPage) ? parsedPage : 1;
+  return Math.min(Math.max(safePage, 1), pageCount);
+};
+const paginateRows = (rows, page) => {
+  const currentPage = normalizePage(page, resolvePageCount(rows.length));
+  const startIndex = (currentPage - 1) * overviewPageSize;
+  return rows.slice(startIndex, startIndex + overviewPageSize);
+};
+const buildInventorySlots = (rows, emptyMessage) =>
+  Array.from({ length: overviewPageSize }, (_, index) => {
+    const row = rows[index] || null;
+    return {
+      emptyMessage: rows.length === 0 && index === 0 ? emptyMessage : "",
+      key: row?.trayCode || `placeholder-${emptyMessage}-${index}`,
+      row,
+    };
+  });
+const currentStagingPageCount = computed(() => resolvePageCount(currentStagingTotalCount.value));
+const overviewPageCount = computed(() => resolvePageCount(plannedInboundTotalCount.value));
+const currentStagingRows = computed(() => paginateRows(currentStagingAllRows.value, currentStagingCurrentPage.value));
+const plannedInboundRows = computed(() => paginateRows(plannedInboundAllRows.value, overviewCurrentPage.value));
+const currentStagingSlots = computed(() => buildInventorySlots(currentStagingRows.value, "当前页暂无暂存间样品"));
+const plannedInboundSlots = computed(() => buildInventorySlots(plannedInboundRows.value, "当前页暂无计划入库托盘"));
 
 watch([overviewQuery, activeMetricMode], () => {
   overviewCurrentPage.value = 1;
+  currentStagingCurrentPage.value = 1;
 });
 
 watch(
-  () => overviewView.value.currentPage,
+  overviewPageCount,
   (nextPage) => {
-    if (overviewCurrentPage.value !== nextPage) {
-      overviewCurrentPage.value = nextPage;
+    const normalizedPage = normalizePage(overviewCurrentPage.value, nextPage);
+    if (overviewCurrentPage.value !== normalizedPage) {
+      overviewCurrentPage.value = normalizedPage;
+    }
+  },
+);
+
+watch(
+  currentStagingPageCount,
+  (nextPage) => {
+    const normalizedPage = normalizePage(currentStagingCurrentPage.value, nextPage);
+    if (currentStagingCurrentPage.value !== normalizedPage) {
+      currentStagingCurrentPage.value = normalizedPage;
     }
   },
 );
 
 const setOverviewPage = (page) => {
-  overviewCurrentPage.value = page;
+  overviewCurrentPage.value = normalizePage(page, overviewPageCount.value);
+};
+
+const setCurrentStagingPage = (page) => {
+  currentStagingCurrentPage.value = normalizePage(page, currentStagingPageCount.value);
 };
 
 const selectMetricMode = (mode) => {

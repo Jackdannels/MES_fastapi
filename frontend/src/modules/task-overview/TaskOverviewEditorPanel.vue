@@ -2,8 +2,16 @@
   <div class="task-overview-editor" @click.stop @dblclick.stop>
     <div class="task-overview-editor-grid">
       <label class="task-overview-editor-field">
-        <span>任务类型</span>
+        <span>{{ readonly ? "任务编号" : "任务类型" }}</span>
+        <input
+          v-if="readonly"
+          :value="editForm.taskCode || row.taskCode"
+          class="search-input"
+          readonly
+          type="text"
+        />
         <select
+          v-else
           :value="editForm.taskType"
           class="search-input"
           @change="updateEditForm('taskType', $event.target.value)"
@@ -20,6 +28,7 @@
           type="number"
           min="0"
           step="1"
+          :readonly="readonly"
           @input="updateEditForm('sampleCount', $event.target.valueAsNumber)"
         />
       </label>
@@ -29,6 +38,7 @@
           :value="editForm.sampleCodesText"
           class="search-input task-overview-editor-textarea"
           placeholder="例如：SYLU-2026-03-007-SP-001"
+          :readonly="readonly"
           @input="updateEditForm('sampleCodesText', $event.target.value)"
         ></textarea>
       </label>
@@ -38,6 +48,7 @@
       <div class="task-overview-editor-experiments-header">
         <span>实验列表</span>
         <button
+          v-if="!readonly"
           class="action-btn secondary"
           type="button"
           title="add-experiment"
@@ -61,13 +72,23 @@
             :value="experiment.experimentName"
             :title="`experiment-name-${index}`"
             class="search-input"
+            :readonly="readonly"
             type="text"
             @input="updateExperiment(index, { experimentName: $event.target.value })"
           />
         </label>
         <label class="task-overview-editor-field">
           <span>实验类型</span>
+          <input
+            v-if="readonly"
+            :value="experiment.requiredDevice"
+            :title="`experiment-type-${index}`"
+            class="search-input"
+            readonly
+            type="text"
+          />
           <select
+            v-else
             :value="experiment.requiredDevice"
             :title="`experiment-type-${index}`"
             class="search-input"
@@ -80,6 +101,7 @@
           </select>
         </label>
         <button
+          v-if="!readonly"
           class="action-btn danger"
           type="button"
           :title="`remove-experiment-${index}`"
@@ -90,11 +112,15 @@
       </div>
     </div>
 
-    <AppFeedback v-if="editError" :message="editError" tone="error" @close="emit('clear-edit-feedback')" />
-    <AppFeedback v-if="editMessage" :message="editMessage" tone="success" @close="emit('clear-edit-feedback')" />
+    <AppFeedback v-if="!readonly && editError" :message="editError" tone="error" @close="emit('clear-edit-feedback')" />
+    <AppFeedback v-if="!readonly && editMessage" :message="editMessage" tone="success" @close="emit('clear-edit-feedback')" />
 
     <div class="form-actions">
+      <button v-if="readonly" class="action-btn secondary" type="button" title="cancel-edit" @click="emit('cancel-edit')">
+        收起详情
+      </button>
       <button
+        v-if="!readonly"
         class="action-btn"
         type="button"
         title="save-edit"
@@ -104,6 +130,7 @@
         {{ saving ? "保存中..." : "保存修改" }}
       </button>
       <button
+        v-if="!readonly"
         class="action-btn secondary"
         type="button"
         title="generate-codes"
@@ -112,6 +139,7 @@
         按数量自动生成编号
       </button>
       <button
+        v-if="!readonly"
         class="action-btn danger task-overview-delete-btn"
         type="button"
         title="request-delete"
@@ -124,7 +152,7 @@
         取消
       </button>
     </div>
-    <div v-if="deleteConfirm.taskCode === row.taskCode" class="task-overview-delete-confirm">
+    <div v-if="!readonly && deleteConfirm.taskCode === row.taskCode" class="task-overview-delete-confirm">
       <div class="task-overview-delete-text">
         确认删除任务 <strong>{{ row.taskCode }}</strong>？
         将同步删除：样品 {{ deleteConfirm.sampleCount }} 条、排程 {{ deleteConfirm.scheduleCount }} 条、数据流
@@ -195,6 +223,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  readonly: {
+    type: Boolean,
+    default: false,
+  },
   row: {
     type: Object,
     required: true,
@@ -253,6 +285,9 @@ const normalizeSampleCount = (value) => {
 };
 
 const updateEditForm = (field, value) => {
+  if (props.readonly) {
+    return;
+  }
   if (!field) {
     return;
   }
@@ -262,6 +297,9 @@ const updateEditForm = (field, value) => {
 };
 
 const updateExperiments = (experiments) => {
+  if (props.readonly) {
+    return;
+  }
   emit("update-edit-form", {
     experiments,
   });

@@ -190,12 +190,47 @@ def sample_sort_key(sample: dict[str, Any]) -> tuple[str, str]:
     return (sample_code(sample), sample_key(sample))
 
 
+def sample_serial_sort_key(sample: dict[str, Any]) -> tuple[int, str, str]:
+    matched = re.search(r"-SP-(\d+)$", sample_code(sample))
+    serial = int(matched.group(1)) if matched else 1000
+    return (serial, sample_code(sample), sample_key(sample))
+
+
 def parse_positive_int(value: Any) -> int:
     try:
         parsed = int(str(value).strip())
     except (TypeError, ValueError):
         return 0
     return parsed if parsed > 0 else 0
+
+
+def sample_has_transfer_work(sample: dict[str, Any]) -> bool:
+    if as_list(sample.get("trays")):
+        return True
+    status_text = normalize_text(sample.get("status") or sample.get("flow_status"))
+    if status_text in STORED_OR_DISPATCHED_SAMPLE_STATUSES:
+        return True
+    return any(normalize_text(entry.get("action")) in TRANSFER_HISTORY_ACTIONS for entry in as_list(sample.get("history")))
+
+
+def limit_task_samples_to_planned_count(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool]:
+    planned_count = parse_positive_int(task.get("sample_count"))
+    if planned_count <= 0 or len(task_samples) <= planned_count:
+        return task_samples, False
+
+    ordered_samples = sorted(task_samples, key=sample_serial_sort_key)
+    surplus_samples = ordered_samples[planned_count:]
+    if any(sample_has_transfer_work(sample) for sample in surplus_samples):
+        return task_samples, False
+
+    surplus_keys = {sample_key(sample) for sample in surplus_samples}
+    snapshot["samples"] = [sample for sample in snapshot["samples"] if sample_key(sample) not in surplus_keys]
+    refreshed_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    return refreshed_samples, True
 
 
 def build_task_sample_map(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -214,6 +249,8 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
     planned_count = parse_positive_int(task.get("sample_count"))
     if planned_count <= 0:
         return []
+    if len(task_samples) >= planned_count:
+        return []
 
     existing_codes = {sample_code(sample) for sample in task_samples if sample_code(sample)}
     current_task_status = transfer_status_for_task(task, task_samples)
@@ -224,10 +261,6 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
         location = "接驳区"
         status = TASK_STATUS_STORED
         flow_status = TASK_STATUS_STORED
-    elif received_time:
-        location = "接驳区"
-        status = TASK_STATUS_PENDING
-        flow_status = "到货"
     else:
         location = ""
         status = "运输中"
@@ -235,6 +268,8 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
 
     generated = []
     for index in range(1, planned_count + 1):
+        if len(task_samples) + len(generated) >= planned_count:
+            break
         generated_code = f"{task_code_value}-SP-{index:03d}"
         if generated_code in existing_codes:
             continue
@@ -267,9 +302,10 @@ def ensure_task_samples(snapshot: dict[str, list[dict[str, Any]]], task: dict[st
     samples_by_task = build_task_sample_map(snapshot["samples"])
     task_code_value = task_code(task)
     task_samples = samples_by_task.get(task_code_value, [])
+    task_samples, trimmed = limit_task_samples_to_planned_count(snapshot, task, task_samples)
     generated_samples = build_generated_task_samples(task, task_samples)
     if not generated_samples:
-        return task_samples, False
+        return task_samples, trimmed
     snapshot["samples"].extend(generated_samples)
     refreshed_samples = build_task_sample_map(snapshot["samples"]).get(task_code_value, [])
     return refreshed_samples, True
@@ -1061,13 +1097,10 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
 
 
 def update_task_samples_for_pending(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:
-    location = "接驳区" if task_arrival_time(task) else ""
-    status = TASK_STATUS_PENDING if task_arrival_time(task) else "运输中"
-    flow_status = "到货" if task_arrival_time(task) else "运输中"
     for sample in task_samples:
-        sample["location"] = location
-        sample["status"] = status
-        sample["flow_status"] = flow_status
+        sample["location"] = ""
+        sample["status"] = "运输中"
+        sample["flow_status"] = "运输中"
 
 
 @router.get("/bootstrap")

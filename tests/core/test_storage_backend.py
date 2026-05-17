@@ -117,6 +117,25 @@ def test_normalize_storage_payload_splits_legacy_test_type_without_expanding_to_
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
 
 
+def test_normalize_storage_payload_does_not_use_task_name_as_experiment_type() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-504",
+                "name": "只修改任务名称",
+                "experiment_count": 1,
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["冲击试验"]
+
+
 def test_normalize_storage_payload_uses_test_types_over_stale_experiment_count() -> None:
     payload = {
         "mes.tasks": [

@@ -176,6 +176,15 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.find("#retention-internal-table").exists()).toBe(false);
   });
 
+  test("labels the manual schedule reset action as reset", async () => {
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const actions = wrapper.get(".form-actions");
+    expect(actions.text()).toContain("重置");
+    expect(actions.text()).not.toContain("清空");
+  });
+
   test("teleports an exception action into the schedule header", async () => {
     installHeaderActions();
     setStorage(CONFLICTS_KEY, [

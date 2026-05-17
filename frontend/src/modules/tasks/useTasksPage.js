@@ -16,6 +16,7 @@ import {
   buildTaskEditForm,
   buildTaskMetrics,
   buildTaskRows,
+  buildTaskSampleCodes,
   createTaskEditForm,
   createTaskIntakeForm,
   createRandomTaskIntakeForm,
@@ -23,8 +24,11 @@ import {
   deleteTaskSnapshot,
   isTaskIntakeFormPristine,
   normalizeText,
+  applyTaskSampleCodes,
+  splitSampleCodeText,
   syncTaskSamples,
   updateTaskRecord,
+  validateSampleCodeDraft,
   validateTaskSampleCount,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -62,6 +66,8 @@ function useTasksPage() {
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
   const editWarning = ref("");
+  const sampleCodesDraft = ref("");
+  const sampleCodesWarning = ref("");
   const intakeExperimentDraft = ref([]);
   const editExperimentDraft = ref([]);
   const scheduledExperimentRemovalDraft = ref(null);
@@ -72,6 +78,7 @@ function useTasksPage() {
   const intakeModal = useDialogState();
   const intakeExperimentModal = useDialogState();
   const editExperimentModal = useDialogState();
+  const sampleCodesModal = useDialogState();
   const scheduledExperimentRemovalModal = useDialogState();
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
@@ -98,6 +105,21 @@ function useTasksPage() {
   const intakeExperimentDraftSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
   const editExperimentSummary = computed(() => buildExperimentTypeSummary(editForm.value.test_types));
   const editExperimentDraftSummary = computed(() => buildExperimentTypeSummary(editExperimentDraft.value));
+  const intakeSampleCodePreview = computed(() =>
+    buildTaskSampleCodes(intakeForm.value.code, intakeForm.value.sample_count, []).slice(0, 5)
+  );
+  const taskDetailSampleCodes = computed(() => {
+    const taskCode = normalizeText(editForm.value.code);
+    if (!taskCode) {
+      return [];
+    }
+    return rawSamples.value
+      .filter((sample) => normalizeText(sample?.task_code) === taskCode)
+      .map((sample) => normalizeText(sample?.code))
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
+  });
+  const taskDetailSampleCodePreview = computed(() => taskDetailSampleCodes.value.slice(0, 5));
 
   const typeFilteredRows = computed(() =>
     allRows.value.filter((row) => {
@@ -268,15 +290,37 @@ function useTasksPage() {
   const openTaskDrawer = (row) => {
     editForm.value = buildTaskEditForm(row);
     editWarning.value = "";
+    sampleCodesWarning.value = "";
     taskDrawer.openWith(row);
   };
 
   const closeTaskDrawer = () => {
     taskDrawer.close();
     editExperimentModal.close();
+    sampleCodesModal.close();
     scheduledExperimentRemovalModal.close();
     editExperimentDraft.value = [];
+    sampleCodesDraft.value = "";
+    sampleCodesWarning.value = "";
     scheduledExperimentRemovalDraft.value = null;
+  };
+
+  const openSampleCodesEditor = () => {
+    const taskCode = normalizeText(editForm.value.code);
+    if (!taskCode) {
+      return;
+    }
+    sampleCodesWarning.value = "";
+    const currentCodes = taskDetailSampleCodes.value;
+    const fallbackCodes = buildTaskSampleCodes(taskCode, editForm.value.sample_count, []);
+    sampleCodesDraft.value = (currentCodes.length > 0 ? currentCodes : fallbackCodes).join("\n");
+    sampleCodesModal.openWith({ id: "task-sample-codes-modal", taskCode });
+  };
+
+  const closeSampleCodesEditor = () => {
+    sampleCodesModal.close();
+    sampleCodesDraft.value = "";
+    sampleCodesWarning.value = "";
   };
 
   const syncModalWithHash = (hashValue) => {
@@ -516,7 +560,7 @@ function useTasksPage() {
     }
 
     // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode);
+    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode, { preserveExistingCodes: true });
     const relatedUpdates = {
       [STORAGE_KEYS.samples]: nextSamples,
     };
@@ -604,6 +648,58 @@ function useTasksPage() {
       return;
     }
     await performTaskUpdate(scheduledExperimentRemovalDraft.value, { confirmRemoveScheduledExperiments: true });
+  };
+
+  const saveSampleCodes = async () => {
+    const taskCode = normalizeText(editForm.value.code);
+    const taskId = normalizeText(editForm.value.id);
+    const codes = splitSampleCodeText(sampleCodesDraft.value);
+    const warning = validateSampleCodeDraft({
+      codes,
+      samples: rawSamples.value,
+      taskCode,
+    });
+    if (warning) {
+      sampleCodesWarning.value = warning;
+      return;
+    }
+    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === taskId);
+    if (!originalTask) {
+      sampleCodesWarning.value = "当前任务不存在，请刷新后重试";
+      return;
+    }
+
+    const updatedTask = {
+      ...originalTask,
+      sample_count: codes.length,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      await updateTaskByApi(taskId, updatedTask);
+      rawTasks.value = rawTasks.value.map((task) => (normalizeText(task?.id) === taskId ? updatedTask : task));
+    } catch (error) {
+      sampleCodesWarning.value = buildFailureMessage("样品编号保存失败，请稍后重试", error);
+      return;
+    }
+
+    const nextSamples = applyTaskSampleCodes(rawSamples.value, updatedTask, codes);
+    try {
+      await persistRelated({
+        [STORAGE_KEYS.samples]: nextSamples,
+      });
+    } catch (error) {
+      sampleCodesWarning.value = buildFailureMessage("样品编号已更新任务数量，但样品数据保存失败，请刷新后确认", error);
+      return;
+    }
+
+    editForm.value.sample_count = String(codes.length);
+    closeSampleCodesEditor();
+    try {
+      await loadTasksPage();
+      loadError.value = "";
+    } catch (error) {
+      loadError.value = buildFailureMessage("样品编号已保存，但任务列表刷新失败，请刷新后确认", error);
+    }
   };
 
   const deleteTask = async () => {
@@ -765,6 +861,7 @@ function useTasksPage() {
     closeIntakeModal,
     closeResetModal,
     closeScheduledExperimentRemovalConfirm,
+    closeSampleCodesEditor,
     closeTaskDrawer,
     confirmScheduledExperimentRemoval,
     currentPage,
@@ -780,6 +877,7 @@ function useTasksPage() {
     intakeExperimentSummary,
     intakeExperimentTypeOptions,
     intakeModalOpen: intakeModal.open,
+    intakeSampleCodePreview,
     intakeWarning,
     loadError,
     metrics,
@@ -791,7 +889,11 @@ function useTasksPage() {
     resetTasks,
     resetting,
     scheduledExperimentRemovalModalOpen: scheduledExperimentRemovalModal.open,
+    sampleCodesDraft,
+    sampleCodesModalOpen: sampleCodesModal.open,
+    sampleCodesWarning,
     saveDraft,
+    saveSampleCodes,
     selectedRow: taskDrawer.payload,
     setCurrentPage,
     statusOptions: scopedStatusOptions,
@@ -806,10 +908,13 @@ function useTasksPage() {
     editExperimentTypeOptions,
     openIntakeExperimentPicker,
     openEditExperimentPicker,
+    openSampleCodesEditor,
     sortDirection,
     sortKey,
     submitTask,
     taskDrawerOpen: taskDrawer.open,
+    taskDetailSampleCodePreview,
+    taskDetailSampleCodes,
     taskRows: visibleRows,
     testTypeOptions: computed(() => filterOptions.value.testTypeOptions),
     toggleIntakeExperimentType,

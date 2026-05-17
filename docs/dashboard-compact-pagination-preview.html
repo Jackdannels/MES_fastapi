@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>中控任务队列紧凑分页预览</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --text: #0f172a;
+        --muted: #64748b;
+        --line: #dbe4ef;
+        --panel: rgba(255, 255, 255, 0.86);
+        --accent: #0284c7;
+        --accent-soft: #e0f2fe;
+        --ok: #22c55e;
+        --warn: #bae6fd;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        font-family:
+          Inter,
+          "Microsoft YaHei",
+          "PingFang SC",
+          system-ui,
+          sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 20% 10%, rgba(186, 230, 253, 0.58), transparent 34%),
+          radial-gradient(circle at 82% 10%, rgba(253, 230, 138, 0.3), transparent 28%),
+          linear-gradient(135deg, #f8fafc 0%, #eef6fb 46%, #f8fafc 100%);
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 48px));
+        margin: 0 auto;
+        padding: 36px 0 48px;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: #38bdf8;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 38px;
+        line-height: 1.15;
+      }
+
+      .subtitle {
+        margin: 16px 0 28px;
+        color: var(--muted);
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(420px, 1fr) minmax(320px, 1fr) minmax(320px, 1fr);
+        gap: 18px;
+        align-items: start;
+      }
+
+      .card {
+        min-height: 460px;
+        padding: 24px;
+        border: 1px solid rgba(226, 232, 240, 0.86);
+        border-radius: 22px;
+        background: var(--panel);
+        box-shadow: 0 18px 46px rgba(15, 23, 42, 0.09);
+        backdrop-filter: blur(14px);
+      }
+
+      .task-card {
+        min-width: 0;
+      }
+
+      .task-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      .task-head h2,
+      .ghost-card h2 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.2;
+      }
+
+      .compact-pager {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 6px;
+        min-height: 32px;
+        padding: 2px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: rgba(248, 250, 252, 0.92);
+      }
+
+      .compact-pager button {
+        display: inline-grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border: 0;
+        border-radius: 9px;
+        color: #334155;
+        background: transparent;
+        font-size: 20px;
+        font-weight: 800;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .compact-pager button:hover {
+        color: #0369a1;
+        background: #e0f2fe;
+      }
+
+      .compact-pager button:disabled {
+        color: #cbd5e1;
+        cursor: not-allowed;
+        background: transparent;
+      }
+
+      .compact-pager__status {
+        min-width: 48px;
+        padding: 0 6px;
+        border: 0;
+        color: #0f172a;
+        background: transparent;
+        font-size: 14px;
+        font-weight: 800;
+        line-height: 28px;
+        text-align: center;
+        cursor: pointer;
+      }
+
+      .compact-pager__status:hover {
+        color: #0369a1;
+      }
+
+      .compact-pager__jump {
+        display: none;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .compact-pager.is-editing .compact-pager__status {
+        display: none;
+      }
+
+      .compact-pager.is-editing .compact-pager__jump {
+        display: inline-flex;
+      }
+
+      .compact-pager__input {
+        width: 42px;
+        height: 28px;
+        border: 1px solid #cbd5e1;
+        border-radius: 9px;
+        color: #0f172a;
+        background: #fff;
+        font: inherit;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .compact-pager__confirm {
+        width: auto !important;
+        padding: 0 10px;
+        color: #0369a1 !important;
+        font-size: 13px !important;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+
+      th {
+        padding: 13px 14px;
+        color: #0f172a;
+        background: #d7f1fb;
+        font-size: 15px;
+        text-align: left;
+      }
+
+      td {
+        padding: 13px 14px;
+        border-bottom: 1px solid #e5edf5;
+        font-size: 15px;
+        white-space: nowrap;
+      }
+
+      th:nth-child(1),
+      td:nth-child(1) {
+        width: 58px;
+        text-align: center;
+      }
+
+      th:nth-child(3),
+      td:nth-child(3) {
+        width: 100px;
+      }
+
+      th:nth-child(4),
+      td:nth-child(4) {
+        width: 104px;
+      }
+
+      .task-code {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 68px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        color: #0f5132;
+        background: #bbf7d0;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .status.pending {
+        color: #075985;
+        background: var(--warn);
+      }
+
+      .timeline {
+        display: grid;
+        gap: 17px;
+        margin-top: 18px;
+      }
+
+      .timeline-item {
+        display: grid;
+        grid-template-columns: 14px 1fr;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        margin-top: 8px;
+        border-radius: 50%;
+        background: #0ea5e9;
+      }
+
+      .dot.green {
+        background: var(--ok);
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .preview-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .mini-card {
+        padding: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.9);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.82);
+      }
+
+      .mini-card h3 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+
+      @media (max-width: 980px) {
+        main {
+          width: min(760px, calc(100vw - 28px));
+        }
+
+        .dashboard-grid,
+        .preview-row {
+          grid-template-columns: 1fr;
+        }
+
+        .card {
+          min-height: 0;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .task-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">中控中心</p>
+      <h1>中控总览分页预览</h1>
+      <p class="subtitle">任务队列使用独立紧凑分页：默认只保留左右翻页与当前页/总页，点击页码后展开跳转。</p>
+
+      <section class="dashboard-grid">
+        <article class="card task-card">
+          <div class="task-head">
+            <h2>任务队列</h2>
+            <div class="compact-pager" aria-label="任务队列分页">
+              <button type="button" disabled aria-label="上一页">‹</button>
+              <button class="compact-pager__status" type="button" aria-label="点击输入页码">1 / 3</button>
+              <div class="compact-pager__jump">
+                <input class="compact-pager__input" type="number" value="1" min="1" max="3" aria-label="页码" />
+                <button class="compact-pager__confirm" type="button">确定</button>
+              </div>
+              <button type="button" aria-label="下一页">›</button>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>序号</th>
+                <th>任务</th>
+                <th>来源</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td class="task-code">SYLU-2026-05-001</td>
+                <td>外部委托</td>
+                <td><span class="status">任务进行中</span></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td class="task-code">SYLU-2026-05-002</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td class="task-code">SYLU-2026-05-003</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>4</td>
+                <td class="task-code">SYLU-2026-05-004</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>5</td>
+                <td class="task-code">SYLU-2026-05-005</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>6</td>
+                <td class="task-code">SYLU-2026-05-006</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>7</td>
+                <td class="task-code">SYLU-2026-05-007</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+              <tr>
+                <td>8</td>
+                <td class="task-code">SYLU-2026-05-008</td>
+                <td>外部委托</td>
+                <td><span class="status pending">待排程</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </article>
+
+        <article class="card ghost-card">
+          <h2>设备状态</h2>
+          <div class="timeline">
+            <div class="timeline-item"><span class="dot"></span><div>冲击一室<div class="muted">可用</div></div></div>
+            <div class="timeline-item"><span class="dot"></span><div>冲击二室<div class="muted">可用</div></div></div>
+            <div class="timeline-item"><span class="dot"></span><div>四综合实验室<div class="muted">可用</div></div></div>
+            <div class="timeline-item"><span class="dot green"></span><div>盐雾试验室<div class="muted">任务进行中</div></div></div>
+          </div>
+        </article>
+
+        <article class="card ghost-card">
+          <h2>未排程实验计时</h2>
+          <p class="muted">暂无未排程实验</p>
+        </article>
+      </section>
+
+      <section class="preview-row">
+        <article class="mini-card">
+          <h3>默认状态</h3>
+          <div class="compact-pager">
+            <button type="button" disabled>‹</button>
+            <button class="compact-pager__status" type="button">1 / 3</button>
+            <button type="button">›</button>
+          </div>
+        </article>
+        <article class="mini-card">
+          <h3>点击页码后</h3>
+          <div class="compact-pager is-editing">
+            <button type="button">‹</button>
+            <button class="compact-pager__status" type="button">2 / 3</button>
+            <div class="compact-pager__jump">
+              <input class="compact-pager__input" type="number" value="2" min="1" max="3" aria-label="页码" />
+              <button class="compact-pager__confirm" type="button">确定</button>
+            </div>
+            <button type="button">›</button>
+          </div>
+        </article>
+        <article class="mini-card">
+          <h3>只有一页时</h3>
+          <p class="muted">建议直接隐藏分页，让任务队列标题保持干净。</p>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      document.querySelectorAll(".compact-pager").forEach((pager) => {
+        const status = pager.querySelector(".compact-pager__status");
+        const confirm = pager.querySelector(".compact-pager__confirm");
+        const input = pager.querySelector(".compact-pager__input");
+
+        status?.addEventListener("click", () => {
+          pager.classList.add("is-editing");
+          input?.focus();
+          input?.select();
+        });
+
+        confirm?.addEventListener("click", () => {
+          pager.classList.remove("is-editing");
+        });
+
+        input?.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            pager.classList.remove("is-editing");
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

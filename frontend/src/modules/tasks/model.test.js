@@ -327,8 +327,10 @@ describe("tasks model", () => {
   test("validateTaskSampleCount requires an integer from 1 to 99", () => {
     expect(validateTaskSampleCount("")).toBe("请填写样品数量");
     expect(validateTaskSampleCount("1.5")).toBe("样品数量必须为整数");
+    expect(validateTaskSampleCount("0")).toBe("样品数量至少为 1");
     expect(validateTaskSampleCount("-1")).toBe("样品数量至少为 1");
     expect(validateTaskSampleCount("100")).toBe("样品数量最多为 99");
+    expect(validateTaskSampleCount("1")).toBe("");
     expect(validateTaskSampleCount("3")).toBe("");
   });
 
@@ -388,6 +390,43 @@ describe("tasks model", () => {
         required_device: "盐雾试验 / 霉菌试验",
         test_type: "盐雾试验 / 霉菌试验",
         test_types: ["盐雾试验", "霉菌试验"],
+      }),
+    );
+  });
+
+  test("updateTaskRecord keeps experiment types when only the task name changes", () => {
+    const result = updateTaskRecord(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "旧任务",
+          status: "待排程",
+          sample_count: "2",
+          test_type: "盐雾试验",
+          test_types: ["盐雾试验"],
+          required_device: "盐雾试验",
+        },
+      ],
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-001",
+        name: "只改任务名称",
+        priority: "高",
+        sample_count: "2",
+        source: "外部委托",
+        status: "待排程",
+        test_type: "盐雾试验",
+        test_types: ["盐雾试验"],
+      },
+    );
+
+    expect(result.tasks[0]).toEqual(
+      expect.objectContaining({
+        name: "只改任务名称",
+        required_device: "盐雾试验",
+        test_type: "盐雾试验",
+        test_types: ["盐雾试验"],
       }),
     );
   });

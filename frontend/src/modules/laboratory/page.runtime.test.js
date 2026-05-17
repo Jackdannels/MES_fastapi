@@ -430,7 +430,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-current");
   });
 
-  test("wraps many trays in the task list modal instead of placing them all on one line", async () => {
+  test("collapses many task-list trays and opens a full tray detail modal", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({
       task_code: "SYLU-2026-04-101",
@@ -451,8 +451,17 @@ describe("LaboratoryPage runtime", () => {
 
     const currentRow = mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-101"]');
     const trayList = currentRow.get(".laboratory-task-tray-list");
-    expect(trayList.classes()).toContain("laboratory-task-tray-list--grid");
-    expect(trayList.findAll(".laboratory-tray-chip")).toHaveLength(7);
+    expect(trayList.findAll(".laboratory-tray-chip")).toHaveLength(3);
+    expect(trayList.text()).toContain("+4");
+    expect(trayList.text()).toContain("查看全部");
+    expect(trayList.text()).not.toContain("TP-007");
+
+    await currentRow.get('[data-testid="laboratory-task-row-show-all-SYLU-2026-04-101"]').trigger("click");
+
+    expect(mounted.find('[data-testid="laboratory-full-content-modal"].is-open').exists()).toBe(true);
+    expect(mounted.findAll("[data-testid^='laboratory-full-tray-row-']")).toHaveLength(7);
+    expect(mounted.text()).toContain("TP-007");
+    expect(mounted.text()).toContain("SYLU-2026-04-101-SP-007");
   });
 
   test("compares trays against the current task and shows green/red feedback", async () => {
@@ -1296,6 +1305,53 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()?.textContent || "").toContain("确认后将把当前盐雾实验更新为实验已完成");
     expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
+  });
+
+  test("collapses oversized running modal content and exposes all trays and samples on demand", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({
+      task_code: "SYLU-2026-04-101",
+      experiment_code: "SYLU-2026-04-101-A",
+      tray_code: `TP-${String(index + 1).padStart(3, "0")}`,
+    }));
+    snapshotState[STORAGE_KEYS.samples] = Array.from({ length: 7 }, (_, index) => {
+      const number = String(index + 1).padStart(3, "0");
+      return {
+        code: `SYLU-2026-04-101-SP-${number}`,
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: `TP-${number}` }],
+      };
+    });
+
+    const mounted = await mountPage();
+    const runningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
+
+    expect(runningModal()?.querySelectorAll('[data-testid^="laboratory-running-tray-chip-"]')).toHaveLength(3);
+    expect(runningModal()?.querySelectorAll('[data-testid^="laboratory-running-sample-chip-"]')).toHaveLength(5);
+    expect(runningModal()?.textContent || "").toContain("+4");
+    expect(runningModal()?.textContent || "").toContain("+2");
+    expect(runningModal()?.textContent || "").not.toContain("TP-007");
+
+    runningModal()?.querySelector('[data-testid="laboratory-running-show-all"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-full-content-modal"].is-open').exists()).toBe(true);
+    expect(mounted.findAll("[data-testid^='laboratory-full-tray-row-']")).toHaveLength(7);
+    expect(mounted.text()).toContain("TP-007");
+    expect(mounted.text()).toContain("SYLU-2026-04-101-SP-007");
+
+    mounted.get('[data-testid="laboratory-full-content-modal"] .modal-close').trigger("click");
+    await nextTick();
+    runningModal()?.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(runningModal()?.textContent || "").toContain("托盘 7 个");
+    expect(runningModal()?.textContent || "").toContain("样品 7 个");
+    expect(runningModal()?.textContent || "").not.toContain("TP-007、");
   });
 
   test("shows the completion prompt inside the overview modal when the running countdown reaches zero", async () => {

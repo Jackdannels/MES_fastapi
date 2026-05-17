@@ -189,7 +189,7 @@ def _split_experiment_type_text(value: Any) -> list[str]:
 
 
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
-    base_type = str(task.get("test_type") or task.get("required_device") or task.get("name") or "").strip()
+    base_type = str(task.get("test_type") or task.get("required_device") or "").strip()
     types: list[str] = []
     raw_types = task.get("test_types")
     if isinstance(raw_types, list):

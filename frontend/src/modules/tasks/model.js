@@ -700,8 +700,76 @@ function buildTaskSampleCodes(taskCode, sampleCount, taskSamples) {
   return Array.from({ length: targetCount }, (_, index) => `${normalizedCode}-SP-${String(index + 1).padStart(3, "0")}`);
 }
 
+const splitSampleCodeText = (value) =>
+  normalizeText(value)
+    .split(/[\n\r,，、;；\s]+/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+
+function validateSampleCodeDraft({ codes, samples, taskCode }) {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const codeList = Array.isArray(codes) ? codes.map((code) => normalizeText(code)).filter(Boolean) : [];
+  if (codeList.length === 0) {
+    return "请填写至少一个样品编号";
+  }
+  if (codeList.length !== new Set(codeList).size) {
+    return "样品编号不能重复";
+  }
+  const occupiedByOtherTask = new Set(
+    (Array.isArray(samples) ? samples : [])
+      .filter((sample) => normalizeText(sample?.task_code) !== normalizedTaskCode)
+      .map((sample) => normalizeText(sample?.code))
+      .filter(Boolean),
+  );
+  const duplicateWithOthers = codeList.filter((code) => occupiedByOtherTask.has(code));
+  if (duplicateWithOthers.length > 0) {
+    return `样品编号已被其他任务使用：${duplicateWithOthers.join("、")}`;
+  }
+  return "";
+}
+
+function applyTaskSampleCodes(samples, task, codes) {
+  const sampleList = Array.isArray(samples) ? samples.map((sample) => ({ ...sample })) : [];
+  const taskCode = normalizeText(task?.code);
+  const nextCodes = Array.isArray(codes) ? codes.map((code) => normalizeText(code)).filter(Boolean) : [];
+  if (!taskCode || nextCodes.length === 0) {
+    return sampleList;
+  }
+
+  const now = new Date().toISOString();
+  const relatedSamples = sampleList
+    .filter((sample) => normalizeText(sample?.task_code) === taskCode)
+    .sort((left, right) => compareTaskCodes(left?.code, right?.code));
+  const nextSamples = sampleList.filter((sample) => normalizeText(sample?.task_code) !== taskCode);
+
+  nextCodes.forEach((code, index) => {
+    const existing = relatedSamples[index];
+    if (existing) {
+      nextSamples.push({
+        ...existing,
+        code,
+        task_code: taskCode,
+        updated_at: now,
+      });
+      return;
+    }
+    nextSamples.push({
+      id: createId("sample"),
+      code,
+      task_code: taskCode,
+      location: "",
+      owner: "",
+      status: "样品运输中",
+      flow_status: "样品运输中",
+      created_at: now,
+    });
+  });
+
+  return nextSamples;
+}
+
 // 在任务编辑后同步维护与任务绑定的样品编号。
-function syncTaskSamples(samples, task, previousTaskCode = "") {
+function syncTaskSamples(samples, task, previousTaskCode = "", options = {}) {
   const sampleList = Array.isArray(samples) ? samples.map((sample) => ({ ...sample })) : [];
   const taskCode = normalizeText(task?.code);
   if (!taskCode) {
@@ -727,6 +795,7 @@ function syncTaskSamples(samples, task, previousTaskCode = "") {
   const relatedSamples = sampleList.filter((sample) => normalizeText(sample?.task_code) === taskCode);
   const expectedCodes = buildTaskSampleCodes(taskCode, task?.sample_count, relatedSamples);
   const nextSamples = sampleList.filter((sample) => normalizeText(sample?.task_code) !== taskCode);
+  const preserveExistingCodes = Boolean(options?.preserveExistingCodes);
 
   // 目标样品编号列表决定保留哪些已有样品，以及是否需要补建新样品。
   expectedCodes.forEach((code, index) => {
@@ -734,7 +803,7 @@ function syncTaskSamples(samples, task, previousTaskCode = "") {
     if (existingSample) {
       nextSamples.push({
         ...existingSample,
-        code,
+        code: preserveExistingCodes ? normalizeText(existingSample?.code) || code : code,
         task_code: taskCode,
       });
       return;
@@ -769,6 +838,7 @@ export {
   buildTaskExperimentProgress,
   buildTaskMetrics,
   buildTaskRows,
+  buildTaskSampleCodes,
   buildTaskStatusLabel,
   createTaskEditForm,
   createTaskIntakeForm,
@@ -778,11 +848,14 @@ export {
   fromDateTimeLocalValue,
   isTaskIntakeFormPristine,
   normalizeText,
+  applyTaskSampleCodes,
   aggregateTaskStatusFromSamples,
   collectTaskTrayStatuses,
   resolveTaskStatus,
+  splitSampleCodeText,
   syncTaskSamples,
   toDateTimeLocalValue,
   updateTaskRecord,
+  validateSampleCodeDraft,
   validateTaskSampleCount,
 };

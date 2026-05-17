@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>分页样式方案</title>
+  <style>
+    :root {
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #b7c6d8;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --panel: #f8fafc;
+      --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 36px;
+      background: linear-gradient(180deg, #eef6ff, #f8fafc);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      gap: 20px;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    .intro {
+      display: grid;
+      gap: 8px;
+    }
+
+    .intro p {
+      color: var(--muted);
+    }
+
+    .option {
+      display: grid;
+      gap: 18px;
+      padding: 22px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow);
+    }
+
+    .option__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .demo-surface {
+      min-height: 146px;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      border-radius: 8px;
+      border: 1px dashed rgba(148, 163, 184, 0.45);
+      background: var(--panel);
+    }
+
+    .pagination {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .page-btn {
+      min-width: 118px;
+      min-height: 58px;
+      padding: 0 24px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: #e8eef6;
+      color: #64748b;
+      font-size: 22px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .page-btn:not(:disabled):hover {
+      border-color: #7aa5df;
+      background: #f1f7ff;
+      color: var(--blue);
+    }
+
+    .page-status {
+      min-width: 118px;
+      text-align: center;
+      color: #475569;
+      font-size: 20px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .page-status strong {
+      color: var(--blue);
+      font-weight: 900;
+    }
+
+    .jump-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 58px;
+      padding: 0 10px;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      background: #ffffff;
+    }
+
+    .jump-inline span {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .jump-inline input {
+      width: 64px;
+      min-height: 38px;
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      border-radius: 12px;
+      text-align: center;
+      color: var(--text);
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .jump-btn {
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(37, 99, 235, 0.3);
+      background: #ffffff;
+      color: var(--blue);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .option-b .pagination {
+      position: relative;
+    }
+
+    .jump-menu {
+      position: absolute;
+      top: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    .option-c .page-status {
+      min-height: 58px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 18px;
+      border-radius: 18px;
+      background: #ffffff;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+    }
+
+    .notes {
+      color: var(--muted);
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="intro">
+      <h1>统一分页样式方案</h1>
+      <p>目标：全项目不再显示具体页码按钮，仅显示“第 x / y 页”，保留上一页、下一页，并增加跳转页码能力。</p>
+    </section>
+
+    <section class="option option-a">
+      <div class="option__head">
+        <h2>方案 A：常驻跳转输入</h2>
+        <span class="tag">推荐</span>
+      </div>
+      <div class="demo-surface">
+        <div class="pagination">
+          <button class="page-btn">上一页</button>
+          <span class="page-status">第 <strong>4</strong> / 12 页</span>
+          <label class="jump-inline">
+            <input type="number" value="8" min="1" max="12" />
+            <span>页</span>
+            <button class="jump-btn" type="button">跳转</button>
+          </label>
+          <button class="page-btn">下一页</button>
+        </div>
+      </div>
+      <p class="notes">优点：功能最清晰，适合任务总览、样品、接驳等数据量大的页面。代价：横向空间略多。</p>
+    </section>
+
+    <section class="option option-b">
+      <div class="option__head">
+        <h2>方案 B：点击“跳转”后展开</h2>
+        <span class="tag">更紧凑</span>
+      </div>
+      <div class="demo-surface">
+        <div class="pagination">
+          <button class="page-btn">上一页</button>
+          <span class="page-status">第 <strong>4</strong> / 12 页</span>
+          <button class="jump-btn" type="button">跳转页码</button>
+          <button class="page-btn">下一页</button>
+          <div class="jump-menu">
+            <input type="number" value="8" min="1" max="12" />
+            <span>页</span>
+            <button class="jump-btn" type="button">确定</button>
+          </div>
+        </div>
+      </div>
+      <p class="notes">优点：默认视觉最简洁。代价：多一次点击；弹层需要处理点击外部关闭和移动端位置。</p>
+    </section>
+
+    <section class="option option-c">
+      <div class="option__head">
+        <h2>方案 C：状态胶囊内输入</h2>
+        <span class="tag">最整齐</span>
+      </div>
+      <div class="demo-surface">
+        <div class="pagination">
+          <button class="page-btn">上一页</button>
+          <span class="page-status">第 <input type="number" value="4" min="1" max="12" /> / 12 页</span>
+          <button class="jump-btn" type="button">确定</button>
+          <button class="page-btn">下一页</button>
+        </div>
+      </div>
+      <p class="notes">优点：视觉最短，跳转和当前页合一。代价：用户可能误以为输入框只是状态显示，需要更明确的焦点样式。</p>
+    </section>
+  </main>
+</body>
+</html>

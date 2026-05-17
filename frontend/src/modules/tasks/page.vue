@@ -73,7 +73,7 @@
     </table>
   </section>
 
-  <AppModal :open="intakeModalOpen" title="手动添加任务" @close="closeIntakeModal">
+  <AppModal :open="intakeModalOpen" class="tasks-intake-modal" title="手动添加任务" @close="closeIntakeModal">
     <form class="tasks-intake-form">
       <div class="form-grid">
         <div class="form-field">
@@ -114,6 +114,13 @@
         <div class="form-field">
           <label>样品数量</label>
           <input v-model="intakeForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+        </div>
+        <div class="form-field tasks-sample-preview">
+          <label>样品编号预览</label>
+          <div class="tasks-sample-preview__list" data-testid="task-intake-sample-code-preview">
+            <span v-for="code in intakeSampleCodePreview" :key="code">{{ code }}</span>
+            <span v-if="intakeSampleCodePreview.length === 0" class="muted">选择试验类型并填写样品数量后生成</span>
+          </div>
         </div>
         <div class="form-field">
           <label>样品类型</label>
@@ -221,7 +228,13 @@
     </template>
   </AppModal>
 
-  <AppDrawer :open="taskDrawerOpen" title="任务详情" @close="closeTaskDrawer">
+  <AppModal
+    :open="taskDrawerOpen"
+    class="tasks-task-detail-modal"
+    data-testid="task-detail-modal"
+    title="任务详情"
+    @close="closeTaskDrawer"
+  >
     <form class="form-grid tasks-edit-form">
       <div class="form-field">
         <label>任务编号</label>
@@ -249,6 +262,19 @@
       <div class="form-field">
         <label>样品数量</label>
         <input v-model="editForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+      </div>
+      <div class="form-field tasks-sample-preview">
+        <label>样品编号</label>
+        <div class="tasks-sample-preview__header">
+          <span class="muted">共 {{ taskDetailSampleCodes.length }} 个，显示前 5 个</span>
+          <button class="action-link" data-testid="open-sample-codes-editor" type="button" @click="openSampleCodesEditor">
+            编辑样品编号
+          </button>
+        </div>
+        <div class="tasks-sample-preview__list" data-testid="task-detail-sample-code-preview">
+          <span v-for="code in taskDetailSampleCodePreview" :key="code">{{ code }}</span>
+          <span v-if="taskDetailSampleCodePreview.length === 0" class="muted">暂无样品编号</span>
+        </div>
       </div>
       <div class="form-field">
         <label>样品类型</label>
@@ -296,7 +322,34 @@
       <button class="action-btn secondary" data-testid="task-delete" type="button" @click="deleteTask">删除任务</button>
     </div>
     <AppFeedback :message="editWarning" tone="warning" data-task-edit-warning @close="editWarning = ''" />
-  </AppDrawer>
+  </AppModal>
+
+  <AppModal
+    :open="sampleCodesModalOpen"
+    class="tasks-sample-codes-modal"
+    data-testid="task-sample-codes-modal"
+    title="编辑样品编号"
+    @close="closeSampleCodesEditor"
+  >
+    <div class="tasks-sample-codes-editor">
+      <div class="form-field">
+        <label>样品编号（换行、逗号或分号分隔）</label>
+        <textarea
+          v-model="sampleCodesDraft"
+          class="tasks-sample-codes-editor__textarea"
+          data-testid="task-sample-codes-textarea"
+          placeholder="每行一个样品编号"
+        ></textarea>
+      </div>
+      <AppFeedback :message="sampleCodesWarning" tone="warning" @close="sampleCodesWarning = ''" />
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" type="button" @click="closeSampleCodesEditor">取消</button>
+      <button class="action-btn" data-testid="task-sample-codes-confirm" type="button" @click="saveSampleCodes">
+        保存样品编号
+      </button>
+    </template>
+  </AppModal>
 
   <AppModal :open="editExperimentModalOpen" title="选择试验类型" @close="closeEditExperimentPicker">
     <div class="tasks-intake-picker-modal" data-testid="task-edit-test-types-modal">
@@ -362,7 +415,6 @@ defineOptions({
   name: "TasksPage",
 });
 
-import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -376,6 +428,7 @@ const {
   currentPage,
   deleteTask,
   closeEditExperimentPicker,
+  closeSampleCodesEditor,
   confirmEditExperimentPicker,
   confirmScheduledExperimentRemoval,
   editExperimentDraft,
@@ -394,6 +447,7 @@ const {
   intakeExperimentSummary,
   intakeExperimentTypeOptions,
   intakeModalOpen,
+  intakeSampleCodePreview,
   intakeWarning,
   loadError,
   metrics,
@@ -406,17 +460,24 @@ const {
   resetTasks,
   resetting,
   scheduledExperimentRemovalModalOpen,
+  sampleCodesDraft,
+  sampleCodesModalOpen,
+  sampleCodesWarning,
   saveDraft,
+  saveSampleCodes,
   setCurrentPage,
   statusOptions,
   closeIntakeExperimentPicker,
   confirmIntakeExperimentPicker,
   openEditExperimentPicker,
   openIntakeExperimentPicker,
+  openSampleCodesEditor,
   sortDirection,
   sortKey,
   submitTask,
   taskDrawerOpen,
+  taskDetailSampleCodePreview,
+  taskDetailSampleCodes,
   taskRows,
   testTypeOptions,
   toggleIntakeExperimentType,

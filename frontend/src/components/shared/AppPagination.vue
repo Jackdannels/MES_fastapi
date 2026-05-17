@@ -2,44 +2,60 @@
   <div class="task-list-pagination" :class="{ 'task-list-pagination--numbers-only': !showStepControls }">
     <button
       v-if="showStepControls"
-      class="page-btn"
+      class="page-btn task-list-pagination__step"
       type="button"
       data-page="prev"
-      :disabled="currentPage <= 1"
-      @click="emitChange(currentPage - 1)"
+      aria-label="上一页"
+      title="上一页"
+      :disabled="safeCurrentPage <= 1"
+      @click="emitChange(safeCurrentPage - 1)"
     >
-      上一页
+      ‹
     </button>
-    <div class="task-list-pagination__pages">
-      <template v-for="item in pageItems" :key="item.key">
-        <button
-          v-if="item.type === 'page'"
-          class="page-btn"
-          type="button"
-          :data-page="String(item.value)"
-          :class="{ active: item.value === currentPage }"
-          @click="emitChange(item.value)"
-        >
-          {{ item.value }}
-        </button>
-        <span v-else class="page-ellipsis" data-page="ellipsis">...</span>
-      </template>
-    </div>
+
+    <span class="task-list-pagination__status" data-testid="pagination-status">
+      第 {{ safeCurrentPage }} / {{ safePageCount }} 页
+    </span>
+
+    <label class="task-list-pagination__jump">
+      <input
+        v-model="jumpValue"
+        data-testid="pagination-jump-input"
+        type="number"
+        aria-label="页码"
+        min="1"
+        :max="safePageCount"
+        inputmode="numeric"
+        @keydown.enter.prevent="emitJump"
+      />
+      <span>页</span>
+      <button
+        class="page-btn task-list-pagination__jump-submit"
+        data-testid="pagination-jump-submit"
+        type="button"
+        @click="emitJump"
+      >
+        跳转
+      </button>
+    </label>
+
     <button
       v-if="showStepControls"
-      class="page-btn"
+      class="page-btn task-list-pagination__step"
       type="button"
       data-page="next"
-      :disabled="currentPage >= pageCount"
-      @click="emitChange(currentPage + 1)"
+      aria-label="下一页"
+      title="下一页"
+      :disabled="safeCurrentPage >= safePageCount"
+      @click="emitChange(safeCurrentPage + 1)"
     >
-      下一页
+      ›
     </button>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 
 const props = defineProps({
   currentPage: {
@@ -56,65 +72,37 @@ const props = defineProps({
   },
 });
 
-const { showStepControls } = props;
-
 const emit = defineEmits(["change"]);
 
-const buildPageItem = (page) => ({
-  key: `page-${page}`,
-  type: "page",
-  value: page,
+const safePageCount = computed(() => Math.max(Number.parseInt(String(props.pageCount || 1), 10) || 1, 1));
+const safeCurrentPage = computed(() => {
+  const parsedPage = Number.parseInt(String(props.currentPage || 1), 10);
+  const currentPage = Number.isFinite(parsedPage) ? parsedPage : 1;
+  return Math.min(Math.max(currentPage, 1), safePageCount.value);
 });
 
-const pageItems = computed(() => {
-  const total = Math.max(props.pageCount, 1);
-  const current = Math.min(Math.max(props.currentPage, 1), total);
+const jumpValue = ref(String(safeCurrentPage.value));
 
-  if (total <= 5) {
-    return Array.from({ length: total }, (_, index) => buildPageItem(index + 1));
-  }
-
-  if (current <= 3) {
-    return [
-      ...Array.from({ length: 4 }, (_, index) => buildPageItem(index + 1)),
-      { key: "ellipsis-end", type: "ellipsis" },
-      buildPageItem(total),
-    ];
-  }
-
-  if (current >= total - 2) {
-    return [
-      buildPageItem(1),
-      { key: "ellipsis-start", type: "ellipsis" },
-      ...Array.from({ length: 4 }, (_, index) => buildPageItem(total - 3 + index)),
-    ];
-  }
-
-  const visibleStart = Math.max(2, current - 1);
-  const visibleEnd = Math.min(total - 1, current + 1);
-  const items = [buildPageItem(1)];
-
-  if (visibleStart > 2) {
-    items.push({ key: "ellipsis-start", type: "ellipsis" });
-  }
-
-  for (let page = visibleStart; page <= visibleEnd; page += 1) {
-    items.push(buildPageItem(page));
-  }
-
-  if (visibleEnd < total - 1) {
-    items.push({ key: "ellipsis-end", type: "ellipsis" });
-  }
-
-  items.push(buildPageItem(total));
-  return items;
+watch([safeCurrentPage, safePageCount], () => {
+  jumpValue.value = String(safeCurrentPage.value);
 });
+
+const normalizePage = (page) => {
+  const parsedPage = Number.parseInt(String(page ?? ""), 10);
+  const nextPage = Number.isFinite(parsedPage) ? parsedPage : safeCurrentPage.value;
+  return Math.min(Math.max(nextPage, 1), safePageCount.value);
+};
 
 const emitChange = (page) => {
-  const nextPage = Math.min(Math.max(page, 1), Math.max(props.pageCount, 1));
-  if (nextPage === props.currentPage) {
+  const nextPage = normalizePage(page);
+  if (nextPage === safeCurrentPage.value) {
+    jumpValue.value = String(safeCurrentPage.value);
     return;
   }
   emit("change", nextPage);
+};
+
+const emitJump = () => {
+  emitChange(jumpValue.value);
 };
 </script>

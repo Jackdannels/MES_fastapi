@@ -208,23 +208,43 @@ input[type="datetime-local"].format-hint-empty:focus::before {
 }
 
 .task-list-pagination {
-  display: grid;
-  grid-template-columns: 68px 312px 68px;
-  gap: 6px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
   justify-content: flex-end;
   margin-left: auto;
 }
 
 .task-list-pagination--numbers-only {
-  grid-template-columns: 312px;
+  justify-content: center;
 }
 
-.task-list-pagination__pages {
+.task-list-pagination__status {
   display: inline-flex;
-  width: 312px;
+  align-items: center;
   justify-content: center;
+  min-width: 96px;
+  min-height: 36px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.task-list-pagination__jump {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .task-list-pagination .page-btn {
@@ -241,16 +261,13 @@ input[type="datetime-local"].format-hint-empty:focus::before {
   min-width: 68px;
 }
 
-.task-list-pagination__pages .page-btn {
-  width: 40px;
-  min-width: 40px;
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.task-list-pagination .page-btn.active {
-  background: rgba(56, 189, 248, 0.28);
-  border-color: rgba(56, 189, 248, 0.5);
+.task-list-pagination > .task-list-pagination__step {
+  min-width: 36px;
+  width: 36px;
+  padding: 6px 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .task-list-pagination .page-btn[disabled] {
@@ -258,13 +275,22 @@ input[type="datetime-local"].format-hint-empty:focus::before {
   opacity: 0.5;
 }
 
-.task-list-pagination .page-ellipsis {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  color: var(--muted);
-  font-size: 12px;
+.task-list-pagination__jump input {
+  width: 56px;
+  min-height: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.task-list-pagination__jump-submit {
+  min-height: 28px;
+  padding: 4px 10px;
+  color: #1d4ed8;
 }
 
 .tabs {
