@@ -141,7 +141,6 @@
                 </div>
               </div>
             </div>
-            <div class="laboratory-flow-status" data-testid="laboratory-task-flow-status">{{ currentTaskFlow.currentStatus }}</div>
             <ol class="laboratory-flow-steps">
               <li
                 v-for="step in currentTaskFlow.steps"
@@ -185,7 +184,7 @@
                 :class="{ 'is-active': step.active, 'is-reached': step.reached }"
               >
                 <span class="laboratory-flow-label">{{ step.label }}</span>
-                <span class="laboratory-flow-time">{{ formatFlowTime(step.time) }}</span>
+                <span class="laboratory-flow-time" :title="formatFlowTime(step.time)">{{ formatFlowTime(step.time) }}</span>
               </li>
             </ol>
           </section>
@@ -524,11 +523,17 @@ defineOptions({
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { computed, ref } from "vue";
+import { useRoute } from "vue-router";
 import { useLaboratoryPage } from "./useLaboratoryPage";
 
 const TASK_TRAY_PREVIEW_LIMIT = 3;
 const RUNNING_TRAY_PREVIEW_LIMIT = 3;
 const RUNNING_SAMPLE_PREVIEW_LIMIT = 5;
+const route = useRoute();
+const selectedLabName = computed(() => {
+  const rawLabName = route.query?.lab;
+  return Array.isArray(rawLabName) ? rawLabName[0] || "" : rawLabName || "";
+});
 
 const {
   actionState,
@@ -591,7 +596,7 @@ const {
   summary,
   submitCompareScan,
   taskListModalOpen,
-} = useLaboratoryPage();
+} = useLaboratoryPage({ selectedLabName });
 
 const fullContentModalOpen = ref(false);
 const fullContentDetail = ref(null);

@@ -212,6 +212,18 @@ const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => 
   return codes;
 };
 
+const resolveTrayExperimentTypeText = ({ taskCode, trayCode, experiments, experimentTrays }) => {
+  const experimentMap = buildExperimentMap(experiments);
+  const names = [];
+  collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays }).forEach((experimentCode) => {
+    const experimentName = resolveExperimentName(experimentMap.get(experimentCode), experimentCode);
+    if (experimentName && !names.includes(experimentName)) {
+      names.push(experimentName);
+    }
+  });
+  return names.join(" / ");
+};
+
 const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
   const names = new Set();
   asArray(samples).forEach((sample) => {
@@ -490,12 +502,19 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       }
 
       const task = taskMap.get(taskCode) || {};
+      const trayExperimentTypeText = resolveTrayExperimentTypeText({
+        experiments,
+        experimentTrays,
+        taskCode,
+        trayCode,
+      });
+      const fallbackSampleType = normalizeText(task?.test_type || task?.sample_type || sample?.sample_type) || "待确认样品类型";
       const current = trayMap.get(trayCode) || {
         id: createId("zancun-row"),
         location: normalizeText(sample?.location) || STAGING_LOCATION,
         owner: normalizeText(sample?.owner) || "待确认",
         quantity: 0,
-        sampleType: normalizeText(task?.test_type || task?.sample_type || sample?.sample_type) || "待确认样品类型",
+        sampleType: trayExperimentTypeText || fallbackSampleType,
         source: normalizeText(task?.source) || "待确认来源",
         statuses: [],
         taskCode,
@@ -506,7 +525,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       current.taskCode = current.taskCode || taskCode;
       current.owner = current.owner || normalizeText(sample?.owner) || "待确认";
       current.location = current.location || normalizeText(sample?.location) || STAGING_LOCATION;
-      current.sampleType = current.sampleType || normalizeText(task?.test_type || task?.sample_type || sample?.sample_type) || "待确认样品类型";
+      current.sampleType = trayExperimentTypeText || current.sampleType || fallbackSampleType;
       current.source = current.source || normalizeText(task?.source) || "待确认来源";
       current.testType = current.testType || normalizeText(task?.test_type);
       current.quantity += Number(tray?.quantity) || 1;
@@ -649,7 +668,7 @@ function buildZancunOverviewView(input = {}) {
   const rows = asArray(input.rows);
   const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
   const sort = input.sort && typeof input.sort === "object" ? input.sort : {};
-  const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 5;
+  const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 4;
   const query = normalizeText(filters.query).toLowerCase();
   const sampleType = normalizeText(filters.sampleType);
   const status = normalizeText(filters.status);
@@ -816,6 +835,25 @@ function applyZancunInventoryAction(input = {}) {
   if (actionMode === "stockIn" && hasReturnedMarker) {
     return {
       error: "该托盘已厂家收回，不能再次入库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  if (actionMode === "stockIn" && isCurrentStagingStatus(matchedRow.status)) {
+    return {
+      error: "该托盘已完成暂存间扫码入库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  const latestMatchedEvent = nextSnapshot[STAGING_EVENTS_KEY]
+    .filter((event) => normalizeText(event?.tray_code) === normalizedCode)
+    .at(-1);
+  if (actionMode === "stockIn" && normalizeText(latestMatchedEvent?.action) === "stock_in") {
+    return {
+      error: "该托盘已完成暂存间扫码入库。",
       row: null,
       snapshot: nextSnapshot,
     };

@@ -1,6 +1,5 @@
 import { buildTrayFlowView, synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
 import {
-  resolveTaskStatus,
   STATUS_COMPLETED,
   STATUS_RETENTION,
   STATUS_RUNNING,
@@ -16,6 +15,7 @@ const LAB_RESET_STATUS = "送至实验室";
 const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
 const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
+const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
   { key: "scheduled", label: STATUS_SCHEDULED },
@@ -422,6 +422,19 @@ const buildLaboratoryTaskFlow = (status = STATUS_WAITING) => {
   };
 };
 
+const resolveLaboratoryTaskStatus = (currentTask) => {
+  if (!currentTask) {
+    return STATUS_WAITING;
+  }
+  const trayStatuses = asArray(currentTask?.trayRows)
+    .map((row) => normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus))
+    .filter(Boolean);
+  if (trayStatuses.some((status) => RUNNING_EXPERIMENT_STATUSES.has(status))) {
+    return STATUS_RUNNING;
+  }
+  return STATUS_SCHEDULED;
+};
+
 const buildRunningExperimentView = ({ currentTask, now }) => {
   const runningTrayRows = asArray(currentTask?.trayRows).filter((row) => normalizeText(row?.trayStatus) === "实验进行中");
   if (!currentTask || !runningTrayRows.length) {
@@ -597,7 +610,7 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentTrayCodeMap, samp
   };
 };
 
-function buildSaltSprayLaboratoryView({
+function buildLaboratoryWorkbenchView({
   tasks = [],
   schedules = [],
   experiments = [],
@@ -647,17 +660,14 @@ function buildSaltSprayLaboratoryView({
     currentExperimentTrayRows.find((row) => row.trayCode === normalizeText(selectedTrayCode))
     || currentExperimentTrayRows[0]
     || null;
-  const currentTaskRecord = taskMap.get(normalizeText(currentTask?.taskCode)) || currentTask || null;
-  const currentTaskStatus = currentTask
-    ? resolveTaskStatus(currentTaskRecord, schedules, samples, nowTime)
-    : STATUS_WAITING;
+  const currentTaskStatus = resolveLaboratoryTaskStatus(currentTask);
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus);
   const selectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
         currentExperimentCode: normalizeText(currentTask?.experimentCode),
         experimentTrays,
         experiments,
-        location: normalizeText(currentTask?.device) || labName,
+        location: normalizeText(selectedTrayRow?.currentLocation),
         samples,
         schedules,
         status: normalizeText(selectedTrayRow?.displayStatus) || normalizeText(selectedTrayRow?.trayStatus),
@@ -771,6 +781,8 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
   };
 }
 
+const buildSaltSprayLaboratoryView = buildLaboratoryWorkbenchView;
+
 function completeLaboratoryComparison(workflow = createLaboratoryWorkflow()) {
   return {
     ...workflow,
@@ -810,9 +822,9 @@ function confirmLaboratoryExperiment(workflow = createLaboratoryWorkflow()) {
   };
 }
 
-function buildLaboratoryProgressMessage(workflow, currentTask) {
+function buildLaboratoryProgressMessage(workflow, currentTask, labName = SALT_SPRAY_LAB) {
   if (!currentTask) {
-    return "当前盐雾试验室暂无排程";
+    return `当前${normalizeText(labName) || SALT_SPRAY_LAB}暂无排程`;
   }
   if (workflow.experimentConfirmed) {
     return "当前任务已确认全部托盘实验准备就绪";
@@ -1030,6 +1042,7 @@ export {
   LAB_RESET_STATUS,
   LAB_READY_STATUS,
   buildLaboratoryChecklist,
+  buildLaboratoryWorkbenchView,
   buildLaboratoryTaskFlow,
   buildLaboratoryProgressMessage,
   buildRunningExperimentView,

@@ -1,9 +1,23 @@
 import { mount } from "@vue/test-utils";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 
 import AppFeedback from "./AppFeedback.vue";
 
 describe("AppFeedback", () => {
+  test("uses the full row while keeping the feedback container vertically compact", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/components/shared/AppFeedback.vue"), "utf8");
+    const rule = source.match(/\.app-feedback\s*\{[^}]*\}/)?.[0] || "";
+
+    expect(rule).toContain("justify-self: stretch;");
+    expect(rule).toContain("width: 100%;");
+    expect(rule).toContain("box-sizing: border-box;");
+    expect(rule).toContain("align-self: start;");
+    expect(rule).toContain("min-height: 0;");
+    expect(rule).toContain("padding: 8px 10px;");
+  });
+
   test("renders tone-specific feedback and emits close when clicked", async () => {
     const wrapper = mount(AppFeedback, {
       props: {

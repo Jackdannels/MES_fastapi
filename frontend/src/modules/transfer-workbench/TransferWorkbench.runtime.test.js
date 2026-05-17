@@ -382,12 +382,20 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').classes()).toContain("transfer-dispatch-shell");
     await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
     await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001");
-    expect(wrapper.get('[data-testid="transfer-dispatch-tray-summary"]').exists()).toBe(true);
+    const summary = wrapper.get('[data-testid="transfer-dispatch-tray-summary"]');
+    expect(summary.exists()).toBe(true);
+    const summaryTaskNo = summary.get('[data-testid="transfer-dispatch-summary-task-no"]');
+    expect(summaryTaskNo.get("span").text()).toBe("任务编号");
+    expect(summaryTaskNo.get("strong").text()).toBe("SYLU-2026-03-102");
+    expect(summary.text()).not.toContain("任务名称");
+    expect(summary.text()).not.toContain("连接器批次 B");
+    expect(summary.text()).not.toContain("关联实验");
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-grid"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-0"]').text()).toContain("暂存间");
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-1"]').text()).toContain("振动一室");

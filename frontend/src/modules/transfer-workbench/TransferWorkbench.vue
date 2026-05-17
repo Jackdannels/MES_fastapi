@@ -685,11 +685,17 @@ const confirmLogout = async () => {
 
 const switchModule = async (targetModule) => {
   closeExitDialog();
-  const result = await switchSessionModule(targetModule);
+  const module = typeof targetModule === "string" ? targetModule : targetModule?.module;
+  const labName = typeof targetModule === "object" && targetModule !== null ? targetModule.labName : "";
+  const result = await switchSessionModule(module);
   if (!result.ok) {
     return;
   }
-  await router.push(resolveModuleHome(targetModule));
+  if (module === "laboratory" && labName) {
+    await router.push({ path: "/laboratory", query: { lab: labName } });
+    return;
+  }
+  await router.push(resolveModuleHome(module));
 };
 
 const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);

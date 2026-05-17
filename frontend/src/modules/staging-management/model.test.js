@@ -164,6 +164,68 @@ describe("staging-management model", () => {
     });
   });
 
+  test("shows tray-mapped experiment types instead of every task experiment on staging rows", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-003",
+      code: "SYLU-2026-05-003",
+      test_type: "盐雾试验 / 霉菌试验 / 四综合试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-003-a",
+        task_code: "SYLU-2026-05-003",
+        experiment_code: "SYLU-2026-05-003-A",
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+      },
+      {
+        id: "exp-003-b",
+        task_code: "SYLU-2026-05-003",
+        experiment_code: "SYLU-2026-05-003-B",
+        experiment_name: "霉菌试验",
+        required_device: "霉菌试验室",
+      },
+      {
+        id: "exp-003-c",
+        task_code: "SYLU-2026-05-003",
+        experiment_code: "SYLU-2026-05-003-C",
+        experiment_name: "四综合试验",
+        required_device: "四综合试验室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-003-b",
+      task_code: "SYLU-2026-05-003",
+      experiment_code: "SYLU-2026-05-003-B",
+      tray_code: "SYLU-2026-05-003-TP-002",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-003",
+      code: "SYLU-2026-05-003-SP-001",
+      task_code: "SYLU-2026-05-003",
+      owner: "周工",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [{ tray_code: "SYLU-2026-05-003-TP-002", status: "已到达暂存间", quantity: 4 }],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-003-in",
+      tray_code: "SYLU-2026-05-003-TP-002",
+      task_code: "SYLU-2026-05-003",
+      action: "stock_in",
+      time: "2026-04-01T09:00:00",
+      operator: "暂存员A",
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-05-003-TP-002");
+
+    expect(row?.sampleType).toBe("霉菌试验");
+  });
+
   test("builds metrics from tray rows and staging events", () => {
     const rows = buildZancunRowsFromSnapshot(createSnapshot(), { now: TODAY });
     const metrics = buildZancunMetrics({
@@ -179,7 +241,7 @@ describe("staging-management model", () => {
     });
   });
 
-  test("filters overview rows by metric mode and paginates in 5-row viewports", () => {
+  test("filters overview rows by metric mode and paginates in 4-row viewports", () => {
     const rows = buildZancunRowsFromSnapshot(createSnapshot(), { now: TODAY });
     const view = buildZancunOverviewView({
       filters: {
@@ -187,7 +249,7 @@ describe("staging-management model", () => {
       },
       now: TODAY,
       page: 1,
-      pageSize: 5,
+      pageSize: 4,
       rows,
       stagingEvents: createSnapshot()[STORAGE_KEYS.staging_events],
     });
@@ -201,7 +263,7 @@ describe("staging-management model", () => {
       },
       now: TODAY,
       page: 2,
-      pageSize: 5,
+      pageSize: 4,
       rows,
       stagingEvents: createSnapshot()[STORAGE_KEYS.staging_events],
       sort: {
@@ -212,7 +274,7 @@ describe("staging-management model", () => {
 
     expect(pagedView.pageCount).toBe(2);
     expect(pagedView.currentPage).toBe(2);
-    expect(pagedView.rows).toHaveLength(1);
+    expect(pagedView.rows).toHaveLength(2);
   });
 
   test("builds scan detail for stock in and stock out actions", () => {

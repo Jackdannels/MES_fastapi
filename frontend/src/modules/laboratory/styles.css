@@ -141,6 +141,10 @@
   gap: 16px;
 }
 
+.laboratory-control-header > div {
+  min-width: 0;
+}
+
 .laboratory-reset-button {
   display: inline-flex;
   align-items: center;
@@ -166,6 +170,7 @@
 .laboratory-progress-panel h4,
 .laboratory-compare-head h4 {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .laboratory-control-header p {
@@ -295,7 +300,7 @@
 }
 
 .laboratory-flow-steps--tray {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .laboratory-flow-steps li {
@@ -327,20 +332,31 @@
 }
 
 .laboratory-flow-steps--tray li {
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
   justify-items: stretch;
-  gap: 10px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .laboratory-flow-label {
-  text-align: left;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .laboratory-flow-time {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: #64748b;
   font-size: 12px;
   font-weight: 500;
-  text-align: right;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -626,6 +642,10 @@
   border: 1px solid rgba(56, 189, 248, 0.24);
 }
 
+.laboratory-compare-head > * {
+  min-width: 0;
+}
+
 .laboratory-checklist-card {
   display: grid;
   gap: 10px;
@@ -639,6 +659,12 @@
   border-radius: 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(248, 250, 252, 0.95);
+}
+
+.laboratory-checklist-item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .laboratory-prompt-card {
@@ -825,9 +851,12 @@
     grid-template-columns: 1fr;
   }
 
-  .laboratory-flow-steps,
-  .laboratory-flow-steps--tray {
+  .laboratory-flow-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .laboratory-flow-steps--tray {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   }
 
   .laboratory-recent-tasks__header,

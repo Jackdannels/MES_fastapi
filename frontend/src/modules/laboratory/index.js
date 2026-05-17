@@ -6,8 +6,8 @@ export const route = {
   name: "laboratory",
   component: Page,
   meta: {
-    title: "盐雾试验室操作台",
-    subtitle: "查看盐雾试验室当前任务与实验准备流程。",
+    title: "试验室操作台",
+    subtitle: "查看当前试验室任务与实验准备流程。",
     module: "laboratory",
   },
 };

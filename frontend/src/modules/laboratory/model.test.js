@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   applyLaboratoryTaskStep,
+  buildLaboratoryWorkbenchView,
   buildLaboratorySummary,
   buildLaboratoryProgressMessage,
   buildLaboratoryWorkflowFromTask,
@@ -27,6 +28,62 @@ const toDisplayedDateTime = (value) => {
 };
 
 describe("laboratory model", () => {
+  test("buildLaboratoryWorkbenchView filters non-salt laboratories by schedule device", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experiments: [
+        { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", experiment_name: "振动试验" },
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", experiment_name: "盐雾试验" },
+      ],
+      labName: "振动一室",
+      now: NOW,
+      samples: [
+        {
+          code: "SYLU-2026-04-102-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-102",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-ZD-001" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-vibration",
+          task_code: "SYLU-2026-04-102",
+          experiment_code: "SYLU-2026-04-102-A",
+          device: "振动一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-salt",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: "SYLU-2026-04-102", name: "振动连接器", test_type: "振动试验" },
+        { code: "SYLU-2026-04-101", name: "盐雾连接器", test_type: "盐雾试验" },
+      ],
+    });
+
+    expect(view.labName).toBe("振动一室");
+    expect(view.scheduleRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-04-102"]);
+    expect(view.allScheduleRows.map((row) => row.device)).toEqual(["振动一室", "盐雾试验室"]);
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      taskCode: "SYLU-2026-04-102",
+      experimentName: "振动试验",
+      owner: "周工",
+    }));
+  });
+
+  test("buildLaboratoryProgressMessage uses the selected lab name when no task exists", () => {
+    expect(buildLaboratoryProgressMessage(createLaboratoryWorkflow(), null, "冲击一室")).toBe("当前冲击一室暂无排程");
+  });
+
   test("buildSaltSprayLaboratoryView keeps only 盐雾试验室 schedules and prioritizes the active one", () => {
     const view = buildSaltSprayLaboratoryView({
       experiments: [
@@ -526,6 +583,88 @@ describe("laboratory model", () => {
       "放置实验后暂存间",
       "厂家收回",
     ]);
+  });
+
+  test("buildLaboratoryWorkbenchView keeps a shared tray's next laboratory task scheduled after the previous experiment completed", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-A", tray_code: "TP-SHARED-701" },
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-B", tray_code: "TP-SHARED-701" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-04-701", experiment_code: "SYLU-2026-04-701-B", experiment_name: "冲击试验" },
+      ],
+      labName: "冲击一室",
+      now: NOW,
+      samples: [
+        {
+          code: "SP-701",
+          location: "盐雾试验室",
+          owner: "赵工",
+          status: "实验已完成",
+          task_code: "SYLU-2026-04-701",
+          trays: [{ quantity: 1, status: "实验已完成", tray_code: "TP-SHARED-701" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-701-impact",
+          task_code: "SYLU-2026-04-701",
+          experiment_code: "SYLU-2026-04-701-B",
+          device: "冲击一室",
+          start_at: "2026-04-02T11:00:00.000Z",
+          end_at: "2026-04-02T13:00:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: "SYLU-2026-04-701", name: "共享托盘任务", test_type: "盐雾试验 / 冲击试验" },
+      ],
+    });
+
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      experimentName: "冲击试验",
+      taskCode: "SYLU-2026-04-701",
+    }));
+    expect(view.currentTaskFlow.currentStatus).toBe("已排程");
+  });
+
+  test("buildLaboratoryWorkbenchView keeps an unsampled scheduled tray at the initial flow state", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-801", experiment_code: "SYLU-2026-04-801-A", tray_code: "TP-UNARRIVED-801" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-801", experiment_code: "SYLU-2026-04-801-A", experiment_name: "盐雾试验" },
+      ],
+      labName: "盐雾试验室",
+      now: NOW,
+      samples: [],
+      schedules: [
+        {
+          id: "schedule-801-salt",
+          task_code: "SYLU-2026-04-801",
+          experiment_code: "SYLU-2026-04-801-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T11:00:00.000Z",
+          end_at: "2026-04-02T13:00:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: "SYLU-2026-04-801", name: "未到货排程任务", test_type: "盐雾试验" },
+      ],
+    });
+
+    expect(view.currentTaskFlow.currentStatus).toBe("已排程");
+    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：TP-UNARRIVED-801 | 当前状态：样品运输中");
+    expect(view.selectedTrayFlow.steps.find((step) => step.key === "in_transit")).toEqual(expect.objectContaining({
+      active: true,
+      reached: false,
+    }));
+    expect(view.selectedTrayFlow.steps.find((step) => step.key === "arrived_lab")).toEqual(expect.objectContaining({
+      active: false,
+      reached: false,
+    }));
   });
 
   test("buildSaltSprayLaboratoryView exposes running experiment countdown data for the current salt spray task", () => {

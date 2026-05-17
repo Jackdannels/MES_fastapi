@@ -9,6 +9,14 @@
           </option>
         </select>
       </label>
+      <label v-if="selectedModule === 'laboratory'" class="form-field">
+        <span>试验室</span>
+        <select v-model="selectedLabName" class="search-input" data-testid="module-exit-lab-select">
+          <option v-for="option in laboratoryOptions" :key="option.key" :value="option.key">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
     </div>
     <AppFeedback :message="errorMessage" tone="warning" @close="errorMessage = ''" />
     <template #footer>
@@ -23,13 +31,17 @@
 import { ref, watch } from "vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 
-import { MODULE_OPTIONS } from "@/lib/moduleCatalog";
+import { LABORATORY_OPTIONS, MODULE_OPTIONS } from "@/lib/moduleCatalog";
 import AppModal from "./AppModal.vue";
 
 const props = defineProps({
   currentModule: {
     type: String,
     default: "central",
+  },
+  currentLabName: {
+    type: String,
+    default: "",
   },
   open: {
     type: Boolean,
@@ -40,19 +52,28 @@ const props = defineProps({
 const emit = defineEmits(["close", "logout", "switch-module"]);
 
 const moduleOptions = MODULE_OPTIONS;
+const laboratoryOptions = LABORATORY_OPTIONS;
 const selectedModule = ref(props.currentModule);
+const selectedLabName = ref(props.currentLabName || laboratoryOptions[0]?.key || "");
 const errorMessage = ref("");
 
 watch(
-  () => [props.currentModule, props.open],
-  ([currentModule, open]) => {
+  () => [props.currentModule, props.currentLabName, props.open],
+  ([currentModule, currentLabName, open]) => {
     selectedModule.value = currentModule || "central";
+    selectedLabName.value = currentLabName || laboratoryOptions[0]?.key || "";
     if (open) {
       errorMessage.value = "";
     }
   },
   { immediate: true },
 );
+
+watch(selectedModule, (module) => {
+  if (module === "laboratory" && !selectedLabName.value) {
+    selectedLabName.value = laboratoryOptions[0]?.key || "";
+  }
+});
 
 const handleClose = () => {
   errorMessage.value = "";
@@ -65,12 +86,23 @@ const handleLogout = () => {
 };
 
 const handleSwitch = () => {
-  if (selectedModule.value === props.currentModule) {
+  const isCurrentLaboratory =
+    selectedModule.value === "laboratory" &&
+    props.currentModule === "laboratory" &&
+    (props.currentLabName ? selectedLabName.value === props.currentLabName : true);
+  const isCurrentModule = selectedModule.value === props.currentModule && selectedModule.value !== "laboratory";
+
+  if (isCurrentModule || isCurrentLaboratory) {
     errorMessage.value = "请选择其他界面";
     return;
   }
 
   errorMessage.value = "";
-  emit("switch-module", selectedModule.value);
+  if (selectedModule.value === "laboratory") {
+    emit("switch-module", { module: "laboratory", labName: selectedLabName.value });
+    return;
+  }
+
+  emit("switch-module", { module: selectedModule.value });
 };
 </script>

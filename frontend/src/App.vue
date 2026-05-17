@@ -67,7 +67,7 @@
   </div>
 
   <div v-else class="app-shell">
-    <aside v-if="!isStagingModule" class="sidebar">
+    <aside v-if="!isStagingModule && !isLaboratoryModule" class="sidebar">
       <div class="brand">
         七二四新火工区信息化中控管理系统
         <span>{{ moduleLabel }}</span>
@@ -103,6 +103,7 @@
   <ModuleExitDialog
     v-if="!isAuthLayout && !isBareModule"
     :current-module="currentModule"
+    :current-lab-name="currentLabName"
     :open="exitDialogOpen"
     @close="closeExitDialog"
     @logout="confirmLogout"
@@ -145,11 +146,13 @@ const moduleLabel = computed(() => MODULE_LABELS[currentModule.value] || MODULE_
 const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
 const isStagingModule = computed(() => currentModule.value === "staging");
+const isLaboratoryModule = computed(() => currentModule.value === "laboratory");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskIntakeAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
+const currentLabName = computed(() => (typeof route.query?.lab === "string" ? route.query.lab : ""));
 
 const isActive = (name) => route.name === name;
 
@@ -229,11 +232,20 @@ const confirmLogout = async () => {
 
 const switchModule = async (targetModule) => {
   closeExitDialog();
-  const result = await switchSessionModule(targetModule);
+  const module = typeof targetModule === "string" ? targetModule : targetModule?.module;
+  const labName = typeof targetModule === "object" && targetModule !== null ? targetModule.labName : "";
+
+  const result = await switchSessionModule(module);
   if (!result.ok) {
     return;
   }
-  await router.push(resolveModuleHome(targetModule));
+
+  if (module === "laboratory" && labName) {
+    await router.push({ path: "/laboratory", query: { lab: labName } });
+    return;
+  }
+
+  await router.push(resolveModuleHome(module));
 };
 
 onMounted(() => {

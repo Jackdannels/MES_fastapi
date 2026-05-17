@@ -257,13 +257,13 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.get('[data-testid="zancun-planned-inbound-column"] .pill').text()).toBe("待入库 6");
   });
 
-  test("inventory columns render five fixed slots with empty placeholders on short pages", async () => {
+  test("inventory columns render four fixed slots with empty placeholders on short pages", async () => {
     const mounted = await mountPage();
     const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
 
-    expect(currentColumn.findAll(".zancun-console-slot")).toHaveLength(5);
-    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+    expect(currentColumn.findAll(".zancun-console-slot")).toHaveLength(4);
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(4);
   });
 
   test("current staging and planned inbound lists paginate independently", async () => {
@@ -280,13 +280,14 @@ describe("StagingManagementPage runtime", () => {
     const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
 
-    expect(currentColumn.text()).toContain("SYLU-2026-04-112-TP-001");
-    expect(currentColumn.text()).not.toContain("SYLU-2026-04-113-TP-001");
+    expect(currentColumn.text()).toContain("SYLU-2026-04-111-TP-001");
+    expect(currentColumn.text()).not.toContain("SYLU-2026-04-112-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
 
     await currentColumn.get('[data-testid="zancun-current-staging-pagination"] [data-page="next"]').trigger("click");
 
+    expect(currentColumn.text()).toContain("SYLU-2026-04-112-TP-001");
     expect(currentColumn.text()).toContain("SYLU-2026-04-113-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
@@ -308,12 +309,13 @@ describe("StagingManagementPage runtime", () => {
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
-    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
-    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(4);
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
-    expect(plannedColumn.text()).toContain("SYLU-2026-04-108-TP-001");
+    expect(plannedColumn.text()).toContain("SYLU-2026-04-107-TP-001");
+    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
   });
 
   test("clicking KPI cards filters the inventory columns without opening scan modals", async () => {
@@ -349,19 +351,36 @@ describe("StagingManagementPage runtime", () => {
 
     expect(document.activeElement).toBe(input);
     expect(input.readOnly).toBe(false);
+    expect(mounted.get('[data-testid="zancun-scan-submit"]').text()).toBe("入库");
+    expect(mounted.get('[data-testid="zancun-scan-complete"]').text()).toBe("入库完成");
     expect(mounted.get('[data-testid="zancun-scan-modal"] .form-actions').classes()).toContain("form-actions--touch");
   });
 
-  test("stock-in scan completes inventory without a second confirmation", async () => {
+  test("stock-in scan batches trays from the inline button before closing from the footer", async () => {
     const mounted = await mountPage();
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
-    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
     expect(mounted.text()).toContain("今日已入库2");
+    expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("");
+    expect(document.activeElement).toBe(mounted.get('[data-testid="zancun-scan-code"]').element);
+    await Promise.resolve();
+    await mounted.vm.$nextTick();
+
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-104-TP-001");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+
+    expect(mounted.text()).toContain("今日已入库3");
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in" && event.time.startsWith("2026-04-01"))).toHaveLength(3);
     expect(mounted.find('[data-testid="zancun-detail-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
+
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
   });
 
   test("stock-in scan rejects trays that have already been returned to manufacturer", async () => {
@@ -384,7 +403,7 @@ describe("StagingManagementPage runtime", () => {
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
-    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
     expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
     expect(mounted.get('[data-testid="zancun-scan-modal"]').text()).toContain("该托盘已厂家收回，不能再次入库。");
@@ -601,7 +620,7 @@ describe("StagingManagementPage runtime", () => {
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-107-TP-001");
-    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
     const updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-001");
 

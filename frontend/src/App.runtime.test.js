@@ -132,18 +132,19 @@ describe("App runtime boundary", () => {
   });
 
   test("renders laboratory routes in the standalone module shell", async () => {
-    reactiveRoute.meta = { module: "laboratory", title: "盐雾试验室操作台", subtitle: "查看盐雾试验室当前任务与实验准备流程。" };
+    reactiveRoute.meta = { module: "laboratory", title: "试验室操作台", subtitle: "查看当前试验室任务与实验准备流程。" };
     reactiveRoute.name = "laboratory";
     reactiveRoute.path = "/laboratory";
 
     mountApp();
     await nextTick();
 
-    expect(wrapper.text()).toContain("盐雾试验室操作台");
+    expect(wrapper.text()).toContain("试验室操作台");
+    expect(wrapper.text()).not.toContain("盐雾试验室操作台");
     expect(wrapper.text()).toContain("退出登录");
-    expect(wrapper.text()).toContain("七二四新火工区信息化中控管理系统");
-    expect(wrapper.find(".sidebar").exists()).toBe(true);
-    expect(wrapper.find(".nav-link").exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("七二四新火工区信息化中控管理系统");
+    expect(wrapper.find(".sidebar").exists()).toBe(false);
+    expect(wrapper.find(".nav-link").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("中控中心");
     expect(wrapper.text()).not.toContain("新建任务");
     expect(wrapper.text()).not.toContain("查看排程");
@@ -281,6 +282,32 @@ describe("App runtime boundary", () => {
     expect(routerReplace).not.toHaveBeenCalled();
     expect(switchSessionModuleMock).toHaveBeenCalledWith("visual");
     expect(routerPush).toHaveBeenCalledWith("/visualization");
+  });
+
+  test("switches to a selected laboratory while preserving the lab query", async () => {
+    mountApp();
+
+    await wrapper.get('[data-testid="app-logout"]').trigger("click");
+    await wrapper.get('[data-testid="module-exit-select"]').setValue("laboratory");
+    await nextTick();
+    await wrapper.get('[data-testid="module-exit-lab-select"]').setValue("冲击一室");
+    await wrapper.get('[data-testid="module-exit-switch"]').trigger("click");
+    await Promise.resolve();
+
+    expect(logoutSessionMock).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(switchSessionModuleMock).toHaveBeenCalledWith("laboratory");
+    expect(routerPush).toHaveBeenCalledWith({
+      path: "/laboratory",
+      query: { lab: "冲击一室" },
+    });
+  });
+
+  test("uses the generic laboratory navigation title", () => {
+    const navLabels = getNavigationModules("laboratory").map((item) => item.route.meta?.title);
+
+    expect(navLabels).toContain("试验室操作台");
+    expect(navLabels).not.toContain("盐雾试验室操作台");
   });
 
   test("full logout still delegates to backend session cleanup before routing to login", async () => {

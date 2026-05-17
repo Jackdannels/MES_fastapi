@@ -144,19 +144,32 @@
         </div>
         <div class="form-field">
           <label>托盘编号</label>
-          <input
-            ref="scanInputRef"
-            v-model="scanForm.code"
-            data-testid="zancun-scan-code"
-            type="text"
-            placeholder="请扫描或输入托盘编号"
-          />
+          <div class="zancun-scan-code-row">
+            <input
+              ref="scanInputRef"
+              v-model="scanForm.code"
+              data-testid="zancun-scan-code"
+              type="text"
+              placeholder="请扫描或输入托盘编号"
+              @keyup="handleScanKeyup"
+            />
+            <button
+              v-if="activeScanMode === 'stockIn'"
+              class="action-btn zancun-scan-submit-btn"
+              data-testid="zancun-scan-submit"
+              type="button"
+              :disabled="scanSubmitting"
+              @click="submitStockInScan"
+            >
+              {{ scanSubmitting ? "入库中..." : "入库" }}
+            </button>
+          </div>
         </div>
         <AppFeedback :message="scanWarning" tone="warning" @close="scanWarning = ''" />
       </div>
       <template #footer>
-        <button class="action-btn zancun-scan-complete-btn" data-testid="zancun-scan-complete" type="button" @click="completeScan">
-          扫码完成
+        <button class="action-btn zancun-scan-complete-btn" data-testid="zancun-scan-complete" type="button" @click="handleScanFooter">
+          {{ activeScanMode === "stockIn" ? "入库完成" : "扫码完成" }}
         </button>
       </template>
     </AppModal>
@@ -310,7 +323,7 @@ defineOptions({
   name: "StagingManagementPage",
 });
 
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
@@ -339,7 +352,7 @@ const snapshot = ref({
 const overviewQuery = ref("");
 const activeMetricMode = ref("all");
 const overviewCurrentPage = ref(1);
-const overviewPageSize = 5;
+const overviewPageSize = 4;
 const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
@@ -484,6 +497,7 @@ const returnDangerModalOpen = ref(false);
 const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
 const scanWarning = ref("");
+const scanSubmitting = ref(false);
 
 const scanForm = reactive({
   code: "",
@@ -603,19 +617,32 @@ const persistInventoryResult = async (result) => {
   return !result.error;
 };
 
-const completeScan = async () => {
+const resolveScannedDetail = () => {
   if (!String(scanForm.code ?? "").trim()) {
     scanWarning.value = "请先完成扫码或输入托盘编号。";
-    return;
+    return null;
   }
 
   const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value);
   if (!detail.found) {
     scanWarning.value = activeScanMode.value === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。";
+    return null;
+  }
+
+  return detail;
+};
+
+const submitStockInScan = async () => {
+  if (scanSubmitting.value) {
+    return;
+  }
+  const detail = resolveScannedDetail();
+  if (!detail) {
     return;
   }
 
-  if (activeScanMode.value === "stockIn") {
+  scanSubmitting.value = true;
+  try {
     const result = applyZancunInventoryAction({
       now: nowValue(),
       payload: {
@@ -625,10 +652,29 @@ const completeScan = async () => {
       snapshot: snapshot.value,
     });
     if (await persistInventoryResult(result)) {
-      cancelScan();
+      scanWarning.value = "";
+      resetScanForm();
+      if (scanInputRef.value) {
+        scanInputRef.value.value = "";
+      }
+      await nextTick();
+      await focusScanInput();
     } else {
       scanWarning.value = result.error;
     }
+  } finally {
+    scanSubmitting.value = false;
+  }
+};
+
+const completeScan = async () => {
+  const detail = resolveScannedDetail();
+  if (!detail) {
+    return;
+  }
+
+  if (activeScanMode.value === "stockIn") {
+    await submitStockInScan();
     return;
   }
 
@@ -639,6 +685,30 @@ const completeScan = async () => {
 
   cancelScan();
   openDestinationModal(detail);
+};
+
+const handleScanEnter = async () => {
+  if (activeScanMode.value === "stockIn") {
+    await submitStockInScan();
+    return;
+  }
+  await completeScan();
+};
+
+const handleScanKeyup = async (event) => {
+  if (event?.key !== "Enter") {
+    return;
+  }
+  event.preventDefault?.();
+  await handleScanEnter();
+};
+
+const handleScanFooter = async () => {
+  if (activeScanMode.value === "stockIn") {
+    cancelScan();
+    return;
+  }
+  await completeScan();
 };
 
 const cancelDetailAction = () => {

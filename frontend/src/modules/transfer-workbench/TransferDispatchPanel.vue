@@ -1,5 +1,5 @@
 <template>
-  <section class="card transfer-overview-shell" data-testid="transfer-dispatch-panel">
+  <section class="card transfer-overview-shell transfer-dispatch-shell" data-testid="transfer-dispatch-panel">
     <div class="transfer-overview-title-row">
       <h2 class="transfer-overview-page-title">样品出库</h2>
     </div>
@@ -11,7 +11,7 @@
       </div>
     </div>
 
-    <div class="transfer-overview-toolbar">
+    <div class="transfer-overview-toolbar transfer-dispatch-toolbar">
       <input
         ref="scanInputRef"
         :value="dispatchState.state.scanCode"
@@ -31,20 +31,28 @@
       >
         {{ dispatchState.state.loading ? "查询中..." : "查询托盘" }}
       </button>
-    </div>
 
-    <AppFeedback
-      :message="dispatchState.feedbackMessage.value"
-      :tone="dispatchState.feedbackTone.value"
-      data-testid="transfer-dispatch-feedback"
-      @close="dispatchState.clearFeedback"
-    />
+      <AppFeedback
+        class="transfer-dispatch-feedback"
+        :message="dispatchState.feedbackMessage.value"
+        :tone="dispatchState.feedbackTone.value"
+        data-testid="transfer-dispatch-feedback"
+        @close="dispatchState.clearFeedback"
+      />
+    </div>
 
     <section v-if="dispatchState.state.tray" class="card section" data-testid="transfer-dispatch-result">
       <article class="transfer-dispatch-summary-card" data-testid="transfer-dispatch-tray-summary">
         <div class="transfer-dispatch-summary-card__top">
           <div>
             <h3>{{ dispatchState.state.tray.trayNo }}</h3>
+            <div
+              class="transfer-dispatch-summary-card__task-no"
+              data-testid="transfer-dispatch-summary-task-no"
+            >
+              <span>任务编号</span>
+              <strong>{{ dispatchState.state.tray.taskNo }}</strong>
+            </div>
             <div class="muted">当前状态：{{ dispatchState.state.tray.trayStatus || "未知" }}</div>
           </div>
           <div class="transfer-dispatch-summary-card__meta">
@@ -63,20 +71,6 @@
           </span>
         </div>
 
-        <div class="transfer-dispatch-summary-card__body">
-          <div class="transfer-dispatch-summary-row">
-            <span class="transfer-dispatch-summary-row__label">任务编号</span>
-            <strong>{{ dispatchState.state.tray.taskNo }}</strong>
-          </div>
-          <div class="transfer-dispatch-summary-row">
-            <span class="transfer-dispatch-summary-row__label">任务名称</span>
-            <strong>{{ dispatchState.state.tray.taskName || "未命名任务" }}</strong>
-          </div>
-          <div class="transfer-dispatch-summary-row">
-            <span class="transfer-dispatch-summary-row__label">关联实验</span>
-            <strong>{{ joinExperimentLabels(dispatchState.state.tray.experimentLabels) }}</strong>
-          </div>
-        </div>
       </article>
 
       <div class="transfer-dispatch-destination-grid" data-testid="transfer-dispatch-destination-grid">
@@ -163,13 +157,6 @@ const handleDestinationSubmit = async (destination) => {
   }
 };
 
-const joinExperimentLabels = (labels) => {
-  if (!Array.isArray(labels) || !labels.length) {
-    return "暂无关联实验";
-  }
-  return labels.join(" / ");
-};
-
 const resolveDestinationTypeLabel = (destination) => (destination?.targetType === "staging" ? "暂存间" : "实验室");
 
 const resolveDestinationStatusLabel = (destination) => {
@@ -233,6 +220,27 @@ const resolveDestinationHint = (destination) => {
 </script>
 
 <style scoped>
+.transfer-dispatch-shell {
+  min-height: auto;
+  grid-template-rows: none;
+  align-content: start;
+}
+
+.transfer-dispatch-toolbar {
+  position: relative;
+}
+
+.transfer-dispatch-toolbar > .transfer-dispatch-feedback {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: auto;
+  margin-top: 0;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
 .transfer-dispatch-summary-card,
 .transfer-dispatch-destination-card {
   border-radius: 18px;
@@ -241,9 +249,9 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-summary-card {
-  padding: 18px;
+  padding: 16px 18px;
   display: grid;
-  gap: 16px;
+  gap: 10px;
 }
 
 .transfer-dispatch-summary-card__top,
@@ -259,6 +267,24 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-summary-card__top h3 {
   margin: 0;
   font-size: 22px;
+  color: #10233f;
+}
+
+.transfer-dispatch-summary-card__task-no {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.transfer-dispatch-summary-card__task-no span {
+  color: #64748b;
+}
+
+.transfer-dispatch-summary-card__task-no strong {
   color: #10233f;
 }
 

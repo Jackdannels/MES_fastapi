@@ -10,7 +10,11 @@ const scheduleStylesPath = resolve(process.cwd(), "src/modules/schedule/styles.c
 const ruleFrom = (source, selector) => {
   const start = source.indexOf(selector);
   expect(start).toBeGreaterThanOrEqual(0);
-  return source.slice(start);
+  const openBrace = source.indexOf("{", start);
+  expect(openBrace).toBeGreaterThanOrEqual(0);
+  const closeBrace = source.indexOf("}", openBrace);
+  expect(closeBrace).toBeGreaterThan(openBrace);
+  return source.slice(start, closeBrace + 1);
 };
 
 describe("time wrapping styles", () => {
@@ -31,6 +35,25 @@ describe("time wrapping styles", () => {
     expect(rule).toContain("white-space: normal;");
     expect(rule).toContain("overflow-wrap: anywhere;");
     expect(rule).toContain("word-break: break-word;");
+  });
+
+  test("keeps laboratory tray flow steps wide enough for status labels", () => {
+    const source = readFileSync(laboratoryStylesPath, "utf8");
+
+    const trayRule = ruleFrom(source, ".laboratory-flow-steps--tray");
+    const trayItemRule = ruleFrom(source, ".laboratory-flow-steps--tray li");
+    const labelRule = ruleFrom(source, ".laboratory-flow-label");
+    const timeRule = ruleFrom(source, ".laboratory-flow-time");
+
+    expect(trayRule).toContain("repeat(auto-fit, minmax(180px, 1fr))");
+    expect(trayRule).not.toContain("repeat(4, minmax(0, 1fr))");
+    expect(trayItemRule).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(trayItemRule).toContain("grid-template-rows: auto auto;");
+    expect(labelRule).toContain("min-width: 0;");
+    expect(labelRule).toContain("overflow-wrap: anywhere;");
+    expect(timeRule).toContain("overflow: hidden;");
+    expect(timeRule).toContain("text-overflow: ellipsis;");
+    expect(timeRule).toContain("white-space: nowrap;");
   });
 
   test("allows process card schedule time values to shrink and wrap", () => {

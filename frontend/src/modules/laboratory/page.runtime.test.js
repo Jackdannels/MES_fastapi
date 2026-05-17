@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { nextTick } from "vue";
+import { nextTick, reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import LaboratoryPage from "./page.vue";
@@ -11,6 +11,17 @@ let pageHeader;
 let headerActions;
 let masterLabsState;
 let snapshotState;
+const { routeState } = vi.hoisted(() => ({
+  routeState: {
+    query: {},
+  },
+}));
+const reactiveRoute = reactive(routeState);
+
+vi.mock("vue-router", () => ({
+  useRoute: () => reactiveRoute,
+}));
+
 const toDisplayedTime = (value) => {
   const date = new Date(value);
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -220,6 +231,7 @@ describe("LaboratoryPage runtime", () => {
     });
     snapshotState = createSnapshot();
     masterLabsState = [];
+    reactiveRoute.query = {};
     vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
       const url = String(input);
       if (url.includes("/api/master/labs")) {
@@ -251,6 +263,73 @@ describe("LaboratoryPage runtime", () => {
     headerActions = undefined;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  test("uses the laboratory query to render and publish commands for a non-salt workbench", async () => {
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          code: "SYLU-2026-04-501-SP-001",
+          location: "冲击一室",
+          owner: "周工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-CJ-001" }],
+        },
+      ],
+      [STORAGE_KEYS.tasks]: [
+        ...createSnapshot()[STORAGE_KEYS.tasks],
+        { code: "SYLU-2026-04-501", name: "冲击连接器", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", experiment_name: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-CJ-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        ...createSnapshot()[STORAGE_KEYS.schedules],
+        {
+          id: "schedule-impact",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          device: "冲击一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("冲击一室操作台");
+    expect(mounted.text()).toContain("SYLU-2026-04-501");
+    expect(mounted.text()).not.toContain("SYLU-2026-04-101");
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-CJ-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const fixtureInstallCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
+    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({
+      labId: "LAB_IMPACT_1",
+      taskId: "SYLU-2026-04-501",
+    }));
+    expect(window.localStorage.setItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1", "冲击一室");
   });
 
   test("renders the salt-spray laboratory console and excludes other laboratory tasks", async () => {
@@ -1233,10 +1312,16 @@ describe("LaboratoryPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.get('[data-testid="laboratory-task-flow"]').text()).toContain("任务流程图");
-    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toContain("已排程");
+    expect(mounted.find('[data-testid="laboratory-task-flow-status"]').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("托盘流程图");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-001");
     expect(mounted.get('[data-testid="laboratory-tray-flow-list"]').classes()).toContain("laboratory-flow-steps--tray");
+    const firstTrayStep = mounted.get('[data-testid="laboratory-tray-flow-step-in_transit"]');
+    expect(firstTrayStep.element.children[0].className).toBe("laboratory-flow-label");
+    expect(firstTrayStep.element.children[1].className).toBe("laboratory-flow-time");
+    expect(firstTrayStep.get(".laboratory-flow-time").attributes("title")).toBe(
+      firstTrayStep.get(".laboratory-flow-time").text(),
+    );
     expect(mounted.get('[data-testid="laboratory-tray-flow-step-in_transit"]').classes()).toContain("is-reached");
     expect(mounted.get('[data-testid="laboratory-tray-flow-step-arrived"]').classes()).toContain("is-active");
 

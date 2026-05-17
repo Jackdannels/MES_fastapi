@@ -1,8 +1,9 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
+import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -12,7 +13,7 @@ import {
   buildLaboratoryProgressMessage,
   buildLaboratorySummary,
   buildLaboratoryWorkflowFromTask,
-  buildSaltSprayLaboratoryView,
+  buildLaboratoryWorkbenchView,
   LAB_COMPARE_STATUS,
   LAB_INSTALL_STATUS,
   LAB_READY_STATUS,
@@ -28,17 +29,47 @@ const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
+const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
 
 const normalizeText = (value) => String(value ?? "").trim();
 
-const createDefaultLaboratoryConfig = () => ({
-  labId: SALT_SPRAY_LAB_ID,
-  labName: SALT_SPRAY_LAB,
+const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
+
+const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
+  labCode: "",
+  labId: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName,
+  labName,
+  testTypeName: "",
 });
 
-const resolveLaboratoryConfig = (masterLabs = []) => {
+const normalizeSelectedLabName = (value) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  return normalizeText(rawValue);
+};
+
+const readStoredLabName = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return normalizeText(window.localStorage.getItem(LABORATORY_SELECTED_LAB_STORAGE_KEY));
+};
+
+const writeStoredLabName = (labName) => {
+  const normalizedLabName = normalizeText(labName);
+  if (!normalizedLabName || typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(LABORATORY_SELECTED_LAB_STORAGE_KEY, normalizedLabName);
+};
+
+const resolveLabId = (lab, labName) =>
+  normalizeText(lab?.mqttLabId || lab?.mqtt_lab_id)
+  || (normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT" ? SALT_SPRAY_LAB_ID : normalizeText(lab?.code || lab?.lab_code))
+  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName);
+
+const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
   const enabledLabs = (Array.isArray(masterLabs) ? masterLabs : []).filter((lab) => {
     if (Number(lab?.status ?? 1) === 0) {
       return false;
@@ -46,16 +77,25 @@ const resolveLaboratoryConfig = (masterLabs = []) => {
     const type = normalizeText(lab?.type || lab?.lab_type);
     return !type || type === "实验室";
   });
+  const requestedLabName = normalizeSelectedLabName(selectedLabName);
+  const matchedRequestedLab = requestedLabName
+    ? enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === requestedLabName)
+    : null;
   const matchedLab =
-    enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT")
+    matchedRequestedLab
+    || enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT")
     || enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === SALT_SPRAY_LAB);
   if (!matchedLab) {
-    return createDefaultLaboratoryConfig();
+    const fallbackLabName = requestedLabName && STATIC_LAB_NAMES.includes(requestedLabName) ? requestedLabName : SALT_SPRAY_LAB;
+    return createDefaultLaboratoryConfig(fallbackLabName);
   }
   const labName = normalizeText(matchedLab?.name || matchedLab?.lab_name);
+  const resolvedLabName = labName || requestedLabName || SALT_SPRAY_LAB;
   return {
-    labId: normalizeText(matchedLab?.mqttLabId || matchedLab?.mqtt_lab_id) || SALT_SPRAY_LAB_ID,
-    labName: labName || SALT_SPRAY_LAB,
+    labCode: normalizeText(matchedLab?.code || matchedLab?.lab_code),
+    labId: resolveLabId(matchedLab, resolvedLabName),
+    labName: resolvedLabName,
+    testTypeName: normalizeText(matchedLab?.testTypeName || matchedLab?.test_type_name || matchedLab?.testType || matchedLab?.test_type),
   };
 };
 
@@ -116,8 +156,10 @@ function useLaboratoryPage(options = {}) {
   let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
 
+  const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
+
   const view = computed(() =>
-    buildSaltSprayLaboratoryView({
+    buildLaboratoryWorkbenchView({
       experiments: experiments.value,
       experimentTrays: experimentTrays.value,
       now: tickNow.value,
@@ -156,7 +198,7 @@ function useLaboratoryPage(options = {}) {
     return state;
   });
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
-  const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value));
+  const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
   const runningExperiment = computed(() => view.value.runningExperiment);
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = ref(false);
@@ -187,6 +229,31 @@ function useLaboratoryPage(options = {}) {
       window.clearTimeout(fixtureConfirmSuccessTimer);
       fixtureConfirmSuccessTimer = null;
     }
+  };
+
+  const closeFullInteractionState = () => {
+    selectedTaskCode.value = "";
+    selectedTrayCode.value = "";
+    pendingTaskCode.value = "";
+    pendingRevertTask.value = null;
+    compareScanCode.value = "";
+    compareFeedback.value = null;
+    verifiedTrayCodes.value = [];
+    scheduleModalOpen.value = false;
+    taskListModalOpen.value = false;
+    compareModalOpen.value = false;
+    installModalOpen.value = false;
+    fixtureConfirmModalOpen.value = false;
+    fixtureConfirmSuccessModalOpen.value = false;
+    readyModalOpen.value = false;
+    confirmedModalOpen.value = false;
+    resetConfirmModalOpen.value = false;
+    resetDangerModalOpen.value = false;
+    completePromptVisible.value = false;
+    runningModalVisible.value = false;
+    clearRunningModalRestoreTimer();
+    clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
   };
 
   const syncHeaderActionTarget = () => {
@@ -284,7 +351,15 @@ function useLaboratoryPage(options = {}) {
         loadSnapshot(),
         readMasterLabs().catch(() => []),
       ]);
-      laboratoryConfig.value = resolveLaboratoryConfig(masterLabs);
+      const explicitLabName = getSelectedLabName();
+      const nextConfig = resolveLaboratoryConfig(masterLabs, explicitLabName || readStoredLabName());
+      if (normalizeText(laboratoryConfig.value.labName) !== normalizeText(nextConfig.labName)) {
+        closeFullInteractionState();
+      }
+      laboratoryConfig.value = nextConfig;
+      if (explicitLabName) {
+        writeStoredLabName(nextConfig.labName);
+      }
       tasks.value = Array.isArray(snapshot?.[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
@@ -371,6 +446,13 @@ function useLaboratoryPage(options = {}) {
       console.warn(error);
     }
   };
+
+  watch(
+    () => getSelectedLabName(),
+    () => {
+      void load();
+    },
+  );
   const buildFixtureInstallPayload = () => {
     const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
     return {

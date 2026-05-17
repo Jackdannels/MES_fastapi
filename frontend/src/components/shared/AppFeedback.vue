@@ -95,10 +95,16 @@ onBeforeUnmount(clearTimer);
 .app-feedback {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
+  justify-self: stretch;
+  align-self: start;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  gap: 8px;
   align-items: start;
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid;
   border-radius: 10px;
   font-size: 12px;
@@ -118,6 +124,8 @@ onBeforeUnmount(clearTimer);
 
 .app-feedback__body {
   min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .app-feedback__close {
