@@ -20,6 +20,7 @@ const STOCK_IN_CANDIDATE_STATUSES = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
+const STAGING_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘已进入试验间流程，不能暂存间入库。";
 
 const createId = (prefix) => {
   const stamp = Date.now();
@@ -574,9 +575,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const stockInToday = events.some(
         (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );
-      const stockOutToday = events.some(
-        (event) => normalizeText(event?.action) === "stock_out" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
-      );
+      const stockOutToday =
+        normalizeText(lastEvent?.action) === "stock_out"
+        && toDateKey(lastEvent?.time) === toDateKey(options.now || new Date());
 
       const targetDestinations = resolveTrayTargetDestinations({
         experiments,
@@ -640,20 +641,29 @@ function buildZancunMetrics(input = {}) {
   const stagingEvents = Array.isArray(input) ? [] : asArray(input.stagingEvents);
   const todayKey = toDateKey(Array.isArray(input) ? new Date() : (input.now || new Date()));
   const stockedInToday = new Set();
-  const stockedOutToday = new Set();
+  const latestEventsByTray = new Map();
 
   stagingEvents.forEach((event) => {
     const trayCode = normalizeText(event?.tray_code);
-    if (!trayCode || toDateKey(event?.time) !== todayKey) {
+    if (!trayCode) {
       return;
     }
-    if (normalizeText(event?.action) === "stock_in") {
+    const current = latestEventsByTray.get(trayCode);
+    if (!current || compareDateTimes(current?.time, event?.time, "asc") <= 0) {
+      latestEventsByTray.set(trayCode, event);
+    }
+    if (toDateKey(event?.time) === todayKey && normalizeText(event?.action) === "stock_in") {
       stockedInToday.add(trayCode);
     }
-    if (normalizeText(event?.action) === "stock_out" || normalizeText(event?.action) === "manufacturer_return") {
-      stockedOutToday.add(trayCode);
-    }
   });
+  const stockedOutToday = new Set(
+    Array.from(latestEventsByTray.entries())
+      .filter(([, event]) => (
+        toDateKey(event?.time) === todayKey
+        && ["stock_out", "manufacturer_return"].includes(normalizeText(event?.action))
+      ))
+      .map(([trayCode]) => trayCode),
+  );
 
   return {
     stockedInTodayCount: stockedInToday.size,
@@ -854,6 +864,14 @@ function applyZancunInventoryAction(input = {}) {
   if (actionMode === "stockIn" && normalizeText(latestMatchedEvent?.action) === "stock_in") {
     return {
       error: "该托盘已完成暂存间扫码入库。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  if (actionMode === "stockIn" && normalizeText(matchedRow.status) !== "待入库") {
+    return {
+      error: STAGING_STOCK_IN_BLOCKED_STATUS_ERROR,
       row: null,
       snapshot: nextSnapshot,
     };

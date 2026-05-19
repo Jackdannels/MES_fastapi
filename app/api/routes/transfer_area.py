@@ -67,6 +67,14 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "放置实验后暂存间",
     "厂家收回",
 )
+RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {
+    "送至暂存间",
+    "已到达暂存间",
+    "送至实验室",
+    "已到达实验室",
+    "工装夹具安装",
+    "实验准备就绪",
+}
 STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
     TASK_STATUS_STORED,
     *TRAY_OUTBOUND_STATUSES,
@@ -367,6 +375,20 @@ def started_experiment_status_for_task(task_samples: list[dict[str, Any]]) -> st
     return normalized_statuses[0] if normalized_statuses else ""
 
 
+def outbound_status_for_task(task_samples: list[dict[str, Any]]) -> str:
+    matched_statuses: list[str] = []
+    for sample in task_samples:
+        for status in (sample.get("status"), sample.get("flow_status")):
+            normalized_status = normalize_experiment_status_text(status)
+            if normalized_status in RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES:
+                matched_statuses.append(normalized_status)
+        for entry in as_list(sample.get("trays")):
+            tray_status = normalize_experiment_status_text(entry.get("status"))
+            if tray_status in RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES:
+                matched_statuses.append(tray_status)
+    return sorted({status for status in matched_statuses if status})[0] if matched_statuses else ""
+
+
 def are_all_assigned_trays_returned(task_samples: list[dict[str, Any]]) -> bool:
     tray_statuses: list[str] = []
     for sample in task_samples:
@@ -391,7 +413,9 @@ def reload_block_reason(task_samples: list[dict[str, Any]], task: dict[str, Any]
         current_returned_reason = returned_task_block_reason(task, task_samples)
         if current_returned_reason:
             return current_returned_reason
-    return "该任务已有托盘开始实验，不能重新入库。" if started_experiment_status_for_task(task_samples) else ""
+    if started_experiment_status_for_task(task_samples):
+        return "该任务已有托盘开始实验，不能重新入库。"
+    return "该任务已有托盘离开接驳区，不能重新入库。" if outbound_status_for_task(task_samples) else ""
 
 
 def ensure_task_not_returned(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:

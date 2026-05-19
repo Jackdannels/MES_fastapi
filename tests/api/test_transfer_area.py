@@ -1052,6 +1052,31 @@ def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(mon
     assert reloaded.json()["detail"] == "该任务已有托盘开始实验，不能重新入库。"
 
 
+def test_transfer_area_rejects_reload_after_tray_leaves_handover(monkeypatch):
+    blocked_statuses = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"]
+
+    for status in blocked_statuses:
+        client, storage = build_client(monkeypatch)
+        samples = storage.read("mes.samples")
+        for sample in samples:
+            if sample["task_code"] != "SYLU-2026-03-102":
+                continue
+            sample["status"] = status
+            sample["flow_status"] = status
+            sample["location"] = "恒温恒湿间（暂存间）" if "暂存间" in status else "振动一室"
+            sample["trays"] = [{**sample["trays"][0], "status": status}]
+        storage.write("mes.samples", samples)
+
+        workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+        reloaded = client.post("/api/transfer-area/tasks/task-102/reload")
+
+        assert workspace.status_code == 200
+        assert workspace.json()["task"]["reloadBlocked"] is True
+        assert workspace.json()["task"]["reloadBlockedReason"] == "该任务已有托盘离开接驳区，不能重新入库。"
+        assert reloaded.status_code == 400
+        assert reloaded.json()["detail"] == "该任务已有托盘离开接驳区，不能重新入库。"
+
+
 def test_transfer_area_progress_stays_running_until_all_task_experiments_complete(monkeypatch):
     client, storage = build_client(monkeypatch)
 

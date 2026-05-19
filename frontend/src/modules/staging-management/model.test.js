@@ -448,6 +448,85 @@ describe("staging-management model", () => {
     expect(sections.plannedInboundRows.map((row) => row.trayCode)).toContain("SYLU-2026-04-108-TP-001");
   });
 
+  test("rejects stock-in for trays that have already progressed in the laboratory", () => {
+    ["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中"].forEach((labStatus, index) => {
+      const snapshot = createSnapshot();
+      const trayCode = `SYLU-2026-04-109-TP-00${index + 1}`;
+      snapshot[STORAGE_KEYS.samples].push({
+        id: `sample-109-${index}`,
+        code: `SYLU-2026-04-109-SP-00${index + 1}`,
+        task_code: "SYLU-2026-04-103",
+        owner: "周工",
+        location: "盐雾试验室",
+        status: labStatus,
+        flow_status: labStatus,
+        trays: [{ tray_code: trayCode, status: labStatus, quantity: 1 }],
+      });
+      snapshot[STORAGE_KEYS.staging_events].push({
+        id: `evt-109-${index}-out`,
+        tray_code: trayCode,
+        task_code: "SYLU-2026-04-103",
+        action: "stock_out",
+        time: "2026-04-01T09:10:00",
+        operator: "暂存员B",
+        target_lab: "盐雾试验室",
+      });
+      const stockInCountBefore = snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in").length;
+
+      const result = applyZancunInventoryAction({
+        now: "2026-04-01T13:00:00",
+        payload: {
+          code: trayCode,
+          mode: "stockIn",
+        },
+        snapshot,
+      });
+
+      const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `SYLU-2026-04-109-SP-00${index + 1}`);
+      expect(result.error).toBe("该托盘已进入试验间流程，不能暂存间入库。");
+      expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in")).toHaveLength(stockInCountBefore);
+      expect(updatedSample).toMatchObject({
+        location: "盐雾试验室",
+        status: labStatus,
+        flow_status: labStatus,
+      });
+      expect(updatedSample.trays[0].status).toBe(labStatus);
+    });
+  });
+
+  test("withdrawn stock-out events are not counted as stocked out today", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-102-out-withdrawn",
+      tray_code: "SYLU-2026-04-102-TP-001",
+      task_code: "SYLU-2026-04-102",
+      action: "stock_out",
+      time: "2026-04-01T09:10:00",
+      operator: "暂存员B",
+      target_lab: "振动一室",
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-102-withdraw",
+      tray_code: "SYLU-2026-04-102-TP-001",
+      task_code: "SYLU-2026-04-102",
+      action: "stock_out_withdraw",
+      time: "2026-04-01T09:30:00",
+      operator: "撤回出库",
+      target_lab: "振动一室",
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const metrics = buildZancunMetrics({
+      now: TODAY,
+      rows,
+      stagingEvents: snapshot[STORAGE_KEYS.staging_events],
+    });
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
+
+    expect(row.stockOutToday).toBe(false);
+    expect(metrics.stockedOutTodayCount).toBe(1);
+  });
+
   test("applies inventory actions by appending staging events instead of mutating static rows", () => {
     const stockInResult = applyZancunInventoryAction({
       now: TODAY,

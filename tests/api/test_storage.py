@@ -119,3 +119,29 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
 
     assert response.status_code == 200
     assert storage.read("mes.samples") == updated
+
+
+def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch):
+    samples = [
+        {
+            "code": "SP-LAB-PROGRESSED",
+            "location": "盐雾试验室",
+            "status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "task_code": "SYLU-2026-05-704",
+            "trays": [{"tray_code": "TP-LAB-PROGRESSED", "status": "工装夹具安装", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（暂存间）"
+    attempted[0]["status"] = "已到达暂存间"
+    attempted[0]["flow_status"] = "已到达暂存间"
+    attempted[0]["trays"][0]["status"] = "已到达暂存间"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已进入试验间流程，不能暂存间入库。"
+    assert storage.read("mes.samples") == samples
