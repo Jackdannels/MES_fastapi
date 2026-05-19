@@ -60,6 +60,16 @@ const waitForStorageGetCount = async (count) => {
   }
   expect(storageGetCalls()).toHaveLength(count);
 };
+const waitForSamplesUpdatedEvent = async (spy, count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (spy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT).length >= count) {
+      await flushPageUpdates();
+      return;
+    }
+  }
+  expect(spy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(count);
+};
 const waitForReadyButtonEnabled = async (mounted) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -236,6 +246,40 @@ describe("LaboratoryPage runtime", () => {
       const url = String(input);
       if (url.includes("/api/master/labs")) {
         return { ok: true, status: 200, json: async () => masterLabsState };
+      }
+      if (url.includes("/api/laboratory/") && url.includes("/withdraw-current")) {
+        const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/withdraw-current/);
+        const taskCode = decodeURIComponent(match?.[1] || "");
+        const experimentCode = decodeURIComponent(match?.[2] || "");
+        const trayCodes = new Set(
+          (snapshotState[STORAGE_KEYS.experiment_trays] || [])
+            .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
+            .map((entry) => entry.tray_code),
+        );
+        snapshotState = {
+          ...snapshotState,
+          [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
+            if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
+              return sample;
+            }
+            const touchesCurrentExperiment = sample.trays.some((tray) => trayCodes.has(tray.tray_code));
+            if (!touchesCurrentExperiment) {
+              return sample;
+            }
+            return {
+              ...sample,
+              flow_status: "到货",
+              location: "接驳区",
+              status: "到货",
+              trays: sample.trays.map((tray) =>
+                trayCodes.has(tray.tray_code)
+                  ? { ...tray, fixtureReady: undefined, fixture_ready: undefined, status: "到货" }
+                  : tray,
+              ),
+            };
+          }),
+        };
+        return { ok: true, status: 200, json: async () => ({ ok: true, samples: snapshotState[STORAGE_KEYS.samples] }) };
       }
       if (url.includes("/api/storage")) {
         if ((options.method || "GET") === "PUT") {
@@ -1035,7 +1079,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').attributes("data-tone")).toBe("error");
   });
 
-  test("opens double confirmation modals for reset and warns before resetting the current experiment trays", async () => {
+  test("opens double confirmation modals for withdrawal and warns before withdrawing the current experiment trays", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
       {
@@ -1055,7 +1099,7 @@ describe("LaboratoryPage runtime", () => {
 
     await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
     expect(mounted.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(true);
-    expect(mounted.text()).toContain("是否重置当前任务下当前实验对应托盘？");
+    expect(mounted.text()).toContain("是否撤回当前任务下当前实验对应托盘？");
     expect(mounted.get('[data-testid="laboratory-reset-confirm-modal"] .form-actions').classes()).toContain("form-actions--touch");
 
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
@@ -1063,7 +1107,7 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.find('[data-testid="laboratory-reset-danger-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-reset-danger-modal"]').text()).toContain("危险操作确认");
-    expect(mounted.get('[data-testid="laboratory-reset-danger-modal"]').text()).toContain("重置后请把当前试验室所有样品从室内推出，重新比对！");
+    expect(mounted.get('[data-testid="laboratory-reset-danger-modal"]').text()).toContain("撤回后仅影响当前实验对应托盘");
     expect(mounted.get('[data-testid="laboratory-reset-danger-modal"] .form-actions').classes()).toContain("form-actions--touch");
   });
 
@@ -1105,7 +1149,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
   });
 
-  test("resets only the current salt-spray experiment trays after double confirmation", async () => {
+  test("withdraws only the current salt-spray experiment trays after double confirmation", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.tasks] = [
@@ -1156,8 +1200,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
     await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([
@@ -1168,12 +1211,15 @@ describe("LaboratoryPage runtime", () => {
         }),
         expect.objectContaining({
           code: "SYLU-2026-04-301-SP-002",
-          status: "送至实验室",
-          flow_status: "送至实验室",
-          trays: [expect.objectContaining({ tray_code: "TP-301-B", status: "送至实验室" })],
+          location: "接驳区",
+          status: "到货",
+          flow_status: "到货",
+          trays: [expect.objectContaining({ tray_code: "TP-301-B", status: "到货" })],
         }),
       ]),
     );
+    const withdrawCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/laboratory/tasks/SYLU-2026-04-301/experiments/SYLU-2026-04-301-B/withdraw-current"));
+    expect(withdrawCall).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
@@ -1299,7 +1345,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.text()).toContain("当前任务已完成部分托盘比对，可继续比对或开始样品安装");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");

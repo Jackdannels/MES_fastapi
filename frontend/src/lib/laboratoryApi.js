@@ -1,0 +1,37 @@
+import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+
+const API_BASE_URL = getFrontendApiBaseUrl();
+
+const readErrorMessage = async (response) => {
+  const payload = await response.json().catch(() => null);
+  return payload?.detail || payload?.message || `请求失败（${response.status}）`;
+};
+
+const withdrawCurrentLaboratoryExperiment = async ({ taskCode, experimentCode, reason = "" }) => {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  const normalizedExperimentCode = String(experimentCode || "").trim();
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    throw new Error("缺少当前任务或实验信息。");
+  }
+  const response = await fetch(
+    buildApiUrl(
+      `/api/laboratory/tasks/${encodeURIComponent(normalizedTaskCode)}/experiments/${encodeURIComponent(normalizedExperimentCode)}/withdraw-current`,
+      API_BASE_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ reason }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
+export { withdrawCurrentLaboratoryExperiment };

@@ -255,6 +255,40 @@ const createDispatchPostedPayload = () => ({
   destinations: createDispatchLookupPayload().destinations,
 });
 
+const createStagingDispatchPostedPayload = () => ({
+  ok: true,
+  message: "SYLU-2026-03-102-TP-001已标记为送至暂存间",
+  affectedSampleCount: 2,
+  tray: {
+    trayNo: "SYLU-2026-03-102-TP-001",
+    trayStatus: "送至暂存间",
+    taskNo: "SYLU-2026-03-102",
+    taskName: "连接器批次 B",
+    sampleCount: 2,
+    experimentLabels: ["通电试验", "耐久试验"],
+    experimentCodes: ["SYLU-2026-03-102-B", "SYLU-2026-03-102-A"],
+  },
+  destinations: createDispatchLookupPayload().destinations,
+});
+
+const createWithdrawnDispatchPayload = () => ({
+  ok: true,
+  message: "SYLU-2026-03-102-TP-001已撤回出库",
+  affectedSampleCount: 2,
+  restoredStatus: "到货",
+  restoredLocation: "接驳区",
+  tray: {
+    trayNo: "SYLU-2026-03-102-TP-001",
+    trayStatus: "到货",
+    taskNo: "SYLU-2026-03-102",
+    taskName: "连接器批次 B",
+    sampleCount: 2,
+    experimentLabels: ["通电试验", "耐久试验"],
+    experimentCodes: ["SYLU-2026-03-102-B", "SYLU-2026-03-102-A"],
+  },
+  destinations: createDispatchLookupPayload().destinations,
+});
+
 const settle = async (wrapper) => {
   await Promise.resolve();
   await Promise.resolve();
@@ -323,7 +357,7 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     const actionTexts = wrapper.findAll(".transfer-system-actions .action-btn").map((button) => button.text());
-    expect(actionTexts).toEqual(["任务总览", "样品出库", "退出登录"]);
+    expect(actionTexts).toEqual(["任务总览", "样品出库", "出错样品处理", "退出登录"]);
     expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("总任务清单");
@@ -421,6 +455,105 @@ describe("TransferWorkbench runtime", () => {
       && (options.method || "GET") === "GET"
     )).toHaveLength(2);
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
+    wrapper.unmount();
+  });
+
+  test("handover error sample dialog withdraws a dispatched tray back to arrived status", async () => {
+    let lookupPayload = createDispatchPostedPayload();
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && options.method === "POST") {
+        lookupPayload = createWithdrawnDispatchPayload();
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-error-sample"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="tray-error-sample-scan-input"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("送至实验室");
+    expect(wrapper.get('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="tray-error-sample-withdraw-modal"]').text()).toContain("是否确认撤回出库");
+    await wrapper.get('[data-testid="tray-error-sample-withdraw-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已撤回出库");
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("到货");
+    expect(wrapper.find('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(false);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    wrapper.unmount();
+  });
+
+  test("handover error sample dialog withdraws a staging tray back to arrived status", async () => {
+    let lookupPayload = createStagingDispatchPostedPayload();
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && options.method === "POST") {
+        lookupPayload = createWithdrawnDispatchPayload();
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-error-sample"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("送至暂存间");
+    expect(wrapper.get('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(true);
+
+    await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="tray-error-sample-withdraw-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已撤回出库");
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("到货");
     wrapper.unmount();
   });
 

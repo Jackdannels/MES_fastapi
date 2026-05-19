@@ -36,7 +36,7 @@
           :disabled="!canResetCurrentTask"
           @click="openResetConfirm"
         >
-          重置当前实验任务
+          出错样品处理
         </button>
       </div>
 
@@ -408,13 +408,13 @@
       </template>
     </AppModal>
 
-    <AppModal :open="resetConfirmModalOpen" data-testid="laboratory-reset-confirm-modal" title="确认重置任务" @close="closeResetConfirm">
+    <AppModal :open="resetConfirmModalOpen" data-testid="laboratory-reset-confirm-modal" title="确认撤回任务" @close="closeResetConfirm">
       <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>是否重置当前任务下当前实验对应托盘？</p>
+        <p>是否撤回当前任务下当前实验对应托盘？撤回后将恢复到上一个有效出库发起点。</p>
       </div>
       <template #footer>
         <button class="action-btn secondary" data-testid="laboratory-reset-cancel" type="button" @click="closeResetConfirm">取消</button>
-        <button class="action-btn" data-testid="laboratory-reset-confirm" type="button" @click="confirmResetPrompt">确认重置</button>
+        <button class="action-btn" data-testid="laboratory-reset-confirm" type="button" @click="confirmResetPrompt">确认撤回</button>
       </template>
     </AppModal>
 
@@ -422,12 +422,12 @@
       <div class="laboratory-modal-body">
         <div class="laboratory-danger-panel">
           <strong>危险操作确认</strong>
-          <p>重置后请把当前试验室所有样品从室内推出，重新比对！</p>
+          <p>撤回后仅影响当前实验对应托盘，并会恢复到到货、已到达暂存间或上一实验已完成状态。</p>
         </div>
       </div>
       <template #footer>
         <button class="action-btn secondary" data-testid="laboratory-reset-danger-cancel" type="button" @click="closeResetDanger">取消</button>
-        <button class="action-btn danger" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认危险重置</button>
+        <button class="action-btn danger" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认撤回</button>
       </template>
     </AppModal>
 

@@ -93,6 +93,15 @@
         </div>
         <div class="header-actions">
           <span class="header-actions-before-logout"></span>
+          <button
+            v-if="isStagingModule"
+            class="action-btn tray-error-sample-trigger"
+            data-testid="staging-error-sample"
+            type="button"
+            @click="errorSample.open()"
+          >
+            出错样品处理
+          </button>
           <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
         </div>
       </header>
@@ -109,13 +118,19 @@
     @logout="confirmLogout"
     @switch-module="switchModule"
   />
+  <TrayErrorSampleDialog
+    v-if="!isAuthLayout && !isBareModule && isStagingModule"
+    :model="errorSample"
+  />
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
+import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { MODULE_LABELS } from "@/lib/moduleCatalog";
@@ -129,6 +144,7 @@ const router = useRouter();
 const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules]);
 const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
+const errorSample = useTrayErrorSampleHandling();
 let navAlertTimer = null;
 
 const pageTitle = computed(() => route.meta?.title || "七二四新火工区信息化中控管理系统");

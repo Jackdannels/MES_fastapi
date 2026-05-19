@@ -110,6 +110,12 @@ class TrayDispatchRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class TrayWithdrawDispatchRequest(BaseModel):
+    reason: str = ""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -156,6 +162,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
+        "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
     }
 
 
@@ -169,6 +176,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.experiments": snapshot["experiments"],
             "mes.experiment_trays": snapshot["experiment_trays"],
             "mes.experiment_samples": snapshot["experiment_samples"],
+            "mes.staging_events": snapshot["staging_events"],
         }
     )
 
@@ -1103,6 +1111,127 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
     }
 
 
+def latest_staging_event_for_tray(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> dict[str, Any] | None:
+    matched_events = [
+        dict(event)
+        for event in as_list(snapshot.get("staging_events"))
+        if normalize_text(event.get("tray_code")) == normalize_text(tray_code)
+    ]
+    if not matched_events:
+        return None
+    matched_events.sort(key=lambda event: (parse_datetime_value(event.get("time")) or datetime.min, normalize_text(event.get("id"))))
+    return matched_events[-1]
+
+
+def restore_status_for_withdrawal(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> tuple[str, str, str]:
+    latest_staging_event = latest_staging_event_for_tray(snapshot, tray_code)
+    if latest_staging_event and normalize_text(latest_staging_event.get("action")) == "stock_out":
+        return "已到达暂存间", STAGING_LOCATION, "staging"
+    return "到货", "接驳区", "handover"
+
+
+def tray_has_laboratory_progress(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
+    blocked_statuses = {
+        "已到达实验室",
+        "工装夹具安装",
+        "实验准备就绪",
+        "实验进行中",
+        "实验中",
+        "实验已完成",
+        "实验完成",
+        "实验已经完成",
+        "放置实验后暂存间",
+        "厂家收回",
+    }
+    normalized_tray_code = normalize_text(tray_code)
+    for sample in task_samples:
+        if normalize_text(sample.get("status")) in blocked_statuses or normalize_text(sample.get("flow_status")) in blocked_statuses:
+            return True
+        for entry in as_list(sample.get("trays")):
+            if normalize_text(entry.get("tray_code")) == normalized_tray_code and normalize_text(entry.get("status")) in blocked_statuses:
+                return True
+    return False
+
+
+def tray_current_status(task_samples: list[dict[str, Any]], tray_code: str) -> str:
+    normalized_tray_code = normalize_text(tray_code)
+    for sample in task_samples:
+        for entry in as_list(sample.get("trays")):
+            if normalize_text(entry.get("tray_code")) == normalized_tray_code:
+                return normalize_text(entry.get("status")) or normalize_text(sample.get("status"))
+    return ""
+
+
+def apply_tray_withdrawal(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task: dict[str, Any],
+    tray_code: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    current_status = tray_current_status(task_samples, tray_code)
+    if tray_has_laboratory_progress(task_samples, tray_code):
+        raise HTTPException(status_code=400, detail="该托盘已进入试验间流程，不能撤回出库")
+    if current_status not in {"送至实验室", "送至暂存间"}:
+        raise HTTPException(status_code=400, detail="该托盘当前不在可撤回的出库状态")
+
+    target_status, target_location, restore_scope = restore_status_for_withdrawal(snapshot, tray_code)
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    normalized_tray_code = normalize_text(tray_code)
+    affected_count = 0
+    for sample in task_samples:
+        tray_matches = False
+        next_trays = []
+        for entry in as_list(sample.get("trays")):
+            normalized = dict(entry)
+            if normalize_text(normalized.get("tray_code")) == normalized_tray_code:
+                tray_matches = True
+                normalized["status"] = target_status
+                normalized["updated_at"] = timestamp
+            next_trays.append(normalized)
+        if not tray_matches:
+            continue
+        affected_count += 1
+        sample["location"] = target_location
+        sample["status"] = target_status
+        sample["flow_status"] = target_status
+        sample["updated_at"] = timestamp
+        sample["trays"] = next_trays
+        detail = f"{normalized_tray_code} 撤回出库至{target_status}"
+        if normalize_text(reason):
+            detail = f"{detail}（{normalize_text(reason)}）"
+        append_history(sample, "撤回出库", detail)
+
+    if affected_count == 0:
+        raise HTTPException(status_code=404, detail="未找到托盘")
+
+    if restore_scope == "staging":
+        latest_event = latest_staging_event_for_tray(snapshot, tray_code) or {}
+        snapshot["staging_events"].append(
+            {
+                "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
+                "tray_code": normalized_tray_code,
+                "task_code": task_code(task),
+                "action": "stock_out_withdraw",
+                "time": timestamp,
+                "operator": normalize_text(reason) or "撤回出库",
+                "target_lab": normalize_text(latest_event.get("target_lab")),
+                "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")),
+            }
+        )
+
+    write_snapshot(snapshot)
+    payload = serialize_tray_dispatch_payload(snapshot, task, tray_code)
+    return {
+        "ok": True,
+        "message": f"{normalized_tray_code}已撤回出库",
+        "affectedSampleCount": affected_count,
+        "restoredStatus": target_status,
+        "restoredLocation": target_location,
+        **payload,
+    }
+
+
 def update_task_samples_for_pending(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:
     for sample in task_samples:
         sample["location"] = ""
@@ -1265,6 +1394,15 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         "affectedSampleCount": len(tray_samples),
         **serialize_tray_dispatch_payload(snapshot, task, tray_code),
     }
+
+
+@router.post("/trays/{tray_code}/withdraw-dispatch")
+def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest = Body(...)) -> dict[str, Any]:
+    snapshot = read_snapshot()
+    task, _tray_samples = find_tray_samples(snapshot, tray_code)
+    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    ensure_task_not_returned(task, task_samples)
+    return apply_tray_withdrawal(snapshot, task, tray_code, request.reason)
 
 
 @router.post("/tasks/{task_id}/allocate")

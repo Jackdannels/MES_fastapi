@@ -184,6 +184,119 @@ input[type="datetime-local"].format-hint-empty:focus::before {
   font-size: 12px;
 }
 
+.action-btn.tray-error-sample-trigger {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(254, 202, 202, 0.78);
+  color: #991b1b;
+}
+
+.tray-error-sample-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.tray-error-sample-panel__head h3,
+.tray-error-sample-summary h4 {
+  margin: 0 0 6px;
+}
+
+.tray-error-sample-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.tray-error-sample-input {
+  min-width: 0;
+}
+
+.tray-error-sample-result {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 241, 242, 0.72);
+}
+
+.tray-error-sample-summary,
+.tray-error-sample-summary__meta,
+.tray-error-sample-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.tray-error-sample-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tray-error-sample-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(14, 165, 233, 0.32);
+  background: rgba(14, 165, 233, 0.12);
+  color: #075985;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tray-error-sample-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.tray-error-sample-detail-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tray-error-sample-detail-row span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tray-error-sample-detail-row strong {
+  overflow-wrap: anywhere;
+}
+
+.tray-error-sample-disabled-hint {
+  margin-left: auto;
+}
+
+.tray-error-sample-confirm {
+  display: grid;
+  gap: 12px;
+}
+
+.tray-error-sample-confirm__danger {
+  padding: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.46);
+  border-radius: 12px;
+  background: rgba(254, 226, 226, 0.92);
+  color: #7f1d1d;
+}
+
+.tray-error-sample-confirm__danger p {
+  margin: 8px 0 0;
+}
+
+@media (max-width: 720px) {
+  .tray-error-sample-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Shared utility classes */
 .is-hidden {
   display: none !important;

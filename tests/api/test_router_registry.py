@@ -29,4 +29,5 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/yt_barcode",
         "/yt_object",
         "/api/mq",
+        "/api/laboratory",
     ]

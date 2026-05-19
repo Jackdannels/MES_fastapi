@@ -25,6 +25,15 @@
         >
           样品出库
         </button>
+        <button
+          v-if="mode === 'handover'"
+          class="action-btn tray-error-sample-trigger"
+          data-testid="handover-error-sample"
+          type="button"
+          @click="errorSample.open()"
+        >
+          出错样品处理
+        </button>
         <button class="action-btn secondary" data-testid="handover-logout" type="button" @click="handleLogout">退出登录</button>
       </div>
     </header>
@@ -433,6 +442,7 @@
       @logout="confirmLogout"
       @switch-module="switchModule"
     />
+    <TrayErrorSampleDialog :model="errorSample" />
   </div>
 </template>
 
@@ -442,9 +452,11 @@ import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
+import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
 import { buildCode128Svg } from "../handover-system/barcode.js";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
@@ -512,6 +524,7 @@ const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
 const transferDispatch = useTransferDispatch();
+const errorSample = useTrayErrorSampleHandling();
 const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,

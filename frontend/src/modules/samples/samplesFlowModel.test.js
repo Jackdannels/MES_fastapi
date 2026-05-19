@@ -188,6 +188,244 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView hides staging step times invalidated by a handover withdraw", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-001-TP-001",
+      taskCode: "SYLU-2026-05-001",
+      status: "送至实验室",
+      experimentFlow: [
+        {
+          name: "盐雾试验",
+          state: "current",
+          routeStatus: "送至实验室",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-001-SP-001",
+          task_code: "SYLU-2026-05-001",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-05-001-TP-001",
+              status: "送至实验室",
+              quantity: 1,
+              updated_at: "2026-05-19T16:37:27+08:00",
+            },
+          ],
+          history: [
+            { action: "送至实验室", status: "送至实验室", time: "2026-05-19T16:37:27+08:00" },
+            { action: "撤回出库", status: "到货", detail: "SYLU-2026-05-001-TP-001 撤回出库至到货", time: "2026-05-19T16:37:09+08:00" },
+            { action: "送至暂存间", status: "送至暂存间", location: "恒温恒湿间（暂存间）", time: "2026-05-19T16:36:42+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-05-19T16:37:27+08:00" }),
+    );
+  });
+
+  test("buildTrayFlowView hides lab dispatch times invalidated by a staging withdraw", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-001-TP-001",
+      taskCode: "SYLU-2026-05-001",
+      status: "送至实验室",
+      experimentFlow: [
+        {
+          name: "盐雾试验",
+          state: "current",
+          routeStatus: "送至实验室",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-001-SP-001",
+          task_code: "SYLU-2026-05-001",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-05-001-TP-001",
+              status: "送至实验室",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "撤回出库", status: "已到达暂存间", detail: "SYLU-2026-05-001-TP-001 撤回出库至已到达暂存间", time: "2026-05-19T10:05:00+08:00" },
+            { action: "暂存间扫码出库", status: "送至实验室", detail: "SYLU-2026-05-001-TP-001 送至 盐雾试验室", time: "2026-05-19T10:00:00+08:00" },
+            { action: "暂存间扫码入库", status: "已到达暂存间", detail: "SYLU-2026-05-001-TP-001 已到达暂存间", time: "2026-05-19T09:50:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-05-19T10:05:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
+      expect.objectContaining({ active: true, time: "" }),
+    );
+  });
+
+  test("buildTrayFlowView keeps later valid laboratory dispatch times after a staging withdraw", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-001-TP-001",
+      taskCode: "SYLU-2026-05-001",
+      status: "送至实验室",
+      experimentFlow: [
+        {
+          name: "盐雾试验",
+          state: "current",
+          routeStatus: "送至实验室",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-001-SP-001",
+          task_code: "SYLU-2026-05-001",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-05-001-TP-001",
+              status: "送至实验室",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "暂存间扫码出库", status: "送至实验室", detail: "SYLU-2026-05-001-TP-001 送至 盐雾试验室", time: "2026-05-19T10:10:00+08:00" },
+            { action: "撤回出库", status: "已到达暂存间", detail: "SYLU-2026-05-001-TP-001 撤回出库至已到达暂存间", time: "2026-05-19T10:05:00+08:00" },
+            { action: "暂存间扫码出库", status: "送至实验室", detail: "SYLU-2026-05-001-TP-001 送至 错误试验室", time: "2026-05-19T10:00:00+08:00" },
+            { action: "暂存间扫码入库", status: "已到达暂存间", detail: "SYLU-2026-05-001-TP-001 已到达暂存间", time: "2026-05-19T09:50:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-05-19T10:05:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-05-19T10:10:00+08:00" }),
+    );
+  });
+
+  test("buildTrayFlowView hides wrong laboratory preparation times after a laboratory withdraw to handover", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-002-TP-001",
+      taskCode: "SYLU-2026-05-002",
+      location: "接驳区",
+      status: "到货",
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-002",
+          experiment_code: "SYLU-2026-05-002-A",
+          experiment_name: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-05-002",
+          experiment_code: "SYLU-2026-05-002-A",
+          tray_code: "SYLU-2026-05-002-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-002-SP-001",
+          task_code: "SYLU-2026-05-002",
+          location: "接驳区",
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-05-002-TP-001", status: "到货", quantity: 1 }],
+          history: [
+            { action: "实验任务撤回", status: "到货", detail: "SYLU-2026-05-002 / 盐雾试验 / 撤回至到货", time: "2026-05-19T11:00:00+08:00" },
+            { action: "样品安装", status: "工装夹具安装", detail: "SYLU-2026-05-002 / 盐雾试验 / 工装夹具安装", time: "2026-05-19T10:40:00+08:00" },
+            { action: "任务比对", status: "已到达实验室", detail: "SYLU-2026-05-002 / 盐雾试验 / 已到达实验室", time: "2026-05-19T10:30:00+08:00" },
+            { action: "送至实验室", status: "送至实验室", time: "2026-05-19T10:20:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "到货")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-05-19T11:00:00+08:00" }),
+    );
+    ["送至实验室", "已到达实验室", "工装夹具安装"].forEach((label) => {
+      expect(view.steps.find((step) => step.label === label)).toEqual(
+        expect.objectContaining({ active: false, reached: false, time: "" }),
+      );
+    });
+  });
+
+  test("buildTrayFlowView restores to the previous completed experiment after a wrong next-lab withdrawal", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-003-TP-001",
+      taskCode: "SYLU-2026-05-003",
+      currentExperimentCode: "SYLU-2026-05-003-B",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-A",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-B",
+          experiment_name: "高低温湿热试验",
+        },
+        {
+          task_code: "SYLU-2026-05-003",
+          experiment_code: "SYLU-2026-05-003-C",
+          experiment_name: "冲击试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-003", experiment_code: "SYLU-2026-05-003-A", tray_code: "SYLU-2026-05-003-TP-001" },
+        { task_code: "SYLU-2026-05-003", experiment_code: "SYLU-2026-05-003-B", tray_code: "SYLU-2026-05-003-TP-001" },
+        { task_code: "SYLU-2026-05-003", experiment_code: "SYLU-2026-05-003-C", tray_code: "SYLU-2026-05-003-TP-001" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-003-SP-001",
+          task_code: "SYLU-2026-05-003",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-05-003-TP-001", status: "实验已完成", quantity: 1 }],
+          history: [
+            { action: "实验任务撤回", status: "实验已完成", detail: "SYLU-2026-05-003 / 高低温湿热试验 / 撤回至盐雾试验已完成", time: "2026-05-19T12:00:00+08:00" },
+            { action: "样品安装", status: "工装夹具安装", detail: "SYLU-2026-05-003 / 高低温湿热试验 / 工装夹具安装", time: "2026-05-19T11:30:00+08:00" },
+            { action: "实验完成", status: "实验已完成", detail: "SYLU-2026-05-003 / 盐雾试验 / 实验已完成", time: "2026-05-19T10:00:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-003-TP-001 | 当前状态：盐雾试验已完成");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-05-19T12:00:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "高低温湿热试验未完成")).toEqual(
+      expect.objectContaining({ active: false, reached: false, time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "高低温湿热试验进行中")).toBeUndefined();
+    ["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].forEach((label) => {
+      expect(view.steps.find((step) => step.label === label)).toEqual(
+        expect.objectContaining({ active: false, reached: false, time: "" }),
+      );
+    });
+  });
+
   test("buildTrayFlowView collapses completed experiments and expands only the current unfinished experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",

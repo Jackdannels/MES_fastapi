@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
+import { withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -20,7 +21,6 @@ import {
   getLaboratoryActionState,
   getLaboratoryOperationLock,
   revertLaboratoryTaskToPreDispatch,
-  resetLaboratoryExperimentTrays,
   SALT_SPRAY_LAB,
   validateLaboratoryTrayScan,
 } from "./model";
@@ -216,7 +216,7 @@ function useLaboratoryPage(options = {}) {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
     return (
       trayRows.length > 0
-      && trayRows.some((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+      && trayRows.every((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
       && !runningInteractionLocked.value
     );
   });
@@ -678,13 +678,12 @@ function useLaboratoryPage(options = {}) {
       resetDangerModalOpen.value = false;
       return;
     }
-    const nextSamples = resetLaboratoryExperimentTrays({
-      currentTask: currentTask.value,
-      now: new Date().toISOString(),
-      samples: samples.value,
+    await withdrawCurrentLaboratoryExperiment({
+      experimentCode: currentTask.value?.experimentCode,
+      reason: "试验间内撤回当前实验任务",
+      taskCode: currentTask.value?.taskCode,
     });
-    samples.value = nextSamples;
-    await persistSamples(nextSamples);
+    await load();
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }

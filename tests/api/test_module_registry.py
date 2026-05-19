@@ -35,6 +35,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/yt_barcode",
         "/yt_object",
         "/api/mq",
+        "/api/laboratory",
     ]
     assert SPA_ROUTES == (
         "/",

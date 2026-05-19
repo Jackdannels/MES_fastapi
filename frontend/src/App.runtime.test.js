@@ -122,6 +122,10 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.text()).toContain("暂存间系统");
+    expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="staging-error-sample"]').trigger("click");
+    await nextTick();
+    expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("退出登录");
     expect(wrapper.find(".sidebar").exists()).toBe(false);
     expect(wrapper.find(".nav-link").exists()).toBe(false);

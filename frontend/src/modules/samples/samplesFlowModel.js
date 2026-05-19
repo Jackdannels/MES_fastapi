@@ -50,6 +50,7 @@ const EXPERIMENT_FLOW_STATUS_LABELS = {
   completed: "已完成",
 };
 const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"];
+const WITHDRAWAL_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 
 const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
@@ -222,6 +223,7 @@ const parseTimeValue = (value) => {
   const timestamp = Date.parse(String(value ?? ""));
   return Number.isFinite(timestamp) ? timestamp : 0;
 };
+const entryTimeValue = (entry) => parseTimeValue(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp);
 const parseExperimentHistoryDetail = (detail, taskCode) => {
   const segments = String(detail ?? "")
     .split(" / ")
@@ -233,6 +235,47 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
   return {
     experimentName: segments[1],
     status: segments[2],
+  };
+};
+const isWithdrawalHistoryEntry = (entry) => WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action));
+const latestWithdrawalHistoryEntry = (historyEntries = []) =>
+  asArray(historyEntries).reduce((latest, entry) => {
+    if (!isWithdrawalHistoryEntry(entry)) {
+      return latest;
+    }
+    const time = entryTimeValue(entry);
+    if (!latest || time >= latest.time) {
+      return { entry, time };
+    }
+    return latest;
+  }, null);
+const stripCompletedExperimentSuffix = (value) => {
+  const text = normalizeText(value);
+  return text
+    .replace(/已经完成$/, "")
+    .replace(/已完成$/, "")
+    .replace(/完成$/, "");
+};
+const parseWithdrawalRestoreTarget = (detail, taskCode) => {
+  const parsed = parseExperimentHistoryDetail(detail, taskCode);
+  const rawStatus = normalizeText(parsed?.status);
+  if (!rawStatus.startsWith("撤回至")) {
+    return null;
+  }
+  const target = rawStatus.slice("撤回至".length).trim();
+  if (!target) {
+    return null;
+  }
+  const experimentName = stripCompletedExperimentSuffix(target);
+  if (experimentName && experimentName !== target) {
+    return {
+      experimentName,
+      status: "实验已完成",
+    };
+  }
+  return {
+    experimentName: "",
+    status: target,
   };
 };
 
@@ -331,6 +374,20 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
   const normalizedTrayCode = normalizeText(trayCode);
   const eventMap = new Map();
 
+  const setExperimentEvent = (parsed, time) => {
+    if (!parsed?.experimentName) {
+      return;
+    }
+    const currentTime = Number(time) || 0;
+    const existingEvent = eventMap.get(parsed.experimentName);
+    if (!existingEvent || currentTime >= existingEvent.time) {
+      eventMap.set(parsed.experimentName, {
+        ...parsed,
+        time: currentTime,
+      });
+    }
+  };
+
   (Array.isArray(samples) ? samples : []).forEach((sample) => {
     if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
       return;
@@ -340,19 +397,31 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
       return;
     }
 
-    (Array.isArray(sample?.history) ? sample.history : []).forEach((entry) => {
+    const historyEntries = asArray(sample?.history);
+    const latestWithdrawal = latestWithdrawalHistoryEntry(historyEntries);
+    const restoreTarget = latestWithdrawal
+      ? parseWithdrawalRestoreTarget(latestWithdrawal.entry?.detail, normalizedTaskCode)
+      : null;
+    if (restoreTarget?.experimentName && restoreTarget.status === "实验已完成") {
+      setExperimentEvent(
+        {
+          experimentName: restoreTarget.experimentName,
+          status: "实验已完成",
+        },
+        latestWithdrawal.time,
+      );
+    }
+
+    historyEntries.forEach((entry) => {
+      const currentTime = entryTimeValue(entry);
+      if (latestWithdrawal && currentTime <= latestWithdrawal.time) {
+        return;
+      }
       const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
       if (!parsed) {
         return;
       }
-      const currentTime = parseTimeValue(entry?.time);
-      const existingEvent = eventMap.get(parsed.experimentName);
-      if (!existingEvent || currentTime >= existingEvent.time) {
-        eventMap.set(parsed.experimentName, {
-          ...parsed,
-          time: currentTime,
-        });
-      }
+      setExperimentEvent(parsed, currentTime);
     });
   });
 
@@ -400,8 +469,13 @@ const buildTrayExperimentFlow = (input = {}) => {
   });
   const experimentStatusMap = new Map(
     orderedExperiments.map((experiment) => {
-      const eventStatus = normalizeText(resolveExperimentEvent(experimentEventMap, experiment)?.status);
-      const fallbackStatus = experiment.code === explicitExperimentCode ? normalizedStatus : "";
+      const event = resolveExperimentEvent(experimentEventMap, experiment);
+      const eventStatus = normalizeText(event?.status);
+      const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
+      const fallbackStatus =
+        experiment.code === explicitExperimentCode && !(normalizedStatusIsCompleted && !event)
+          ? normalizedStatus
+          : "";
       return [experiment.code, eventStatus || fallbackStatus];
     }),
   );
@@ -437,7 +511,7 @@ const buildTrayExperimentFlow = (input = {}) => {
   const currentExperiment =
     explicitExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
   const isSyntheticUnstartedCurrent =
-    normalizedStatus === "厂家收回"
+    (normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
     && completedExperiments.length > 0
     && startedUnfinishedExperiments.length === 0
     && !explicitExperiment;
@@ -708,6 +782,41 @@ const buildTrayFlowTimeMap = (input = {}) => {
     if (trayEntries.length === 0) {
       return;
     }
+    const historyEntries = asArray(sample?.history);
+    const latestWithdrawal = latestWithdrawalHistoryEntry(historyEntries);
+    const latestWithdrawalEntry = latestWithdrawal?.entry || null;
+    const restoreTarget = latestWithdrawalEntry
+      ? parseWithdrawalRestoreTarget(latestWithdrawalEntry?.detail, taskCode)
+      : null;
+    const latestWithdrawalRank = latestWithdrawalEntry
+      ? resolveFlowStatusRank(latestWithdrawalEntry?.location, restoreTarget?.status || latestWithdrawalEntry?.status)
+      : -1;
+    const shouldIgnoreHistoryTime = (entry, label, entryLocation) => {
+      if (!latestWithdrawal) {
+        return false;
+      }
+      const entryTime = entryTimeValue(entry);
+      if (entryTime >= latestWithdrawal.time) {
+        return false;
+      }
+      const labelRank = resolveFlowStatusRank(entryLocation, label);
+      return labelRank > latestWithdrawalRank;
+    };
+    if (latestWithdrawalEntry) {
+      const withdrawalTime = latestWithdrawalEntry?.time
+        || latestWithdrawalEntry?.updated_at
+        || latestWithdrawalEntry?.created_at
+        || latestWithdrawalEntry?.timestamp;
+      if (restoreTarget?.experimentName && restoreTarget.status === "实验已完成") {
+        setLatestFlowTime(timeMap, `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, withdrawalTime);
+      } else {
+        const restoreLabel = normalizeHistoryFlowLabel(
+          restoreTarget?.status || latestWithdrawalEntry?.status,
+          latestWithdrawalEntry?.location,
+        );
+        setLatestFlowTime(timeMap, restoreLabel, withdrawalTime);
+      }
+    }
 
     const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     if (parseTimeValue(sample?.created_at) > 0 && resolveFlowStatusRank("", sampleStatus) >= (FLOW_STEP_INDEX_BY_KEY.get("arrived") ?? 1)) {
@@ -722,15 +831,24 @@ const buildTrayFlowTimeMap = (input = {}) => {
       setLatestFlowTime(timeMap, trayStatusLabel, tray?.updated_at || sample?.updated_at);
     });
 
-    asArray(sample?.history).forEach((entry) => {
+    historyEntries.forEach((entry) => {
       const time = entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp;
       const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location);
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
-      [statusLabel, actionLabel, detailLabel].forEach((label) => setLatestFlowTime(timeMap, label, time));
+      [statusLabel, actionLabel, detailLabel].forEach((label) => {
+        if (!label || shouldIgnoreHistoryTime(entry, label, entry?.location)) {
+          return;
+        }
+        setLatestFlowTime(timeMap, label, time);
+      });
 
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
       if (experimentEvent) {
+        const currentTime = entryTimeValue(entry);
+        if (latestWithdrawal && currentTime < latestWithdrawal.time) {
+          return;
+        }
         const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
         if (experimentStatus === "实验进行中" || experimentStatus === "实验中") {
           setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time);
