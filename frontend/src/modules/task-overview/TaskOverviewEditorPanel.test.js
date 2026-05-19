@@ -54,6 +54,21 @@ describe("TaskOverviewEditorPanel", () => {
     expect(wrapper.emitted("cancel-edit")).toEqual([[]]);
   });
 
+  test("hides the edit cancel button when rendering readonly details", () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: {
+        ...baseProps,
+        readonly: true,
+      },
+    });
+
+    const cancelButtons = wrapper.findAll('button[title="cancel-edit"]');
+
+    expect(cancelButtons).toHaveLength(1);
+    expect(cancelButtons[0].text()).toBe("收起详情");
+    expect(wrapper.text()).not.toContain("取消");
+  });
+
   test("renders delete confirmation and emits confirmation actions", async () => {
     const wrapper = mount(TaskOverviewEditorPanel, {
       props: {

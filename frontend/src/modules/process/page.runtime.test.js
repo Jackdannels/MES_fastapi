@@ -372,6 +372,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.find("[data-testid='process-tray-chip-TRAY-006']").exists()).toBe(false);
     expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(5);
     expect(wrapper.findAll(".process-task-tray-row")).toHaveLength(6);
+    expect(wrapper.get("[data-testid='process-tray-button-TRAY-001']").text()).not.toContain("SP-001-B");
     expect(wrapper.text()).toContain("+3");
     expect(wrapper.text()).toContain("+4");
 

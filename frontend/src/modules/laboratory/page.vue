@@ -500,7 +500,7 @@
             <p><strong>托盘</strong> {{ runningExperiment.trayCodes.length }} 个</p>
             <p><strong>样品</strong> {{ runningExperiment.sampleCodes.length }} 个</p>
             <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
-            <p>确认后将把当前盐雾实验更新为实验已完成。</p>
+            <p>确认后将把当前{{ runningExperiment.experimentName || labName }}更新为实验已完成。</p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
               <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">确认实验完成</button>

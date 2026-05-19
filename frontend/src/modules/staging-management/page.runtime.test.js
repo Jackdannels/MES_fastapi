@@ -407,6 +407,7 @@ describe("StagingManagementPage runtime", () => {
 
     expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
     expect(mounted.get('[data-testid="zancun-scan-modal"]').text()).toContain("该托盘已厂家收回，不能再次入库。");
+    expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("");
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in")).toHaveLength(stockInCountBefore);
   });
 

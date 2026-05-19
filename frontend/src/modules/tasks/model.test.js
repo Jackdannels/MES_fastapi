@@ -394,6 +394,38 @@ describe("tasks model", () => {
     );
   });
 
+  test("updateTaskRecord keeps task status read-only during intake edits", () => {
+    const result = updateTaskRecord(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "旧任务",
+          status: "已排程",
+          sample_count: "2",
+          sample_type: "结构件",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+        },
+      ],
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-001",
+        name: "旧任务",
+        priority: "高",
+        sample_count: "2",
+        sample_type: "结构件",
+        source: "内部新增",
+        status: "厂家收回",
+        test_type: "冲击试验",
+        test_types: ["冲击试验"],
+      },
+    );
+
+    expect(result.tasks[0].status).toBe("已排程");
+  });
+
   test("updateTaskRecord keeps experiment types when only the task name changes", () => {
     const result = updateTaskRecord(
       [

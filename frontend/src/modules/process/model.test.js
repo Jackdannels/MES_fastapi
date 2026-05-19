@@ -262,6 +262,65 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards keeps shared-tray follow-up labs scheduled until that experiment code completes", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "高低温湿热二室", testType: "高低温湿热试验" }],
+      [{ code: "TASK-003", test_type: "高低温湿热试验" }],
+      [
+        {
+          device: "高低温湿热二室",
+          end_at: "2026-04-09T12:00:00Z",
+          experiment_code: "TASK-003-B",
+          start_at: "2026-04-09T08:00:00Z",
+          task_code: "TASK-003",
+        },
+      ],
+      [
+        {
+          code: "TASK-003-SP-001",
+          history: [
+            {
+              detail: "TASK-003 / 高低温湿热试验-A / 实验已完成",
+              time: "2026-04-09T10:00:00Z",
+            },
+          ],
+          task_code: "TASK-003",
+          status: "实验已完成",
+          trays: [{ tray_code: "TASK-003-TP-001", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T09:00:00Z"),
+      [
+        {
+          experiment_code: "TASK-003-A",
+          experiment_name: "高低温湿热试验-A",
+          status: "实验已完成",
+          task_code: "TASK-003",
+        },
+        {
+          experiment_code: "TASK-003-B",
+          experiment_name: "高低温湿热试验-B",
+          status: "已排程",
+          task_code: "TASK-003",
+        },
+      ],
+      [
+        { task_code: "TASK-003", experiment_code: "TASK-003-A", tray_code: "TASK-003-TP-001" },
+        { task_code: "TASK-003", experiment_code: "TASK-003-B", tray_code: "TASK-003-TP-001" },
+      ]
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        hasTask: true,
+        experimentCode: "TASK-003-B",
+        status: "已排程",
+        statusClass: "is-scheduled",
+        taskCode: "TASK-003",
+      })
+    );
+  });
+
   test("buildProcessLabCards does not mark future labs running when shared trays are still located in the current lab", () => {
     const cards = buildProcessLabCards(
       [

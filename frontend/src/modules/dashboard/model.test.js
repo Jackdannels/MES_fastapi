@@ -255,7 +255,52 @@ describe("dashboard model", () => {
       expect.objectContaining({ code: "LAB-AVAILABLE", status: "可用", dotClass: "timeline-dot--available" }),
       expect.objectContaining({ code: "LAB-MAINTAIN", status: "维护", dotClass: "timeline-dot--attention" }),
       expect.objectContaining({ code: "LAB-DISABLED", status: "停用", dotClass: "timeline-dot--disabled" }),
-      expect.objectContaining({ code: "LAB-RUNNING", status: "任务进行中", dotClass: "timeline-dot--running" }),
+      expect.objectContaining({ code: "LAB-RUNNING", status: "可用", dotClass: "timeline-dot--available" }),
+    ]);
+  });
+
+  test("marks devices running only when the scheduled experiment has really started", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      streams: [],
+      devices: [
+        { code: "LAB-ACTIVE-SCHEDULE", status: "可用" },
+        { code: "LAB-ACTUAL-RUNNING", status: "可用" },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-ACTIVE",
+          experiment_code: "TASK-ACTIVE-A",
+          status: "已排程",
+        },
+        {
+          task_code: "TASK-RUNNING",
+          experiment_code: "TASK-RUNNING-A",
+          status: "实验进行中",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-ACTIVE",
+          experiment_code: "TASK-ACTIVE-A",
+          device: "LAB-ACTIVE-SCHEDULE",
+          start_at: "2026-03-17T09:00:00.000Z",
+          end_at: "2026-03-17T11:00:00.000Z",
+        },
+        {
+          task_code: "TASK-RUNNING",
+          experiment_code: "TASK-RUNNING-A",
+          device: "LAB-ACTUAL-RUNNING",
+          start_at: "2026-03-17T09:00:00.000Z",
+          end_at: "2026-03-17T11:00:00.000Z",
+        },
+      ],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "LAB-ACTIVE-SCHEDULE", status: "可用", dotClass: "timeline-dot--available" }),
+      expect.objectContaining({ code: "LAB-ACTUAL-RUNNING", status: "任务进行中", dotClass: "timeline-dot--running" }),
     ]);
   });
 

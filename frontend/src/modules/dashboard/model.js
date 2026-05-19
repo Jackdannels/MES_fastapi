@@ -74,6 +74,24 @@ const hasFormalScheduleForExperiment = (schedules, taskCode, experimentCode) =>
       normalizeText(entry?.task_code) === normalizeText(taskCode) &&
       normalizeText(entry?.experiment_code) === normalizeText(experimentCode),
   );
+const isExperimentRunning = (experiment) => {
+  const normalized = normalizeText(experiment?.status);
+  return normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
+};
+const scheduleMatchesExperiment = (schedule, experiment) => {
+  if (normalizeText(schedule?.task_code) !== normalizeText(experiment?.task_code)) {
+    return false;
+  }
+  const scheduleExperimentCode = normalizeText(schedule?.experiment_code);
+  if (!scheduleExperimentCode) {
+    return true;
+  }
+  return scheduleExperimentCode === normalizeText(experiment?.experiment_code);
+};
+const hasRunningExperimentForSchedule = (schedule, experiments) =>
+  (Array.isArray(experiments) ? experiments : []).some(
+    (experiment) => isExperimentRunning(experiment) && scheduleMatchesExperiment(schedule, experiment),
+  );
 
 const formatElapsedDuration = (elapsedMs) => {
   const safeElapsed = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -102,22 +120,17 @@ const statusClass = (value) => {
 };
 
 // 根据任务数据和当前排程推导总览卡片上的任务状态。
-function resolveTaskStatus(task, schedules, now = Date.now()) {
+function resolveTaskStatus(task, schedules, experiments, now = Date.now()) {
   const taskCode = normalizeText(task?.code);
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (entry) => normalizeText(entry?.task_code) === taskCode
   );
 
-  // 先判断是否存在当前正在执行的正式实验排程。
-  const activeSchedule = matchedSchedules.find((entry) => {
-    if (isRetentionDevice(entry?.device)) {
-      return false;
-    }
-    const start = parseTime(entry?.start_at);
-    const end = parseTime(entry?.end_at);
-    return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
-  });
-  if (activeSchedule) {
+  // 先判断正式排程关联的实验是否已经真实开始，避免只因时间窗命中而误判为运行中。
+  const runningSchedule = matchedSchedules.find(
+    (entry) => !isRetentionDevice(entry?.device) && hasRunningExperimentForSchedule(entry, experiments),
+  );
+  if (runningSchedule) {
     return STATUS_RUNNING;
   }
 
@@ -142,18 +155,14 @@ function resolveTaskStatus(task, schedules, now = Date.now()) {
 }
 
 // 推导设备汇总区当前显示的设备状态标签。
-function computeDeviceStatus(device, schedules, now = Date.now()) {
+function computeDeviceStatus(device, schedules, experiments) {
   const deviceCode = normalizeText(device?.code);
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (entry) => normalizeText(entry?.device) === deviceCode
   );
-  // 设备状态在总览区以“是否正被排程占用”为最高优先级。
-  const activeSchedule = matchedSchedules.find((entry) => {
-    const start = parseTime(entry?.start_at);
-    const end = parseTime(entry?.end_at);
-    return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
-  });
-  if (activeSchedule) {
+  // 设备状态以实验真实状态为准，不能只按排程时间窗推导。
+  const runningSchedule = matchedSchedules.find((entry) => hasRunningExperimentForSchedule(entry, experiments));
+  if (runningSchedule) {
     return STATUS_RUNNING;
   }
   return normalizeText(device?.status) || "可用";
@@ -187,7 +196,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   // 先补齐每条任务的展示态和样式，后面的统计全部基于统一后的任务集合。
   const normalizedTasks = taskList.map((task) => {
-    const nextStatus = resolveTaskStatus(task, scheduleList, now);
+    const nextStatus = resolveTaskStatus(task, scheduleList, experimentList, now);
     return {
       ...task,
       displayStatus: nextStatus,
@@ -206,8 +215,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   );
   const unscheduledCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_WAITING).length;
   const runningExperimentCount = experimentList.filter((experiment) => {
-    const normalized = normalizeText(experiment?.status);
-    return normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
+    return isExperimentRunning(experiment);
   }).length;
   const scheduledCount = normalizedTasks.filter((task) => formalScheduledTaskCodes.has(normalizeText(task?.code))).length;
   const gapCount = streamList.filter((stream) => normalizeText(stream?.status).includes("缺口")).length;
@@ -224,7 +232,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
   const deviceItems = deviceList.map((device) => {
-    const deviceStatus = computeDeviceStatus(device, scheduleList, now);
+    const deviceStatus = computeDeviceStatus(device, scheduleList, experimentList);
     return {
       code: normalizeText(device?.code) || "-",
       dotClass: resolveDeviceDotClass(deviceStatus),

@@ -18,6 +18,7 @@ import {
   LAB_INSTALL_STATUS,
   LAB_READY_STATUS,
   getLaboratoryActionState,
+  getLaboratoryOperationLock,
   revertLaboratoryTaskToPreDispatch,
   resetLaboratoryExperimentTrays,
   SALT_SPRAY_LAB,
@@ -195,6 +196,14 @@ function useLaboratoryPage(options = {}) {
         canMarkReady: false,
       };
     }
+    const operationLock = getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value);
+    if (operationLock.active) {
+      return {
+        canCompare: false,
+        canInstallSample: false,
+        canMarkReady: false,
+      };
+    }
     return state;
   });
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
@@ -207,7 +216,7 @@ function useLaboratoryPage(options = {}) {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
     return (
       trayRows.length > 0
-      && trayRows.every((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+      && trayRows.some((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
       && !runningInteractionLocked.value
     );
   });
@@ -615,9 +624,10 @@ function useLaboratoryPage(options = {}) {
     const payload = buildFixtureInstallPayload();
     const targetTaskCode = currentTask.value?.taskCode || "";
     const targetTrayCodes = getCurrentTaskTrayCodesByStatus(LAB_COMPARE_STATUS);
-    await persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
+    const persistOperation = persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
     startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
+    void persistOperation.catch(() => {});
     void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload);
   };
   const openReady = () => {

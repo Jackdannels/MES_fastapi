@@ -630,7 +630,7 @@ function updateTaskRecord(tasks, editForm) {
     sample_count: normalizeText(editForm?.sample_count),
     sample_type: normalizeText(editForm?.sample_type),
     source: normalizeText(editForm?.source),
-    status: normalizeTaskStatusLabel(editForm?.status) || taskList[targetIndex].status,
+    status: taskList[targetIndex].status,
     test_type: testTypeSummary,
     test_types: collectExperimentTypes(selectedTestTypes, testTypeSummary),
     updated_at: new Date().toISOString(),

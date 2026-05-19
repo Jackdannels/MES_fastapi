@@ -146,6 +146,12 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, 
     return false;
   }
 
+  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  if (experimentCode && hasSharedScopedTray) {
+    return false;
+  }
+
   const experimentName = normalizeText(matchedExperiment?.experiment_name);
   if (experimentName) {
     const latestHistoryBySample = new Map();
@@ -174,12 +180,6 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, 
         && historyStatuses.every((status) => COMPLETED_TRAY_STATUSES.has(status))
       );
     }
-  }
-
-  const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
-  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
-  if (hasSharedScopedTray) {
-    return false;
   }
 
   const statuses = [];

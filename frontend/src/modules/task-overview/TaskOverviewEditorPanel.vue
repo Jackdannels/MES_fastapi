@@ -148,7 +148,7 @@
       >
         {{ deleting ? "删除中..." : "删除任务" }}
       </button>
-      <button class="action-btn secondary" type="button" title="cancel-edit" @click="emit('cancel-edit')">
+      <button v-if="!readonly" class="action-btn secondary" type="button" title="cancel-edit" @click="emit('cancel-edit')">
         取消
       </button>
     </div>

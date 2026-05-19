@@ -156,4 +156,28 @@ describe("task history model", () => {
     expect(view.tasks).toHaveLength(1);
     expect(view.tasks[0].status).toBe("厂家收回");
   });
+
+  test("uses the first experiment start time for the task running flow step", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-MULTI", name: "多实验任务", status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-301",
+          task_code: "TASK-MULTI",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-301", status: "厂家收回" }],
+          history: [
+            { action: "开始实验", status: "实验进行中", detail: "TASK-MULTI / A实验 / 实验进行中", time: "2026-04-02T10:00:00" },
+            { action: "开始实验", status: "实验进行中", detail: "TASK-MULTI / B实验 / 实验进行中", time: "2026-04-03T11:00:00" },
+            { action: "厂家收回", status: "厂家收回", detail: "TP-301 厂家收回", time: "2026-04-05T11:00:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.tasks[0].taskFlow).toContainEqual({
+      label: "实验进行中",
+      time: "2026-04-02T10:00:00",
+    });
+  });
 });

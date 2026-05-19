@@ -377,6 +377,34 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-101");
   });
 
+  test("does not mention showing the first five sample codes when fewer than five exist", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ sample_count: 2 })],
+      samples: [
+        {
+          id: "sample-1",
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          status: "样品运输中",
+        },
+        {
+          id: "sample-2",
+          code: "SYLU-2026-03-001-SP-002",
+          task_code: "SYLU-2026-03-001",
+          status: "样品运输中",
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+
+    expect(wrapper.text()).toContain("共 2 个");
+    expect(wrapper.text()).not.toContain("显示前 5 个");
+  });
+
   test("updates the sort arrow direction on repeated header clicks", async () => {
     installApiFetchMock({
       tasks: [
@@ -958,6 +986,10 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await settle(wrapper);
 
+    const detailModal = wrapper.get('[data-testid="task-detail-modal"]');
+    expect(detailModal.find('select[name="status"]').exists()).toBe(false);
+    expect(detailModal.get('[data-testid="task-edit-status-readonly"]').attributes("readonly")).toBeDefined();
+    expect(detailModal.get('[data-testid="task-edit-status-readonly"]').element.value).toBe("待排程");
     expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("冲击试验");
     expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).not.toContain("演示任务001-A");
 

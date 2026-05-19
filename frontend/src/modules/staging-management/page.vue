@@ -528,6 +528,14 @@ const resetScanForm = () => {
   scanForm.code = "";
 };
 
+const resetScanCodeAfterAttempt = () => {
+  resetScanForm();
+  if (scanInputRef.value) {
+    scanInputRef.value.value = "";
+  }
+  void nextTick().then(() => focusScanInput());
+};
+
 const resetDetail = () => {
   activeDetail.location = "";
   activeDetail.nextStatus = "";
@@ -620,12 +628,14 @@ const persistInventoryResult = async (result) => {
 const resolveScannedDetail = () => {
   if (!String(scanForm.code ?? "").trim()) {
     scanWarning.value = "请先完成扫码或输入托盘编号。";
+    resetScanCodeAfterAttempt();
     return null;
   }
 
   const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value);
   if (!detail.found) {
     scanWarning.value = activeScanMode.value === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。";
+    resetScanCodeAfterAttempt();
     return null;
   }
 
@@ -661,6 +671,7 @@ const submitStockInScan = async () => {
       await focusScanInput();
     } else {
       scanWarning.value = result.error;
+      resetScanCodeAfterAttempt();
     }
   } finally {
     scanSubmitting.value = false;
@@ -680,6 +691,7 @@ const completeScan = async () => {
 
   if (detail.status !== "已入库" && detail.status !== "放置实验后暂存间") {
     scanWarning.value = "该托盘尚未完成暂存间扫码入库。";
+    resetScanCodeAfterAttempt();
     return;
   }
 

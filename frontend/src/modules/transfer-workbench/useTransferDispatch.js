@@ -65,6 +65,7 @@ function useTransferDispatch() {
     } catch (error) {
       state.tray = null;
       state.destinations = [];
+      state.scanCode = "";
       feedbackState.show(error instanceof Error ? error.message : "托盘查询失败，请重试。", "error");
       return false;
     } finally {

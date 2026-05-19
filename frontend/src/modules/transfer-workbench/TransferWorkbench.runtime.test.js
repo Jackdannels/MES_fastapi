@@ -424,6 +424,27 @@ describe("TransferWorkbench runtime", () => {
     wrapper.unmount();
   });
 
+  test("handover dispatch view clears scan input after a failed lookup", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("UNKNOWN-TRAY");
+    await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("UNKNOWN-TRAY");
+    expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("");
+    wrapper.unmount();
+  });
+
   test("handover dispatch state is reset after leaving and re-entering dispatch view", async () => {
     const wrapper = mount(TransferWorkbench, {
       attachTo: document.body,

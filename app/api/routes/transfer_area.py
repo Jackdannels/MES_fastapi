@@ -51,6 +51,13 @@ TRAY_OUTBOUND_STATUSES = {
     "放置实验后暂存间",
     "厂家收回",
 }
+TRAY_LAB_REDISPATCH_STATUSES = {
+    "已到达暂存间",
+    "放置实验后暂存间",
+    "实验完成",
+    "实验已经完成",
+    "实验已完成",
+}
 STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验进行中",
     "实验中",
@@ -1201,12 +1208,12 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
                 break
         if current_tray_status:
             break
-    if current_tray_status in TRAY_OUTBOUND_STATUSES:
-        raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
 
     target_type = normalize_text(request.target_type)
     target_name = normalize_text(request.target_name)
     if target_type == "staging":
+        if current_tray_status in TRAY_OUTBOUND_STATUSES:
+            raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
         next_status = "送至暂存间"
         next_location = STAGING_LOCATION
         detail = normalize_text(tray_code)
@@ -1224,6 +1231,11 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         )
         if matched_destination is None:
             raise HTTPException(status_code=400, detail="目标实验室与当前托盘不匹配")
+        if (
+            current_tray_status in TRAY_OUTBOUND_STATUSES
+            and current_tray_status not in TRAY_LAB_REDISPATCH_STATUSES
+        ):
+            raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
         next_status = "送至实验室"
         next_location = target_name
         detail = f"{normalize_text(tray_code)} -> {target_name}"

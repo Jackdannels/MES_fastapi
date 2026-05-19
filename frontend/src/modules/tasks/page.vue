@@ -266,7 +266,9 @@
       <div class="form-field tasks-sample-preview">
         <label>样品编号</label>
         <div class="tasks-sample-preview__header">
-          <span class="muted">共 {{ taskDetailSampleCodes.length }} 个，显示前 5 个</span>
+          <span class="muted">
+            共 {{ taskDetailSampleCodes.length }} 个<span v-if="taskDetailSampleCodes.length > taskDetailSampleCodePreview.length">，显示前 5 个</span>
+          </span>
           <button class="action-link" data-testid="open-sample-codes-editor" type="button" @click="openSampleCodesEditor">
             编辑样品编号
           </button>
@@ -304,13 +306,7 @@
       </div>
       <div class="form-field">
         <label>状态</label>
-        <select v-model="editForm.status" name="status">
-          <option>待排程</option>
-          <option>已排程</option>
-          <option>任务进行中</option>
-          <option>任务已完成</option>
-          <option>厂家收回</option>
-        </select>
+        <input :value="editForm.status || '-'" data-testid="task-edit-status-readonly" name="status" type="text" readonly />
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
         <label>备注</label>

@@ -361,6 +361,85 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
     assert all("SYLU-2026-03-102-TP-001 -> 振动一室" in sample["history"][0]["detail"] for sample in updated_samples)
 
 
+def test_transfer_area_dispatches_arrived_staging_tray_to_lab(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "恒温恒湿间（暂存间）"
+        sample["status"] = "已到达暂存间"
+        sample["flow_status"] = "已到达暂存间"
+        sample["trays"] = [{**sample["trays"][0], "status": "已到达暂存间"}]
+    storage.write("mes.samples", samples)
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 200
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["location"] == "振动一室" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "送至实验室" for sample in updated_samples)
+
+
+def test_transfer_area_dispatches_completed_experiment_tray_to_next_lab(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    experiments = storage.read("mes.experiments")
+    for experiment in experiments:
+        if experiment["experiment_code"] == "SYLU-2026-03-102-A":
+            experiment["status"] = "实验已完成"
+        if experiment["experiment_code"] == "SYLU-2026-03-102-B":
+            experiment["status"] = "已排程"
+    storage.write("mes.experiments", experiments)
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "耐久试验室"
+        sample["status"] = "实验已完成"
+        sample["flow_status"] = "实验已完成"
+        sample["trays"] = [{**sample["trays"][0], "status": "实验已完成"}]
+    storage.write("mes.samples", samples)
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 200
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["location"] == "振动一室" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "送至实验室" for sample in updated_samples)
+
+
 def test_transfer_area_dispatch_rejects_duplicate_outbound(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])

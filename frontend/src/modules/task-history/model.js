@@ -90,7 +90,12 @@ const collectFlowEntries = (samples) => {
         return;
       }
       const current = latestByLabel.get(label);
-      if (!current || time.localeCompare(current.time) > 0) {
+      const shouldUseEarlierTime = label === "实验进行中";
+      if (
+        !current
+        || (shouldUseEarlierTime && time.localeCompare(current.time) < 0)
+        || (!shouldUseEarlierTime && time.localeCompare(current.time) > 0)
+      ) {
         latestByLabel.set(label, { label, time });
       }
     });
