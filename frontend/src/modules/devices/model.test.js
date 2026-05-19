@@ -72,4 +72,17 @@ describe("devices model", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ status: "使用中", statusClass: "status running" }));
     expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ activeCount: 1, idleCount: 0 }));
   });
+
+  test("normalizes hot-humid lab maintenance and disabled states to idle unless it is running", () => {
+    const rows = buildDeviceRows(
+      [
+        { code: "高低温湿热一室", name: "高低温湿热一室", status: "维护/校准" },
+        { code: "高低温湿热一室", name: "高低温湿热一室", status: "停用" },
+      ],
+      [],
+    );
+
+    expect(rows.map((row) => row.status)).toEqual(["可用", "可用"]);
+    expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ idleCount: 2, maintenanceCount: 0 }));
+  });
 });

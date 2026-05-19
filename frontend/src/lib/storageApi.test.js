@@ -122,5 +122,23 @@ describe("storageApi", () => {
 
     expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
   });
+
+  test("includes backend validation detail when remote writes fail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request",
+        json: async () => ({ detail: "托盘尚未从接驳间出库，不能直接到达实验室" }),
+      }),
+    );
+
+    await expect(
+      writeStorageUpdates({
+        [STORAGE_KEYS.samples]: [],
+      }),
+    ).rejects.toThrow("Failed to write storage updates: 400 Bad Request，托盘尚未从接驳间出库，不能直接到达实验室");
+  });
 });
 

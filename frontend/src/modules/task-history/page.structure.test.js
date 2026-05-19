@@ -32,6 +32,12 @@ describe("TaskHistoryPage structure", () => {
     expect(source).toContain("selectedTraySampleRows");
     expect(source).toContain("history-tray-sample-row");
     expect(source).toContain("history-tray-sample-code");
+    expect(source).toContain("history-task-search");
+    expect(source).toContain("history-task-range");
+    expect(source).toContain("AppPagination");
+    expect(source).toContain("pagedHistoryTasks");
+    expect(source).toContain("historyPage");
+    expect(source).toContain("historyPageCount");
     expect(source).toContain("justify-content: end;");
     expect(source).toContain("text-align: left;");
     expect(source).toContain("grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.45fr)");
@@ -42,5 +48,6 @@ describe("TaskHistoryPage structure", () => {
     expect(source).not.toContain("history-status-pill");
     expect(source).not.toContain("<span>{{ selectedTray.status || \"-\" }}</span>");
     expect(source).not.toContain("selectedTray.sampleCodes.join(\" / \")");
+    expect(source).not.toContain("step.time || resolveTrayStepTime(step.label)");
   });
 });

@@ -16,6 +16,10 @@ const FLOW_INDEX_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const parseTimeValue = (value) => {
+  const timestamp = Date.parse(normalizeText(value));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
 
 const normalizeFlowLabel = (value) => {
   const text = normalizeText(value);
@@ -80,6 +84,16 @@ const hasAllAssignedTraysReturned = (samples) => {
   ));
 };
 
+const shouldPreferFlowTime = (label, nextTime, currentTime) => {
+  if (!currentTime) {
+    return true;
+  }
+  if (label === "到货" || label === "实验进行中") {
+    return parseTimeValue(nextTime) < parseTimeValue(currentTime);
+  }
+  return parseTimeValue(nextTime) >= parseTimeValue(currentTime);
+};
+
 const collectFlowEntries = (samples) => {
   const latestByLabel = new Map();
   samples.forEach((sample) => {
@@ -90,11 +104,9 @@ const collectFlowEntries = (samples) => {
         return;
       }
       const current = latestByLabel.get(label);
-      const shouldUseEarlierTime = label === "实验进行中";
       if (
         !current
-        || (shouldUseEarlierTime && time.localeCompare(current.time) < 0)
-        || (!shouldUseEarlierTime && time.localeCompare(current.time) > 0)
+        || shouldPreferFlowTime(label, time, current.time)
       ) {
         latestByLabel.set(label, { label, time });
       }
@@ -181,12 +193,13 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
   const taskFlow = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
+  const returnedAt = taskFlow.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
   return {
     id: task?.id || code,
     code,
     name: normalizeText(task?.name || task?.task_name || task?.test_type || task?.experiment_type),
     status: RETURNED_STATUS,
-    updatedAt: normalizeText(task?.updated_at || task?.created_at),
+    updatedAt: returnedAt || normalizeText(task?.updated_at || task?.created_at),
     sampleCount: samples.length,
     trayCount: trays.length,
     experimentCount: experimentRows.length,
@@ -195,6 +208,35 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
     taskFlow,
     trays,
   };
+};
+
+const matchesTaskSearch = (task, query) => {
+  const normalizedQuery = normalizeText(query).toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  const searchText = [
+    task.code,
+    task.name,
+    task.status,
+    ...asArray(task.trays).flatMap((tray) => [tray.trayCode, ...asArray(tray.sampleCodes)]),
+  ]
+    .map((item) => normalizeText(item).toLowerCase())
+    .join(" ");
+  return searchText.includes(normalizedQuery);
+};
+
+const matchesDateWindow = (task, days, now) => {
+  const parsedDays = Number.parseInt(String(days || ""), 10);
+  if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
+    return true;
+  }
+  const taskTime = parseTimeValue(task.updatedAt);
+  const nowTime = parseTimeValue(now) || Date.now();
+  if (!taskTime) {
+    return false;
+  }
+  return taskTime >= nowTime - parsedDays * 24 * 60 * 60 * 1000;
 };
 
 function buildReturnedTaskHistoryView(input = {}) {
@@ -216,6 +258,8 @@ function buildReturnedTaskHistoryView(input = {}) {
 
   const taskRecordsByCode = new Map(tasks.map((task) => [resolveTaskCode(task), task]).filter(([code]) => code));
   const taskCodes = new Set([...taskRecordsByCode.keys(), ...samplesByTaskCode.keys()]);
+  const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
+  const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 8;
   const historyTasks = Array.from(taskCodes)
     .map((taskCode) => {
       const taskSamples = samplesByTaskCode.get(taskCode) || [];
@@ -225,12 +269,24 @@ function buildReturnedTaskHistoryView(input = {}) {
       return buildTaskRow(taskRecordsByCode.get(taskCode) || { code: taskCode }, taskSamples, experiments, experimentTrays);
     })
     .filter(Boolean)
+    .filter((task) => matchesTaskSearch(task, filters.query || input.query))
+    .filter((task) => matchesDateWindow(task, filters.days ?? input.days, input.now))
     .sort((left, right) => {
       const timeCompare = String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
       return timeCompare || left.code.localeCompare(right.code, "zh-Hans-CN", { numeric: true });
     });
 
-  return { tasks: historyTasks };
+  const totalPages = Math.max(1, Math.ceil(historyTasks.length / pageSize));
+  const rawPage = Number.parseInt(String(input.page ?? 1), 10);
+  const currentPage = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), totalPages) : 1;
+  const startIndex = (currentPage - 1) * pageSize;
+
+  return {
+    currentPage,
+    tasks: historyTasks.slice(startIndex, startIndex + pageSize),
+    totalCount: historyTasks.length,
+    totalPages,
+  };
 }
 
 export { buildReturnedTaskHistoryView };

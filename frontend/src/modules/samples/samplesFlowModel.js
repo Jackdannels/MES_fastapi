@@ -745,15 +745,30 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
   return FLOW_STEP_KEY_BY_LABEL.has(normalized) ? normalized : "";
 };
 
-const setLatestFlowTime = (timeMap, label, time) => {
+const setLatestFlowTime = (timeMap, label, time, sourceMap = new Map(), source = "history") => {
   const normalizedLabel = normalizeText(label);
   const normalizedTime = normalizeText(time);
   if (!normalizedLabel || !normalizedTime) {
     return;
   }
   const existing = timeMap.get(normalizedLabel);
-  if (!existing || parseTimeValue(normalizedTime) >= parseTimeValue(existing)) {
+  const existingSource = sourceMap.get(normalizedLabel) || "";
+  const historyPreferredLabel = normalizedLabel === "到货" || normalizedLabel === "厂家收回";
+  if (historyPreferredLabel && existingSource === "history" && source !== "history") {
+    return;
+  }
+  if (historyPreferredLabel && existingSource !== "history" && source === "history") {
     timeMap.set(normalizedLabel, normalizedTime);
+    sourceMap.set(normalizedLabel, source);
+    return;
+  }
+  if (
+    !existing
+    || (normalizedLabel === "到货" && parseTimeValue(normalizedTime) < parseTimeValue(existing))
+    || (normalizedLabel !== "到货" && parseTimeValue(normalizedTime) >= parseTimeValue(existing))
+  ) {
+    timeMap.set(normalizedLabel, normalizedTime);
+    sourceMap.set(normalizedLabel, source);
   }
 };
 
@@ -770,6 +785,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
   const taskCode = normalizeText(input.taskCode);
   const trayCode = normalizeText(input.trayCode);
   const timeMap = new Map();
+  const timeSourceMap = new Map();
   if (!trayCode) {
     return timeMap;
   }
@@ -808,19 +824,19 @@ const buildTrayFlowTimeMap = (input = {}) => {
         || latestWithdrawalEntry?.created_at
         || latestWithdrawalEntry?.timestamp;
       if (restoreTarget?.experimentName && restoreTarget.status === "实验已完成") {
-        setLatestFlowTime(timeMap, `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, withdrawalTime);
+        setLatestFlowTime(timeMap, `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, withdrawalTime, timeSourceMap);
       } else {
         const restoreLabel = normalizeHistoryFlowLabel(
           restoreTarget?.status || latestWithdrawalEntry?.status,
           latestWithdrawalEntry?.location,
         );
-        setLatestFlowTime(timeMap, restoreLabel, withdrawalTime);
+        setLatestFlowTime(timeMap, restoreLabel, withdrawalTime, timeSourceMap);
       }
     }
 
     const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     if (parseTimeValue(sample?.created_at) > 0 && resolveFlowStatusRank("", sampleStatus) >= (FLOW_STEP_INDEX_BY_KEY.get("arrived") ?? 1)) {
-      setLatestFlowTime(timeMap, "到货", sample?.created_at);
+      setLatestFlowTime(timeMap, "到货", sample?.created_at, timeSourceMap, "fallback");
     }
 
     trayEntries.forEach((tray) => {
@@ -828,7 +844,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const trayStatusLabel = isPostRetentionLocation(sample?.location) && isAmbiguousStagingStatus(trayStatus)
         ? "放置实验后暂存间"
         : trayStatus;
-      setLatestFlowTime(timeMap, trayStatusLabel, tray?.updated_at || sample?.updated_at);
+      setLatestFlowTime(timeMap, trayStatusLabel, tray?.updated_at || sample?.updated_at, timeSourceMap, "fallback");
     });
 
     historyEntries.forEach((entry) => {
@@ -840,7 +856,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
         if (!label || shouldIgnoreHistoryTime(entry, label, entry?.location)) {
           return;
         }
-        setLatestFlowTime(timeMap, label, time);
+        setLatestFlowTime(timeMap, label, time, timeSourceMap);
       });
 
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
@@ -851,10 +867,10 @@ const buildTrayFlowTimeMap = (input = {}) => {
         }
         const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
         if (experimentStatus === "实验进行中" || experimentStatus === "实验中") {
-          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time);
+          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time, timeSourceMap);
         }
         if (experimentStatus === "实验已完成" || experimentStatus === "实验完成") {
-          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time);
+          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time, timeSourceMap);
         }
       }
     });

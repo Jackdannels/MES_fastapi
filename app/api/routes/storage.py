@@ -53,8 +53,21 @@ def _sample_was_dispatched(sample: Any) -> bool:
     }
 
 
+def _sample_was_lab_arrived(sample: Any) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    return LAB_ARRIVED_STATUS in {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+
+
 def _tray_was_dispatched(sample: Any, tray: Any) -> bool:
     return _status(tray) == LAB_DISPATCHED_STATUS or _sample_was_dispatched(sample)
+
+
+def _tray_was_lab_arrived(sample: Any, tray: Any) -> bool:
+    return _status(tray) == LAB_ARRIVED_STATUS or _sample_was_lab_arrived(sample)
 
 
 def _sample_has_blocked_lab_status(sample: Any) -> bool:
@@ -126,6 +139,8 @@ def _validate_samples_lab_arrival_transition(current_samples: Any, next_samples:
                 continue
             arrived_tray_count += 1
             current_tray = current_trays.get(_tray_code(next_tray))
+            if _tray_was_lab_arrived(current_sample, current_tray):
+                continue
             if not _tray_was_dispatched(current_sample, current_tray):
                 raise HTTPException(status_code=400, detail=LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL)
 
@@ -134,6 +149,8 @@ def _validate_samples_lab_arrival_transition(current_samples: Any, next_samples:
             _normalize_text(next_sample.get("flow_status")),
         }
         if LAB_ARRIVED_STATUS in next_sample_status and arrived_tray_count == 0 and not _sample_was_dispatched(current_sample):
+            if _sample_was_lab_arrived(current_sample):
+                continue
             raise HTTPException(status_code=400, detail=LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL)
 
 

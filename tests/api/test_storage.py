@@ -121,6 +121,36 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
     assert storage.read("mes.samples") == updated
 
 
+def test_storage_allows_idempotent_snapshot_when_sample_already_arrived_lab(monkeypatch):
+    samples = [
+        {
+            "code": "SP-ALREADY-ARRIVED",
+            "location": "盐雾试验室",
+            "status": "已到达实验室",
+            "flow_status": "已到达实验室",
+            "task_code": "SYLU-2026-05-705",
+            "trays": [{"tray_code": "TP-ALREADY-ARRIVED", "status": "已到达实验室", "quantity": 1}],
+        },
+        {
+            "code": "SP-NEW",
+            "location": "",
+            "status": "样品运输中",
+            "flow_status": "样品运输中",
+            "task_code": "SYLU-2026-05-706",
+            "trays": [],
+        },
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    updated = deepcopy(samples)
+    updated[1]["owner"] = "新任务"
+
+    response = client.put("/api/storage", json={"mes.samples": updated})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == updated
+
+
 def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch):
     samples = [
         {

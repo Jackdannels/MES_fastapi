@@ -3,6 +3,20 @@ import { describe, expect, test, vi } from "vitest";
 
 import TrayManagementPanel from "./TrayManagementPanel.vue";
 
+const buildSamplesFlow = (overrides = {}) => ({
+  rawExperimentTrays: [],
+  rawExperiments: [],
+  rawSamples: [],
+  rawSchedules: [],
+  rawTasks: [],
+  trayRows: [],
+  trayStatusOptions: [],
+  updateTrayStatusInline: vi.fn(async () => {}),
+  warning: "",
+  clearWarning: vi.fn(),
+  ...overrides,
+});
+
 describe("TrayManagementPanel", () => {
   test("renders tray table without task info/current status columns and collapses long sample code lists", () => {
     const wrapper = mount(TrayManagementPanel, {
@@ -72,6 +86,69 @@ describe("TrayManagementPanel", () => {
       "SYLU-2026-03-021-SP-005",
       "SYLU-2026-03-021-SP-006",
     ]);
+  });
+
+  test("paginates tray rows to five per page", async () => {
+    const trayRows = Array.from({ length: 6 }, (_, index) => ({
+      sampleCodes: [`SP-${index + 1}`],
+      sampleCount: 1,
+      sampleSummary: `SP-${index + 1}`,
+      status: "送至实验室",
+      taskCode: "SYLU-2026-05-001",
+      trayCode: `SYLU-2026-05-001-TP-${String(index + 1).padStart(3, "0")}`,
+    }));
+    const wrapper = mount(TrayManagementPanel, {
+      props: {
+        samplesFlow: buildSamplesFlow({ trayRows }),
+      },
+    });
+
+    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(5);
+    expect(wrapper.text()).toContain("SYLU-2026-05-001-TP-005");
+    expect(wrapper.text()).not.toContain("SYLU-2026-05-001-TP-006");
+    expect(wrapper.get('[data-testid="pagination-status"]').text()).toContain("第 1 / 2 页");
+
+    await wrapper.get('[data-page="next"]').trigger("click");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(1);
+    expect(wrapper.text()).toContain("SYLU-2026-05-001-TP-006");
+  });
+
+  test("keeps only the unified tray flow title above the tray flow", () => {
+    const wrapper = mount(TrayManagementPanel, {
+      props: {
+        samplesFlow: buildSamplesFlow({
+          rawSamples: [
+            {
+              code: "SP-001",
+              task_code: "TASK-001",
+              location: "霉菌试验室",
+              status: "送至实验室",
+              owner: "张三",
+              trays: [{ tray_code: "TP-001", status: "送至实验室" }],
+            },
+          ],
+          trayRows: [
+            {
+              sampleCodes: ["SP-001", "SP-002"],
+              sampleCount: 2,
+              sampleSummary: "SP-001、SP-002",
+              status: "送至实验室",
+              taskCode: "TASK-001",
+              trayCode: "TP-001",
+            },
+          ],
+        }),
+      },
+    });
+
+    const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]').text();
+    expect(trayFlowCard).toContain("统一托盘流程图");
+    expect(trayFlowCard).not.toContain("当前托盘");
+    expect(trayFlowCard).not.toContain("当前位置");
+    expect(trayFlowCard).not.toContain("责任人");
+    expect(trayFlowCard).not.toContain("样品：");
   });
 
   test("shows partial experiment completion as running with a completed-count suffix in the task flow", async () => {

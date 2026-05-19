@@ -5,6 +5,7 @@ const DEFAULT_DEVICE_STATUS = "可用";
 const ACTIVE_DEVICE_STATUS = "使用中";
 const MAINTENANCE_DEVICE_STATUS = "维护/校准";
 const DISABLED_DEVICE_STATUS = "停用";
+const HOT_HUMID_LAB_CODE = "高低温湿热一室";
 const RUNNING_TRAY_STATUSES = new Set(["实验进行中", "实验中"]);
 
 const DEFAULT_POINT_ROWS = Object.freeze([
@@ -104,7 +105,15 @@ function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = 
   if (runningSchedule) {
     return ACTIVE_DEVICE_STATUS;
   }
-  return normalizeText(device?.status) || DEFAULT_DEVICE_STATUS;
+  const storedStatus = normalizeText(device?.status);
+  const deviceName = normalizeText(device?.name);
+  if (
+    (deviceCode === HOT_HUMID_LAB_CODE || deviceName === HOT_HUMID_LAB_CODE)
+    && (storedStatus === MAINTENANCE_DEVICE_STATUS || storedStatus === DISABLED_DEVICE_STATUS)
+  ) {
+    return DEFAULT_DEVICE_STATUS;
+  }
+  return storedStatus || DEFAULT_DEVICE_STATUS;
 }
 
 // 将设备状态映射为表格和卡片复用的 CSS 状态类。

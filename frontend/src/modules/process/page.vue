@@ -277,16 +277,10 @@
         </div>
 
         <aside class="process-task-drawer-side">
-          <section class="process-task-summary-card process-task-flow-card">
+          <section class="process-task-summary-card process-task-flow-card" data-testid="process-tray-flow-card">
             <div class="process-task-flow-head">
               <div>
                 <div class="process-task-summary-title">统一托盘流程图</div>
-                <div class="process-task-flow-status">{{ selectedTaskDetail?.selectedTrayFlow?.currentStatus || "暂无托盘" }}</div>
-              </div>
-              <div class="process-task-tray-meta" v-if="selectedTaskDetail?.selectedTraySummary">
-                <span>位置：{{ selectedTaskDetail.selectedTraySummary.locationSummary }}</span>
-                <span>责任人：{{ selectedTaskDetail.selectedTraySummary.ownerSummary }}</span>
-                <span>样品：{{ selectedTaskDetail.selectedTraySummary.sampleSummary }}</span>
               </div>
             </div>
             <ol class="process-task-flow-list process-task-flow-list--timed">

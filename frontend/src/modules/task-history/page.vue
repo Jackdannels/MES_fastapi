@@ -4,12 +4,31 @@
       <aside class="card history-task-list" data-testid="history-task-list">
         <div class="history-task-list__head">
           <h3>历史任务数据</h3>
-          <span class="muted">已收回任务 {{ historyTasks.length }}</span>
+          <span class="muted">已收回任务 {{ historyTotalCount }}</span>
+        </div>
+        <div class="history-task-controls">
+          <input
+            v-model="historySearch"
+            class="search-input history-task-search"
+            data-testid="history-task-search"
+            placeholder="搜索任务、托盘、样品"
+            type="search"
+          />
+          <select
+            v-model="historyDateRange"
+            class="search-input history-task-range"
+            data-testid="history-task-range"
+          >
+            <option value="">全部时间</option>
+            <option value="7">7日内</option>
+            <option value="30">30日内</option>
+            <option value="180">180日内</option>
+          </select>
         </div>
         <div v-if="loadError" class="form-alert">{{ loadError }}</div>
-        <div v-if="historyTasks.length === 0" class="history-empty muted">暂无历史任务数据</div>
+        <div v-if="pagedHistoryTasks.length === 0" class="history-empty muted">暂无历史任务数据</div>
         <button
-          v-for="task in historyTasks"
+          v-for="task in pagedHistoryTasks"
           :key="task.code"
           class="history-task-row"
           :class="{ active: selectedTaskCode === task.code }"
@@ -21,6 +40,12 @@
           <span class="history-task-row__name">{{ task.name || "-" }}</span>
           <span class="history-task-row__meta">{{ task.trayCount }} 个托盘 · {{ task.sampleCount }} 个样品</span>
         </button>
+        <AppPagination
+          v-if="historyPageCount > 1"
+          :current-page="historyPage"
+          :page-count="historyPageCount"
+          @change="historyPage = $event"
+        />
       </aside>
 
       <aside class="history-task-side">
@@ -99,13 +124,13 @@
                       <span class="history-flow-label">{{ step.label }}</span>
                       <span
                         class="history-flow-time"
-                        :title="formatHistoryTime(step.time || resolveTrayStepTime(step.label))"
+                        :title="formatHistoryTime(step.time)"
                       >
                         <span class="history-flow-time__date">
-                          {{ formatHistoryDatePart(step.time || resolveTrayStepTime(step.label)) }}
+                          {{ formatHistoryDatePart(step.time) }}
                         </span>
                         <span class="history-flow-time__clock">
-                          {{ formatHistoryClockPart(step.time || resolveTrayStepTime(step.label)) }}
+                          {{ formatHistoryClockPart(step.time) }}
                         </span>
                       </span>
                       <span class="history-flow-dot"></span>
@@ -130,6 +155,7 @@ defineOptions({
 import { computed, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTasks } from "@/lib/tasksApi";
 import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
@@ -141,6 +167,9 @@ const samples = ref([]);
 const loadError = ref("");
 const selectedTaskCode = ref("");
 const selectedTrayCode = ref("");
+const historySearch = ref("");
+const historyDateRange = ref("");
+const historyPage = ref(1);
 const experiments = ref([]);
 const experimentTrays = ref([]);
 const schedules = ref([]);
@@ -152,12 +181,21 @@ const { loadSnapshot } = useStorageSnapshot([
 ]);
 
 const historyView = computed(() => buildReturnedTaskHistoryView({
+  filters: {
+    days: historyDateRange.value,
+    query: historySearch.value,
+  },
+  page: historyPage.value,
+  pageSize: 8,
   tasks: tasks.value,
   samples: samples.value,
   experiments: experiments.value,
   experimentTrays: experimentTrays.value,
 }));
 const historyTasks = computed(() => historyView.value.tasks);
+const pagedHistoryTasks = computed(() => historyTasks.value);
+const historyTotalCount = computed(() => historyView.value.totalCount || 0);
+const historyPageCount = computed(() => historyView.value.totalPages || 1);
 const selectedTask = computed(() => historyTasks.value.find((task) => task.code === selectedTaskCode.value) || null);
 const selectedTray = computed(() => selectedTask.value?.trays.find((tray) => tray.trayCode === selectedTrayCode.value) || null);
 const selectedTraySampleRows = computed(() => {
@@ -217,11 +255,6 @@ const formatHistoryClockPart = (value) => {
   }
   return formatted.split(" ").slice(1).join(" ");
 };
-const resolveTrayStepTime = (label) => {
-  const matched = selectedTray.value?.flowSteps?.find((step) => step.label === label);
-  return matched?.time || "";
-};
-
 watch(historyTasks, (nextTasks) => {
   if (!nextTasks.length) {
     selectedTaskCode.value = "";
@@ -232,6 +265,10 @@ watch(historyTasks, (nextTasks) => {
     selectedTaskCode.value = nextTasks[0].code;
   }
 }, { immediate: true });
+
+watch([historySearch, historyDateRange], () => {
+  historyPage.value = 1;
+});
 
 watch(selectedTask, (task) => {
   if (!task?.trays?.length) {
@@ -297,6 +334,13 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.history-task-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, auto);
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .history-task-row {

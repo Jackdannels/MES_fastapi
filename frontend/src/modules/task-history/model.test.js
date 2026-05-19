@@ -3,6 +3,94 @@ import { describe, expect, test } from "vitest";
 import { buildReturnedTaskHistoryView } from "./model";
 
 describe("task history model", () => {
+  test("uses real history times for arrival and latest return instead of stale record timestamps", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [
+        {
+          code: "TASK-TIME",
+          name: "时间校验任务",
+          status: "厂家收回",
+          updated_at: "2026-05-19T18:00:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SP-TIME-001",
+          task_code: "TASK-TIME",
+          status: "厂家收回",
+          created_at: "2026-05-19T12:00:00+08:00",
+          updated_at: "2026-05-19T12:30:00+08:00",
+          trays: [
+            {
+              tray_code: "TP-TIME-001",
+              status: "厂家收回",
+              updated_at: "2026-05-19T12:30:00+08:00",
+            },
+          ],
+          history: [
+            { action: "厂家收回", status: "厂家收回", detail: "TP-TIME-001 厂家收回", time: "2026-05-19T12:31:00+08:00" },
+            { action: "批量入库", status: "到货", detail: "TP-TIME-001 到货", time: "2026-05-19T11:25:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.tasks[0].updatedAt).toBe("2026-05-19T12:31:00+08:00");
+    expect(view.tasks[0].taskFlow).toEqual([
+      { label: "到货", time: "2026-05-19T11:25:00+08:00" },
+      { label: "厂家收回", time: "2026-05-19T12:31:00+08:00" },
+    ]);
+    expect(view.tasks[0].trays[0].flowSteps).toEqual([
+      { label: "到货", time: "2026-05-19T11:25:00+08:00" },
+      { label: "厂家收回", time: "2026-05-19T12:31:00+08:00" },
+    ]);
+  });
+
+  test("filters returned task history by search text and recent day window with pagination", () => {
+    const view = buildReturnedTaskHistoryView({
+      now: "2026-05-19T12:00:00+08:00",
+      page: 1,
+      pageSize: 1,
+      filters: {
+        query: "TP-B",
+        days: 30,
+      },
+      tasks: [
+        { code: "TASK-A", name: "旧任务", status: "厂家收回" },
+        { code: "TASK-B", name: "目标任务", status: "厂家收回" },
+        { code: "TASK-C", name: "不匹配任务", status: "厂家收回" },
+      ],
+      samples: [
+        {
+          code: "SP-A",
+          task_code: "TASK-A",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-A", status: "厂家收回" }],
+          history: [{ status: "厂家收回", time: "2026-03-01T12:00:00+08:00" }],
+        },
+        {
+          code: "SP-B",
+          task_code: "TASK-B",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-B", status: "厂家收回" }],
+          history: [{ status: "厂家收回", time: "2026-05-18T12:00:00+08:00" }],
+        },
+        {
+          code: "SP-C",
+          task_code: "TASK-C",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-C", status: "厂家收回" }],
+          history: [{ status: "厂家收回", time: "2026-05-18T12:00:00+08:00" }],
+        },
+      ],
+    });
+
+    expect(view.totalCount).toBe(1);
+    expect(view.totalPages).toBe(1);
+    expect(view.currentPage).toBe(1);
+    expect(view.tasks.map((task) => task.code)).toEqual(["TASK-B"]);
+  });
+
   test("keeps only tasks whose assigned trays are all returned and exposes task/tray flow times", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [

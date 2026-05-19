@@ -296,7 +296,12 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.text()).not.toContain("补充信息");
     expect(wrapper.text()).toContain("TRAY-001");
     expect(wrapper.text()).toContain("TRAY-003");
-    expect(wrapper.text()).toContain("当前托盘：TRAY-001 | 当前状态：已到达实验室");
+    const trayFlowCard = wrapper.get("[data-testid='process-tray-flow-card']").text();
+    expect(trayFlowCard).toContain("统一托盘流程图");
+    expect(trayFlowCard).not.toContain("当前托盘");
+    expect(trayFlowCard).not.toContain("当前位置");
+    expect(trayFlowCard).not.toContain("责任人");
+    expect(trayFlowCard).not.toContain("样品：");
     expect(wrapper.get("[data-testid='process-selected-tray-sample-list']").text()).toContain("SP-001");
     expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(1);
     expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-selected");

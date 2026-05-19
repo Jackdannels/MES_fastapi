@@ -33,7 +33,7 @@
               <td colspan="6" class="muted">暂无托盘数据</td>
             </tr>
             <tr
-              v-for="(row, index) in filteredTrayRows"
+              v-for="(row, index) in pagedTrayRows"
               :key="row.trayCode"
               :data-testid="`samples-trays-row-${index}`"
               :class="{ 'tray-row-active': row.trayCode === selectedTrayCode, 'is-active': row.trayCode === selectedTrayCode }"
@@ -85,6 +85,12 @@
             </tr>
           </tbody>
         </table>
+        <AppPagination
+          v-if="trayPageCount > 1"
+          :current-page="trayPage"
+          :page-count="trayPageCount"
+          @change="trayPage = $event"
+        />
         <AppFeedback :message="samplesFlow.warning" tone="warning" @close="samplesFlow.clearWarning" />
       </section>
 
@@ -105,9 +111,8 @@
           </ol>
         </section>
 
-        <section class="sample-flow-card section">
+        <section class="sample-flow-card section" data-testid="samples-tray-flow">
           <div class="sample-flow-title">统一托盘流程图</div>
-          <div class="sample-flow-status" data-testid="samples-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
           <ol class="sample-flow-unified sample-flow-unified--timed">
             <li
               v-for="(step, index) in selectedTrayFlow.steps"
@@ -130,6 +135,7 @@
 import { computed, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import { SYSTEM_TRAY_TOTAL, getRemainingSystemTrayCount } from "@/lib/trayCapacity";
 import { buildTrayFlowView } from "./samplesFlowModel";
 import {
@@ -164,6 +170,7 @@ const TASK_FLOW_STEPS = [
 ];
 const SAMPLE_CODES_ELLIPSIS = "...";
 const SAMPLE_CODES_VISIBLE_LIMIT = 5;
+const TRAY_PAGE_SIZE = 5;
 const formatFlowTime = (value) => {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -179,6 +186,7 @@ const TASK_FLOW_INDEX = new Map(TASK_FLOW_STEPS.map((step, index) => [step.label
 
 const selectedTrayCode = ref("");
 const selectedTaskCode = ref("");
+const trayPage = ref(1);
 
 const setTaskFilter = (taskCode) => {
   selectedTaskCode.value = String(taskCode || "").trim();
@@ -205,6 +213,13 @@ const filteredTrayRows = computed(() => {
 const trayCounterText = computed(() => {
   const occupiedCount = Array.isArray(props.samplesFlow.trayRows) ? props.samplesFlow.trayRows.length : 0;
   return `${getRemainingSystemTrayCount(occupiedCount)}/${SYSTEM_TRAY_TOTAL}`;
+});
+
+const trayPageCount = computed(() => Math.max(1, Math.ceil(filteredTrayRows.value.length / TRAY_PAGE_SIZE)));
+const safeTrayPage = computed(() => Math.min(Math.max(Number.parseInt(String(trayPage.value || 1), 10) || 1, 1), trayPageCount.value));
+const pagedTrayRows = computed(() => {
+  const startIndex = (safeTrayPage.value - 1) * TRAY_PAGE_SIZE;
+  return filteredTrayRows.value.slice(startIndex, startIndex + TRAY_PAGE_SIZE);
 });
 
 const allSampleCodes = (row) => {
@@ -235,7 +250,14 @@ const selectTray = (trayCode) => {
 };
 
 watch(
-  () => filteredTrayRows.value,
+  () => selectedTaskCode.value,
+  () => {
+    trayPage.value = 1;
+  },
+);
+
+watch(
+  () => pagedTrayRows.value,
   (rows) => {
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) {
@@ -250,7 +272,7 @@ watch(
 );
 
 const selectedTray = computed(() => {
-  const rows = filteredTrayRows.value;
+  const rows = pagedTrayRows.value;
   return rows.find((row) => row.trayCode === selectedTrayCode.value) || rows[0] || { trayCode: "", status: "样品运输中" };
 });
 

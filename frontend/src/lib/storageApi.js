@@ -40,7 +40,15 @@ async function writeStorageUpdates(updates) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to write storage updates: ${response.status} ${response.statusText}`);
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = String(payload?.detail || payload?.message || "").trim();
+    } catch {
+      detail = "";
+    }
+    const suffix = detail ? `，${detail}` : "";
+    throw new Error(`Failed to write storage updates: ${response.status} ${response.statusText}${suffix}`);
   }
 }
 

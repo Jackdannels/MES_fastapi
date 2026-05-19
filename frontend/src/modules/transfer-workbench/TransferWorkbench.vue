@@ -576,6 +576,7 @@ const normalizeTaskStatus = (status) => {
   if (text.includes(pendingStatus)) return pendingStatus;
   return text;
 };
+const BARCODE_SAMPLE_PREVIEW_LIMIT = 8;
 
 const normalizeText = (value) => String(value || "").trim();
 
@@ -586,6 +587,17 @@ const resolveExperimentDisplayName = (experiment) =>
   || "实验";
 
 const encodeHtml = (value) => String(value || "").replace(/[&"<>]/g, (char) => XML_ESCAPE_MAP[char] || char);
+
+const formatSampleCodePreview = (sampleCodes, limit = BARCODE_SAMPLE_PREVIEW_LIMIT) => {
+  const codes = Array.isArray(sampleCodes)
+    ? sampleCodes.map((sampleCode) => normalizeText(sampleCode)).filter(Boolean)
+    : [];
+  if (!codes.length) {
+    return "-";
+  }
+  const visibleCodes = codes.slice(0, limit);
+  return `${visibleCodes.join(" / ")}${codes.length > limit ? " / ..." : ""}`;
+};
 
 const resolveExperimentTagToneIndex = (value) => {
   const text = String(value || "").trim();
@@ -1625,7 +1637,7 @@ const printAllTrayBarcodes = async () => {
         trayNo: tray?.trayNo || "--",
         samples: tray?.samples?.map((sample) => sample.sampleNo) || [],
         summaryText: buildBarcodeSummaryText(currentTask.value?.taskNo, tray?.samples?.length || 0),
-        sampleText: tray?.samples?.map((sample) => sample.sampleNo).join(" / ") || "-",
+        sampleText: formatSampleCodePreview(tray?.samples?.map((sample) => sample.sampleNo)),
         experimentLabels: Array.isArray(tray?.experimentLabels) ? [...tray.experimentLabels] : [],
         experimentCodes: Array.isArray(tray?.experimentCodes) ? [...tray.experimentCodes] : [],
         barcodeSvg: buildBarcodeSvg(barcodeValue),
