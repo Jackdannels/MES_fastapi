@@ -110,7 +110,15 @@ const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
 
 const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
   const status = normalizeText(device?.status);
-  return status === DEVICE_STATUS_MAINTENANCE || status.includes("维护") || isDeviceInMaintenanceWindow(device, now);
+  return (
+    status === DEVICE_STATUS_MAINTENANCE
+    || status.includes("维护")
+    || status.includes("维修")
+    || status.includes("停用")
+    || status.includes("禁用")
+    || status.includes("不可用")
+    || isDeviceInMaintenanceWindow(device, now)
+  );
 };
 
 const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt) => {

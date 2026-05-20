@@ -150,6 +150,23 @@ def is_staging_device(value: Any) -> bool:
     return "暂存间" in normalize_text(value)
 
 
+def device_is_unavailable(device: dict[str, Any] | None) -> bool:
+    if not device:
+        return False
+    status = normalize_text(device.get("status"))
+    return any(keyword in status for keyword in ["维护", "维修", "停用", "禁用", "不可用"])
+
+
+def find_unavailable_device(snapshot: dict[str, list[dict[str, Any]]], device_name: str) -> dict[str, Any] | None:
+    normalized_device = normalize_text(device_name)
+    for device in snapshot.get("devices", []):
+        if normalized_device not in {normalize_text(device.get("code")), normalize_text(device.get("name"))}:
+            continue
+        if device_is_unavailable(device):
+            return device
+    return None
+
+
 def has_formal_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str, experiment_code_value: str) -> bool:
     return any(
         normalize_text(item.get("task_code")) == task_code_value
@@ -171,6 +188,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
+        "devices": [dict(item) for item in as_list(payload.get("mes.devices")) if isinstance(item, dict)],
     }
 
 
@@ -1405,6 +1423,10 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         )
         if matched_destination is None:
             raise HTTPException(status_code=400, detail="目标实验室与当前托盘不匹配")
+        unavailable_device = find_unavailable_device(snapshot, target_name)
+        if unavailable_device:
+            device_name = normalize_text(unavailable_device.get("code")) or target_name
+            raise HTTPException(status_code=400, detail=f"{device_name}设备维护中，禁止送至该实验室")
         if (
             current_tray_status in TRAY_OUTBOUND_STATUSES
             and current_tray_status not in TRAY_LAB_REDISPATCH_STATUSES

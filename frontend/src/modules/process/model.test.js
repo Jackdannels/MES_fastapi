@@ -119,6 +119,36 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards shows maintenance state from device resources", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Salt Lab", testType: "盐雾试验" }],
+      [{ code: "TASK-001", test_type: "盐雾试验" }],
+      [
+        {
+          device: "Salt Lab",
+          end_at: "2026-04-01T15:30:00Z",
+          experiment_code: "TASK-001-A",
+          start_at: "2026-04-01T12:00:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      [],
+      Date.parse("2026-04-01T13:00:00Z"),
+      [{ task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "盐雾试验" }],
+      [],
+      [{ code: "Salt Lab", status: "维护/校准" }],
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        canStartExperiment: false,
+        startDisabledReason: "设备维护中，禁止开始实验",
+        status: "维护/校准",
+        statusClass: "is-maintenance",
+      }),
+    );
+  });
+
   test("buildProcessLabCards scopes running state to the scheduled experiment instead of the whole task", () => {
     const cards = buildProcessLabCards(
       [

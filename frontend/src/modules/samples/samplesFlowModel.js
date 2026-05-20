@@ -987,8 +987,16 @@ function buildTrayFlowView(input = {}) {
           currentStatus = steps[latestCompletedIndex].label;
           activeIndex = latestCompletedIndex;
         } else {
-          currentStatus = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          const completedIdentityLabel = `${experimentIdentityNameText}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          steps[currentExperimentIndexInSteps].label = completedLabel;
+          steps[currentExperimentIndexInSteps].time =
+            steps[currentExperimentIndexInSteps].time || stepTimeMap.get(completedLabel) || stepTimeMap.get(completedIdentityLabel) || "";
+          currentStatus = completedLabel;
           activeIndex = currentExperimentIndexInSteps;
+          routeIndexes.forEach((stepIndex) => {
+            steps[stepIndex].reached = true;
+          });
         }
       } else if (normalizedRouteStatus === "放置实验后暂存间") {
         currentStatus = normalizedRouteStatus;

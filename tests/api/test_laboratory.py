@@ -312,6 +312,129 @@ def test_laboratory_withdraw_current_restores_previous_completed_experiment(monk
     assert "盐雾试验已完成" in updated["history"][0]["detail"]
 
 
+def test_laboratory_withdraw_current_restores_completed_experiment_from_same_tray_history(monkeypatch):
+    previous_completed = sample_with_history(
+        "实验已完成",
+        "盐雾试验室",
+        [
+            {
+                "action": "实验完成",
+                "detail": "TASK-501 / 盐雾试验 / 实验已完成",
+                "status": "实验已完成",
+                "location": "盐雾试验室",
+                "time": "2026-05-19T10:00:00",
+            },
+        ],
+    )
+    previous_completed["id"] = "sample-501-salt"
+    previous_completed["code"] = "SP-501-SALT"
+    current_next_lab = sample_with_history(
+        "已到达实验室",
+        "温度冲击一室",
+        [
+            {
+                "action": "任务比对",
+                "detail": "TASK-501 / 温度冲击试验 / 已到达实验室",
+                "status": "已到达实验室",
+                "location": "温度冲击一室",
+                "time": "2026-05-19T11:00:00",
+            },
+        ],
+    )
+    current_next_lab["id"] = "sample-501-thermal"
+    current_next_lab["code"] = "SP-501-THERMAL"
+    payloads = base_payloads(
+        [previous_completed, current_next_lab],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"},
+        ],
+    )
+    payloads["mes.experiments"][1]["experiment_name"] = "温度冲击试验"
+    payloads["mes.schedules"][1]["device"] = "温度冲击一室"
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "实验已完成"
+    assert payload["restoredExperimentName"] == "盐雾试验"
+    completed_previous, withdrawn_current = storage.read("mes.samples")
+    assert completed_previous["status"] == "实验已完成"
+    assert withdrawn_current["status"] == "实验已完成"
+    assert withdrawn_current["flow_status"] == "实验已完成"
+    assert withdrawn_current["location"] == "盐雾试验室"
+    assert withdrawn_current["trays"][0]["status"] == "实验已完成"
+    assert "撤回至盐雾试验已完成" in withdrawn_current["history"][0]["detail"]
+
+
+def test_laboratory_withdraw_current_only_withdraws_current_batch_trays(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        base_payloads(
+            [
+                sample_with_history(
+                    "实验已完成",
+                    "盐雾试验室",
+                    [
+                        {"action": "实验完成", "detail": "TASK-501 / 盐雾试验 / 实验已完成", "status": "实验已完成", "location": "盐雾试验室", "time": "2026-05-19T10:00:00"},
+                    ],
+                    tray_code="TP-501-A",
+                ),
+                sample_with_history(
+                    "已到达实验室",
+                    "霉菌试验室",
+                    [
+                        {"action": "任务比对", "status": "已到达实验室", "location": "霉菌试验室", "time": "2026-05-19T11:00:00"},
+                        {"action": "实验完成", "detail": "TASK-501 / 盐雾试验 / 实验已完成", "status": "实验已完成", "location": "盐雾试验室", "time": "2026-05-19T10:00:00"},
+                    ],
+                    tray_code="TP-501-B",
+                ),
+            ],
+            experiment_trays=[
+                {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501-A"},
+                {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501-A"},
+                {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501-B"},
+            ],
+        ),
+    )
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["affectedTrayCodes"] == ["TP-501-B"]
+    assert payload["affectedSampleCount"] == 1
+    completed_previous, withdrawn_current = storage.read("mes.samples")
+    assert completed_previous["status"] == "实验已完成"
+    assert completed_previous["trays"][0]["status"] == "实验已完成"
+    assert withdrawn_current["status"] == "实验已完成"
+    assert withdrawn_current["location"] == "盐雾试验室"
+    assert withdrawn_current["trays"][0]["status"] == "实验已完成"
+    assert withdrawn_current["history"][0]["action"] == "实验任务撤回"
+
+
+def test_laboratory_withdraw_current_uses_sample_status_when_tray_status_lags(monkeypatch):
+    sample = sample_with_history(
+        "已到达实验室",
+        "霉菌试验室",
+        [
+            {"action": "任务比对", "status": "已到达实验室", "location": "霉菌试验室", "time": "2026-05-19T11:00:00"},
+            {"action": "实验完成", "detail": "TASK-501 / 盐雾试验 / 实验已完成", "status": "实验已完成", "location": "盐雾试验室", "time": "2026-05-19T10:00:00"},
+        ],
+    )
+    sample["trays"][0]["status"] = "送至实验室"
+    client, storage = build_client(monkeypatch, base_payloads([sample]))
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "实验已完成"
+    assert updated["trays"][0]["status"] == "实验已完成"
+
+
 def test_laboratory_withdraw_current_rejects_running_or_finished_states(monkeypatch):
     for blocked_status in ["实验进行中", "实验已完成", "放置实验后暂存间", "厂家收回"]:
         client, storage = build_client(

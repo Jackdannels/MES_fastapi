@@ -426,6 +426,51 @@ describe("samplesFlowModel", () => {
     });
   });
 
+  test("buildTrayFlowView highlights a completed current experiment instead of its running step", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-004-TP-001",
+      taskCode: "SYLU-2026-05-004",
+      currentExperimentCode: "SYLU-2026-05-004-A",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-004",
+          experiment_code: "SYLU-2026-05-004-A",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-05-004",
+          experiment_code: "SYLU-2026-05-004-B",
+          experiment_name: "温度冲击试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-004", experiment_code: "SYLU-2026-05-004-A", tray_code: "SYLU-2026-05-004-TP-001" },
+        { task_code: "SYLU-2026-05-004", experiment_code: "SYLU-2026-05-004-B", tray_code: "SYLU-2026-05-004-TP-001" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-004-SP-001",
+          task_code: "SYLU-2026-05-004",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-05-004-TP-001", status: "实验已完成", quantity: 1 }],
+          history: [],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-004-TP-001 | 当前状态：盐雾试验已完成");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+    expect(view.steps.find((step) => step.label === "盐雾试验进行中")).toBeUndefined();
+    expect(view.steps.find((step) => step.label === "温度冲击试验未完成")).toEqual(
+      expect.objectContaining({ active: false, reached: false, time: "" }),
+    );
+  });
+
   test("buildTrayFlowView collapses completed experiments and expands only the current unfinished experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",

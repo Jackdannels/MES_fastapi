@@ -149,21 +149,28 @@ def latest_previous_completed_experiment(
     sample: dict[str, Any],
     task_code: str,
     current_experiment_name: str,
+    related_samples: list[dict[str, Any]] | None = None,
 ) -> dict[str, str] | None:
     candidates: list[dict[str, Any]] = []
-    for entry in as_list(sample.get("history")):
-        parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
-        if not parsed or parsed["status"] != "实验已完成":
+    seen_sources: set[int] = set()
+    for source_sample in [sample, *as_list(related_samples)]:
+        source_id = id(source_sample)
+        if source_id in seen_sources:
             continue
-        if parsed["experimentName"] == current_experiment_name:
-            continue
-        candidates.append(
-            {
-                "experimentName": parsed["experimentName"],
-                "location": normalize_text(entry.get("location")) or normalize_text(sample.get("location")),
-                "time": parse_datetime_value(entry.get("time")) or datetime.min,
-            }
-        )
+        seen_sources.add(source_id)
+        for entry in as_list(source_sample.get("history")):
+            parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
+            if not parsed or parsed["status"] != "实验已完成":
+                continue
+            if parsed["experimentName"] == current_experiment_name:
+                continue
+            candidates.append(
+                {
+                    "experimentName": parsed["experimentName"],
+                    "location": normalize_text(entry.get("location")) or normalize_text(source_sample.get("location")),
+                    "time": parse_datetime_value(entry.get("time")) or datetime.min,
+                }
+            )
     if not candidates:
         return None
     candidates.sort(key=lambda item: item["time"])
@@ -174,6 +181,23 @@ def latest_previous_completed_experiment(
         "experimentName": latest["experimentName"],
         "scope": "experiment",
     }
+
+
+def related_samples_for_tray(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task_code: str,
+    tray_code: str,
+) -> list[dict[str, Any]]:
+    normalized_task_code = normalize_text(task_code)
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_task_code or not normalized_tray_code:
+        return []
+    return [
+        sample
+        for sample in snapshot["samples"]
+        if normalize_text(sample.get("task_code")) == normalized_task_code
+        and any(normalize_text(tray.get("tray_code")) == normalized_tray_code for tray in as_list(sample.get("trays")))
+    ]
 
 
 def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
@@ -226,7 +250,12 @@ def resolve_restore_snapshot(
     current_experiment_name: str,
     tray_code: str,
 ) -> dict[str, str]:
-    completed = latest_previous_completed_experiment(sample, task_code, current_experiment_name)
+    completed = latest_previous_completed_experiment(
+        sample,
+        task_code,
+        current_experiment_name,
+        related_samples_for_tray(snapshot, task_code, tray_code),
+    )
     if completed:
         return completed
     if sample_has_staging_origin(sample, snapshot, tray_code):
@@ -270,6 +299,27 @@ def matching_samples(
     return result
 
 
+def withdrawable_sample_matches(
+    sample_matches: list[tuple[dict[str, Any], list[str]]],
+) -> list[tuple[dict[str, Any], list[str]]]:
+    result: list[tuple[dict[str, Any], list[str]]] = []
+    for sample, matched_tray_codes in sample_matches:
+        matched_code_set = set(matched_tray_codes)
+        withdrawable_codes: list[str] = []
+        for tray in as_list(sample.get("trays")):
+            tray_code = normalize_text(tray.get("tray_code"))
+            if tray_code not in matched_code_set:
+                continue
+            sample_status = normalize_text(sample.get("status"))
+            tray_status = normalize_text(tray.get("status"))
+            current_status = sample_status if sample_status in ALLOW_WITHDRAW_STATUSES else tray_status
+            if current_status in ALLOW_WITHDRAW_STATUSES:
+                withdrawable_codes.append(tray_code)
+        if withdrawable_codes:
+            result.append((sample, sorted(set(withdrawable_codes))))
+    return result
+
+
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/withdraw-current")
 def withdraw_current_experiment(
     task_code: str,
@@ -286,20 +336,16 @@ def withdraw_current_experiment(
     if not sample_matches:
         raise HTTPException(status_code=404, detail="当前实验未找到对应托盘样品")
 
-    for sample, matched_tray_codes in sample_matches:
-        for tray in as_list(sample.get("trays")):
-            tray_code = normalize_text(tray.get("tray_code"))
-            if tray_code not in matched_tray_codes:
-                continue
-            current_status = normalize_text(tray.get("status")) or normalize_text(sample.get("status"))
-            if current_status not in ALLOW_WITHDRAW_STATUSES:
-                raise HTTPException(status_code=400, detail=f"托盘{tray_code}当前状态为{current_status or '未知'}，不能撤回当前实验任务")
+    withdrawable_matches = withdrawable_sample_matches(sample_matches)
+    if not withdrawable_matches:
+        raise HTTPException(status_code=400, detail="当前实验没有可撤回的已比对、已安装或已准备就绪托盘")
 
     now = datetime.now().isoformat(timespec="seconds")
     affected_sample_count = 0
+    affected_tray_codes: set[str] = set()
     restored_targets: list[dict[str, str]] = []
     compensated_tray_codes: set[str] = set()
-    for sample, matched_tray_codes in sample_matches:
+    for sample, matched_tray_codes in withdrawable_matches:
         restore_snapshot = resolve_restore_snapshot(
             sample,
             snapshot,
@@ -318,6 +364,7 @@ def withdraw_current_experiment(
                 normalized_tray.pop("fixture_ready", None)
                 normalized_tray.pop("fixtureReady", None)
             next_trays.append(normalized_tray)
+        affected_tray_codes.update(matched_tray_codes)
         sample["location"] = restore_snapshot["location"]
         sample["status"] = restore_snapshot["status"]
         sample["flow_status"] = restore_snapshot["status"]
@@ -358,7 +405,7 @@ def withdraw_current_experiment(
         "ok": True,
         "message": f"{normalized_task_code} / {current_experiment_name} 已撤回当前实验任务",
         "affectedSampleCount": affected_sample_count,
-        "affectedTrayCodes": sorted(tray_codes),
+        "affectedTrayCodes": sorted(affected_tray_codes),
         "restoredStatus": first_target["status"],
         "restoredLocation": first_target["location"],
         "restoredExperimentName": first_target.get("experimentName") or "",

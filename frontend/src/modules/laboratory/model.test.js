@@ -855,7 +855,7 @@ describe("laboratory model", () => {
           owner: "赵工",
           status: "已到达暂存间",
           task_code: "SYLU-2026-05-001",
-          trays: [{ quantity: 1, status: "到货", tray_code: "SYLU-2026-05-001-TP-003" }],
+          trays: [{ quantity: 1, status: "已到达暂存间", tray_code: "SYLU-2026-05-001-TP-003" }],
         },
       ],
       schedules: [
@@ -887,6 +887,48 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(expect.objectContaining({
       active: false,
       reached: false,
+    }));
+  });
+
+  test("buildLaboratoryWorkbenchView keeps tray flow based on tray status when sample status is ahead", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-502", experiment_code: "SYLU-2026-04-502-A", tray_code: "TP-LAG" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-502", experiment_code: "SYLU-2026-04-502-A", experiment_name: "温度冲击试验" },
+      ],
+      labName: "温度冲击一室",
+      now: NOW,
+      samples: [
+        {
+          code: "SYLU-2026-04-502-SP-001",
+          flow_status: "已到达实验室",
+          location: "温度冲击一室",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-502",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-LAG" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-202604502-temp",
+          task_code: "SYLU-2026-04-502",
+          experiment_code: "SYLU-2026-04-502-A",
+          device: "温度冲击一室",
+          start_at: "2026-04-02T10:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      selectedTrayCode: "TP-LAG",
+      tasks: [
+        { code: "SYLU-2026-04-502", name: "温度冲击", test_type: "温度冲击试验" },
+      ],
+    });
+
+    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：TP-LAG | 当前状态：送至实验室");
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(expect.objectContaining({
+      active: true,
     }));
   });
 
@@ -1508,11 +1550,11 @@ describe("laboratory model", () => {
           history: [
             { action: "任务切换撤回", detail: "SYLU-2026-05-703 / 盐雾试验 / 撤回至已到达暂存间", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-05-13T10:00:00.000Z" },
           ],
-          location: "盐雾试验室",
+          location: "恒温恒湿间（暂存间）",
           owner: "王工",
-          status: "送至实验室",
+          status: "已到达暂存间",
           task_code: "SYLU-2026-05-703",
-          trays: [{ tray_code: "TP-RESET-STAGING", quantity: 1, status: "送至实验室" }],
+          trays: [{ tray_code: "TP-RESET-STAGING", quantity: 1, status: "已到达暂存间" }],
         },
       ],
       schedules: [

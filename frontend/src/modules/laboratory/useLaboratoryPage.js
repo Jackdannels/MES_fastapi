@@ -117,6 +117,7 @@ function useLaboratoryPage(options = {}) {
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
+      STORAGE_KEYS.devices,
     ]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
   const persistSnapshot = options.persistSnapshot || storage.persistSnapshot || (async () => {});
@@ -128,6 +129,7 @@ function useLaboratoryPage(options = {}) {
   const experiments = ref([]);
   const experimentTrays = ref([]);
   const samples = ref([]);
+  const devices = ref([]);
 
   const selectedTaskCode = ref("");
   const selectedTrayCode = ref("");
@@ -156,6 +158,7 @@ function useLaboratoryPage(options = {}) {
   let fixtureConfirmTimer = null;
   let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
+  let ignoreNextSamplesUpdatedLoad = false;
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
 
@@ -178,18 +181,42 @@ function useLaboratoryPage(options = {}) {
   const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
   const hasLaboratoryTasks = computed(() => view.value.scheduleRows.length > 0);
+  const selectedLabDevice = computed(() =>
+    devices.value.find(
+      (device) =>
+        normalizeText(device?.code) === normalizeText(laboratoryConfig.value.labName)
+        || normalizeText(device?.name) === normalizeText(laboratoryConfig.value.labName),
+    ) || null,
+  );
+  const laboratoryMaintenanceNotice = computed(() => {
+    const status = normalizeText(selectedLabDevice.value?.status);
+    if (
+      status.includes("维护")
+      || status.includes("维修")
+      || status.includes("停用")
+      || status.includes("禁用")
+      || status.includes("不可用")
+    ) {
+      return "设备维护中，禁止实验室操作";
+    }
+    return "";
+  });
+  const laboratoryUnderMaintenance = computed(() => Boolean(laboratoryMaintenanceNotice.value));
   const laboratoryTaskNotice = computed(() => {
+    if (laboratoryMaintenanceNotice.value) {
+      return laboratoryMaintenanceNotice.value;
+    }
     if (!hasLaboratoryTasks.value) {
       return `当前${laboratoryConfig.value.labName}暂无任务，请先在排程看板安排任务后再进行比对。`;
     }
-    if (!currentTask.value) {
+    if (!currentTask.value || laboratoryUnderMaintenance.value) {
       return "请先在查看任务中选择一个任务，再开启实验流程。";
     }
     return "";
   });
   const actionState = computed(() => {
     const state = getLaboratoryActionState(workflow.value);
-    if (!currentTask.value) {
+    if (!currentTask.value || laboratoryUnderMaintenance.value) {
       return {
         canCompare: false,
         canInstallSample: false,
@@ -216,8 +243,9 @@ function useLaboratoryPage(options = {}) {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
     return (
       trayRows.length > 0
-      && trayRows.every((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+      && trayRows.some((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
       && !runningInteractionLocked.value
+      && !laboratoryUnderMaintenance.value
     );
   });
 
@@ -374,9 +402,24 @@ function useLaboratoryPage(options = {}) {
       experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
+      devices.value = Array.isArray(snapshot?.[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
     } finally {
       loading.value = false;
     }
+  };
+
+  const applyWithdrawResponse = (payload) => {
+    if (Array.isArray(payload?.samples)) {
+      samples.value = payload.samples;
+    }
+  };
+
+  const handleSamplesUpdated = () => {
+    if (ignoreNextSamplesUpdatedLoad) {
+      ignoreNextSamplesUpdatedLoad = false;
+      return;
+    }
+    void load();
   };
 
   onMounted(() => {
@@ -385,7 +428,7 @@ function useLaboratoryPage(options = {}) {
       tickTimer = window.setInterval(() => {
         tickNow.value = now || new Date();
       }, 1000);
-      window.addEventListener(SAMPLES_UPDATED_EVENT, load);
+      window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);
       window.addEventListener("wheel", handleRunningModalActivity, true);
@@ -401,7 +444,7 @@ function useLaboratoryPage(options = {}) {
       tickTimer = null;
     }
     if (typeof window !== "undefined") {
-      window.removeEventListener(SAMPLES_UPDATED_EVENT, load);
+      window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       window.removeEventListener("pointerdown", handleRunningModalActivity, true);
       window.removeEventListener("mousemove", handleRunningModalActivity, true);
       window.removeEventListener("wheel", handleRunningModalActivity, true);
@@ -678,17 +721,23 @@ function useLaboratoryPage(options = {}) {
       resetDangerModalOpen.value = false;
       return;
     }
-    await withdrawCurrentLaboratoryExperiment({
+    const withdrawResult = await withdrawCurrentLaboratoryExperiment({
       experimentCode: currentTask.value?.experimentCode,
       reason: "试验间内撤回当前实验任务",
       taskCode: currentTask.value?.taskCode,
     });
-    await load();
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    }
     resetDangerModalOpen.value = false;
     resetCompareState();
+    try {
+      await load();
+    } catch {
+      // The withdraw API response is authoritative for the local tray flow.
+    }
+    applyWithdrawResponse(withdrawResult);
+    if (typeof window !== "undefined") {
+      ignoreNextSamplesUpdatedLoad = true;
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    }
   };
   const openCompleteConfirm = () => {
     if (!runningExperiment.value?.active) {

@@ -121,16 +121,48 @@ function useSchedulePage() {
       experimentOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.experiment_code)) || null,
   );
 
+  const findDevice = (deviceCode) =>
+    rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(deviceCode));
+  const buildMaintenanceLabTitle = (deviceCode, device) => {
+    const name = normalizeText(deviceCode);
+    if (!name || !isDeviceUnavailableForSchedule(device, now.value)) {
+      return "";
+    }
+    const startAt = normalizeText(device?.maintenance_start_at ?? device?.maintenanceStartAt);
+    const endAt = normalizeText(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+    const range = startAt || endAt ? `（${formatDateTime(startAt)} - ${formatDateTime(endAt)}）` : "";
+    return `${name}维护中，暂不可排程${range}`;
+  };
+  const buildLabOptionItems = ({ options, selectedDevice = "" }) =>
+    (Array.isArray(options) ? options : []).map((option) => {
+      const value = normalizeText(option);
+      const device = findDevice(value);
+      const disabled = normalizeText(selectedDevice) !== value && isDeviceUnavailableForSchedule(device, now.value);
+      const title = disabled ? buildMaintenanceLabTitle(value, device) : "";
+      return {
+        disabled,
+        label: value,
+        title,
+        value,
+      };
+    });
+
   // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
-  const manualLabOptions = computed(() =>
-    buildLabOptions({
+  const manualLabOptionItems = computed(() =>
+    buildLabOptionItems({
+      options: buildLabOptions({
       masterLabs: masterLabs.value,
       selectedDevice: normalizeText(scheduleForm.value.device),
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
-    }).filter((option) => {
-      const device = rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(option));
-      return !isDeviceUnavailableForSchedule(device, now.value);
     }),
+      selectedDevice: normalizeText(scheduleForm.value.device),
+    }),
+  );
+  const manualLabOptions = computed(() =>
+    manualLabOptionItems.value.filter((option) => !option.disabled).map((option) => option.value),
+  );
+  const maintenanceLabNotice = computed(() =>
+    manualLabOptionItems.value.find((option) => option.disabled)?.title || "",
   );
   const manualTimeSlotOptions = computed(() =>
     buildManualTimeSlotOptions({
@@ -808,17 +840,17 @@ function useSchedulePage() {
       masterLabs: masterLabs.value,
       selectedDevice,
       testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
-    }).filter((option) => {
-      if (normalizeText(option) === normalizeText(selectedDevice)) {
-        return true;
-      }
-      const device = rawDevices.value.find((item) => normalizeText(item?.code) === normalizeText(option));
-      return !isDeviceUnavailableForSchedule(device, now.value);
     });
   };
+  const buildEditLabOptionItems = (selectedDevice, taskCode) =>
+    buildLabOptionItems({
+      options: buildEditLabOptions(selectedDevice, taskCode),
+      selectedDevice,
+    });
 
   return {
     buildEditLabOptions,
+    buildEditLabOptionItems,
     acknowledgeException,
     cancelScheduleConflict,
     canResetGanttWindow,
@@ -842,6 +874,7 @@ function useSchedulePage() {
     showNextGanttWindow,
     showPreviousGanttWindow,
     manualLabOptions,
+    manualLabOptionItems,
     manualTimeSlotOptions,
     openTaskDetailModal,
     openExceptionModal,
@@ -865,6 +898,7 @@ function useSchedulePage() {
     scheduleRows: filteredScheduleRows,
     scheduleSearch,
     scheduleWarning,
+    maintenanceLabNotice,
     selectedSchedule: scheduleDrawer.payload,
     submitSchedule,
     summaryCards,

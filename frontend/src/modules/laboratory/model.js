@@ -194,7 +194,7 @@ const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray }) => {
   const trayStatus = normalizeText(tray?.status);
   const status = normalizeLifecycleStatus(
     normalizedLocation,
-    normalizeText(sample?.flow_status) || trayStatus || normalizeText(sample?.status),
+    trayStatus || normalizeText(sample?.flow_status) || normalizeText(sample?.status),
   );
   return {
     location: normalizedLocation,

@@ -147,6 +147,7 @@ function useProcessLabs(options = {}) {
   const storage =
     options.storage ||
     useStorageSnapshot([
+      STORAGE_KEYS.devices,
       STORAGE_KEYS.tasks,
       STORAGE_KEYS.schedules,
       STORAGE_KEYS.samples,
@@ -180,6 +181,7 @@ function useProcessLabs(options = {}) {
 
   const loading = ref(false);
   const labCards = ref([]);
+  const devices = ref([]);
   const tasks = ref([]);
   const schedules = ref([]);
   const samples = ref([]);
@@ -672,7 +674,7 @@ function useProcessLabs(options = {}) {
           )
         : schedules.value;
       return (
-        buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value)[0]
+        buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value, devices.value)[0]
         || lab
       );
     };
@@ -715,6 +717,18 @@ function useProcessLabs(options = {}) {
     }
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     const hasScheduledTask = Boolean(scopedLab?.hasTask);
+    if (normalizeText(scopedLab?.statusClass) === "is-maintenance") {
+      return {
+        ...scopedLab,
+        canStartExperiment: false,
+        experimentCode: activeExperimentCode,
+        readyTrayCount: actionState.readyTrayCount,
+        remainingTrayCount: actionState.remainingTrayCount,
+        runningTrayCount: actionState.runningTrayCount,
+        startDisabledReason: "设备维护中，禁止开始实验",
+        targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
+      };
+    }
     const status = actionState.runningTrayCount > 0 ? TRAY_STATUS_RUNNING : hasScheduledTask ? "已排程" : "空闲";
     const statusClass = actionState.runningTrayCount > 0 ? "is-running" : hasScheduledTask ? "is-scheduled" : "is-idle";
     return {
@@ -740,6 +754,7 @@ function useProcessLabs(options = {}) {
       currentTimeValue(),
       experiments.value,
       experimentTrays.value,
+      devices.value,
     ).map(enrichLabCard);
   };
 
@@ -791,6 +806,7 @@ function useProcessLabs(options = {}) {
           ? mergeProcessLabsWithStaticFallback(normalizedMasterLabs, fallbackLabs)
           : fallbackLabs;
       }
+      devices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
       tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
       schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
@@ -906,6 +922,10 @@ function useProcessLabs(options = {}) {
         : buildTaskDetail(activeLab);
     const taskCode = normalizeText(detail?.code);
     const actionState = buildStartExperimentState(detail?.trayRows);
+    if (normalizeText(activeLab?.statusClass) === "is-maintenance") {
+      processActionMessage.value = "设备维护中，禁止开始实验";
+      return;
+    }
     if (!actionState.canStartExperiment) {
       return;
     }

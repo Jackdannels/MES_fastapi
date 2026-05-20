@@ -93,24 +93,27 @@
             </div>
           </div>
 
-          <div class="transfer-overview-toolbar">
-            <input
-              v-model="searchText"
-              class="search-input"
-              type="text"
-              placeholder="筛选任务编号、实验类型、样品编号"
+          <div class="transfer-overview-toolbar-frame">
+            <div class="transfer-overview-toolbar">
+              <input
+                v-model="searchText"
+                class="search-input"
+                type="text"
+                placeholder="筛选任务编号、实验类型、样品编号"
+              />
+              <select v-model="taskTypeFilter" class="transfer-overview-select">
+                <option value="">全部类型</option>
+                <option v-for="type in taskTypeOptions" :key="type" :value="type">{{ type }}</option>
+              </select>
+            </div>
+            <AppFeedback
+              class="transfer-overview-feedback"
+              :message="feedback"
+              :tone="feedbackTone"
+              data-testid="transfer-overview-feedback"
+              @close="clearWorkbenchFeedback"
             />
-            <select v-model="taskTypeFilter" class="transfer-overview-select">
-              <option value="">全部类型</option>
-              <option v-for="type in taskTypeOptions" :key="type" :value="type">{{ type }}</option>
-            </select>
           </div>
-          <AppFeedback
-            :message="feedback"
-            :tone="feedbackTone"
-            data-testid="transfer-overview-feedback"
-            @close="clearWorkbenchFeedback"
-          />
 
           <div class="transfer-table">
             <div class="transfer-table__head transfer-table__head--compact">

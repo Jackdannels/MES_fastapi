@@ -21,11 +21,18 @@ const STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
 const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
+const STATUS_MAINTENANCE = "维护/校准";
 const RUNNING_SAMPLE_STATUSES = new Set([STATUS_RUNNING, "实验中"]);
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const isDeviceUnavailable = (device) => {
+  const status = normalizeText(device?.status);
+  return status.includes("维护") || status.includes("维修") || status.includes("停用") || status.includes("禁用") || status.includes("不可用");
+};
+const findDeviceByLabName = (devices, labName) =>
+  asArray(devices).find((device) => normalizeText(device?.code) === normalizeText(labName) || normalizeText(device?.name) === normalizeText(labName));
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
@@ -241,7 +248,7 @@ const experimentHasRunningTrays = ({ schedule, experimentTrays, samples }) => {
   );
 };
 
-const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = [], experimentTrays = []) => {
+const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = [], experimentTrays = [], devices = []) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
   const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
   const labList = Array.isArray(labs) ? labs : [];
@@ -321,11 +328,16 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
         taskCode,
       });
 
+      const device = findDeviceByLabName(devices, lab.name);
+      const deviceUnavailable = isDeviceUnavailable(device);
       let status = STATUS_IDLE;
       let statusClass = "is-idle";
       if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === TASK_STATUS_RUNNING)) {
         status = STATUS_RUNNING;
         statusClass = "is-running";
+      } else if (deviceUnavailable) {
+        status = normalizeText(device?.status) || STATUS_MAINTENANCE;
+        statusClass = "is-maintenance";
       } else if (activeSchedule || upcomingSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";
@@ -338,6 +350,8 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
           ? `${formatDateTime(nextSchedule.start_at)} - ${formatDateTime(nextSchedule.end_at)}`
           : "暂无排程",
         hasTask: Boolean(taskCode),
+        canStartExperiment: !deviceUnavailable,
+        startDisabledReason: deviceUnavailable ? "设备维护中，禁止开始实验" : "",
         status,
         statusClass,
         targetExperiment: taskCode ? targetExperiment : "未分配",

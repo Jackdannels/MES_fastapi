@@ -182,6 +182,33 @@ describe("useSchedulePage", () => {
     expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
   });
 
+  test("shows maintenance labs as disabled manual choices with a maintenance hint", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.devices"] = [
+      { code: "冲击一室", status: "维护/校准" },
+      { code: "振动一室", status: "可用" },
+    ];
+    mocks.loadSnapshot.mockResolvedValue(snapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-A";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptionItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          disabled: true,
+          title: expect.stringContaining("冲击一室维护中，暂不可排程"),
+          value: "冲击一室",
+        }),
+      ]),
+    );
+    expect(wrapper.vm.maintenanceLabNotice).toContain("冲击一室维护中，暂不可排程");
+  });
+
   test("keeps the current task code and resets the rest of the top form after scheduling one experiment", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);

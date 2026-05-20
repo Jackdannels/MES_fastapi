@@ -115,4 +115,21 @@ describe("useDevicesPage", () => {
       }),
     );
   });
+
+  test("opens conflict confirmation before directly saving an unavailable device status", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openEditDevice(wrapper.vm.deviceRows[0]);
+    wrapper.vm.deviceForm.status = "停用";
+
+    await wrapper.vm.saveEditedDevice();
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenanceConflictOpen).toBe(true);
+    expect(wrapper.vm.maintenanceConflictDetail.conflictingSchedules).toEqual([
+      expect.objectContaining({ id: "schedule-1" }),
+    ]);
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
 });

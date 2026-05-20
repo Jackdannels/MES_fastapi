@@ -35,9 +35,20 @@
         <div class="form-field">
           <label>{{ uiText.lab }}</label>
           <select v-model="scheduleForm.device" name="device">
-            <option value="">{{ manualLabOptions.length ? uiText.selectLab : uiText.selectTaskFirst }}</option>
-            <option v-for="option in manualLabOptions" :key="option" :value="option">{{ option }}</option>
+            <option value="">{{ manualLabOptionItems.length ? uiText.selectLab : uiText.selectTaskFirst }}</option>
+            <option
+              v-for="option in manualLabOptionItems"
+              :key="option.value"
+              :disabled="option.disabled"
+              :title="option.title"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
           </select>
+          <div v-if="maintenanceLabNotice" class="muted schedule-maintenance-hint" data-testid="schedule-maintenance-hint">
+            {{ maintenanceLabNotice }}
+          </div>
         </div>
         <div class="form-field">
           <label>{{ uiText.scheduleDate }}</label>
@@ -500,11 +511,13 @@
         <select v-model="editForm.device" name="device" data-testid="schedule-edit-device">
           <option value="">{{ uiText.selectLab }}</option>
           <option
-            v-for="option in buildEditLabOptions(editForm.device, editForm.task_code)"
-            :key="option"
-            :value="option"
+            v-for="option in buildEditLabOptionItems(editForm.device, editForm.task_code)"
+            :key="option.value"
+            :disabled="option.disabled"
+            :title="option.title"
+            :value="option.value"
           >
-            {{ option }}
+            {{ option.label }}
           </option>
         </select>
       </div>
@@ -661,6 +674,7 @@ const uiText = {
 const {
   acknowledgeException,
   buildEditLabOptions,
+  buildEditLabOptionItems,
   cancelScheduleConflict,
   canResetGanttWindow,
   canShowPreviousGanttWindow,
@@ -680,6 +694,7 @@ const {
   showNextGanttWindow,
   showPreviousGanttWindow,
   manualLabOptions,
+  manualLabOptionItems,
   manualTimeSlotOptions,
   openExceptionModal,
   openScheduleDrawer,
@@ -702,6 +717,7 @@ const {
   scheduleRows,
   scheduleSearch,
   scheduleWarning,
+  maintenanceLabNotice,
   submitSchedule,
   summaryCards,
   taskOptions,

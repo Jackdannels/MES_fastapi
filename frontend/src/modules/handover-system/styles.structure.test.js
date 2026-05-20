@@ -23,6 +23,20 @@ describe("handover system styles", () => {
     expect(source).toMatch(/\.transfer-overview-pagination\s*\{[^}]*margin-top:\s*auto/i);
   });
 
+  test("overview feedback is a floating toast and does not reserve a grid row", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(componentSource).toContain('class="transfer-overview-toolbar-frame"');
+    expect(componentSource).toContain('class="transfer-overview-feedback"');
+    expect(styleSource).toMatch(/\.transfer-overview-toolbar-frame\s*\{[^}]*position:\s*relative/i);
+    expect(styleSource).toMatch(/\.transfer-overview-toolbar-frame\s*>\s*\.transfer-overview-feedback\s*\{[^}]*position:\s*absolute/i);
+    expect(styleSource).toMatch(/\.transfer-overview-toolbar-frame\s*>\s*\.transfer-overview-feedback\s*\{[^}]*top:\s*calc\(100%\s*\+\s*8px\)/i);
+    expect(styleSource).toMatch(/\.transfer-overview-toolbar-frame\s*>\s*\.transfer-overview-feedback\s*\{[^}]*margin-top:\s*0/i);
+  });
+
   test("overview table rows and sample code lists are height bounded so pagination stays fixed", () => {
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
     const source = readFileSync(stylesPath, "utf8");

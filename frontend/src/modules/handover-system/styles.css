@@ -83,6 +83,21 @@
   align-items: flex-start;
 }
 
+.transfer-overview-toolbar-frame {
+  position: relative;
+}
+
+.transfer-overview-toolbar-frame > .transfer-overview-feedback {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 20;
+  width: auto;
+  margin-top: 0;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
 .transfer-overview-page-title,
 .transfer-overview-shell__head h2,
 .transfer-detail-shell__title h2,

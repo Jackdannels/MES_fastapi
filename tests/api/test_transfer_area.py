@@ -390,6 +390,34 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
     assert all("SYLU-2026-03-102-TP-001 -> 振动一室" in sample["history"][0]["detail"] for sample in updated_samples)
 
 
+def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    storage.write("mes.devices", [{"code": "振动一室", "status": "维护/校准"}])
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "振动一室设备维护中，禁止送至该实验室"
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "已入库" for sample in updated_samples)
+
+
 def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(

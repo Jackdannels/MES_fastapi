@@ -31,6 +31,10 @@ import {
 } from "./model";
 
 const normalizeText = (value) => String(value ?? "").trim();
+const isUnavailableDeviceStatus = (status) => {
+  const normalized = normalizeText(status);
+  return ["维护", "维修", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
+};
 const toLocalDateTimeValue = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -199,6 +203,45 @@ function useDevicesPage() {
     };
   };
 
+  const buildUnavailableDeviceStatusUpdates = ({ conflictingSchedules = [], form, timestamp }) => {
+    const deviceCode = normalizeText(form?.code);
+    const removedScheduleIds = new Set(conflictingSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
+    const removedExperimentKeys = new Set(
+      conflictingSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
+    );
+    const nextDevices = upsertDevice(rawDevices.value, form);
+    const nextSchedules = rawSchedules.value.filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)));
+    const nextExperiments = rawExperiments.value.map((experiment) => {
+      const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;
+      if (!removedExperimentKeys.has(key)) {
+        return { ...experiment };
+      }
+      return {
+        ...experiment,
+        status: STATUS_WAITING,
+        unscheduled_since: timestamp,
+        updated_at: timestamp,
+      };
+    });
+    const nextTasks = rawTasks.value.map((task) => ({
+      ...task,
+      status: resolveTaskStatus(task, nextSchedules, rawSamples.value, new Date(timestamp), rawExperimentTrays.value),
+    }));
+    const nextConflicts = [
+      ...rawConflicts.value.map((entry) => ({ ...entry })),
+      ...conflictingSchedules.map((schedule) => buildMaintenanceException({ schedule, timestamp })),
+    ];
+    return {
+      [STORAGE_KEYS.conflicts]: nextConflicts,
+      [STORAGE_KEYS.devices]: nextDevices.map((device) =>
+        normalizeText(device?.code) === deviceCode ? { ...device, updated_at: timestamp } : device,
+      ),
+      [STORAGE_KEYS.experiments]: nextExperiments,
+      [STORAGE_KEYS.schedules]: nextSchedules,
+      [STORAGE_KEYS.tasks]: nextTasks,
+    };
+  };
+
   const persistMaintenancePlan = async ({ conflictingSchedules = [], deviceCode, form }) => {
     const timestamp = toLocalDateTimeValue(new Date());
     const updates = buildMaintenancePlanUpdates({ conflictingSchedules, deviceCode, form, timestamp });
@@ -231,6 +274,22 @@ function useDevicesPage() {
   };
 
   const saveEditedDevice = async () => {
+    const previousDevice = rawDevices.value.find((device) => normalizeText(device?.code) === normalizeText(deviceForm.value?.code));
+    const changedToUnavailable =
+      isUnavailableDeviceStatus(deviceForm.value?.status) && normalizeText(previousDevice?.status) !== normalizeText(deviceForm.value?.status);
+    if (changedToUnavailable) {
+      const conflictingSchedules = rawSchedules.value.filter((schedule) => normalizeText(schedule?.device) === normalizeText(deviceForm.value?.code));
+      if (conflictingSchedules.length > 0) {
+        maintenanceConflictDetail.value = {
+          conflictingSchedules,
+          deviceCode: normalizeText(deviceForm.value?.code),
+          form: { ...deviceForm.value },
+          mode: "deviceStatus",
+        };
+        maintenanceConflictModal.openWith(maintenanceConflictDetail.value);
+        return;
+      }
+    }
     await saveCurrentDevice();
     closeEditDevice();
   };
@@ -277,6 +336,24 @@ function useDevicesPage() {
     const detail = maintenanceConflictDetail.value;
     if (!detail) {
       maintenanceConflictModal.close();
+      return;
+    }
+    if (detail.mode === "deviceStatus") {
+      const timestamp = toLocalDateTimeValue(new Date());
+      const updates = buildUnavailableDeviceStatusUpdates({
+        conflictingSchedules: detail.conflictingSchedules,
+        form: detail.form,
+        timestamp,
+      });
+      rawConflicts.value = updates[STORAGE_KEYS.conflicts];
+      rawDevices.value = updates[STORAGE_KEYS.devices];
+      rawExperiments.value = updates[STORAGE_KEYS.experiments];
+      rawSchedules.value = updates[STORAGE_KEYS.schedules];
+      rawTasks.value = updates[STORAGE_KEYS.tasks];
+      await persistSnapshot(updates);
+      maintenanceConflictDetail.value = null;
+      maintenanceConflictModal.close();
+      closeEditDevice();
       return;
     }
     await persistMaintenancePlan({

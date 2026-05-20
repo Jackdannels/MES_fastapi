@@ -121,6 +121,79 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
     assert storage.read("mes.samples") == updated
 
 
+def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):
+    samples = [
+        {
+            "code": "SP-MAINTENANCE",
+            "location": "盐雾试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "SYLU-2026-05-704",
+            "trays": [{"tray_code": "TP-MAINTENANCE", "status": "送至实验室", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.devices": [{"code": "盐雾试验室", "status": "维护/校准"}],
+            "mes.samples": samples,
+        },
+    )
+
+    updated = deepcopy(samples)
+    updated[0]["status"] = "已到达实验室"
+    updated[0]["flow_status"] = "已到达实验室"
+    updated[0]["trays"][0]["status"] = "已到达实验室"
+
+    response = client.put("/api/storage", json={"mes.samples": updated})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "盐雾试验室设备维护中，禁止实验室操作"
+    assert storage.read("mes.samples") == samples
+
+
+def test_storage_allows_next_experiment_arrival_after_previous_experiment_completed(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PREVIOUS-COMPLETED",
+            "location": "盐雾试验室",
+            "status": "实验已完成",
+            "flow_status": "实验已完成",
+            "task_code": "SYLU-2026-05-707",
+            "trays": [{"tray_code": "TP-PREVIOUS-COMPLETED", "status": "实验已完成", "quantity": 1}],
+            "history": [
+                {
+                    "action": "实验完成",
+                    "detail": "SYLU-2026-05-707 / 盐雾试验 / 实验已完成",
+                    "status": "实验已完成",
+                    "time": "2026-05-20T22:19:29+08:00",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    updated = deepcopy(samples)
+    updated[0]["location"] = "温度冲击一室"
+    updated[0]["status"] = "已到达实验室"
+    updated[0]["flow_status"] = "已到达实验室"
+    updated[0]["trays"][0]["status"] = "已到达实验室"
+    updated[0]["history"].insert(
+        0,
+        {
+            "action": "任务比对",
+            "detail": "SYLU-2026-05-707 / 温度冲击试验 / 已到达实验室",
+            "status": "已到达实验室",
+            "time": "2026-05-20T22:25:00+08:00",
+        },
+    )
+
+    response = client.put("/api/storage", json={"mes.samples": updated})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == updated
+
+
 def test_storage_allows_idempotent_snapshot_when_sample_already_arrived_lab(monkeypatch):
     samples = [
         {
