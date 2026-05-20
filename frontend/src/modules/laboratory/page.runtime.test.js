@@ -387,6 +387,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T11:00:00.000Z"));
     expect(mounted.text()).not.toContain("SYLU-2026-04-102");
     expect(mounted.find('[data-testid="laboratory-reset-task"]').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').text()).toContain("重置实验室任务");
     expect(mounted.find(".laboratory-control-header .pill").exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();

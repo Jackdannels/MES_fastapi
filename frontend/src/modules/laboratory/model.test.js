@@ -829,6 +829,67 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("buildLaboratoryWorkbenchView uses the unified tray lifecycle after a lab reset restores a tray to staging", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-A", tray_code: "SYLU-2026-05-001-TP-003" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-A", experiment_name: "盐雾试验" },
+      ],
+      labName: "盐雾试验室",
+      now: NOW,
+      samples: [
+        {
+          code: "SYLU-2026-05-001-SP-003",
+          flow_status: "已到达暂存间",
+          history: [
+            { action: "任务切换撤回", detail: "SYLU-2026-05-001 / 盐雾试验 / 撤回至已到达暂存间", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-05-19T10:50:00.000Z" },
+            { action: "任务比对", location: "盐雾试验室", status: "已到达实验室", time: "2026-05-19T10:40:00.000Z" },
+            { action: "暂存间扫码出库", location: "盐雾试验室", status: "送至实验室", time: "2026-05-19T10:20:00.000Z" },
+            { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-05-19T09:50:00.000Z" },
+            { action: "送至暂存间", location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-05-19T09:30:00.000Z" },
+            { action: "任务样品入库", location: "接驳区", status: "到货", time: "2026-05-19T09:00:00.000Z" },
+          ],
+          location: "恒温恒湿间（暂存间）",
+          owner: "赵工",
+          status: "已到达暂存间",
+          task_code: "SYLU-2026-05-001",
+          trays: [{ quantity: 1, status: "到货", tray_code: "SYLU-2026-05-001-TP-003" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-202605001-salt",
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-19T10:00:00.000Z",
+          end_at: "2026-05-19T12:00:00.000Z",
+        },
+      ],
+      selectedTrayCode: "SYLU-2026-05-001-TP-003",
+      tasks: [
+        { code: "SYLU-2026-05-001", name: "重置回暂存间任务", test_type: "盐雾试验" },
+      ],
+    });
+
+    expect(view.selectedTrayFlow.currentStatus).toBe(
+      "当前托盘：SYLU-2026-05-001-TP-003 | 当前状态：已到达暂存间",
+    );
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至暂存间")).toEqual(expect.objectContaining({
+      reached: true,
+    }));
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "已到达暂存间")).toEqual(expect.objectContaining({
+      active: true,
+      reached: false,
+    }));
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(expect.objectContaining({
+      active: false,
+      reached: false,
+    }));
+  });
+
   test("buildSaltSprayLaboratoryView exposes running experiment countdown data for the current salt spray task", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
@@ -1429,6 +1490,55 @@ describe("laboratory model", () => {
       trayCode: "TP-STAGING",
     }));
     expect(result.guidance).not.toContain("接驳间");
+  });
+
+  test("validateLaboratoryTrayScan rejects a reset tray whose unified lifecycle is back in staging", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-703", experiment_code: "SYLU-2026-05-703-A", tray_code: "TP-RESET-STAGING" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-703", experiment_code: "SYLU-2026-05-703-A", experiment_name: "盐雾试验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-RESET-STAGING",
+          flow_status: "已到达暂存间",
+          history: [
+            { action: "任务切换撤回", detail: "SYLU-2026-05-703 / 盐雾试验 / 撤回至已到达暂存间", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-05-13T10:00:00.000Z" },
+          ],
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-05-703",
+          trays: [{ tray_code: "TP-RESET-STAGING", quantity: 1, status: "送至实验室" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-reset-staging",
+          task_code: "SYLU-2026-05-703",
+          experiment_code: "SYLU-2026-05-703-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-13T09:00:00.000Z",
+          end_at: "2026-05-13T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-05-703", name: "重置回暂存间任务", test_type: "盐雾试验" }],
+    });
+
+    expect(validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-RESET-STAGING",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      guidance: "请先在暂存间完成出库并送至实验室。",
+      message: "托盘尚未出库",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-RESET-STAGING",
+    }));
   });
 
   test("validateLaboratoryTrayScan rejects current task trays that already passed comparison", () => {

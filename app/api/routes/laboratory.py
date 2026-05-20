@@ -117,6 +117,34 @@ def latest_staging_event_for_tray(snapshot: dict[str, list[dict[str, Any]]], tra
     return matched[-1]
 
 
+def history_entry_marks_staging_origin(entry: dict[str, Any]) -> bool:
+    text = " ".join(
+        [
+            normalize_text(entry.get("action")),
+            normalize_text(entry.get("status")),
+            normalize_text(entry.get("location")),
+        ]
+    )
+    return "暂存间" in text
+
+
+def generic_lab_dispatch_has_staging_origin(
+    sample: dict[str, Any],
+    dispatch_time: datetime,
+    latest_withdrawal_time: datetime,
+) -> bool:
+    prior_entries = [
+        entry
+        for entry in as_list(sample.get("history"))
+        if latest_withdrawal_time < (parse_datetime_value(entry.get("time")) or datetime.min) < dispatch_time
+    ]
+    if not prior_entries:
+        return False
+    prior_entries.sort(key=lambda entry: parse_datetime_value(entry.get("time")) or datetime.min)
+    latest_prior = prior_entries[-1]
+    return history_entry_marks_staging_origin(latest_prior)
+
+
 def latest_previous_completed_experiment(
     sample: dict[str, Any],
     task_code: str,
@@ -149,21 +177,46 @@ def latest_previous_completed_experiment(
 
 
 def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
-    latest_event = latest_staging_event_for_tray(snapshot, tray_code)
-    if latest_event and normalize_text(latest_event.get("action")) == "stock_out":
-        return True
-    if latest_event:
-        return False
-
-    dispatch_entries = [
-        entry
-        for entry in as_list(sample.get("history"))
-        if normalize_text(entry.get("action")) in {"暂存间扫码出库", "接驳区扫码出库", "送至实验室"}
+    normalized_tray_code = normalize_text(tray_code)
+    withdrawal_times = [
+        parse_datetime_value(event.get("time")) or datetime.min
+        for event in snapshot["staging_events"]
+        if normalize_text(event.get("tray_code")) == normalized_tray_code
+        and normalize_text(event.get("action")) == "stock_out_withdraw"
     ]
+    withdrawal_times.extend(
+        parse_datetime_value(entry.get("time")) or datetime.min
+        for entry in as_list(sample.get("history"))
+        if normalize_text(entry.get("action")) in {"撤回出库", "实验任务撤回", "任务切换撤回"}
+    )
+    latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
+
+    dispatch_entries: list[dict[str, Any]] = []
+    for event in snapshot["staging_events"]:
+        if normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        if normalize_text(event.get("action")) != "stock_out":
+            continue
+        event_time = parse_datetime_value(event.get("time")) or datetime.min
+        if event_time > latest_withdrawal_time:
+            dispatch_entries.append({"action": "暂存间扫码出库", "stagingOrigin": True, "time": event_time})
+
+    for entry in as_list(sample.get("history")):
+        action = normalize_text(entry.get("action"))
+        if action not in {"暂存间扫码出库", "接驳区扫码出库", "送至实验室"}:
+            continue
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        staging_origin = action == "暂存间扫码出库" or (
+            action == "送至实验室"
+            and generic_lab_dispatch_has_staging_origin(sample, entry_time, latest_withdrawal_time)
+        )
+        if entry_time > latest_withdrawal_time:
+            dispatch_entries.append({"action": action, "stagingOrigin": staging_origin, "time": entry_time})
+
     if not dispatch_entries:
         return False
-    dispatch_entries.sort(key=lambda entry: parse_datetime_value(entry.get("time")) or datetime.min)
-    return normalize_text(dispatch_entries[-1].get("action")) == "暂存间扫码出库"
+    dispatch_entries.sort(key=lambda entry: entry["time"])
+    return bool(dispatch_entries[-1].get("stagingOrigin"))
 
 
 def resolve_restore_snapshot(

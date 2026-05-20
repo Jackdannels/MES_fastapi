@@ -111,9 +111,24 @@
           <td>{{ row.location }}</td>
           <td>{{ row.nextCal }}</td>
           <td>
-            <button class="action-link" :data-testid="`open-device-drawer-${index}`" type="button" @click="openDeviceDrawer(row)">
-              详情
-            </button>
+            <div class="devices-action-cell">
+              <button
+                class="action-link devices-action-link"
+                :data-testid="`open-device-edit-${index}`"
+                type="button"
+                @click="openEditDevice(row)"
+              >
+                编辑
+              </button>
+              <button
+                class="action-link devices-action-link devices-action-link--maintenance"
+                :data-testid="`open-maintenance-plan-${index}`"
+                type="button"
+                @click="openMaintenancePlan(row)"
+              >
+                维护计划
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -249,6 +264,88 @@
     </template>
   </AppModal>
 
+  <AppModal :open="editDeviceOpen" title="编辑设备" @close="closeEditDevice">
+    <div class="form-grid">
+      <div class="form-field">
+        <label>设备编号</label>
+        <input v-model="deviceForm.code" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>设备名称</label>
+        <input v-model="deviceForm.name" type="text" placeholder="设备名称" />
+      </div>
+      <div class="form-field">
+        <label>设备当前状态</label>
+        <select v-model="deviceForm.status" name="edit_status">
+          <option>可用</option>
+          <option>使用中</option>
+          <option>维护/校准</option>
+          <option>停用</option>
+        </select>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn" type="button" data-testid="device-edit-save" @click="saveEditedDevice">保存</button>
+      <button class="action-btn secondary" type="button" @click="closeEditDevice">取消</button>
+    </template>
+  </AppModal>
+
+  <AppModal :open="maintenancePlanOpen" title="维护计划" @close="closeMaintenancePlan">
+    <div class="form-grid">
+      <div class="form-field">
+        <label>设备编号</label>
+        <input :value="selectedDevice.code" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>设备名称</label>
+        <input :value="selectedDevice.name" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>维护类型</label>
+        <select v-model="maintenancePlanForm.type">
+          <option>计划维护</option>
+          <option>校准</option>
+          <option>保养</option>
+          <option>维修</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>开始时间</label>
+        <PickerOnlyInput v-model="maintenancePlanForm.startAt" type="datetime-local" />
+      </div>
+      <div class="form-field">
+        <label>结束时间</label>
+        <PickerOnlyInput v-model="maintenancePlanForm.endAt" type="datetime-local" />
+      </div>
+      <div class="form-field" style="grid-column: 1 / -1;">
+        <label>备注</label>
+        <textarea v-model="maintenancePlanForm.note" placeholder="维护说明"></textarea>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn" type="button" data-testid="maintenance-plan-save" @click="saveMaintenancePlan">保存计划</button>
+      <button class="action-btn secondary" type="button" @click="closeMaintenancePlan">取消</button>
+    </template>
+  </AppModal>
+
+  <AppModal :open="maintenanceConflictOpen" title="维护计划冲突确认" @close="cancelMaintenanceConflict">
+    <div class="devices-maintenance-conflict" data-testid="maintenance-conflict-modal">
+      <strong>计划维护时间与已排程设备阶段重叠。</strong>
+      <p>确认后会删除该设备在维护时间内的排程信息，并同步至排程页异常处理。</p>
+      <ul>
+        <li v-for="schedule in maintenanceConflictDetail?.conflictingSchedules || []" :key="schedule.id">
+          {{ schedule.task_code }} / {{ schedule.experiment_code || "-" }} / {{ schedule.start_at }} - {{ schedule.end_at }}
+        </li>
+      </ul>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" type="button" @click="cancelMaintenanceConflict">取消</button>
+      <button class="action-btn" type="button" data-testid="maintenance-conflict-confirm" @click="confirmMaintenanceConflict">
+        确认删除排程
+      </button>
+    </template>
+  </AppModal>
+
   <AppDrawer :open="deviceDrawerOpen" title="设备维护记录" @close="closeDeviceDrawer">
     <div class="form-grid">
       <div class="form-field">
@@ -291,17 +388,28 @@ import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDevicesPage } from "./useDevicesPage";
 
 const {
+  cancelMaintenanceConflict,
   closeDeviceDrawer,
+  closeEditDevice,
+  closeMaintenancePlan,
   closePointModal,
+  confirmMaintenanceConflict,
   connectionForm,
   createNewDevice,
   deviceDrawerOpen,
   deviceForm,
   deviceRows,
+  editDeviceOpen,
   locationOptions,
+  maintenanceConflictDetail,
+  maintenanceConflictOpen,
   maintenanceForm,
+  maintenancePlanForm,
+  maintenancePlanOpen,
   metrics,
+  openEditDevice,
   openDeviceDrawer,
+  openMaintenancePlan,
   openPointModal,
   pointForm,
   pointModalOpen,
@@ -309,6 +417,8 @@ const {
   pointRows,
   query,
   saveCurrentDevice,
+  saveEditedDevice,
+  saveMaintenancePlan,
   savePoint,
   selectedDevice,
   sortDirection,

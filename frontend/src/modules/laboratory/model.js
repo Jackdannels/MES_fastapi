@@ -1,4 +1,9 @@
-import { buildTrayFlowView, synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
+import {
+  SAMPLE_FLOW_STEPS,
+  buildTrayFlowView,
+  normalizeLifecycleStatus,
+  synchronizeSamplesForTrayCodes,
+} from "@/modules/samples/samplesFlowModel";
 import {
   STATUS_COMPLETED,
   STATUS_RETENTION,
@@ -14,6 +19,7 @@ const LAB_READY_STATUS = "实验准备就绪";
 const LAB_RESET_STATUS = "送至实验室";
 const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
+const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
 const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
 const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
 const LABORATORY_TASK_FLOW_STEPS = [
@@ -173,6 +179,28 @@ const resolveLaboratoryStatusRank = (value) => {
     return 5;
   }
   return 0;
+};
+
+const resolveUnifiedTrayFlowRank = (status) => {
+  const normalized = normalizeText(status);
+  if (!normalized) {
+    return -1;
+  }
+  return UNIFIED_TRAY_FLOW_STATUS_RANK.get(normalized) ?? -1;
+};
+
+const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray }) => {
+  const normalizedLocation = normalizeText(location);
+  const trayStatus = normalizeText(tray?.status);
+  const status = normalizeLifecycleStatus(
+    normalizedLocation,
+    normalizeText(sample?.flow_status) || trayStatus || normalizeText(sample?.status),
+  );
+  return {
+    location: normalizedLocation,
+    rank: resolveUnifiedTrayFlowRank(status),
+    status,
+  };
 };
 
 const isFixtureReady = (value) => {
@@ -528,6 +556,15 @@ const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   const currentLab = normalizeText(currentTask?.device);
   return !location || !currentLab || location === currentLab;
 };
+const trayLifecycleIsBeforeLaboratoryDispatch = (row) => {
+  const lifecycleStatus = normalizeText(row?.lifecycleStatus);
+  if (!lifecycleStatus) {
+    return false;
+  }
+  const rank = resolveUnifiedTrayFlowRank(lifecycleStatus);
+  const sentToLabRank = resolveUnifiedTrayFlowRank(LAB_RESET_STATUS);
+  return rank >= 0 && rank < sentToLabRank;
+};
 const taskHasWrongLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => !trayIsDispatchedToCurrentLaboratory(row, task));
 const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null) => {
@@ -678,6 +715,8 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       currentLocation: normalizeText(location),
       displayStatus: "",
       experimentCodes: experimentCodesByTrayCode.get(normalizedTrayCode) || [],
+      lifecycleLocation: normalizeText(location),
+      lifecycleStatus: "",
       owner: normalizeText(owner),
       quantity: quantity || "",
       sampleCodes: sampleCode ? [sampleCode] : [],
@@ -728,6 +767,14 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       const currentDisplayRank = resolveLaboratoryStatusRank(row?.displayStatus);
       if (resolveLaboratoryStatusRank(displayStatusCandidate) >= currentDisplayRank) {
         row.displayStatus = displayStatusCandidate;
+      }
+      const lifecycleCandidate = resolveUnifiedTrayLifecycleCandidate({ location, sample, tray });
+      if (
+        lifecycleCandidate.status
+        && (!row.lifecycleStatus || lifecycleCandidate.rank > resolveUnifiedTrayFlowRank(row.lifecycleStatus))
+      ) {
+        row.lifecycleLocation = lifecycleCandidate.location || row.currentLocation;
+        row.lifecycleStatus = lifecycleCandidate.status;
       }
     });
   });
@@ -829,10 +876,12 @@ function buildLaboratoryWorkbenchView({
         currentExperimentCode: normalizeText(currentTask?.experimentCode),
         experimentTrays,
         experiments,
-        location: normalizeText(selectedTrayRow?.currentLocation),
+        location: normalizeText(selectedTrayRow?.lifecycleLocation) || normalizeText(selectedTrayRow?.currentLocation),
         samples,
         schedules,
-        status: normalizeText(selectedTrayRow?.displayStatus) || normalizeText(selectedTrayRow?.trayStatus),
+        status: normalizeText(selectedTrayRow?.lifecycleStatus)
+          || normalizeText(selectedTrayRow?.displayStatus)
+          || normalizeText(selectedTrayRow?.trayStatus),
         taskCode: normalizeText(currentTask?.taskCode),
         trayCode: normalizeText(selectedTrayRow?.trayCode),
       })
@@ -1166,6 +1215,13 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
   if (asArray(currentTask.trayCodes).includes(normalizedScanCode)) {
     const matchedTray = asArray(currentTask.trayRows).find((row) => normalizeText(row?.trayCode) === normalizedScanCode) || null;
     const trayStatus = normalizeText(matchedTray?.trayStatus) || normalizeText(matchedTray?.displayStatus);
+    if (trayLifecycleIsBeforeLaboratoryDispatch(matchedTray)) {
+      return buildNotDispatchedComparisonResult(normalizedScanCode, {
+        ...matchedTray,
+        currentLocation: normalizeText(matchedTray?.lifecycleLocation) || normalizeText(matchedTray?.currentLocation),
+        trayStatus: normalizeText(matchedTray?.lifecycleStatus) || trayStatus,
+      });
+    }
     if (resolveLaboratoryStatusRank(trayStatus) >= 1) {
       const canEnterNextExperiment =
         (trayStatus === "实验已完成" || trayStatus === "实验完成" || trayStatus === "实验已经完成")

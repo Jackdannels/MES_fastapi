@@ -22,6 +22,7 @@ import {
   deleteScheduleRecord,
   formatDateTime,
   isRetentionDevice,
+  isDeviceUnavailableForSchedule,
   normalizeText,
   isManualScheduleSelectionLegal,
   resolveLegalManualScheduleState,
@@ -126,6 +127,9 @@ function useSchedulePage() {
       masterLabs: masterLabs.value,
       selectedDevice: normalizeText(scheduleForm.value.device),
       testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
+    }).filter((option) => {
+      const device = rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(option));
+      return !isDeviceUnavailableForSchedule(device, now.value);
     }),
   );
   const manualTimeSlotOptions = computed(() =>
@@ -449,6 +453,7 @@ function useSchedulePage() {
     }
 
     const result = createScheduleRecord({
+      devices: rawDevices.value,
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
       form: scheduleForm.value,
@@ -485,6 +490,7 @@ function useSchedulePage() {
     }
 
     const result = createScheduleRecord({
+      devices: rawDevices.value,
       experiments: rawExperiments.value,
       form: draft,
       now: now.value,
@@ -574,6 +580,7 @@ function useSchedulePage() {
 
   const saveSchedule = async () => {
     const result = updateScheduleRecord({
+      devices: rawDevices.value,
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
       form: editForm.value,
@@ -801,6 +808,12 @@ function useSchedulePage() {
       masterLabs: masterLabs.value,
       selectedDevice,
       testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
+    }).filter((option) => {
+      if (normalizeText(option) === normalizeText(selectedDevice)) {
+        return true;
+      }
+      const device = rawDevices.value.find((item) => normalizeText(item?.code) === normalizeText(option));
+      return !isDeviceUnavailableForSchedule(device, now.value);
     });
   };
 

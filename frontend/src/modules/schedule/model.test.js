@@ -1591,6 +1591,41 @@ describe("schedulePageModel", () => {
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-21 10:30");
   });
 
+  test("createScheduleRecord rejects a device that is currently in maintenance", () => {
+    const result = createScheduleRecord({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_end_at: "2099-03-20T12:00",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "可用",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          experiment_name: "冲击试验",
+        },
+      ],
+      form: {
+        custom_start: "09:00",
+        device: "冲击一室",
+        experiment_code: "TASK-001-A",
+        planned_hours: 1,
+        schedule_date: "2099-03-20",
+        task_code: "TASK-001",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBe("该设备处于维护状态，不可排程");
+  });
+
   test("updateScheduleRecord recalculates end time when planned hours change", () => {
     const result = updateScheduleRecord({
       experiments: [

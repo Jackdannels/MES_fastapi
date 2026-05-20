@@ -230,6 +230,47 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.text()).toContain("SYLU-2026-04-106-TP-001");
   });
 
+  test("refreshes staging rows when tray data changes elsewhere", async () => {
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("暂存间中样品数量1");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).not.toContain("SYLU-2026-04-101-TP-001");
+
+    remoteSnapshot = {
+      ...remoteSnapshot,
+      [STORAGE_KEYS.samples]: remoteSnapshot[STORAGE_KEYS.samples].map((sample) =>
+        sample.code === "SYLU-2026-04-101-SP-001"
+          ? {
+              ...sample,
+              status: "已到达暂存间",
+              flow_status: "已到达暂存间",
+              trays: sample.trays.map((tray) => ({ ...tray, status: "已到达暂存间" })),
+            }
+          : sample,
+      ),
+      [STORAGE_KEYS.staging_events]: [
+        ...remoteSnapshot[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-101-withdraw",
+          tray_code: "SYLU-2026-04-101-TP-001",
+          task_code: "SYLU-2026-04-101",
+          action: "stock_out_withdraw",
+          time: "2026-04-01T12:05:00",
+        },
+      ],
+    };
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await mounted.vm.$nextTick();
+    await mounted.vm.$nextTick();
+
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("当前在库 2");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-101-TP-001");
+  });
+
   test("renders planned inbound and actual staging trays in separate columns", async () => {
     const mounted = await mountPage();
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
@@ -432,6 +473,22 @@ describe("StagingManagementPage runtime", () => {
       target_lab: "振动一室",
       tray_code: "SYLU-2026-04-102-TP-001",
     });
+  });
+
+  test("stock-out scan returns to waiting scan state after one tray is dispatched", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await Promise.resolve();
+    await mounted.vm.$nextTick();
+
+    expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("");
+    expect(document.activeElement).toBe(mounted.get('[data-testid="zancun-scan-code"]').element);
   });
 
   test("stock-out scan opens target lab selection instead of the staging room detail", async () => {

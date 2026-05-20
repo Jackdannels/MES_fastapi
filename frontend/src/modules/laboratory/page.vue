@@ -36,7 +36,7 @@
           :disabled="!canResetCurrentTask"
           @click="openResetConfirm"
         >
-          出错样品处理
+          重置实验室任务
         </button>
       </div>
 

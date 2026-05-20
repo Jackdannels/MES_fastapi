@@ -7,6 +7,14 @@ import DevicesPage from "./page.vue";
 const saveCurrentDeviceMock = vi.fn();
 const createNewDeviceMock = vi.fn();
 const openDeviceDrawerMock = vi.fn();
+const openEditDeviceMock = vi.fn();
+const closeEditDeviceMock = vi.fn();
+const openMaintenancePlanMock = vi.fn();
+const closeMaintenancePlanMock = vi.fn();
+const saveEditedDeviceMock = vi.fn();
+const saveMaintenancePlanMock = vi.fn();
+const cancelMaintenanceConflictMock = vi.fn();
+const confirmMaintenanceConflictMock = vi.fn();
 const closeDeviceDrawerMock = vi.fn();
 const openPointModalMock = vi.fn();
 const closePointModalMock = vi.fn();
@@ -14,13 +22,20 @@ const savePointMock = vi.fn();
 
 const devicesState = reactive({
   deviceDrawerOpen: false,
+  editDeviceOpen: false,
+  maintenanceConflictOpen: false,
+  maintenancePlanOpen: false,
   pointModalOpen: false,
 });
 
 vi.mock("./useDevicesPage", () => ({
   useDevicesPage: () => ({
+    cancelMaintenanceConflict: cancelMaintenanceConflictMock,
     closeDeviceDrawer: closeDeviceDrawerMock,
+    closeEditDevice: closeEditDeviceMock,
+    closeMaintenancePlan: closeMaintenancePlanMock,
     closePointModal: closePointModalMock,
+    confirmMaintenanceConflict: confirmMaintenanceConflictMock,
     connectionForm: ref({
       endpoint: "10.10.0.23",
       functionCode: "03 读保持寄存器",
@@ -56,18 +71,32 @@ vi.mock("./useDevicesPage", () => ({
         type: "液相色谱",
       },
     ]),
+    editDeviceOpen: computed(() => devicesState.editDeviceOpen),
     locationOptions: computed(() => ["液相实验室", "微生物实验室"]),
+    maintenanceConflictDetail: ref({
+      conflictingSchedules: [],
+    }),
+    maintenanceConflictOpen: computed(() => devicesState.maintenanceConflictOpen),
     maintenanceForm: ref({
       latestCalibration: "2026-03-01",
       maintenanceType: "校准",
       record: "年度校准完成",
     }),
+    maintenancePlanForm: ref({
+      endAt: "",
+      note: "",
+      startAt: "",
+      type: "计划维护",
+    }),
+    maintenancePlanOpen: computed(() => devicesState.maintenancePlanOpen),
     metrics: computed(() => ({
       activeCount: 1,
       idleCount: 3,
       maintenanceCount: 1,
     })),
+    openEditDevice: openEditDeviceMock,
     openDeviceDrawer: openDeviceDrawerMock,
+    openMaintenancePlan: openMaintenancePlanMock,
     openPointModal: openPointModalMock,
     pointForm: ref({
       address: "",
@@ -93,6 +122,8 @@ vi.mock("./useDevicesPage", () => ({
     ]),
     query: ref(""),
     saveCurrentDevice: saveCurrentDeviceMock,
+    saveEditedDevice: saveEditedDeviceMock,
+    saveMaintenancePlan: saveMaintenancePlanMock,
     savePoint: savePointMock,
     selectedDevice: computed(() => ({
       code: "HPLC-01",
@@ -130,6 +161,21 @@ describe("DevicesPage runtime", () => {
 
     expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+  });
+
+  test("replaces table details action with edit and maintenance plan actions", async () => {
+    const wrapper = mount(DevicesPage);
+
+    expect(wrapper.text()).not.toContain("详情");
+
+    await wrapper.get('[data-testid="open-device-edit-0"]').trigger("click");
+    const maintenanceButton = wrapper.get('[data-testid="open-maintenance-plan-0"]');
+    expect(maintenanceButton.classes()).toContain("devices-action-link--maintenance");
+
+    await maintenanceButton.trigger("click");
+
+    expect(openEditDeviceMock).toHaveBeenCalledTimes(1);
+    expect(openMaintenancePlanMock).toHaveBeenCalledTimes(1);
   });
 
   test("renders reactive test-type and lab options without legacy DOM patching", () => {

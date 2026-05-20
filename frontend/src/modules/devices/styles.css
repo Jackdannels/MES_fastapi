@@ -23,6 +23,33 @@
   flex-wrap: wrap;
 }
 
+.devices-action-cell {
+  align-items: center;
+  display: inline-flex;
+  gap: 18px;
+  justify-content: center;
+  min-width: 132px;
+  white-space: nowrap;
+}
+
+.devices-action-link {
+  display: inline-flex;
+  justify-content: center;
+  min-width: 32px;
+}
+
+.devices-action-link + .devices-action-link {
+  margin-left: 18px;
+}
+
+.devices-action-link--maintenance {
+  color: #d97706;
+}
+
+.devices-action-link--maintenance:hover {
+  color: #b45309;
+}
+
 /* 设备台账和连接配置区块采用独立卡片排布。 */
 .devices-registry-card {
   display: grid;
@@ -41,4 +68,23 @@
 /* 点位映射表保留裁切，避免内容溢出圆角容器。 */
 .devices-points-card {
   overflow: hidden;
+}
+
+.devices-maintenance-conflict {
+  background: #fff1f2;
+  border: 1px solid #f43f5e;
+  border-radius: 8px;
+  color: #881337;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.devices-maintenance-conflict p {
+  margin: 0;
+}
+
+.devices-maintenance-conflict ul {
+  margin: 0;
+  padding-left: 20px;
 }

@@ -145,6 +145,9 @@ describe("App runtime boundary", () => {
 
     expect(wrapper.text()).toContain("试验室操作台");
     expect(wrapper.text()).not.toContain("盐雾试验室操作台");
+    expect(wrapper.find('[data-testid="laboratory-error-sample"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(false);
     expect(wrapper.text()).toContain("退出登录");
     expect(wrapper.text()).not.toContain("七二四新火工区信息化中控管理系统");
     expect(wrapper.find(".sidebar").exists()).toBe(false);

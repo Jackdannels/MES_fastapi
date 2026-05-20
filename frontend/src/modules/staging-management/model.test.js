@@ -527,6 +527,56 @@ describe("staging-management model", () => {
     expect(metrics.stockedOutTodayCount).toBe(1);
   });
 
+  test("withdrawn laboratory stock-out returns the tray to current staging inventory", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-102-out",
+      tray_code: "SYLU-2026-04-102-TP-001",
+      task_code: "SYLU-2026-04-102",
+      action: "stock_out",
+      time: "2026-04-01T09:10:00",
+      operator: "暂存员B",
+      target_lab: "振动一室",
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-102-withdraw",
+      tray_code: "SYLU-2026-04-102-TP-001",
+      task_code: "SYLU-2026-04-102",
+      action: "stock_out_withdraw",
+      time: "2026-04-01T09:30:00",
+      operator: "实验任务撤回",
+      target_lab: "振动一室",
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const sections = buildZancunInventorySections(rows);
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
+
+    expect(row?.status).toBe("已入库");
+    expect(row?.location).toBe("恒温恒湿间（暂存间）");
+    expect(sections.currentStagingRows.map((item) => item.trayCode)).toContain("SYLU-2026-04-102-TP-001");
+  });
+
+  test("sample status alone cannot return a tray to current staging inventory while stock-out is latest", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-102-out",
+      tray_code: "SYLU-2026-04-102-TP-001",
+      task_code: "SYLU-2026-04-102",
+      action: "stock_out",
+      time: "2026-04-01T09:10:00",
+      operator: "暂存员B",
+      target_lab: "振动一室",
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const sections = buildZancunInventorySections(rows);
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
+
+    expect(row?.status).toBe("已出库");
+    expect(sections.currentStagingRows.map((item) => item.trayCode)).not.toContain("SYLU-2026-04-102-TP-001");
+  });
+
   test("applies inventory actions by appending staging events instead of mutating static rows", () => {
     const stockInResult = applyZancunInventoryAction({
       now: TODAY,

@@ -323,7 +323,7 @@ defineOptions({
   name: "StagingManagementPage",
 });
 
-import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
@@ -620,7 +620,7 @@ const persistInventoryResult = async (result) => {
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "staging-management" } }));
   }
   return !result.error;
 };
@@ -750,6 +750,9 @@ const confirmDestinationAction = async (destination = null) => {
 
   await persistInventoryResult(result);
   closeDestinationModal();
+  if (!result.error) {
+    await openScanModal("stockOut");
+  }
 };
 
 const confirmManufacturerReturn = async () => {
@@ -798,7 +801,7 @@ const confirmDetailAction = async () => {
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "staging-management" } }));
   }
 
   closeDetailModal();
@@ -827,7 +830,23 @@ const actions = [
   },
 ];
 
+const handleSamplesUpdated = (event) => {
+  if (event?.detail?.source === "staging-management") {
+    return;
+  }
+  void loadSnapshot();
+};
+
 onMounted(() => {
   void loadSnapshot();
+  if (typeof window !== "undefined") {
+    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+  }
 });
 </script>

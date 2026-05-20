@@ -8,6 +8,7 @@ const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验进行中";
 const STATUS_COMPLETED = "实验已完成";
 const STATUS_RETENTION = "暂存间存放";
+const DEVICE_STATUS_MAINTENANCE = "维护/校准";
 const STREAMING_STATUS = "Streaming";
 const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
 const RETENTION_KEYWORD = "暂存间";
@@ -99,6 +100,27 @@ const parseDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 };
+
+const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
+  const startAt = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
+  const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  const current = parseDate(now) || new Date();
+  return Boolean(startAt && endAt && startAt <= current && current <= endAt);
+};
+
+const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
+  const status = normalizeText(device?.status);
+  return status === DEVICE_STATUS_MAINTENANCE || status.includes("维护") || isDeviceInMaintenanceWindow(device, now);
+};
+
+const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt) => {
+  const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
+  const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  return Boolean(maintenanceStart && maintenanceEnd && startAt && endAt && maintenanceStart < endAt && maintenanceEnd > startAt);
+};
+
+const findDeviceRecord = (devices = [], deviceCode = "") =>
+  (Array.isArray(devices) ? devices : []).find((device) => normalizeText(device?.code) === normalizeText(deviceCode));
 
 // 把 Date 对象格式化成日期输入框可直接消费的 yyyy-MM-dd。
 const toLocalDateValue = (date) => {
@@ -1830,7 +1852,7 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "", experiment
   });
 }
 
-function createScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
+function createScheduleRecord({ devices = [], experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
   const taskCode = normalizeText(form?.task_code);
   const device = normalizeText(form?.device);
   if (!taskCode || !device) {
@@ -1840,6 +1862,15 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
   const resolved = resolveScheduleTimes(form, now, schedules);
   if (resolved.error) {
     return resolved;
+  }
+
+  const deviceRecord = findDeviceRecord(devices, device);
+  if (
+    !isRetentionDevice(device) &&
+    (isDeviceUnavailableForSchedule(deviceRecord, now) ||
+      deviceMaintenanceOverlapsSchedule(deviceRecord, resolved.startAt, resolved.endAt))
+  ) {
+    return { error: "该设备处于维护状态，不可排程" };
   }
 
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
@@ -1892,7 +1923,7 @@ function createScheduleRecord({ experiments, form, tasks, schedules, streams, no
   return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function updateScheduleRecord({ experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
+function updateScheduleRecord({ devices = [], experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
   const scheduleId = normalizeText(form?.id);
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
   const target = nextSchedules.find((schedule) => normalizeText(schedule?.id) === scheduleId);
@@ -1918,6 +1949,14 @@ function updateScheduleRecord({ experiments, form, tasks, schedules, streams, no
     start_at: resolved.startAt.toISOString(),
     task_code: normalizeText(form?.task_code),
   };
+  const deviceRecord = findDeviceRecord(devices, device);
+  if (
+    !isRetentionDevice(device) &&
+    (isDeviceUnavailableForSchedule(deviceRecord, now) ||
+      deviceMaintenanceOverlapsSchedule(deviceRecord, resolved.startAt, resolved.endAt))
+  ) {
+    return { error: "该设备处于维护状态，不可排程" };
+  }
   const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules, ignoreId: scheduleId });
   if (conflicts.length > 0) {
     return { error: "排程冲突，请调整时间或实验室" };
@@ -1994,6 +2033,7 @@ export {
   deleteScheduleRecord,
   formatDateTime,
   isRetentionDevice,
+  isDeviceUnavailableForSchedule,
   normalizeText,
   toLocalDateValue,
   toLocalTimeValue,

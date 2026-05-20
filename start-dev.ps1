@@ -1,0 +1,109 @@
+param(
+    [string]$BackendHost = "0.0.0.0",
+    [int]$BackendPort = 8000,
+    [string]$FrontendHost = "0.0.0.0",
+    [string]$CondaEnv = "fastapi",
+    [int]$FrontendWaitTimeoutSeconds = 90,
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = "Stop"
+
+$ProjectRoot = $PSScriptRoot
+$FrontendRoot = Join-Path $ProjectRoot "frontend"
+
+function Resolve-CondaBat {
+    $candidates = @()
+
+    if ($env:CONDA_BAT) {
+        $candidates += $env:CONDA_BAT
+    }
+
+    if ($env:CONDA_EXE) {
+        $condaExePath = $env:CONDA_EXE
+        $condaRoot = Split-Path (Split-Path $condaExePath -Parent) -Parent
+        $candidates += Join-Path $condaRoot "condabin\conda.bat"
+    }
+
+    $pathCommand = Get-Command "conda.bat" -ErrorAction SilentlyContinue
+    if ($pathCommand) {
+        $candidates += $pathCommand.Source
+    }
+
+    $condaCommand = Get-Command "conda" -ErrorAction SilentlyContinue
+    if ($condaCommand -and $condaCommand.Source -like "*.bat") {
+        $candidates += $condaCommand.Source
+    }
+
+    $candidates += @(
+        (Join-Path $env:USERPROFILE "anaconda3\condabin\conda.bat"),
+        (Join-Path $env:USERPROFILE "miniconda3\condabin\conda.bat"),
+        "C:\ProgramData\anaconda3\condabin\conda.bat",
+        "C:\ProgramData\miniconda3\condabin\conda.bat"
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return $null
+}
+
+if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "scripts\run_local.py"))) {
+    throw "Cannot find scripts\run_local.py. Please run this script from the MES_fastapi project."
+}
+
+if (-not (Test-Path -LiteralPath $FrontendRoot)) {
+    throw "Cannot find frontend directory: $FrontendRoot"
+}
+
+$condaBat = Resolve-CondaBat
+$backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
+
+if ($condaBat) {
+    $backendCommand = "call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py --reload --host $BackendHost --port $BackendPort"
+} else {
+    $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
+}
+
+$frontendWaitScript = @"
+`$deadline = (Get-Date).AddSeconds($FrontendWaitTimeoutSeconds)
+Write-Host "Waiting for backend: $backendReadyUrl"
+do {
+    try {
+        `$response = Invoke-WebRequest -UseBasicParsing -Uri "$backendReadyUrl" -TimeoutSec 2
+        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500) {
+            Write-Host "Backend is ready."
+            exit 0
+        }
+    } catch {
+        Start-Sleep -Seconds 1
+    }
+} while ((Get-Date) -lt `$deadline)
+Write-Error "Backend did not become ready within $FrontendWaitTimeoutSeconds seconds: $backendReadyUrl"
+exit 1
+"@
+
+$encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
+$frontendCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost"
+
+if ($DryRun) {
+    Write-Host "Backend command:"
+    Write-Host $backendCommand
+    Write-Host ""
+    Write-Host "Frontend wait:"
+    Write-Host $frontendWaitScript.Trim()
+    Write-Host ""
+    Write-Host "Frontend command:"
+    Write-Host $frontendCommand
+    exit 0
+}
+
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot
+Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot
+
+Write-Host "Started MES backend and frontend dev windows."
+Write-Host "Backend:  http://localhost:$BackendPort"
+Write-Host "Frontend: check the Vite window for the local URL."

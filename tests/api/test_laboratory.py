@@ -155,6 +155,84 @@ def test_laboratory_withdraw_current_ignores_stale_staging_history_after_prior_w
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_out_withdraw"
 
 
+def test_laboratory_withdraw_current_restores_staging_when_dispatch_history_is_newer_than_prior_withdraw(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        base_payloads(
+            [
+                sample_with_history(
+                    "工装夹具安装",
+                    "盐雾试验室",
+                    [
+                        {"action": "样品安装", "status": "工装夹具安装", "location": "盐雾试验室", "time": "2026-05-19T11:20:00"},
+                        {"action": "任务比对", "status": "已到达实验室", "location": "盐雾试验室", "time": "2026-05-19T11:10:00"},
+                        {"action": "暂存间扫码出库", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-05-19T11:00:00"},
+                        {"action": "实验任务撤回", "status": "已到达暂存间", "location": "恒温恒湿间（暂存间）", "time": "2026-05-19T10:10:00"},
+                        {"action": "暂存间扫码出库", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-05-19T10:00:00"},
+                    ],
+                )
+            ],
+            staging_events=[
+                {"id": "event-out-old", "tray_code": "TP-501", "task_code": "TASK-501", "action": "stock_out", "time": "2026-05-19T10:00:00"},
+                {"id": "event-withdraw-old", "tray_code": "TP-501", "task_code": "TASK-501", "action": "stock_out_withdraw", "time": "2026-05-19T10:10:00"},
+                {
+                    "id": "event-out-new",
+                    "tray_code": "TP-501",
+                    "task_code": "TASK-501",
+                    "action": "stock_out",
+                    "target_lab": "盐雾试验室",
+                    "target_experiment_code": "EXP-B",
+                    "time": "2026-05-19T11:00:00",
+                },
+            ],
+        ),
+    )
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    assert response.json()["restoredStatus"] == "已到达暂存间"
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "已到达暂存间"
+    assert updated["flow_status"] == "已到达暂存间"
+    assert updated["location"] == "恒温恒湿间（暂存间）"
+    assert updated["trays"][0]["status"] == "已到达暂存间"
+    staging_events = storage.read("mes.staging_events")
+    assert staging_events[-1]["action"] == "stock_out_withdraw"
+    assert staging_events[-1]["target_experiment_code"] == "EXP-B"
+
+
+def test_laboratory_withdraw_current_infers_staging_origin_from_generic_lab_dispatch_history(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        base_payloads(
+            [
+                sample_with_history(
+                    "已到达实验室",
+                    "盐雾试验室",
+                    [
+                        {"action": "任务比对", "status": "已到达实验室", "location": "盐雾试验室", "time": "2026-05-20T16:41:03"},
+                        {"action": "送至实验室", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-05-20T16:40:50"},
+                        {"action": "暂存间扫码入库", "status": "已到达暂存间", "location": "恒温恒湿间（暂存间）", "time": "2026-05-20T16:40:19"},
+                        {"action": "送至暂存间", "status": "送至暂存间", "location": "恒温恒湿间（暂存间）", "time": "2026-05-20T16:39:11"},
+                        {"action": "任务样品入库", "status": "到货", "location": "接驳区", "time": "2026-05-20T16:38:59"},
+                    ],
+                )
+            ]
+        ),
+    )
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    assert response.json()["restoredStatus"] == "已到达暂存间"
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "已到达暂存间"
+    assert updated["flow_status"] == "已到达暂存间"
+    assert updated["location"] == "恒温恒湿间（暂存间）"
+    assert updated["trays"][0]["status"] == "已到达暂存间"
+
+
 def test_laboratory_withdraw_current_restores_staging_origin_and_compensates_event(monkeypatch):
     client, storage = build_client(
         monkeypatch,

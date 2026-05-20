@@ -1,48 +1,82 @@
-// 负责设备台账状态、维护表单和点位管理流程。
+// 负责设备台账状态、维护表单、维护计划和点位管理流程。
 import { computed, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 import {
+  MAINTENANCE_DEVICE_STATUS,
   appendDevice,
   appendPoint,
+  buildDeviceForm,
   buildDeviceMetrics,
   buildDeviceRows,
   buildLocationOptions,
+  buildMaintenancePlanForm,
   buildSelectedDevice,
   buildTestTypeOptions,
   buildVisiblePointRows,
   createConnectionForm,
   createDeviceForm,
   createMaintenanceForm,
+  createMaintenancePlanForm,
   createPointForm,
   createPointRows,
+  normalizeMaintenancePlan,
+  resolveMaintenanceScheduleImpact,
   syncDeviceTypeWithLocation,
   upsertDevice,
 } from "./model";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+
+const normalizeText = (value) => String(value ?? "").trim();
+const toLocalDateTimeValue = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+};
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPage() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+    STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
+    STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
+    STORAGE_KEYS.tasks,
   ]);
+  const rawConflicts = ref([]);
   const rawDevices = ref([]);
+  const rawExperiments = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
+  const rawTasks = ref([]);
   const deviceForm = ref(createDeviceForm());
   const selectedDevice = ref(buildSelectedDevice());
   const maintenanceForm = ref(createMaintenanceForm());
+  const maintenancePlanForm = ref(createMaintenancePlanForm());
+  const maintenancePlanDevice = ref(null);
+  const maintenanceConflictDetail = ref(null);
   const pointForm = ref(createPointForm());
   const connectionForm = ref(createConnectionForm());
   const pointRows = ref(createPointRows());
   const pointQuery = ref("");
   const deviceDrawer = useDialogState();
+  const editDeviceModal = useDialogState();
+  const maintenancePlanModal = useDialogState();
+  const maintenanceConflictModal = useDialogState();
   const pointModal = useDialogState();
 
   const baseRows = computed(() =>
@@ -70,7 +104,6 @@ function useDevicesPage() {
   };
 
   const syncFormTypeWithLocation = () => {
-    // 设备位置一旦能命中实验室映射，就自动带出推荐试验类型。
     const mappedType = syncDeviceTypeWithLocation(deviceForm.value.location, deviceForm.value.type);
     if (mappedType) {
       deviceForm.value.type = mappedType;
@@ -78,7 +111,6 @@ function useDevicesPage() {
   };
 
   const persistDevices = async (nextDevices) => {
-    // 先更新本地响应式数据，再把最新快照落盘。
     rawDevices.value = nextDevices;
     await persistSnapshot({
       [STORAGE_KEYS.devices]: nextDevices,
@@ -95,8 +127,90 @@ function useDevicesPage() {
     await persistDevices(nextDevices);
   };
 
+  const buildMaintenanceException = ({ schedule, timestamp }) => ({
+    acknowledged_at: "",
+    created_at: timestamp,
+    detail: [
+      normalizeText(schedule?.task_code) || "-",
+      normalizeText(schedule?.experiment_code) || "-",
+      normalizeText(schedule?.device) || "-",
+      "设备计划维护，系统已同步删除该设备排程",
+    ].join(" / "),
+    device: normalizeText(schedule?.device),
+    experiment_code: normalizeText(schedule?.experiment_code),
+    id: `device-maintenance-${normalizeText(schedule?.id) || Date.now()}`,
+    reason: "设备计划维护与已排程时段冲突，系统已删除原排程",
+    schedule_id: normalizeText(schedule?.id),
+    status: "pending",
+    task_code: normalizeText(schedule?.task_code),
+    type: "device_maintenance_schedule_removed",
+  });
+
+  const buildMaintenancePlanUpdates = ({ conflictingSchedules = [], deviceCode, form, timestamp }) => {
+    const removedScheduleIds = new Set(conflictingSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
+    const removedExperimentKeys = new Set(
+      conflictingSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
+    );
+    const nextDevices = rawDevices.value.map((device) => {
+      if (normalizeText(device?.code) !== normalizeText(deviceCode)) {
+        return { ...device };
+      }
+      const plan = normalizeMaintenancePlan(form);
+      const nextDevice = {
+        ...device,
+        ...plan,
+      };
+      const startAt = Date.parse(plan.maintenance_start_at);
+      const endAt = Date.parse(plan.maintenance_end_at);
+      const current = Date.parse(timestamp);
+      if (Number.isFinite(startAt) && Number.isFinite(endAt) && startAt <= current && current <= endAt) {
+        nextDevice.status = MAINTENANCE_DEVICE_STATUS;
+      }
+      return nextDevice;
+    });
+    const nextSchedules = rawSchedules.value.filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)));
+    const nextExperiments = rawExperiments.value.map((experiment) => {
+      const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;
+      if (!removedExperimentKeys.has(key)) {
+        return { ...experiment };
+      }
+      return {
+        ...experiment,
+        status: STATUS_WAITING,
+        unscheduled_since: timestamp,
+        updated_at: timestamp,
+      };
+    });
+    const nextTasks = rawTasks.value.map((task) => ({
+      ...task,
+      status: resolveTaskStatus(task, nextSchedules, rawSamples.value, new Date(timestamp), rawExperimentTrays.value),
+    }));
+    const nextConflicts = [
+      ...rawConflicts.value.map((entry) => ({ ...entry })),
+      ...conflictingSchedules.map((schedule) => buildMaintenanceException({ schedule, timestamp })),
+    ];
+
+    return {
+      [STORAGE_KEYS.conflicts]: nextConflicts,
+      [STORAGE_KEYS.devices]: nextDevices,
+      [STORAGE_KEYS.experiments]: nextExperiments,
+      [STORAGE_KEYS.schedules]: nextSchedules,
+      [STORAGE_KEYS.tasks]: nextTasks,
+    };
+  };
+
+  const persistMaintenancePlan = async ({ conflictingSchedules = [], deviceCode, form }) => {
+    const timestamp = toLocalDateTimeValue(new Date());
+    const updates = buildMaintenancePlanUpdates({ conflictingSchedules, deviceCode, form, timestamp });
+    rawConflicts.value = updates[STORAGE_KEYS.conflicts];
+    rawDevices.value = updates[STORAGE_KEYS.devices];
+    rawExperiments.value = updates[STORAGE_KEYS.experiments];
+    rawSchedules.value = updates[STORAGE_KEYS.schedules];
+    rawTasks.value = updates[STORAGE_KEYS.tasks];
+    await persistSnapshot(updates);
+  };
+
   const openDeviceDrawer = (row) => {
-    // 抽屉标题和维护表单都以当前选中设备为准同步刷新。
     const nextSelected = buildSelectedDevice(row ?? deviceForm.value);
     selectedDevice.value = nextSelected;
     maintenanceForm.value = createMaintenanceForm(row ?? deviceForm.value);
@@ -105,6 +219,79 @@ function useDevicesPage() {
 
   const closeDeviceDrawer = () => {
     deviceDrawer.close();
+  };
+
+  const openEditDevice = (row) => {
+    deviceForm.value = buildDeviceForm(row);
+    editDeviceModal.openWith({ code: normalizeText(row?.code) });
+  };
+
+  const closeEditDevice = () => {
+    editDeviceModal.close();
+  };
+
+  const saveEditedDevice = async () => {
+    await saveCurrentDevice();
+    closeEditDevice();
+  };
+
+  const openMaintenancePlan = (row) => {
+    const selected = buildSelectedDevice(row);
+    selectedDevice.value = selected;
+    maintenancePlanDevice.value = row;
+    maintenancePlanForm.value = buildMaintenancePlanForm(row);
+    maintenancePlanModal.openWith(selected);
+  };
+
+  const closeMaintenancePlan = () => {
+    maintenancePlanModal.close();
+    maintenancePlanDevice.value = null;
+    maintenancePlanForm.value = createMaintenancePlanForm();
+  };
+
+  const saveMaintenancePlan = async () => {
+    const deviceCode = normalizeText(maintenancePlanDevice.value?.code);
+    if (!deviceCode) {
+      return;
+    }
+    const impact = resolveMaintenanceScheduleImpact({
+      deviceCode,
+      endAt: maintenancePlanForm.value.endAt,
+      schedules: rawSchedules.value,
+      startAt: maintenancePlanForm.value.startAt,
+    });
+    if (impact.conflictingSchedules.length > 0) {
+      maintenanceConflictDetail.value = {
+        conflictingSchedules: impact.conflictingSchedules,
+        deviceCode,
+        form: { ...maintenancePlanForm.value },
+      };
+      maintenanceConflictModal.openWith(maintenanceConflictDetail.value);
+      return;
+    }
+    await persistMaintenancePlan({ deviceCode, form: maintenancePlanForm.value });
+    closeMaintenancePlan();
+  };
+
+  const confirmMaintenanceConflict = async () => {
+    const detail = maintenanceConflictDetail.value;
+    if (!detail) {
+      maintenanceConflictModal.close();
+      return;
+    }
+    await persistMaintenancePlan({
+      conflictingSchedules: detail.conflictingSchedules,
+      deviceCode: detail.deviceCode,
+      form: detail.form,
+    });
+    maintenanceConflictDetail.value = null;
+    maintenanceConflictModal.close();
+    closeMaintenancePlan();
+  };
+
+  const cancelMaintenanceConflict = () => {
+    maintenanceConflictDetail.value = null;
+    maintenanceConflictModal.close();
   };
 
   const openPointModal = () => {
@@ -117,7 +304,6 @@ function useDevicesPage() {
 
   const savePoint = () => {
     const nextPoints = appendPoint(pointRows.value, pointForm.value);
-    // 长度未变化说明表单缺少关键字段，本次新增直接忽略。
     if (nextPoints.length === pointRows.value.length) {
       return;
     }
@@ -128,18 +314,20 @@ function useDevicesPage() {
 
   const loadDevicesPage = async () => {
     const snapshot = await loadSnapshot();
+    rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+    rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
     rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
       ? snapshot[STORAGE_KEYS.experiment_trays]
       : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+    rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
   };
 
   watch(
     () => deviceForm.value.location,
     () => {
-      // 位置变化时持续保持试验类型的自动联动。
       syncFormTypeWithLocation();
     },
   );
@@ -147,17 +335,28 @@ function useDevicesPage() {
   onMounted(loadDevicesPage);
 
   return {
+    cancelMaintenanceConflict,
     closeDeviceDrawer,
+    closeEditDevice,
+    closeMaintenancePlan,
     closePointModal,
+    confirmMaintenanceConflict,
     connectionForm,
     createNewDevice,
     deviceDrawerOpen: deviceDrawer.open,
     deviceForm,
     deviceRows: visibleRows,
+    editDeviceOpen: editDeviceModal.open,
     locationOptions,
+    maintenanceConflictDetail,
+    maintenanceConflictOpen: maintenanceConflictModal.open,
     maintenanceForm,
+    maintenancePlanForm,
+    maintenancePlanOpen: maintenancePlanModal.open,
     metrics,
     openDeviceDrawer,
+    openEditDevice,
+    openMaintenancePlan,
     openPointModal,
     pointForm,
     pointModalOpen: pointModal.open,
@@ -165,6 +364,8 @@ function useDevicesPage() {
     pointRows: visiblePointRows,
     query,
     saveCurrentDevice,
+    saveEditedDevice,
+    saveMaintenancePlan,
     savePoint,
     selectedDevice,
     sortDirection,

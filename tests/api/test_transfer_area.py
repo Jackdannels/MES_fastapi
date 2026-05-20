@@ -497,6 +497,43 @@ def test_transfer_area_withdraw_staging_dispatch_restores_tray_to_staging_arriva
     assert staging_events[-1]["action"] == "stock_out_withdraw"
 
 
+def test_transfer_area_withdraw_staging_dispatch_uses_history_when_event_is_missing(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "盐雾试验室"
+        sample["status"] = "送至实验室"
+        sample["flow_status"] = "送至实验室"
+        sample["trays"] = [{**sample["trays"][0], "status": "送至实验室"}]
+        sample["history"] = [
+            {
+                "action": "暂存间扫码出库",
+                "detail": "SYLU-2026-03-102-TP-001 送至 盐雾试验室",
+                "location": "盐雾试验室",
+                "status": "送至实验室",
+                "time": "2026-05-19T10:00:00",
+            }
+        ]
+    storage.write("mes.samples", samples)
+    storage.write("mes.staging_events", [])
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "点错试验间"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "已到达暂存间"
+    assert payload["restoredLocation"] == "恒温恒湿间（暂存间）"
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "已到达暂存间" for sample in updated_samples)
+    assert storage.read("mes.staging_events")[-1]["action"] == "stock_out_withdraw"
+
+
 def test_transfer_area_withdraw_dispatch_rejects_after_laboratory_compare(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])
