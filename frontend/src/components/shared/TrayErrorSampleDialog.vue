@@ -179,9 +179,9 @@ const confirmWithdraw = async () => {
   }
 };
 
-const handleClose = () => {
+const handleClose = async () => {
   closeConfirm();
-  model.close();
+  await model.close();
 };
 
 watch(

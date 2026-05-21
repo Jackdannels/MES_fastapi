@@ -101,7 +101,7 @@
         </div>
         <div class="form-field">
           <label>联系方式</label>
-          <input v-model="intakeForm.contact_info" type="text" name="contact_info" placeholder="电话/邮箱" />
+          <input v-model="intakeForm.contact_info" type="text" name="contact_info" inputmode="numeric" maxlength="15" placeholder="请输入 1-15 位数字" />
         </div>
         <div class="form-field">
           <label>优先级</label>
@@ -113,7 +113,7 @@
         </div>
         <div class="form-field">
           <label>样品数量</label>
-          <input v-model="intakeForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+          <input v-model="intakeForm.sample_count" type="number" name="sample_count" min="1" max="999" step="1" required placeholder="例如：12" />
         </div>
         <div class="form-field tasks-sample-preview">
           <label>样品编号预览</label>
@@ -261,7 +261,7 @@
       </div>
       <div class="form-field">
         <label>样品数量</label>
-        <input v-model="editForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+        <input v-model="editForm.sample_count" type="number" name="sample_count" min="1" max="999" step="1" required placeholder="例如：12" />
       </div>
       <div class="form-field tasks-sample-preview">
         <label>样品编号</label>
@@ -391,8 +391,8 @@
 
   <AppModal :open="scheduledExperimentRemovalModalOpen" title="确认修改实验类型" @close="closeScheduledExperimentRemovalConfirm">
     <div class="tasks-danger-confirmation" data-testid="task-scheduled-removal-confirm">
-      <strong>排程信息将同步删除</strong>
-      <p>修改的实验类型涉及已排程实验，确定修改后将同步删除对应排程信息</p>
+      <strong>实验类型已变更</strong>
+      <p>确定修改后将同步删除该任务原有排程信息，并清空预接驳托盘分配，需要重新排程并从预接驳处重新分配托盘。</p>
     </div>
     <template #footer>
       <button class="action-btn secondary" data-testid="task-scheduled-removal-confirm-cancel" type="button" @click="closeScheduledExperimentRemovalConfirm">

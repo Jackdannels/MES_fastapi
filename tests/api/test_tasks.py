@@ -381,6 +381,71 @@ def test_create_task_rejects_missing_empty_or_duplicate_test_types(monkeypatch):
     assert duplicate.json() == {"detail": "test_types must not contain duplicates"}
 
 
+def test_create_task_rejects_garbled_symbol_text_fields(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-05-099",
+            "code": "SYLU-2026-05-099",
+            "name": "&^*(&U&^GFG&HU&",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "任务名称包含无效字符，请检查输入"}
+    assert client.app.state.storage.read("mes.tasks") == []
+
+
+def test_create_task_rejects_invalid_contact_info_and_long_name(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+    base_payload = {
+        "id": "SYLU-2026-05-100",
+        "code": "SYLU-2026-05-100",
+        "name": "字段校验",
+        "sample_count": "3",
+        "test_type": "冲击试验",
+        "test_types": ["冲击试验"],
+        "status": "待排程",
+    }
+
+    invalid_phone = client.post("/api/tasks", json={**base_payload, "contact_info": "1380000ABC"})
+    too_long_phone = client.post("/api/tasks", json={**base_payload, "contact_info": "1234567890123456"})
+    too_long_name = client.post("/api/tasks", json={**base_payload, "name": "一二三四五六七八九十一二三四五六七八九十X"})
+
+    assert invalid_phone.status_code == 400
+    assert invalid_phone.json() == {"detail": "联系方式必须为 1-15 位数字"}
+    assert too_long_phone.status_code == 400
+    assert too_long_phone.json() == {"detail": "联系方式必须为 1-15 位数字"}
+    assert too_long_name.status_code == 400
+    assert too_long_name.json() == {"detail": "任务名称不能超过 20 个字"}
+
+
+def test_create_task_defaults_blank_name_from_task_code_suffix(monkeypatch):
+    client = build_client(monkeypatch, tasks=[{"id": "old", "code": "SYLU-2025-05-001", "name": "测试实验05001"}])
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-05-001",
+            "code": "SYLU-2026-05-001",
+            "name": "",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["name"] == "测试实验05001-2"
+
+
 def test_update_task_rejects_empty_test_types_without_falling_back_to_task_name(monkeypatch):
     client = build_client(
         monkeypatch,
@@ -561,6 +626,7 @@ def test_update_task_replaces_stale_experiment_metadata_when_test_types_change(m
             "required_device": "四综合试验",
             "priority": "",
             "status": "待排程",
+            "unscheduled_since": "",
         }
     ]
 
@@ -704,6 +770,13 @@ def test_update_task_requires_confirmation_before_removing_scheduled_experiment(
     assert response.json()["detail"]["code"] == "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
     assert response.json()["detail"]["affected_schedules"] == [
         {
+            "id": "SCH-KEEP",
+            "experiment_code": "SYLU-2026-05-005-A",
+            "device": "冲击一室",
+            "start_at": "",
+            "end_at": "",
+        },
+        {
             "id": "SCH-REMOVE",
             "experiment_code": "SYLU-2026-05-005-B",
             "device": "盐雾试验室",
@@ -785,13 +858,117 @@ def test_update_task_confirmed_scheduled_experiment_removal_cleans_related_rows(
     assert response.status_code == 200
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验"]
     assert [item["experiment_code"] for item in storage.read("mes.experiments")] == ["SYLU-2026-05-006-A"]
-    assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-KEEP", "SCH-OTHER"]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-OTHER"]
+    assert storage.read("mes.experiment_trays") == []
+    assert storage.read("mes.experiment_samples") == []
+
+
+def test_update_task_type_change_after_preallocation_resets_handover_allocation(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-preallocated",
+                "code": "SYLU-2026-05-020",
+                "name": "预接驳后新增实验",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "experiment_codes": ["SYLU-2026-05-020-A"],
+                "experiment_count": 1,
+                "status": "待排程",
+                "transfer_status": "未入库",
+                "tray_codes": ["SYLU-2026-05-020-TP-001"],
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-05-020-A",
+                "task_code": "SYLU-2026-05-020",
+                "experiment_code": "SYLU-2026-05-020-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "已排程",
+            }
+        ],
+        samples=[
+            {
+                "id": "SYLU-2026-05-020-SP-001",
+                "code": "SYLU-2026-05-020-SP-001",
+                "task_code": "SYLU-2026-05-020",
+                "status": "运输中",
+                "flow_status": "运输中",
+                "location": "",
+                "trays": [{"tray_code": "SYLU-2026-05-020-TP-001", "status": "未入库"}],
+            },
+            {
+                "id": "SYLU-2026-05-020-SP-002",
+                "code": "SYLU-2026-05-020-SP-002",
+                "task_code": "SYLU-2026-05-020",
+                "status": "运输中",
+                "flow_status": "运输中",
+                "location": "",
+                "trays": [{"tray_code": "SYLU-2026-05-020-TP-001", "status": "未入库"}],
+            },
+        ],
+        schedules=[
+            {"id": "SCH-OLD", "task_code": "SYLU-2026-05-020", "experiment_code": "SYLU-2026-05-020-A", "device": "冲击一室"},
+            {"id": "SCH-OTHER", "task_code": "OTHER", "experiment_code": "OTHER-A", "device": "盐雾试验室"},
+        ],
+        experiment_trays=[
+            {"task_code": "SYLU-2026-05-020", "experiment_code": "SYLU-2026-05-020-A", "tray_code": "SYLU-2026-05-020-TP-001"},
+            {"task_code": "OTHER", "experiment_code": "OTHER-A", "tray_code": "OTHER-TP-001"},
+        ],
+        experiment_samples=[
+            {"task_code": "SYLU-2026-05-020", "experiment_code": "SYLU-2026-05-020-A", "sample_code": "SYLU-2026-05-020-SP-001"},
+            {"task_code": "OTHER", "experiment_code": "OTHER-A", "sample_code": "OTHER-SP-001"},
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-preallocated",
+        json={
+            "id": "task-preallocated",
+            "code": "SYLU-2026-05-020",
+            "name": "预接驳后新增实验",
+            "sample_count": "2",
+            "test_type": "冲击试验 / 盐雾试验",
+            "test_types": ["冲击试验", "盐雾试验"],
+            "required_device": "冲击试验 / 盐雾试验",
+            "experiment_codes": ["SYLU-2026-05-020-A", "SYLU-2026-05-020-B"],
+            "experiment_count": 2,
+            "status": "待排程",
+            "transfer_status": "未入库",
+            "confirm_remove_scheduled_experiments": True,
+        },
+    )
+
+    storage = client.app.state.storage
+    stored_task = storage.read("mes.tasks")[0]
+    stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-05-020"]
+
+    assert response.status_code == 200
+    assert stored_task["test_types"] == ["冲击试验", "盐雾试验"]
+    assert stored_task["test_type"] == "冲击试验 / 盐雾试验"
+    assert stored_task["required_device"] == "冲击试验 / 盐雾试验"
+    assert stored_task["transfer_status"] == "未入库"
+    assert stored_task["tray_codes"] == []
+    assert [item["experiment_name"] for item in storage.read("mes.experiments") if item["task_code"] == "SYLU-2026-05-020"] == [
+        "冲击试验",
+        "盐雾试验",
+    ]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-OTHER"]
     assert storage.read("mes.experiment_trays") == [
-        {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "tray_code": "TP-A"}
+        {"task_code": "OTHER", "experiment_code": "OTHER-A", "tray_code": "OTHER-TP-001"}
     ]
     assert storage.read("mes.experiment_samples") == [
-        {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "sample_code": "SP-A"}
+        {"task_code": "OTHER", "experiment_code": "OTHER-A", "sample_code": "OTHER-SP-001"}
     ]
+    assert all(sample["status"] == "运输中" for sample in stored_samples)
+    assert all(sample["flow_status"] == "运输中" for sample in stored_samples)
+    assert all(sample["location"] == "" for sample in stored_samples)
+    assert all(sample["trays"] == [] for sample in stored_samples)
 
 
 def test_update_task_string_false_does_not_confirm_scheduled_experiment_removal(monkeypatch):
@@ -900,11 +1077,11 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
     non_integer = client.post("/api/tasks", json={**base_payload, "sample_count": "1.5"})
     zero = client.post("/api/tasks", json={**base_payload, "sample_count": "0"})
     negative = client.post("/api/tasks", json={**base_payload, "sample_count": "-1"})
-    too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "100"})
+    too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "1000"})
     one_sample = client.post("/api/tasks", json={**base_payload, "sample_count": "1"})
     valid = client.post(
         "/api/tasks",
-        json={**base_payload, "id": "SYLU-2026-04-110-B", "code": "SYLU-2026-04-110-B", "sample_count": "99"},
+        json={**base_payload, "id": "SYLU-2026-04-110-B", "code": "SYLU-2026-04-110-B", "sample_count": "999"},
     )
 
     assert missing.status_code == 400
@@ -916,7 +1093,7 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
     assert negative.status_code == 400
     assert negative.json() == {"detail": "样品数量至少为 1"}
     assert too_many.status_code == 400
-    assert too_many.json() == {"detail": "样品数量最多为 99"}
+    assert too_many.json() == {"detail": "样品数量最多为 999"}
     assert one_sample.status_code == 201
     assert one_sample.json()["sample_count"] == "1"
     assert valid.status_code == 201

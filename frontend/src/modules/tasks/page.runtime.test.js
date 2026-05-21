@@ -680,6 +680,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.get('input[name="code"]').element.value).toBe(buildCurrentMonthFirstTaskCode());
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').exists()).toBe(true);
@@ -719,6 +720,63 @@ describe("TasksPage runtime", () => {
         test_types: ["冲击试验", "盐雾试验"],
       }),
     );
+  });
+
+  test("blocks garbled symbol input in the intake form before creating a task", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('input[name="name"]').setValue("&^*(&U&^GFG&HU&");
+    await wrapper.get('input[name="sample_count"]').setValue("3");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("任务名称包含无效字符，请检查输入");
+    expect(state.tasks).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
+  });
+
+  test("validates intake phone and sample count by field rules", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('input[name="name"]').setValue("字段校验任务");
+    await wrapper.get('input[name="contact_info"]').setValue("1380000ABC");
+    await wrapper.get('input[name="sample_count"]').setValue("1000");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("联系方式必须为 1-15 位数字");
+
+    await wrapper.get('input[name="contact_info"]').setValue("138000012345678");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("样品数量最多为 999");
+    expect(state.tasks).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
   });
 
   test("uses master test type options for intake selections when available", async () => {
@@ -1001,6 +1059,8 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
     await wrapper.get('[data-testid="task-update"]').trigger("click");
     await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
 
     const updateCall = fetchMock.mock.calls.find(
       ([url, options]) => url === buildTaskEndpoint("task-edit-1") && options?.method === "PUT",
@@ -1067,6 +1127,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await settle(wrapper);
     await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
     await settle(wrapper);
 
     const summary = wrapper.get("td.tasks-table__cell--summary .tasks-table__summary-text").text();
@@ -1183,7 +1245,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="task-scheduled-removal-confirm"]').text()).toContain(
-      "修改的实验类型涉及已排程实验，确定修改后将同步删除对应排程信息",
+      "需要重新排程并从预接驳处重新分配托盘",
     );
     expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-scheduled-removal") && options?.method === "PUT")).toBe(
       false,
@@ -1201,9 +1263,107 @@ describe("TasksPage runtime", () => {
         confirm_remove_scheduled_experiments: true,
       }),
     );
-    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
-    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", tray_code: "TP-A" }]);
-    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-005", experiment_code: "SYLU-2026-05-005-A", sample_code: "SP-A" }]);
+    expect(state.schedules).toEqual([]);
+    expect(state.experimentTrays).toEqual([]);
+    expect(state.experimentSamples).toEqual([]);
+  });
+
+  test("resets preallocation and old schedules when adding an experiment type", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-preallocated-add-type",
+          code: "SYLU-2026-05-020",
+          name: "预接驳后新增实验",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+          experiment_codes: ["SYLU-2026-05-020-A"],
+          experiment_count: 1,
+          transfer_status: "未入库",
+          tray_codes: ["SYLU-2026-05-020-TP-001"],
+        }),
+      ],
+      samples: [
+        {
+          id: "SYLU-2026-05-020-SP-001",
+          code: "SYLU-2026-05-020-SP-001",
+          task_code: "SYLU-2026-05-020",
+          status: "运输中",
+          flow_status: "运输中",
+          location: "",
+          trays: [{ tray_code: "SYLU-2026-05-020-TP-001", status: "未入库" }],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-020",
+          experiment_code: "SYLU-2026-05-020-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "SCH-OLD",
+          task_code: "SYLU-2026-05-020",
+          experiment_code: "SYLU-2026-05-020-A",
+          device: "冲击一室",
+          status: "已排程",
+        },
+        {
+          id: "SCH-OTHER",
+          task_code: "OTHER",
+          experiment_code: "OTHER-A",
+          device: "盐雾试验室",
+          status: "已排程",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-020", experiment_code: "SYLU-2026-05-020-A", tray_code: "SYLU-2026-05-020-TP-001" },
+        { task_code: "OTHER", experiment_code: "OTHER-A", tray_code: "OTHER-TP-001" },
+      ],
+      experimentSamples: [
+        { task_code: "SYLU-2026-05-020", experiment_code: "SYLU-2026-05-020-A", sample_code: "SYLU-2026-05-020-SP-001" },
+        { task_code: "OTHER", experiment_code: "OTHER-A", sample_code: "OTHER-SP-001" },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-scheduled-removal-confirm"]').text()).toContain(
+      "需要重新排程并从预接驳处重新分配托盘",
+    );
+
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-preallocated-add-type") && options?.method === "PUT",
+    );
+    expect(JSON.parse(updateCall[1].body)).toEqual(
+      expect.objectContaining({
+        test_types: ["冲击试验", "盐雾试验"],
+        confirm_remove_scheduled_experiments: true,
+        transfer_status: "未入库",
+        tray_codes: [],
+      }),
+    );
+    expect(state.tasks[0].tray_codes).toEqual([]);
+    expect(state.samples[0].trays).toEqual([]);
+    expect(state.samples[0].status).toBe("运输中");
+    expect(state.samples[0].flow_status).toBe("运输中");
+    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-OTHER"]);
+    expect(state.experimentTrays).toEqual([{ task_code: "OTHER", experiment_code: "OTHER-A", tray_code: "OTHER-TP-001" }]);
+    expect(state.experimentSamples).toEqual([{ task_code: "OTHER", experiment_code: "OTHER-A", sample_code: "OTHER-SP-001" }]);
   });
 
   test("removes scheduled experiment links by the original task code when task code also changes", async () => {
@@ -1273,12 +1433,12 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
     await settle(wrapper);
 
-    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
-    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", tray_code: "TP-A" }]);
-    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-015", experiment_code: "SYLU-2026-05-015-A", sample_code: "SP-A" }]);
+    expect(state.schedules).toEqual([]);
+    expect(state.experimentTrays).toEqual([]);
+    expect(state.experimentSamples).toEqual([]);
   });
 
-  test("keeps schedules for a retained experiment when deleting an earlier experiment type", async () => {
+  test("removes schedules for a retained experiment when any experiment type changes", async () => {
     const { state } = installApiFetchMock({
       tasks: [
         createTask({
@@ -1322,9 +1482,9 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
     await settle(wrapper);
 
-    expect(state.schedules.map((schedule) => schedule.id)).toEqual(["SCH-KEEP"]);
-    expect(state.experimentTrays).toEqual([{ task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", tray_code: "TP-B" }]);
-    expect(state.experimentSamples).toEqual([{ task_code: "SYLU-2026-05-006", experiment_code: "SYLU-2026-05-006-B", sample_code: "SP-B" }]);
+    expect(state.schedules).toEqual([]);
+    expect(state.experimentTrays).toEqual([]);
+    expect(state.experimentSamples).toEqual([]);
   });
 
   test("cancels scheduled experiment removal without saving or clearing schedules", async () => {
@@ -1435,6 +1595,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await wrapper.get('[data-testid="task-update"]').trigger("click");
     await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
 
     const updateCall = fetchMock.mock.calls.find(
       ([url, options]) => url === buildTaskEndpoint("task-edit-all") && options?.method === "PUT",
@@ -1447,7 +1609,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).not.toContain("任务更新失败");
   });
 
-  test("creates a random task when the intake form is submitted with all default empty values", async () => {
+  test("creates a default-named task when the intake form is submitted without a manual task name", async () => {
     const { state } = installApiFetchMock({
       tasks: [],
       samples: [],
@@ -1460,21 +1622,24 @@ describe("TasksPage runtime", () => {
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.get('select[name="source"]').element.value).toBe("内部新增");
 
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
+    const expectedTaskCode = buildCurrentMonthFirstTaskCode();
     expect(state.tasks).toHaveLength(1);
     expect(state.tasks[0]).toEqual(
       expect.objectContaining({
-        code: expect.stringMatching(/^SYLU-\d{4}-\d{2}-\d{3}$/),
-        name: expect.any(String),
+        code: expectedTaskCode,
+        name: `测试实验${expectedTaskCode.replace(/\D/g, "").slice(-5)}`,
         source: "内部新增",
-        test_type: expect.any(String),
+        test_type: "冲击试验",
         status: expect.any(String),
       }),
     );
-    expect(state.tasks[0].name.trim().length).toBeGreaterThan(0);
-    expect(state.tasks[0].test_type.trim().length).toBeGreaterThan(0);
   });
 
   test("keeps the created task visible when creation succeeds but the follow-up reload fails", async () => {

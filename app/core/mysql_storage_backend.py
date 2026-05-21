@@ -244,7 +244,7 @@ def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
         "priority": parse_priority_value(task.get("priority")),
         "sample_count": parse_int_value(task.get("sample_count")),
         "task_status": normalize_task_status_text(task.get("status")),
-        "transfer_status": normalize_text(task.get("transfer_status")),
+        "transfer_status": normalize_task_status_text(task.get("transfer_status")),
         "tray_limit": parse_int_value(task.get("tray_limit")),
         "arrival_time": parse_storage_datetime(task.get("arrival_at")),
         "due_time": parse_storage_datetime(task.get("due_at")),
@@ -292,7 +292,7 @@ def build_storage_task_item(row: Dict[str, Any], tray_codes: Iterable[str] | Non
         "attachment": normalize_text(row.get("attachment_path")),
         "remark": normalize_text(row.get("remark")),
         "status": normalize_task_status_text(row.get("task_status")),
-        "transfer_status": normalize_text(row.get("transfer_status")),
+        "transfer_status": normalize_task_status_text(row.get("transfer_status")),
         "tray_limit": row.get("tray_limit"),
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "tray_codes": [normalize_text(code) for code in (tray_codes or []) if normalize_text(code)],
@@ -417,9 +417,14 @@ EXPERIMENT_RUNNING_STATUSES = {EXPERIMENT_RUNNING_STATUS, *LEGACY_RUNNING_STATUS
 EXPERIMENT_COMPLETED_STATUSES = {CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}
 TASK_RUNNING_STATUS = CANONICAL_TASK_RUNNING_STATUS
 TASK_COMPLETED_STATUS = CANONICAL_TASK_COMPLETED_STATUS
-TASK_STORED_STATUS = "已入库"
+TASK_STORED_STATUS = "到货"
+LEGACY_TASK_STORED_STATUS = "已入库"
 UNSCHEDULED_BACKFILL_HISTORY_ACTION = "任务已确认入库"
 UNSCHEDULED_BACKFILL_ELIGIBLE_STATUSES = {"", "待排程", "已排程"}
+
+
+def is_task_stored_status(value: Any) -> bool:
+    return normalize_text(value) in {TASK_STORED_STATUS, LEGACY_TASK_STORED_STATUS}
 
 
 def normalize_experiment_status(value: Any) -> str:
@@ -600,15 +605,15 @@ def resolve_sample_storage_time(sample: Dict[str, Any]) -> datetime | None:
     status_times = [
         parse_storage_datetime(entry.get("time"))
         for entry in (sample.get("history") or [])
-        if normalize_text(entry.get("status")) == TASK_STORED_STATUS
+        if is_task_stored_status(entry.get("status"))
         and parse_storage_datetime(entry.get("time")) is not None
     ]
     if status_times:
         return min(status_times)
 
     if (
-        normalize_text(sample.get("status")) == TASK_STORED_STATUS
-        or normalize_text(sample.get("flow_status")) == TASK_STORED_STATUS
+        is_task_stored_status(sample.get("status"))
+        or is_task_stored_status(sample.get("flow_status"))
     ):
         return parse_storage_datetime(sample.get("updated_at"))
 
@@ -643,7 +648,7 @@ def backfill_missing_unscheduled_since(
         task_code = normalize_text(experiment.get("task_code"))
         task = task_by_code.get(task_code) or {}
 
-        if normalize_text(task.get("transfer_status")) != TASK_STORED_STATUS:
+        if not is_task_stored_status(task.get("transfer_status")):
             next_experiments.append(next_experiment)
             continue
         if not is_unscheduled_since_backfill_eligible(experiment):
@@ -1407,6 +1412,82 @@ class MySQLMesStorageBackend(StorageBackend):
         )
 
     def _normalize_legacy_status_columns(self, cursor) -> None:
+        cursor.execute(
+            """
+            UPDATE biz_task
+            SET task_status = CASE WHEN task_status = %s THEN %s ELSE task_status END,
+                transfer_status = CASE WHEN transfer_status = %s THEN %s ELSE transfer_status END
+            WHERE task_status = %s
+               OR transfer_status = %s
+            """,
+            (
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_sample
+            SET sample_status = CASE WHEN sample_status = %s THEN %s ELSE sample_status END,
+                flow_status = CASE WHEN flow_status = %s THEN %s ELSE flow_status END
+            WHERE sample_status = %s
+               OR flow_status = %s
+            """,
+            (
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_tray
+            SET tray_status = CASE WHEN tray_status = %s THEN %s ELSE tray_status END,
+                test_state = CASE WHEN test_state = %s THEN %s ELSE test_state END
+            WHERE tray_status = %s
+               OR test_state = %s
+            """,
+            (
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+            ),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_tray_item
+            SET status = %s
+            WHERE status = %s
+            """,
+            (TASK_STORED_STATUS, LEGACY_TASK_STORED_STATUS),
+        )
+        cursor.execute(
+            """
+            UPDATE biz_sample_event
+            SET sample_status = CASE WHEN sample_status = %s THEN %s ELSE sample_status END,
+                detail = REPLACE(COALESCE(detail, ''), %s, %s)
+            WHERE sample_status = %s
+               OR detail LIKE %s
+            """,
+            (
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                TASK_STORED_STATUS,
+                LEGACY_TASK_STORED_STATUS,
+                f"%{LEGACY_TASK_STORED_STATUS}%",
+            ),
+        )
         cursor.execute(
             """
             UPDATE biz_task

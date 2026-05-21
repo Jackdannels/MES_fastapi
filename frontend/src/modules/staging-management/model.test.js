@@ -156,7 +156,7 @@ describe("staging-management model", () => {
     });
     expect(stockedInRow).toMatchObject({
       taskCode: "SYLU-2026-04-102",
-      status: "已入库",
+      status: "到货",
     });
     expect(stockedOutRow).toMatchObject({
       taskCode: "SYLU-2026-04-103",
@@ -282,7 +282,7 @@ describe("staging-management model", () => {
     const stockInDetail = buildZancunScanDetail(rows, "SYLU-2026-04-101-TP-001", "stockIn");
     const stockOutDetail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
 
-    expect(stockInDetail.nextStatus).toBe("已入库");
+    expect(stockInDetail.nextStatus).toBe("到货");
     expect(stockOutDetail.nextStatus).toBe("已出库");
     expect(stockOutDetail.trayCode).toBe("SYLU-2026-04-102-TP-001");
     expect(stockOutDetail.targetLab).toBe("振动一室");
@@ -412,7 +412,7 @@ describe("staging-management model", () => {
       location: "盐雾试验室",
     });
     expect(detail.found).toBe(true);
-    expect(detail.nextStatus).toBe("已入库");
+    expect(detail.nextStatus).toBe("到货");
   });
 
   test("moves trays back to planned inbound after lab completion even when the last staging event was stock-out", () => {
@@ -552,7 +552,7 @@ describe("staging-management model", () => {
     const sections = buildZancunInventorySections(rows);
     const row = rows.find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
 
-    expect(row?.status).toBe("已入库");
+    expect(row?.status).toBe("到货");
     expect(row?.location).toBe("恒温恒湿间（暂存间）");
     expect(sections.currentStagingRows.map((item) => item.trayCode)).toContain("SYLU-2026-04-102-TP-001");
   });
@@ -607,7 +607,7 @@ describe("staging-management model", () => {
       stagingEvents: stockOutResult.snapshot[STORAGE_KEYS.staging_events],
     });
 
-    expect(stockInRow?.status).toBe("已入库");
+    expect(stockInRow?.status).toBe("到货");
     expect(stockOutRow?.status).toBe("已出库");
     expect(stockOutRow?.location).toBe("已完成出库");
     expect(stockInResult.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({

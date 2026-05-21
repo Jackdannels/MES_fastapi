@@ -27,7 +27,18 @@ const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"
 const RANDOM_PRIORITIES = ["高", "中", "低"];
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
 const MIN_SAMPLE_COUNT = 1;
-const MAX_SAMPLE_COUNT = 99;
+const MAX_SAMPLE_COUNT = 999;
+const INVALID_TASK_TEXT_PATTERN = /[\uFFFD&^*#<>`{}|\\]/;
+const TASK_TEXT_FIELD_LABELS = {
+  attachment: "附件",
+  client: "委托单位/部门",
+  conditions: "环境/特殊条件",
+  contact: "联系人",
+  contact_info: "联系方式",
+  name: "任务名称",
+  remark: "备注",
+  sample_type: "样品类型",
+};
 
 // 本地随机演示数据在候选数组中抽取一个元素。
 const randomFrom = (items) => items[Math.floor(Math.random() * items.length)] || "";
@@ -56,9 +67,27 @@ const validateTaskSampleCount = (value) => {
     return "样品数量至少为 1";
   }
   if (parsed > MAX_SAMPLE_COUNT) {
-    return "样品数量最多为 99";
+    return `样品数量最多为 ${MAX_SAMPLE_COUNT}`;
   }
   return "";
+};
+const validateTaskTextFields = (form = {}) => {
+  const contactInfo = normalizeText(form?.contact_info);
+  if (contactInfo && !/^\d{1,15}$/.test(contactInfo)) {
+    return "联系方式必须为 1-15 位数字";
+  }
+  const taskName = normalizeText(form?.name);
+  if ([...taskName].length > 20) {
+    return "任务名称不能超过 20 个字";
+  }
+  const invalidEntry = Object.entries(TASK_TEXT_FIELD_LABELS).find(([field]) => {
+    const normalized = normalizeText(form?.[field]);
+    return normalized && INVALID_TASK_TEXT_PATTERN.test(normalized);
+  });
+  if (!invalidEntry) {
+    return "";
+  }
+  return `${invalidEntry[1]}包含无效字符，请检查输入`;
 };
 // 兼容历史脏数据：旧版本可能残留暂存间“排程”记录，当前业务中暂存间只是临时放置位置。
 const isLegacyTemporaryStagingSchedule = (value) => normalizeText(value).includes(TEMPORARY_STAGING_DEVICE_KEYWORD);
@@ -447,9 +476,6 @@ const resolveTaskCodeDate = (referenceValue) => {
 
 // 所有新任务统一按 SYLU-YYYY-MM-NNN 递增，不再按旧实验前缀分流。
 function buildTaskCode(testType, tasks, referenceValue = new Date()) {
-  if (!normalizeText(testType)) {
-    return "";
-  }
   const codeDate = resolveTaskCodeDate(referenceValue);
   const year = codeDate.getFullYear();
   const month = String(codeDate.getMonth() + 1).padStart(2, "0");
@@ -474,6 +500,23 @@ function buildTaskCode(testType, tasks, referenceValue = new Date()) {
 
   return `SYLU-${year}-${month}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
+
+const buildDefaultTaskName = (taskCode, tasks = []) => {
+  const digits = normalizeText(taskCode).replace(/\D/g, "");
+  const suffix = (digits || "00000").slice(-5).padStart(5, "0");
+  const baseName = `测试实验${suffix}`;
+  const existingNames = new Set((Array.isArray(tasks) ? tasks : []).map((task) => normalizeText(task?.name)).filter(Boolean));
+  if (!existingNames.has(baseName)) {
+    return baseName;
+  }
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = `${baseName}-${index}`;
+    if (!existingNames.has(candidate)) {
+      return candidate;
+    }
+  }
+  return `${baseName}-${Date.now().toString().slice(-3)}`;
+};
 
 // 通过表单工厂统一任务弹窗和抽屉的数据结构。
 function createTaskIntakeForm() {
@@ -583,7 +626,7 @@ function createTaskRecord(form, tasks) {
   return {
     id: createId("task"),
     code: taskCode,
-    name: normalizeText(form?.name),
+    name: normalizeText(form?.name) || buildDefaultTaskName(taskCode, tasks),
     source: normalizeText(form?.source) || SOURCE_EXTERNAL,
     client: normalizeText(form?.client) || "内部部门",
     contact: normalizeText(form?.contact),
@@ -858,4 +901,5 @@ export {
   updateTaskRecord,
   validateSampleCodeDraft,
   validateTaskSampleCount,
+  validateTaskTextFields,
 };

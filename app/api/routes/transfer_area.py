@@ -13,12 +13,14 @@ from app.core.storage_backend import get_storage_backend, normalize_experiment_s
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
 TASK_STATUS_PENDING = "未入库"
-TASK_STATUS_STORED = "已入库"
+TASK_STATUS_STORED = "到货"
+LEGACY_TASK_STATUS_STORED = "已入库"
 TASK_STATUS_RETURNED = "厂家收回"
 RETURNED_REENTRY_BLOCK_REASON = "该任务已厂家收回，不能重新入库。"
 TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
-TRAY_STATUS_STORED = "已入库"
+TRAY_STATUS_STORED = "到货"
+LEGACY_TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
 SYSTEM_TRAY_TOTAL = 20
@@ -77,6 +79,7 @@ RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {
 }
 STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
     TASK_STATUS_STORED,
+    LEGACY_TASK_STATUS_STORED,
     *TRAY_OUTBOUND_STATUSES,
     *STARTED_EXPERIMENT_TRAY_STATUSES,
 }
@@ -126,6 +129,10 @@ class TrayWithdrawDispatchRequest(BaseModel):
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def is_handover_stored_status(value: Any) -> bool:
+    return normalize_text(value) in {TASK_STATUS_STORED, LEGACY_TASK_STATUS_STORED}
 
 
 def as_list(value: Any) -> list[Any]:
@@ -298,7 +305,7 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
     received_time = task_arrival_time(task)
     now_iso = datetime.now().isoformat(timespec="seconds")
 
-    if current_task_status == TASK_STATUS_STORED:
+    if is_handover_stored_status(current_task_status):
         location = "接驳区"
         status = TASK_STATUS_STORED
         flow_status = TASK_STATUS_STORED
@@ -365,7 +372,7 @@ def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) ->
         ]
     )
     if any(keyword in status_text for keyword in EXCLUDED_TASK_STATUS_KEYWORDS):
-        return transfer_status_for_task(task, task_samples) == TASK_STATUS_STORED
+        return is_handover_stored_status(transfer_status_for_task(task, task_samples))
     return bool(task_samples) or bool(normalize_text(task.get("sample_count")))
 
 
@@ -448,12 +455,12 @@ def transfer_status_for_task(task: dict[str, Any], task_samples: list[dict[str, 
         return TASK_STATUS_RETURNED
     if are_all_assigned_trays_returned(task_samples):
         return TASK_STATUS_RETURNED
-    if explicit == TASK_STATUS_STORED:
+    if is_handover_stored_status(explicit):
         return TASK_STATUS_STORED
     if explicit == TASK_STATUS_PENDING:
         return TASK_STATUS_PENDING
 
-    if task_samples and all(normalize_text(sample.get("status")) == TASK_STATUS_STORED for sample in task_samples):
+    if task_samples and all(is_handover_stored_status(sample.get("status")) for sample in task_samples):
         return TASK_STATUS_STORED
     if task_samples and all(
         (

@@ -8,7 +8,7 @@ const DEFAULT_LABELS = {
   postRetentionLocation: "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4\uFF09",
   sampleReceived: "\u5DF2\u63A5\u6536",
   sampleTesting: "\u8BD5\u9A8C\u4E2D",
-  sampleStored: "\u5DF2\u5165\u5E93",
+  sampleStored: "\u5230\u8D27",
 };
 
 const TEST_LABS = new Set([
@@ -256,9 +256,13 @@ const stripCompletedExperimentSuffix = (value) => {
     .replace(/已完成$/, "")
     .replace(/完成$/, "");
 };
+const stripWithdrawalReasonSuffix = (value) =>
+  normalizeText(value)
+    .replace(/\s*[（(][^）)]*[）)]\s*$/, "")
+    .trim();
 const parseWithdrawalRestoreTarget = (detail, taskCode) => {
   const parsed = parseExperimentHistoryDetail(detail, taskCode);
-  const rawStatus = normalizeText(parsed?.status);
+  const rawStatus = stripWithdrawalReasonSuffix(parsed?.status);
   if (!rawStatus.startsWith("撤回至")) {
     return null;
   }
@@ -276,6 +280,48 @@ const parseWithdrawalRestoreTarget = (detail, taskCode) => {
   return {
     experimentName: "",
     status: target,
+  };
+};
+
+const findCompletedExperimentHistoryEntry = (historyEntries = [], taskCode, experimentName, beforeTime = Number.MAX_SAFE_INTEGER) => {
+  const normalizedExperimentName = normalizeText(experimentName);
+  if (!normalizedExperimentName) {
+    return null;
+  }
+  return asArray(historyEntries).reduce((latest, entry) => {
+    const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+    if (!parsed || normalizeText(parsed.experimentName) !== normalizedExperimentName) {
+      return latest;
+    }
+    if (normalizeLifecycleStatus("", parsed.status) !== "实验已完成") {
+      return latest;
+    }
+    const time = entryTimeValue(entry);
+    if (!time || time > beforeTime) {
+      return latest;
+    }
+    if (!latest || time >= latest.time) {
+      return { entry, time };
+    }
+    return latest;
+  }, null);
+};
+
+const parseRetainedCompletedExperimentBeforeWithdrawal = (entry, taskCode, withdrawalEntry, restoreTarget) => {
+  if (restoreTarget?.status !== "实验已完成") {
+    return null;
+  }
+  const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+  if (!parsed || normalizeLifecycleStatus("", parsed.status) !== "实验已完成") {
+    return null;
+  }
+  const withdrawalExperiment = parseExperimentHistoryDetail(withdrawalEntry?.detail, taskCode);
+  if (normalizeText(parsed.experimentName) === normalizeText(withdrawalExperiment?.experimentName)) {
+    return null;
+  }
+  return {
+    experimentName: parsed.experimentName,
+    status: "实验已完成",
   };
 };
 
@@ -403,18 +449,33 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
       ? parseWithdrawalRestoreTarget(latestWithdrawal.entry?.detail, normalizedTaskCode)
       : null;
     if (restoreTarget?.experimentName && restoreTarget.status === "实验已完成") {
+      const restoredCompletedEntry = findCompletedExperimentHistoryEntry(
+        historyEntries,
+        normalizedTaskCode,
+        restoreTarget.experimentName,
+        latestWithdrawal.time,
+      );
       setExperimentEvent(
         {
           experimentName: restoreTarget.experimentName,
           status: "实验已完成",
         },
-        latestWithdrawal.time,
+        restoredCompletedEntry?.time || latestWithdrawal.time,
       );
     }
 
     historyEntries.forEach((entry) => {
       const currentTime = entryTimeValue(entry);
       if (latestWithdrawal && currentTime <= latestWithdrawal.time) {
+        const retainedCompleted = parseRetainedCompletedExperimentBeforeWithdrawal(
+          entry,
+          normalizedTaskCode,
+          latestWithdrawal.entry,
+          restoreTarget,
+        );
+        if (retainedCompleted) {
+          setExperimentEvent(retainedCompleted, currentTime);
+        }
         return;
       }
       const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
@@ -824,7 +885,18 @@ const buildTrayFlowTimeMap = (input = {}) => {
         || latestWithdrawalEntry?.created_at
         || latestWithdrawalEntry?.timestamp;
       if (restoreTarget?.experimentName && restoreTarget.status === "实验已完成") {
-        setLatestFlowTime(timeMap, `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, withdrawalTime, timeSourceMap);
+        const restoredCompletedEntry = findCompletedExperimentHistoryEntry(
+          historyEntries,
+          taskCode,
+          restoreTarget.experimentName,
+          latestWithdrawal.time,
+        );
+        setLatestFlowTime(
+          timeMap,
+          `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
+          restoredCompletedEntry?.entry?.time || withdrawalTime,
+          timeSourceMap,
+        );
       } else {
         const restoreLabel = normalizeHistoryFlowLabel(
           restoreTarget?.status || latestWithdrawalEntry?.status,
@@ -852,7 +924,11 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location);
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
+      const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].includes("放置实验后暂存间");
       [statusLabel, actionLabel, detailLabel].forEach((label) => {
+        if (hasPostTestStagingLabel && label === "已到达暂存间") {
+          return;
+        }
         if (!label || shouldIgnoreHistoryTime(entry, label, entry?.location)) {
           return;
         }
@@ -863,6 +939,20 @@ const buildTrayFlowTimeMap = (input = {}) => {
       if (experimentEvent) {
         const currentTime = entryTimeValue(entry);
         if (latestWithdrawal && currentTime < latestWithdrawal.time) {
+          const retainedCompleted = parseRetainedCompletedExperimentBeforeWithdrawal(
+            entry,
+            taskCode,
+            latestWithdrawalEntry,
+            restoreTarget,
+          );
+          if (retainedCompleted) {
+            setLatestFlowTime(
+              timeMap,
+              `${retainedCompleted.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
+              time,
+              timeSourceMap,
+            );
+          }
           return;
         }
         const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
@@ -895,11 +985,12 @@ function buildTrayFlowView(input = {}) {
 
     const pushStep = (step) => {
       const label = normalizeText(step?.label);
+      const hasExplicitTime = Object.prototype.hasOwnProperty.call(step || {}, "time");
       steps.push({
         active: false,
         reached: false,
-        time: step?.time || stepTimeMap.get(label) || "",
         ...step,
+        time: hasExplicitTime ? normalizeText(step?.time) : stepTimeMap.get(label) || "",
       });
       return steps.length - 1;
     };
@@ -910,6 +1001,27 @@ function buildTrayFlowView(input = {}) {
       `${experimentDisplayName(experiment, index)}${EXPERIMENT_FLOW_STATUS_LABELS[statusKey] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`;
     const experimentIdentityStatusLabel = (experiment, index, statusKey) =>
       `${experimentIdentityName(experiment, index)}${EXPERIMENT_FLOW_STATUS_LABELS[statusKey] || EXPERIMENT_FLOW_STATUS_LABELS.pending}`;
+    const completedExperimentTime = (experiment, index) => Math.max(
+      parseTimeValue(stepTimeMap.get(experimentStatusLabel(experiment, index, "completed"))),
+      parseTimeValue(stepTimeMap.get(experimentIdentityStatusLabel(experiment, index, "completed"))),
+    );
+    const routeStepTimeAfter = (label, floorTime = 0, ceilingTime = 0) => {
+      const time = stepTimeMap.get(label) || "";
+      const parsedTime = parseTimeValue(time);
+      if (!floorTime) {
+        if (ceilingTime && parsedTime >= ceilingTime) {
+          return "";
+        }
+        return time;
+      }
+      if (parsedTime <= floorTime) {
+        return "";
+      }
+      if (ceilingTime && parsedTime >= ceilingTime) {
+        return "";
+      }
+      return time;
+    };
 
     const transportIndex = pushStep({ key: "in_transit", label: "样品运输中" });
     const arrivalIndex = pushStep({ key: "arrival", label: "到货" });
@@ -934,6 +1046,10 @@ function buildTrayFlowView(input = {}) {
       experimentsBeforeCurrent.forEach((experiment, index) => {
         completedStepIndexes.push(pushExperimentStep(experiment, index));
       });
+      const latestCompletedTimeBeforeCurrent = experimentsBeforeCurrent.reduce(
+        (latest, experiment, index) => Math.max(latest, completedExperimentTime(experiment, index)),
+        0,
+      );
       const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
         ? activeExperiment.routeSteps.filter(Boolean)
         : buildExperimentRouteSteps();
@@ -943,6 +1059,7 @@ function buildTrayFlowView(input = {}) {
         pushStep({
           key: `route-${currentExperimentIndex}-${index}`,
           label,
+          time: routeStepTimeAfter(label, latestCompletedTimeBeforeCurrent),
         }),
       );
       const experimentName = experimentDisplayName(activeExperiment, currentExperimentIndex);
@@ -1044,17 +1161,26 @@ function buildTrayFlowView(input = {}) {
       const routeSteps = Array.isArray(lastExperiment?.routeSteps) && lastExperiment.routeSteps.length > 0
         ? lastExperiment.routeSteps.filter(Boolean)
         : buildExperimentRouteSteps();
+      const latestCompletedTimeBeforeFinal = completedMilestones.reduce(
+        (latest, experiment, index) => Math.max(latest, completedExperimentTime(experiment, index)),
+        0,
+      );
+      const experimentName = experimentDisplayName(lastExperiment, completedExperiments.length - 1);
+      const experimentIdentityNameText = experimentIdentityName(lastExperiment, completedExperiments.length - 1);
+      const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+      const completedIdentityLabel = `${experimentIdentityNameText}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+      const finalCompletedTime = Math.max(
+        parseTimeValue(stepTimeMap.get(completedLabel)),
+        parseTimeValue(stepTimeMap.get(completedIdentityLabel)),
+      );
       routeSteps.forEach((label, index) => {
         pushStep({
           key: `route-final-${index}`,
           label,
           reached: true,
+          time: routeStepTimeAfter(label, latestCompletedTimeBeforeFinal, finalCompletedTime),
         });
       });
-      const experimentName = experimentDisplayName(lastExperiment, completedExperiments.length - 1);
-      const experimentIdentityNameText = experimentIdentityName(lastExperiment, completedExperiments.length - 1);
-      const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
-      const completedIdentityLabel = `${experimentIdentityNameText}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
       const completedIndex = pushStep({
         key: "experiment-final-completed",
         label: completedLabel,

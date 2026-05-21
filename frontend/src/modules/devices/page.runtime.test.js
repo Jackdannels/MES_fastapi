@@ -184,4 +184,25 @@ describe("DevicesPage runtime", () => {
     expect(wrapper.findAll('select[name="type"] option').length).toBeGreaterThan(1);
     expect(wrapper.findAll('select[name="location"] option').length).toBeGreaterThan(1);
   });
+
+  test("omits auto-running status from manual device status selectors", async () => {
+    const wrapper = mount(DevicesPage);
+
+    expect(wrapper.findAll('select[name="status"] option').map((option) => option.text())).toEqual([
+      "可用",
+      "维护/校准",
+      "停用",
+    ]);
+
+    devicesState.editDeviceOpen = true;
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('select[name="edit_status"] option').map((option) => option.text())).toEqual([
+      "可用",
+      "维护/校准",
+      "停用",
+    ]);
+
+    devicesState.editDeviceOpen = false;
+  });
 });

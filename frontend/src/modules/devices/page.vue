@@ -49,7 +49,6 @@
           <label>状态</label>
           <select v-model="deviceForm.status" name="status">
             <option>可用</option>
-            <option>使用中</option>
             <option>维护/校准</option>
             <option>停用</option>
           </select>
@@ -278,7 +277,6 @@
         <label>设备当前状态</label>
         <select v-model="deviceForm.status" name="edit_status">
           <option>可用</option>
-          <option>使用中</option>
           <option>维护/校准</option>
           <option>停用</option>
         </select>

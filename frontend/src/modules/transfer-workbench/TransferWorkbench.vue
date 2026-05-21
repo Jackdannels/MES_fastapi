@@ -77,7 +77,7 @@
                 type="button"
                 @click="setTaskStatusFilter(storedStatus)"
               >
-                <span class="muted">已入库</span>
+                <span class="muted">到货</span>
                 <strong>{{ storedTaskCount }}</strong>
               </button>
               <button
@@ -170,7 +170,7 @@
 
               <div v-else class="transfer-table__empty" data-testid="transfer-empty-state">
                 <strong>{{ taskOverview.length ? "当前筛选条件下没有任务" : "当前没有接驳任务" }}</strong>
-                <span>{{ taskOverview.length ? "切换到已入库或全部视图，或清空筛选条件后重试。" : "新任务到样后会自动出现在这里。" }}</span>
+                <span>{{ taskOverview.length ? "切换到到货或全部视图，或清空筛选条件后重试。" : "新任务到样后会自动出现在这里。" }}</span>
                 <div class="transfer-empty-actions">
                   <button
                     v-if="taskOverview.length && taskStatusFilter !== storedStatus"
@@ -179,7 +179,7 @@
                     type="button"
                     @click="setTaskStatusFilter(storedStatus)"
                   >
-                    查看已入库
+                    查看到货
                   </button>
                   <button
                     v-if="taskOverview.length && taskStatusFilter !== ''"
@@ -483,7 +483,8 @@ const props = defineProps({
 const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
 const pendingStatus = "未入库";
-const storedStatus = "已入库";
+const storedStatus = "到货";
+const legacyStoredStatus = "已入库";
 const MAX_TRAY_LIMIT = 99;
 
 const activeWorkbenchView = ref("overview");
@@ -527,12 +528,15 @@ const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
 const transferDispatch = useTransferDispatch();
-const errorSample = useTrayErrorSampleHandling();
+const errorSample = useTrayErrorSampleHandling({
+  onChanged: () => refreshTransferWorkspaceAfterTrayChange(),
+  onClose: () => refreshTransferWorkspaceAfterTrayChange(),
+});
 const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
     allowReset: true,
-    detailHelper: "默认上限为 4，保存托盘后即可确认入库；已入库任务仍可打印条码，但不允许再调整托盘。",
+    detailHelper: "默认上限为 4，保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
     detailHint: "支持触控先点托盘再点样品，也支持样品换位",
     detailTitle: "托盘分装与入库",
     eyebrow: "接驳区系统",
@@ -546,7 +550,7 @@ const MODE_CONFIGS = {
   "pre-allocation": {
     allowConfirm: false,
     allowReset: true,
-    detailHelper: "当前为预接驳预分装模式，可保存托盘方案与打印条码；正式入库由接驳区工作台执行。已入库任务仅允许查看与打印。",
+    detailHelper: "当前为预接驳预分装模式，可保存托盘方案与打印条码；正式入库由接驳区工作台执行。到货任务仅允许查看与打印。",
     detailHint: "支持鼠标拖拽与点击快速调整托盘",
     detailTitle: "任务样品分配管理",
     eyebrow: "样品管理",
@@ -575,7 +579,7 @@ const XML_ESCAPE_MAP = {
 
 const normalizeTaskStatus = (status) => {
   const text = String(status || "").trim();
-  if (text.includes(storedStatus)) return storedStatus;
+  if (text.includes(storedStatus) || text.includes(legacyStoredStatus)) return storedStatus;
   if (text.includes(pendingStatus)) return pendingStatus;
   return text;
 };
@@ -893,7 +897,7 @@ const trayInteractionHint = computed(() => {
     return `${reloadBlockedReason.value} 当前仅支持查看与打印。`;
   }
   if (isStoredTask.value) {
-    return "已入库任务仅支持查看与打印。";
+    return "到货任务仅支持查看与打印。";
   }
   if (allocationSaved.value) {
     return `当前托盘方案已保存，点击${modeConfig.value.resetActionLabel}后才能继续调整。`;
@@ -1095,8 +1099,8 @@ const loadBootstrap = async () => {
       clearWorkspace();
       viewMode.value = "overview";
     }
-    pendingTaskCount.value = payload.pendingTaskCount || 0;
-    storedTaskCount.value = payload.storedTaskCount || 0;
+    pendingTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === pendingStatus).length;
+    storedTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === storedStatus).length;
   } catch (error) {
     bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
     taskOverview.value = [];
@@ -1142,6 +1146,14 @@ const openTask = async (task) => {
     viewMode.value = "overview";
     await loadBootstrap();
   }
+};
+
+const refreshTransferWorkspaceAfterTrayChange = async () => {
+  await loadBootstrap();
+  if (!selectedTaskId.value) {
+    return;
+  }
+  await loadWorkspace(selectedTaskId.value);
 };
 
 const setTaskStatusFilter = (status) => {
@@ -1688,8 +1700,8 @@ const reloadWorkspace = async () => {
   activeTrayIndex.value = -1;
   updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印条形码");
   showWorkbenchFeedback(props.mode === "pre-allocation"
-    ? (payload?.workspace?.task?.taskStatus === storedStatus ? "已入库任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
-    : payload.message, payload?.workspace?.task?.taskStatus === storedStatus ? "warning" : "success");
+    ? (normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "到货任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
+    : payload.message, normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "warning" : "success");
   await loadBootstrap();
   taskStatusFilter.value = pendingStatus;
 };

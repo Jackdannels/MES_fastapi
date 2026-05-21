@@ -1,8 +1,22 @@
 import { describe, expect, test } from "vitest";
 
-import { buildReturnedTaskHistoryView } from "./model";
+import { buildReturnedTaskHistoryView, formatHistoryTime } from "./model";
 
 describe("task history model", () => {
+  const returnedTaskFlow = [
+    ["待排程", false, true],
+    ["已排程", false, true],
+    ["任务进行中", false, true],
+    ["任务已完成", false, true],
+    ["厂家收回", true, true],
+  ];
+
+  test("formats UTC returned timestamps as Beijing business time", () => {
+    expect(formatHistoryTime("2026-05-21T01:46:35Z")).toBe("2026-05-21 09:46:35");
+    expect(formatHistoryTime("2026-05-21T09:46:35+08:00")).toBe("2026-05-21 09:46:35");
+    expect(formatHistoryTime("2026-05-21T09:46:35")).toBe("2026-05-21 09:46:35");
+  });
+
   test("uses real history times for arrival and latest return instead of stale record timestamps", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [
@@ -36,10 +50,7 @@ describe("task history model", () => {
     });
 
     expect(view.tasks[0].updatedAt).toBe("2026-05-19T12:31:00+08:00");
-    expect(view.tasks[0].taskFlow).toEqual([
-      { label: "到货", time: "2026-05-19T11:25:00+08:00" },
-      { label: "厂家收回", time: "2026-05-19T12:31:00+08:00" },
-    ]);
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
     expect(view.tasks[0].trays[0].flowSteps).toEqual([
       { label: "到货", time: "2026-05-19T11:25:00+08:00" },
       { label: "厂家收回", time: "2026-05-19T12:31:00+08:00" },
@@ -137,12 +148,7 @@ describe("task history model", () => {
       status: "厂家收回",
       trayCount: 2,
     });
-    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.time])).toEqual([
-      ["到货", "2026-04-01T14:20:00"],
-      ["工装夹具安装", "2026-04-03T09:20:00"],
-      ["实验已完成", "2026-04-04T17:30:00"],
-      ["厂家收回", "2026-04-05T11:05:00"],
-    ]);
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
     expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-001", "TP-002"]);
     expect(view.tasks[0].trays[0].flowSteps.map((step) => [step.label, step.time])).toContainEqual([
       "厂家收回",
@@ -210,7 +216,7 @@ describe("task history model", () => {
         experimentCount: 2,
       }),
     );
-    expect(view.tasks[0].taskFlow.map((step) => step.label)).toEqual(["厂家收回"]);
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
     expect(view.tasks[0].experiments).toEqual([
       expect.objectContaining({
         experimentCode: "TASK-PARTIAL-A",
@@ -245,7 +251,7 @@ describe("task history model", () => {
     expect(view.tasks[0].status).toBe("厂家收回");
   });
 
-  test("uses the first experiment start time for the task running flow step", () => {
+  test("uses the same canonical task flow as the tray information task flow", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [{ code: "TASK-MULTI", name: "多实验任务", status: "厂家收回" }],
       samples: [
@@ -263,9 +269,6 @@ describe("task history model", () => {
       ],
     });
 
-    expect(view.tasks[0].taskFlow).toContainEqual({
-      label: "实验进行中",
-      time: "2026-04-02T10:00:00",
-    });
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
   });
 });

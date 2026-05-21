@@ -397,7 +397,7 @@ const metrics = computed(() => {
     },
     {
       caption: "",
-      label: "今日已入库",
+      label: "今日到货",
       mode: "stockedInToday",
       testId: "zancun-metric-stocked-in",
       value: String(summary.stockedInTodayCount),
@@ -689,7 +689,7 @@ const completeScan = async () => {
     return;
   }
 
-  if (detail.status !== "已入库" && detail.status !== "放置实验后暂存间") {
+  if (detail.status !== "到货" && detail.status !== "放置实验后暂存间") {
     scanWarning.value = "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;

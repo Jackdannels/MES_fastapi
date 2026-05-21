@@ -30,6 +30,7 @@ import {
   updateTaskRecord,
   validateSampleCodeDraft,
   validateTaskSampleCount,
+  validateTaskTextFields,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
@@ -365,7 +366,7 @@ function useTasksPage() {
     return leftItems.length === rightItems.length && leftItems.every((item, index) => item === rightItems[index]);
   };
 
-  const isStorageConfirmedStatus = (value) => normalizeText(value) === "已入库";
+  const isStorageConfirmedStatus = (value) => ["到货", "已入库"].includes(normalizeText(value));
 
   const taskStorageConfirmed = (task, samples) => {
     const taskCode = taskCodeOf(task);
@@ -413,17 +414,30 @@ function useTasksPage() {
 
   const resolveScheduledExperimentRemoval = (taskCode, nextExperimentTypes) => {
     const affectedCodes = resolveAffectedExperimentCodes(taskCode, nextExperimentTypes);
-    const schedules = rawSchedules.value.filter(
-      (schedule) =>
-        taskCodeOf(schedule) === taskCode
-        && affectedCodes.has(experimentCodeOf(schedule))
-        && !isRetentionSchedule(schedule),
-    );
+    const schedules = rawSchedules.value.filter((schedule) => taskCodeOf(schedule) === taskCode && !isRetentionSchedule(schedule));
     return {
       affectedCodes,
       schedules,
     };
   };
+
+  const resetSamplesForExperimentTypeChange = (samples, taskCode) =>
+    (Array.isArray(samples) ? samples : []).map((sample) => {
+      if (taskCodeOf(sample) !== taskCode) {
+        return sample;
+      }
+      const history = Array.isArray(sample?.history)
+        ? sample.history.filter((entry) => !["样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"].includes(normalizeText(entry?.action)))
+        : sample?.history;
+      return {
+        ...sample,
+        status: "运输中",
+        flow_status: "运输中",
+        location: "",
+        trays: [],
+        ...(Array.isArray(sample?.history) ? { history } : {}),
+      };
+    });
 
   const clearResetFeedbackTimer = () => {
     if (resetFeedbackTimer) {
@@ -480,14 +494,9 @@ function useTasksPage() {
   };
 
   const submitTask = async () => {
-    // 空白表单直接提交时自动填充随机演示数据，方便快速联调。
-    if (isTaskIntakeFormPristine(intakeForm.value)) {
-      intakeForm.value = createRandomTaskIntakeForm();
-      syncIntakeDerivedFields();
-    }
-
-    if (!normalizeText(intakeForm.value.name)) {
-      intakeWarning.value = "请填写任务名称";
+    const textWarning = validateTaskTextFields(intakeForm.value);
+    if (textWarning) {
+      intakeWarning.value = textWarning;
       return;
     }
     if (intakeForm.value.test_types.length === 0) {
@@ -533,6 +542,11 @@ function useTasksPage() {
 
   const saveDraft = async () => {
     syncIntakeDerivedFields();
+    const textWarning = validateTaskTextFields(intakeForm.value);
+    if (textWarning) {
+      intakeWarning.value = textWarning;
+      return;
+    }
     savedIntakeDraft.value = cloneIntakeForm(intakeForm.value);
     intakeWarning.value = "任务草稿已保存";
   };
@@ -543,7 +557,7 @@ function useTasksPage() {
   };
 
   const performTaskUpdate = async (draft, options = {}) => {
-    const { previousCode, tasks, updatedTask, affectedCodes = new Set() } = draft;
+    const { previousCode, tasks, updatedTask, affectedCodes = new Set(), experimentTypesChanged = false } = draft;
     const confirmRemoval = Boolean(options.confirmRemoveScheduledExperiments);
 
     try {
@@ -560,11 +574,25 @@ function useTasksPage() {
     }
 
     // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-    const nextSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode, { preserveExistingCodes: true });
+    const syncedSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode, { preserveExistingCodes: true });
+    const nextSamples = experimentTypesChanged
+      ? resetSamplesForExperimentTypeChange(syncedSamples, taskCodeOf(updatedTask))
+      : syncedSamples;
     const relatedUpdates = {
       [STORAGE_KEYS.samples]: nextSamples,
     };
-    if (affectedCodes.size > 0) {
+    if (experimentTypesChanged) {
+      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map((code) => normalizeText(code)).filter(Boolean));
+      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
+        (schedule) => !taskCodesToClean.has(taskCodeOf(schedule)),
+      );
+      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
+        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
+      );
+      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
+        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
+      );
+    } else if (affectedCodes.size > 0) {
       const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map((code) => normalizeText(code)).filter(Boolean));
       relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
         (schedule) => !(taskCodesToClean.has(taskCodeOf(schedule)) && affectedCodes.has(experimentCodeOf(schedule))),
@@ -624,13 +652,25 @@ function useTasksPage() {
     const scheduledRemoval = experimentTypesChanged
       ? resolveScheduledExperimentRemoval(taskCodeOf(originalTask), nextTypes)
       : { affectedCodes: new Set(), schedules: [] };
+    const normalizedUpdatedTask = experimentTypesChanged
+      ? {
+          ...updatedTask,
+          status: "待排程",
+          transfer_status: "未入库",
+          tray_codes: [],
+        }
+      : updatedTask;
+    const normalizedTasks = experimentTypesChanged
+      ? tasks.map((task) => (normalizeText(task?.id) === normalizeText(editForm.value.id) ? normalizedUpdatedTask : task))
+      : tasks;
     const draft = {
       previousCode,
-      tasks,
-      updatedTask,
+      tasks: normalizedTasks,
+      updatedTask: normalizedUpdatedTask,
       affectedCodes: scheduledRemoval.affectedCodes,
+      experimentTypesChanged,
     };
-    if (scheduledRemoval.schedules.length > 0) {
+    if (experimentTypesChanged) {
       scheduledExperimentRemovalDraft.value = draft;
       scheduledExperimentRemovalModal.openWith({
         id: "task-scheduled-removal-confirm",

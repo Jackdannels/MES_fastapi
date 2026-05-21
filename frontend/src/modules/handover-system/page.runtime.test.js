@@ -340,7 +340,7 @@ describe("TransferAreaPage runtime", () => {
     expect(globalThis.__transferAreaAllocateCount()).toBe(allocateCountBeforeConfirm);
 
     expect(wrapper.text()).toContain("任务已确认入库");
-    expect(wrapper.text()).toContain("SYLU-2026-03-101-SP-001已入库");
+    expect(wrapper.text()).toContain("SYLU-2026-03-101-SP-001到货");
     const reloadButton = wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)");
     expect(reloadButton.attributes("disabled")).toBeUndefined();
 
@@ -390,7 +390,7 @@ describe("TransferAreaPage runtime", () => {
 
     const actionTexts = wrapper.findAll(".transfer-system-actions .action-btn").map((button) => button.text());
 
-    expect(actionTexts).toEqual(["任务总览", "样品出库", "退出登录"]);
+    expect(actionTexts).toEqual(["任务总览", "样品出库", "出错样品处理", "退出登录"]);
   });
 
   test("switches modules from the exit dialog without logging out", async () => {
@@ -1355,7 +1355,7 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("当前筛选条件下没有任务");
-    expect(wrapper.text()).toContain("切换到已入库或全部视图");
+    expect(wrapper.text()).toContain("切换到到货或全部视图");
 
     await wrapper.get('[data-testid="transfer-empty-show-stored"]').trigger("click");
     await settle(wrapper);

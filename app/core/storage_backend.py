@@ -13,6 +13,8 @@ MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
 RUNTIME_STORAGE_BACKEND = "mysql"
 UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 RETURNED_STATUS = "厂家收回"
+CANONICAL_HANDOVER_STORED_STATUS = "到货"
+LEGACY_HANDOVER_STORED_STATUSES = {"已入库"}
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -51,7 +53,7 @@ SAMPLE_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("鏀舵牱鍙", "收样台"),
     ("鏍峰搧搴", "样品库"),
     ("宸叉帴鏀", "已接收"),
-    ("宸插叆搴", "已入库"),
+    ("宸插叆搴", CANONICAL_HANDOVER_STORED_STATUS),
     ("杩愯緭涓", "运输中"),
     ("鍒拌揣", "到货"),
     ("浠诲姟 ", "任务 "),
@@ -63,7 +65,23 @@ CANONICAL_TASK_RUNNING_STATUS = "任务进行中"
 CANONICAL_TASK_COMPLETED_STATUS = "任务已完成"
 LEGACY_RUNNING_STATUSES = {"实验中"}
 LEGACY_COMPLETED_STATUSES = {"实验完成", "实验已经完成"}
-STATUS_VALUE_KEYS = {"status", "flow_status", "task_status", "experiment_status", "schedule_status", "sample_status"}
+STATUS_VALUE_KEYS = {
+    "status",
+    "flow_status",
+    "flowStatus",
+    "task_status",
+    "taskStatus",
+    "transfer_status",
+    "transferStatus",
+    "experiment_status",
+    "experimentStatus",
+    "schedule_status",
+    "scheduleStatus",
+    "sample_status",
+    "sampleStatus",
+    "tray_status",
+    "trayStatus",
+}
 
 def _sanitize_sample_text(value: str) -> str:
     text = str(value)
@@ -76,6 +94,8 @@ def normalize_experiment_status_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    if text in LEGACY_HANDOVER_STORED_STATUSES:
+        return CANONICAL_HANDOVER_STORED_STATUS
     if text == CANONICAL_RUNNING_STATUS or text in LEGACY_RUNNING_STATUSES:
         return CANONICAL_RUNNING_STATUS
     if text == CANONICAL_COMPLETED_STATUS or text in LEGACY_COMPLETED_STATUSES:
@@ -87,6 +107,8 @@ def normalize_task_status_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    if text in LEGACY_HANDOVER_STORED_STATUSES:
+        return CANONICAL_HANDOVER_STORED_STATUS
     if text in {CANONICAL_TASK_RUNNING_STATUS, CANONICAL_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}:
         return CANONICAL_TASK_RUNNING_STATUS
     if text in {CANONICAL_TASK_COMPLETED_STATUS, CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}:

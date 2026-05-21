@@ -1,6 +1,13 @@
 import { SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 
 const RETURNED_STATUS = "厂家收回";
+const TASK_STATUS_FLOW_STEPS = [
+  { key: "waiting", label: "待排程" },
+  { key: "scheduled", label: "已排程" },
+  { key: "running", label: "任务进行中" },
+  { key: "completed", label: "任务已完成" },
+  { key: "returned", label: RETURNED_STATUS },
+];
 const EXPERIMENT_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间"]);
 const FLOW_LABEL_ALIASES = new Map([
   ["运输中", "样品运输中"],
@@ -41,6 +48,42 @@ const normalizeFlowLabel = (value) => {
 };
 
 const normalizeTime = (value) => normalizeText(value);
+const pad2 = (value) => String(value ?? "").padStart(2, "0");
+const EXPLICIT_TIMEZONE_PATTERN = /(?:Z|[+-]\d{2}:?\d{2})$/;
+
+const formatBeijingDateTime = (value) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  const beijing = new Date(parsed.getTime() + 8 * 60 * 60 * 1000);
+  return [
+    `${beijing.getUTCFullYear()}-${pad2(beijing.getUTCMonth() + 1)}-${pad2(beijing.getUTCDate())}`,
+    `${pad2(beijing.getUTCHours())}:${pad2(beijing.getUTCMinutes())}:${pad2(beijing.getUTCSeconds())}`,
+  ].join(" ");
+};
+
+const formatHistoryTime = (value) => {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return "-";
+  }
+  const withoutMilliseconds = normalized.replace(/\.\d{1,6}/, "");
+  if (EXPLICIT_TIMEZONE_PATTERN.test(withoutMilliseconds)) {
+    return formatBeijingDateTime(withoutMilliseconds) || "-";
+  }
+  return withoutMilliseconds.replace("T", " ");
+};
+
+const formatHistoryDatePart = (value) => {
+  const formatted = formatHistoryTime(value);
+  return formatted.includes(" ") ? formatted.split(" ")[0] : formatted;
+};
+
+const formatHistoryClockPart = (value) => {
+  const formatted = formatHistoryTime(value);
+  return formatted.includes(" ") ? formatted.split(" ")[1] : "";
+};
 
 const resolveTaskCode = (task) => normalizeText(task?.code || task?.task_code || task?.taskNo || task?.task_no || task?.id);
 const resolveSampleTaskCode = (sample) => normalizeText(sample?.task_code || sample?.taskCode || sample?.taskNo || sample?.task_no);
@@ -133,6 +176,15 @@ const filterTaskFlowForExperiments = (flowEntries, experiments) => {
   return flowEntries.filter((entry) => entry.label !== "实验已完成");
 };
 
+const buildReturnedTaskStatusFlow = () => {
+  const activeIndex = TASK_STATUS_FLOW_STEPS.length - 1;
+  return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
+    ...step,
+    active: index === activeIndex,
+    reached: index <= activeIndex,
+  }));
+};
+
 const buildExperimentRows = (task, taskSamples, experiments, experimentTrays) => {
   const taskCode = resolveTaskCode(task) || resolveSampleTaskCode(taskSamples[0]);
   const taskExperiments = experiments
@@ -192,8 +244,8 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const trays = buildTrayRows(samples);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
-  const taskFlow = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
-  const returnedAt = taskFlow.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
+  const sampleFlowEntries = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
+  const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
   return {
     id: task?.id || code,
     code,
@@ -205,7 +257,7 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
     experimentCount: experimentRows.length,
     experimentCompletedCount: completedCount,
     experiments: experimentRows,
-    taskFlow,
+    taskFlow: buildReturnedTaskStatusFlow(),
     trays,
   };
 };
@@ -289,4 +341,4 @@ function buildReturnedTaskHistoryView(input = {}) {
   };
 }
 
-export { buildReturnedTaskHistoryView };
+export { buildReturnedTaskHistoryView, formatHistoryClockPart, formatHistoryDatePart, formatHistoryTime };

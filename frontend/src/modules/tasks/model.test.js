@@ -9,6 +9,7 @@ import {
   createTaskIntakeForm,
   createTaskRecord,
   updateTaskRecord,
+  validateTaskTextFields,
   validateTaskSampleCount,
 } from "./model";
 
@@ -324,14 +325,40 @@ describe("tasks model", () => {
     );
   });
 
-  test("validateTaskSampleCount requires an integer from 1 to 99", () => {
+  test("validateTaskSampleCount requires an integer from 1 to 999", () => {
     expect(validateTaskSampleCount("")).toBe("请填写样品数量");
     expect(validateTaskSampleCount("1.5")).toBe("样品数量必须为整数");
     expect(validateTaskSampleCount("0")).toBe("样品数量至少为 1");
     expect(validateTaskSampleCount("-1")).toBe("样品数量至少为 1");
-    expect(validateTaskSampleCount("100")).toBe("样品数量最多为 99");
+    expect(validateTaskSampleCount("1000")).toBe("样品数量最多为 999");
     expect(validateTaskSampleCount("1")).toBe("");
-    expect(validateTaskSampleCount("3")).toBe("");
+    expect(validateTaskSampleCount("999")).toBe("");
+  });
+
+  test("validateTaskTextFields rejects obvious garbled symbol input in intake text fields", () => {
+    expect(validateTaskTextFields({ name: "盐雾试验-批次A", contact_info: "13800001234" })).toBe("");
+    expect(validateTaskTextFields({ name: "&^*(&U&^GFG&HU&" })).toBe("任务名称包含无效字符，请检查输入");
+    expect(validateTaskTextFields({ contact: "张三#*!" })).toBe("联系人包含无效字符，请检查输入");
+    expect(validateTaskTextFields({ contact_info: "1380000123A" })).toBe("联系方式必须为 1-15 位数字");
+    expect(validateTaskTextFields({ contact_info: "1234567890123456" })).toBe("联系方式必须为 1-15 位数字");
+    expect(validateTaskTextFields({ name: "一二三四五六七八九十一二三四五六七八九十X" })).toBe("任务名称不能超过 20 个字");
+    expect(validateTaskTextFields({ name: "" })).toBe("");
+  });
+
+  test("createTaskRecord defaults blank task names from the task code suffix without duplicating existing names", () => {
+    const task = createTaskRecord(
+      {
+        code: "SYLU-2026-05-001",
+        name: "",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_types: ["冲击试验"],
+      },
+      [{ name: "测试实验05001" }],
+    );
+
+    expect(task.name).toBe("测试实验05001-2");
   });
 
   test("createTaskRecord derives test_type from the selected experiment array in order", () => {

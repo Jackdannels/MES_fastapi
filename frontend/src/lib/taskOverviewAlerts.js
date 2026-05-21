@@ -1,5 +1,6 @@
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
-const TRANSFER_STATUS_STORED = "已入库";
+const TRANSFER_STATUS_STORED = "到货";
+const LEGACY_TRANSFER_STATUS_STORED = "已入库";
 const RETENTION_KEYWORD = "暂存间";
 
 const normalizeText = (value) => String(value ?? "").trim();
@@ -23,7 +24,7 @@ const listOverdueWaitingExperiments = (tasks, experiments, schedules, now = Date
   return (Array.isArray(experiments) ? experiments : [])
     .filter((experiment) => {
       const task = taskByCode.get(normalizeText(experiment?.task_code));
-      if (normalizeText(task?.transfer_status) !== TRANSFER_STATUS_STORED) {
+      if (![TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status))) {
         return false;
       }
       if (hasFormalScheduleForExperiment(schedules, experiment)) {

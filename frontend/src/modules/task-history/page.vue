@@ -60,12 +60,9 @@
                 v-for="step in selectedTask.taskFlow"
                 :key="`task-${step.label}`"
                 class="history-flow-strip-item"
+                :class="{ current: step.active, reached: step.reached }"
               >
                 <span class="history-flow-label">{{ step.label }}</span>
-                <span class="history-flow-time" :title="formatHistoryTime(step.time)">
-                  <span class="history-flow-time__date">{{ formatHistoryDatePart(step.time) }}</span>
-                  <span class="history-flow-time__clock">{{ formatHistoryClockPart(step.time) }}</span>
-                </span>
                 <span class="history-flow-dot"></span>
               </div>
             </div>
@@ -160,7 +157,12 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTasks } from "@/lib/tasksApi";
 import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
 
-import { buildReturnedTaskHistoryView } from "./model";
+import {
+  buildReturnedTaskHistoryView,
+  formatHistoryClockPart,
+  formatHistoryDatePart,
+  formatHistoryTime,
+} from "./model";
 
 const tasks = ref([]);
 const samples = ref([]);
@@ -231,30 +233,6 @@ const selectTray = (trayCode) => {
   selectedTrayCode.value = trayCode;
 };
 
-const formatHistoryTime = (value) => {
-  const normalized = String(value || "").trim();
-  if (!normalized) {
-    return "-";
-  }
-  return normalized
-    .replace("T", " ")
-    .replace(/\.\d{1,6}/, "")
-    .replace(/(?:Z|[+-]\d{2}:?\d{2})$/, "");
-};
-const formatHistoryDatePart = (value) => {
-  const formatted = formatHistoryTime(value);
-  if (formatted === "-") {
-    return formatted;
-  }
-  return formatted.split(" ")[0] || formatted;
-};
-const formatHistoryClockPart = (value) => {
-  const formatted = formatHistoryTime(value);
-  if (formatted === "-") {
-    return "";
-  }
-  return formatted.split(" ").slice(1).join(" ");
-};
 watch(historyTasks, (nextTasks) => {
   if (!nextTasks.length) {
     selectedTaskCode.value = "";

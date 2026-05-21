@@ -2,6 +2,7 @@ import { reactive } from "vue";
 
 import { useFeedback } from "@/composables/useFeedback";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
@@ -12,7 +13,7 @@ const readErrorMessage = async (response) => {
   return payload?.detail || payload?.message || `请求失败（${response.status}）`;
 };
 
-function useTrayErrorSampleHandling() {
+function useTrayErrorSampleHandling(options = {}) {
   const feedbackState = useFeedback();
   const state = reactive({
     open: false,
@@ -69,9 +70,21 @@ function useTrayErrorSampleHandling() {
     state.open = true;
   };
 
-  const close = () => {
+  const notifyChanged = async (payload, reason) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "tray-error-sample", reason } }));
+    }
+    if (typeof options.onChanged === "function") {
+      await options.onChanged(payload, reason);
+    }
+  };
+
+  const close = async () => {
     state.open = false;
     reset();
+    if (typeof options.onClose === "function") {
+      await options.onClose();
+    }
   };
 
   const lookupTray = async () => {
@@ -116,6 +129,7 @@ function useTrayErrorSampleHandling() {
       const refreshedPayload = await fetchTrayDispatch(trayCode);
       applyDispatchPayload(refreshedPayload, state.destinations);
       state.scanCode = "";
+      await notifyChanged(refreshedPayload, "withdraw-dispatch");
       return true;
     } catch (error) {
       feedbackState.show(error instanceof Error ? error.message : "托盘撤回失败，请重试。", "error");

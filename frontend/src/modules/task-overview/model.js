@@ -10,7 +10,8 @@ const STATUS_SCHEDULED = "已排程";
 const LEGACY_STATUS_RUNNING = "实验中";
 const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const STATUS_RETENTION = "厂家收回";
-const TRANSFER_STATUS_STORED = "已入库";
+const TRANSFER_STATUS_STORED = "到货";
+const LEGACY_TRANSFER_STATUS_STORED = "已入库";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
@@ -102,7 +103,7 @@ function parseTimeValue(value) {
 }
 
 function isTaskStored(task) {
-  return normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
+  return [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status));
 }
 
 function upsertLatestSchedule(map, key, schedule) {

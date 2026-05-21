@@ -7,7 +7,8 @@ const LEGACY_STATUS_RUNNING = "实验中";
 const TASK_LEGACY_RUNNING = "任务进行中";
 const STATUS_SCHEDULED = "已排程";
 const STATUS_WAITING = "待排程";
-const TRANSFER_STATUS_STORED = "已入库";
+const TRANSFER_STATUS_STORED = "到货";
+const LEGACY_TRANSFER_STATUS_STORED = "已入库";
 const STATUS_RETENTION = "厂家收回";
 const STATUS_COMPLETED = "任务已完成";
 const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
@@ -52,7 +53,7 @@ const parseTime = (value) => {
   return Number.isFinite(time) ? time : Number.NaN;
 };
 
-const isTaskStored = (task) => normalizeText(task?.transfer_status) === TRANSFER_STATUS_STORED;
+const isTaskStored = (task) => [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status));
 const isReturnedTaskRecord = (task, schedules) => {
   const taskCode = normalizeText(task?.code);
   const explicitReturned =

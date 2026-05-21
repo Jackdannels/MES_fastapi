@@ -18,15 +18,34 @@ SNAPSHOT_KEYS = (
 )
 RETURNED_STATUS = "厂家收回"
 MIN_SAMPLE_COUNT = 1
-MAX_SAMPLE_COUNT = 99
-STORAGE_CONFIRMED_STATUS = "已入库"
+MAX_SAMPLE_COUNT = 999
+STORAGE_CONFIRMED_STATUS = "到货"
+LEGACY_STORAGE_CONFIRMED_STATUS = "已入库"
+TRANSFER_PENDING_STATUS = "未入库"
+SAMPLE_TRANSPORT_STATUS = "运输中"
 SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
+TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
+INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
+TASK_TEXT_FIELD_LABELS = {
+    "attachment": "附件",
+    "client": "委托单位/部门",
+    "conditions": "环境/特殊条件",
+    "contact": "联系人",
+    "contact_info": "联系方式",
+    "name": "任务名称",
+    "remark": "备注",
+    "sample_type": "样品类型",
+}
 
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def is_storage_confirmed_status(value: Any) -> bool:
+    return normalize_text(value) in {STORAGE_CONFIRMED_STATUS, LEGACY_STORAGE_CONFIRMED_STATUS}
 
 
 def load_snapshot(storage=None) -> dict[str, Any]:
@@ -139,15 +158,15 @@ def parse_bool_flag(value: Any) -> bool:
 
 def task_storage_confirmed(task: dict[str, Any], samples: list[dict[str, Any]]) -> bool:
     code = task_code(task)
-    if normalize_text(task.get("transfer_status") or task.get("transferStatus")) == STORAGE_CONFIRMED_STATUS:
+    if is_storage_confirmed_status(task.get("transfer_status") or task.get("transferStatus")):
         return True
     for sample in samples:
         if sample_task_code(sample) != code:
             continue
-        if normalize_text(sample.get("status")) == STORAGE_CONFIRMED_STATUS or normalize_text(sample.get("flow_status")) == STORAGE_CONFIRMED_STATUS:
+        if is_storage_confirmed_status(sample.get("status")) or is_storage_confirmed_status(sample.get("flow_status")):
             return True
         for tray in as_list(sample.get("trays")):
-            if normalize_text(tray.get("status") or tray.get("tray_status") or tray.get("trayStatus")) == STORAGE_CONFIRMED_STATUS:
+            if is_storage_confirmed_status(tray.get("status") or tray.get("tray_status") or tray.get("trayStatus")):
                 return True
     return False
 
@@ -198,11 +217,57 @@ def affected_scheduled_experiment_rows(schedules: list[dict[str, Any]], task_cod
     return rows
 
 
+def task_formal_schedule_rows(schedules: list[dict[str, Any]], task_code_value: str) -> list[dict[str, str]]:
+    rows = []
+    for schedule in schedules:
+        if normalize_text(schedule.get("task_code")) != task_code_value or is_retention_schedule(schedule):
+            continue
+        rows.append(
+            {
+                "id": normalize_text(schedule.get("id")),
+                "experiment_code": normalize_text(schedule.get("experiment_code")),
+                "device": normalize_text(schedule.get("device")),
+                "start_at": normalize_text(schedule.get("start_at")),
+                "end_at": normalize_text(schedule.get("end_at")),
+            }
+        )
+    return rows
+
+
 def keep_row_outside_removed_experiments(row: dict[str, Any], task_code_value: str, experiment_codes: set[str]) -> bool:
     return not (
         normalize_text(row.get("task_code")) == task_code_value
         and normalize_text(row.get("experiment_code")) in experiment_codes
     )
+
+
+def keep_row_outside_task(row: dict[str, Any], task_code_value: str) -> bool:
+    return normalize_text(row.get("task_code")) != task_code_value
+
+
+def reset_task_preallocation(task: dict[str, Any], samples: list[dict[str, Any]], task_code_value: str) -> None:
+    task["transfer_status"] = TRANSFER_PENDING_STATUS
+    task["tray_codes"] = []
+    task["status"] = "待排程"
+    for sample in samples:
+        if sample_task_code(sample) != task_code_value:
+            continue
+        sample["status"] = SAMPLE_TRANSPORT_STATUS
+        sample["flow_status"] = SAMPLE_TRANSPORT_STATUS
+        sample["location"] = ""
+        sample["trays"] = []
+        if isinstance(sample.get("history"), list):
+            sample["history"] = [
+                entry
+                for entry in sample["history"]
+                if normalize_text(entry.get("action")) not in TRANSFER_HISTORY_ACTIONS
+            ]
+
+
+def reset_experiments_for_reschedule(experiments: list[dict[str, Any]]) -> None:
+    for experiment in experiments:
+        experiment["status"] = "待排程"
+        experiment["unscheduled_since"] = ""
 
 
 def parse_int(value: Any) -> int:
@@ -223,8 +288,35 @@ def validate_sample_count(value: Any) -> str:
     if parsed < MIN_SAMPLE_COUNT:
         raise HTTPException(status_code=400, detail="样品数量至少为 1")
     if parsed > MAX_SAMPLE_COUNT:
-        raise HTTPException(status_code=400, detail="样品数量最多为 99")
+        raise HTTPException(status_code=400, detail=f"样品数量最多为 {MAX_SAMPLE_COUNT}")
     return str(parsed)
+
+
+def validate_task_text_fields(task: dict[str, Any]) -> None:
+    contact_info = normalize_text(task.get("contact_info"))
+    if contact_info and not re.fullmatch(r"\d{1,15}", contact_info):
+        raise HTTPException(status_code=400, detail="联系方式必须为 1-15 位数字")
+    task_name = normalize_text(task.get("name"))
+    if len(task_name) > 20:
+        raise HTTPException(status_code=400, detail="任务名称不能超过 20 个字")
+    for field, label in TASK_TEXT_FIELD_LABELS.items():
+        value = normalize_text(task.get(field))
+        if value and INVALID_TASK_TEXT_PATTERN.search(value):
+            raise HTTPException(status_code=400, detail=f"{label}包含无效字符，请检查输入")
+
+
+def build_default_task_name(task_code_value: str, tasks: list[dict[str, Any]]) -> str:
+    digits = re.sub(r"\D", "", normalize_text(task_code_value))
+    suffix = (digits or "00000")[-5:].zfill(5)
+    base_name = f"测试实验{suffix}"
+    existing_names = {normalize_text(task.get("name")) for task in tasks if normalize_text(task.get("name"))}
+    if base_name not in existing_names:
+        return base_name
+    for index in range(2, 1000):
+        candidate = f"{base_name}-{index}"
+        if candidate not in existing_names:
+            return candidate
+    return f"{base_name}-999"
 
 
 def task_sample_code(task_code_value: str, index: int) -> str:
@@ -456,6 +548,9 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     if "test_types" not in next_task:
         raise HTTPException(status_code=400, detail="test_types is required")
     next_task["test_types"] = parse_test_types(next_task.get("test_types"))
+    if not normalize_text(next_task.get("name")):
+        next_task["name"] = build_default_task_name(task_code(next_task), tasks)
+    validate_task_text_fields(next_task)
     next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
     ensure_unique_task_code(tasks, next_task.get("code"))
     next_experiments = persist_task_experiments(next_task)
@@ -489,17 +584,26 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     previous_task_code = task_code(previous_task)
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == previous_task_code]
     previous_test_types = extract_task_test_types(previous_task, existing_experiments)
+    experiment_types_changed = False
     if "test_types" in payload_dict:
         updated_task["test_types"] = parse_test_types(updated_task.get("test_types"))
-        if test_types_changed(previous_test_types, updated_task["test_types"]):
+        experiment_types_changed = test_types_changed(previous_test_types, updated_task["test_types"])
+        if experiment_types_changed:
             samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
             if task_storage_confirmed(previous_task, samples):
                 raise HTTPException(status_code=400, detail=EXPERIMENT_TYPE_LOCKED_MESSAGE)
+    if not normalize_text(updated_task.get("name")):
+        updated_task["name"] = build_default_task_name(task_code(updated_task), tasks)
+    validate_task_text_fields(updated_task)
     updated_task["sample_count"] = validate_sample_count(updated_task.get("sample_count"))
     next_experiments = persist_task_experiments(updated_task, existing_experiments)
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
-    affected_schedules = affected_scheduled_experiment_rows(schedules, previous_task_code, removed_or_changed_codes)
+    affected_schedules = (
+        task_formal_schedule_rows(schedules, previous_task_code)
+        if experiment_types_changed
+        else affected_scheduled_experiment_rows(schedules, previous_task_code, removed_or_changed_codes)
+    )
     if affected_schedules and not confirm_remove_scheduled_experiments:
         raise HTTPException(
             status_code=409,
@@ -516,10 +620,27 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         updated_task,
         previous_task_code,
     )
+    if experiment_types_changed:
+        reset_task_preallocation(updated_task, snapshot["mes.samples"], task_code(updated_task))
+        reset_experiments_for_reschedule(next_experiments)
     snapshot["mes.experiments"] = [
         experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) != previous_task_code
     ] + next_experiments
-    if removed_or_changed_codes:
+    if experiment_types_changed:
+        snapshot["mes.schedules"] = [
+            schedule for schedule in schedules if keep_row_outside_task(schedule, previous_task_code)
+        ]
+        snapshot["mes.experiment_trays"] = [
+            dict(row)
+            for row in snapshot.get("mes.experiment_trays", [])
+            if keep_row_outside_task(dict(row), previous_task_code)
+        ]
+        snapshot["mes.experiment_samples"] = [
+            dict(row)
+            for row in snapshot.get("mes.experiment_samples", [])
+            if keep_row_outside_task(dict(row), previous_task_code)
+        ]
+    elif removed_or_changed_codes:
         snapshot["mes.schedules"] = [
             schedule
             for schedule in schedules

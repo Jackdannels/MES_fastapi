@@ -80,7 +80,7 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     assert storage_item["priority"] == "高"
     assert storage_item["contact_info"] == "13800000001"
     assert storage_item["due_at"] == "2026-03-18 10:00"
-    assert storage_item["transfer_status"] == "已入库"
+    assert storage_item["transfer_status"] == "到货"
     assert storage_item["tray_limit"] == 2
 
 
@@ -1390,6 +1390,28 @@ def test_replace_schedules_backfills_lab_id_from_device_name() -> None:
     assert "%(lab_id)s" in schedule_sql
     assert "lab_id = VALUES(lab_id)" in schedule_sql
     assert schedule_call[0]["lab_id"] == 9
+
+
+def test_normalize_legacy_status_columns_converts_stored_status_to_arrived() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.executed = []
+
+        def execute(self, sql, params=None):
+            self.executed.append((" ".join(str(sql).split()), params))
+
+    cursor = _CaptureCursor()
+    backend._normalize_legacy_status_columns(cursor)
+
+    assert any("transfer_status" in statement and params[:2] == ("已入库", "到货") for statement, params in cursor.executed)
+    assert any("UPDATE biz_sample" in statement and params[:2] == ("已入库", "到货") for statement, params in cursor.executed)
+    assert any("UPDATE biz_tray" in statement and params[:2] == ("已入库", "到货") for statement, params in cursor.executed)
+    assert any("UPDATE biz_tray_item" in statement and params == ("到货", "已入库") for statement, params in cursor.executed)
 
 
 def test_normalize_storage_payload_preserves_existing_task_codes_without_auto_migration() -> None:

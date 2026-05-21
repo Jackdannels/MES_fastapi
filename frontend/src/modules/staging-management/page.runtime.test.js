@@ -222,7 +222,7 @@ describe("StagingManagementPage runtime", () => {
 
     expect(mounted.text()).toContain("SYLU-2026-04-101");
     expect(mounted.text()).toContain("暂存间中样品数量1");
-    expect(mounted.text()).toContain("今日已入库1");
+    expect(mounted.text()).toContain("今日到货1");
     expect(mounted.text()).toContain("今日已出库1");
     expect(mounted.findAll('[data-testid="zancun-current-staging-row"]')).toHaveLength(1);
     expect(mounted.findAll('[data-testid="zancun-planned-inbound-row"]')).toHaveLength(4);
@@ -404,7 +404,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
-    expect(mounted.text()).toContain("今日已入库2");
+    expect(mounted.text()).toContain("今日到货2");
     expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
     expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("");
     expect(document.activeElement).toBe(mounted.get('[data-testid="zancun-scan-code"]').element);
@@ -414,7 +414,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-104-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
-    expect(mounted.text()).toContain("今日已入库3");
+    expect(mounted.text()).toContain("今日到货3");
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in" && event.time.startsWith("2026-04-01"))).toHaveLength(3);
     expect(mounted.find('[data-testid="zancun-detail-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);

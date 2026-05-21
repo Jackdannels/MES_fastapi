@@ -246,6 +246,37 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
     ]
 
 
+def test_normalize_storage_payload_converts_legacy_handover_stored_status_to_arrived() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-05-001",
+                "status": "待排程",
+                "transfer_status": "已入库",
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": "SYLU-2026-05-001-SP-001",
+                "task_code": "SYLU-2026-05-001",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "trays": [{"tray_code": "SYLU-2026-05-001-TP-001", "status": "已入库"}],
+                "history": [{"action": "任务已确认入库", "status": "已入库"}],
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["transfer_status"] == "到货"
+    assert normalized["mes.samples"][0]["status"] == "到货"
+    assert normalized["mes.samples"][0]["flow_status"] == "到货"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "到货"
+    assert normalized["mes.samples"][0]["history"][0]["status"] == "到货"
+
+
 def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_stock_in_followed() -> None:
     payload = {
         "mes.tasks": [

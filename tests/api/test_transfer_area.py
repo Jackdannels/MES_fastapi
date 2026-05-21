@@ -204,6 +204,7 @@ def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(m
     assert task_nos == ["SYLU-2026-03-101", "SYLU-2026-03-102"]
     assert "SYLU-2026-03-103" not in task_nos
     assert payload["taskOverview"][0]["experimentTypeText"] == "盐雾试验 / 振动试验 / 温度冲击试验"
+    assert payload["taskOverview"][1]["taskStatus"] == "到货"
     assert payload["pendingTaskCount"] == 1
     assert payload["storedTaskCount"] == 1
 
@@ -800,8 +801,8 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert printed.json()["workspace"]["assignedTrays"][0]["barcode"]["barcodeNo"]
 
     assert confirmed.status_code == 200
-    assert confirmed.json()["workspace"]["task"]["taskStatus"] == "已入库"
-    assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "已入库"
+    assert confirmed.json()["workspace"]["task"]["taskStatus"] == "到货"
+    assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "到货"
 
     assert reloaded.status_code == 200
     assert reloaded.json()["workspace"]["task"]["taskStatus"] == "未入库"
@@ -909,8 +910,8 @@ def test_transfer_area_preallocation_keeps_in_transit_samples_until_storage_conf
     stored_samples = [
         sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"
     ]
-    assert {sample["status"] for sample in stored_samples} == {"已入库"}
-    assert {sample["flow_status"] for sample in stored_samples} == {"已入库"}
+    assert {sample["status"] for sample in stored_samples} == {"到货"}
+    assert {sample["flow_status"] for sample in stored_samples} == {"到货"}
     assert {sample["location"] for sample in stored_samples} == {"接驳区"}
 
 
@@ -988,8 +989,8 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
 
     assert allocated.status_code == 200
     assert confirmed.status_code == 200
-    assert confirmed.json()["workspace"]["task"]["taskStatus"] == "已入库"
-    assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "已入库"
+    assert confirmed.json()["workspace"]["task"]["taskStatus"] == "到货"
+    assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "到货"
 
 
 def test_transfer_area_confirm_storage_sets_unscheduled_since_only_for_experiments_without_formal_schedule(monkeypatch):
@@ -1104,11 +1105,11 @@ def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(mon
 
     assert bootstrap.status_code == 200
     task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-102")
-    assert task_row["taskStatus"] == "已入库"
+    assert task_row["taskStatus"] == "到货"
     assert task_row["taskProgress"] == "实验进行中"
 
     assert workspace.status_code == 200
-    assert workspace.json()["task"]["taskStatus"] == "已入库"
+    assert workspace.json()["task"]["taskStatus"] == "到货"
     assert workspace.json()["task"]["taskProgress"] == "实验进行中"
     assert workspace.json()["task"]["reloadBlocked"] is True
     assert workspace.json()["task"]["reloadBlockedReason"] == "该任务已有托盘开始实验，不能重新入库。"
@@ -1187,11 +1188,11 @@ def test_transfer_area_progress_stays_running_until_all_task_experiments_complet
 
     assert bootstrap.status_code == 200
     task_row = next(item for item in bootstrap.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-102")
-    assert task_row["taskStatus"] == "已入库"
+    assert task_row["taskStatus"] == "到货"
     assert task_row["taskProgress"] == "实验进行中"
 
     assert workspace.status_code == 200
-    assert workspace.json()["task"]["taskStatus"] == "已入库"
+    assert workspace.json()["task"]["taskStatus"] == "到货"
     assert workspace.json()["task"]["taskProgress"] == "实验进行中"
 
 
@@ -1600,7 +1601,7 @@ def test_transfer_area_confirm_storage_backfills_arrival_time_for_preallocated_t
     response = client.post("/api/transfer-area/tasks/task-201/confirm-storage")
 
     assert response.status_code == 200
-    assert response.json()["workspace"]["task"]["taskStatus"] == "已入库"
+    assert response.json()["workspace"]["task"]["taskStatus"] == "到货"
     assert response.json()["workspace"]["task"]["receivedTime"]
     updated_task = next(task for task in storage.read("mes.tasks") if task["code"] == "SYLU-2026-04-201")
     assert updated_task["arrival_at"]

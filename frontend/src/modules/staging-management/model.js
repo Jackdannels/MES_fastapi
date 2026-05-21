@@ -8,6 +8,8 @@ const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const STAGING_STOCKED_STATUS = "到货";
+const LEGACY_STAGING_STOCKED_STATUS = "已入库";
 const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
@@ -54,7 +56,7 @@ const resolveStatusClass = (status) => {
   if (normalized === "待入库") {
     return "status accepted";
   }
-  if (normalized === "已入库" || normalized === POST_EXPERIMENT_STAGING_STATUS) {
+  if (isCurrentStagingStatus(normalized)) {
     return "status retention";
   }
   if (normalized === "已出库") {
@@ -159,7 +161,7 @@ const buildEventMap = (stagingEvents) => {
 
 const isCurrentStagingStatus = (status) => {
   const normalized = normalizeText(status);
-  return normalized === "已入库" || normalized === POST_EXPERIMENT_STAGING_STATUS;
+  return normalized === STAGING_STOCKED_STATUS || normalized === LEGACY_STAGING_STOCKED_STATUS || normalized === POST_EXPERIMENT_STAGING_STATUS;
 };
 
 const resolveTrayStatus = (statuses, events, options = {}) => {
@@ -177,10 +179,10 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
     return "厂家收回";
   }
   if (normalizeText(latestEvent?.action) === "stock_in") {
-    return options.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : "已入库";
+    return options.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : STAGING_STOCKED_STATUS;
   }
   if (hasStoredStatus) {
-    return "已入库";
+    return STAGING_STOCKED_STATUS;
   }
   if (hasStockInCandidateStatus) {
     return "待入库";
@@ -754,7 +756,7 @@ function buildZancunScanDetail(rows, code, mode) {
       actionMode,
       found: false,
       location: actionMode === "stockIn" ? "待确认暂存库位" : "待确认当前位置",
-      nextStatus: actionMode === "stockIn" ? "已入库" : "已出库",
+      nextStatus: actionMode === "stockIn" ? STAGING_STOCKED_STATUS : "已出库",
       owner: "待确认",
       quantity: 0,
       sampleType: "待确认样品类型",
@@ -777,7 +779,7 @@ function buildZancunScanDetail(rows, code, mode) {
     actionLabel: actionMode === "stockIn" ? "入库" : "出库",
     actionMode,
     found: true,
-    nextStatus: actionMode === "stockIn" ? "已入库" : "已出库",
+    nextStatus: actionMode === "stockIn" ? STAGING_STOCKED_STATUS : "已出库",
     stockInAtDisplay: formatDateTime(matchedRow.stockInAt),
   };
 }
@@ -893,7 +895,7 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  if (actionMode === "stockOut" && normalizeText(matchedRow.status) !== "已入库") {
+  if (actionMode === "stockOut" && !isCurrentStagingStatus(matchedRow.status)) {
     return {
       error: "该托盘尚未完成暂存间扫码入库。",
       row: null,
