@@ -346,7 +346,12 @@ describe("TasksPage runtime", () => {
         code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
         task_code: "SYLU-2026-03-001",
         status: "样品运输中",
+        trays: [{ tray_code: "SYLU-2026-03-001-TP-001", sample_code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}` }],
       })),
+      experimentSamples: [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-001" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-002" },
+      ],
     });
 
     const wrapper = mount(TasksPage);
@@ -371,6 +376,14 @@ describe("TasksPage runtime", () => {
     expect(state.samples.filter((sample) => sample.task_code === "SYLU-2026-03-001").map((sample) => sample.code)).toEqual([
       "SYLU-2026-03-001-SP-101",
       "SYLU-2026-03-001-SP-102",
+    ]);
+    expect(state.samples.filter((sample) => sample.task_code === "SYLU-2026-03-001").map((sample) => sample.trays[0].sample_code)).toEqual([
+      "SYLU-2026-03-001-SP-101",
+      "SYLU-2026-03-001-SP-102",
+    ]);
+    expect(state.experimentSamples).toEqual([
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-101" },
+      { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-102" },
     ]);
     expect(state.tasks[0].sample_count).toBe(2);
     expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(false);
@@ -707,6 +720,8 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).not.toContain("必需设备/能力");
 
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次B");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("3");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -738,6 +753,8 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('input[name="name"]').setValue("&^*(&U&^GFG&HU&");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("3");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -763,6 +780,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('input[name="name"]').setValue("字段校验任务");
+    await wrapper.get('input[name="contact"]').setValue("张三");
     await wrapper.get('input[name="contact_info"]').setValue("1380000ABC");
     await wrapper.get('input[name="sample_count"]').setValue("1000");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
@@ -775,6 +793,31 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("样品数量最多为 999");
+    expect(state.tasks).toHaveLength(0);
+    expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
+  });
+
+  test("requires contact and phone before submitting a new task", async () => {
+    const { fetchMock, state } = installApiFetchMock({ tasks: [], samples: [] });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="sample_count"]').setValue("3");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请填写联系人");
+
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请填写联系方式");
     expect(state.tasks).toHaveLength(0);
     expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
   });
@@ -855,6 +898,8 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('input[name="code"]').element.value).toBe("SYLU-2026-05-002");
 
     await wrapper.get('input[name="name"]').setValue("归档后新任务");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -889,6 +934,8 @@ describe("TasksPage runtime", () => {
     }
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("全实验新增任务");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -985,6 +1032,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次C");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -1072,6 +1121,44 @@ describe("TasksPage runtime", () => {
         test_types: ["盐雾试验", "霉菌试验"],
       }),
     );
+  });
+
+  test("does not reopen the intake modal after saving task edits when router hash is stale", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-edit-stale-hash",
+          code: "SYLU-2026-03-001",
+          name: "原任务名称",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+        }),
+      ],
+    });
+    window.location.hash = "#task-intake-modal";
+    routeState.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.find(".tasks-intake-modal.modal.is-open").exists()).toBe(true);
+
+    await wrapper.get(".tasks-intake-modal .modal-close").trigger("click");
+    await settle(wrapper);
+
+    expect(window.location.hash).toBe("");
+    expect(routeState.hash).toBe("#task-intake-modal");
+    expect(wrapper.find(".tasks-intake-modal.modal.is-open").exists()).toBe(false);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-detail-modal"] input[name="name"]').setValue("修改后的任务");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-edit-stale-hash") && options?.method === "PUT")).toBe(true);
+    expect(wrapper.find(".tasks-intake-modal.modal.is-open").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="task-detail-modal"].modal.is-open').exists()).toBe(false);
   });
 
   test("refreshes experiment metadata after changing three experiment types to one", async () => {
@@ -1625,6 +1712,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -1695,6 +1784,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次D");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
@@ -1716,6 +1807,9 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('input[name="name"]').setValue("未选择实验的任务");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
+    await wrapper.get('input[name="sample_count"]').setValue("2");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
@@ -1736,6 +1830,8 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次E");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 

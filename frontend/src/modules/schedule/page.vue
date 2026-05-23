@@ -239,21 +239,11 @@
     </div>
   </section>
 
-  <section class="grid cols-3 section">
+  <section class="section">
     <div class="card">
       <h3>{{ uiText.nextSchedule }}</h3>
       <div class="muted">{{ uiText.nextScheduleHint }}</div>
       <div class="kpi">{{ summaryCards.nextAuto }}</div>
-    </div>
-    <div class="card">
-      <h3>{{ uiText.conflictAlert }}</h3>
-      <div class="muted">{{ uiText.pending }}</div>
-      <div class="kpi">{{ summaryCards.conflictCount }}</div>
-    </div>
-    <div class="card">
-      <h3>{{ uiText.changeRequest }}</h3>
-      <div class="muted">{{ uiText.last24Hours }}</div>
-      <div class="kpi">{{ summaryCards.changeCount }}</div>
     </div>
   </section>
 
@@ -296,42 +286,6 @@
             >
               {{ uiText.edit }}
             </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
-
-  <section class="card section">
-    <h3>{{ uiText.conflictList }}</h3>
-    <div class="toolbar">
-      <input v-model="conflictSearch" class="search-input" :placeholder="uiText.conflictSearchPlaceholder" />
-    </div>
-    <table class="table" id="conflict-table">
-      <thead>
-        <tr>
-          <th>{{ uiText.index }}</th>
-          <th>{{ uiText.task }}</th>
-          <th>{{ uiText.device }}</th>
-          <th>{{ uiText.conflictType }}</th>
-          <th>{{ uiText.impact }}</th>
-          <th>{{ uiText.suggestion }}</th>
-          <th>{{ uiText.actions }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-if="conflictRows.length === 0">
-          <td class="muted" colspan="7">{{ uiText.noConflictRecords }}</td>
-        </tr>
-        <tr v-for="(row, index) in conflictRows" :key="`${row.id}-${index}`">
-          <td>{{ index + 1 }}</td>
-          <td>{{ row.taskCode }}</td>
-          <td>{{ row.device }}</td>
-          <td>{{ row.reason }}</td>
-          <td>{{ row.impact }}</td>
-          <td>{{ row.suggestion }}</td>
-          <td>
-            <button class="action-link" type="button" @click="openScheduleDrawer(row.id)">{{ uiText.edit }}</button>
           </td>
         </tr>
       </tbody>
@@ -599,15 +553,10 @@ const uiText = {
   afternoonShort: "下午 12:00-18:00",
   afternoonSlot: "下午（12:00-18:00）",
   cancelConflictSchedule: "取消排程",
-  changeRequest: "变更申请",
   clear: "重置",
-  conflictAlert: "冲突提醒",
   conflictCandidateLabel: "当前实验：",
-  conflictList: "待解决冲突",
-  conflictSearchPlaceholder: "筛选任务/设备/冲突类型",
   conflictTaskLabel: "当前任务：",
   conflictTrayLabel: "冲突托盘",
-  conflictType: "冲突类型",
   confirmSchedule: "确认排程",
   confirmConflictSchedule: "确认排程",
   currentTime: "当前时间",
@@ -627,23 +576,19 @@ const uiText = {
   experimentLabel: "实验标签",
   fullConflictTitle: "完全冲突提示",
   ganttTitle: "设备空闲排程（上午/下午）",
-  impact: "影响",
   index: "序号",
   lab: "实验室",
-  last24Hours: "24小时内",
   manualTitle: "手动排程",
   morningShort: "上午 08:00-12:00",
   morningSlot: "上午（08:00-12:00）",
   nextSchedule: "下一次排程提示",
   nextScheduleHint: "基于设备空闲与样品到样",
   noAcceptedTask: "暂无已接收任务",
-  noConflictRecords: "暂无冲突记录",
   noDevices: "暂无设备",
   nextGanttWindow: "后三天",
   nextLabSchedule: "跳转到该实验室下一个实验",
   noScheduleRecords: "暂无排程记录",
   noTraySummary: "未记录托盘",
-  pending: "待处理",
   partialConflictTitle: "部分冲突提示",
   plannedDuration: "预计实验时长",
   plannedHours: "预计实验时长（小时）",
@@ -662,7 +607,6 @@ const uiText = {
   source: "任务来源",
   startTime: "开始时间",
   status: "状态",
-  suggestion: "建议",
   task: "任务",
   taskCode: "任务编号",
   taskDetailTitle: "任务详情",
@@ -682,8 +626,6 @@ const {
   closeScheduleDrawer,
   closeTaskDetailModal,
   confirmScheduleConflict,
-  conflictRows,
-  conflictSearch,
   editForm,
   editCustomStartMinTime,
   editWarning,

@@ -71,8 +71,16 @@ const validateTaskSampleCount = (value) => {
   }
   return "";
 };
-const validateTaskTextFields = (form = {}) => {
+const validateTaskTextFields = (form = {}, options = {}) => {
+  const requireContact = Boolean(options?.requireContact);
+  const contact = normalizeText(form?.contact);
   const contactInfo = normalizeText(form?.contact_info);
+  if (requireContact && !contact) {
+    return "请填写联系人";
+  }
+  if (requireContact && !contactInfo) {
+    return "请填写联系方式";
+  }
   if (contactInfo && !/^\d{1,15}$/.test(contactInfo)) {
     return "联系方式必须为 1-15 位数字";
   }
@@ -792,6 +800,13 @@ function applyTaskSampleCodes(samples, task, codes) {
         ...existing,
         code,
         task_code: taskCode,
+        trays: Array.isArray(existing.trays)
+          ? existing.trays.map((tray) => ({
+              ...tray,
+              sample_code: normalizeText(tray?.sample_code) ? code : tray?.sample_code,
+              sampleCode: normalizeText(tray?.sampleCode) ? code : tray?.sampleCode,
+            }))
+          : existing.trays,
         updated_at: now,
       });
       return;

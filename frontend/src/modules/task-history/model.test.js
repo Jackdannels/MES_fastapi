@@ -51,9 +51,37 @@ describe("task history model", () => {
 
     expect(view.tasks[0].updatedAt).toBe("2026-05-19T12:31:00+08:00");
     expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
+    expect(view.tasks[0].taskFlow.find((step) => step.label === "厂家收回")?.time).toBe("2026-05-19T12:31:00+08:00");
     expect(view.tasks[0].trays[0].flowSteps).toEqual([
       { label: "到货", time: "2026-05-19T11:25:00+08:00" },
       { label: "厂家收回", time: "2026-05-19T12:31:00+08:00" },
+    ]);
+  });
+
+  test("maps sample history times onto the returned task status flow", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-FLOW-TIME", name: "流程时间任务", status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-FLOW-001",
+          task_code: "TASK-FLOW-TIME",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-FLOW-001", status: "厂家收回" }],
+          history: [
+            { status: "实验进行中", time: "2026-05-19T09:00:00+08:00" },
+            { status: "实验已完成", time: "2026-05-19T10:00:00+08:00" },
+            { status: "厂家收回", time: "2026-05-19T11:00:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.time || ""])).toEqual([
+      ["待排程", ""],
+      ["已排程", ""],
+      ["任务进行中", "2026-05-19T09:00:00+08:00"],
+      ["任务已完成", "2026-05-19T10:00:00+08:00"],
+      ["厂家收回", "2026-05-19T11:00:00+08:00"],
     ]);
   });
 

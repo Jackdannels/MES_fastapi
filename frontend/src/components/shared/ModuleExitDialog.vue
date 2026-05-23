@@ -89,7 +89,8 @@ const handleSwitch = () => {
   const isCurrentLaboratory =
     selectedModule.value === "laboratory" &&
     props.currentModule === "laboratory" &&
-    (props.currentLabName ? selectedLabName.value === props.currentLabName : true);
+    Boolean(props.currentLabName) &&
+    selectedLabName.value === props.currentLabName;
   const isCurrentModule = selectedModule.value === props.currentModule && selectedModule.value !== "laboratory";
 
   if (isCurrentModule || isCurrentLaboratory) {

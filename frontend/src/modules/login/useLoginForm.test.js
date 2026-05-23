@@ -69,4 +69,26 @@ describe("useLoginForm", () => {
     expect(resolveHome).toHaveBeenCalledWith("handover");
     expect(navigate).toHaveBeenCalledWith("/handover-system");
   });
+
+  test("navigates to the selected laboratory when the laboratory module succeeds", async () => {
+    const login = vi.fn(async () => ({ module: "laboratory", ok: true }));
+    const navigate = vi.fn();
+    const form = useLoginForm({
+      login,
+      navigate,
+      redirectPath: "",
+      resolveModuleHome: vi.fn(() => "/laboratory"),
+    });
+
+    form.moduleKey.value = "laboratory";
+    form.selectedLabName.value = "冲击一室";
+
+    await form.submitLogin();
+
+    expect(login).toHaveBeenCalledWith("admin", "123", "laboratory");
+    expect(navigate).toHaveBeenCalledWith({
+      path: "/laboratory",
+      query: { lab: "冲击一室" },
+    });
+  });
 });

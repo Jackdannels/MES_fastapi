@@ -254,6 +254,14 @@ function useTasksPage() {
     closeIntakeExperimentPicker();
   };
 
+  const sanitizeIntakeContactInfo = (event) => {
+    const digits = normalizeText(event?.target?.value).replace(/\D/g, "").slice(0, 15);
+    intakeForm.value.contact_info = digits;
+    if (event?.target) {
+      event.target.value = digits;
+    }
+  };
+
   const openEditExperimentPicker = () => {
     editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
     editExperimentModal.openWith({ id: "task-edit-test-types-modal" });
@@ -494,7 +502,7 @@ function useTasksPage() {
   };
 
   const submitTask = async () => {
-    const textWarning = validateTaskTextFields(intakeForm.value);
+    const textWarning = validateTaskTextFields(intakeForm.value, { requireContact: true });
     if (textWarning) {
       intakeWarning.value = textWarning;
       return;
@@ -722,10 +730,36 @@ function useTasksPage() {
       return;
     }
 
+    const currentCodes = taskDetailSampleCodes.value;
+    const sampleCodeMap = new Map();
+    currentCodes.forEach((code, index) => {
+      const nextCode = normalizeText(codes[index]);
+      const currentCode = normalizeText(code);
+      if (currentCode && nextCode && currentCode !== nextCode) {
+        sampleCodeMap.set(currentCode, nextCode);
+      }
+    });
+    const currentCodeSet = new Set(currentCodes.map((code) => normalizeText(code)).filter(Boolean));
+    const nextCodeSet = new Set(codes.map((code) => normalizeText(code)).filter(Boolean));
     const nextSamples = applyTaskSampleCodes(rawSamples.value, updatedTask, codes);
+    const nextExperimentSamples = rawExperimentSamples.value.map((entry) => {
+      if (normalizeText(entry?.task_code) !== taskCode) {
+        return entry;
+      }
+      const currentCode = normalizeText(entry?.sample_code);
+      const nextCode = sampleCodeMap.get(currentCode) || currentCode;
+      return nextCode ? { ...entry, sample_code: nextCode } : entry;
+    }).filter((entry) => {
+      if (normalizeText(entry?.task_code) !== taskCode) {
+        return true;
+      }
+      const sampleCode = normalizeText(entry?.sample_code);
+      return !currentCodeSet.has(sampleCode) || nextCodeSet.has(sampleCode);
+    });
     try {
       await persistRelated({
         [STORAGE_KEYS.samples]: nextSamples,
+        [STORAGE_KEYS.experiment_samples]: nextExperimentSamples,
       });
     } catch (error) {
       sampleCodesWarning.value = buildFailureMessage("样品编号已更新任务数量，但样品数据保存失败，请刷新后确认", error);
@@ -834,7 +868,7 @@ function useTasksPage() {
       loadError.value = buildFailureMessage("任务数据加载失败，请检查网络后重试", error);
     }
     syncIntakeDerivedFields();
-    syncModalWithHash(route.hash || (typeof window !== "undefined" ? window.location.hash : ""));
+    syncModalWithHash(typeof window !== "undefined" ? window.location.hash : route.hash || "");
   };
 
   watch(
@@ -932,6 +966,7 @@ function useTasksPage() {
     sampleCodesDraft,
     sampleCodesModalOpen: sampleCodesModal.open,
     sampleCodesWarning,
+    sanitizeIntakeContactInfo,
     saveDraft,
     saveSampleCodes,
     selectedRow: taskDrawer.payload,

@@ -63,6 +63,17 @@
                 :class="{ current: step.active, reached: step.reached }"
               >
                 <span class="history-flow-label">{{ step.label }}</span>
+                <span
+                  class="history-flow-time"
+                  :title="formatHistoryTime(step.time)"
+                >
+                  <span class="history-flow-time__date">
+                    {{ formatHistoryDatePart(step.time) }}
+                  </span>
+                  <span class="history-flow-time__clock">
+                    {{ formatHistoryClockPart(step.time) }}
+                  </span>
+                </span>
                 <span class="history-flow-dot"></span>
               </div>
             </div>

@@ -292,8 +292,13 @@ def validate_sample_count(value: Any) -> str:
     return str(parsed)
 
 
-def validate_task_text_fields(task: dict[str, Any]) -> None:
+def validate_task_text_fields(task: dict[str, Any], *, require_contact: bool = False) -> None:
+    contact = normalize_text(task.get("contact"))
     contact_info = normalize_text(task.get("contact_info"))
+    if require_contact and not contact:
+        raise HTTPException(status_code=400, detail="请填写联系人")
+    if require_contact and not contact_info:
+        raise HTTPException(status_code=400, detail="请填写联系方式")
     if contact_info and not re.fullmatch(r"\d{1,15}", contact_info):
         raise HTTPException(status_code=400, detail="联系方式必须为 1-15 位数字")
     task_name = normalize_text(task.get("name"))
@@ -550,9 +555,9 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     next_task["test_types"] = parse_test_types(next_task.get("test_types"))
     if not normalize_text(next_task.get("name")):
         next_task["name"] = build_default_task_name(task_code(next_task), tasks)
-    validate_task_text_fields(next_task)
     next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
     ensure_unique_task_code(tasks, next_task.get("code"))
+    validate_task_text_fields(next_task, require_contact=True)
     next_experiments = persist_task_experiments(next_task)
     tasks.insert(0, next_task)
     snapshot["mes.tasks"] = tasks

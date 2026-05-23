@@ -174,6 +174,10 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.find('[data-testid="schedule-tab-unpacking"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="schedule-tab-retention"]').exists()).toBe(false);
     expect(wrapper.find("#retention-internal-table").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("冲突提醒");
+    expect(wrapper.text()).not.toContain("变更申请");
+    expect(wrapper.text()).not.toContain("待解决冲突");
+    expect(wrapper.find("#conflict-table").exists()).toBe(false);
   });
 
   test("labels the manual schedule reset action as reset", async () => {

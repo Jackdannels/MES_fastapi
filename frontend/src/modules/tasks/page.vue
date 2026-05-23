@@ -85,7 +85,7 @@
         </div>
         <div class="form-field">
           <label>任务名称</label>
-          <input v-model="intakeForm.name" type="text" name="name" placeholder="例如：来料检测-批次A" />
+          <input v-model="intakeForm.name" type="text" name="name" maxlength="20" placeholder="例如：来料检测-批次A" />
         </div>
         <div class="form-field">
           <label>任务编号</label>
@@ -97,11 +97,11 @@
         </div>
         <div class="form-field">
           <label>联系人</label>
-          <input v-model="intakeForm.contact" type="text" name="contact" placeholder="姓名" />
+          <input v-model="intakeForm.contact" type="text" name="contact" required placeholder="姓名" />
         </div>
         <div class="form-field">
           <label>联系方式</label>
-          <input v-model="intakeForm.contact_info" type="text" name="contact_info" inputmode="numeric" maxlength="15" placeholder="请输入 1-15 位数字" />
+          <input v-model="intakeForm.contact_info" type="text" name="contact_info" inputmode="numeric" maxlength="15" required placeholder="请输入 1-15 位数字" @input="sanitizeIntakeContactInfo" />
         </div>
         <div class="form-field">
           <label>优先级</label>

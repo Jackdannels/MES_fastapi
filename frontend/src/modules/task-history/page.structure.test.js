@@ -14,10 +14,14 @@ describe("TaskHistoryPage structure", () => {
     expect(source).toContain("history-task-detail-card");
     expect(source).toContain("history-flow-strip");
     expect(source).toContain("history-flow-strip-item");
-    expect(source).toContain(":title=\"formatHistoryTime(step.time)\"");
-    expect(source).toContain("formatHistoryDatePart");
-    expect(source).toContain("history-flow-time__date");
-    expect(source).toContain("history-flow-time__clock");
+    const taskFlowSection = source.slice(
+      source.indexOf('data-testid="history-task-flow-card"'),
+      source.indexOf('<section class="card history-task-detail'),
+    );
+    expect(taskFlowSection).toContain(":title=\"formatHistoryTime(step.time)\"");
+    expect(taskFlowSection).toContain("formatHistoryDatePart");
+    expect(taskFlowSection).toContain("history-flow-time__date");
+    expect(taskFlowSection).toContain("history-flow-time__clock");
     expect(source).toContain("container-type: inline-size;");
     expect(source).toContain("@container history-task-flow (max-width: 520px)");
     expect(source).toContain("grid-template-columns: repeat(auto-fit, minmax(min(100%, 142px), 1fr));");

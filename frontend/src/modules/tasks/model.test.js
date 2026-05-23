@@ -336,12 +336,14 @@ describe("tasks model", () => {
   });
 
   test("validateTaskTextFields rejects obvious garbled symbol input in intake text fields", () => {
-    expect(validateTaskTextFields({ name: "盐雾试验-批次A", contact_info: "13800001234" })).toBe("");
-    expect(validateTaskTextFields({ name: "&^*(&U&^GFG&HU&" })).toBe("任务名称包含无效字符，请检查输入");
-    expect(validateTaskTextFields({ contact: "张三#*!" })).toBe("联系人包含无效字符，请检查输入");
-    expect(validateTaskTextFields({ contact_info: "1380000123A" })).toBe("联系方式必须为 1-15 位数字");
-    expect(validateTaskTextFields({ contact_info: "1234567890123456" })).toBe("联系方式必须为 1-15 位数字");
-    expect(validateTaskTextFields({ name: "一二三四五六七八九十一二三四五六七八九十X" })).toBe("任务名称不能超过 20 个字");
+    expect(validateTaskTextFields({ name: "盐雾试验-批次A", contact: "张三", contact_info: "13800001234" }, { requireContact: true })).toBe("");
+    expect(validateTaskTextFields({ name: "&^*(&U&^GFG&HU&", contact: "张三", contact_info: "13800001234" }, { requireContact: true })).toBe("任务名称包含无效字符，请检查输入");
+    expect(validateTaskTextFields({ contact: "张三#*!", contact_info: "13800001234" }, { requireContact: true })).toBe("联系人包含无效字符，请检查输入");
+    expect(validateTaskTextFields({ contact: "", contact_info: "13800001234" }, { requireContact: true })).toBe("请填写联系人");
+    expect(validateTaskTextFields({ contact: "张三", contact_info: "" }, { requireContact: true })).toBe("请填写联系方式");
+    expect(validateTaskTextFields({ contact: "张三", contact_info: "1380000123A" }, { requireContact: true })).toBe("联系方式必须为 1-15 位数字");
+    expect(validateTaskTextFields({ contact: "张三", contact_info: "1234567890123456" }, { requireContact: true })).toBe("联系方式必须为 1-15 位数字");
+    expect(validateTaskTextFields({ name: "一二三四五六七八九十一二三四五六七八九十X", contact: "张三", contact_info: "13800001234" }, { requireContact: true })).toBe("任务名称不能超过 20 个字");
     expect(validateTaskTextFields({ name: "" })).toBe("");
   });
 

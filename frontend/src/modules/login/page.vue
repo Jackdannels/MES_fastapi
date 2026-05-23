@@ -19,7 +19,15 @@
             <option value="handover">接驳区系统</option>
             <option value="visual">可视化管理</option>
             <option value="staging">暂存间系统</option>
-            <option value="laboratory">盐雾试验室操作台</option>
+            <option value="laboratory">试验室操作台</option>
+          </select>
+        </label>
+        <label v-if="moduleKey === 'laboratory'" class="login-field">
+          <span>试验室</span>
+          <select v-model="selectedLabName">
+            <option v-for="option in LABORATORY_OPTIONS" :key="option.key" :value="option.key">
+              {{ option.label }}
+            </option>
           </select>
         </label>
         <button class="action-btn login-submit" type="submit" :disabled="submitting">
@@ -39,13 +47,14 @@ defineOptions({
 import { useRoute, useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { loginWithCredentials, resolveModuleHome } from "@/auth";
+import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useLoginForm } from "./useLoginForm";
 
 const router = useRouter();
 const route = useRoute();
 const redirectPath =
   typeof route.query.redirect === "string" && route.query.redirect.trim() ? route.query.redirect.trim() : "";
-const { errorMessage, moduleKey, password, submitLogin, submitting, username } = useLoginForm({
+const { errorMessage, moduleKey, password, selectedLabName, submitLogin, submitting, username } = useLoginForm({
   login: loginWithCredentials,
   navigate: (target) => router.replace(target),
   redirectPath,

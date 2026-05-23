@@ -51,6 +51,31 @@ vi.mock("@/composables/useStorageSnapshot", () => ({
 
 let wrapper;
 
+const mockWindowLocalStorage = (initialValues = {}) => {
+  const originalLocalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+  const values = new Map(Object.entries(initialValues));
+  const storage = {
+    getItem: vi.fn((key) => (values.has(key) ? values.get(key) : null)),
+    setItem: vi.fn((key, value) => values.set(key, String(value))),
+    removeItem: vi.fn((key) => values.delete(key)),
+    clear: vi.fn(() => values.clear()),
+  };
+
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: storage,
+  });
+
+  return {
+    storage,
+    restore() {
+      if (originalLocalStorage) {
+        Object.defineProperty(window, "localStorage", originalLocalStorage);
+      }
+    },
+  };
+};
+
 const mountApp = () => {
   wrapper = mount(App, {
     global: {
@@ -139,22 +164,30 @@ describe("App runtime boundary", () => {
     reactiveRoute.meta = { module: "laboratory", title: "试验室操作台", subtitle: "查看当前试验室任务与实验准备流程。" };
     reactiveRoute.name = "laboratory";
     reactiveRoute.path = "/laboratory";
+    const { restore, storage } = mockWindowLocalStorage({
+      mes_laboratory_selected_lab_v1: "冲击一室",
+    });
 
-    mountApp();
-    await nextTick();
+    try {
+      mountApp();
+      await nextTick();
 
-    expect(wrapper.text()).toContain("试验室操作台");
-    expect(wrapper.text()).not.toContain("盐雾试验室操作台");
-    expect(wrapper.find('[data-testid="laboratory-error-sample"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("退出登录");
-    expect(wrapper.text()).not.toContain("七二四新火工区信息化中控管理系统");
-    expect(wrapper.find(".sidebar").exists()).toBe(false);
-    expect(wrapper.find(".nav-link").exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("中控中心");
-    expect(wrapper.text()).not.toContain("新建任务");
-    expect(wrapper.text()).not.toContain("查看排程");
+      expect(storage.getItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1");
+      expect(wrapper.text()).toContain("试验室操作台");
+      expect(wrapper.text()).not.toContain("盐雾试验室操作台");
+      expect(wrapper.find('[data-testid="laboratory-error-sample"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(false);
+      expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(false);
+      expect(wrapper.text()).toContain("退出登录");
+      expect(wrapper.text()).not.toContain("七二四新火工区信息化中控管理系统");
+      expect(wrapper.find(".sidebar").exists()).toBe(false);
+      expect(wrapper.find(".nav-link").exists()).toBe(false);
+      expect(wrapper.text()).not.toContain("中控中心");
+      expect(wrapper.text()).not.toContain("新建任务");
+      expect(wrapper.text()).not.toContain("查看排程");
+    } finally {
+      restore();
+    }
   });
 
   test("renders central shell for vue-native routes", async () => {
@@ -164,6 +197,31 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.text()).toContain("任务/托盘总览");
+  });
+
+  test("does not read saved laboratory selection while rendering central routes", async () => {
+    reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
+    reactiveRoute.name = "task-overview";
+    reactiveRoute.path = "/task-overview";
+
+    const getLocalStorage = vi.fn(() => {
+      throw new Error("localStorage should not be read for central routes");
+    });
+    const originalLocalStorage = Object.getOwnPropertyDescriptor(window, "localStorage");
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: getLocalStorage,
+    });
+
+    try {
+      mountApp();
+      await nextTick();
+      expect(getLocalStorage).not.toHaveBeenCalled();
+    } finally {
+      if (originalLocalStorage) {
+        Object.defineProperty(window, "localStorage", originalLocalStorage);
+      }
+    }
   });
 
   test("updates page title area when navigating across central routes", async () => {

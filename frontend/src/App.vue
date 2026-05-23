@@ -138,6 +138,7 @@ import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
 
 const TASK_RESET_EVENT = "mes:open-task-reset";
+const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 
 const route = useRoute();
 const router = useRouter();
@@ -168,7 +169,18 @@ const moduleNavigation = computed(() => getNavigationModules(currentModule.value
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskIntakeAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
-const currentLabName = computed(() => (typeof route.query?.lab === "string" ? route.query.lab : ""));
+const currentLabName = computed(() => {
+  if (!isLaboratoryModule.value) {
+    return "";
+  }
+  if (typeof route.query?.lab === "string" && route.query.lab.trim()) {
+    return route.query.lab.trim();
+  }
+  if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
+    return "";
+  }
+  return String(window.localStorage.getItem(LABORATORY_SELECTED_LAB_STORAGE_KEY) || "").trim();
+});
 
 const isActive = (name) => route.name === name;
 

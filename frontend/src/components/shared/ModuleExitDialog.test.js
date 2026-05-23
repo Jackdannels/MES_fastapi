@@ -146,6 +146,22 @@ describe("ModuleExitDialog", () => {
     expect(wrapper.emitted("switch-module")).toBeUndefined();
   });
 
+  test("allows switching laboratories when the current laboratory name is unknown", async () => {
+    const wrapper = mount(ModuleExitDialog, {
+      props: {
+        currentModule: "laboratory",
+        currentLabName: "",
+        open: true,
+      },
+    });
+
+    await wrapper.get('[data-testid="module-exit-lab-select"]').setValue("冲击一室");
+    await wrapper.get('[data-testid="module-exit-switch"]').trigger("click");
+
+    expect(wrapper.emitted("switch-module")).toEqual([[{ module: "laboratory", labName: "冲击一室" }]]);
+    expect(wrapper.text()).not.toContain("请选择其他界面");
+  });
+
   test("emits logout when the full logout action is clicked", async () => {
     const wrapper = mount(ModuleExitDialog, {
       props: {

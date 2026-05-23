@@ -176,12 +176,20 @@ const filterTaskFlowForExperiments = (flowEntries, experiments) => {
   return flowEntries.filter((entry) => entry.label !== "实验已完成");
 };
 
-const buildReturnedTaskStatusFlow = () => {
+const TASK_FLOW_TIME_LABELS = new Map([
+  ["任务进行中", "实验进行中"],
+  ["任务已完成", "实验已完成"],
+  [RETURNED_STATUS, RETURNED_STATUS],
+]);
+
+const buildReturnedTaskStatusFlow = (flowEntries = []) => {
   const activeIndex = TASK_STATUS_FLOW_STEPS.length - 1;
+  const timeByLabel = new Map(asArray(flowEntries).map((entry) => [normalizeText(entry?.label), normalizeText(entry?.time)]));
   return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
     ...step,
     active: index === activeIndex,
     reached: index <= activeIndex,
+    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || "",
   }));
 };
 
@@ -257,7 +265,7 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
     experimentCount: experimentRows.length,
     experimentCompletedCount: completedCount,
     experiments: experimentRows,
-    taskFlow: buildReturnedTaskStatusFlow(),
+    taskFlow: buildReturnedTaskStatusFlow(sampleFlowEntries),
     trays,
   };
 };

@@ -108,6 +108,8 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "霉菌试验",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "2",
             "test_type": "霉菌试验 / 盐雾试验",
             "test_types": ["霉菌试验", "盐雾试验"],
@@ -185,6 +187,8 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
             "id": "SYLU-2026-04-105",
             "code": "SYLU-2026-04-105",
             "name": "高低温湿热试验-批次E",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "3",
             "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
             "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
@@ -231,6 +235,8 @@ def test_create_and_update_task_accept_all_experiment_types(monkeypatch):
             "id": "SYLU-2026-04-115",
             "code": "SYLU-2026-04-115",
             "name": "全实验类型任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "3",
             "test_type": " / ".join(all_types),
             "test_types": all_types,
@@ -291,6 +297,8 @@ def test_create_task_rejects_code_that_already_exists_on_returned_archived_task(
             "id": "task-new",
             "code": "SYLU-2026-05-001",
             "name": "新任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "2",
             "test_type": "振动试验",
             "test_types": ["振动试验"],
@@ -312,6 +320,8 @@ def test_create_task_uses_test_types_count_over_stale_experiment_count(monkeypat
             "id": "SYLU-2026-04-109",
             "code": "SYLU-2026-04-109",
             "name": "固定实验类型任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "3",
             "test_type": "冲击试验 / 盐雾试验 / 温度冲击试验",
             "test_types": ["冲击试验", "盐雾试验", "温度冲击试验"],
@@ -390,6 +400,8 @@ def test_create_task_rejects_garbled_symbol_text_fields(monkeypatch):
             "id": "SYLU-2026-05-099",
             "code": "SYLU-2026-05-099",
             "name": "&^*(&U&^GFG&HU&",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "3",
             "test_type": "冲击试验",
             "test_types": ["冲击试验"],
@@ -408,6 +420,8 @@ def test_create_task_rejects_invalid_contact_info_and_long_name(monkeypatch):
         "id": "SYLU-2026-05-100",
         "code": "SYLU-2026-05-100",
         "name": "字段校验",
+        "contact": "张三",
+        "contact_info": "13800001234",
         "sample_count": "3",
         "test_type": "冲击试验",
         "test_types": ["冲击试验"],
@@ -426,6 +440,27 @@ def test_create_task_rejects_invalid_contact_info_and_long_name(monkeypatch):
     assert too_long_name.json() == {"detail": "任务名称不能超过 20 个字"}
 
 
+def test_create_task_rejects_missing_contact_fields(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+    base_payload = {
+        "id": "SYLU-2026-05-101",
+        "code": "SYLU-2026-05-101",
+        "name": "联系人校验",
+        "sample_count": "3",
+        "test_type": "冲击试验",
+        "test_types": ["冲击试验"],
+        "status": "待排程",
+    }
+
+    missing_contact = client.post("/api/tasks", json={**base_payload, "contact_info": "13800001234"})
+    missing_phone = client.post("/api/tasks", json={**base_payload, "contact": "张三"})
+
+    assert missing_contact.status_code == 400
+    assert missing_contact.json() == {"detail": "请填写联系人"}
+    assert missing_phone.status_code == 400
+    assert missing_phone.json() == {"detail": "请填写联系方式"}
+
+
 def test_create_task_defaults_blank_name_from_task_code_suffix(monkeypatch):
     client = build_client(monkeypatch, tasks=[{"id": "old", "code": "SYLU-2025-05-001", "name": "测试实验05001"}])
 
@@ -435,6 +470,8 @@ def test_create_task_defaults_blank_name_from_task_code_suffix(monkeypatch):
             "id": "SYLU-2026-05-001",
             "code": "SYLU-2026-05-001",
             "name": "",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "3",
             "test_type": "冲击试验",
             "test_types": ["冲击试验"],
@@ -1068,6 +1105,8 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
         "id": "SYLU-2026-04-110",
         "code": "SYLU-2026-04-110",
         "name": "样品数量校验",
+        "contact": "张三",
+        "contact_info": "13800001234",
         "test_type": "冲击试验",
         "test_types": ["冲击试验"],
         "status": "待排程",
@@ -1204,6 +1243,8 @@ def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch)
             "id": "SYLU-2026-03-002",
             "code": "SYLU-2026-03-002",
             "name": "新任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
             "sample_count": "2",
             "test_type": "振动试验 / 盐雾试验",
             "test_types": ["振动试验", "盐雾试验"],
