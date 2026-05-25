@@ -46,9 +46,10 @@
         </div>
         <div class="visual-screen-frame">
           <component
-            :is="screen.kind === 'lab-process' ? LabProcessScreen : PlaceholderScreen"
+            :is="resolveScreenComponent(screen)"
             :screen="screen"
             :labs="defaultLabs"
+            :schedule-view="scheduleView"
             compact
           />
         </div>
@@ -61,6 +62,7 @@
       data-testid="visual-single-preview"
       role="dialog"
       aria-modal="true"
+      @click.self="closeSinglePreview"
     >
       <section class="visual-preview-shell" :class="{ 'is-screen-only': selectedScreen.kind === 'lab-process' }">
         <div v-if="selectedScreen.kind !== 'lab-process'" class="visual-preview-header">
@@ -82,11 +84,14 @@
         </button>
         <div class="visual-expanded-screen" :class="{ 'is-lab-process': selectedScreen.kind === 'lab-process' }">
           <component
-            :is="selectedScreen.kind === 'lab-process' ? LabProcessScreen : PlaceholderScreen"
+            :is="resolveScreenComponent(selectedScreen)"
             :screen="selectedScreen"
             :labs="selectedLabs"
-            :interactive="selectedScreen.kind === 'lab-process'"
+            :schedule-view="scheduleView"
+            :interactive="selectedScreen.kind === 'lab-process' || selectedScreen.kind === 'schedule-three-day'"
             @open-lab-picker="openLabPicker"
+            @schedule-today="resetScheduleWindow"
+            @schedule-window="shiftScheduleWindow"
           />
         </div>
         <div
@@ -129,14 +134,26 @@
       data-testid="visual-combined-preview"
       role="dialog"
       aria-modal="true"
+      @click.self="closeCombinedPreview"
     >
-      <section class="visual-combined-shell">
-        <div class="visual-preview-header">
+      <section
+        class="visual-combined-shell is-fullscreen-merge"
+        data-testid="visual-combined-shell"
+        :style="combinedPreviewStyle"
+      >
+        <div class="visual-preview-header visual-combined-header">
           <div>
             <div class="visualization-eyebrow">全屏预览</div>
             <h3>八屏拼接展示</h3>
           </div>
-          <button class="action-btn secondary" type="button" @click="closeCombinedPreview">关闭</button>
+          <button
+            class="action-btn secondary visual-combined-close"
+            data-testid="visual-combined-preview-close"
+            type="button"
+            @click="closeCombinedPreview"
+          >
+            关闭
+          </button>
         </div>
         <div class="visual-combined-grid">
           <div
@@ -145,13 +162,56 @@
             class="visual-combined-screen"
             data-testid="visual-combined-screen"
           >
-            <component
-              :is="screen.kind === 'lab-process' ? LabProcessScreen : PlaceholderScreen"
-              :screen="screen"
-              :labs="defaultLabs"
-              compact
-            />
+            <div class="visual-combined-stage" data-testid="visual-combined-stage">
+              <div
+                class="visual-combined-stage-scale"
+                data-testid="visual-combined-stage-scale"
+                :style="stageStyle"
+              >
+                <component
+                  :is="resolveScreenComponent(screen)"
+                  :screen="screen"
+                  :labs="screen.kind === 'lab-process' ? selectedLabs : defaultLabs"
+                  :schedule-view="scheduleView"
+                  :interactive="screen.kind === 'lab-process' || screen.kind === 'schedule-three-day'"
+                  @open-lab-picker="openLabPicker"
+                  @schedule-today="resetScheduleWindow"
+                  @schedule-window="shiftScheduleWindow"
+                />
+              </div>
+            </div>
           </div>
+        </div>
+        <div
+          v-if="labPickerPosition"
+          class="visual-lab-picker-overlay visual-combined-lab-picker"
+          data-testid="visual-combined-lab-picker"
+          role="dialog"
+          aria-modal="true"
+        >
+          <section class="visual-lab-picker-panel">
+            <div class="visual-lab-picker-head">
+              <div>
+                <div class="visual-board-kicker">LAB SELECT</div>
+                <h3>{{ labPickerTitle }}</h3>
+              </div>
+              <button class="visual-lab-picker-close" type="button" @click="closeLabPicker">关闭</button>
+            </div>
+            <div class="visual-lab-picker-grid">
+              <button
+                v-for="lab in labPickerOptions"
+                :key="lab.name"
+                class="visual-lab-picker-option"
+                :class="{ 'is-selected': lab.name === activePickerLabName }"
+                data-testid="visual-lab-picker-option"
+                type="button"
+                @click="selectLabFromPicker(lab.name)"
+              >
+                <span>{{ lab.name }}</span>
+                <strong>{{ lab.trayCount }} 托盘</strong>
+              </button>
+            </div>
+          </section>
         </div>
       </section>
     </div>
@@ -166,23 +226,18 @@ defineOptions({
 import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { buildLabProcessPanels, getVisualizationLabNames } from "./model";
+import { buildLabProcessPanels, buildLabScheduleThreeDayView, getVisualizationLabNames } from "./model";
 
 const screenCards = [
   { key: "lab-process", name: "实验室流程监控屏", kind: "lab-process", status: "运行中", tone: "live" },
   {
-    key: "device-status",
-    name: "设备状态监控屏",
-    kind: "placeholder",
-    status: "在线",
-    metric: "12 台设备",
+    key: "lab-schedule-three-day",
+    name: "三日实验室排期屏",
+    kind: "schedule-three-day",
+    status: "排程中",
+    metric: "三日排期",
     accent: "cyan",
-    tone: "live",
-    indicators: [
-      ["运行", "10"],
-      ["待机", "2"],
-      ["故障", "0"],
-    ],
+    tone: "sync",
   },
   {
     key: "today-plan",
@@ -213,17 +268,17 @@ const screenCards = [
     ],
   },
   {
-    key: "quality-trend",
-    name: "合格率趋势屏",
-    kind: "placeholder",
-    status: "在线",
-    metric: "97.3%",
-    accent: "green",
+    key: "today-task-plan-overview",
+    name: "今日任务计划总览屏",
+    kind: "today-task-plan",
+    status: "模拟数据",
+    metric: "6 项任务",
+    accent: "cyan",
     tone: "live",
     indicators: [
-      ["通过", "142"],
-      ["复核", "4"],
-      ["异常", "2"],
+      ["已分盘", "4"],
+      ["待分盘", "2"],
+      ["样品", "48"],
     ],
   },
   {
@@ -284,11 +339,35 @@ const selectedScreen = ref(null);
 const selectedPrimaryLabName = ref(labNames[0] || "");
 const selectedSecondaryLabName = ref(labNames[1] || "");
 const combinedPreviewOpen = ref(false);
+const viewportSize = ref({ height: 1080, width: 1920 });
 const labPickerPosition = ref("");
+const manualLabSelection = ref(false);
+const labRandomSeed = ref(Math.random());
+const scheduleWindowOffsetDays = ref(0);
+const SCREEN_STAGE_WIDTH = 1920;
+const SCREEN_STAGE_HEIGHT = 1080;
+const COMBINED_COLUMNS = 4;
+const COMBINED_ROWS = 2;
+const COMBINED_GAP = 6;
+const COMBINED_PADDING = 8;
 const labScreens = computed(() => {
   const snapshot = rawSnapshot.value || {};
   return buildLabProcessPanels({
     labNames,
+    tasks: snapshot[STORAGE_KEYS.tasks],
+    samples: snapshot[STORAGE_KEYS.samples],
+    experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+    schedules: snapshot[STORAGE_KEYS.schedules],
+  });
+});
+const scheduleView = computed(() => {
+  const snapshot = rawSnapshot.value || {};
+  const anchorDate = new Date();
+  anchorDate.setDate(anchorDate.getDate() + scheduleWindowOffsetDays.value);
+  return buildLabScheduleThreeDayView({
+    labNames,
+    now: anchorDate,
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
@@ -302,15 +381,89 @@ const operationsSummary = computed(() => [
   { label: "运行任务", value: labScreens.value.reduce((total, lab) => total + lab.taskCount, 0) },
   { label: "托盘流程", value: labScreens.value.reduce((total, lab) => total + lab.trayCount, 0) },
 ]);
-const defaultLabs = computed(() => [labScreens.value[0], labScreens.value[1]].filter(Boolean));
+const seededLabWeight = (lab, index) => {
+  const textWeight = Array.from(String(lab?.name || "")).reduce((total, char) => total + char.charCodeAt(0), 0);
+  const raw = Math.sin((labRandomSeed.value + 1) * (textWeight + index * 97 + 17)) * 10000;
+  return raw - Math.floor(raw);
+};
+const labDisplayOrder = computed(() => {
+  const labs = labScreens.value.slice();
+  const hasTaskLabs = labs.some((lab) => lab.taskCount > 0 || lab.trayCount > 0);
+  if (!hasTaskLabs) {
+    return labs
+      .map((lab, index) => ({ lab, weight: seededLabWeight(lab, index) }))
+      .sort((left, right) => left.weight - right.weight)
+      .map((entry) => entry.lab);
+  }
+  return labs.sort((left, right) => {
+    const leftScore = left.taskCount * 10 + left.trayCount;
+    const rightScore = right.taskCount * 10 + right.trayCount;
+    if (leftScore !== rightScore) {
+      return rightScore - leftScore;
+    }
+    return labNames.indexOf(left.name) - labNames.indexOf(right.name);
+  });
+});
+const defaultLabs = computed(() => labDisplayOrder.value.slice(0, 2).filter(Boolean));
 const selectedLabs = computed(() => [
-  labScreens.value.find((lab) => lab.name === selectedPrimaryLabName.value) || labScreens.value[0],
-  labScreens.value.find((lab) => lab.name === selectedSecondaryLabName.value) || labScreens.value[1],
-]);
-const activePickerLabName = computed(() => (labPickerPosition.value === "secondary" ? selectedSecondaryLabName.value : selectedPrimaryLabName.value));
-const excludedPickerLabName = computed(() => (labPickerPosition.value === "secondary" ? selectedPrimaryLabName.value : selectedSecondaryLabName.value));
+  manualLabSelection.value
+    ? labScreens.value.find((lab) => lab.name === selectedPrimaryLabName.value) || defaultLabs.value[0]
+    : defaultLabs.value[0],
+  manualLabSelection.value
+    ? labScreens.value.find((lab) => lab.name === selectedSecondaryLabName.value) || defaultLabs.value[1]
+    : defaultLabs.value[1],
+].filter(Boolean));
+const activePickerLabName = computed(() => {
+  const index = labPickerPosition.value === "secondary" ? 1 : 0;
+  return selectedLabs.value[index]?.name || "";
+});
+const excludedPickerLabName = computed(() => {
+  const index = labPickerPosition.value === "secondary" ? 0 : 1;
+  return selectedLabs.value[index]?.name || "";
+});
 const labPickerTitle = computed(() => (labPickerPosition.value === "secondary" ? "选择下方试验间" : "选择上方试验间"));
 const labPickerOptions = computed(() => labScreens.value.filter((lab) => lab.name !== excludedPickerLabName.value));
+const combinedScale = computed(() => {
+  const availableWidth = Math.max(1, viewportSize.value.width - COMBINED_PADDING * 2 - COMBINED_GAP * (COMBINED_COLUMNS - 1));
+  const availableHeight = Math.max(1, viewportSize.value.height - COMBINED_PADDING * 2 - COMBINED_GAP * (COMBINED_ROWS - 1));
+  return Math.min(availableWidth / COMBINED_COLUMNS / SCREEN_STAGE_WIDTH, availableHeight / COMBINED_ROWS / SCREEN_STAGE_HEIGHT);
+});
+const combinedPreviewStyle = computed(() => ({
+  "--visual-combined-scale": String(combinedScale.value),
+}));
+const stageStyle = {
+  "--visual-stage-height": `${SCREEN_STAGE_HEIGHT}px`,
+  "--visual-stage-width": `${SCREEN_STAGE_WIDTH}px`,
+};
+const mockTodayTaskPlans = [
+  {
+    taskCode: "SYLU-2026-0524-001",
+    phase: "上午",
+    state: "已分配",
+    experiments: [
+      { experimentType: "冲击试验", time: "09:00-11:30", lab: "冲击一室", trays: ["TP-001", "TP-002"], sampleCount: 8 },
+      { experimentType: "振动试验", time: "13:00-16:00", lab: "振动一室", trays: ["TP-003"], sampleCount: 5 },
+    ],
+  },
+  {
+    taskCode: "SYLU-2026-0524-002",
+    phase: "下午",
+    state: "已分配",
+    experiments: [
+      { experimentType: "高低温湿热试验", time: "10:00-15:30", lab: "高低温湿热一室", trays: [], sampleCount: 12 },
+      { experimentType: "盐雾试验", time: "15:40-19:00", lab: "盐雾试验室", trays: ["TP-004"], sampleCount: 9 },
+    ],
+  },
+  {
+    taskCode: "SYLU-2026-0524-003",
+    phase: "夜间",
+    state: "待分盘",
+    experiments: [
+      { experimentType: "霉菌试验", time: "16:00-19:30", lab: "霉菌试验室", trays: [], sampleCount: 6 },
+      { experimentType: "四综合试验", time: "19:40-23:00", lab: "四综合实验室", trays: ["TP-005"], sampleCount: 8 },
+    ],
+  },
+];
 
 const openSinglePreview = (screen) => {
   selectedScreen.value = screen;
@@ -341,6 +494,9 @@ const selectLabFromPicker = (labName) => {
   if (!nextName || nextName === excludedPickerLabName.value) {
     return;
   }
+  manualLabSelection.value = true;
+  selectedPrimaryLabName.value = selectedLabs.value[0]?.name || "";
+  selectedSecondaryLabName.value = selectedLabs.value[1]?.name || "";
   if (labPickerPosition.value === "secondary") {
     selectedSecondaryLabName.value = nextName;
   } else {
@@ -349,19 +505,51 @@ const selectLabFromPicker = (labName) => {
   closeLabPicker();
 };
 
+const shiftScheduleWindow = (direction) => {
+  scheduleWindowOffsetDays.value += direction === "previous" ? -1 : 1;
+};
+const resetScheduleWindow = () => {
+  scheduleWindowOffsetDays.value = 0;
+};
+
+const resolveScreenComponent = (screen) => {
+  if (screen?.kind === "lab-process") {
+    return LabProcessScreen;
+  }
+  if (screen?.kind === "schedule-three-day") {
+    return LabScheduleScreen;
+  }
+  if (screen?.kind === "today-task-plan") {
+    return TodayTaskPlanScreen;
+  }
+  return PlaceholderScreen;
+};
+
 const refreshSnapshot = async () => {
   rawSnapshot.value = await loadSnapshot();
 };
+const refreshViewportSize = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  viewportSize.value = {
+    height: window.innerHeight || SCREEN_STAGE_HEIGHT,
+    width: window.innerWidth || SCREEN_STAGE_WIDTH,
+  };
+};
 
 onMounted(() => {
+  refreshViewportSize();
   refreshSnapshot();
   window.addEventListener("mes:samples-updated", refreshSnapshot);
   window.addEventListener("storage", refreshSnapshot);
+  window.addEventListener("resize", refreshViewportSize);
 });
 
 onUnmounted(() => {
   window.removeEventListener("mes:samples-updated", refreshSnapshot);
   window.removeEventListener("storage", refreshSnapshot);
+  window.removeEventListener("resize", refreshViewportSize);
 });
 
 const LabProcessScreen = {
@@ -449,6 +637,223 @@ const LabProcessScreen = {
           ]),
         ]),
       ]);
+  },
+};
+
+const scheduleStateLabel = (state) => {
+  const normalized = String(state || "").trim();
+  if (normalized === "running") {
+    return "进行中";
+  }
+  if (normalized === "conflict") {
+    return "冲突";
+  }
+  if (normalized === "completed") {
+    return "已完成";
+  }
+  if (normalized === "idle") {
+    return "空闲";
+  }
+  return "已排程";
+};
+
+const compactTimeRange = (value) => {
+  const matches = String(value || "").match(/\d{2}:\d{2}/g) || [];
+  return matches.length >= 2 ? `${matches[0]}-${matches.at(-1)}` : String(value || "").trim();
+};
+
+const renderScheduleItem = (item, slot, compact) =>
+  h("div", { class: "visual-schedule-task", style: item?.color ? { "--schedule-task-color": item.color } : null }, [
+    h("strong", item?.taskCode || slot.label || "-"),
+    compact ? null : h("span", item?.experimentLabel || "-"),
+    h("small", compactTimeRange(item?.timeRange || slot.title)),
+  ]);
+
+const renderScheduleSlot = (slot, compact) => {
+  const items = Array.isArray(slot?.items) ? slot.items : [];
+  const visibleItems = items.length ? items.slice(0, compact ? 1 : 2) : [];
+  return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, slot.displayMode === "conflict" ? "is-conflict" : ""] }, [
+    h("div", { class: "visual-schedule-slot-state" }, scheduleStateLabel(slot.state)),
+    ...(visibleItems.length
+      ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
+      : slot.state !== "idle"
+        ? [h("div", { class: "visual-schedule-task" }, [h("strong", slot.label || "-"), h("small", compactTimeRange(slot.title))])]
+        : [h("div", { class: "visual-schedule-idle" }, "空闲")]),
+    slot.overflowCount > 0 ? h("div", { class: "visual-schedule-overflow" }, `+${slot.overflowCount}`) : null,
+  ]);
+};
+
+const LabScheduleScreen = {
+  name: "LabScheduleScreen",
+  props: {
+    compact: { type: Boolean, default: false },
+    interactive: { type: Boolean, default: false },
+    scheduleView: { type: Object, required: true },
+    screen: { type: Object, required: false, default: null },
+  },
+  emits: ["schedule-today", "schedule-window"],
+  setup(props, { emit }) {
+    return () => {
+      const view = props.scheduleView || { dayCounts: [], days: [], rows: [], summary: {} };
+      const rows = Array.isArray(view.rows) ? view.rows.slice(0, props.compact ? 5 : 10) : [];
+      return h("div", { class: ["visual-board", "visual-schedule-board", props.compact ? "is-compact" : ""] }, [
+        h("div", { class: "visual-board-top" }, [
+          h("div", { class: "visual-board-title-group" }, [
+            h("div", { class: "visual-board-kicker" }, "SCHEDULE MATRIX"),
+            h("div", { class: "visual-board-title" }, props.screen?.name || "三日实验室排期屏"),
+          ]),
+          h("div", { class: "visual-schedule-head-actions" }, [
+            props.interactive && !props.compact
+              ? h("div", { class: "visual-schedule-nav", "aria-label": "切换排期日期窗口" }, [
+                h(
+                  "button",
+                  {
+                    "aria-label": "回到今日排期",
+                    "data-testid": "visual-schedule-today",
+                    type: "button",
+                    onClick: () => emit("schedule-today"),
+                  },
+                  "今",
+                ),
+                h(
+                  "button",
+                  {
+                    "aria-label": "查看前三日排期",
+                    "data-testid": "visual-schedule-prev",
+                    type: "button",
+                    onClick: () => emit("schedule-window", "previous"),
+                  },
+                  "‹",
+                ),
+                h(
+                  "button",
+                  {
+                    "aria-label": "查看后三日排期",
+                    "data-testid": "visual-schedule-next",
+                    type: "button",
+                    onClick: () => emit("schedule-window", "next"),
+                  },
+                  "›",
+                ),
+              ])
+              : null,
+            h("div", { class: ["visual-board-live", "tone-sync"] }, "三日窗口"),
+          ]),
+        ]),
+        h("div", { class: "visual-schedule-main" }, [
+          h("div", { class: "visual-board-metrics visual-schedule-metrics" }, [
+            h("div", [h("span", "三日排程"), h("strong", view.summary?.total ?? 0)]),
+            h("div", [h("span", "进行中"), h("strong", view.summary?.running ?? 0)]),
+            h("div", [h("span", "冲突"), h("strong", view.summary?.conflicts ?? 0)]),
+            props.compact ? null : h("div", [h("span", "空闲实验室"), h("strong", view.summary?.idleLabs ?? 0)]),
+          ]),
+          h("div", { class: "visual-schedule-days" }, (view.dayCounts || []).map((day) =>
+            h("div", { class: "visual-schedule-day", key: day.key }, [
+              h("span", day.label),
+              h("strong", day.dateLabel),
+              h("small", `${day.count} 项`),
+            ]),
+          )),
+          h("div", { class: "visual-schedule-grid" }, [
+            h("div", { class: "visual-schedule-grid-head visual-schedule-lab-head" }, "实验室"),
+            ...(view.days || []).flatMap((day) => [
+              h("div", { class: "visual-schedule-grid-head", key: `${day.key}-am` }, `${day.dateLabel || day.label} 上午`),
+              h("div", { class: "visual-schedule-grid-head", key: `${day.key}-pm` }, `${day.dateLabel || day.label} 下午`),
+            ]),
+            ...(rows.length
+              ? rows.flatMap((row) => [
+                h("div", { class: "visual-schedule-lab-name", key: `${row.device}-name` }, row.device),
+                ...row.slots.map((slot) => h("div", { class: "visual-schedule-cell", key: slot.key }, renderScheduleSlot(slot, props.compact))),
+              ])
+              : [h("div", { class: "visual-schedule-empty" }, "暂无排期")]),
+          ]),
+        ]),
+      ]);
+    };
+  },
+};
+
+const taskPlanTrayText = (entry) => (entry.trays?.length ? entry.trays.join(" / ") : "待分配托盘");
+const flattenTaskPlanRows = (tasks) =>
+  tasks.flatMap((task) =>
+    (task.experiments || []).map((experiment) => ({
+      ...experiment,
+      taskCode: task.taskCode,
+    })),
+  );
+const taskPlanSummary = (tasks) => ({
+  assigned: flattenTaskPlanRows(tasks).filter((row) => row.trays?.length).length,
+  pending: flattenTaskPlanRows(tasks).filter((row) => !row.trays?.length).length,
+  experiments: tasks.reduce((total, task) => total + (task.experiments?.length || 0), 0),
+  samples: tasks.reduce((total, task) => total + (task.experiments || []).reduce((sum, experiment) => sum + experiment.sampleCount, 0), 0),
+  types: new Set(tasks.flatMap((task) => (task.experiments || []).map((experiment) => experiment.experimentType))).size,
+});
+const taskPlanExperimentText = (task) => (task.experiments || []).map((experiment) => experiment.experimentType).join(" / ");
+const taskPlanCompactTrayText = (task) => {
+  const trays = (task.experiments || []).flatMap((experiment) => experiment.trays || []);
+  return trays.length ? trays.join(" / ") : "待分配托盘";
+};
+
+const TodayTaskPlanScreen = {
+  name: "TodayTaskPlanScreen",
+  props: {
+    compact: { type: Boolean, default: false },
+    screen: { type: Object, required: false, default: null },
+  },
+  setup(props) {
+    return () => {
+      const tasks = mockTodayTaskPlans;
+      const taskRows = flattenTaskPlanRows(tasks);
+      const summary = taskPlanSummary(tasks);
+      const visibleTasks = props.compact ? tasks.slice(0, 3) : tasks;
+
+      return h("div", { class: ["visual-board", "visual-task-plan-board", props.compact ? "is-compact" : ""] }, [
+        h("div", { class: "visual-board-top" }, [
+          h("div", { class: "visual-board-title-group" }, [
+            h("div", { class: "visual-board-kicker" }, "TODAY PLAN"),
+            h("div", { class: "visual-board-title" }, props.screen?.name || "今日任务计划总览屏"),
+          ]),
+          h("div", { class: ["visual-board-live", "tone-live"] }, props.compact ? "05" : "模拟数据"),
+        ]),
+        h("div", { class: "visual-task-plan-main" }, [
+          h("div", { class: "visual-board-metrics visual-task-plan-metrics" }, [
+            h("div", [h("span", "今日任务"), h("strong", tasks.length)]),
+            h("div", [h("span", "实验计划"), h("strong", summary.experiments)]),
+            h("div", [h("span", "已分配托盘"), h("strong", summary.assigned)]),
+            props.compact ? null : h("div", [h("span", "样品总数"), h("strong", `${summary.samples}件`)]),
+          ]),
+          props.compact
+            ? h("div", { class: "visual-task-plan-compact-list" }, visibleTasks.map((task) =>
+              h("div", { class: "visual-task-plan-compact-row", key: task.taskCode }, [
+                h("strong", task.taskCode),
+                h("span", taskPlanExperimentText(task)),
+                h("small", taskPlanCompactTrayText(task)),
+              ]),
+            ))
+            : h("div", { class: "visual-task-plan-single" }, [
+              h("section", { class: "visual-task-plan-variant is-table is-focused" }, [
+                h("div", { class: "visual-task-plan-variant-head" }, [
+                  h("strong", "方案A"),
+                  h("span", "任务实验一行式总览"),
+                ]),
+                h("div", { class: "visual-task-plan-table" }, [
+                  h("div", { class: "visual-task-plan-table-head is-flat" }, ["任务编号", "实验类型", "时间", "试验间", "托盘信息", "样品数"].map((label) => h("span", label))),
+                  ...taskRows.map((row) =>
+                    h("div", { class: "visual-task-plan-row is-flat", key: `${row.taskCode}-${row.experimentType}` }, [
+                      h("strong", row.taskCode),
+                      h("span", row.experimentType),
+                      h("span", row.time),
+                      h("span", row.lab),
+                      h("span", { class: row.trays.length ? "has-tray" : "is-pending" }, taskPlanTrayText(row)),
+                      h("span", `${row.sampleCount}件`),
+                    ]),
+                  ),
+                ]),
+              ]),
+            ]),
+        ]),
+      ]);
+    };
   },
 };
 

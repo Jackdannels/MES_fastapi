@@ -119,6 +119,20 @@ describe("TrayManagementPanel", () => {
     const wrapper = mount(TrayManagementPanel, {
       props: {
         samplesFlow: buildSamplesFlow({
+          rawExperimentTrays: [
+            {
+              task_code: "TASK-001",
+              experiment_code: "TASK-001-A",
+              tray_code: "TP-001",
+            },
+          ],
+          rawExperiments: [
+            {
+              task_code: "TASK-001",
+              experiment_code: "TASK-001-A",
+              experiment_type: "霉菌试验",
+            },
+          ],
           rawSamples: [
             {
               code: "SP-001",
@@ -127,6 +141,13 @@ describe("TrayManagementPanel", () => {
               status: "送至实验室",
               owner: "张三",
               trays: [{ tray_code: "TP-001", status: "送至实验室" }],
+            },
+          ],
+          rawSchedules: [
+            {
+              task_code: "TASK-001",
+              experimentCode: "TASK-001-A",
+              device: "霉菌试验室",
             },
           ],
           trayRows: [
@@ -145,6 +166,7 @@ describe("TrayManagementPanel", () => {
 
     const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]').text();
     expect(trayFlowCard).toContain("统一托盘流程图");
+    expect(trayFlowCard).toContain("送至霉菌试验室");
     expect(trayFlowCard).not.toContain("当前托盘");
     expect(trayFlowCard).not.toContain("当前位置");
     expect(trayFlowCard).not.toContain("责任人");

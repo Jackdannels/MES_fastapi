@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildLabProcessPanels } from "./model";
+import { buildLabProcessPanels, buildLabScheduleThreeDayView } from "./model";
 
 describe("visualization model", () => {
   test("builds lab panels from real tray flow data grouped by laboratory", () => {
@@ -62,5 +62,100 @@ describe("visualization model", () => {
     );
     expect(panels[1].trays[0].status).toContain("高低温湿热试验");
     expect(panels[1].trays[0].steps.some((step) => step.label === "高低温湿热试验已完成")).toBe(true);
+  });
+
+  test("builds a three-day laboratory schedule view from real schedule data", () => {
+    const view = buildLabScheduleThreeDayView({
+      labNames: ["振动一室", "盐雾试验室"],
+      now: new Date("2026-05-23T10:00:00+08:00"),
+      tasks: [
+        { code: "TASK-001", name: "振动任务", test_type: "振动试验" },
+        { code: "TASK-002", name: "盐雾任务", test_type: "盐雾试验" },
+        { code: "TASK-003", name: "跨天任务", test_type: "盐雾试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-001", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
+        { task_code: "TASK-002", experiment_code: "EXP-SALT", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { task_code: "TASK-003", experiment_code: "EXP-NIGHT", experiment_name: "跨天盐雾", required_device: "盐雾试验室" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-001", experiment_code: "EXP-VIB", tray_code: "TP-001" },
+        { task_code: "TASK-002", experiment_code: "EXP-SALT", tray_code: "TP-002" },
+        { task_code: "TASK-003", experiment_code: "EXP-NIGHT", tray_code: "TP-003" },
+      ],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "TASK-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-today",
+          task_code: "TASK-001",
+          experiment_code: "EXP-VIB",
+          device: "振动一室",
+          start_at: "2026-05-23T08:00:00+08:00",
+          end_at: "2026-05-23T12:00:00+08:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-tomorrow",
+          task_code: "TASK-002",
+          experiment_code: "EXP-SALT",
+          device: "盐雾试验室",
+          start_at: "2026-05-24T12:00:00+08:00",
+          end_at: "2026-05-24T18:00:00+08:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-cross-day",
+          task_code: "TASK-003",
+          experiment_code: "EXP-NIGHT",
+          device: "盐雾试验室",
+          start_at: "2026-05-24T20:00:00+08:00",
+          end_at: "2026-05-25T09:00:00+08:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-retention",
+          task_code: "TASK-RETENTION",
+          experiment_code: "EXP-RETENTION",
+          device: "恒温恒湿间（暂存间）",
+          start_at: "2026-05-23T08:00:00+08:00",
+          end_at: "2026-05-23T09:00:00+08:00",
+          status: "暂存间存放",
+        },
+        {
+          id: "schedule-outside",
+          task_code: "TASK-004",
+          experiment_code: "EXP-OUTSIDE",
+          device: "振动一室",
+          start_at: "2026-05-26T08:00:00+08:00",
+          end_at: "2026-05-26T12:00:00+08:00",
+          status: "已排程",
+        },
+      ],
+    });
+
+    expect(view.days.map((day) => day.label)).toEqual(["5/23", "5/24", "5/25"]);
+    expect(view.days.map((day) => day.key)).toEqual(["2026-05-23", "2026-05-24", "2026-05-25"]);
+    expect(view.summary.total).toBe(3);
+    expect(view.summary.running).toBe(1);
+    expect(view.summary.conflicts).toBe(0);
+    expect(view.dayCounts.map((day) => day.count)).toEqual([1, 2, 1]);
+    expect(view.rows.map((row) => row.device)).toEqual(["振动一室", "盐雾试验室"]);
+    expect(view.rows[0].slots[0]).toEqual(expect.objectContaining({
+      displayMode: "single",
+      label: "TASK-001",
+      state: "running",
+    }));
+    expect(view.rows[1].slots.flatMap((slot) => slot.items.map((item) => item.experimentLabel))).toEqual(
+      expect.arrayContaining(["盐雾试验", "跨天盐雾"]),
+    );
+    expect(JSON.stringify(view)).not.toContain("TASK-004");
+    expect(JSON.stringify(view)).not.toContain("暂存间");
   });
 });

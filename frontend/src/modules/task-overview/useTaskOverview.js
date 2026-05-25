@@ -8,6 +8,7 @@ import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
@@ -573,12 +574,16 @@ function useTaskOverview() {
     loadOverview();
     if (typeof window !== "undefined") {
       window.addEventListener("click", handleWindowClick);
+      window.addEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
+      window.addEventListener("storage", loadOverview);
     }
   });
 
   onBeforeUnmount(() => {
     if (typeof window !== "undefined") {
       window.removeEventListener("click", handleWindowClick);
+      window.removeEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
+      window.removeEventListener("storage", loadOverview);
     }
     clearHighlightedCard();
   });

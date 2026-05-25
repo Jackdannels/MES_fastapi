@@ -671,7 +671,7 @@ describe("laboratory model", () => {
       "A实验已完成",
       "送至暂存间",
       "已到达暂存间",
-      "送至实验室",
+      "送至盐雾试验室",
       "已到达实验室",
       "工装夹具安装",
       "实验准备就绪",
@@ -884,8 +884,9 @@ describe("laboratory model", () => {
       active: true,
       reached: false,
     }));
-    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(expect.objectContaining({
+    expect(view.selectedTrayFlow.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({
       active: false,
+      label: "送至盐雾试验室",
       reached: false,
     }));
   });
@@ -927,8 +928,9 @@ describe("laboratory model", () => {
     });
 
     expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：TP-LAG | 当前状态：送至实验室");
-    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(expect.objectContaining({
+    expect(view.selectedTrayFlow.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({
       active: true,
+      label: "送至温度冲击一室",
     }));
   });
 

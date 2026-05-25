@@ -60,7 +60,44 @@ const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const uniqueNormalizedTexts = (values) => Array.from(new Set(asArray(values).map(normalizeText).filter(Boolean)));
+const resolveEntryTaskCode = (entry) =>
+  normalizeText(entry?.task_code)
+  || normalizeText(entry?.taskCode)
+  || normalizeText(entry?.task_no)
+  || normalizeText(entry?.taskNo);
+const resolveEntryTrayCode = (entry) =>
+  normalizeText(entry?.tray_code)
+  || normalizeText(entry?.trayCode)
+  || normalizeText(entry?.tray_no)
+  || normalizeText(entry?.trayNo);
+const resolveEntryExperimentCode = (entry) =>
+  normalizeText(entry?.experiment_code)
+  || normalizeText(entry?.experimentCode)
+  || normalizeText(entry?.experiment_id)
+  || normalizeText(entry?.experimentId);
 const isLikelyLabDestination = (value) => /室$/.test(normalizeText(value));
+const extractLabDestinationName = (value) => {
+  const text = normalizeText(value);
+  if (!text) {
+    return "";
+  }
+  if (TEST_LABS.has(text) || isLikelyLabDestination(text)) {
+    return text;
+  }
+  const knownLab = Array.from(TEST_LABS).find((lab) => text.includes(lab));
+  if (knownLab) {
+    return knownLab;
+  }
+  const dispatchMatch = text.match(/送至\s*([^，,；;/\s]+室)/);
+  return dispatchMatch ? normalizeText(dispatchMatch[1]) : "";
+};
+const resolveLabDestinationName = (...values) =>
+  values.map(extractLabDestinationName).find(Boolean) || "";
+
+const buildLabDispatchStepLabel = (labName) => {
+  const normalizedLabName = normalizeText(labName);
+  return normalizedLabName ? `送至${normalizedLabName}` : "送至实验室";
+};
 
 const resolveExperimentIdentityName = (experiment, fallback = "") =>
   normalizeText(experiment?.experiment_name)
@@ -345,30 +382,45 @@ const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], exp
     (Array.isArray(experimentTrays) ? experimentTrays : [])
       .filter(
         (entry) =>
-          normalizeText(entry?.task_code) === normalizedTaskCode && normalizeText(entry?.tray_code) === normalizedTrayCode,
+          resolveEntryTaskCode(entry) === normalizedTaskCode && resolveEntryTrayCode(entry) === normalizedTrayCode,
       )
-      .map((entry) => normalizeText(entry?.experiment_code))
+      .map(resolveEntryExperimentCode)
       .filter(Boolean),
   );
 
+  const relatedSchedules = (Array.isArray(schedules) ? schedules : [])
+    .filter((schedule) => resolveEntryTaskCode(schedule) === normalizedTaskCode);
   const scheduleMap = new Map(
-    (Array.isArray(schedules) ? schedules : [])
-      .filter((schedule) => normalizeText(schedule?.task_code) === normalizedTaskCode)
-      .map((schedule) => [normalizeText(schedule?.experiment_code), parseTimeValue(schedule?.start_at)]),
+    relatedSchedules
+      .map((schedule) => [resolveEntryExperimentCode(schedule), parseTimeValue(schedule?.start_at)]),
+  );
+  const scheduleLabMap = new Map(
+    relatedSchedules
+      .map((schedule) => [
+        resolveEntryExperimentCode(schedule),
+        resolveLabDestinationName(
+          schedule?.device,
+          schedule?.lab,
+          schedule?.laboratory,
+          schedule?.required_device,
+          schedule?.requiredDevice,
+        ),
+      ])
+      .filter(([experimentCode, labName]) => experimentCode && labName),
   );
 
   return (Array.isArray(experiments) ? experiments : [])
     .filter((experiment) => {
-      if (normalizeText(experiment?.task_code) !== normalizedTaskCode) {
+      if (resolveEntryTaskCode(experiment) !== normalizedTaskCode) {
         return false;
       }
-      const experimentCode = normalizeText(experiment?.experiment_code);
+      const experimentCode = resolveEntryExperimentCode(experiment);
       return trayExperimentCodes.size === 0 || trayExperimentCodes.has(experimentCode);
     })
     .slice()
     .sort((left, right) => {
-      const leftCode = normalizeText(left?.experiment_code);
-      const rightCode = normalizeText(right?.experiment_code);
+      const leftCode = resolveEntryExperimentCode(left);
+      const rightCode = resolveEntryExperimentCode(right);
       const leftStart = scheduleMap.get(leftCode);
       const rightStart = scheduleMap.get(rightCode);
       if (Number.isFinite(leftStart) && Number.isFinite(rightStart) && leftStart !== rightStart) {
@@ -380,10 +432,19 @@ const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], exp
       const fallbackName = `${index + 1}实验`;
       const name = resolveExperimentIdentityName(experiment, fallbackName);
       const displayName = resolveExperimentDisplayName(experiment, fallbackName);
+      const experimentCode = resolveEntryExperimentCode(experiment);
       return {
-        code: normalizeText(experiment?.experiment_code),
+        code: experimentCode,
         name,
         displayName,
+        destinationLab: scheduleLabMap.get(experimentCode)
+          || resolveLabDestinationName(
+            experiment?.device,
+            experiment?.lab,
+            experiment?.laboratory,
+            experiment?.required_device,
+            experiment?.requiredDevice,
+          ),
         aliases: resolveExperimentAliases(experiment, name),
       };
     });
@@ -550,6 +611,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         code: experiment.code,
         name: experiment.name,
         displayName: experiment.displayName,
+        destinationLab: experiment.destinationLab,
         aliases: experiment.aliases,
         state: "completed",
         completedAt: event.time,
@@ -582,6 +644,7 @@ const buildTrayExperimentFlow = (input = {}) => {
       code: experiment.code,
       name: experiment.name,
       displayName: experiment.displayName,
+      destinationLab: experiment.destinationLab,
       aliases: experiment.aliases,
       state: "completed",
       routeSteps: index === completedExperiments.length - 1 ? buildExperimentRouteSteps() : [],
@@ -606,6 +669,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         code: experiment.code,
         name: experiment.name,
         displayName: experiment.displayName,
+        destinationLab: experiment.destinationLab,
         aliases: experiment.aliases,
         state: "completed",
       };
@@ -615,6 +679,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         code: currentExperiment.code,
         name: currentExperiment.name,
         displayName: currentExperiment.displayName,
+        destinationLab: currentExperiment.destinationLab,
         aliases: currentExperiment.aliases,
         state: "current",
         unstarted: isSyntheticUnstartedCurrent,
@@ -626,6 +691,7 @@ const buildTrayExperimentFlow = (input = {}) => {
       code: experiment.code,
       name: experiment.name,
       displayName: experiment.displayName,
+      destinationLab: experiment.destinationLab,
       aliases: experiment.aliases,
       state: "pending",
     };
@@ -984,13 +1050,16 @@ function buildTrayFlowView(input = {}) {
     const steps = [];
 
     const pushStep = (step) => {
-      const label = normalizeText(step?.label);
+      const rawLabel = normalizeText(step?.timeLabel || step?.label);
+      const label = normalizeText(step?.displayLabel || step?.label);
       const hasExplicitTime = Object.prototype.hasOwnProperty.call(step || {}, "time");
+      const { displayLabel, timeLabel, ...stepPayload } = step || {};
       steps.push({
         active: false,
         reached: false,
-        ...step,
-        time: hasExplicitTime ? normalizeText(step?.time) : stepTimeMap.get(label) || "",
+        ...stepPayload,
+        label,
+        time: hasExplicitTime ? normalizeText(step?.time) : stepTimeMap.get(rawLabel) || "",
       });
       return steps.length - 1;
     };
@@ -1055,10 +1124,13 @@ function buildTrayFlowView(input = {}) {
         : buildExperimentRouteSteps();
       const normalizedRouteStatus = normalizeLifecycleStatus(input.location, activeExperiment?.routeStatus || input.status);
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
+      const currentLabDestination = normalizeText(activeExperiment?.destinationLab);
       const routeIndexes = routeSteps.map((label, index) =>
         pushStep({
           key: `route-${currentExperimentIndex}-${index}`,
           label,
+          displayLabel: label === "送至实验室" ? buildLabDispatchStepLabel(currentLabDestination) : label,
+          timeLabel: label,
           time: routeStepTimeAfter(label, latestCompletedTimeBeforeCurrent),
         }),
       );
@@ -1173,10 +1245,13 @@ function buildTrayFlowView(input = {}) {
         parseTimeValue(stepTimeMap.get(completedLabel)),
         parseTimeValue(stepTimeMap.get(completedIdentityLabel)),
       );
+      const finalLabDestination = normalizeText(lastExperiment?.destinationLab);
       routeSteps.forEach((label, index) => {
         pushStep({
           key: `route-final-${index}`,
           label,
+          displayLabel: label === "送至实验室" ? buildLabDispatchStepLabel(finalLabDestination) : label,
+          timeLabel: label,
           reached: true,
           time: routeStepTimeAfter(label, latestCompletedTimeBeforeFinal, finalCompletedTime),
         });
@@ -1233,6 +1308,7 @@ function buildTrayFlowView(input = {}) {
   const singleExperiment = resolveSingleTrayExperiment(input);
   const singleExperimentName = normalizeText(singleExperiment?.displayName || singleExperiment?.name);
   const singleExperimentIdentityName = normalizeText(singleExperiment?.name);
+  const singleExperimentDestinationLab = normalizeText(singleExperiment?.destinationLab);
   const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
   const singleExperimentEvent = singleExperiment
     ? resolveExperimentEvent(
@@ -1256,12 +1332,13 @@ function buildTrayFlowView(input = {}) {
     steps: SAMPLE_FLOW_STEPS.map((step, index) => {
       const label = buildSingleExperimentStatusLabel(singleExperimentName, step.label);
       const identityLabel = buildSingleExperimentStatusLabel(singleExperimentIdentityName || singleExperimentName, step.label);
+      const displayLabel = step.key === "sent_to_lab" ? buildLabDispatchStepLabel(singleExperimentDestinationLab) : label;
       const active = step.key === currentKey;
       const reached = holdUncompletedSingleExperiment ? index <= preExperimentReturnedReachedIndex : index < currentIndex;
       const time = active || reached ? stepTimeMap.get(label) || stepTimeMap.get(identityLabel) || stepTimeMap.get(step.label) || "" : "";
       return {
         ...step,
-        label,
+        label: displayLabel,
         time,
         active,
         reached,

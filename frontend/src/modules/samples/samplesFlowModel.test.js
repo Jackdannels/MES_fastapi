@@ -66,6 +66,146 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({ active: true }));
   });
 
+  test("buildTrayFlowView displays the concrete laboratory for lab dispatch steps", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-004",
+      taskCode: "SYLU-2026-03-001",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_type: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-004",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "盐雾试验室",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-004 | 当前状态：送至实验室");
+    expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({
+      active: true,
+      label: "送至盐雾试验室",
+    }));
+  });
+
+  test("buildTrayFlowView resolves concrete laboratories from camelCase schedule experiment codes", () => {
+    const view = buildTrayFlowView({
+      trayCode: "TP-MOLD-001",
+      taskCode: "TASK-MOLD-001",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "TASK-MOLD-001",
+          experiment_code: "EXP-MOLD",
+          experiment_type: "霉菌试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "TASK-MOLD-001",
+          experiment_code: "EXP-MOLD",
+          tray_code: "TP-MOLD-001",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-MOLD-001",
+          experimentCode: "EXP-MOLD",
+          device: "霉菌试验室",
+        },
+      ],
+      samples: [
+        {
+          code: "SP-MOLD-001",
+          task_code: "TASK-MOLD-001",
+          location: "霉菌试验室",
+          status: "送至实验室",
+          trays: [{ tray_code: "TP-MOLD-001", status: "送至实验室" }],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({
+      label: "送至霉菌试验室",
+    }));
+  });
+
+  test("buildTrayFlowView displays the concrete laboratory for multi-experiment route steps", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-101-TP-001",
+      taskCode: "SYLU-2026-03-101",
+      currentExperimentCode: "SYLU-2026-03-101-B",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-A",
+          experiment_type: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-B",
+          experiment_type: "霉菌试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-A",
+          tray_code: "SYLU-2026-03-101-TP-001",
+        },
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-B",
+          tray_code: "SYLU-2026-03-101-TP-001",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-03-01T08:00:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-03-101",
+          experiment_code: "SYLU-2026-03-101-B",
+          device: "霉菌试验室",
+          start_at: "2026-03-02T08:00:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-03-101",
+          trays: [{ tray_code: "SYLU-2026-03-101-TP-001", status: "盐雾试验已完成" }],
+          history: [
+            {
+              detail: "SYLU-2026-03-101 / 盐雾试验 / 实验已完成",
+              time: "2026-03-01T12:00:00+08:00",
+            },
+          ],
+        },
+      ],
+    });
+
+    const routeStep = view.steps.find((step) => step.key.startsWith("route-") && step.label === "送至霉菌试验室");
+    expect(routeStep).toEqual(expect.objectContaining({ active: true }));
+    expect(view.status).toBe("送至实验室");
+  });
+
   test("buildTrayFlowView labels tray experiment requirements by test type instead of experiment name", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-101-TP-001",

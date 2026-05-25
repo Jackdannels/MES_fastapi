@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { defineComponent, reactive, ref } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -60,6 +60,8 @@ vi.mock("./useTaskOverviewEditor", () => ({
 }));
 
 import { useTaskOverview } from "./useTaskOverview";
+
+enableAutoUnmount(afterEach);
 
 const TestHarness = defineComponent({
   setup() {
@@ -144,5 +146,64 @@ describe("useTaskOverview runtime", () => {
 
     expect(mocks.readMasterTestTypes).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.taskTypeEditOptions).toEqual(expect.arrayContaining(["自定义疲劳试验"]));
+  });
+
+  test("reloads overview data when sample updates are broadcast", async () => {
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-002",
+            sample_count: 3,
+            status: "待排程",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [],
+        "mes.schedules": [],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-002",
+            experiment_code: "SYLU-2026-03-002-A",
+            experiment_name: "盐雾试验",
+            status: "待排程",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-003",
+            sample_count: 1,
+            status: "已排程",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [],
+        "mes.schedules": [
+          {
+            task_code: "SYLU-2026-03-003",
+            experiment_code: "SYLU-2026-03-003-A",
+            start_at: "2026-03-11T08:00:00.000Z",
+          },
+        ],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-003",
+            experiment_code: "SYLU-2026-03-003-A",
+            experiment_name: "振动试验",
+            status: "已排程",
+          },
+        ],
+      });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-003"]);
   });
 });
