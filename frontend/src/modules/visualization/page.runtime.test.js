@@ -63,11 +63,14 @@ describe("VisualizationPage runtime", () => {
 
     expect(picker.text()).toContain("选择上方试验间");
 
-    const saltOption = wrapper.findAll('[data-testid="visual-lab-picker-option"]').find((option) => option.text().includes("盐雾试验室"));
-    expect(saltOption).toBeTruthy();
-    await saltOption.trigger("click");
+    const nextOption = wrapper.findAll('[data-testid="visual-lab-picker-option"]').find((option) => !option.classes().includes("is-selected"));
+    expect(nextOption).toBeTruthy();
+    const nextLabName = nextOption.find("span").text();
+    await nextOption.trigger("click");
 
-    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("盐雾试验室");
+    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain(nextLabName);
+    const selectedLabNames = wrapper.find('[data-testid="visual-single-preview"]').findAll(".visual-lab-name").map((name) => name.text());
+    expect(new Set(selectedLabNames).size).toBe(selectedLabNames.length);
     expect(wrapper.find('[data-testid="visual-lab-picker"]').exists()).toBe(false);
   });
 
@@ -188,6 +191,77 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).not.toContain("任务下发");
   });
 
+  test("switches tasks and trays inside the enlarged first screen", async () => {
+    snapshotState.snapshot = {
+      "mes.tasks": [
+        { code: "TASK-LAB-A", name: "振动任务A" },
+        { code: "TASK-LAB-B", name: "振动任务B" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-LAB-A", experiment_code: "EXP-LAB-A", experiment_name: "振动试验A", required_device: "振动一室" },
+        { task_code: "TASK-LAB-B", experiment_code: "EXP-LAB-B", experiment_name: "振动试验B", required_device: "振动一室" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-LAB-A", experiment_code: "EXP-LAB-A", tray_code: "TRAY-A-001" },
+        { task_code: "TASK-LAB-A", experiment_code: "EXP-LAB-A", tray_code: "TRAY-A-002" },
+        { task_code: "TASK-LAB-B", experiment_code: "EXP-LAB-B", tray_code: "TRAY-B-001" },
+      ],
+      "mes.schedules": [
+        { task_code: "TASK-LAB-A", experiment_code: "EXP-LAB-A", device: "振动一室", status: "实验进行中" },
+        { task_code: "TASK-LAB-B", experiment_code: "EXP-LAB-B", device: "振动一室", status: "实验准备就绪" },
+      ],
+      "mes.samples": [
+        {
+          code: "SAMPLE-A-001",
+          task_code: "TASK-LAB-A",
+          location: "振动一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-A-001", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SAMPLE-A-002",
+          task_code: "TASK-LAB-A",
+          location: "振动一室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-A-002", status: "实验准备就绪", quantity: 1 }],
+        },
+        {
+          code: "SAMPLE-B-001",
+          task_code: "TASK-LAB-B",
+          location: "振动一室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-B-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    };
+    const wrapper = mountPage();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[0].trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.find(".visual-board").classes()).toContain("is-layout-a");
+    expect(preview.find('[data-testid="visual-lab-layout-option"]').exists()).toBe(false);
+
+    expect(preview.text()).toContain("任务切换");
+    expect(preview.text()).toContain("托盘切换");
+    expect(preview.text()).toContain("TRAY-A-001");
+
+    const taskB = preview.findAll('[data-testid="visual-lab-task-option"]').find((option) => option.text().includes("TASK-LAB-B"));
+    expect(taskB).toBeTruthy();
+    await taskB.trigger("click");
+    expect(preview.text()).toContain("TRAY-B-001");
+
+    const taskA = preview.findAll('[data-testid="visual-lab-task-option"]').find((option) => option.text().includes("TASK-LAB-A"));
+    expect(taskA).toBeTruthy();
+    await taskA.trigger("click");
+
+    const trayA2 = preview.findAll('[data-testid="visual-lab-tray-option"]').find((option) => option.text().includes("TRAY-A-002"));
+    expect(trayA2).toBeTruthy();
+    await trayA2.trigger("click");
+    expect(preview.text()).toContain("TRAY-A-002");
+  });
+
   test("renders the second screen as a real three-day laboratory schedule view", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-23T10:00:00+08:00"));
@@ -250,9 +324,11 @@ describe("VisualizationPage runtime", () => {
       await secondCard.trigger("click");
 
       const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
+      expect(wrapper.get(".visual-schedule-grid").attributes("style")).toContain("--visual-schedule-row-count");
       expect(previewText).toContain("振动试验");
       expect(previewText).toContain("08:00-12:00");
       expect(previewText).toContain("进行中");
+      expect(previewText).not.toContain("已排程");
     } finally {
       vi.useRealTimers();
     }
@@ -357,42 +433,49 @@ describe("VisualizationPage runtime", () => {
   });
 
   test("opens the eight-screen combined preview from the page action", async () => {
-    const wrapper = mountPage();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-25T10:00:00+08:00"));
 
-    await wrapper.get('[data-testid="visual-combined-preview-open"]').trigger("click");
+    try {
+      const wrapper = mountPage();
 
-    expect(wrapper.find('[data-testid="visual-combined-preview"]').exists()).toBe(true);
-    expect(wrapper.get('[data-testid="visual-combined-shell"]').classes()).toContain("is-fullscreen-merge");
-    expect(wrapper.get('[data-testid="visual-combined-shell"]').attributes("style") || "").toContain("--visual-combined-scale");
-    expect(wrapper.get('[data-testid="visual-combined-preview-close"]').text()).toContain("关闭");
-    expect(wrapper.findAll('[data-testid="visual-combined-screen"]')).toHaveLength(8);
-    wrapper.findAll('[data-testid="visual-combined-screen"]').forEach((screen) => {
-      expect(screen.find(".visual-board").classes()).not.toContain("is-compact");
-      expect(screen.find(".visual-board").classes()).not.toContain("is-merge-preview");
-      expect(screen.find('[data-testid="visual-combined-stage"]').exists()).toBe(true);
-      expect(screen.find('[data-testid="visual-combined-stage-scale"]').exists()).toBe(true);
-      expect(screen.find('[data-testid="visual-combined-stage-scale"]').attributes("style")).toContain("--visual-stage-width: 1920px");
-      expect(screen.find('[data-testid="visual-combined-stage-scale"]').attributes("style")).toContain("--visual-stage-height: 1080px");
-    });
+      await wrapper.get('[data-testid="visual-combined-preview-open"]').trigger("click");
 
-    const secondCombinedScreen = wrapper.findAll('[data-testid="visual-combined-screen"]')[1];
-    expect(secondCombinedScreen.findAll(".visual-schedule-lab-name").length).toBeGreaterThan(5);
-    expect(wrapper.find('[data-testid="visual-lab-cycle-primary"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="visual-schedule-today"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="visual-schedule-prev"]').exists()).toBe(true);
-    expect(wrapper.find('[data-testid="visual-schedule-next"]').exists()).toBe(true);
-    await wrapper.get('[data-testid="visual-lab-cycle-primary"]').trigger("click");
-    expect(wrapper.find('[data-testid="visual-combined-lab-picker"]').exists()).toBe(true);
-    await wrapper.get(".visual-lab-picker-close").trigger("click");
-    await wrapper.get('[data-testid="visual-schedule-next"]').trigger("click");
-    expect(wrapper.find('[data-testid="visual-combined-preview"]').text()).toContain("5/26");
+      expect(wrapper.find('[data-testid="visual-combined-preview"]').exists()).toBe(true);
+      expect(wrapper.get('[data-testid="visual-combined-shell"]').classes()).toContain("is-fullscreen-merge");
+      expect(wrapper.get('[data-testid="visual-combined-shell"]').attributes("style") || "").toContain("--visual-combined-scale");
+      expect(wrapper.get('[data-testid="visual-combined-preview-close"]').text()).toContain("关闭");
+      expect(wrapper.findAll('[data-testid="visual-combined-screen"]')).toHaveLength(8);
+      wrapper.findAll('[data-testid="visual-combined-screen"]').forEach((screen) => {
+        expect(screen.find(".visual-board").classes()).not.toContain("is-compact");
+        expect(screen.find(".visual-board").classes()).not.toContain("is-merge-preview");
+        expect(screen.find('[data-testid="visual-combined-stage"]').exists()).toBe(true);
+        expect(screen.find('[data-testid="visual-combined-stage-scale"]').exists()).toBe(true);
+        expect(screen.find('[data-testid="visual-combined-stage-scale"]').attributes("style")).toContain("--visual-stage-width: 1920px");
+        expect(screen.find('[data-testid="visual-combined-stage-scale"]').attributes("style")).toContain("--visual-stage-height: 1080px");
+      });
 
-    const fifthCombinedScreen = wrapper.findAll('[data-testid="visual-combined-screen"]')[4];
-    expect(fifthCombinedScreen.text()).toContain("任务编号");
-    expect(fifthCombinedScreen.text()).toContain("托盘信息");
-    expect(fifthCombinedScreen.text()).toContain("TP-003");
+      const secondCombinedScreen = wrapper.findAll('[data-testid="visual-combined-screen"]')[1];
+      expect(secondCombinedScreen.findAll(".visual-schedule-lab-name").length).toBeGreaterThan(5);
+      expect(wrapper.find('[data-testid="visual-lab-cycle-primary"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="visual-schedule-today"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="visual-schedule-prev"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="visual-schedule-next"]').exists()).toBe(true);
+      await wrapper.get('[data-testid="visual-lab-cycle-primary"]').trigger("click");
+      expect(wrapper.find('[data-testid="visual-combined-lab-picker"]').exists()).toBe(true);
+      await wrapper.get(".visual-lab-picker-close").trigger("click");
+      await wrapper.get('[data-testid="visual-schedule-next"]').trigger("click");
+      expect(wrapper.find('[data-testid="visual-combined-preview"]').text()).toContain("5/26");
 
-    await wrapper.get('[data-testid="visual-combined-preview-close"]').trigger("click");
-    expect(wrapper.find('[data-testid="visual-combined-preview"]').exists()).toBe(false);
+      const fifthCombinedScreen = wrapper.findAll('[data-testid="visual-combined-screen"]')[4];
+      expect(fifthCombinedScreen.text()).toContain("任务编号");
+      expect(fifthCombinedScreen.text()).toContain("托盘信息");
+      expect(fifthCombinedScreen.text()).toContain("TP-003");
+
+      await wrapper.get('[data-testid="visual-combined-preview-close"]').trigger("click");
+      expect(wrapper.find('[data-testid="visual-combined-preview"]').exists()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
