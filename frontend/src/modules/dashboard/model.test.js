@@ -314,6 +314,14 @@ describe("dashboard model", () => {
           transfer_status: "已入库",
         },
       ],
+      samples: [
+        {
+          task_code: "SYLU-2026-04-109",
+          history: [{ action: "任务已确认入库", time: "2026-03-17T07:45:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-109-TP-001", status: "到货" }],
+        },
+      ],
       experiments: [
         {
           task_code: "SYLU-2026-04-109",
@@ -349,6 +357,14 @@ describe("dashboard model", () => {
           transfer_status: "已入库",
         },
       ],
+      samples: [
+        {
+          task_code: "SYLU-2026-04-110",
+          history: [{ action: "任务已确认入库", time: "2026-03-16T08:30:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-110-TP-001", status: "到货" }],
+        },
+      ],
       experiments: [
         {
           task_code: "SYLU-2026-04-110",
@@ -372,6 +388,48 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("starts unscheduled timers from transfer confirmation history instead of exception time", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-122",
+          source: "外部委托",
+          status: "待排程",
+          transfer_status: "到货",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-04-122",
+          history: [{ action: "任务已确认入库", time: "2026-03-17T07:30:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-122-TP-001", status: "到货" }],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-122",
+          experiment_code: "SYLU-2026-04-122-A",
+          experiment_name: "冲击试验",
+          status: "待排程",
+          unscheduled_since: "2026-03-17T09:30:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-122",
+        experimentCode: "SYLU-2026-04-122-A",
+        elapsedLabel: "02:30:00",
+      }),
+    ]);
+  });
+
   test("shows only arrived experiments without a formal schedule in the unscheduled timer list", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [
@@ -380,6 +438,14 @@ describe("dashboard model", () => {
           source: "内部新增",
           status: "待排程",
           transfer_status: "已入库",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-04-112",
+          history: [{ action: "任务已确认入库", time: "2026-03-16T07:30:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-112-TP-001", status: "到货" }],
         },
       ],
       experiments: [
@@ -418,6 +484,148 @@ describe("dashboard model", () => {
         experimentLabel: "振动试验",
         elapsedLabel: "26:30:00",
         isOverdue: true,
+      }),
+    ]);
+  });
+
+  test("uses arrived sample state as fallback for abnormal schedules when task transfer status is missing", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-04-121",
+          source: "外部委托",
+          status: "待排程",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-04-121",
+          history: [{ action: "任务已确认入库", time: "2026-03-17T09:30:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-121-TP-001", status: "到货" }],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-04-121",
+          experiment_code: "SYLU-2026-04-121-A",
+          experiment_name: "霉菌试验",
+          status: "待排程",
+          unscheduled_since: "2026-03-17T09:30:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-121",
+        experimentCode: "SYLU-2026-04-121-A",
+        elapsedLabel: "00:30:00",
+      }),
+    ]);
+  });
+
+  test("shows pending abnormal schedule experiments even when arrival fields are stale", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-05-009",
+          source: "外部委托",
+          status: "待排程",
+          transfer_status: "未入库",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-009",
+          history: [{ action: "任务已确认入库", time: "2026-05-22T18:00:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-05-009-TP-001", status: "到货" }],
+        },
+      ],
+      conflicts: [
+        {
+          id: "schedule-exception-9",
+          type: "schedule_missed_start",
+          status: "pending",
+          task_code: "SYLU-2026-05-009",
+          experiment_code: "SYLU-2026-05-009-A",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-009",
+          experiment_code: "SYLU-2026-05-009-A",
+          experiment_name: "冲击试验",
+          status: "待排程",
+          unscheduled_since: "2026-05-22T18:00:00.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-05-22T19:05:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-05-009",
+        experimentCode: "SYLU-2026-05-009-A",
+        elapsedLabel: "01:05:00",
+      }),
+    ]);
+  });
+
+  test("keeps acknowledged abnormal schedule experiments in timers when they remain unscheduled", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-05-010",
+          source: "外部委托",
+          status: "待排程",
+          transfer_status: "未入库",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-010",
+          history: [{ action: "任务已确认入库", time: "2026-05-22T18:00:00.000Z" }],
+          status: "运输中",
+          trays: [{ tray_code: "SYLU-2026-05-010-TP-001", status: "运输中" }],
+        },
+      ],
+      conflicts: [
+        {
+          id: "schedule-exception-10",
+          type: "schedule_missed_start",
+          status: "acknowledged",
+          task_code: "SYLU-2026-05-010",
+          experiment_code: "SYLU-2026-05-010-A",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-010",
+          experiment_code: "SYLU-2026-05-010-A",
+          experiment_name: "冲击试验",
+          status: "待排程",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-05-22T19:05:00.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-05-010",
+        experimentCode: "SYLU-2026-05-010-A",
+        elapsedLabel: "01:05:00",
       }),
     ]);
   });

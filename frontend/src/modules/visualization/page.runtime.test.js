@@ -170,8 +170,8 @@ describe("VisualizationPage runtime", () => {
           status: "实验进行中",
           trays: [{ tray_code: "TRAY-VIS-001", status: "实验进行中", quantity: 1 }],
           history: [
-            { status: "到货", time: "2026-05-22T09:00:00" },
-            { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00" },
+            { status: "到货", time: "2026-05-22T09:00:00+08:00" },
+            { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00+08:00" },
           ],
         },
       ],
@@ -185,9 +185,14 @@ describe("VisualizationPage runtime", () => {
 
     expect(previewText).toContain("TRAY-VIS-001");
     expect(previewText).toContain("TASK-VIS-001");
+    const flowHead = wrapper.find('[data-testid="visual-single-preview"] .visual-tray-flow-head');
+    expect(flowHead.get("strong").text()).toBe("TASK-VIS-001");
+    expect(flowHead.get("span").text()).toBe("TRAY-VIS-001");
     expect(previewText).toContain("样品运输中");
     expect(previewText).toContain("振动试验进行中");
     expect(previewText).toContain("到货");
+    expect(previewText).toContain("05-22 10:00:00");
+    expect(previewText).not.toContain("+08:00");
     expect(previewText).not.toContain("任务下发");
   });
 
@@ -317,6 +322,11 @@ describe("VisualizationPage runtime", () => {
       expect(secondCard.text()).not.toContain("今天");
       expect(secondCard.text()).not.toContain("明天");
       expect(secondCard.text()).not.toContain("后天");
+      secondCard.findAll(".visual-schedule-day").forEach((day) => {
+        expect(day.find("span").exists()).toBe(false);
+        expect(day.find("strong").exists()).toBe(true);
+        expect(day.find("small").exists()).toBe(true);
+      });
       expect(secondCard.text()).toContain("TASK-SCH-001");
       expect(secondCard.text()).not.toContain("12 台设备");
       expect(secondCard.text()).not.toContain("TASK-SCH-OUTSIDE");
@@ -329,6 +339,42 @@ describe("VisualizationPage runtime", () => {
       expect(previewText).toContain("08:00-12:00");
       expect(previewText).toContain("进行中");
       expect(previewText).not.toContain("已排程");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("shows maintenance devices as maintenance in the enlarged schedule screen", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-26T10:00:00+08:00"));
+    snapshotState.snapshot = {
+      "mes.devices": [
+        { code: "冲击一室", name: "冲击一室", status: "维护/校准" },
+      ],
+      "mes.experiment_trays": [],
+      "mes.experiments": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.tasks": [],
+    };
+
+    try {
+      const wrapper = mountPage();
+
+      await Promise.resolve();
+      await wrapper.vm.$nextTick();
+
+      const secondCard = wrapper.findAll('[data-testid="visual-screen-card"]')[1];
+      expect(secondCard.text()).toContain("三日实验室排期屏");
+      expect(secondCard.text()).toContain("维护中");
+
+      await secondCard.trigger("click");
+
+      const preview = wrapper.find('[data-testid="visual-single-preview"]');
+      expect(preview.text()).toContain("冲击一室");
+      expect(preview.text()).toContain("维护中");
+      expect(preview.find(".visual-schedule-slot.state-maintenance").exists()).toBe(true);
+      expect(preview.find(".visual-schedule-slot.state-maintenance").text()).toBe("维护中");
     } finally {
       vi.useRealTimers();
     }

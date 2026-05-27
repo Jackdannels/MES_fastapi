@@ -397,6 +397,14 @@ describe("App runtime boundary", () => {
           transfer_status: "已入库",
         },
       ],
+      "mes.samples": [
+        {
+          task_code: "SYLU-2026-03-011",
+          history: [{ action: "任务已确认入库", time: "2026-03-10T08:00:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-03-011-TP-001", status: "到货" }],
+        },
+      ],
       "mes.experiments": [
         {
           task_code: "SYLU-2026-03-011",
@@ -496,6 +504,20 @@ describe("App runtime boundary", () => {
         { code: "SYLU-2026-03-002", transfer_status: "已入库" },
       ],
       "mes.schedules": [],
+      "mes.samples": [
+        {
+          task_code: "SYLU-2026-03-003",
+          history: [{ action: "任务已确认入库", time: "2026-03-10T08:00:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-03-003-TP-001", status: "到货" }],
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          history: [{ action: "任务已确认入库", time: "2026-03-10T08:00:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "到货" }],
+        },
+      ],
       "mes.experiments": [
         {
           task_code: "SYLU-2026-03-003",
@@ -524,5 +546,33 @@ describe("App runtime boundary", () => {
       path: "/task-overview",
       query: { highlightTask: "SYLU-2026-03-002" },
     });
+  });
+
+  test("shows an explicit schedule exception badge on the schedule menu item", async () => {
+    reactiveRoute.meta = { module: "central", title: "中控总览" };
+    reactiveRoute.name = "dashboard";
+    reactiveRoute.path = "/";
+    loadSnapshotMock.mockResolvedValue({
+      "mes.tasks": [],
+      "mes.schedules": [],
+      "mes.experiments": [],
+      "mes.conflicts": [
+        {
+          id: "schedule-exception-1",
+          type: "schedule_missed_start",
+          status: "pending",
+        },
+      ],
+    });
+
+    mountApp();
+    await nextTick();
+    await nextTick();
+
+    const navText = wrapper.findAll(".nav-link").find((node) => node.text().includes("排程看板"));
+
+    expect(navText.exists()).toBe(true);
+    expect(navText.find(".nav-alert-pill").exists()).toBe(true);
+    expect(navText.find(".nav-alert-pill").text()).toBe("异常 1");
   });
 });

@@ -161,7 +161,15 @@ def device_is_unavailable(device: dict[str, Any] | None) -> bool:
     if not device:
         return False
     status = normalize_text(device.get("status"))
-    return any(keyword in status for keyword in ["维护", "维修", "停用", "禁用", "不可用"])
+    start_at = parse_datetime_value(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
+    end_at = parse_datetime_value(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
+    timezone = start_at.tzinfo if start_at and start_at.tzinfo else end_at.tzinfo if end_at and end_at.tzinfo else None
+    now = datetime.now(timezone) if timezone else datetime.now()
+    if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
+        return True
+    if any(keyword in status for keyword in ["维护", "维修"]) and not (end_at and end_at < now):
+        return True
+    return bool(start_at and end_at and start_at <= now <= end_at)
 
 
 def find_unavailable_device(snapshot: dict[str, list[dict[str, Any]]], device_name: str) -> dict[str, Any] | None:
@@ -1485,6 +1493,11 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
+    current_reload_block_reason = reload_block_reason(task_samples, task)
+    if current_reload_block_reason:
+        raise HTTPException(status_code=400, detail=current_reload_block_reason)
+    if transfer_status_for_task(task, task_samples) != TASK_STATUS_PENDING:
+        raise HTTPException(status_code=400, detail="该任务已到货，不能重新保存预接驳托盘。")
     sample_map = {sample_key(sample): sample for sample in task_samples}
     requested_ids = [sample_id for tray in request.trays for sample_id in tray.sample_ids]
     requested_tray_count = sum(1 for tray in request.trays if tray.sample_ids)

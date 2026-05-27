@@ -74,11 +74,14 @@ def _device_is_unavailable(device: Any) -> bool:
     if not isinstance(device, dict):
         return False
     status = _normalize_text(device.get("status"))
-    if any(keyword in status for keyword in ["维护", "维修", "停用", "禁用", "不可用"]):
-        return True
     start_at = _parse_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
     end_at = _parse_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
-    now = datetime.now(start_at.tzinfo) if start_at and start_at.tzinfo else datetime.now()
+    timezone = start_at.tzinfo if start_at and start_at.tzinfo else end_at.tzinfo if end_at and end_at.tzinfo else None
+    now = datetime.now(timezone) if timezone else datetime.now()
+    if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
+        return True
+    if any(keyword in status for keyword in ["维护", "维修"]) and not (end_at and end_at < now):
+        return True
     return bool(start_at and end_at and start_at <= now <= end_at)
 
 

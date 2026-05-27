@@ -1,10 +1,11 @@
 // 负责设备台账状态、维护表单、维护计划和点位管理流程。
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 import { resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 import {
   MAINTENANCE_DEVICE_STATUS,
@@ -82,9 +83,11 @@ function useDevicesPage() {
   const maintenancePlanModal = useDialogState();
   const maintenanceConflictModal = useDialogState();
   const pointModal = useDialogState();
+  const now = ref(new Date());
+  let deviceClockTimer = null;
 
   const baseRows = computed(() =>
-    buildDeviceRows(rawDevices.value, rawSchedules.value, new Date(), rawSamples.value, rawExperimentTrays.value),
+    buildDeviceRows(rawDevices.value, rawSchedules.value, now.value, rawSamples.value, rawExperimentTrays.value),
   );
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
@@ -134,27 +137,36 @@ function useDevicesPage() {
   const buildMaintenanceException = ({ schedule, timestamp }) => ({
     acknowledged_at: "",
     created_at: timestamp,
-    detail: [
-      normalizeText(schedule?.task_code) || "-",
-      normalizeText(schedule?.experiment_code) || "-",
-      normalizeText(schedule?.device) || "-",
-      "设备计划维护，系统已同步删除该设备排程",
-    ].join(" / "),
+    detail: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维护，已自动删除`,
     device: normalizeText(schedule?.device),
     experiment_code: normalizeText(schedule?.experiment_code),
     id: `device-maintenance-${normalizeText(schedule?.id) || Date.now()}`,
-    reason: "设备计划维护与已排程时段冲突，系统已删除原排程",
+    reason: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维护，已自动删除`,
     schedule_id: normalizeText(schedule?.id),
     status: "pending",
     task_code: normalizeText(schedule?.task_code),
     type: "device_maintenance_schedule_removed",
   });
 
+  const buildTransferConfirmedContext = () => {
+    const taskByCode = new Map(rawTasks.value.map((task) => [normalizeText(task?.code || task?.task_code), task]));
+    const samplesByTaskCode = new Map();
+    rawSamples.value.forEach((sample) => {
+      const taskCode = normalizeText(sample?.task_code);
+      if (!taskCode) {
+        return;
+      }
+      samplesByTaskCode.set(taskCode, [...(samplesByTaskCode.get(taskCode) || []), sample]);
+    });
+    return { samplesByTaskCode, taskByCode };
+  };
+
   const buildMaintenancePlanUpdates = ({ conflictingSchedules = [], deviceCode, form, timestamp }) => {
     const removedScheduleIds = new Set(conflictingSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
     const removedExperimentKeys = new Set(
       conflictingSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
     );
+    const { samplesByTaskCode, taskByCode } = buildTransferConfirmedContext();
     const nextDevices = rawDevices.value.map((device) => {
       if (normalizeText(device?.code) !== normalizeText(deviceCode)) {
         return { ...device };
@@ -178,10 +190,15 @@ function useDevicesPage() {
       if (!removedExperimentKeys.has(key)) {
         return { ...experiment };
       }
+      const taskCode = normalizeText(experiment?.task_code);
+      const confirmedAt = resolveTransferConfirmedAt({
+        samples: samplesByTaskCode.get(taskCode),
+        task: taskByCode.get(taskCode),
+      });
       return {
         ...experiment,
         status: STATUS_WAITING,
-        unscheduled_since: timestamp,
+        unscheduled_since: confirmedAt?.toISOString() || "",
         updated_at: timestamp,
       };
     });
@@ -209,6 +226,7 @@ function useDevicesPage() {
     const removedExperimentKeys = new Set(
       conflictingSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
     );
+    const { samplesByTaskCode, taskByCode } = buildTransferConfirmedContext();
     const nextDevices = upsertDevice(rawDevices.value, form);
     const nextSchedules = rawSchedules.value.filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)));
     const nextExperiments = rawExperiments.value.map((experiment) => {
@@ -216,10 +234,15 @@ function useDevicesPage() {
       if (!removedExperimentKeys.has(key)) {
         return { ...experiment };
       }
+      const taskCode = normalizeText(experiment?.task_code);
+      const confirmedAt = resolveTransferConfirmedAt({
+        samples: samplesByTaskCode.get(taskCode),
+        task: taskByCode.get(taskCode),
+      });
       return {
         ...experiment,
         status: STATUS_WAITING,
-        unscheduled_since: timestamp,
+        unscheduled_since: confirmedAt?.toISOString() || "",
         updated_at: timestamp,
       };
     });
@@ -409,7 +432,22 @@ function useDevicesPage() {
     },
   );
 
-  onMounted(loadDevicesPage);
+  const syncDeviceClock = () => {
+    now.value = new Date();
+  };
+
+  onMounted(() => {
+    syncDeviceClock();
+    deviceClockTimer = window.setInterval(syncDeviceClock, 1000);
+    loadDevicesPage();
+  });
+
+  onBeforeUnmount(() => {
+    if (deviceClockTimer) {
+      window.clearInterval(deviceClockTimer);
+      deviceClockTimer = null;
+    }
+  });
 
   return {
     cancelMaintenanceConflict,

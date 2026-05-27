@@ -1,4 +1,5 @@
 import { STORAGE_KEYS } from "./storageKeys";
+import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 
 const STARTED_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
@@ -209,6 +210,15 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
   const experimentNameByCode = buildExperimentNameMap(experiments);
+  const taskByCode = new Map(tasks.map((task) => [normalizeText(task?.code || task?.task_code), task]));
+  const samplesByTaskCode = new Map();
+  samples.forEach((sample) => {
+    const taskCode = normalizeText(sample?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    samplesByTaskCode.set(taskCode, [...(samplesByTaskCode.get(taskCode) || []), sample]);
+  });
 
   const expiredUnstartedSchedules = schedules.filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
@@ -243,10 +253,16 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     if (!removedExperiments.has(key)) {
       return experiment;
     }
+    const taskCode = normalizeText(experiment?.task_code);
+    const confirmedAt = resolveTransferConfirmedAt({
+      samples: samplesByTaskCode.get(taskCode),
+      task: taskByCode.get(taskCode),
+    });
+    const unscheduledSince = confirmedAt?.toISOString() || "";
     return {
       ...experiment,
       status: STATUS_WAITING,
-      unscheduled_since: now.toISOString(),
+      unscheduled_since: unscheduledSince,
       updated_at: now.toISOString(),
     };
   });

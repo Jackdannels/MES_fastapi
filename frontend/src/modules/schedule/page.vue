@@ -2,6 +2,7 @@
   <Teleport v-if="canTeleportExceptionAction" to=".header-actions">
     <button
       class="action-btn schedule-header-action-button schedule-header-action-button--exception"
+      :class="{ 'is-alert': pendingExceptionCount > 0 }"
       data-testid="schedule-exception-action"
       type="button"
       @click="openExceptionModal"
@@ -617,7 +618,6 @@ const uiText = {
 
 const {
   acknowledgeException,
-  buildEditLabOptions,
   buildEditLabOptionItems,
   cancelScheduleConflict,
   canResetGanttWindow,
@@ -635,12 +635,12 @@ const {
   ganttView,
   showNextGanttWindow,
   showPreviousGanttWindow,
-  manualLabOptions,
   manualLabOptionItems,
   manualTimeSlotOptions,
   openExceptionModal,
   openScheduleDrawer,
   openTaskDetailModal,
+  pendingExceptionCount,
   pendingExceptionRows,
   removeSchedule,
   removeTaskDetailSchedule,

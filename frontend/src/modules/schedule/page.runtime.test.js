@@ -208,9 +208,25 @@ describe("SchedulePage runtime", () => {
     expect(exceptionButton).not.toBeNull();
     expect(String(exceptionButton?.textContent || "").trim()).toBe("异常处理 1");
     expect(exceptionButton?.className || "").toContain("schedule-header-action-button--exception");
+    expect(exceptionButton?.className || "").toContain("is-alert");
 
     const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
     expect(headerButtons).toContain("异常处理 1");
+
+    wrapper.unmount();
+  });
+
+  test("keeps the exception action blue when there are no pending exceptions", async () => {
+    installHeaderActions();
+    setStorage(CONFLICTS_KEY, []);
+
+    const wrapper = mount(SchedulePage, { attachTo: document.body });
+    await settle(wrapper);
+
+    const exceptionButton = document.body.querySelector('[data-testid="schedule-exception-action"]');
+    expect(exceptionButton).not.toBeNull();
+    expect(String(exceptionButton?.textContent || "").trim()).toBe("异常处理");
+    expect(exceptionButton?.className || "").not.toContain("is-alert");
 
     wrapper.unmount();
   });
@@ -799,6 +815,23 @@ describe("SchedulePage runtime", () => {
     expect(ganttRows).toHaveLength(2);
     expect(ganttRows[0].text()).toContain(PRIMARY_LAB);
     expect(ganttRows[1].text()).toContain(SECONDARY_LAB);
+  });
+
+  test("shows maintenance devices as maintenance in the central schedule gantt", async () => {
+    setStorage(TASKS_KEY, []);
+    setStorage(EXPERIMENTS_KEY, []);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB, status: "维护/校准" }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const firstRow = wrapper.findAll("#gantt-body tr").find((row) => row.text().includes(PRIMARY_LAB));
+    expect(firstRow).toBeTruthy();
+    expect(firstRow.text()).toContain("维护中");
+    expect(firstRow.find(".gantt-slot.maintenance").exists()).toBe(true);
   });
 
   test("renders stacked task codes inside one half-day gantt cell", async () => {

@@ -72,16 +72,6 @@ const waitForSamplesUpdatedEvent = async (spy, count) => {
   }
   expect(spy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(count);
 };
-const waitForReadyButtonEnabled = async (mounted) => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await flushPageUpdates();
-    if (mounted.get('[data-testid="laboratory-ready"]').attributes("disabled") === undefined) {
-      return;
-    }
-  }
-  expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
-};
-
 const createSnapshot = () => ({
   [STORAGE_KEYS.tasks]: [
     { code: "SYLU-2026-04-101", name: "盐雾连接器", test_type: "盐雾试验" },
@@ -1058,11 +1048,32 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  test("does not allow completed experiment trays to be added to comparison", async () => {
+  test("does not allow shared trays completed in the current experiment to be added to comparison", async () => {
     snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = [
+      ...snapshotState[STORAGE_KEYS.experiments],
+      {
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-B",
+        experiment_name: "高低温湿热试验",
+        status: "已排程",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      ...snapshotState[STORAGE_KEYS.experiment_trays],
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-B", tray_code: "TP-001" },
+    ];
     snapshotState[STORAGE_KEYS.samples] = [
       {
         code: "SYLU-2026-04-101-SP-001",
+        history: [
+          {
+            action: "实验完成",
+            detail: "SYLU-2026-04-101 / 盐雾试验-A / 实验已完成",
+            status: "实验已完成",
+            time: "2026-04-02T10:30:00.000Z",
+          },
+        ],
         location: "盐雾试验室",
         owner: "王工",
         status: "实验已完成",
@@ -1097,6 +1108,20 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "实验已完成",
+      status: "实验已完成",
+      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-001" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][1]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-002" })],
+    }));
   });
 
   test("auto focuses the compare scan input when the compare modal opens", async () => {

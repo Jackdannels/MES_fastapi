@@ -24,6 +24,7 @@ import {
   isRetentionDevice,
   isDeviceUnavailableForSchedule,
   normalizeText,
+  resolveDeviceUnavailableReason,
   isManualScheduleSelectionLegal,
   resolveLegalManualScheduleState,
   resolveScheduleTimes,
@@ -35,8 +36,11 @@ import {
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
+const SCHEDULE_PAGE_REFRESH_INTERVAL_MS = 5000;
+
 function useSchedulePage() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.conflicts,
@@ -74,6 +78,10 @@ function useSchedulePage() {
   const pendingScheduleDraft = ref(null);
   const scheduleFormWatchSuspended = ref(false);
   let clockTimer = null;
+  let scheduleRefreshTimer = null;
+  const refreshSchedulePageWithoutReset = () => {
+    void loadSchedulePage({ resetForm: false });
+  };
 
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
@@ -123,10 +131,17 @@ function useSchedulePage() {
 
   const findDevice = (deviceCode) =>
     rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(deviceCode));
-  const buildMaintenanceLabTitle = (deviceCode, device) => {
+  const buildUnavailableLabTitle = (deviceCode, device) => {
     const name = normalizeText(deviceCode);
     if (!name || !isDeviceUnavailableForSchedule(device, now.value)) {
       return "";
+    }
+    const reason = resolveDeviceUnavailableReason(device, now.value);
+    if (reason === "disabled") {
+      return `${name}已停用，暂不可排程`;
+    }
+    if (reason === "unavailable") {
+      return `${name}不可用，暂不可排程`;
     }
     const startAt = normalizeText(device?.maintenance_start_at ?? device?.maintenanceStartAt);
     const endAt = normalizeText(device?.maintenance_end_at ?? device?.maintenanceEndAt);
@@ -138,7 +153,7 @@ function useSchedulePage() {
       const value = normalizeText(option);
       const device = findDevice(value);
       const disabled = normalizeText(selectedDevice) !== value && isDeviceUnavailableForSchedule(device, now.value);
-      const title = disabled ? buildMaintenanceLabTitle(value, device) : "";
+      const title = disabled ? buildUnavailableLabTitle(value, device) : "";
       return {
         disabled,
         label: value,
@@ -146,6 +161,35 @@ function useSchedulePage() {
         value,
       };
     });
+  const buildMaintenanceLabNotice = (options = []) => {
+    const disabledOptions = (Array.isArray(options) ? options : [])
+      .filter((option) => option?.disabled && normalizeText(option?.title));
+    if (disabledOptions.length === 0) {
+      return "";
+    }
+    if (disabledOptions.length === 1) {
+      return normalizeText(disabledOptions[0]?.title);
+    }
+    const groupedBySuffix = [];
+    disabledOptions.forEach((option) => {
+      const label = normalizeText(option?.label);
+      const title = normalizeText(option?.title);
+      const suffix = label && title.startsWith(label) ? title.slice(label.length) : "";
+      if (!suffix) {
+        groupedBySuffix.push({ raw: title });
+        return;
+      }
+      const group = groupedBySuffix.find((entry) => entry.suffix === suffix);
+      if (group) {
+        group.labels.push(label);
+        return;
+      }
+      groupedBySuffix.push({ labels: [label], suffix });
+    });
+    return groupedBySuffix
+      .map((group) => group.raw || `${group.labels.join("、")}${group.suffix}`)
+      .join("；");
+  };
 
   // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
   const manualLabOptionItems = computed(() =>
@@ -162,7 +206,7 @@ function useSchedulePage() {
     manualLabOptionItems.value.filter((option) => !option.disabled).map((option) => option.value),
   );
   const maintenanceLabNotice = computed(() =>
-    manualLabOptionItems.value.find((option) => option.disabled)?.title || "",
+    buildMaintenanceLabNotice(manualLabOptionItems.value),
   );
   const manualTimeSlotOptions = computed(() =>
     buildManualTimeSlotOptions({
@@ -191,7 +235,7 @@ function useSchedulePage() {
   );
   const pendingExceptionRows = computed(() =>
     rawConflicts.value.filter(
-      (entry) => normalizeText(entry?.type) === "schedule_missed_start" && normalizeText(entry?.status) === "pending",
+      (entry) => normalizeText(entry?.status) === "pending",
     ),
   );
   const pendingExceptionCount = computed(() => pendingExceptionRows.value.length);
@@ -640,8 +684,10 @@ function useSchedulePage() {
 
   const removeSchedule = async () => {
     const result = deleteScheduleRecord({
+      experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
+      samples: rawSamples.value,
       scheduleId: editForm.value.id,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
@@ -663,8 +709,10 @@ function useSchedulePage() {
       return;
     }
     const result = deleteScheduleRecord({
+      experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
+      samples: rawSamples.value,
       scheduleId,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
@@ -688,8 +736,10 @@ function useSchedulePage() {
     }
 
     const result = deleteScheduleRecord({
+      experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
+      samples: rawSamples.value,
       scheduleId,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
@@ -706,7 +756,7 @@ function useSchedulePage() {
     closeTaskDetailModal();
   };
 
-  const loadSchedulePage = async () => {
+  const loadSchedulePage = async ({ resetForm: shouldResetForm = true } = {}) => {
     try {
       const [snapshot, loadedMasterLabs] = await Promise.all([
         loadSnapshot(),
@@ -721,7 +771,9 @@ function useSchedulePage() {
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
       rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
-      resetScheduleForm();
+      if (shouldResetForm) {
+        resetScheduleForm();
+      }
     } catch (error) {
       masterLabs.value = [];
       scheduleWarning.value = buildFailureMessage("排程数据加载失败，请稍后重试", error);
@@ -820,12 +872,22 @@ function useSchedulePage() {
   onMounted(() => {
     void loadSchedulePage();
     clockTimer = window.setInterval(syncRetentionClock, 1000);
+    scheduleRefreshTimer = window.setInterval(refreshSchedulePageWithoutReset, SCHEDULE_PAGE_REFRESH_INTERVAL_MS);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, refreshSchedulePageWithoutReset);
+    window.addEventListener("storage", refreshSchedulePageWithoutReset);
+    window.addEventListener("focus", refreshSchedulePageWithoutReset);
   });
 
   onBeforeUnmount(() => {
     if (clockTimer) {
       window.clearInterval(clockTimer);
     }
+    if (scheduleRefreshTimer) {
+      window.clearInterval(scheduleRefreshTimer);
+    }
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, refreshSchedulePageWithoutReset);
+    window.removeEventListener("storage", refreshSchedulePageWithoutReset);
+    window.removeEventListener("focus", refreshSchedulePageWithoutReset);
   });
 
   const buildEditLabOptions = (selectedDevice, taskCode) => {

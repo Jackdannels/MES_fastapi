@@ -152,6 +152,43 @@ def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(mo
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkeypatch):
+    samples = [
+        {
+            "code": "SP-MAINTENANCE-ENDED",
+            "location": "盐雾试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "SYLU-2026-05-705",
+            "trays": [{"tray_code": "TP-MAINTENANCE-ENDED", "status": "送至实验室", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.devices": [
+                {
+                    "code": "盐雾试验室",
+                    "maintenance_end_at": "2000-01-01T12:00:00",
+                    "maintenance_start_at": "2000-01-01T08:00:00",
+                    "status": "维护/校准",
+                }
+            ],
+            "mes.samples": samples,
+        },
+    )
+
+    updated = deepcopy(samples)
+    updated[0]["status"] = "已到达实验室"
+    updated[0]["flow_status"] = "已到达实验室"
+    updated[0]["trays"][0]["status"] = "已到达实验室"
+
+    response = client.put("/api/storage", json={"mes.samples": updated})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == updated
+
+
 def test_storage_allows_next_experiment_arrival_after_previous_experiment_completed(monkeypatch):
     samples = [
         {

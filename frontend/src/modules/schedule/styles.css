@@ -126,13 +126,25 @@
 }
 
 .schedule-header-action-button--exception {
+  border-color: rgba(37, 99, 235, 0.3);
+  background: rgba(219, 234, 254, 0.92);
+  color: #1d4ed8;
+}
+
+.schedule-header-action-button--exception:hover,
+.schedule-header-action-button--exception:focus-visible {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(191, 219, 254, 0.98);
+}
+
+.schedule-header-action-button--exception.is-alert {
   border-color: rgba(239, 68, 68, 0.3);
   background: rgba(254, 226, 226, 0.92);
   color: #b91c1c;
 }
 
-.schedule-header-action-button--exception:hover,
-.schedule-header-action-button--exception:focus-visible {
+.schedule-header-action-button--exception.is-alert:hover,
+.schedule-header-action-button--exception.is-alert:focus-visible {
   border-color: rgba(220, 38, 38, 0.4);
   background: rgba(254, 202, 202, 0.98);
 }
@@ -557,6 +569,22 @@
   color: #64748b;
 }
 
+.gantt-slot.maintenance {
+  font-size: 16px;
+  font-weight: 600;
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+}
+
+.gantt-slot.disabled {
+  font-size: 16px;
+  font-weight: 600;
+  border-color: rgba(100, 116, 139, 0.36);
+  background: rgba(226, 232, 240, 0.96);
+  color: #475569;
+}
+
 .gantt-slot.busy {
   border-style: solid;
   border-color: rgba(37, 99, 235, 0.42);
@@ -707,6 +735,16 @@
 .gantt tbody tr:hover td .gantt-slot.idle {
   background: rgba(241, 245, 249, 0.98);
   border-color: rgba(148, 163, 184, 0.38);
+}
+
+.gantt tbody tr:hover td .gantt-slot.maintenance {
+  background: rgba(254, 243, 199, 0.92);
+  border-color: rgba(245, 158, 11, 0.46);
+}
+
+.gantt tbody tr:hover td .gantt-slot.disabled {
+  background: rgba(226, 232, 240, 0.98);
+  border-color: rgba(100, 116, 139, 0.42);
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy {

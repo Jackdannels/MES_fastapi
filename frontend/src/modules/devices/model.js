@@ -120,6 +120,11 @@ function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = 
   if (isDeviceInMaintenanceWindow(device, now)) {
     return MAINTENANCE_DEVICE_STATUS;
   }
+  const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  const current = parseDate(now) || new Date();
+  if (storedStatus === MAINTENANCE_DEVICE_STATUS && maintenanceEnd && maintenanceEnd < current) {
+    return DEFAULT_DEVICE_STATUS;
+  }
   return storedStatus || DEFAULT_DEVICE_STATUS;
 }
 

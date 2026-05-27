@@ -419,6 +419,42 @@ def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
     assert all(sample["status"] == "已入库" for sample in updated_samples)
 
 
+def test_transfer_area_dispatch_to_lab_allows_device_after_planned_maintenance_ends(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    storage.write(
+        "mes.devices",
+        [
+            {
+                "code": "振动一室",
+                "maintenance_end_at": "2000-01-01T12:00:00",
+                "maintenance_start_at": "2000-01-01T08:00:00",
+                "status": "维护/校准",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tray"]["trayStatus"] == "送至实验室"
+
+
 def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(
@@ -814,6 +850,35 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
     assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
+
+
+def test_transfer_area_allocate_rejects_stale_saved_allocation_after_storage_confirmed(monkeypatch):
+    client, _storage = build_client(monkeypatch)
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+    stale_save = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert allocated.status_code == 200
+    assert confirmed.status_code == 200
+    assert stale_save.status_code == 400
+    assert stale_save.json()["detail"] == "该任务已到货，不能重新保存预接驳托盘。"
 
 
 def test_transfer_area_workspace_and_allocate_include_experiment_tray_assignments(monkeypatch):

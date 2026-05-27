@@ -73,6 +73,22 @@
   flex: 0 0 auto;
 }
 
+.nav-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(254, 226, 226, 0.95);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .sidebar-footer {
   margin-top: 28px;
   padding-top: 18px;

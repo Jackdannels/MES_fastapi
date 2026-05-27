@@ -186,6 +186,7 @@ describe("useSchedulePage", () => {
     const snapshot = buildSnapshot();
     snapshot["mes.devices"] = [
       { code: "冲击一室", status: "维护/校准" },
+      { code: "冲击二室", status: "停用" },
       { code: "振动一室", status: "可用" },
     ];
     mocks.loadSnapshot.mockResolvedValue(snapshot);
@@ -204,9 +205,14 @@ describe("useSchedulePage", () => {
           title: expect.stringContaining("冲击一室维护中，暂不可排程"),
           value: "冲击一室",
         }),
+        expect.objectContaining({
+          disabled: true,
+          title: expect.stringContaining("冲击二室已停用，暂不可排程"),
+          value: "冲击二室",
+        }),
       ]),
     );
-    expect(wrapper.vm.maintenanceLabNotice).toContain("冲击一室维护中，暂不可排程");
+    expect(wrapper.vm.maintenanceLabNotice).toBe("冲击一室维护中，暂不可排程；冲击二室已停用，暂不可排程");
   });
 
   test("keeps the current task code and resets the rest of the top form after scheduling one experiment", async () => {

@@ -158,4 +158,25 @@ describe("visualization model", () => {
     expect(JSON.stringify(view)).not.toContain("TASK-004");
     expect(JSON.stringify(view)).not.toContain("暂存间");
   });
+
+  test("marks visualization schedule idle slots as maintenance or disabled from device state", () => {
+    const view = buildLabScheduleThreeDayView({
+      devices: [
+        { code: "冲击一室", status: "维护/校准" },
+        { code: "冲击二室", status: "停用" },
+      ],
+      labNames: ["冲击一室", "冲击二室"],
+      now: new Date("2026-05-23T10:00:00+08:00"),
+      schedules: [],
+    });
+
+    expect(view.rows.find((row) => row.device === "冲击一室")?.slots[0]).toEqual(expect.objectContaining({
+      label: "维护中",
+      state: "maintenance",
+    }));
+    expect(view.rows.find((row) => row.device === "冲击二室")?.slots[0]).toEqual(expect.objectContaining({
+      label: "停用",
+      state: "disabled",
+    }));
+  });
 });

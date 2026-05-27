@@ -25,10 +25,10 @@ describe("scheduleExceptions", () => {
           {
             code: "TASK-001-SP-001",
             task_code: "TASK-001",
+            history: [{ action: "任务已确认入库", time: "2099-03-19T07:15:00.000Z" }],
             location: "冲击一室",
             status: "实验准备就绪",
             trays: [{ tray_code: "TASK-001-TP-001", status: "实验准备就绪", quantity: 1 }],
-            history: [],
           },
         ],
         [STORAGE_KEYS.schedules]: [
@@ -59,7 +59,7 @@ describe("scheduleExceptions", () => {
         task_code: "TASK-001",
         experiment_code: "TASK-001-A",
         status: "待排程",
-        unscheduled_since: "2099-03-20T12:00:00.000Z",
+        unscheduled_since: "2099-03-19T07:15:00.000Z",
       }),
     ]);
     expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([

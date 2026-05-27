@@ -1551,6 +1551,43 @@ describe("schedulePageModel", () => {
     expect(tempShockRow?.slots.some((slot) => slot.scheduleId === "schedule-30-c")).toBe(true);
   });
 
+  test("buildGanttRows marks idle slots as maintenance or disabled when devices are unavailable", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        { code: "冲击一室", status: "维护/校准" },
+        { code: "冲击二室", status: "停用" },
+        {
+          code: "振动一室",
+          maintenance_end_at: "2099-03-20T11:00",
+          maintenance_start_at: "2099-03-20T09:00",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [],
+    });
+
+    expect(gantt.rows.find((row) => row.device === "冲击一室")?.slots[0]).toEqual(expect.objectContaining({
+      className: expect.stringContaining("maintenance"),
+      label: "维护中",
+      state: "maintenance",
+      title: "冲击一室维护中，暂不可排程",
+    }));
+    expect(gantt.rows.find((row) => row.device === "冲击二室")?.slots[0]).toEqual(expect.objectContaining({
+      className: expect.stringContaining("disabled"),
+      label: "停用",
+      state: "disabled",
+      title: "冲击二室已停用，暂不可排程",
+    }));
+    expect(gantt.rows.find((row) => row.device === "振动一室")?.slots[0]).toEqual(expect.objectContaining({
+      label: "维护中",
+      state: "maintenance",
+      title: "振动一室维护中，暂不可排程",
+    }));
+  });
+
   test("resolveRetentionTimeState snaps retention scheduling to now", () => {
     const result = resolveRetentionTimeState(new Date(2099, 2, 20, 9, 15, 0));
 
@@ -1626,6 +1663,34 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("该设备处于维护状态，不可排程");
   });
 
+  test("createScheduleRecord rejects a disabled device with a disabled-device message", () => {
+    const result = createScheduleRecord({
+      devices: [{ code: "冲击一室", status: "停用" }],
+      experiments: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          experiment_name: "冲击试验",
+        },
+      ],
+      form: {
+        custom_start: "09:00",
+        device: "冲击一室",
+        experiment_code: "TASK-001-A",
+        planned_hours: 1,
+        schedule_date: "2099-03-20",
+        task_code: "TASK-001",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBe("该设备已停用，不可排程");
+  });
+
   test("updateScheduleRecord recalculates end time when planned hours change", () => {
     const result = updateScheduleRecord({
       experiments: [
@@ -1668,7 +1733,7 @@ describe("schedulePageModel", () => {
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
   });
 
-  test("deleteScheduleRecord restarts unscheduled_since when removing the last formal schedule", () => {
+  test("deleteScheduleRecord restores unscheduled_since from transfer confirmation when removing the last formal schedule", () => {
     const result = deleteScheduleRecord({
       experiments: [
         {
@@ -1679,6 +1744,14 @@ describe("schedulePageModel", () => {
         },
       ],
       now: new Date("2099-03-10T08:00:00.000Z"),
+      samples: [
+        {
+          task_code: "SYLU-2026-03-001",
+          history: [{ action: "任务已确认入库", time: "2099-03-09T07:15:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", status: "到货" }],
+        },
+      ],
       scheduleId: "schedule-1",
       schedules: [
         {
@@ -1697,7 +1770,8 @@ describe("schedulePageModel", () => {
     });
 
     expect(result.schedules).toEqual([]);
-    expect(result.experiments[0].unscheduled_since).toBe("2099-03-10T08:00:00.000Z");
+    expect(result.experiments[0].unscheduled_since).toBe("2099-03-09T07:15:00.000Z");
+    expect(result.experiments[0].status).toBe(STATUS_WAITING);
   });
 
   test("buildGanttRows keeps cross-day schedules inside the fixed three-day window", () => {

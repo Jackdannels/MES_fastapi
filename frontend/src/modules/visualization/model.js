@@ -241,6 +241,7 @@ function buildLabScheduleThreeDayView(input = {}) {
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const samples = asArray(input.samples);
   const schedules = asArray(input.schedules);
+  const devices = asArray(input.devices);
   const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
 
   const visibleSchedules = schedules.filter(
@@ -249,6 +250,7 @@ function buildLabScheduleThreeDayView(input = {}) {
   const visibleScheduleIds = new Set(visibleSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
   const rawGanttView = buildGanttRows({
     days: 3,
+    devices,
     experiments,
     experimentTrays,
     masterLabs: labNames.map((name) => ({ name, test_types: [name] })),

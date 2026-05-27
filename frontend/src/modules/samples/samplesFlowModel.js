@@ -1053,7 +1053,9 @@ function buildTrayFlowView(input = {}) {
       const rawLabel = normalizeText(step?.timeLabel || step?.label);
       const label = normalizeText(step?.displayLabel || step?.label);
       const hasExplicitTime = Object.prototype.hasOwnProperty.call(step || {}, "time");
-      const { displayLabel, timeLabel, ...stepPayload } = step || {};
+      const stepPayload = { ...(step || {}) };
+      delete stepPayload.displayLabel;
+      delete stepPayload.timeLabel;
       steps.push({
         active: false,
         reached: false,

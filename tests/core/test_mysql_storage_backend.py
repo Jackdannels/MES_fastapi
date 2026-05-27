@@ -872,6 +872,22 @@ def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> Non
     assert storage_item["next_cal"] == "2026-07-12"
 
 
+def test_device_mapping_round_trip_preserves_three_operational_statuses() -> None:
+    for status in ["可用", "维护/校准", "停用"]:
+        insert_row = build_device_insert_row(
+            {
+                "code": f"设备-{status}",
+                "name": f"设备-{status}",
+                "status": status,
+            }
+        )
+
+        storage_item = build_storage_device_item(insert_row)
+
+        assert insert_row["status"] == status
+        assert storage_item["status"] == status
+
+
 def test_stream_mapping_round_trip_formats_quality_and_reported_flag() -> None:
     storage_stream = {
         "id": "stream-1",

@@ -1,4 +1,6 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
+import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
+
 const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
 const STATUS_RUNNING = "任务进行中";
@@ -17,6 +19,19 @@ const LEGACY_STATUS_COMPLETED_ALT = "实验已经完成";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
 const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
+const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
+  TRANSFER_STATUS_STORED,
+  LEGACY_TRANSFER_STATUS_STORED,
+  "送至实验室",
+  "实验准备就绪",
+  EXPERIMENT_STATUS_RUNNING,
+  LEGACY_STATUS_RUNNING,
+  EXPERIMENT_STATUS_COMPLETED,
+  LEGACY_STATUS_COMPLETED,
+  LEGACY_STATUS_COMPLETED_ALT,
+  "放置实验后暂存间",
+  "已到达暂存间",
+]);
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
 const normalizeText = (value) => String(value ?? "").trim();
@@ -47,13 +62,23 @@ const normalizeStatusLabel = (value) => {
   return normalized;
 };
 
-// 时间比较统一使用时间戳，无法解析时返回 NaN 交由调用方兜底。
-const parseTime = (value) => {
-  const time = Date.parse(String(value || ""));
-  return Number.isFinite(time) ? time : Number.NaN;
+const isArrivedOrLaterSampleStatus = (value) => ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeStatusLabel(value)) || ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeText(value));
+const isTaskStoredBySamples = (taskSamples) => {
+  const samples = Array.isArray(taskSamples) ? taskSamples : [];
+  if (samples.length === 0) {
+    return false;
+  }
+  return samples.every((sample) => {
+    if (isArrivedOrLaterSampleStatus(sample?.status) || isArrivedOrLaterSampleStatus(sample?.flow_status)) {
+      return true;
+    }
+    const trays = Array.isArray(sample?.trays) ? sample.trays : [];
+    return trays.length > 0 && trays.every((tray) => isArrivedOrLaterSampleStatus(tray?.status));
+  });
 };
-
-const isTaskStored = (task) => [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status));
+const isTaskStored = (task, taskSamples = []) =>
+  [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status)) ||
+  isTaskStoredBySamples(taskSamples);
 const isReturnedTaskRecord = (task, schedules) => {
   const taskCode = normalizeText(task?.code);
   const explicitReturned =
@@ -93,6 +118,22 @@ const hasRunningExperimentForSchedule = (schedule, experiments) =>
   (Array.isArray(experiments) ? experiments : []).some(
     (experiment) => isExperimentRunning(experiment) && scheduleMatchesExperiment(schedule, experiment),
   );
+const makeExperimentKey = (taskCode, experimentCode) => `${normalizeText(taskCode)}::${normalizeText(experimentCode)}`;
+const buildPendingExceptionExperimentKeys = (conflicts) => {
+  const keys = new Set();
+  (Array.isArray(conflicts) ? conflicts : []).forEach((conflict) => {
+    if (normalizeText(conflict?.status) !== "pending") {
+      return;
+    }
+    const taskCode = normalizeText(conflict?.task_code);
+    const experimentCode = normalizeText(conflict?.experiment_code);
+    if (!taskCode || !experimentCode) {
+      return;
+    }
+    keys.add(makeExperimentKey(taskCode, experimentCode));
+  });
+  return keys;
+};
 
 const formatElapsedDuration = (elapsedMs) => {
   const safeElapsed = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -121,7 +162,7 @@ const statusClass = (value) => {
 };
 
 // 根据任务数据和当前排程推导总览卡片上的任务状态。
-function resolveTaskStatus(task, schedules, experiments, now = Date.now()) {
+function resolveTaskStatus(task, schedules, experiments) {
   const taskCode = normalizeText(task?.code);
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (entry) => normalizeText(entry?.task_code) === taskCode
@@ -187,17 +228,27 @@ function resolveDeviceDotClass(status) {
 }
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
-function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, now = Date.now() }) {
+function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, samples, conflicts, now = Date.now() }) {
   const taskList = (Array.isArray(tasks) ? tasks : []).filter((task) => !isReturnedTaskRecord(task, schedules));
   const scheduleList = Array.isArray(schedules) ? schedules : [];
   const deviceList = Array.isArray(devices) ? devices : [];
   const streamList = Array.isArray(streams) ? streams : [];
   const experimentList = Array.isArray(experiments) ? experiments : [];
+  const sampleList = Array.isArray(samples) ? samples : [];
+  const pendingExceptionExperimentKeys = buildPendingExceptionExperimentKeys(conflicts);
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
+  const samplesByTaskCode = new Map();
+  sampleList.forEach((sample) => {
+    const taskCode = normalizeText(sample?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    samplesByTaskCode.set(taskCode, [...(samplesByTaskCode.get(taskCode) || []), sample]);
+  });
 
   // 先补齐每条任务的展示态和样式，后面的统计全部基于统一后的任务集合。
   const normalizedTasks = taskList.map((task) => {
-    const nextStatus = resolveTaskStatus(task, scheduleList, experimentList, now);
+    const nextStatus = resolveTaskStatus(task, scheduleList, experimentList);
     return {
       ...task,
       displayStatus: nextStatus,
@@ -243,14 +294,18 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   const unscheduledExperimentItems = experimentList
     .map((experiment) => {
-      const task = taskByCode.get(normalizeText(experiment?.task_code));
-      if (!isTaskStored(task)) {
+      const taskCode = normalizeText(experiment?.task_code);
+      const experimentCode = normalizeText(experiment?.experiment_code);
+      const task = taskByCode.get(taskCode);
+      const confirmedAt = resolveTransferConfirmedAt({ samples: samplesByTaskCode.get(taskCode), task });
+      const hasPendingException = pendingExceptionExperimentKeys.has(makeExperimentKey(taskCode, experimentCode));
+      if (!hasPendingException && !confirmedAt && !isTaskStored(task, samplesByTaskCode.get(taskCode))) {
         return null;
       }
       if (hasFormalScheduleForExperiment(scheduleList, experiment?.task_code, experiment?.experiment_code)) {
         return null;
       }
-      const startedAt = parseTime(experiment?.unscheduled_since);
+      const startedAt = confirmedAt?.getTime() ?? Number.NaN;
       if (!Number.isFinite(startedAt)) {
         return null;
       }

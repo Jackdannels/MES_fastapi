@@ -316,6 +316,7 @@ const screenCards = [
 ];
 
 const { loadSnapshot } = useStorageSnapshot([
+  STORAGE_KEYS.devices,
   STORAGE_KEYS.tasks,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
@@ -349,6 +350,7 @@ const labScreens = computed(() => {
     experiments: snapshot[STORAGE_KEYS.experiments],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
+    devices: snapshot[STORAGE_KEYS.devices],
   });
 });
 const scheduleView = computed(() => {
@@ -360,6 +362,7 @@ const scheduleView = computed(() => {
     now: anchorDate,
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
+    devices: snapshot[STORAGE_KEYS.devices],
     experiments: snapshot[STORAGE_KEYS.experiments],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
@@ -565,6 +568,30 @@ const compactFlowSteps = (steps) => {
   return compact.filter((step, index) => compact.findIndex((item) => item.key === step.key && item.label === step.label) === index);
 };
 
+const formatBeijingFlowTime = (value) => {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    return text.replace(/T/g, " ").replace(/\+08:00$/i, "");
+  }
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date).reduce((result, part) => {
+    result[part.type] = part.value;
+    return result;
+  }, {});
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+};
+
 onMounted(() => {
   refreshViewportSize();
   refreshSnapshot();
@@ -688,8 +715,8 @@ const LabProcessScreen = {
                     ? displayedTrays.map((tray) =>
                       h("div", { class: "visual-tray-flow", key: tray.trayCode }, [
                         h("div", { class: "visual-tray-flow-head" }, [
-                          h("strong", tray.trayCode),
-                          h("span", tray.taskCode),
+                          h("strong", tray.taskCode),
+                          h("span", tray.trayCode),
                         ]),
                         h(
                           "div",
@@ -698,7 +725,7 @@ const LabProcessScreen = {
                             h("div", { class: ["visual-flow-step", stepClass(step)] }, [
                               h("span", { class: "visual-flow-dot" }),
                               h("strong", step.label),
-                              h("small", step.time),
+                              h("small", formatBeijingFlowTime(step.time)),
                             ]),
                           ),
                         ),
@@ -733,6 +760,12 @@ const scheduleStateLabel = (state) => {
   if (normalized === "idle") {
     return "空闲";
   }
+  if (normalized === "maintenance") {
+    return "维护中";
+  }
+  if (normalized === "disabled") {
+    return "停用";
+  }
   return "已排程";
 };
 
@@ -753,11 +786,14 @@ const renderScheduleSlot = (slot, compact) => {
   const visibleItems = items.length ? items.slice(0, compact ? 1 : 2) : [];
   const stateLabel = scheduleStateLabel(slot.state);
   const isPlainCell = stateLabel === "已排程" || stateLabel === "空闲";
+  const isStatusOnlyCell = visibleItems.length === 0 && ["maintenance", "disabled"].includes(String(slot?.state || "").trim());
   return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : ""] }, [
-    isPlainCell ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
+    isPlainCell || isStatusOnlyCell ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
     ...(visibleItems.length
       ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
-      : slot.state !== "idle"
+      : isStatusOnlyCell
+        ? [h("div", { class: "visual-schedule-status-only" }, stateLabel)]
+        : slot.state !== "idle"
         ? [h("div", { class: "visual-schedule-task" }, [h("strong", slot.label || "-"), h("small", compactTimeRange(slot.title))])]
         : [h("div", { class: "visual-schedule-idle" }, "空闲")]),
     slot.overflowCount > 0 ? h("div", { class: "visual-schedule-overflow" }, `+${slot.overflowCount}`) : null,
@@ -830,8 +866,7 @@ const LabScheduleScreen = {
           ]),
           h("div", { class: "visual-schedule-days" }, (view.dayCounts || []).map((day) =>
             h("div", { class: "visual-schedule-day", key: day.key }, [
-              h("span", day.label),
-              h("strong", day.dateLabel),
+              h("strong", day.dateLabel || day.label),
               h("small", `${day.count} 项`),
             ]),
           )),

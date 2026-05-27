@@ -450,7 +450,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -461,6 +461,7 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import { buildCode128Svg } from "../handover-system/barcode.js";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";
@@ -481,6 +482,7 @@ const props = defineProps({
 });
 
 const API_BASE_URL = getFrontendApiBaseUrl();
+const TRANSFER_REFRESH_INTERVAL_MS = 5000;
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "到货";
@@ -524,6 +526,7 @@ const lockedOperationHint = ref("");
 const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 const taskPage = ref(1);
 const overviewPageSize = ref(3);
+let transferRefreshTimer = null;
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
@@ -1156,6 +1159,14 @@ const refreshTransferWorkspaceAfterTrayChange = async () => {
   await loadWorkspace(selectedTaskId.value);
 };
 
+const handleSamplesUpdated = (event) => {
+  const source = String(event?.detail?.source || "").trim();
+  if (source === "transfer-workbench" || source === "tray-error-sample") {
+    return;
+  }
+  void refreshTransferWorkspaceAfterTrayChange();
+};
+
 const setTaskStatusFilter = (status) => {
   taskStatusFilter.value = status;
   taskPage.value = 1;
@@ -1493,6 +1504,7 @@ const persistAllocation = async (showMessage = true) => {
       body: JSON.stringify(buildAllocationPayload()),
     });
     applyWorkspace(payload.workspace);
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "allocate" } }));
     if (showMessage) showWorkbenchFeedback(payload.message, "success");
     return true;
   } catch (error) {
@@ -1683,6 +1695,7 @@ const confirmStorage = async () => {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
   }
   showWorkbenchFeedback(payload.message, "success");
+  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "confirm-storage" } }));
   await loadBootstrap();
   if (confirmedTaskId) {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
@@ -1703,10 +1716,28 @@ const reloadWorkspace = async () => {
     ? (normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "到货任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
     : payload.message, normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "warning" : "success");
   await loadBootstrap();
+  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "reload" } }));
   taskStatusFilter.value = pendingStatus;
 };
 
-onMounted(loadBootstrap);
+onMounted(() => {
+  void loadBootstrap();
+  transferRefreshTimer = window.setInterval(() => {
+    void refreshTransferWorkspaceAfterTrayChange();
+  }, TRANSFER_REFRESH_INTERVAL_MS);
+  window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+  window.addEventListener("storage", refreshTransferWorkspaceAfterTrayChange);
+  window.addEventListener("focus", refreshTransferWorkspaceAfterTrayChange);
+});
+
+onBeforeUnmount(() => {
+  if (transferRefreshTimer) {
+    window.clearInterval(transferRefreshTimer);
+  }
+  window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+  window.removeEventListener("storage", refreshTransferWorkspaceAfterTrayChange);
+  window.removeEventListener("focus", refreshTransferWorkspaceAfterTrayChange);
+});
 </script>
 
 <style scoped src="../handover-system/styles.css"></style>

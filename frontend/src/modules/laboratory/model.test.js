@@ -1180,6 +1180,92 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("validateLaboratoryTrayScan rejects a shared tray already completed for the current experiment", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-B", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-A", tray_code: "TP-002" },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-A",
+          experiment_name: "振动试验",
+          status: "已排程",
+        },
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          experiment_name: "盐雾试验",
+          status: "已排程",
+        },
+      ],
+      labName: "振动一室",
+      now: NOW,
+      samples: [
+        {
+          code: "SP-001",
+          history: [
+            {
+              action: "实验完成",
+              detail: "SYLU-2026-05-001 / 振动试验 / 实验已完成",
+              time: "2026-05-25T14:55:28.000Z",
+            },
+          ],
+          location: "振动一室",
+          owner: "王工",
+          status: "实验已完成",
+          task_code: "SYLU-2026-05-001",
+          trays: [{ tray_code: "TP-001", quantity: 1, status: "实验已完成" }],
+        },
+        {
+          code: "SP-002",
+          history: [],
+          location: "振动一室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-05-001",
+          trays: [{ tray_code: "TP-002", quantity: 1, status: "送至实验室" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-vibration",
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-A",
+          device: "振动一室",
+          start_at: "2026-05-25T14:55:00.000Z",
+          end_at: "2026-05-25T18:25:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-05-001", name: "双托盘任务", test_type: "振动试验 / 盐雾试验" }],
+    });
+
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: "TP-001",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘已完成实验",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-001",
+    }));
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: "TP-002",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      tone: "success",
+      trayCode: "TP-002",
+    }));
+  });
+
   test("keeps compare available when a shared tray completed a previous experiment and enters the next one", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
@@ -1880,6 +1966,55 @@ describe("laboratory model", () => {
     }));
     expect(updatedSamples[2].status).toBe("已到达实验室");
     expect(updatedSamples[2].trays[0].status).toBe("已到达实验室");
+  });
+
+  test("applyLaboratoryTaskStep does not downgrade completed trays back to comparison", () => {
+    const updatedSamples = applyLaboratoryTaskStep({
+      currentTask: {
+        device: "振动一室",
+        experimentName: "振动试验",
+        taskCode: "SYLU-2026-05-001",
+        trayCodes: ["TP-001", "TP-002"],
+      },
+      historyAction: "任务比对",
+      nextStatus: "已到达实验室",
+      now: "2026-05-25T15:05:00.000Z",
+      targetTrayCodes: ["TP-001", "TP-002"],
+      samples: [
+        {
+          code: "SP-001",
+          flow_status: "实验已完成",
+          history: [{ action: "实验完成", detail: "SYLU-2026-05-001 / 振动试验 / 实验已完成" }],
+          location: "振动一室",
+          owner: "王工",
+          status: "实验已完成",
+          task_code: "SYLU-2026-05-001",
+          trays: [{ quantity: 1, status: "实验已完成", tray_code: "TP-001" }],
+        },
+        {
+          code: "SP-002",
+          flow_status: "送至实验室",
+          history: [],
+          location: "振动一室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-05-001",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-002" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "实验已完成",
+      status: "实验已完成",
+      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-001" })],
+    }));
+    expect(updatedSamples[0].history).toHaveLength(1);
+    expect(updatedSamples[1]).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-002" })],
+    }));
   });
 
   test("resetLaboratoryExperimentTrays only resets trays for the current task and experiment", () => {

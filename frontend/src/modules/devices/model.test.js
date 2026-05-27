@@ -114,6 +114,24 @@ describe("devices model", () => {
     );
   });
 
+  test("returns a planned maintenance device to available after its maintenance window", () => {
+    const rows = buildDeviceRows(
+      [
+        {
+          code: "冲击一室",
+          name: "冲击试验系统-1",
+          maintenance_end_at: "2099-03-20T12:00",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "维护/校准",
+        },
+      ],
+      [],
+      new Date("2099-03-20T12:30:00"),
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "可用", statusClass: "status" }));
+  });
+
   test("finds schedules overlapped by a planned maintenance window", () => {
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode: "冲击一室",

@@ -20,6 +20,9 @@
           <span class="nav-link-label">
             {{ navItem.route.meta?.title }}
             <span v-if="showTaskOverviewAlert(navItem.route.name)" class="nav-alert-dot" aria-hidden="true"></span>
+            <span v-if="showScheduleExceptionAlert(navItem.route.name)" class="nav-alert-pill">
+              异常 {{ pendingScheduleExceptionCount }}
+            </span>
           </span>
         </RouterLink>
       </nav>
@@ -142,9 +145,10 @@ const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 
 const route = useRoute();
 const router = useRouter();
-const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules]);
+const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.conflicts]);
 const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
+const pendingScheduleExceptionCount = ref(0);
 const errorSample = useTrayErrorSampleHandling();
 let navAlertTimer = null;
 
@@ -169,6 +173,7 @@ const moduleNavigation = computed(() => getNavigationModules(currentModule.value
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskIntakeAction = computed(() => isCentralModule.value && route.name === "tasks");
 const showTaskOverviewAlert = (routeName) => routeName === "task-overview" && hasTaskOverviewAlert.value;
+const showScheduleExceptionAlert = (routeName) => routeName === "schedule" && pendingScheduleExceptionCount.value > 0;
 const currentLabName = computed(() => {
   if (!isLaboratoryModule.value) {
     return "";
@@ -190,7 +195,12 @@ const refreshTaskOverviewAlert = async () => {
     snapshot[STORAGE_KEYS.tasks],
     snapshot[STORAGE_KEYS.experiments],
     snapshot[STORAGE_KEYS.schedules],
+    Date.now(),
+    snapshot[STORAGE_KEYS.samples],
   );
+  pendingScheduleExceptionCount.value = (Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [])
+    .filter((entry) => String(entry?.status || "").trim() === "pending")
+    .length;
 };
 
 const handleCentralNavClick = async (navItem, event) => {
@@ -204,6 +214,8 @@ const handleCentralNavClick = async (navItem, event) => {
     snapshot[STORAGE_KEYS.tasks],
     snapshot[STORAGE_KEYS.experiments],
     snapshot[STORAGE_KEYS.schedules],
+    Date.now(),
+    snapshot[STORAGE_KEYS.samples],
   );
 
   await router

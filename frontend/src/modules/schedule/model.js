@@ -2,6 +2,7 @@
 import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { filterActiveTasks } from "@/lib/taskArchive";
+import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
 const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
@@ -9,6 +10,7 @@ const STATUS_RUNNING = "实验进行中";
 const STATUS_COMPLETED = "实验已完成";
 const STATUS_RETENTION = "暂存间存放";
 const DEVICE_STATUS_MAINTENANCE = "维护/校准";
+const DEVICE_STATUS_DISABLED = "停用";
 const STREAMING_STATUS = "Streaming";
 const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
 const RETENTION_KEYWORD = "暂存间";
@@ -108,23 +110,81 @@ const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
   return Boolean(startAt && endAt && startAt <= current && current <= endAt);
 };
 
-const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
+const resolveDeviceUnavailableReason = (device, now = new Date()) => {
   const status = normalizeText(device?.status);
-  return (
-    status === DEVICE_STATUS_MAINTENANCE
-    || status.includes("维护")
-    || status.includes("维修")
-    || status.includes("停用")
-    || status.includes("禁用")
-    || status.includes("不可用")
-    || isDeviceInMaintenanceWindow(device, now)
-  );
+  const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
+  const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  const current = parseDate(now) || new Date();
+  const hasMaintenanceWindow = Boolean(maintenanceStart && maintenanceEnd);
+  if (status === DEVICE_STATUS_DISABLED || status.includes("停用") || status.includes("禁用")) {
+    return "disabled";
+  }
+  if (hasMaintenanceWindow && maintenanceEnd < current) {
+    return status.includes("不可用") ? "unavailable" : "";
+  }
+  if (status === DEVICE_STATUS_MAINTENANCE || status.includes("维护") || status.includes("维修") || isDeviceInMaintenanceWindow(device, now)) {
+    return "maintenance";
+  }
+  if (status.includes("不可用")) {
+    return "unavailable";
+  }
+  return "";
+};
+
+const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
+  return Boolean(resolveDeviceUnavailableReason(device, now));
 };
 
 const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt) => {
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
   return Boolean(maintenanceStart && maintenanceEnd && startAt && endAt && maintenanceStart < endAt && maintenanceEnd > startAt);
+};
+
+const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = new Date(), startAt = null }) => {
+  const reason = resolveDeviceUnavailableReason(device, now)
+    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt) ? "maintenance" : "");
+  if (reason === "disabled") {
+    return "该设备已停用，不可排程";
+  }
+  if (reason === "maintenance") {
+    return "该设备处于维护状态，不可排程";
+  }
+  if (reason === "unavailable") {
+    return "该设备不可用，不可排程";
+  }
+  return "";
+};
+
+const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt }) => {
+  const name = normalizeText(deviceCode);
+  const reason = resolveDeviceUnavailableReason(device, now)
+    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt) ? "maintenance" : "");
+  if (reason === "disabled") {
+    return {
+      className: "gantt-slot idle disabled",
+      label: "停用",
+      state: "disabled",
+      title: `${name}已停用，暂不可排程`,
+    };
+  }
+  if (reason === "maintenance") {
+    return {
+      className: "gantt-slot idle maintenance",
+      label: "维护中",
+      state: "maintenance",
+      title: `${name}维护中，暂不可排程`,
+    };
+  }
+  if (reason === "unavailable") {
+    return {
+      className: "gantt-slot idle disabled",
+      label: "不可用",
+      state: "disabled",
+      title: `${name}不可用，暂不可排程`,
+    };
+  }
+  return null;
 };
 
 const findDeviceRecord = (devices = [], deviceCode = "") =>
@@ -1364,10 +1424,11 @@ function buildConflictRows({ schedules, tasks = [], samples = [], experiments = 
 }
 
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
-function buildGanttRows({ schedules, experiments = [], experimentTrays = [], samples = [], tasks = [], masterLabs = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+function buildGanttRows({ schedules, experiments = [], experimentTrays = [], samples = [], tasks = [], devices = [], masterLabs = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
+  const deviceByCode = new Map((Array.isArray(devices) ? devices : []).map((device) => [normalizeText(device?.code), device]));
   const visibleSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples }).filter((schedule) => {
     if (isRetentionDevice(schedule?.device)) {
       return false;
@@ -1393,11 +1454,17 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
     };
   });
 
+  const masterLabNames = getMasterLabNames(masterLabs);
+  const hasMasterLabRows = masterLabNames.length > 0;
+  const inventoryDeviceCodes = (Array.isArray(devices) ? devices : [])
+    .map((device) => normalizeText(device?.code))
+    .filter((code) => !hasMasterLabRows || masterLabNames.includes(code) || TEST_LABS.includes(code));
   const baseDeviceCodes = Array.from(
     new Set(
       []
         .concat(TEST_LABS)
-        .concat(getMasterLabNames(masterLabs))
+        .concat(inventoryDeviceCodes)
+        .concat(masterLabNames)
         .concat(visibleSchedules.map((schedule) => normalizeText(schedule?.device))),
     ),
   )
@@ -1435,18 +1502,25 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
 
         const slotKey = `${device}-${day.key}-${segment}`;
         if (matched.length === 0) {
+          const unavailableMeta = resolveUnavailableSlotMeta({
+            device: deviceByCode.get(device),
+            deviceCode: device,
+            endAt: segmentEnd,
+            now,
+            startAt: segmentStart,
+          });
           return {
-            className: "gantt-slot idle",
+            className: unavailableMeta?.className || "gantt-slot idle",
             date: day.key,
             displayMode: "idle",
             items: [],
             key: slotKey,
-            label: "空闲",
+            label: unavailableMeta?.label || "空闲",
             overflowCount: 0,
             scheduleId: "",
             segment,
-            state: "idle",
-            title: "空闲",
+            state: unavailableMeta?.state || "idle",
+            title: unavailableMeta?.title || "空闲",
           };
         }
 
@@ -1534,8 +1608,8 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
     const segments = [];
     slots.forEach((slot) => {
       // 连续同态槽位在这里折叠成 colspan 段，减少甘特图重复单元格。
-      const signature = slot.state === "idle"
-        ? "idle"
+      const signature = slot.state === "idle" || slot.state === "maintenance" || slot.state === "disabled"
+        ? `${slot.state}:${slot.label}:${slot.title}`
         : slot.state === "conflict" || slot.state === "stacked" || slot.state === "split"
           ? `${slot.state}:${slot.key}`
           : `${slot.label}:${slot.className}`;
@@ -1740,7 +1814,7 @@ function hasFormalExperimentSchedule(schedules, taskCode, experimentCode) {
   );
 }
 
-function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, experimentCode, now = new Date() }) {
+function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, experimentCode, tasks = [], samples = [] }) {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedExperimentCode = normalizeText(experimentCode);
   const nextExperiments = Array.isArray(experiments) ? experiments.map((experiment) => ({ ...experiment })) : [];
@@ -1749,6 +1823,13 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
   }
 
   const hasFormalSchedule = hasFormalExperimentSchedule(schedules, normalizedTaskCode, normalizedExperimentCode);
+  const task = (Array.isArray(tasks) ? tasks : []).find(
+    (entry) => normalizeText(entry?.code || entry?.task_code) === normalizedTaskCode,
+  );
+  const taskSamples = (Array.isArray(samples) ? samples : []).filter(
+    (sample) => normalizeText(sample?.task_code) === normalizedTaskCode,
+  );
+  const confirmedAt = resolveTransferConfirmedAt({ samples: taskSamples, task });
   return nextExperiments.map((experiment) => {
     if (
       normalizeText(experiment?.task_code) !== normalizedTaskCode ||
@@ -1759,7 +1840,8 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
 
     return {
       ...experiment,
-      unscheduled_since: hasFormalSchedule ? "" : now.toISOString(),
+      status: hasFormalSchedule ? experiment.status : STATUS_WAITING,
+      unscheduled_since: hasFormalSchedule ? "" : confirmedAt?.toISOString() || "",
     };
   });
 }
@@ -1873,12 +1955,16 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
   }
 
   const deviceRecord = findDeviceRecord(devices, device);
-  if (
-    !isRetentionDevice(device) &&
-    (isDeviceUnavailableForSchedule(deviceRecord, now) ||
-      deviceMaintenanceOverlapsSchedule(deviceRecord, resolved.startAt, resolved.endAt))
-  ) {
-    return { error: "该设备处于维护状态，不可排程" };
+  const deviceBlockMessage = isRetentionDevice(device)
+    ? ""
+    : resolveDeviceScheduleBlockMessage({
+        device: deviceRecord,
+        endAt: resolved.endAt,
+        now,
+        startAt: resolved.startAt,
+      });
+  if (deviceBlockMessage) {
+    return { error: deviceBlockMessage };
   }
 
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
@@ -1919,9 +2005,10 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
     experiments,
-    now,
+    samples,
     schedules: nextSchedules,
     taskCode,
+    tasks,
   });
   const targetSchedule =
     nextSchedules.find((schedule) => normalizeText(schedule?.task_code) === taskCode && normalizeText(schedule?.device) === device) ||
@@ -1958,12 +2045,16 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
     task_code: normalizeText(form?.task_code),
   };
   const deviceRecord = findDeviceRecord(devices, device);
-  if (
-    !isRetentionDevice(device) &&
-    (isDeviceUnavailableForSchedule(deviceRecord, now) ||
-      deviceMaintenanceOverlapsSchedule(deviceRecord, resolved.startAt, resolved.endAt))
-  ) {
-    return { error: "该设备处于维护状态，不可排程" };
+  const deviceBlockMessage = isRetentionDevice(device)
+    ? ""
+    : resolveDeviceScheduleBlockMessage({
+        device: deviceRecord,
+        endAt: resolved.endAt,
+        now,
+        startAt: resolved.startAt,
+      });
+  if (deviceBlockMessage) {
+    return { error: deviceBlockMessage };
   }
   const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules, ignoreId: scheduleId });
   if (conflicts.length > 0) {
@@ -1982,29 +2073,31 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
     experiments,
-    now,
+    samples,
     schedules: nextSchedules,
     taskCode: candidate.task_code,
+    tasks,
   });
   const nextStreams = ensureStreamForSchedule(streams, target, now);
 
   return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function deleteScheduleRecord({ experiments, scheduleId, tasks, schedules, streams, now = new Date() }) {
+function deleteScheduleRecord({ experimentTrays = [], experiments, samples = [], scheduleId, tasks, schedules, streams, now = new Date() }) {
   const removedSchedule = (Array.isArray(schedules) ? schedules : []).find(
     (schedule) => normalizeText(schedule?.id) === normalizeText(scheduleId),
   );
   const nextSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (schedule) => normalizeText(schedule?.id) !== normalizeText(scheduleId),
   );
-  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now);
+  const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: normalizeText(removedSchedule?.experiment_code),
     experiments,
-    now,
+    samples,
     schedules: nextSchedules,
     taskCode: normalizeText(removedSchedule?.task_code),
+    tasks,
   });
   return {
     experiments: nextExperiments,
@@ -2051,4 +2144,5 @@ export {
   resolveTaskStatus,
   isManualScheduleSelectionLegal,
   updateScheduleRecord,
+  resolveDeviceUnavailableReason,
 };
