@@ -186,8 +186,8 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).toContain("TRAY-VIS-001");
     expect(previewText).toContain("TASK-VIS-001");
     const flowHead = wrapper.find('[data-testid="visual-single-preview"] .visual-tray-flow-head');
-    expect(flowHead.get("strong").text()).toBe("TASK-VIS-001");
-    expect(flowHead.get("span").text()).toBe("TRAY-VIS-001");
+    expect(flowHead.get("strong").text()).toBe("任务编号：TASK-VIS-001");
+    expect(flowHead.get("span").text()).toBe("托盘编号：TRAY-VIS-001");
     expect(previewText).toContain("样品运输中");
     expect(previewText).toContain("振动试验进行中");
     expect(previewText).toContain("到货");
@@ -251,11 +251,15 @@ describe("VisualizationPage runtime", () => {
     expect(preview.text()).toContain("任务切换");
     expect(preview.text()).toContain("托盘切换");
     expect(preview.text()).toContain("TRAY-A-001");
+    expect(preview.text()).toContain("任务编号：TASK-LAB-A");
+    expect(preview.text()).toContain("托盘编号：TRAY-A-001");
 
     const taskB = preview.findAll('[data-testid="visual-lab-task-option"]').find((option) => option.text().includes("TASK-LAB-B"));
     expect(taskB).toBeTruthy();
     await taskB.trigger("click");
+    expect(preview.text()).toContain("任务编号：TASK-LAB-B");
     expect(preview.text()).toContain("TRAY-B-001");
+    expect(preview.text()).toContain("托盘编号：TRAY-B-001");
 
     const taskA = preview.findAll('[data-testid="visual-lab-task-option"]').find((option) => option.text().includes("TASK-LAB-A"));
     expect(taskA).toBeTruthy();
@@ -264,7 +268,7 @@ describe("VisualizationPage runtime", () => {
     const trayA2 = preview.findAll('[data-testid="visual-lab-tray-option"]').find((option) => option.text().includes("TRAY-A-002"));
     expect(trayA2).toBeTruthy();
     await trayA2.trigger("click");
-    expect(preview.text()).toContain("TRAY-A-002");
+    expect(preview.text()).toContain("托盘编号：TRAY-A-002");
   });
 
   test("renders the second screen as a real three-day laboratory schedule view", async () => {
@@ -476,6 +480,298 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).toContain("TP-001");
     expect(previewText).toContain("TP-003");
     expect(previewText).toContain("8件");
+  });
+
+  test("renders the sixth screen as a staging sample board with task tray switching and all-samples modal", async () => {
+    snapshotState.snapshot = {
+      "mes.tasks": [
+        { code: "TASK-STAGING-001", name: "盐雾暂存任务", test_type: "盐雾试验" },
+        { code: "TASK-STAGING-002", name: "霉菌暂存任务", test_type: "霉菌试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-STAGING-001", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+        { task_code: "TASK-STAGING-002", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-STAGING-001", experiment_code: "EXP-SALT", tray_code: "TRAY-SALT-001" },
+        { task_code: "TASK-STAGING-002", experiment_code: "EXP-MOLD", tray_code: "TRAY-MOLD-001" },
+      ],
+      "mes.staging_events": [
+        { tray_code: "TRAY-SALT-001", task_code: "TASK-STAGING-001", action: "stock_in", time: "2026-05-28T08:00:00+08:00" },
+        { tray_code: "TRAY-MOLD-001", task_code: "TASK-STAGING-002", action: "stock_in", time: "2026-05-28T08:05:00+08:00" },
+      ],
+      "mes.samples": [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          code: `SALT-SAMPLE-00${index + 1}`,
+          task_code: "TASK-STAGING-001",
+          location: "恒温恒湿间（暂存间）",
+          status: "已入库",
+          trays: [{ tray_code: "TRAY-SALT-001", status: "已入库", quantity: 1 }],
+        })),
+        {
+          code: "MOLD-SAMPLE-001",
+          task_code: "TASK-STAGING-002",
+          location: "恒温恒湿间（暂存间）",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "TRAY-MOLD-001", status: "放置实验后暂存间", quantity: 1 }],
+        },
+      ],
+    };
+    const wrapper = mountPage();
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    const sixthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[5];
+    expect(sixthCard.text()).toContain("暂存间样品信息屏");
+    expect(sixthCard.text()).toContain("托盘剩余");
+
+    await sixthCard.trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.text()).toContain("任务切换");
+    expect(preview.text()).toContain("托盘切换");
+    expect(preview.text()).toContain("TASK-STAGING-001");
+    expect(preview.text()).toContain("TRAY-SALT-001");
+    expect(preview.text()).toContain("SALT-SAMPLE-005");
+    expect(preview.text()).not.toContain("SALT-SAMPLE-006");
+    expect(preview.text()).toContain("全部样品");
+    expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("当前任务2");
+    expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("暂存托盘2");
+    expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("样品总数7");
+    expect(preview.text()).toContain("托盘剩余8");
+    expect(preview.text()).toContain("已用托盘 2");
+    expect(preview.text()).toContain("盐雾剩余99");
+    expect(preview.text()).toContain("已用盐量 1");
+    expect(preview.text()).not.toContain("盐雾托盘");
+    expect(preview.text()).toContain("霉菌剩余99");
+    expect(preview.text()).toContain("已用菌体 1");
+    expect(preview.text()).not.toContain("霉菌托盘");
+    expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick")).toHaveLength(10);
+    expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(8);
+
+    await wrapper.get('[data-testid="visual-staging-all-samples"]').trigger("click");
+    expect(wrapper.get('[data-testid="visual-staging-sample-modal"]').text()).toContain("SALT-SAMPLE-006");
+
+    await wrapper.get('[data-testid="visual-staging-modal-close"]').trigger("click");
+    await wrapper.findAll('[data-testid="visual-staging-task-option"]')[1].trigger("click");
+
+    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-MOLD-001");
+    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("MOLD-SAMPLE-001");
+  });
+
+  test("shows a red warning marker when tray remaining is at or below ten percent", async () => {
+    snapshotState.snapshot = {
+      "mes.tasks": [{ code: "TASK-STAGING-LOW", name: "低库存暂存任务", test_type: "盐雾试验" }],
+      "mes.experiments": [{ task_code: "TASK-STAGING-LOW", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" }],
+      "mes.experiment_trays": [{ task_code: "TASK-STAGING-LOW", experiment_code: "EXP-SALT", tray_code: "LOW-TP-001" }],
+      "mes.staging_events": [{ tray_code: "LOW-TP-001", task_code: "TASK-STAGING-LOW", action: "stock_in", time: "2026-05-28T08:00:00+08:00" }],
+      "mes.samples": Array.from({ length: 9 }, (_, index) => ({
+        code: `LOW-SAMPLE-${String(index + 1).padStart(3, "0")}`,
+        task_code: index === 0 ? "TASK-STAGING-LOW" : `TASK-USED-${index}`,
+        location: index === 0 ? "恒温恒湿间（暂存间）" : "盐雾试验室",
+        status: index === 0 ? "已入库" : "实验进行中",
+        trays: [{ tray_code: `LOW-TP-${String(index + 1).padStart(3, "0")}`, status: index === 0 ? "已入库" : "实验进行中", quantity: 1 }],
+      })),
+    };
+    const wrapper = mountPage();
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[5].trigger("click");
+
+    const trayCapacityCard = wrapper.find('[data-testid="visual-single-preview"]').findAll('[data-testid="visual-staging-capacity-card"]')[0];
+    expect(trayCapacityCard.text()).toContain("托盘剩余1");
+    expect(trayCapacityCard.findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(1);
+    expect(trayCapacityCard.get('[data-testid="visual-staging-capacity-alert"]').text()).toContain("!");
+    expect(trayCapacityCard.text()).toContain("托盘库存不足");
+  });
+
+  test("applies low-stock segmented warnings to salt spray and mold remaining metrics", async () => {
+    const saltTrays = Array.from({ length: 90 }, (_, index) => `SALT-LOW-${String(index + 1).padStart(3, "0")}`);
+    const moldTrays = Array.from({ length: 90 }, (_, index) => `MOLD-LOW-${String(index + 1).padStart(3, "0")}`);
+
+    snapshotState.snapshot = {
+      "mes.tasks": [
+        { code: "TASK-SALT-LOW", name: "盐雾低余量任务", test_type: "盐雾试验" },
+        { code: "TASK-MOLD-LOW", name: "霉菌低余量任务", test_type: "霉菌试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-SALT-LOW", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+        { task_code: "TASK-MOLD-LOW", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      "mes.experiment_trays": [
+        ...saltTrays.map((tray_code) => ({ task_code: "TASK-SALT-LOW", experiment_code: "EXP-SALT", tray_code })),
+        ...moldTrays.map((tray_code) => ({ task_code: "TASK-MOLD-LOW", experiment_code: "EXP-MOLD", tray_code })),
+      ],
+      "mes.staging_events": [
+        ...saltTrays.map((tray_code) => ({ tray_code, task_code: "TASK-SALT-LOW", action: "stock_in", time: "2026-05-28T08:00:00+08:00" })),
+        ...moldTrays.map((tray_code) => ({ tray_code, task_code: "TASK-MOLD-LOW", action: "stock_in", time: "2026-05-28T08:00:00+08:00" })),
+      ],
+      "mes.samples": [
+        ...saltTrays.map((tray_code, index) => ({
+          code: `SALT-LOW-SAMPLE-${String(index + 1).padStart(3, "0")}`,
+          task_code: "TASK-SALT-LOW",
+          location: "恒温恒湿间（暂存间）",
+          status: "已入库",
+          trays: [{ tray_code, status: "已入库", quantity: 1 }],
+        })),
+        ...moldTrays.map((tray_code, index) => ({
+          code: `MOLD-LOW-SAMPLE-${String(index + 1).padStart(3, "0")}`,
+          task_code: "TASK-MOLD-LOW",
+          location: "恒温恒湿间（暂存间）",
+          status: "已入库",
+          trays: [{ tray_code, status: "已入库", quantity: 1 }],
+        })),
+      ],
+    };
+    const wrapper = mountPage();
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[5].trigger("click");
+
+    const capacityCards = wrapper.find('[data-testid="visual-single-preview"]').findAll('[data-testid="visual-staging-capacity-card"]');
+    const saltCapacityCard = capacityCards[1];
+    const moldCapacityCard = capacityCards[2];
+
+    expect(saltCapacityCard.text()).toContain("盐雾剩余10");
+    expect(saltCapacityCard.findAll(".visual-staging-capacity-tick")).toHaveLength(10);
+    expect(saltCapacityCard.findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(1);
+    expect(saltCapacityCard.get('[data-testid="visual-staging-capacity-alert"]').text()).toContain("!");
+    expect(saltCapacityCard.text()).toContain("已用盐量 90");
+    expect(saltCapacityCard.text()).toContain("盐量库存不足");
+    expect(saltCapacityCard.text()).not.toContain("盐雾托盘");
+
+    expect(moldCapacityCard.text()).toContain("霉菌剩余10");
+    expect(moldCapacityCard.findAll(".visual-staging-capacity-tick")).toHaveLength(10);
+    expect(moldCapacityCard.findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(1);
+    expect(moldCapacityCard.get('[data-testid="visual-staging-capacity-alert"]').text()).toContain("!");
+    expect(moldCapacityCard.text()).toContain("已用菌体 90");
+    expect(moldCapacityCard.text()).toContain("菌体库存不足");
+    expect(moldCapacityCard.text()).not.toContain("霉菌托盘");
+  });
+
+  test("renders the eighth screen as a full laboratory analysis board with single-row custom time filters", async () => {
+    const wrapper = mountPage();
+    const eighthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[7];
+
+    expect(eighthCard.text()).toContain("设备状态与产品统计屏");
+    expect(eighthCard.text()).toContain("今日");
+    expect(eighthCard.text()).toContain("本周");
+    expect(eighthCard.text()).toContain("本月");
+    expect(eighthCard.text()).toContain("年初至今");
+    expect(eighthCard.text()).toContain("自定义");
+    expect(eighthCard.find('[data-testid="visual-analysis-filter-row"]').exists()).toBe(true);
+    expect(eighthCard.findAll('[data-testid="visual-analysis-custom-mode"]')).toHaveLength(0);
+    [
+      "振动一室",
+      "高低温湿热一室",
+      "盐雾试验室",
+      "冲击一室",
+      "霉菌试验室",
+      "四综合实验室",
+      "冲击二室",
+      "温度冲击二室",
+      "温度冲击一室",
+      "振动二室",
+    ].forEach((labName) => {
+      expect(eighthCard.text()).toContain(labName);
+    });
+
+    await eighthCard.trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.find(".visual-analysis-board").exists()).toBe(true);
+    expect(preview.text()).toContain("年初至今 · 2026-01-01 至 2026-05-28");
+    expect(preview.findAll('[data-testid="visual-analysis-filter-row"] .visual-analysis-time-chip')).toHaveLength(5);
+
+    await preview.get('[data-testid="visual-analysis-custom-trigger"]').trigger("click");
+
+    const menu = preview.get('[data-testid="visual-analysis-custom-menu"]');
+    expect(menu.text()).toContain("按天");
+    expect(menu.text()).toContain("按月");
+    expect(menu.text()).toContain("按年");
+    expect(menu.text()).toContain("时间段");
+    expect(menu.findAll('[data-testid="visual-analysis-custom-mode"]')).toHaveLength(4);
+  });
+
+  test("updates the eighth screen analysis data when time filters and custom modes are selected", async () => {
+    const wrapper = mountPage();
+
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[7].trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.text()).toContain("年初至今 · 2026-01-01 至 2026-05-28");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("449");
+
+    const monthButton = preview.findAll(".visual-analysis-time-chip").find((button) => button.text() === "本月");
+    expect(monthButton).toBeTruthy();
+    await monthButton.trigger("click");
+
+    expect(preview.text()).toContain("本月 · 2026-05-01 至 2026-05-28");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("305");
+    expect(monthButton.classes()).toContain("is-active");
+
+    await preview.get('[data-testid="visual-analysis-custom-trigger"]').trigger("click");
+    const customMonth = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("按月"));
+    expect(customMonth).toBeTruthy();
+    await customMonth.trigger("click");
+
+    expect(preview.text()).toContain("自定义 · 按月 · 2026-05");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("305");
+    expect(preview.get('[data-testid="visual-analysis-custom-trigger"]').classes()).toContain("is-active");
+  });
+
+  test("uses vivid diverse pie colors and matching custom filter button styling on the eighth screen", async () => {
+    const wrapper = mountPage();
+
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[7].trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    const customTrigger = preview.get('[data-testid="visual-analysis-custom-trigger"]');
+    const regularButton = preview.findAll(".visual-analysis-time-chip").find((button) => button.text() === "本月");
+    const sliceColors = preview.findAll(".visual-analysis-pie-slice").map((slice) => slice.attributes("fill"));
+
+    expect(customTrigger.classes()).toContain("visual-analysis-time-chip");
+    expect(customTrigger.classes()).not.toContain("is-subtle");
+    expect(customTrigger.classes().filter((className) => className.startsWith("is-"))).toEqual(regularButton.classes().filter((className) => className.startsWith("is-")));
+    expect(new Set(sliceColors).size).toBeGreaterThanOrEqual(10);
+    expect(sliceColors).toEqual(expect.arrayContaining(["#f97316", "#ef4444", "#a855f7", "#eab308"]));
+  });
+
+  test("opens calendar-only custom date controls without manual typing on the eighth screen", async () => {
+    const wrapper = mountPage();
+
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[7].trigger("click");
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+
+    await preview.get('[data-testid="visual-analysis-custom-trigger"]').trigger("click");
+
+    const menu = preview.get('[data-testid="visual-analysis-custom-menu"]');
+    expect(menu.findAll("input")).toHaveLength(0);
+    expect(preview.get('[data-testid="visual-analysis-day-grid"]').exists()).toBe(true);
+
+    const customMonth = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("按月"));
+    await customMonth.trigger("click");
+    expect(preview.find('[data-testid="visual-analysis-day-grid"]').exists()).toBe(false);
+    const monthGrid = preview.get('[data-testid="visual-analysis-month-grid"]');
+    expect(monthGrid.findAll("button").map((button) => button.text())).toEqual(expect.arrayContaining(["1月", "5月", "12月"]));
+
+    const customYear = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("按年"));
+    await customYear.trigger("click");
+    expect(preview.find('[data-testid="visual-analysis-month-grid"]').exists()).toBe(false);
+    const yearGrid = preview.get('[data-testid="visual-analysis-year-grid"]');
+    expect(yearGrid.findAll("button").map((button) => button.text())).toEqual(expect.arrayContaining(["2024", "2025", "2026", "2027"]));
+
+    const customRange = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("时间段"));
+    await customRange.trigger("click");
+    expect(preview.get('[data-testid="visual-analysis-range-grid"]').exists()).toBe(true);
+    expect(preview.findAll('[data-testid="visual-analysis-calendar-range"]')).toHaveLength(4);
+
+    const selectedDay = preview.get('[data-testid="visual-analysis-range-grid"]').findAll("button").find((button) => button.text() === "15");
+    await selectedDay.trigger("click");
+    expect(preview.text()).toContain("自定义 · 时间段 · 2026-05-15 至 2026-05-28");
   });
 
   test("opens the eight-screen combined preview from the page action", async () => {

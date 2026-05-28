@@ -72,6 +72,13 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step small\s*{[^}]*font-size:\s*13px;/s);
   });
 
+  test("layout A connects manufacturer return below post-experiment staging for long flows", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(n \+ 13\):last-child\s*{[^}]*grid-column:\s*4;[^}]*grid-row:\s*4;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(n \+ 13\):last-child::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
+  });
+
   test("layout A makes task and tray switch text easier to read", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
@@ -84,5 +91,32 @@ describe("visualization styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-cycle\s*{[^}]*min-height:\s*34px;[^}]*padding:\s*0 12px;[^}]*font-size:\s*14px;/s);
+  });
+
+  test("staging sample screen defines full and compact industrial board layouts", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toContain(".visual-staging-board");
+    expect(source).toContain(".visual-staging-overview");
+    expect(source).toMatch(/\.visual-staging-layout\s*{[^}]*grid-template-columns:\s*minmax\(220px,\s*0\.23fr\) minmax\(0,\s*1fr\) minmax\(260px,\s*0\.26fr\);/s);
+    expect(source).toMatch(/\.visual-staging-task-option,\s*\.visual-staging-tray-option\s*{[^}]*min-height:\s*48px;/s);
+    expect(source).toContain(".visual-staging-capacity");
+    expect(source).toContain(".visual-staging-capacity-ticks");
+    expect(source).toContain(".visual-staging-capacity-tick");
+    expect(source).toContain(".visual-staging-low-stock");
+    expect(source).toContain(".visual-staging-modal");
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-staging-layout\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(120px,\s*0\.38fr\);/s);
+  });
+
+  test("analysis screen keeps custom time filtering in one row and reserves full-screen chart space", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toContain(".visual-analysis-board");
+    expect(source).toMatch(/\.visual-analysis-filter-row\s*{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap;/s);
+    expect(source).toMatch(/\.visual-analysis-layout\s*{[^}]*grid-template-columns:\s*minmax\(430px,\s*0\.4fr\) minmax\(0,\s*0\.6fr\);[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\) minmax\(128px,\s*0\.16fr\);/s);
+    expect(source).toMatch(/\.visual-analysis-product-panel\s*{[^}]*grid-template-columns:\s*minmax\(640px,\s*0\.58fr\) minmax\(360px,\s*0\.42fr\);/s);
+    expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*position:\s*absolute;[^}]*right:\s*0;/s);
+    expect(source).toMatch(/\.visual-analysis-top\s*{[^}]*z-index:\s*20;/s);
+    expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*z-index:\s*40;/s);
   });
 });

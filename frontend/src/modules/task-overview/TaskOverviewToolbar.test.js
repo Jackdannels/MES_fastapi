@@ -55,7 +55,7 @@ describe("TaskOverviewToolbar", () => {
       experimentCounterLabel: "",
       experimentCounterValue: "",
       overviewCounterLabel: "剩余托盘/总托盘数",
-      overviewCounterValue: "1/20",
+      overviewCounterValue: "1/10",
       viewMode: "tray",
     });
 
@@ -68,7 +68,7 @@ describe("TaskOverviewToolbar", () => {
       experimentCounterLabel: "",
       experimentCounterValue: "",
       overviewCounterLabel: "剩余托盘/总托盘数",
-      overviewCounterValue: "1/20",
+      overviewCounterValue: "1/10",
       viewMode: "tray",
     });
 

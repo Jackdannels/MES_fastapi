@@ -1,4 +1,4 @@
-export const SYSTEM_TRAY_TOTAL = 20;
+export const SYSTEM_TRAY_TOTAL = 10;
 
 export function getRemainingSystemTrayCount(occupiedTrayCount) {
   const occupied = Number.parseInt(String(occupiedTrayCount ?? 0), 10);

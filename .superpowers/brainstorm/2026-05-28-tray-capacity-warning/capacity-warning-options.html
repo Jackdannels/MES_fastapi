@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>托盘剩余进度条告警样式选择</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050b0b;
+      --panel: rgba(8, 18, 18, 0.92);
+      --panel-2: rgba(12, 28, 27, 0.94);
+      --line: rgba(94, 234, 212, 0.28);
+      --line-strong: rgba(94, 234, 212, 0.58);
+      --text: #eefdf9;
+      --muted: #9fb8b4;
+      --red: #ef4444;
+      --amber: #f59e0b;
+      --green: #22c55e;
+      --cyan: #22d3ee;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      color: var(--text);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      background:
+        radial-gradient(circle at 18% 4%, rgba(34, 211, 238, 0.16), transparent 32%),
+        linear-gradient(rgba(94, 234, 212, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(94, 234, 212, 0.04) 1px, transparent 1px),
+        linear-gradient(135deg, #05070a 0%, #071011 48%, #0b1412 100%);
+      background-size: auto, 42px 42px, 42px 42px, auto;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .choices {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .option {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(45, 212, 191, 0.08), transparent 48%),
+        rgba(5, 7, 10, 0.7);
+      box-shadow: inset 0 0 0 1px rgba(238, 253, 249, 0.04), 0 18px 48px rgba(0, 0, 0, 0.28);
+      cursor: pointer;
+      transition: border-color 180ms ease, transform 180ms ease;
+    }
+
+    .option:hover {
+      border-color: var(--line-strong);
+      transform: translateY(-1px);
+    }
+
+    .option.selected {
+      border-color: var(--amber);
+      box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.22), 0 18px 48px rgba(0, 0, 0, 0.28);
+    }
+
+    .option-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .option-head strong {
+      min-width: 0;
+      font-size: 18px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tag {
+      min-width: max-content;
+      color: #fde68a;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .mock-screen {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+      min-height: 340px;
+      padding: 14px;
+      border: 1px solid rgba(94, 234, 212, 0.18);
+      border-radius: 8px;
+      background:
+        linear-gradient(rgba(94, 234, 212, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(94, 234, 212, 0.04) 1px, transparent 1px),
+        var(--bg);
+      background-size: 30px 30px;
+    }
+
+    .capacity-card {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      padding: 14px;
+      border: 1px solid rgba(238, 253, 249, 0.12);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(45, 212, 191, 0.1), transparent 70%),
+        var(--panel);
+    }
+
+    .capacity-card.is-alert {
+      border-color: rgba(239, 68, 68, 0.56);
+      background:
+        linear-gradient(90deg, rgba(239, 68, 68, 0.18), transparent 70%),
+        var(--panel);
+    }
+
+    .cap-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .cap-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .cap-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .cap-value strong {
+      color: var(--text);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+    .cap-value small {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .alert-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--red);
+      box-shadow: 0 0 18px rgba(239, 68, 68, 0.56);
+      font-size: 16px;
+      font-weight: 1000;
+      line-height: 1;
+    }
+
+    .bar {
+      position: relative;
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(238, 253, 249, 0.12);
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+    }
+
+    .fill-gradient i {
+      width: var(--value);
+      background: linear-gradient(90deg, var(--red) 0%, var(--amber) 42%, var(--green) 100%);
+    }
+
+    .full-gradient {
+      overflow: visible;
+      background: linear-gradient(90deg, var(--red) 0%, var(--amber) 42%, var(--green) 100%);
+    }
+
+    .full-gradient::after {
+      position: absolute;
+      top: -5px;
+      left: calc(var(--value) - 6px);
+      width: 14px;
+      height: 18px;
+      content: "";
+      border: 2px solid #fff;
+      border-radius: 5px;
+      background: rgba(5, 7, 10, 0.78);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.24);
+    }
+
+    .ticks {
+      display: grid;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+      gap: 4px;
+      height: 12px;
+      background: transparent;
+      overflow: visible;
+    }
+
+    .ticks span {
+      border-radius: 999px;
+      background: rgba(238, 253, 249, 0.12);
+    }
+
+    .ticks span.on:nth-child(-n + 1) { background: var(--red); }
+    .ticks span.on:nth-child(n + 2):nth-child(-n + 4) { background: var(--amber); }
+    .ticks span.on:nth-child(n + 5) { background: var(--green); }
+
+    .alert-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 6px 10px;
+      color: #fecaca;
+      border: 1px solid rgba(239, 68, 68, 0.42);
+      border-radius: 7px;
+      background: rgba(127, 29, 29, 0.38);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <h1>托盘剩余进度条告警方案选择</h1>
+  <p class="subtitle">规则：剩余数按 0-10 计算，10 为充足满格，0 为空；当剩余比例小于等于 10%（即 1/10 或 0/10）时显示红色感叹号。下面每个方案都展示“8/10 正常”和“1/10 告警”两种状态。</p>
+
+  <div class="choices">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="option-head">
+        <strong>A. 卡片内联告警</strong>
+        <span class="tag">推荐</span>
+      </div>
+      <div class="mock-screen">
+        <div class="capacity-card">
+          <div class="cap-title"><span>托盘剩余</span></div>
+          <div class="cap-value"><strong>8</strong><small>已用托盘 2</small></div>
+          <div class="bar fill-gradient" style="--value:80%"><i></i></div>
+        </div>
+        <div class="capacity-card is-alert">
+          <div class="cap-title"><span>托盘剩余</span><span class="alert-icon">!</span></div>
+          <div class="cap-value"><strong>1</strong><small>已用托盘 9</small></div>
+          <div class="bar fill-gradient" style="--value:10%"><i></i></div>
+        </div>
+      </div>
+      <div class="note">优点：最符合当前容量卡片结构，感叹号在标题右侧，不遮挡数值和进度条；低库存时一眼能看见。</div>
+    </div>
+
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="option-head">
+        <strong>B. 游标刻度告警</strong>
+        <span class="tag">精确</span>
+      </div>
+      <div class="mock-screen">
+        <div class="capacity-card">
+          <div class="cap-title"><span>托盘剩余</span></div>
+          <div class="cap-value"><strong>8</strong><small>已用托盘 2</small></div>
+          <div class="bar full-gradient" style="--value:80%"></div>
+        </div>
+        <div class="capacity-card is-alert">
+          <div class="cap-title"><span>托盘剩余</span></div>
+          <div class="cap-value"><strong>1</strong><span class="alert-icon">!</span><small>已用托盘 9</small></div>
+          <div class="bar full-gradient" style="--value:10%"></div>
+        </div>
+      </div>
+      <div class="note">优点：整条色带表达 0 到 10 的风险区间，游标表达当前位置；缺点是在工业大屏缩略模式里会更细。</div>
+    </div>
+
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="option-head">
+        <strong>C. 十格库存条</strong>
+        <span class="tag">直观</span>
+      </div>
+      <div class="mock-screen">
+        <div class="capacity-card">
+          <div class="cap-title"><span>托盘剩余</span></div>
+          <div class="cap-value"><strong>8</strong><small>已用托盘 2</small></div>
+          <div class="bar ticks">
+            <span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span>
+            <span class="on"></span><span class="on"></span><span class="on"></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="capacity-card is-alert">
+          <div class="cap-title"><span>托盘剩余</span></div>
+          <div class="cap-value"><strong>1</strong><small>已用托盘 9</small></div>
+          <div class="bar ticks">
+            <span class="on"></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div class="alert-strip"><span class="alert-icon">!</span>托盘库存不足</div>
+        </div>
+      </div>
+      <div class="note">优点：10 个托盘一格一个，业务含义最直白；缺点是占用更多垂直空间，右侧容量区会更挤。</div>
+    </div>
+  </div>
+</body>
+</html>

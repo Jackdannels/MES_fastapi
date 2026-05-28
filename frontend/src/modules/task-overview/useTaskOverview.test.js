@@ -157,7 +157,7 @@ describe("useTaskOverview helpers", () => {
         { hasTray: true, targetExperiment: "振动试验" },
         { hasTray: false, targetExperiment: "未分配" },
       ],
-      trayOverviewTotal: 20,
+      trayOverviewTotal: 10,
       viewMode: "tray",
     });
 
@@ -167,7 +167,7 @@ describe("useTaskOverview helpers", () => {
     expect(taskMetrics.experimentCounterValue).toBe("2/5");
     expect(taskMetrics.isTrayCounterAlert).toBe(false);
     expect(trayMetrics.overviewCounterLabel).toBe("已用托盘/总托盘数");
-    expect(trayMetrics.overviewCounterValue).toBe("3/20");
+    expect(trayMetrics.overviewCounterValue).toBe("3/10");
     expect(trayMetrics.experimentCounterLabel).toBe("");
     expect(trayMetrics.experimentCounterValue).toBe("");
     expect(trayMetrics.isTrayCounterAlert).toBe(false);
@@ -176,15 +176,15 @@ describe("useTaskOverview helpers", () => {
   test("alerts when the global tray remainder is almost exhausted", () => {
     const trayMetrics = buildOverviewMetrics({
       filteredRows: [],
-      trayOverviewRows: Array.from({ length: 19 }, (_, index) => ({
+      trayOverviewRows: Array.from({ length: 9 }, (_, index) => ({
         hasTray: true,
         targetExperiment: `实验${index + 1}`,
       })),
-      trayOverviewTotal: 20,
+      trayOverviewTotal: 10,
       viewMode: "tray",
     });
 
-    expect(trayMetrics.overviewCounterValue).toBe("19/20");
+    expect(trayMetrics.overviewCounterValue).toBe("9/10");
     expect(trayMetrics.remainingTrayCount).toBe(1);
     expect(trayMetrics.isTrayCounterAlert).toBe(true);
   });

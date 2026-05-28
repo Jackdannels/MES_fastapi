@@ -1,0 +1,1461 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>第八屏设计方案</title>
+  <style>
+    :root {
+      --bg: #05070a;
+      --panel: rgba(9, 18, 18, 0.92);
+      --panel-soft: rgba(15, 29, 28, 0.78);
+      --line: rgba(94, 234, 212, 0.24);
+      --line-strong: rgba(94, 234, 212, 0.55);
+      --text: #eefdf9;
+      --muted: #9fb8b4;
+      --cyan: #22d3ee;
+      --teal: #2dd4bf;
+      --green: #84cc16;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --blue: #60a5fa;
+      --violet: #a78bfa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 24% 12%, rgba(45, 212, 191, 0.18), transparent 30%),
+        radial-gradient(circle at 78% 26%, rgba(96, 165, 250, 0.18), transparent 32%),
+        #07100f;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    button,
+    select,
+    input {
+      font: inherit;
+    }
+
+    .shell {
+      min-height: 100vh;
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 16px;
+      border: 1px solid rgba(94, 234, 212, 0.2);
+      border-radius: 8px;
+      background: rgba(5, 7, 10, 0.62);
+      box-shadow: 0 18px 54px rgba(0, 0, 0, 0.26);
+    }
+
+    .heading {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      line-height: 1.15;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .tab {
+      min-height: 44px;
+      padding: 0 16px;
+      color: var(--muted);
+      border: 1px solid rgba(238, 253, 249, 0.14);
+      border-radius: 7px;
+      background: rgba(9, 18, 18, 0.8);
+      cursor: pointer;
+      font-weight: 900;
+    }
+
+    .tab.is-active {
+      color: #041312;
+      border-color: rgba(94, 234, 212, 0.9);
+      background: linear-gradient(180deg, #67e8f9, #2dd4bf);
+    }
+
+    .board-wrap {
+      display: none;
+      gap: 10px;
+    }
+
+    .board-wrap.is-active {
+      display: grid;
+    }
+
+    .screen {
+      position: relative;
+      width: min(100%, 1380px);
+      min-height: 760px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 1px solid rgba(94, 234, 212, 0.28);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(94, 234, 212, 0.08) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(94, 234, 212, 0.07) 1px, transparent 1px),
+        radial-gradient(circle at 50% 42%, rgba(34, 211, 238, 0.16), transparent 30%),
+        var(--bg);
+      background-size: 54px 54px, 54px 54px, auto, auto;
+      box-shadow: inset 0 0 42px rgba(34, 211, 238, 0.08), 0 22px 60px rgba(0, 0, 0, 0.38);
+      aspect-ratio: 16 / 9;
+    }
+
+    .screen::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, transparent 0 49.9%, rgba(239, 68, 68, 0.42) 50%, transparent 50.1%),
+        linear-gradient(0deg, transparent 0 49.9%, rgba(239, 68, 68, 0.36) 50%, transparent 50.1%);
+      opacity: 0.2;
+    }
+
+    .screen-head {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: center;
+      padding: 20px 24px 10px;
+    }
+
+    .screen-title {
+      display: grid;
+      gap: 4px;
+    }
+
+    .screen-title h2 {
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .filterbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-height: 56px;
+    }
+
+    .select,
+    .chip {
+      min-height: 44px;
+      color: var(--text);
+      border: 1px solid rgba(94, 234, 212, 0.28);
+      border-radius: 7px;
+      background: rgba(5, 7, 10, 0.72);
+      font-size: 16px;
+      font-weight: 800;
+    }
+
+    .select {
+      min-width: 184px;
+      padding: 0 12px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 76px;
+      padding: 0 13px;
+      cursor: pointer;
+    }
+
+    .chip.is-active {
+      color: #042f2e;
+      border-color: rgba(45, 212, 191, 0.95);
+      background: linear-gradient(180deg, #5eead4, #14b8a6);
+    }
+
+    .date-input {
+      min-height: 44px;
+      width: 238px;
+      padding: 0 12px;
+      color: var(--text);
+      border: 1px solid rgba(94, 234, 212, 0.28);
+      border-radius: 7px;
+      background: rgba(5, 7, 10, 0.72);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .panel {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(45, 212, 191, 0.08), transparent 48%),
+        var(--panel);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px 8px;
+      color: var(--muted);
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .panel-title {
+      color: var(--text);
+      font-size: 19px;
+      font-weight: 900;
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 16px 14px;
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 11px 12px;
+      border: 1px solid rgba(238, 253, 249, 0.12);
+      border-radius: 7px;
+      background: rgba(5, 7, 10, 0.45);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--text);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      flex-wrap: wrap;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 5px;
+      border-radius: 50%;
+      vertical-align: middle;
+    }
+
+    .normal {
+      background: var(--green);
+    }
+
+    .maintain {
+      background: var(--amber);
+    }
+
+    .disabled {
+      background: var(--red);
+    }
+
+    .a-layout {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(360px, 0.4fr) minmax(0, 0.6fr);
+      grid-template-rows: minmax(0, 1fr) 150px;
+      gap: 14px;
+      padding: 10px 24px 24px;
+      min-height: 640px;
+    }
+
+    .screen-head.is-analysis {
+      grid-template-columns: minmax(300px, 0.34fr) minmax(0, 0.66fr);
+      align-items: stretch;
+      gap: 16px;
+      padding-bottom: 8px;
+    }
+
+    .filterbar.is-analysis {
+      display: grid;
+      grid-template-columns: minmax(148px, 0.2fr) minmax(286px, 0.36fr) minmax(360px, 0.44fr);
+      gap: 10px;
+      align-content: center;
+      min-height: 76px;
+    }
+
+    .time-filter-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      min-height: 54px;
+      padding: 8px 10px 8px 14px;
+      border: 1px solid rgba(94, 234, 212, 0.3);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(45, 212, 191, 0.14), transparent 72%),
+        rgba(5, 7, 10, 0.72);
+    }
+
+    .time-filter-card span,
+    .time-filter-card strong {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .time-filter-card span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .time-filter-card strong {
+      margin-top: 2px;
+      color: var(--text);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    .time-filter-card button {
+      min-width: 88px;
+      min-height: 38px;
+      color: #cffafe;
+      border: 1px solid rgba(94, 234, 212, 0.36);
+      border-radius: 999px;
+      background: rgba(8, 47, 73, 0.46);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .time-filter-modes {
+      position: relative;
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+      align-content: center;
+    }
+
+    .time-filter-row {
+      display: flex;
+      gap: 7px;
+      justify-content: flex-end;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+
+    .time-filter-row .chip {
+      min-width: 68px;
+      min-height: 34px;
+      padding: 0 10px;
+      font-size: 14px;
+    }
+
+    .chip.is-subtle {
+      color: #cbd5e1;
+      border-color: rgba(148, 163, 184, 0.24);
+      background: rgba(15, 23, 42, 0.54);
+    }
+
+    .time-custom-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .time-custom-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 20;
+      display: none;
+      width: 390px;
+      padding: 12px;
+      border: 1px solid rgba(94, 234, 212, 0.32);
+      border-radius: 8px;
+      background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(3, 7, 18, 0.98)),
+        #05070a;
+      box-shadow: 0 18px 38px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    }
+
+    .time-custom-wrap.is-open .time-custom-menu {
+      display: grid;
+      gap: 10px;
+    }
+
+    .time-menu-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .time-menu-row strong {
+      color: #cffafe;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .time-menu-control {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      padding: 0 10px;
+      color: var(--text);
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.72);
+      font: 800 13px "Microsoft YaHei", sans-serif;
+    }
+
+    .time-range-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 7px;
+    }
+
+    .screen-select {
+      width: 100%;
+      min-width: 0;
+      height: 54px;
+      font-size: 17px;
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .donut-zone,
+    .radial-zone {
+      display: grid;
+      place-items: center;
+      min-height: 0;
+      padding: 10px;
+    }
+
+    .donut {
+      width: 310px;
+      height: 310px;
+      border-radius: 50%;
+      background: conic-gradient(var(--green) 0 78%, var(--amber) 78% 91%, var(--red) 91% 100%);
+      position: relative;
+      box-shadow: 0 0 34px rgba(132, 204, 22, 0.16);
+    }
+
+    .donut::after {
+      content: "综合\A 设备状态";
+      white-space: pre;
+      position: absolute;
+      inset: 72px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--text);
+      border-radius: 50%;
+      background: #06100f;
+      font-size: 22px;
+      font-weight: 900;
+      line-height: 1.4;
+    }
+
+    .health-panel-body {
+      display: grid;
+      grid-template-columns: 210px minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+      padding: 4px 16px 14px;
+    }
+
+    .health-ring {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 196px;
+      height: 196px;
+      align-self: center;
+      justify-self: center;
+      border-radius: 50%;
+      background: conic-gradient(#2dd4bf 0 72%, #64748b 72% 84%, #f59e0b 84% 93%, #ef4444 93% 100%);
+      box-shadow: 0 0 28px rgba(45, 212, 191, 0.14);
+    }
+
+    .health-ring::after {
+      content: "";
+      position: absolute;
+      inset: 34px;
+      border-radius: 50%;
+      background: #06100f;
+      box-shadow: inset 0 0 0 1px rgba(238, 253, 249, 0.1);
+    }
+
+    .health-ring-center {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 3px;
+      text-align: center;
+    }
+
+    .health-ring-center span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .health-ring-center strong {
+      color: var(--text);
+      font: 900 34px Consolas, "Microsoft YaHei", monospace;
+      line-height: 1;
+    }
+
+    .health-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      grid-column: 1 / -1;
+    }
+
+    .health-summary .metric {
+      padding: 10px;
+    }
+
+    .health-summary .metric strong {
+      font-size: 25px;
+    }
+
+    .status-breakdown {
+      display: grid;
+      gap: 9px;
+      align-content: center;
+      min-width: 0;
+    }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: 70px minmax(0, 1fr) 58px;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .status-row b {
+      color: var(--text);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 14px;
+      text-align: right;
+    }
+
+    .status-row .bar i {
+      background: var(--c);
+    }
+
+    .mini-trend {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid rgba(238, 253, 249, 0.1);
+      border-radius: 7px;
+      background: rgba(5, 7, 10, 0.38);
+    }
+
+    .mini-trend-head {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .mini-trend-bars {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 7px;
+      align-items: end;
+      min-height: 58px;
+    }
+
+    .mini-trend-bars span {
+      display: block;
+      height: var(--h);
+      min-height: 18px;
+      border-radius: 4px 4px 0 0;
+      background: linear-gradient(180deg, #2dd4bf, rgba(45, 212, 191, 0.16));
+    }
+
+    .product-pie {
+      position: relative;
+      width: min(100%, 410px);
+      height: 372px;
+    }
+
+    .product-pie-svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .product-pie-slice {
+      filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.18));
+      stroke: rgba(5, 7, 10, 0.86);
+      stroke-linejoin: round;
+      stroke-width: 4;
+    }
+
+    .product-pie-guide {
+      fill: none;
+      stroke: rgba(143, 246, 255, 0.62);
+      stroke-width: 1.5;
+    }
+
+    .product-pie-label {
+      fill: #8ff6ff;
+      font-size: 14px;
+      font-weight: 900;
+      paint-order: stroke;
+      stroke: rgba(5, 7, 10, 0.82);
+      stroke-width: 4px;
+      stroke-linejoin: round;
+    }
+
+    .product-pie-value {
+      fill: #e0f2fe;
+      font: 900 30px Consolas, "Microsoft YaHei", monospace;
+      paint-order: stroke;
+      stroke: #05070a;
+      stroke-width: 5px;
+    }
+
+    .product-panel-body {
+      display: grid;
+      grid-template-columns: minmax(360px, 0.56fr) minmax(260px, 0.44fr);
+      gap: 14px;
+      align-items: stretch;
+      padding: 6px 16px 14px;
+      min-height: 0;
+    }
+
+    .product-pie-wrap {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid rgba(238, 253, 249, 0.08);
+      border-radius: 8px;
+      background: rgba(5, 7, 10, 0.34);
+    }
+
+    .product-side {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .product-total {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(94, 234, 212, 0.2);
+      border-radius: 8px;
+      background:
+        linear-gradient(90deg, rgba(96, 165, 250, 0.14), transparent 72%),
+        rgba(5, 7, 10, 0.46);
+    }
+
+    .product-total span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .product-total strong {
+      color: var(--text);
+      font: 900 34px Consolas, "Microsoft YaHei", monospace;
+    }
+
+    .product-ranking {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-width: 0;
+    }
+
+    .product-rank-row {
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) 54px 48px;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid rgba(238, 253, 249, 0.1);
+      border-radius: 6px;
+      background: rgba(5, 7, 10, 0.38);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .product-rank-row i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--c);
+    }
+
+    .product-rank-row span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .product-rank-row strong,
+    .product-rank-row b {
+      color: var(--text);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      text-align: right;
+    }
+
+    .time-rule-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 16px 14px;
+    }
+
+    .time-rule-card {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid rgba(238, 253, 249, 0.1);
+      border-radius: 7px;
+      background: rgba(5, 7, 10, 0.42);
+    }
+
+    .time-rule-card strong {
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    .time-rule-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .time-rule-card em {
+      color: #8ff6ff;
+      font-style: normal;
+      font-weight: 900;
+    }
+
+    .rank-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 4px 16px 16px;
+    }
+
+    .rank-item {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr) 42px;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .bar {
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(238, 253, 249, 0.1);
+    }
+
+    .bar i {
+      display: block;
+      height: 100%;
+      width: var(--w);
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--teal), var(--green));
+    }
+
+    .b-layout {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 14px;
+      padding: 10px 24px 24px;
+      min-height: 640px;
+    }
+
+    .lab-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .lab-card {
+      min-height: 158px;
+      padding: 14px;
+      border: 1px solid rgba(94, 234, 212, 0.22);
+      border-radius: 8px;
+      background: rgba(5, 7, 10, 0.5);
+    }
+
+    .lab-card.is-selected {
+      border-color: var(--line-strong);
+      box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.14), 0 0 28px rgba(34, 211, 238, 0.1);
+    }
+
+    .lab-card h3 {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+
+    .stack {
+      display: flex;
+      height: 14px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(238, 253, 249, 0.1);
+    }
+
+    .stack span:nth-child(1) {
+      width: var(--n);
+      background: var(--green);
+    }
+
+    .stack span:nth-child(2) {
+      width: var(--m);
+      background: var(--amber);
+    }
+
+    .stack span:nth-child(3) {
+      flex: 1;
+      background: var(--red);
+    }
+
+    .lab-number {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .lab-number strong {
+      font: 900 38px Consolas, monospace;
+    }
+
+    .spark {
+      width: 92px;
+      height: 34px;
+    }
+
+    .device-list {
+      display: grid;
+      gap: 9px;
+      padding: 0 14px 14px;
+    }
+
+    .device-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 42px;
+      padding: 0 10px;
+      border: 1px solid rgba(238, 253, 249, 0.1);
+      border-radius: 6px;
+      background: rgba(5, 7, 10, 0.38);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .badge {
+      min-width: 58px;
+      padding: 4px 8px;
+      text-align: center;
+      border-radius: 999px;
+      color: #041312;
+      font-size: 13px;
+      font-weight: 900;
+      background: var(--green);
+    }
+
+    .badge.warn {
+      background: var(--amber);
+    }
+
+    .badge.stop {
+      color: #fff;
+      background: var(--red);
+    }
+
+    .c-layout {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      grid-template-rows: 210px minmax(0, 1fr);
+      gap: 14px;
+      padding: 10px 24px 24px;
+      min-height: 640px;
+    }
+
+    .trend-card {
+      padding: 12px 16px;
+    }
+
+    .svg-chart {
+      width: 100%;
+      height: 100%;
+      min-height: 220px;
+    }
+
+    .heat-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 6px;
+      padding: 10px 16px 16px;
+    }
+
+    .heat-cell {
+      min-height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 5px;
+      color: #ecfeff;
+      background: rgba(45, 212, 191, var(--a));
+      border: 1px solid rgba(94, 234, 212, 0.16);
+      font: 900 13px Consolas, monospace;
+    }
+
+    .footer-note {
+      width: min(100%, 1380px);
+      margin: 0 auto;
+      padding: 12px 14px;
+      color: var(--muted);
+      border: 1px solid rgba(238, 253, 249, 0.12);
+      border-radius: 8px;
+      background: rgba(5, 7, 10, 0.54);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 980px) {
+      .topbar,
+      .screen-head,
+      .a-layout,
+      .b-layout,
+      .c-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .screen {
+        min-height: auto;
+        aspect-ratio: auto;
+      }
+
+      .filterbar.is-analysis,
+      .health-panel-body,
+      .product-panel-body,
+      .time-rule-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .lab-grid,
+      .metric-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="heading">
+        <div class="eyebrow">VISUALIZATION SCREEN 08 OPTIONS</div>
+        <h1>第八屏：设备状态与实验产品数统计方案</h1>
+        <p class="hint">目标：默认综合展示，可按试验间筛选；时间支持日、本周、本月、年月、年、自定义阶段。</p>
+      </div>
+      <nav class="tabs" aria-label="方案切换">
+        <button class="tab is-active" type="button" data-target="option-a">A 双主图总览</button>
+        <button class="tab" type="button" data-target="option-b">B 试验间矩阵</button>
+        <button class="tab" type="button" data-target="option-c">C 时间分析驾驶舱</button>
+      </nav>
+    </header>
+
+    <section id="option-a" class="board-wrap is-active">
+      <div class="screen">
+        <header class="screen-head is-analysis">
+          <div class="screen-title">
+            <div class="eyebrow">EQUIPMENT AND PRODUCT COUNT</div>
+            <h2>设备年度状态与试验产品数统计屏</h2>
+            <p class="hint">方案 A：双主图区分“设备健康状态”和“实验产品数分布”，顶部常驻当前时间口径。</p>
+          </div>
+          <div class="filterbar is-analysis">
+            <select class="select screen-select" aria-label="试验间">
+              <option>综合</option>
+              <option>盐雾试验室</option>
+              <option>霉菌试验室</option>
+              <option>高低温湿热一室</option>
+            </select>
+            <div class="time-filter-card">
+              <div>
+                <span>统计时间 · 自动粒度：按月</span>
+                <strong>年初至今 · 2026-01-01 至 2026-05-28 · 截至今日</strong>
+              </div>
+            </div>
+            <div class="time-filter-modes" aria-label="时间筛选模式">
+              <div class="time-filter-row">
+                <button class="chip" type="button">今日</button>
+                <button class="chip" type="button">本周</button>
+                <button class="chip" type="button">本月</button>
+                <button class="chip is-active" type="button">年初至今</button>
+                <div class="time-custom-wrap">
+                  <button class="chip is-subtle" type="button" data-custom-time-trigger aria-haspopup="menu" aria-expanded="false">自定义</button>
+                  <div class="time-custom-menu" role="menu" aria-label="自定义时间筛选">
+                    <label class="time-menu-row">
+                      <strong>按天</strong>
+                      <input class="time-menu-control" type="date" value="2026-05-28" aria-label="按天选择" />
+                    </label>
+                    <label class="time-menu-row">
+                      <strong>按月</strong>
+                      <input class="time-menu-control" type="month" value="2026-05" aria-label="按月选择" />
+                    </label>
+                    <label class="time-menu-row">
+                      <strong>按年</strong>
+                      <input class="time-menu-control" type="number" min="2020" max="2035" value="2026" aria-label="按年选择" />
+                    </label>
+                    <label class="time-menu-row">
+                      <strong>时间段</strong>
+                      <span class="time-range-controls">
+                        <input class="time-menu-control" type="date" value="2026-05-01" aria-label="开始日期" />
+                        <input class="time-menu-control" type="date" value="2026-05-28" aria-label="结束日期" />
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="a-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">年度设备健康状态</span>
+              <span class="panel-subtitle">综合 · 2026年截至05-28 · 当前快照</span>
+            </div>
+            <div class="health-panel-body">
+              <div class="health-summary">
+                <div class="metric"><span>设备总数</span><strong>110</strong></div>
+                <div class="metric"><span>正常率</span><strong>78.2%</strong></div>
+                <div class="metric"><span>异常设备</span><strong>24</strong></div>
+              </div>
+              <div class="health-ring" aria-label="设备状态环图：正常78.2%，维护13.6%，停用8.2%">
+                <div class="health-ring-center">
+                  <span>综合状态</span>
+                  <strong>78.2%</strong>
+                </div>
+              </div>
+              <div class="status-breakdown">
+                <div class="status-row" style="--c: #2dd4bf;"><span>正常</span><div class="bar"><i style="--w: 78.2%"></i></div><b>86</b></div>
+                <div class="status-row" style="--c: #f59e0b;"><span>维护</span><div class="bar"><i style="--w: 13.6%"></i></div><b>15</b></div>
+                <div class="status-row" style="--c: #ef4444;"><span>停用</span><div class="bar"><i style="--w: 8.2%"></i></div><b>9</b></div>
+                <div class="status-row" style="--c: #64748b;"><span>占用</span><div class="bar"><i style="--w: 42%"></i></div><b>46</b></div>
+              </div>
+              <div class="mini-trend">
+                <div class="mini-trend-head"><span>近 6 个月正常率</span><span>按月快照</span></div>
+                <div class="mini-trend-bars" aria-label="近六月设备正常率趋势">
+                  <span style="--h: 48px"></span>
+                  <span style="--h: 42px"></span>
+                  <span style="--h: 51px"></span>
+                  <span style="--h: 46px"></span>
+                  <span style="--h: 55px"></span>
+                  <span style="--h: 50px"></span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">试验间实验产品数分布</span>
+              <span class="panel-subtitle">年初至今 · 按月汇总 · 去重样品数</span>
+            </div>
+            <div class="product-panel-body">
+              <div class="product-pie-wrap">
+                <div class="product-pie">
+                <svg class="product-pie-svg" viewBox="0 0 640 430" role="img" aria-label="月度各试验间实验产品数饼图">
+                  <g transform="translate(320 214)">
+                    <circle r="128" fill="rgba(238,253,249,.06)" />
+                    <path class="product-pie-slice" fill="#3b82f6" d="M 0 0 L 0 -150 A 150 150 0 0 1 149.4 13.5 Z" />
+                    <path class="product-pie-slice" fill="#22d3ee" d="M 0 0 L 149.4 13.5 A 150 150 0 0 1 23.4 148.2 Z" />
+                    <path class="product-pie-slice" fill="#2dd4bf" d="M 0 0 L 23.4 148.2 A 150 150 0 0 1 -108.3 103.8 Z" />
+                    <path class="product-pie-slice" fill="#818cf8" d="M 0 0 L -108.3 103.8 A 150 150 0 0 1 -149.2 -15.3 Z" />
+                    <path class="product-pie-slice" fill="#5eead4" d="M 0 0 L -149.2 -15.3 A 150 150 0 0 1 -93.6 -117.2 Z" />
+                    <path class="product-pie-slice" fill="#94a3b8" d="M 0 0 L -93.6 -117.2 A 150 150 0 0 1 0 -150 Z" />
+                    <circle r="50" fill="#05070a" stroke="rgba(238,253,249,.12)" stroke-width="18" />
+                    <text class="product-pie-value" text-anchor="middle" dominant-baseline="central">261</text>
+                  </g>
+                  <g>
+                    <path class="product-pie-guide" d="M 441 103 L 496 54" />
+                    <path class="product-pie-guide" d="M 440 326 L 494 377" />
+                    <path class="product-pie-guide" d="M 268 369 L 244 415" />
+                    <path class="product-pie-guide" d="M 165 267 L 95 291" />
+                    <path class="product-pie-guide" d="M 176 135 L 111 100" />
+                    <path class="product-pie-guide" d="M 266 59 L 242 34" />
+                  </g>
+                  <g class="product-pie-label">
+                    <text x="502" y="54">霉菌试验室 69</text>
+                    <text x="500" y="377">盐雾试验室 55</text>
+                    <text x="238" y="415" text-anchor="end">振动一室 40</text>
+                    <text x="89" y="291" text-anchor="end">温度冲击二室 36</text>
+                    <text x="105" y="100" text-anchor="end">四综合试验室 33</text>
+                    <text x="236" y="34" text-anchor="end">冲击一室 28</text>
+                  </g>
+                </svg>
+                </div>
+              </div>
+              <div class="product-side">
+                <div class="product-total">
+                  <span>当前筛选范围产品总数</span>
+                  <strong>261</strong>
+                </div>
+                <div class="product-ranking">
+                  <div class="product-rank-row" style="--c: #3b82f6;"><i></i><span>霉菌试验室</span><strong>69</strong><b>26.4%</b></div>
+                  <div class="product-rank-row" style="--c: #22d3ee;"><i></i><span>盐雾试验室</span><strong>55</strong><b>21.1%</b></div>
+                  <div class="product-rank-row" style="--c: #2dd4bf;"><i></i><span>振动一室</span><strong>40</strong><b>15.3%</b></div>
+                  <div class="product-rank-row" style="--c: #818cf8;"><i></i><span>温度冲击二室</span><strong>36</strong><b>13.8%</b></div>
+                  <div class="product-rank-row" style="--c: #5eead4;"><i></i><span>四综合试验室</span><strong>33</strong><b>12.6%</b></div>
+                  <div class="product-rank-row" style="--c: #94a3b8;"><i></i><span>冲击一室</span><strong>28</strong><b>10.7%</b></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" style="grid-column: 1 / -1;">
+            <div class="panel-head">
+              <span class="panel-title">时间筛选与统计口径</span>
+              <span class="panel-subtitle">当前周、月、年均以 2026-05-28 截至今日计算</span>
+            </div>
+            <div class="time-rule-grid">
+              <div class="time-rule-card"><strong>快捷筛选</strong><span><em>今日</em>按小时；<em>本周</em>按日；<em>本月</em>按日/周；<em>年初至今</em>按月。</span></div>
+              <div class="time-rule-card"><strong>精确筛选</strong><span>自定义菜单内支持按天、按月、按年、时间段，选择后顶部时间卡常驻显示生效范围。</span></div>
+              <div class="time-rule-card"><strong>自定义阶段</strong><span>1天内按小时，2-31天按日，32-180天按周，超过180天按月。</span></div>
+              <div class="time-rule-card"><strong>数据口径</strong><span>产品数按 schedule.device + experiment_trays + samples 去重统计；无数据时保留图表空状态。</span></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <p class="footer-note">A 方案特点：保留参考图的强视觉重心，同时把复杂时间筛选收束到“当前口径 + 快捷按钮 + 自定义弹出菜单”，适合第八屏默认大屏展示。</p>
+    </section>
+
+    <section id="option-b" class="board-wrap">
+      <div class="screen">
+        <header class="screen-head">
+          <div class="screen-title">
+            <div class="eyebrow">LAB MATRIX OVERVIEW</div>
+            <h2>试验间矩阵状态屏</h2>
+            <p class="hint">方案 B：每个试验间一张卡，同时展示设备状态与产品数，适合横向对比。</p>
+          </div>
+          <div class="filterbar">
+            <select class="select" aria-label="试验间">
+              <option>综合矩阵</option>
+              <option>盐雾试验室</option>
+              <option>霉菌试验室</option>
+            </select>
+            <button class="chip is-active" type="button">今日</button>
+            <button class="chip" type="button">本周</button>
+            <button class="chip" type="button">某月</button>
+            <input class="date-input" aria-label="日期范围" value="2026-05-28" />
+          </div>
+        </header>
+
+        <div class="b-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">各试验间状态矩阵</span>
+              <span class="legend"><i class="dot normal"></i>正常 <i class="dot maintain"></i>维护 <i class="dot disabled"></i>停用</span>
+            </div>
+            <div class="lab-grid">
+              <article class="lab-card is-selected">
+                <h3>盐雾试验室</h3>
+                <div class="stack" style="--n: 76%; --m: 18%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>55</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,24 15,20 30,22 45,12 60,14 76,7 92,11" fill="none" stroke="#5eead4" stroke-width="4"/></svg></div>
+              </article>
+              <article class="lab-card">
+                <h3>霉菌试验室</h3>
+                <div class="stack" style="--n: 82%; --m: 10%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>69</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,25 15,18 30,19 45,10 60,16 76,8 92,5" fill="none" stroke="#84cc16" stroke-width="4"/></svg></div>
+              </article>
+              <article class="lab-card">
+                <h3>振动一室</h3>
+                <div class="stack" style="--n: 70%; --m: 20%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>40</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,20 15,16 30,18 45,15 60,9 76,14 92,10" fill="none" stroke="#60a5fa" stroke-width="4"/></svg></div>
+              </article>
+              <article class="lab-card">
+                <h3>冲击一室</h3>
+                <div class="stack" style="--n: 64%; --m: 22%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>28</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,25 15,22 30,17 45,20 60,12 76,18 92,16" fill="none" stroke="#fbbf24" stroke-width="4"/></svg></div>
+              </article>
+              <article class="lab-card">
+                <h3>高低温湿热一室</h3>
+                <div class="stack" style="--n: 58%; --m: 30%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>18</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,27 15,26 30,20 45,22 60,17 76,18 92,15" fill="none" stroke="#fb923c" stroke-width="4"/></svg></div>
+              </article>
+              <article class="lab-card">
+                <h3>四综合试验室</h3>
+                <div class="stack" style="--n: 72%; --m: 12%;"><span></span><span></span><span></span></div>
+                <div class="lab-number"><strong>33</strong><span class="hint">实验产品数</span><svg class="spark" viewBox="0 0 92 34"><polyline points="0,23 15,19 30,18 45,12 60,14 76,10 92,13" fill="none" stroke="#a78bfa" stroke-width="4"/></svg></div>
+              </article>
+            </div>
+          </section>
+
+          <aside class="panel">
+            <div class="panel-head">
+              <span class="panel-title">盐雾试验室设备</span>
+              <span>4 台</span>
+            </div>
+            <div class="metric-row" style="grid-template-columns: 1fr; padding-bottom: 10px;">
+              <div class="metric"><span>正常 / 维护 / 停用</span><strong>3 / 1 / 0</strong></div>
+            </div>
+            <div class="device-list">
+              <div class="device-row"><span>盐雾箱 A01</span><b class="badge">正常</b></div>
+              <div class="device-row"><span>盐雾箱 A02</span><b class="badge">正常</b></div>
+              <div class="device-row"><span>喷雾发生器</span><b class="badge warn">维护</b></div>
+              <div class="device-row"><span>盐液循环泵</span><b class="badge">正常</b></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <p class="footer-note">B 方案特点：最强调试验间横向对比，点击某个试验间后右侧显示具体设备状态，适合调度和巡检视角。</p>
+    </section>
+
+    <section id="option-c" class="board-wrap">
+      <div class="screen">
+        <header class="screen-head">
+          <div class="screen-title">
+            <div class="eyebrow">TIME ANALYSIS COCKPIT</div>
+            <h2>设备状态与产品数时间分析屏</h2>
+            <p class="hint">方案 C：突出趋势分析，时间筛选最完整，适合产能和周期观察。</p>
+          </div>
+          <div class="filterbar">
+            <select class="select" aria-label="试验间">
+              <option>综合</option>
+              <option>振动一室</option>
+              <option>盐雾试验室</option>
+            </select>
+            <button class="chip" type="button">具体日</button>
+            <button class="chip" type="button">本周</button>
+            <button class="chip is-active" type="button">某一年</button>
+            <button class="chip" type="button">阶段</button>
+            <input class="date-input" aria-label="日期范围" value="2026 年" />
+          </div>
+        </header>
+
+        <div class="c-layout">
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">年度设备状态</span>
+              <span>综合</span>
+            </div>
+            <div class="metric-row" style="grid-template-columns: 1fr; padding-top: 4px;">
+              <div class="metric"><span>正常率</span><strong>78.2%</strong></div>
+              <div class="metric"><span>维护率</span><strong>13.6%</strong></div>
+              <div class="metric"><span>停用率</span><strong>8.2%</strong></div>
+            </div>
+          </section>
+
+          <section class="panel trend-card">
+            <div class="panel-head" style="padding: 0 0 8px;">
+              <span class="panel-title">全年实验产品数趋势</span>
+              <span>按月统计</span>
+            </div>
+            <svg class="svg-chart" viewBox="0 0 820 210" role="img" aria-label="产品数趋势">
+              <g stroke="rgba(238,253,249,.12)" stroke-width="1">
+                <line x1="34" y1="30" x2="790" y2="30" />
+                <line x1="34" y1="78" x2="790" y2="78" />
+                <line x1="34" y1="126" x2="790" y2="126" />
+                <line x1="34" y1="174" x2="790" y2="174" />
+              </g>
+              <g fill="#2dd4bf">
+                <rect x="58" y="118" width="28" height="56" rx="4" />
+                <rect x="118" y="104" width="28" height="70" rx="4" />
+                <rect x="178" y="88" width="28" height="86" rx="4" />
+                <rect x="238" y="96" width="28" height="78" rx="4" />
+                <rect x="298" y="62" width="28" height="112" rx="4" />
+                <rect x="358" y="74" width="28" height="100" rx="4" />
+                <rect x="418" y="50" width="28" height="124" rx="4" />
+                <rect x="478" y="66" width="28" height="108" rx="4" />
+                <rect x="538" y="82" width="28" height="92" rx="4" />
+                <rect x="598" y="96" width="28" height="78" rx="4" />
+                <rect x="658" y="108" width="28" height="66" rx="4" />
+                <rect x="718" y="84" width="28" height="90" rx="4" />
+              </g>
+              <polyline points="72,118 132,104 192,88 252,96 312,62 372,74 432,50 492,66 552,82 612,96 672,108 732,84" fill="none" stroke="#fbbf24" stroke-width="4" />
+              <g fill="#9fb8b4" font-size="13" font-weight="800">
+                <text x="54" y="198">1月</text><text x="174" y="198">3月</text><text x="294" y="198">5月</text><text x="414" y="198">7月</text><text x="534" y="198">9月</text><text x="648" y="198">11月</text>
+              </g>
+            </svg>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">设备状态月度变化</span>
+              <span class="legend"><i class="dot normal"></i>正常 <i class="dot maintain"></i>维护 <i class="dot disabled"></i>停用</span>
+            </div>
+            <div class="heat-grid">
+              <span class="heat-cell" style="--a:.30">01</span><span class="heat-cell" style="--a:.42">02</span><span class="heat-cell" style="--a:.56">03</span><span class="heat-cell" style="--a:.48">04</span>
+              <span class="heat-cell" style="--a:.70">05</span><span class="heat-cell" style="--a:.66">06</span><span class="heat-cell" style="--a:.78">07</span><span class="heat-cell" style="--a:.62">08</span>
+              <span class="heat-cell" style="--a:.50">09</span><span class="heat-cell" style="--a:.44">10</span><span class="heat-cell" style="--a:.38">11</span><span class="heat-cell" style="--a:.52">12</span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <span class="panel-title">试验间年度累计排行</span>
+              <span>2026</span>
+            </div>
+            <div class="rank-list" style="grid-template-columns: 1fr; padding-top: 10px;">
+              <div class="rank-item"><span>霉菌试验室</span><div class="bar"><i style="--w: 100%"></i></div><strong>612</strong></div>
+              <div class="rank-item"><span>盐雾试验室</span><div class="bar"><i style="--w: 88%"></i></div><strong>538</strong></div>
+              <div class="rank-item"><span>振动一室</span><div class="bar"><i style="--w: 76%"></i></div><strong>465</strong></div>
+              <div class="rank-item"><span>冲击一室</span><div class="bar"><i style="--w: 61%"></i></div><strong>372</strong></div>
+              <div class="rank-item"><span>四综合试验室</span><div class="bar"><i style="--w: 56%"></i></div><strong>341</strong></div>
+            </div>
+          </section>
+        </div>
+      </div>
+      <p class="footer-note">C 方案特点：适合产能趋势、设备状态趋势和时间筛选最复杂的场景；信息密度最高，但需要后续实现更完整的数据聚合模型。</p>
+    </section>
+  </main>
+
+  <script>
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const boards = Array.from(document.querySelectorAll(".board-wrap"));
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.dataset.target;
+        tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
+        boards.forEach((board) => board.classList.toggle("is-active", board.id === target));
+      });
+    });
+
+    document.querySelectorAll(".filterbar").forEach((bar) => {
+      const chips = Array.from(bar.querySelectorAll(".chip"));
+      chips.forEach((chip) => {
+        chip.addEventListener("click", () => {
+          chips.forEach((item) => item.classList.toggle("is-active", item === chip));
+        });
+      });
+    });
+
+    const customTimeWrap = document.querySelector(".time-custom-wrap");
+    const customTimeTrigger = document.querySelector("[data-custom-time-trigger]");
+    if (customTimeWrap && customTimeTrigger) {
+      customTimeTrigger.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const isOpen = customTimeWrap.classList.toggle("is-open");
+        customTimeTrigger.setAttribute("aria-expanded", String(isOpen));
+      });
+
+      customTimeWrap.querySelector(".time-custom-menu").addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+
+      document.addEventListener("click", () => {
+        customTimeWrap.classList.remove("is-open");
+        customTimeTrigger.setAttribute("aria-expanded", "false");
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          customTimeWrap.classList.remove("is-open");
+          customTimeTrigger.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+  </script>
+</body>
+</html>

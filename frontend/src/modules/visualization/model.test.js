@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildLabProcessPanels, buildLabScheduleThreeDayView } from "./model";
+import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView } from "./model";
 
 describe("visualization model", () => {
   test("builds lab panels from real tray flow data grouped by laboratory", () => {
@@ -178,5 +178,106 @@ describe("visualization model", () => {
       label: "停用",
       state: "disabled",
     }));
+  });
+
+  test("builds staging sample board grouped by task and tray with capacity metrics", () => {
+    const view = buildStagingSamplesView({
+      capacity: 100,
+      tasks: [
+        { code: "TASK-STAGING-001", name: "盐雾暂存任务", test_type: "盐雾试验" },
+        { code: "TASK-STAGING-002", name: "霉菌暂存任务", test_type: "霉菌试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-STAGING-001", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+        { task_code: "TASK-STAGING-002", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-STAGING-001", experiment_code: "EXP-SALT", tray_code: "TRAY-SALT-001" },
+        { task_code: "TASK-STAGING-002", experiment_code: "EXP-MOLD", tray_code: "TRAY-MOLD-001" },
+        { task_code: "TASK-STAGING-002", experiment_code: "EXP-MOLD", tray_code: "TRAY-MOLD-002" },
+      ],
+      stagingEvents: [
+        { tray_code: "TRAY-SALT-001", task_code: "TASK-STAGING-001", action: "stock_in", time: "2026-05-28T08:00:00+08:00" },
+        { tray_code: "TRAY-MOLD-001", task_code: "TASK-STAGING-002", action: "stock_in", time: "2026-05-28T08:05:00+08:00" },
+        { tray_code: "TRAY-MOLD-002", task_code: "TASK-STAGING-002", action: "stock_out", time: "2026-05-28T08:10:00+08:00" },
+      ],
+      samples: [
+        ...Array.from({ length: 6 }, (_, index) => ({
+          code: `SALT-SAMPLE-00${index + 1}`,
+          task_code: "TASK-STAGING-001",
+          location: "恒温恒湿间（暂存间）",
+          status: "已入库",
+          trays: [{ tray_code: "TRAY-SALT-001", status: "已入库", quantity: 1 }],
+        })),
+        {
+          code: "MOLD-SAMPLE-001",
+          task_code: "TASK-STAGING-002",
+          location: "恒温恒湿间（暂存间）",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "TRAY-MOLD-001", status: "放置实验后暂存间", quantity: 1 }],
+        },
+        {
+          code: "MOLD-SAMPLE-OUT",
+          task_code: "TASK-STAGING-002",
+          location: "已完成出库",
+          status: "已出库",
+          trays: [{ tray_code: "TRAY-MOLD-002", status: "已出库", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(view.summary).toEqual({
+      moldRemaining: 99,
+      moldTrayCount: 1,
+      saltSprayRemaining: 99,
+      saltSprayTrayCount: 1,
+      totalSampleCount: 7,
+      totalTaskCount: 2,
+      totalTrayCount: 2,
+      trayRemaining: 7,
+      usedSystemTrayCount: 3,
+    });
+    expect(view.tasks.map((task) => task.taskCode)).toEqual(["TASK-STAGING-001", "TASK-STAGING-002"]);
+    expect(view.tasks[0]).toMatchObject({
+      sampleCount: 6,
+      taskName: "盐雾暂存任务",
+      trayCount: 1,
+    });
+    expect(view.tasks[0].trays[0]).toMatchObject({
+      experimentType: "盐雾试验",
+      overflowSampleCount: 1,
+      sampleCount: 6,
+      status: "已入库",
+      trayCode: "TRAY-SALT-001",
+      visibleSampleCodes: ["SALT-SAMPLE-001", "SALT-SAMPLE-002", "SALT-SAMPLE-003", "SALT-SAMPLE-004", "SALT-SAMPLE-005"],
+    });
+    expect(view.tasks[0].trays[0].sampleCodes).toContain("SALT-SAMPLE-006");
+    expect(JSON.stringify(view)).not.toContain("MOLD-SAMPLE-OUT");
+  });
+
+  test("calculates staging tray remaining from the project-wide used tray count", () => {
+    const view = buildStagingSamplesView({
+      samples: [
+        {
+          code: "SAMPLE-LAB-001",
+          task_code: "TASK-LAB-001",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [{ tray_code: "PROJECT-TP-001", status: "送至实验室", quantity: 1 }],
+        },
+        {
+          code: "SAMPLE-DONE-001",
+          task_code: "TASK-DONE-001",
+          location: "冲击一室",
+          status: "实验已完成",
+          trays: [{ tray_code: "PROJECT-TP-002", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(view.summary.totalTrayCount).toBe(0);
+    expect(view.summary.usedSystemTrayCount).toBe(2);
+    expect(view.summary.trayRemaining).toBe(8);
   });
 });
