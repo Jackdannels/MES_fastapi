@@ -402,6 +402,40 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
   });
 
+  test("transfer workbench waits for stage-change events instead of polling on a short timer", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    const addEventListenerSpy = vi.spyOn(window, "addEventListener");
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    expect(addEventListenerSpy).toHaveBeenCalledWith(SAMPLES_UPDATED_EVENT, expect.any(Function));
+    expect(addEventListenerSpy).not.toHaveBeenCalledWith("focus", expect.any(Function));
+    expect(addEventListenerSpy).not.toHaveBeenCalledWith("storage", expect.any(Function));
+  });
+
+  test("transfer workbench refreshes when a sample stage-change event is broadcast", async () => {
+    const fetchMock = fetch;
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    const fetchCallCountBeforeEvent = fetchMock.mock.calls.length;
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await settle(wrapper);
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(fetchCallCountBeforeEvent);
+  });
+
   test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     const wrapper = mount(TransferWorkbench, {

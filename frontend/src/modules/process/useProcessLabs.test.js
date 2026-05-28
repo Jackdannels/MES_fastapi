@@ -650,6 +650,149 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test("treats a tray as startable when one sample row has advanced to ready", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "盐雾试验室",
+          end_at: "2026-03-11T10:30:00Z",
+          experiment_code: "TASK-001-A",
+          id: "schedule-1",
+          start_at: "2026-03-11T09:30:00Z",
+          task_code: "TASK-001",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "已排程", test_type: "盐雾试验" }],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-MIXED" },
+      ],
+      "mes.samples": [
+        {
+          code: "S-001",
+          task_code: "TASK-001",
+          location: "盐雾试验室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TRAY-MIXED", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "S-002",
+          task_code: "TASK-001",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TRAY-MIXED", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-11T08:00:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+      startDisabledReason: "",
+    });
+
+    await startExperiment(labCards.value[0]);
+
+    expect(persistSnapshot).toHaveBeenCalledTimes(1);
+    expect(persistSnapshot.mock.calls[0][0]["mes.samples"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "S-001",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TRAY-MIXED", status: "实验进行中" })],
+        }),
+        expect.objectContaining({
+          code: "S-002",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TRAY-MIXED", status: "实验进行中" })],
+        }),
+      ]),
+    );
+  });
+
+  test("allows a ready scheduled tray to start even when its location label is not the lab display name", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-021",
+          device: "盐雾试验室",
+          end_at: "2026-05-21T12:00:00Z",
+          experiment_code: "SYLU-2026-05-021-A",
+          start_at: "2026-05-21T08:00:00Z",
+          task_code: "SYLU-2026-05-021",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-05-021", status: "任务进行中", test_type: "盐雾试验" }],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-A", tray_code: "TP-002" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-001",
+          task_code: "SYLU-2026-05-021",
+          location: "盐雾一室",
+          status: "送至实验室",
+          trays: [{ tray_code: "TP-001", status: "送至实验室", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "SYLU-2026-05-021",
+          location: "盐雾一室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-05-21T09:00:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+    await openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value.readyTrayRows.map((row) => row.trayCode)).toEqual(["TP-002"]);
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+      remainingTrayCount: 2,
+      startDisabledReason: "",
+    });
+
+    await startExperiment(labCards.value[0]);
+
+    expect(persistSnapshot).toHaveBeenCalledTimes(1);
+    const persistedSamples = persistSnapshot.mock.calls[0][0]["mes.samples"];
+    expect(persistedSamples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SP-001",
+          status: "送至实验室",
+          trays: [expect.objectContaining({ tray_code: "TP-001", status: "送至实验室" })],
+        }),
+        expect.objectContaining({
+          code: "SP-002",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TP-002", status: "实验进行中" })],
+        }),
+      ]),
+    );
+  });
+
   test("keeps a lab card scheduled when trays are only ready but not explicitly started", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [

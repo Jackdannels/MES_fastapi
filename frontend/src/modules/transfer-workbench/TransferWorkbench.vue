@@ -482,7 +482,6 @@ const props = defineProps({
 });
 
 const API_BASE_URL = getFrontendApiBaseUrl();
-const TRANSFER_REFRESH_INTERVAL_MS = 5000;
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "到货";
@@ -526,7 +525,6 @@ const lockedOperationHint = ref("");
 const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 const taskPage = ref(1);
 const overviewPageSize = ref(3);
-let transferRefreshTimer = null;
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
@@ -1722,21 +1720,11 @@ const reloadWorkspace = async () => {
 
 onMounted(() => {
   void loadBootstrap();
-  transferRefreshTimer = window.setInterval(() => {
-    void refreshTransferWorkspaceAfterTrayChange();
-  }, TRANSFER_REFRESH_INTERVAL_MS);
   window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
-  window.addEventListener("storage", refreshTransferWorkspaceAfterTrayChange);
-  window.addEventListener("focus", refreshTransferWorkspaceAfterTrayChange);
 });
 
 onBeforeUnmount(() => {
-  if (transferRefreshTimer) {
-    window.clearInterval(transferRefreshTimer);
-  }
   window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
-  window.removeEventListener("storage", refreshTransferWorkspaceAfterTrayChange);
-  window.removeEventListener("focus", refreshTransferWorkspaceAfterTrayChange);
 });
 </script>
 

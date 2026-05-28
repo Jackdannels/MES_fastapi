@@ -97,6 +97,7 @@ const resolveExperimentStatus = (experiment) => normalizeText(experiment?.status
 const resolveExperimentTime = (experiment) => normalizeText(experiment?.completed_at || experiment?.completedAt || experiment?.updated_at || experiment?.updatedAt || experiment?.created_at || experiment?.createdAt);
 const resolveRelationTaskCode = (relation) => normalizeText(relation?.task_code || relation?.taskCode || relation?.taskNo || relation?.task_no);
 const resolveRelationExperimentCode = (relation) => normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experimentNo || relation?.experiment_no);
+const resolveTaskArchiveStatus = (task) => normalizeText(task?.transfer_status || task?.transferStatus || task?.status || task?.displayStatus || task?.display_status);
 
 const collectTrayRefs = (samples) => {
   const trayRefsByCode = new Map();
@@ -114,16 +115,19 @@ const collectTrayRefs = (samples) => {
   return trayRefsByCode;
 };
 
-const isReturned = (status) => normalizeText(status) === RETURNED_STATUS;
+const isReturned = (status) => normalizeFlowLabel(status) === RETURNED_STATUS || normalizeText(status) === RETURNED_STATUS;
+const trayRefIsReturned = ({ sample, tray }) => isReturned(resolveStatus(tray) || resolveStatus(sample));
 
-const hasAllAssignedTraysReturned = (samples) => {
+const hasExplicitReturnedStatus = (task) => isReturned(resolveTaskArchiveStatus(task));
+
+const hasAllAssignedTraysReturned = (samples, task = null) => {
   const trayRefsByCode = collectTrayRefs(samples);
   if (!trayRefsByCode.size) {
-    return false;
+    return hasExplicitReturnedStatus(task);
   }
   return Array.from(trayRefsByCode.values()).every((refs) => (
     refs.length > 0
-    && refs.every(({ sample, tray }) => isReturned(resolveStatus(tray) || resolveStatus(sample)))
+    && refs.some(trayRefIsReturned)
   ));
 };
 
@@ -323,10 +327,11 @@ function buildReturnedTaskHistoryView(input = {}) {
   const historyTasks = Array.from(taskCodes)
     .map((taskCode) => {
       const taskSamples = samplesByTaskCode.get(taskCode) || [];
-      if (!hasAllAssignedTraysReturned(taskSamples)) {
+      const taskRecord = taskRecordsByCode.get(taskCode) || { code: taskCode };
+      if (!hasAllAssignedTraysReturned(taskSamples, taskRecord)) {
         return null;
       }
-      return buildTaskRow(taskRecordsByCode.get(taskCode) || { code: taskCode }, taskSamples, experiments, experimentTrays);
+      return buildTaskRow(taskRecord, taskSamples, experiments, experimentTrays);
     })
     .filter(Boolean)
     .filter((task) => matchesTaskSearch(task, filters.query || input.query))

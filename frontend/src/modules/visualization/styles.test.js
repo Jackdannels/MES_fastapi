@@ -62,4 +62,27 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-options\s*{[^}]*overflow-x:\s*auto;/s);
   });
+
+  test("layout A connects vertical flow turns across stretched rows and enlarges step labels", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*height:\s*100%;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step strong\s*{[^}]*font-size:\s*15px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step small\s*{[^}]*font-size:\s*13px;/s);
+  });
+
+  test("layout A makes task and tray switch text easier to read", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-group > span\s*{[^}]*font-size:\s*14px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-option strong\s*{[^}]*font-size:\s*15px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-option small\s*{[^}]*font-size:\s*13px;/s);
+  });
+
+  test("layout A enlarges the lab switch action button", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-cycle\s*{[^}]*min-height:\s*34px;[^}]*padding:\s*0 12px;[^}]*font-size:\s*14px;/s);
+  });
 });

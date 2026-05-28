@@ -279,6 +279,68 @@ describe("task history model", () => {
     expect(view.tasks[0].status).toBe("厂家收回");
   });
 
+  test("keeps returned tasks when one sample row for the same tray still has a stale status", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-STALE-TRAY", name: "托盘状态滞后任务", status: "厂家收回", transfer_status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-STALE-001",
+          task_code: "TASK-STALE-TRAY",
+          status: "实验已完成",
+          trays: [{ tray_code: "TP-STALE-001", status: "实验已完成", updated_at: "2026-05-19T10:00:00+08:00" }],
+          history: [{ action: "实验完成", status: "实验已完成", time: "2026-05-19T10:00:00+08:00" }],
+        },
+        {
+          code: "SP-STALE-002",
+          task_code: "TASK-STALE-TRAY",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-STALE-001", status: "厂家收回", updated_at: "2026-05-19T12:00:00+08:00" }],
+          history: [{ action: "厂家收回", status: "厂家收回", detail: "TP-STALE-001 厂家收回", time: "2026-05-19T12:00:00+08:00" }],
+        },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0]).toMatchObject({
+      code: "TASK-STALE-TRAY",
+      status: "厂家收回",
+      trayCount: 1,
+    });
+    expect(view.tasks[0].trays[0]).toMatchObject({
+      status: "厂家收回",
+      trayCode: "TP-STALE-001",
+    });
+  });
+
+  test("recognizes returned status aliases and explicit archived tasks without tray refs", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [
+        { code: "TASK-ALIAS", name: "别名收回任务", status: "已收回" },
+        { code: "TASK-EMPTY", name: "显式归档任务", transfer_status: "厂家收回", updated_at: "2026-05-19T14:00:00+08:00" },
+      ],
+      samples: [
+        {
+          code: "SP-ALIAS-001",
+          task_code: "TASK-ALIAS",
+          status: "已收回",
+          trays: [{ tray_code: "TP-ALIAS-001", status: "已收回" }],
+          history: [{ action: "已收回", status: "已收回", detail: "TP-ALIAS-001 已收回", time: "2026-05-19T13:00:00+08:00" }],
+        },
+      ],
+    });
+
+    expect(view.tasks.map((task) => task.code)).toEqual(["TASK-EMPTY", "TASK-ALIAS"]);
+    expect(view.tasks.find((task) => task.code === "TASK-ALIAS")).toMatchObject({
+      status: "厂家收回",
+      trayCount: 1,
+    });
+    expect(view.tasks.find((task) => task.code === "TASK-EMPTY")).toMatchObject({
+      status: "厂家收回",
+      trayCount: 0,
+      updatedAt: "2026-05-19T14:00:00+08:00",
+    });
+  });
+
   test("uses the same canonical task flow as the tray information task flow", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [{ code: "TASK-MULTI", name: "多实验任务", status: "厂家收回" }],

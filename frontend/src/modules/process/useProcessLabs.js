@@ -27,6 +27,22 @@ const TRAY_STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
 const RUNNING_TRAY_STATUSES = new Set([TRAY_STATUS_RUNNING, "实验中"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "放置实验后暂存间", "厂家收回"]);
+const TRAY_FLOW_STATUS_RANK = new Map(
+  [
+    "样品运输中",
+    "到货",
+    "送至暂存间",
+    "已到达暂存间",
+    "送至实验室",
+    "已到达实验室",
+    "工装夹具安装",
+    TRAY_STATUS_READY,
+    TRAY_STATUS_RUNNING,
+    "实验已完成",
+    "放置实验后暂存间",
+    "厂家收回",
+  ].map((status, index) => [status, index]),
+);
 
 // 为抽屉详情提供统一的文案兜底，避免页面出现空串。
 const toText = (value, fallback = "-") => {
@@ -124,6 +140,11 @@ const trayBelongsToLab = (trayRow, labName) => {
 };
 
 const trayHasUnknownLocation = (trayRow) => normalizeLocationList(trayRow?.locationNames).length === 0;
+
+const resolveTrayFlowStatusRank = (location, status) => {
+  const normalizedStatus = normalizeLifecycleStatus(location, status);
+  return TRAY_FLOW_STATUS_RANK.get(normalizedStatus) ?? -1;
+};
 
 const resolveScheduleDurationHours = (schedule) => {
   const plannedHours = Number(schedule?.planned_hours);
@@ -426,8 +447,11 @@ function useProcessLabs(options = {}) {
         if (sampleCode && !row.sampleCodes.includes(sampleCode)) {
           row.sampleCodes.push(sampleCode);
         }
-        if (!row.status) {
-          row.status = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
+        const nextStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
+        const currentRank = resolveTrayFlowStatusRank(sample?.location, row.status);
+        const nextRank = resolveTrayFlowStatusRank(sample?.location, nextStatus);
+        if (!row.status || nextRank >= currentRank) {
+          row.status = nextStatus;
         }
         row.locations.push(normalizeText(sample?.location));
         row.owners.push(normalizeText(sample?.owner));
@@ -513,7 +537,7 @@ function useProcessLabs(options = {}) {
     const normalizedLabName = normalizeText(options.labName);
     const matchesLab = (row) =>
       !normalizedLabName || trayBelongsToLab(row, normalizedLabName) || trayHasUnknownLocation(row);
-    const readyTrayRows = rows.filter((row) => row.isReady && matchesLab(row));
+    const readyTrayRows = rows.filter((row) => row.isReady);
     const runningTrayRows = rows.filter((row) => row.isRunning && matchesLab(row));
     const remainingTrayRows = rows.filter((row) => !row.isRunning && !row.isCompleted);
 
