@@ -6,7 +6,8 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useTableControls } from "@/composables/useTableControls";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
-import { resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
+import { revertLaboratoryTaskToPreviousStableState } from "@/modules/laboratory/model";
+import { resolveTaskStatus, STATUS_COMPLETED, STATUS_WAITING } from "@/modules/schedule/model";
 import {
   MAINTENANCE_DEVICE_STATUS,
   appendDevice,
@@ -26,6 +27,7 @@ import {
   createPointForm,
   createPointRows,
   normalizeMaintenancePlan,
+  resolveStatusClass,
   resolveMaintenanceScheduleImpact,
   syncDeviceTypeWithLocation,
   upsertDevice,
@@ -34,7 +36,14 @@ import {
 const normalizeText = (value) => String(value ?? "").trim();
 const isUnavailableDeviceStatus = (status) => {
   const normalized = normalizeText(status);
-  return ["维护", "维修", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
+  return ["维护", "维修", "保养", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
+};
+const isPlannedMaintenanceType = (type) => normalizeText(type).startsWith("计划");
+const maintenanceTypeToStatus = (type) => (normalizeText(type).includes("保养") ? "保养" : "维修");
+const isRunningExperimentStatus = (status) => ["实验进行中", "实验中"].includes(normalizeText(status));
+const parseTime = (value) => {
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : null;
 };
 const toLocalDateTimeValue = (value = new Date()) => {
   const date = value instanceof Date ? value : new Date(value);
@@ -73,6 +82,7 @@ function useDevicesPage() {
   const maintenanceForm = ref(createMaintenanceForm());
   const maintenancePlanForm = ref(createMaintenancePlanForm());
   const maintenancePlanDevice = ref(null);
+  const maintenancePlanWarning = ref("");
   const maintenanceConflictDetail = ref(null);
   const pointForm = ref(createPointForm());
   const connectionForm = ref(createConnectionForm());
@@ -82,7 +92,9 @@ function useDevicesPage() {
   const editDeviceModal = useDialogState();
   const maintenancePlanModal = useDialogState();
   const maintenanceConflictModal = useDialogState();
+  const runningRepairChoiceModal = useDialogState();
   const pointModal = useDialogState();
+  const runningRepairChoiceDetail = ref(null);
   const now = ref(new Date());
   let deviceClockTimer = null;
 
@@ -91,8 +103,11 @@ function useDevicesPage() {
   );
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
+  const maintenancePlanIsPlanned = computed(() => isPlannedMaintenanceType(maintenancePlanForm.value.type));
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
   const visiblePointRows = computed(() => buildVisiblePointRows(pointRows.value, pointQuery.value));
+  const editDeviceStatusClass = computed(() => resolveStatusClass(deviceForm.value.status));
+  const canSetDeviceAvailable = computed(() => !["空闲", "工作中"].includes(normalizeText(deviceForm.value.status)));
 
   const { query, sortDirection, sortKey, visibleRows } = useTableControls({
     rows: baseRows,
@@ -122,6 +137,52 @@ function useDevicesPage() {
     await persistSnapshot({
       [STORAGE_KEYS.devices]: nextDevices,
     });
+  };
+
+  const buildTimedMaintenanceStatusUpdates = (currentDate = new Date()) => {
+    const current = currentDate instanceof Date ? currentDate.getTime() : Date.parse(String(currentDate || ""));
+    if (!Number.isFinite(current)) {
+      return null;
+    }
+    let changed = false;
+    const nextDevices = rawDevices.value.map((device) => {
+      const startAt = parseTime(device?.maintenance_start_at);
+      const endAt = parseTime(device?.maintenance_end_at);
+      const maintenanceType = normalizeText(device?.maintenance_type);
+      if (!startAt || !maintenanceType) {
+        return { ...device };
+      }
+      if (startAt <= current && (!endAt || current <= endAt)) {
+        const targetStatus = maintenanceTypeToStatus(maintenanceType);
+        if (normalizeText(device?.status) === targetStatus) {
+          return { ...device };
+        }
+        changed = true;
+        return {
+          ...device,
+          status: targetStatus,
+          updated_at: toLocalDateTimeValue(currentDate),
+        };
+      }
+      if (endAt && endAt < current && normalizeText(device?.status) !== "可用") {
+        changed = true;
+        return {
+          ...device,
+          status: "可用",
+          updated_at: toLocalDateTimeValue(currentDate),
+        };
+      }
+      return { ...device };
+    });
+    return changed ? nextDevices : null;
+  };
+
+  const syncTimedMaintenanceStatuses = async (currentDate = new Date()) => {
+    const nextDevices = buildTimedMaintenanceStatusUpdates(currentDate);
+    if (!nextDevices) {
+      return;
+    }
+    await persistDevices(nextDevices);
   };
 
   const saveCurrentDevice = async () => {
@@ -179,8 +240,9 @@ function useDevicesPage() {
       const startAt = Date.parse(plan.maintenance_start_at);
       const endAt = Date.parse(plan.maintenance_end_at);
       const current = Date.parse(timestamp);
-      if (Number.isFinite(startAt) && Number.isFinite(endAt) && startAt <= current && current <= endAt) {
-        nextDevice.status = MAINTENANCE_DEVICE_STATUS;
+      const inTimedWindow = Number.isFinite(startAt) && (!Number.isFinite(endAt) || current <= endAt) && startAt <= current;
+      if (inTimedWindow) {
+        nextDevice.status = maintenanceTypeToStatus(plan.maintenance_type) || MAINTENANCE_DEVICE_STATUS;
       }
       return nextDevice;
     });
@@ -215,6 +277,182 @@ function useDevicesPage() {
       [STORAGE_KEYS.conflicts]: nextConflicts,
       [STORAGE_KEYS.devices]: nextDevices,
       [STORAGE_KEYS.experiments]: nextExperiments,
+      [STORAGE_KEYS.schedules]: nextSchedules,
+      [STORAGE_KEYS.tasks]: nextTasks,
+    };
+  };
+
+  const findExperimentBySchedule = (schedule) =>
+    rawExperiments.value.find(
+      (experiment) =>
+        normalizeText(experiment?.task_code) === normalizeText(schedule?.task_code)
+        && normalizeText(experiment?.experiment_code) === normalizeText(schedule?.experiment_code),
+    );
+
+  const resolveScheduleTrayCodes = (schedule) => {
+    const taskCode = normalizeText(schedule?.task_code);
+    const experimentCode = normalizeText(schedule?.experiment_code);
+    const scopedCodes = rawExperimentTrays.value
+      .filter(
+        (entry) =>
+          normalizeText(entry?.task_code) === taskCode
+          && normalizeText(entry?.experiment_code) === experimentCode,
+      )
+      .map((entry) => normalizeText(entry?.tray_code))
+      .filter(Boolean);
+    if (scopedCodes.length > 0) {
+      return scopedCodes;
+    }
+    return rawSamples.value
+      .filter((sample) => normalizeText(sample?.task_code) === taskCode)
+      .flatMap((sample) => (Array.isArray(sample?.trays) ? sample.trays : []))
+      .map((tray) => normalizeText(tray?.tray_code))
+      .filter(Boolean);
+  };
+
+  const scheduleHasRunningTray = (schedule, deviceCode) => {
+    const taskCode = normalizeText(schedule?.task_code);
+    const trayCodes = new Set(resolveScheduleTrayCodes(schedule));
+    return rawSamples.value.some((sample) => {
+      if (normalizeText(sample?.task_code) !== taskCode || normalizeText(sample?.location) !== normalizeText(deviceCode)) {
+        return false;
+      }
+      return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => {
+        const trayCode = normalizeText(tray?.tray_code);
+        if (trayCodes.size > 0 && !trayCodes.has(trayCode)) {
+          return false;
+        }
+        return isRunningExperimentStatus(tray?.status) || isRunningExperimentStatus(sample?.status);
+      });
+    });
+  };
+
+  const findRunningSchedulesForDevice = (deviceCode) =>
+    rawSchedules.value.filter(
+      (schedule) => normalizeText(schedule?.device) === normalizeText(deviceCode) && scheduleHasRunningTray(schedule, deviceCode),
+    );
+
+  const buildLaboratoryTaskFromSchedule = (schedule) => {
+    const experiment = findExperimentBySchedule(schedule);
+    return {
+      experimentName:
+        normalizeText(schedule?.experiment_name)
+        || normalizeText(experiment?.experiment_name)
+        || normalizeText(schedule?.experiment_code)
+        || "-",
+      taskCode: normalizeText(schedule?.task_code),
+      trayCodes: resolveScheduleTrayCodes(schedule),
+    };
+  };
+
+  const completeRunningScheduleSamples = ({ samples, schedule, timestamp }) => {
+    const taskCode = normalizeText(schedule?.task_code);
+    const trayCodes = new Set(resolveScheduleTrayCodes(schedule));
+    const experimentName = normalizeText(schedule?.experiment_name) || normalizeText(schedule?.experiment_code) || "-";
+    return samples.map((sample) => {
+      if (normalizeText(sample?.task_code) !== taskCode) {
+        return sample;
+      }
+      let changed = false;
+      const nextTrays = (Array.isArray(sample?.trays) ? sample.trays : []).map((tray) => {
+        const trayCode = normalizeText(tray?.tray_code);
+        if (trayCodes.size > 0 && !trayCodes.has(trayCode)) {
+          return { ...tray };
+        }
+        changed = true;
+        return {
+          ...tray,
+          status: STATUS_COMPLETED,
+          updated_at: timestamp,
+        };
+      });
+      if (!changed) {
+        return { ...sample, trays: nextTrays };
+      }
+      const nextSample = {
+        ...sample,
+        flow_status: STATUS_COMPLETED,
+        status: STATUS_COMPLETED,
+        trays: nextTrays,
+        updated_at: timestamp,
+      };
+      nextSample.history = [
+        {
+          action: "实验完成",
+          detail: `${taskCode} / ${experimentName} / ${STATUS_COMPLETED}`,
+          id: `device-repair-complete-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          location: normalizeText(nextSample.location),
+          status: STATUS_COMPLETED,
+          time: timestamp,
+        },
+        ...(Array.isArray(sample?.history) ? sample.history : []),
+      ];
+      return nextSample;
+    });
+  };
+
+  const buildRunningRepairUpdates = ({ form, mode, runningSchedules = [], timestamp }) => {
+    const runningScheduleIds = new Set(runningSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
+    const runningExperimentKeys = new Set(
+      runningSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
+    );
+    const deviceCode = normalizeText(maintenancePlanDevice.value?.code);
+    const plan = normalizeMaintenancePlan(form);
+    const nextDevices = rawDevices.value.map((device) =>
+      normalizeText(device?.code) === deviceCode
+        ? {
+            ...device,
+            ...plan,
+            status: maintenanceTypeToStatus(plan.maintenance_type),
+            updated_at: timestamp,
+          }
+        : { ...device },
+    );
+    const nextSchedules = rawSchedules.value.filter((schedule) => !runningScheduleIds.has(normalizeText(schedule?.id)));
+    let nextSamples = rawSamples.value.map((sample) => ({ ...sample }));
+    runningSchedules.forEach((schedule) => {
+      const currentTask = buildLaboratoryTaskFromSchedule(schedule);
+      nextSamples =
+        mode === "complete"
+          ? completeRunningScheduleSamples({
+              samples: nextSamples,
+              schedule,
+              timestamp,
+            })
+          : revertLaboratoryTaskToPreviousStableState({
+              allowRunningRevert: true,
+              currentTask,
+              now: timestamp,
+              samples: nextSamples,
+            });
+    });
+    const nextExperiments = rawExperiments.value.map((experiment) => {
+      const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;
+      if (!runningExperimentKeys.has(key)) {
+        return { ...experiment };
+      }
+      return mode === "complete"
+        ? {
+            ...experiment,
+            actual_end_time: timestamp,
+            status: STATUS_COMPLETED,
+            updated_at: timestamp,
+          }
+        : {
+            ...experiment,
+            status: STATUS_WAITING,
+            unscheduled_since: timestamp,
+            updated_at: timestamp,
+          };
+    });
+    const nextTasks = rawTasks.value.map((task) => ({
+      ...task,
+      status: resolveTaskStatus(task, nextSchedules, nextSamples, new Date(timestamp), rawExperimentTrays.value),
+    }));
+    return {
+      [STORAGE_KEYS.devices]: nextDevices,
+      [STORAGE_KEYS.experiments]: nextExperiments,
+      [STORAGE_KEYS.samples]: nextSamples,
       [STORAGE_KEYS.schedules]: nextSchedules,
       [STORAGE_KEYS.tasks]: nextTasks,
     };
@@ -322,6 +560,7 @@ function useDevicesPage() {
     selectedDevice.value = selected;
     maintenancePlanDevice.value = row;
     maintenancePlanForm.value = buildMaintenancePlanForm(row);
+    maintenancePlanWarning.value = "";
     maintenancePlanModal.openWith(selected);
   };
 
@@ -329,30 +568,113 @@ function useDevicesPage() {
     maintenancePlanModal.close();
     maintenancePlanDevice.value = null;
     maintenancePlanForm.value = createMaintenancePlanForm();
+    maintenancePlanWarning.value = "";
   };
 
   const saveMaintenancePlan = async () => {
+    maintenancePlanWarning.value = "";
     const deviceCode = normalizeText(maintenancePlanDevice.value?.code);
     if (!deviceCode) {
       return;
     }
+    const timestamp = toLocalDateTimeValue(new Date());
+    const form = { ...maintenancePlanForm.value };
+    const runningSchedules = findRunningSchedulesForDevice(deviceCode);
+    if (runningSchedules.length > 0) {
+      if (normalizeText(form.type) !== "维修") {
+        maintenancePlanWarning.value = `设备正在运行无法进行${normalizeText(form.type) || "该操作"}`;
+        return;
+      }
+      form.startAt = timestamp;
+      runningRepairChoiceDetail.value = {
+        deviceCode,
+        form,
+        runningSchedules,
+      };
+      runningRepairChoiceModal.openWith(runningRepairChoiceDetail.value);
+      return;
+    }
+    if (!isPlannedMaintenanceType(form.type)) {
+      form.startAt = timestamp;
+      form.endAt = "";
+    } else if (!normalizeText(form.startAt)) {
+      maintenancePlanWarning.value = "请选择开始时间";
+      return;
+    }
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode,
-      endAt: maintenancePlanForm.value.endAt,
+      endAt: form.endAt,
       schedules: rawSchedules.value,
-      startAt: maintenancePlanForm.value.startAt,
+      startAt: form.startAt,
     });
     if (impact.conflictingSchedules.length > 0) {
       maintenanceConflictDetail.value = {
         conflictingSchedules: impact.conflictingSchedules,
         deviceCode,
-        form: { ...maintenancePlanForm.value },
+        form,
       };
       maintenanceConflictModal.openWith(maintenanceConflictDetail.value);
       return;
     }
-    await persistMaintenancePlan({ deviceCode, form: maintenancePlanForm.value });
+    await persistMaintenancePlan({ deviceCode, form });
     closeMaintenancePlan();
+  };
+
+  const closeRunningRepairChoice = () => {
+    runningRepairChoiceDetail.value = null;
+    runningRepairChoiceModal.close();
+  };
+
+  const persistRunningRepairChoice = async (mode) => {
+    const detail = runningRepairChoiceDetail.value;
+    if (!detail) {
+      runningRepairChoiceModal.close();
+      return;
+    }
+    const timestamp = toLocalDateTimeValue(new Date());
+    const updates = buildRunningRepairUpdates({
+      form: {
+        ...detail.form,
+        startAt: timestamp,
+      },
+      mode,
+      runningSchedules: detail.runningSchedules,
+      timestamp,
+    });
+    rawDevices.value = updates[STORAGE_KEYS.devices];
+    rawExperiments.value = updates[STORAGE_KEYS.experiments];
+    rawSamples.value = updates[STORAGE_KEYS.samples];
+    rawSchedules.value = updates[STORAGE_KEYS.schedules];
+    rawTasks.value = updates[STORAGE_KEYS.tasks];
+    await persistSnapshot(updates);
+    closeRunningRepairChoice();
+    closeMaintenancePlan();
+  };
+
+  const confirmRunningRepairReschedule = () => persistRunningRepairChoice("reschedule");
+
+  const confirmRunningRepairComplete = () => persistRunningRepairChoice("complete");
+
+  const setDeviceAvailable = async () => {
+    const deviceCode = normalizeText(deviceForm.value?.code);
+    if (!deviceCode || !canSetDeviceAvailable.value) {
+      return;
+    }
+    const nextDevices = rawDevices.value.map((device) =>
+      normalizeText(device?.code) === deviceCode
+        ? {
+            ...device,
+            maintenance_end_at: "",
+            maintenance_note: "",
+            maintenance_start_at: "",
+            maintenance_type: "",
+            status: "可用",
+            updated_at: toLocalDateTimeValue(new Date()),
+          }
+        : { ...device },
+    );
+    await persistDevices(nextDevices);
+    closeEditDevice();
   };
 
   const confirmMaintenanceConflict = async () => {
@@ -423,6 +745,7 @@ function useDevicesPage() {
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+    await syncTimedMaintenanceStatuses(now.value);
   };
 
   watch(
@@ -433,7 +756,9 @@ function useDevicesPage() {
   );
 
   const syncDeviceClock = () => {
-    now.value = new Date();
+    const currentDate = new Date();
+    now.value = currentDate;
+    void syncTimedMaintenanceStatuses(currentDate);
   };
 
   onMounted(() => {
@@ -451,22 +776,29 @@ function useDevicesPage() {
 
   return {
     cancelMaintenanceConflict,
+    canSetDeviceAvailable,
+    closeRunningRepairChoice,
     closeDeviceDrawer,
     closeEditDevice,
     closeMaintenancePlan,
     closePointModal,
     confirmMaintenanceConflict,
+    confirmRunningRepairComplete,
+    confirmRunningRepairReschedule,
     connectionForm,
     createNewDevice,
     deviceDrawerOpen: deviceDrawer.open,
     deviceForm,
     deviceRows: visibleRows,
+    editDeviceStatusClass,
     editDeviceOpen: editDeviceModal.open,
     locationOptions,
     maintenanceConflictDetail,
     maintenanceConflictOpen: maintenanceConflictModal.open,
     maintenanceForm,
     maintenancePlanForm,
+    maintenancePlanIsPlanned,
+    maintenancePlanWarning,
     maintenancePlanOpen: maintenancePlanModal.open,
     metrics,
     openDeviceDrawer,
@@ -478,11 +810,14 @@ function useDevicesPage() {
     pointQuery,
     pointRows: visiblePointRows,
     query,
+    runningRepairChoiceDetail,
+    runningRepairChoiceOpen: runningRepairChoiceModal.open,
     saveCurrentDevice,
     saveEditedDevice,
     saveMaintenancePlan,
     savePoint,
     selectedDevice,
+    setDeviceAvailable,
     sortDirection,
     sortKey,
     testTypeOptions,

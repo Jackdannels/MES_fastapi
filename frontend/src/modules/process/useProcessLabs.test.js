@@ -212,6 +212,46 @@ describe("useProcessLabs", () => {
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
   });
 
+  test("reloads lab status when a cross-window storage update marker changes", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [],
+      "mes.tasks": [],
+      "mes.experiments": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+    }));
+    const Harness = {
+      setup() {
+        useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+          loadSnapshot,
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(1);
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "mes:snapshot-updated-at", newValue: "2026-04-01T12:00:00.000Z" }));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "unrelated", newValue: "1" }));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
   test("loads lab cards and opens task detail drawer in place", async () => {
     // 这里覆盖“卡片加载 -> 原地打开抽屉 -> 汇总托盘数”的完整主流程。
     const loadSnapshot = vi.fn(async () => ({
@@ -1668,6 +1708,82 @@ describe("useProcessLabs", () => {
       status: "已排程",
       statusClass: "is-scheduled",
     });
+  });
+
+  test("blocks other laboratories from starting a shared tray that is ready in the current experiment", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-salt",
+          device: "盐雾试验室",
+          end_at: "2026-04-09T13:35:38Z",
+          experiment_code: "SYLU-2026-03-006-A",
+          start_at: "2026-04-09T10:05:38Z",
+          task_code: "SYLU-2026-03-006",
+        },
+        {
+          id: "schedule-vibration",
+          device: "振动一室",
+          end_at: "2026-04-10T07:30:00Z",
+          experiment_code: "SYLU-2026-03-006-B",
+          start_at: "2026-04-10T04:00:00Z",
+          task_code: "SYLU-2026-03-006",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-03-006", name: "任务006", status: "已排程", test_type: "盐雾试验 / 振动试验" }],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", tray_code: "SYLU-2026-03-006-TP-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-006-SP-001",
+          task_code: "SYLU-2026-03-006",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-03-006-TP-001", status: "实验准备就绪", quantity: 1 }],
+          history: [
+            {
+              action: "实验确认",
+              detail: "SYLU-2026-03-006 / 盐雾试验 / 实验准备就绪",
+              status: "实验准备就绪",
+              time: "2026-04-09T10:30:00Z",
+            },
+          ],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { name: "盐雾试验室", testType: "盐雾试验" },
+        { name: "振动一室", testType: "振动试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-04-09T18:30:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+    const vibrationCard = labCards.value.find((card) => card.name === "振动一室");
+
+    expect(vibrationCard).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+      startDisabledReason: "托盘正在盐雾试验中，不能开始当前实验",
+      status: "已排程",
+      statusClass: "is-scheduled",
+    });
+
+    setSelectedTaskForLab("振动一室", "SYLU-2026-03-006", "SYLU-2026-03-006-B");
+    await startExperiment(labCards.value.find((card) => card.name === "振动一室"));
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("builds a compressed multi-experiment tray flow for the selected process task without auto-completing earlier experiments", async () => {

@@ -39,7 +39,7 @@ describe("devices model", () => {
       ],
     );
 
-    expect(rows[0]).toEqual(expect.objectContaining({ status: "可用", statusClass: "status" }));
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "空闲", statusClass: "status" }));
     expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ activeCount: 0, idleCount: 1 }));
   });
 
@@ -74,19 +74,19 @@ describe("devices model", () => {
       ],
     );
 
-    expect(rows[0]).toEqual(expect.objectContaining({ status: "使用中", statusClass: "status running" }));
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "工作中", statusClass: "status running" }));
     expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ activeCount: 1, idleCount: 0 }));
   });
 
   test("keeps hot-humid lab manual maintenance visible in the device list", () => {
     const rows = buildDeviceRows(
       [
-        { code: "高低温湿热一室", name: "高低温湿热一室", status: "维护/校准" },
+        { code: "高低温湿热一室", name: "高低温湿热一室", status: "维修" },
       ],
       [],
     );
 
-    expect(rows.map((row) => row.status)).toEqual(["维护/校准"]);
+    expect(rows.map((row) => row.status)).toEqual(["维修"]);
     expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ idleCount: 0, maintenanceCount: 1 }));
   });
 
@@ -98,7 +98,7 @@ describe("devices model", () => {
           name: "冲击试验系统-1",
           maintenance_end_at: "2099-03-20T12:00",
           maintenance_start_at: "2099-03-20T08:00",
-          status: "可用",
+        status: "可用",
         },
       ],
       [],
@@ -109,7 +109,7 @@ describe("devices model", () => {
       expect.objectContaining({
         maintenanceEndAt: "2099-03-20T12:00",
         maintenanceStartAt: "2099-03-20T08:00",
-        status: "维护/校准",
+        status: "维修",
       }),
     );
   });
@@ -129,7 +129,7 @@ describe("devices model", () => {
       new Date("2099-03-20T12:30:00"),
     );
 
-    expect(rows[0]).toEqual(expect.objectContaining({ status: "可用", statusClass: "status" }));
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "空闲", statusClass: "status" }));
   });
 
   test("finds schedules overlapped by a planned maintenance window", () => {
@@ -164,13 +164,27 @@ describe("devices model", () => {
         maintenance_end_at: "2099-03-20T12:00",
         maintenance_note: "年度校准",
         maintenance_start_at: "2099-03-20T08:00",
-        maintenance_type: "计划维护",
+        maintenance_type: "计划维修",
       }),
     ).toEqual({
       endAt: "2099-03-20T12:00",
       note: "年度校准",
       startAt: "2099-03-20T08:00",
-      type: "计划维护",
+      type: "计划维修",
     });
+  });
+
+  test("derives work status from safety status before running state", () => {
+    const rows = buildDeviceRows(
+      [
+        { code: "LAB-1", name: "维修设备", status: "维修" },
+        { code: "LAB-2", name: "保养设备", status: "保养" },
+        { code: "LAB-3", name: "可用设备", status: "可用" },
+      ],
+      [],
+    );
+
+    expect(rows.map((row) => row.status)).toEqual(["维修", "保养", "空闲"]);
+    expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ idleCount: 1, maintenanceCount: 2 }));
   });
 });

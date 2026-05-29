@@ -406,7 +406,7 @@ def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
             },
         ],
     )
-    storage.write("mes.devices", [{"code": "振动一室", "status": "维护/校准"}])
+    storage.write("mes.devices", [{"code": "振动一室", "status": "保养"}])
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
@@ -441,7 +441,7 @@ def test_transfer_area_dispatch_to_lab_allows_device_after_planned_maintenance_e
                 "code": "振动一室",
                 "maintenance_end_at": "2000-01-01T12:00:00",
                 "maintenance_start_at": "2000-01-01T08:00:00",
-                "status": "维护/校准",
+                "status": "保养",
             }
         ],
     )
@@ -453,6 +453,42 @@ def test_transfer_area_dispatch_to_lab_allows_device_after_planned_maintenance_e
 
     assert response.status_code == 200
     assert response.json()["tray"]["trayStatus"] == "送至实验室"
+
+
+def test_transfer_area_dispatch_to_lab_rejects_open_ended_maintenance_after_start(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    storage.write(
+        "mes.devices",
+        [
+            {
+                "code": "振动一室",
+                "maintenance_start_at": "2000-01-01T08:00:00",
+                "maintenance_type": "计划维修",
+                "status": "可用",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "振动一室设备维护中，禁止送至该实验室"
 
 
 def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monkeypatch):

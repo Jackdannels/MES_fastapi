@@ -50,10 +50,47 @@
   color: #b45309;
 }
 
+.device-status-field {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.device-status-field .action-btn {
+  white-space: nowrap;
+}
+
+.device-status-display {
+  align-items: center;
+  border-radius: 8px;
+  display: flex;
+  min-height: 40px;
+  padding: 0 12px;
+  user-select: none;
+}
+
+.device-status-display.status {
+  color: #0369a1;
+}
+
+.device-status-display.status.running {
+  color: #047857;
+}
+
+.device-status-display.status.alert {
+  color: #be123c;
+}
+
+.device-status-display.status.warn {
+  color: #b45309;
+}
+
 /* 设备台账和连接配置区块采用独立卡片排布。 */
 .devices-registry-card {
   display: grid;
   gap: 16px;
+  overflow: hidden;
 }
 
 .devices-table-card {

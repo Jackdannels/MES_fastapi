@@ -20,7 +20,7 @@ import {
   LAB_READY_STATUS,
   getLaboratoryActionState,
   getLaboratoryOperationLock,
-  revertLaboratoryTaskToPreDispatch,
+  revertLaboratoryTaskToPreviousStableState,
   SALT_SPRAY_LAB,
   validateLaboratoryTrayScan,
 } from "./model";
@@ -546,7 +546,7 @@ function useLaboratoryPage(options = {}) {
             : currentTask.value?.trayCodes;
     const baseSamples =
       options.revertTask && nextStatus === LAB_COMPARE_STATUS
-        ? revertLaboratoryTaskToPreDispatch({
+        ? revertLaboratoryTaskToPreviousStableState({
             currentTask: options.revertTask,
             now: actionTime,
             samples: samples.value,

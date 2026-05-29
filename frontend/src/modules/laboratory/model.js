@@ -155,10 +155,10 @@ const resolvePreDispatchSnapshot = (sample) => {
   };
 };
 
-const shouldRevertLaboratoryTrayStatus = (status) => {
+const shouldRevertLaboratoryTrayStatus = (status, { includeRunning = false } = {}) => {
   const normalized = normalizeText(status);
   const rank = resolveLaboratoryStatusRank(normalized);
-  return normalized === LAB_RESET_STATUS || (rank >= 1 && rank < 4);
+  return normalized === LAB_RESET_STATUS || (rank >= 1 && rank < (includeRunning ? 5 : 4));
 };
 
 const resolveLaboratoryStatusRank = (value) => {
@@ -308,6 +308,36 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
   return {
     experimentName: segments[1],
     status: segments[2],
+  };
+};
+
+const resolvePreviousCompletedExperimentSnapshot = (sample, taskCode, currentExperimentName) => {
+  const candidates = asArray(sample?.history)
+    .map((entry) => {
+      const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+      if (!parsed || parsed.status !== "实验已完成" || parsed.experimentName === currentExperimentName) {
+        return null;
+      }
+      return {
+        experimentName: parsed.experimentName,
+        location: normalizeText(entry?.location) || normalizeText(sample?.location),
+        status: "实验已完成",
+        time: toTime(entry?.time) || -Infinity,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.time - right.time);
+  return candidates[candidates.length - 1] || null;
+};
+
+const resolvePreviousStableSnapshot = (sample, taskCode, currentExperimentName) => {
+  const completed = resolvePreviousCompletedExperimentSnapshot(sample, taskCode, currentExperimentName);
+  if (completed) {
+    return completed;
+  }
+  return {
+    ...resolvePreDispatchSnapshot(sample),
+    experimentName: "",
   };
 };
 
@@ -1238,6 +1268,72 @@ function revertLaboratoryTaskToPreDispatch({
   });
 }
 
+function revertLaboratoryTaskToPreviousStableState({
+  allowRunningRevert = false,
+  samples = [],
+  currentTask = null,
+  now = new Date().toISOString(),
+}) {
+  if (!currentTask || !asArray(currentTask?.trayCodes).length) {
+    return asArray(samples);
+  }
+
+  const taskCode = normalizeText(currentTask?.taskCode);
+  const trayCodeSet = new Set(asArray(currentTask?.trayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
+  const experimentName = normalizeText(currentTask?.experimentName) || "-";
+
+  return asArray(samples).map((sample) => {
+    if (normalizeText(sample?.task_code) !== taskCode) {
+      return sample;
+    }
+
+    let restoreSnapshot = null;
+    let reverted = false;
+    const nextTrays = asArray(sample?.trays).map((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (
+        !trayCodeSet.has(trayCode)
+        || !shouldRevertLaboratoryTrayStatus(normalizeText(tray?.status) || normalizeText(sample?.status), {
+          includeRunning: allowRunningRevert,
+        })
+      ) {
+        return { ...tray };
+      }
+      restoreSnapshot = restoreSnapshot || resolvePreviousStableSnapshot(sample, taskCode, experimentName);
+      reverted = true;
+      return {
+        ...tray,
+        status: restoreSnapshot.status,
+        updated_at: now,
+      };
+    });
+
+    if (!reverted || !restoreSnapshot) {
+      return sample;
+    }
+
+    const nextSample = {
+      ...sample,
+      flow_status: restoreSnapshot.status,
+      location: restoreSnapshot.location,
+      status: restoreSnapshot.status,
+      trays: nextTrays,
+      updated_at: now,
+    };
+    const detailTarget = restoreSnapshot.experimentName
+      ? `${restoreSnapshot.experimentName}已完成`
+      : restoreSnapshot.status;
+    nextSample.history = buildLaboratoryHistoryEntry(
+      nextSample,
+      "任务切换撤回",
+      restoreSnapshot.status,
+      `${taskCode} / ${experimentName} / 撤回至${detailTarget}`,
+      now,
+    );
+    return nextSample;
+  });
+}
+
 function buildLaboratoryChecklist(task) {
   if (!task) {
     return [];
@@ -1366,6 +1462,7 @@ export {
   getLaboratoryActionState,
   getLaboratoryOperationLock,
   resetLaboratoryExperimentTrays,
+  revertLaboratoryTaskToPreviousStableState,
   revertLaboratoryTaskToPreDispatch,
   validateLaboratoryTrayScan,
 };

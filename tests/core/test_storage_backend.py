@@ -345,6 +345,66 @@ def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_s
     assert normalized["mes.samples"][0]["trays"][0]["updated_at"] == "2026-04-28T03:32:34Z"
 
 
+def test_normalize_storage_payload_keeps_other_task_trays_active_when_one_tray_returned() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-03-002",
+                "name": "部分收回任务",
+                "sample_count": 2,
+                "test_types": ["盐雾试验"],
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": "SYLU-2026-03-002-SP-001",
+                "task_code": "SYLU-2026-03-002",
+                "status": "已到达暂存间",
+                "flow_status": "已到达暂存间",
+                "location": "恒温恒湿间（暂存间）",
+                "trays": [{"tray_code": "SYLU-2026-03-002-TP-001", "status": "已到达暂存间"}],
+            },
+            {
+                "code": "SYLU-2026-03-002-SP-002",
+                "task_code": "SYLU-2026-03-002",
+                "status": "送至暂存间",
+                "flow_status": "送至暂存间",
+                "location": "恒温恒湿间（暂存间）",
+                "trays": [{"tray_code": "SYLU-2026-03-002-TP-002", "status": "送至暂存间"}],
+            },
+        ],
+        "mes.experiment_trays": [
+            {
+                "task_code": "SYLU-2026-03-002",
+                "experiment_code": "SYLU-2026-03-002-A",
+                "tray_code": "SYLU-2026-03-002-TP-001",
+            },
+            {
+                "task_code": "SYLU-2026-03-002",
+                "experiment_code": "SYLU-2026-03-002-A",
+                "tray_code": "SYLU-2026-03-002-TP-002",
+            },
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": "SYLU-2026-03-002-TP-001",
+                "task_code": "SYLU-2026-03-002",
+                "action": "manufacturer_return",
+                "time": "2026-04-28T03:32:34Z",
+                "target_lab": "厂家收回",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0].get("transfer_status") != "厂家收回"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "已到达暂存间"
+    assert normalized["mes.samples"][1]["status"] == "送至暂存间"
+    assert normalized["mes.samples"][1]["trays"][0]["status"] == "送至暂存间"
+
+
 def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_devices() -> None:
     writes = {}
 

@@ -13,6 +13,7 @@ import {
   createLaboratoryWorkflow,
   getLaboratoryActionState,
   getLaboratoryOperationLock,
+  revertLaboratoryTaskToPreviousStableState,
   revertLaboratoryTaskToPreDispatch,
   resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
@@ -2181,6 +2182,92 @@ describe("laboratory model", () => {
       location: "盐雾试验室",
       status: "实验准备就绪",
       trays: [expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-B" })],
+    }));
+  });
+
+  test("revertLaboratoryTaskToPreviousStableState restores a switched task to the previous completed experiment", () => {
+    const updatedSamples = revertLaboratoryTaskToPreviousStableState({
+      currentTask: {
+        device: "冲击一室",
+        experimentCode: "TASK-700-B",
+        experimentName: "冲击试验",
+        taskCode: "TASK-700",
+        trayCodes: ["TP-700"],
+      },
+      now: "2026-04-02T11:00:00.000Z",
+      samples: [
+        {
+          code: "TASK-700-SP-001",
+          flow_status: "实验准备就绪",
+          history: [
+            { action: "实验确认", location: "冲击一室", status: "实验准备就绪", time: "2026-04-02T10:45:00.000Z" },
+            { action: "任务比对", location: "冲击一室", status: "已到达实验室", time: "2026-04-02T10:35:00.000Z" },
+            { action: "实验完成", detail: "TASK-700 / 盐雾试验 / 实验已完成", location: "盐雾试验室", status: "实验已完成", time: "2026-04-02T09:30:00.000Z" },
+            { action: "暂存间扫码出库", location: "冲击一室", status: "送至实验室", time: "2026-04-02T10:20:00.000Z" },
+            { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T09:10:00.000Z" },
+          ],
+          location: "冲击一室",
+          owner: "王工",
+          status: "实验准备就绪",
+          task_code: "TASK-700",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-700" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "实验已完成",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-700" })],
+    }));
+    expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "TASK-700 / 冲击试验 / 撤回至盐雾试验已完成",
+      location: "盐雾试验室",
+      status: "实验已完成",
+    }));
+  });
+
+  test("revertLaboratoryTaskToPreviousStableState keeps running trays locked unless explicitly allowed", () => {
+    const samples = [
+      {
+        code: "TASK-701-SP-001",
+        flow_status: "实验进行中",
+        history: [
+          { action: "实验完成", detail: "TASK-701 / 盐雾试验 / 实验已完成", location: "盐雾试验室", status: "实验已完成", time: "2026-04-02T09:30:00.000Z" },
+        ],
+        location: "冲击一室",
+        status: "实验进行中",
+        task_code: "TASK-701",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-701" }],
+      },
+    ];
+    const currentTask = {
+      experimentName: "冲击试验",
+      taskCode: "TASK-701",
+      trayCodes: ["TP-701"],
+    };
+
+    const defaultRollback = revertLaboratoryTaskToPreviousStableState({
+      currentTask,
+      now: "2026-04-02T11:00:00.000Z",
+      samples,
+    });
+    const equipmentRepairRollback = revertLaboratoryTaskToPreviousStableState({
+      allowRunningRevert: true,
+      currentTask,
+      now: "2026-04-02T11:00:00.000Z",
+      samples,
+    });
+
+    expect(defaultRollback[0].status).toBe("实验进行中");
+    expect(defaultRollback[0].trays[0].status).toBe("实验进行中");
+    expect(equipmentRepairRollback[0]).toEqual(expect.objectContaining({
+      flow_status: "实验已完成",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-701" })],
     }));
   });
 });

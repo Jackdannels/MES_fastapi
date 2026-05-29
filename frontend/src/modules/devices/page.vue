@@ -7,85 +7,24 @@
       <div class="muted">可排程</div>
     </div>
     <div class="card">
-      <div class="muted">使用中</div>
+      <div class="muted">工作中</div>
       <div class="kpi" id="device-active-count">{{ metrics.activeCount }}</div>
       <div class="muted">自动采集中</div>
     </div>
     <div class="card">
-      <div class="muted">维护/校准</div>
+      <div class="muted">维保中</div>
       <div class="kpi" id="device-maintenance-count">{{ metrics.maintenanceCount }}</div>
       <div class="muted">待处理</div>
     </div>
   </section>
 
   <section class="card section devices-registry-card">
-    <h3>设备台账</h3>
-    <form>
-      <div class="form-grid">
-        <div class="form-field">
-          <label>设备编号</label>
-          <input v-model="deviceForm.code" type="text" name="code" placeholder="例如：HPLC-03" />
-        </div>
-        <div class="form-field">
-          <label>设备名称</label>
-          <input v-model="deviceForm.name" type="text" name="name" placeholder="高效液相色谱仪" />
-        </div>
-        <div class="form-field">
-          <label>试验类型</label>
-          <select v-model="deviceForm.type" name="type">
-            <option value="">请选择试验类型</option>
-            <option v-for="type in testTypeOptions" :key="type" :value="type">{{ type }}</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>型号/规格</label>
-          <input v-model="deviceForm.model" type="text" name="model" placeholder="型号或规格" />
-        </div>
-        <div class="form-field">
-          <label>负责人</label>
-          <input v-model="deviceForm.owner" type="text" name="owner" placeholder="设备负责人" />
-        </div>
-        <div class="form-field">
-          <label>状态</label>
-          <select v-model="deviceForm.status" name="status">
-            <option>可用</option>
-            <option>维护/校准</option>
-            <option>停用</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>位置</label>
-          <select v-model="deviceForm.location" name="location">
-            <option value="">请选择实验室</option>
-            <option v-for="location in locationOptions" :key="location" :value="location">{{ location }}</option>
-          </select>
-        </div>
-        <div class="form-field">
-          <label>下次校准时间</label>
-          <PickerOnlyInput v-model="deviceForm.next_cal" type="date" name="next_cal" />
-        </div>
-        <div class="form-field">
-          <label>采集启用</label>
-          <select v-model="deviceForm.acquisition_enabled" name="acquisition_enabled">
-            <option>启用</option>
-            <option>停用</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="action-btn" data-testid="device-save" type="button" @click="saveCurrentDevice">保存设备</button>
-        <button class="action-btn secondary" data-testid="device-add" type="button" @click="createNewDevice">新增设备</button>
-        <button class="action-btn secondary" data-testid="open-device-drawer" type="button" @click="openDeviceDrawer()">
-          维护记录
-        </button>
-      </div>
-    </form>
-  </section>
-
-  <section class="card section devices-table-card">
     <h3>设备列表</h3>
     <div class="toolbar">
       <input v-model="query" class="search-input" placeholder="筛选设备/状态/位置" />
+      <button class="action-btn secondary" data-testid="open-device-drawer" type="button" @click="openDeviceDrawer()">
+        维保记录
+      </button>
     </div>
     <table class="table" id="device-table">
       <thead>
@@ -125,7 +64,7 @@
                 type="button"
                 @click="openMaintenancePlan(row)"
               >
-                维护计划
+                维保计划
               </button>
             </div>
           </td>
@@ -275,20 +214,29 @@
       </div>
       <div class="form-field">
         <label>设备当前状态</label>
-        <select v-model="deviceForm.status" name="edit_status">
-          <option>可用</option>
-          <option>维护/校准</option>
-          <option>停用</option>
-        </select>
+        <div class="device-status-field" data-testid="device-status-field">
+          <div :class="['device-status-display', editDeviceStatusClass]" data-testid="device-edit-status" role="status">
+            {{ deviceForm.status }}
+          </div>
+          <button
+            class="action-btn secondary"
+            type="button"
+            data-testid="device-set-available"
+            :disabled="!canSetDeviceAvailable"
+            @click="setDeviceAvailable"
+          >
+            设为可用
+          </button>
+        </div>
       </div>
     </div>
     <template #footer>
-      <button class="action-btn" type="button" data-testid="device-edit-save" @click="saveEditedDevice">保存</button>
       <button class="action-btn secondary" type="button" @click="closeEditDevice">取消</button>
+      <button class="action-btn" type="button" data-testid="device-edit-confirm" @click="saveEditedDevice">确定</button>
     </template>
   </AppModal>
 
-  <AppModal :open="maintenancePlanOpen" title="维护计划" @close="closeMaintenancePlan">
+  <AppModal :open="maintenancePlanOpen" title="维保计划" @close="closeMaintenancePlan">
     <div class="form-grid">
       <div class="form-field">
         <label>设备编号</label>
@@ -299,30 +247,54 @@
         <input :value="selectedDevice.name" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>维护类型</label>
-        <select v-model="maintenancePlanForm.type">
-          <option>计划维护</option>
-          <option>校准</option>
-          <option>保养</option>
+        <label>维保类型</label>
+        <select v-model="maintenancePlanForm.type" name="maintenance_type">
+          <option>计划维修</option>
           <option>维修</option>
+          <option>计划保养</option>
+          <option>保养</option>
         </select>
       </div>
       <div class="form-field">
         <label>开始时间</label>
-        <PickerOnlyInput v-model="maintenancePlanForm.startAt" type="datetime-local" />
+        <PickerOnlyInput v-model="maintenancePlanForm.startAt" :disabled="!maintenancePlanIsPlanned" type="datetime-local" />
       </div>
       <div class="form-field">
         <label>结束时间</label>
-        <PickerOnlyInput v-model="maintenancePlanForm.endAt" type="datetime-local" />
+        <PickerOnlyInput v-model="maintenancePlanForm.endAt" :disabled="!maintenancePlanIsPlanned" type="datetime-local" />
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
         <label>备注</label>
-        <textarea v-model="maintenancePlanForm.note" placeholder="维护说明"></textarea>
+        <textarea v-model="maintenancePlanForm.note" placeholder="维保说明"></textarea>
+      </div>
+      <div v-if="maintenancePlanWarning" class="form-alert" data-testid="maintenance-plan-warning">
+        {{ maintenancePlanWarning }}
       </div>
     </div>
     <template #footer>
-      <button class="action-btn" type="button" data-testid="maintenance-plan-save" @click="saveMaintenancePlan">保存计划</button>
       <button class="action-btn secondary" type="button" @click="closeMaintenancePlan">取消</button>
+      <button class="action-btn" type="button" data-testid="maintenance-plan-save" @click="saveMaintenancePlan">确定</button>
+    </template>
+  </AppModal>
+
+  <AppModal :open="runningRepairChoiceOpen" title="设备维修确认" @close="closeRunningRepairChoice">
+    <div class="devices-maintenance-conflict" data-testid="running-repair-choice-modal">
+      <strong>当前试验间正在进行实验。</strong>
+      <p>维修会立即生效，请选择当前实验的处理方式。</p>
+      <ul>
+        <li v-for="schedule in runningRepairChoiceDetail?.runningSchedules || []" :key="schedule.id">
+          {{ schedule.task_code }} / {{ schedule.experiment_code || "-" }}
+        </li>
+      </ul>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" type="button" @click="closeRunningRepairChoice">取消</button>
+      <button class="action-btn secondary" type="button" data-testid="running-repair-reschedule" @click="confirmRunningRepairReschedule">
+        重新排程
+      </button>
+      <button class="action-btn" type="button" data-testid="running-repair-complete" @click="confirmRunningRepairComplete">
+        设为实验已完成
+      </button>
     </template>
   </AppModal>
 
@@ -344,7 +316,7 @@
     </template>
   </AppModal>
 
-  <AppDrawer :open="deviceDrawerOpen" title="设备维护记录" @close="closeDeviceDrawer">
+  <AppDrawer :open="deviceDrawerOpen" title="设备维保记录" @close="closeDeviceDrawer">
     <div class="form-grid">
       <div class="form-field">
         <label>设备编号</label>
@@ -359,7 +331,7 @@
         <PickerOnlyInput v-model="maintenanceForm.latestCalibration" type="date" />
       </div>
       <div class="form-field">
-        <label>维护类型</label>
+        <label>维保类型</label>
         <select v-model="maintenanceForm.maintenanceType">
           <option>校准</option>
           <option>保养</option>
@@ -367,8 +339,8 @@
         </select>
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
-        <label>维护记录</label>
-        <textarea v-model="maintenanceForm.record" placeholder="记录维护内容与结果"></textarea>
+        <label>维保记录</label>
+        <textarea v-model="maintenanceForm.record" placeholder="记录维保内容与结果"></textarea>
       </div>
     </div>
   </AppDrawer>
@@ -387,22 +359,29 @@ import { useDevicesPage } from "./useDevicesPage";
 
 const {
   cancelMaintenanceConflict,
+  canSetDeviceAvailable,
+  closeRunningRepairChoice,
   closeDeviceDrawer,
   closeEditDevice,
   closeMaintenancePlan,
   closePointModal,
   confirmMaintenanceConflict,
+  confirmRunningRepairComplete,
+  confirmRunningRepairReschedule,
   connectionForm,
   createNewDevice,
   deviceDrawerOpen,
   deviceForm,
   deviceRows,
+  editDeviceStatusClass,
   editDeviceOpen,
   locationOptions,
   maintenanceConflictDetail,
   maintenanceConflictOpen,
   maintenanceForm,
   maintenancePlanForm,
+  maintenancePlanIsPlanned,
+  maintenancePlanWarning,
   maintenancePlanOpen,
   metrics,
   openEditDevice,
@@ -414,11 +393,14 @@ const {
   pointQuery,
   pointRows,
   query,
+  runningRepairChoiceDetail,
+  runningRepairChoiceOpen,
   saveCurrentDevice,
   saveEditedDevice,
   saveMaintenancePlan,
   savePoint,
   selectedDevice,
+  setDeviceAvailable,
   sortDirection,
   sortKey,
   testTypeOptions,

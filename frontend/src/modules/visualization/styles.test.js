@@ -118,5 +118,8 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*position:\s*absolute;[^}]*right:\s*0;/s);
     expect(source).toMatch(/\.visual-analysis-top\s*{[^}]*z-index:\s*20;/s);
     expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*z-index:\s*40;/s);
+    const closeZIndex = Number(source.match(/\.visual-screen-close\s*{[^}]*z-index:\s*(\d+);/s)?.[1] || 0);
+    const customMenuZIndex = Number(source.match(/\.visual-analysis-custom-menu\s*{[^}]*z-index:\s*(\d+);/s)?.[1] || 0);
+    expect(closeZIndex).toBeGreaterThan(customMenuZIndex);
   });
 });

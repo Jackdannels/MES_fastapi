@@ -1,6 +1,7 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
+const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
 
 function readLocalArray(key) {
   void key;
@@ -50,6 +51,29 @@ async function writeStorageUpdates(updates) {
     const suffix = detail ? `，${detail}` : "";
     throw new Error(`Failed to write storage updates: ${response.status} ${response.statusText}${suffix}`);
   }
+  notifyStorageSnapshotUpdated(payload);
 }
 
-export { readLocalArray, readStorageSnapshot, writeLocalArray, writeStorageUpdates };
+function notifyStorageSnapshotUpdated(updates = {}) {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  const marker = JSON.stringify({
+    keys: Object.keys(updates || {}),
+    updatedAt: new Date().toISOString(),
+  });
+  try {
+    window.localStorage.setItem(SNAPSHOT_UPDATED_STORAGE_KEY, marker);
+  } catch {
+    // localStorage may be unavailable in private or embedded browser contexts.
+  }
+}
+
+export {
+  SNAPSHOT_UPDATED_STORAGE_KEY,
+  notifyStorageSnapshotUpdated,
+  readLocalArray,
+  readStorageSnapshot,
+  writeLocalArray,
+  writeStorageUpdates,
+};

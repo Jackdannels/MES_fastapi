@@ -835,10 +835,9 @@ function applyZancunInventoryAction(input = {}) {
     nextSnapshot[SAMPLES_KEY].some(
       (sample) =>
         normalizeText(sample?.task_code) === normalizeText(matchedRow.taskCode) &&
-        (normalizeText(sample?.status) === "厂家收回" ||
-          asArray(sample?.trays).some(
-            (tray) => normalizeText(tray?.tray_code) === normalizedCode && normalizeText(tray?.status) === "厂家收回",
-          )),
+        asArray(sample?.trays).some(
+          (tray) => normalizeText(tray?.tray_code) === normalizedCode && normalizeText(tray?.status) === "厂家收回",
+        ),
     ) ||
     nextSnapshot[TASKS_KEY].some(
       (task) => normalizeText(task?.code || task?.task_code || task?.id) === normalizeText(matchedRow.taskCode) && normalizeText(task?.transfer_status) === "厂家收回",

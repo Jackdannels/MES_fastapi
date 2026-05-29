@@ -685,6 +685,10 @@ def build_device_insert_row(device: Dict[str, Any]) -> Dict[str, Any]:
         "model_no": normalize_text(device.get("model")),
         "manufacturer": STORAGE_MARKER,
         "status": normalize_text(device.get("status")),
+        "maintenance_start_at": parse_storage_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt")),
+        "maintenance_end_at": parse_storage_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt")),
+        "maintenance_type": normalize_text(device.get("maintenance_type") or device.get("maintenanceType")),
+        "maintenance_note": normalize_text(device.get("maintenance_note") or device.get("maintenanceNote")),
         "acquisition_enabled": normalize_text(device.get("acquisition_enabled")) or "启用",
         "next_calibration_date": parse_date_value(device.get("next_cal")),
         "location_desc": normalize_text(device.get("location")),
@@ -699,6 +703,10 @@ def build_storage_device_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "name": normalize_text(row.get("equipment_name")),
         "type": normalize_text(row.get("equipment_type")),
         "status": normalize_text(row.get("status")),
+        "maintenance_start_at": format_iso_storage_datetime(row.get("maintenance_start_at")),
+        "maintenance_end_at": format_iso_storage_datetime(row.get("maintenance_end_at")),
+        "maintenance_type": normalize_text(row.get("maintenance_type")),
+        "maintenance_note": normalize_text(row.get("maintenance_note")),
         "location": normalize_text(row.get("location_desc")),
         "next_cal": format_date_value(row.get("next_calibration_date")),
         "owner": normalize_text(row.get("remark")),
@@ -956,6 +964,10 @@ class MySQLMesStorageBackend(StorageBackend):
                     ("md_lab", "location_desc", "ALTER TABLE md_lab ADD COLUMN location_desc VARCHAR(200) NULL AFTER capacity"),
                     ("md_lab", "status", "ALTER TABLE md_lab ADD COLUMN status TINYINT NOT NULL DEFAULT 1 AFTER location_desc"),
                     ("md_lab", "remark", "ALTER TABLE md_lab ADD COLUMN remark VARCHAR(300) NULL AFTER status"),
+                    ("md_equipment", "maintenance_start_at", "ALTER TABLE md_equipment ADD COLUMN maintenance_start_at DATETIME NULL AFTER status"),
+                    ("md_equipment", "maintenance_end_at", "ALTER TABLE md_equipment ADD COLUMN maintenance_end_at DATETIME NULL AFTER maintenance_start_at"),
+                    ("md_equipment", "maintenance_type", "ALTER TABLE md_equipment ADD COLUMN maintenance_type VARCHAR(30) NULL AFTER maintenance_end_at"),
+                    ("md_equipment", "maintenance_note", "ALTER TABLE md_equipment ADD COLUMN maintenance_note VARCHAR(500) NULL AFTER maintenance_type"),
                 )
                 for table_name, column_name, ddl in master_columns:
                     cursor.execute(f"SHOW COLUMNS FROM {table_name} LIKE '{column_name}'")
@@ -1746,11 +1758,13 @@ class MySQLMesStorageBackend(StorageBackend):
             """
             INSERT INTO md_equipment (
               equipment_code, equipment_name, equipment_type, test_type_id, lab_id, model_no,
-              manufacturer, status, acquisition_enabled, next_calibration_date, manager_user_id,
+              manufacturer, status, maintenance_start_at, maintenance_end_at, maintenance_type,
+              maintenance_note, acquisition_enabled, next_calibration_date, manager_user_id,
               location_desc, remark
             ) VALUES (
               %(equipment_code)s, %(equipment_name)s, %(equipment_type)s, NULL, NULL, %(model_no)s,
-              %(manufacturer)s, %(status)s, %(acquisition_enabled)s, %(next_calibration_date)s, NULL,
+              %(manufacturer)s, %(status)s, %(maintenance_start_at)s, %(maintenance_end_at)s,
+              %(maintenance_type)s, %(maintenance_note)s, %(acquisition_enabled)s, %(next_calibration_date)s, NULL,
               %(location_desc)s, %(remark)s
             )
             ON DUPLICATE KEY UPDATE
@@ -1759,6 +1773,10 @@ class MySQLMesStorageBackend(StorageBackend):
               model_no = VALUES(model_no),
               manufacturer = VALUES(manufacturer),
               status = VALUES(status),
+              maintenance_start_at = VALUES(maintenance_start_at),
+              maintenance_end_at = VALUES(maintenance_end_at),
+              maintenance_type = VALUES(maintenance_type),
+              maintenance_note = VALUES(maintenance_note),
               acquisition_enabled = VALUES(acquisition_enabled),
               next_calibration_date = VALUES(next_calibration_date),
               location_desc = VALUES(location_desc),
@@ -2233,6 +2251,7 @@ class MySQLMesStorageBackend(StorageBackend):
         cursor.execute(
             """
             SELECT equipment_code, equipment_name, equipment_type, model_no, status,
+                   maintenance_start_at, maintenance_end_at, maintenance_type, maintenance_note,
                    acquisition_enabled, next_calibration_date, location_desc, remark
             FROM md_equipment
             WHERE manufacturer = %s

@@ -167,9 +167,9 @@ def device_is_unavailable(device: dict[str, Any] | None) -> bool:
     now = datetime.now(timezone) if timezone else datetime.now()
     if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
         return True
-    if any(keyword in status for keyword in ["维护", "维修"]) and not (end_at and end_at < now):
+    if any(keyword in status for keyword in ["维护", "维修", "保养"]) and not (end_at and end_at < now):
         return True
-    return bool(start_at and end_at and start_at <= now <= end_at)
+    return bool(start_at and start_at <= now and (not end_at or now <= end_at))
 
 
 def find_unavailable_device(snapshot: dict[str, list[dict[str, Any]]], device_name: str) -> dict[str, Any] | None:

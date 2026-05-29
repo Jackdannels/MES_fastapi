@@ -69,6 +69,7 @@ describe("storageApi", () => {
     });
 
     expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
+    expect(window.localStorage.getItem("mes:snapshot-updated-at")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(STORAGE_ENDPOINT, {
       method: "PUT",
       headers: {

@@ -715,6 +715,71 @@ describe("staging-management model", () => {
     });
   });
 
+  test("allows stock-in for another tray from the same task after one tray was returned", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-107",
+      code: "SYLU-2026-04-107",
+      test_type: "盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.samples].push(
+      {
+        id: "sample-107-a",
+        code: "SYLU-2026-04-107-SP-001",
+        task_code: "SYLU-2026-04-107",
+        owner: "吴工",
+        location: "恒温恒湿间（暂存间）",
+        status: "已到达暂存间",
+        trays: [{ tray_code: "SYLU-2026-04-107-TP-001", status: "已到达暂存间", quantity: 1 }],
+      },
+      {
+        id: "sample-107-b",
+        code: "SYLU-2026-04-107-SP-002",
+        task_code: "SYLU-2026-04-107",
+        owner: "吴工",
+        location: "恒温恒湿间（暂存间）",
+        status: "送至暂存间",
+        trays: [{ tray_code: "SYLU-2026-04-107-TP-002", status: "送至暂存间", quantity: 1 }],
+      },
+    );
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-107-in",
+      tray_code: "SYLU-2026-04-107-TP-001",
+      task_code: "SYLU-2026-04-107",
+      action: "stock_in",
+      time: "2026-04-01T09:30:00",
+      operator: "暂存员A",
+    });
+
+    const returnedResult = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-107-TP-001",
+        mode: "manufacturerReturn",
+      },
+      snapshot,
+    });
+    const result = applyZancunInventoryAction({
+      now: "2026-04-01T13:00:00",
+      payload: {
+        code: "SYLU-2026-04-107-TP-002",
+        mode: "stockIn",
+      },
+      snapshot: returnedResult.snapshot,
+    });
+
+    const stockedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-002");
+
+    expect(result.error).toBe("");
+    expect(stockedSample).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ tray_code: "SYLU-2026-04-107-TP-002", status: "已到达暂存间" })],
+    });
+  });
+
   test("syncs fully completed tray samples into post-experiment staging on stock-in", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.experiments].push({

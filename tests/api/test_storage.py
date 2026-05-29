@@ -135,7 +135,7 @@ def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(mo
     client, storage = build_client(
         monkeypatch,
         {
-            "mes.devices": [{"code": "盐雾试验室", "status": "维护/校准"}],
+            "mes.devices": [{"code": "盐雾试验室", "status": "保养"}],
             "mes.samples": samples,
         },
     )
@@ -171,7 +171,7 @@ def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkey
                     "code": "盐雾试验室",
                     "maintenance_end_at": "2000-01-01T12:00:00",
                     "maintenance_start_at": "2000-01-01T08:00:00",
-                    "status": "维护/校准",
+                    "status": "保养",
                 }
             ],
             "mes.samples": samples,
@@ -187,6 +187,44 @@ def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkey
 
     assert response.status_code == 200
     assert storage.read("mes.samples") == updated
+
+
+def test_storage_rejects_laboratory_progress_after_open_ended_maintenance_starts(monkeypatch):
+    samples = [
+        {
+            "code": "SP-MAINTENANCE-OPEN",
+            "location": "盐雾试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "SYLU-2026-05-706",
+            "trays": [{"tray_code": "TP-MAINTENANCE-OPEN", "status": "送至实验室", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.devices": [
+                {
+                    "code": "盐雾试验室",
+                    "maintenance_start_at": "2000-01-01T08:00:00",
+                    "maintenance_type": "计划保养",
+                    "status": "可用",
+                }
+            ],
+            "mes.samples": samples,
+        },
+    )
+
+    updated = deepcopy(samples)
+    updated[0]["status"] = "已到达实验室"
+    updated[0]["flow_status"] = "已到达实验室"
+    updated[0]["trays"][0]["status"] = "已到达实验室"
+
+    response = client.put("/api/storage", json={"mes.samples": updated})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "盐雾试验室设备维护中，禁止实验室操作"
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_allows_next_experiment_arrival_after_previous_experiment_completed(monkeypatch):

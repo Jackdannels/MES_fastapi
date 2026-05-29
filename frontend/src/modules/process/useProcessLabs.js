@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { readMasterLabs } from "@/lib/masterDataApi";
+import { SNAPSHOT_UPDATED_STORAGE_KEY } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   buildTrayFlowView,
@@ -277,6 +278,113 @@ function useProcessLabs(options = {}) {
     );
     return normalizeText(matchedExperiment?.experiment_name);
   };
+  const getExperimentLabels = (taskCode, experimentCode) => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    const normalizedExperimentCode = normalizeText(experimentCode);
+    if (!normalizedTaskCode || !normalizedExperimentCode) {
+      return [];
+    }
+    const experimentName = getScheduledExperimentName(normalizedTaskCode, normalizedExperimentCode);
+    return Array.from(new Set([normalizedExperimentCode, experimentName].map(normalizeText).filter(Boolean)));
+  };
+  const historyEntryText = (entry) =>
+    [entry?.detail, entry?.experiment_code, entry?.experimentCode, entry?.experiment_name, entry?.experimentName]
+      .map(normalizeText)
+      .filter(Boolean)
+      .join(" / ");
+  const historyEntryMatchesExperiment = (entry, taskCode, experimentCode) => {
+    const normalizedTaskCode = normalizeText(taskCode);
+    const text = historyEntryText(entry);
+    if (!text || (normalizedTaskCode && !text.includes(normalizedTaskCode))) {
+      return false;
+    }
+    return getExperimentLabels(taskCode, experimentCode).some((label) => text.includes(label));
+  };
+  const resolveHistoryExperimentName = (entry, taskCode) => {
+    const text = historyEntryText(entry);
+    if (!text) {
+      return "";
+    }
+    const matchedExperiment = experiments.value.find((experiment) => {
+      if (normalizeText(experiment?.task_code) !== normalizeText(taskCode)) {
+        return false;
+      }
+      const labels = [
+        normalizeText(experiment?.experiment_code),
+        normalizeText(experiment?.experiment_name),
+      ].filter(Boolean);
+      return labels.some((label) => text.includes(label));
+    });
+    return normalizeText(matchedExperiment?.experiment_name) || normalizeText(matchedExperiment?.experiment_code);
+  };
+  const isSharedExperimentTray = (taskCode, trayCode) => {
+    const experimentCodes = new Set();
+    experimentTrays.value.forEach((entry) => {
+      if (normalizeText(entry?.task_code) !== normalizeText(taskCode) || normalizeText(entry?.tray_code) !== normalizeText(trayCode)) {
+        return;
+      }
+      const experimentCode = normalizeText(entry?.experiment_code);
+      if (experimentCode) {
+        experimentCodes.add(experimentCode);
+      }
+    });
+    return experimentCodes.size > 1;
+  };
+  const findLatestTrayExperimentHistory = (taskCode, trayCode) => {
+    const matchedEntries = [];
+    getTaskSamples(taskCode).forEach((sample) => {
+      const hasTray = asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === normalizeText(trayCode));
+      if (!hasTray) {
+        return;
+      }
+      asArray(sample?.history).forEach((entry, index) => {
+        const status = normalizeText(entry?.status);
+        const detail = normalizeText(entry?.detail);
+        if (
+          status !== TRAY_STATUS_READY
+          && !RUNNING_TRAY_STATUSES.has(status)
+          && !detail.includes(TRAY_STATUS_READY)
+          && !detail.includes(TRAY_STATUS_RUNNING)
+          && !detail.includes("实验中")
+        ) {
+          return;
+        }
+        matchedEntries.push({ entry, index, time: parseScheduleTime(entry?.time) });
+      });
+    });
+    matchedEntries.sort((left, right) => {
+      const leftTime = Number.isFinite(left.time) ? left.time : 0;
+      const rightTime = Number.isFinite(right.time) ? right.time : 0;
+      return rightTime - leftTime || left.index - right.index;
+    });
+    return matchedEntries[0]?.entry || null;
+  };
+  const resolveReadyBlockedReason = (row, options = {}) => {
+    if (!row?.isReady) {
+      return "";
+    }
+    const taskCode = normalizeText(options.taskCode);
+    const experimentCode = normalizeText(options.experimentCode);
+    const trayCode = normalizeText(row?.trayCode);
+    if (!taskCode || !experimentCode || !trayCode || !isSharedExperimentTray(taskCode, trayCode)) {
+      return "";
+    }
+
+    const latestHistory = findLatestTrayExperimentHistory(taskCode, trayCode);
+    if (latestHistory) {
+      if (historyEntryMatchesExperiment(latestHistory, taskCode, experimentCode)) {
+        return "";
+      }
+      const experimentName = resolveHistoryExperimentName(latestHistory, taskCode);
+      return `托盘正在${experimentName || "其他实验"}中，不能开始当前实验`;
+    }
+
+    const labName = normalizeText(options.labName);
+    if (!labName || trayBelongsToLab(row, labName) || trayHasUnknownLocation(row)) {
+      return "";
+    }
+    return "托盘正在其他实验中，不能开始当前实验";
+  };
   const buildAvailableTasksForLab = (labName) => {
     const rows = [];
     const seen = new Set();
@@ -537,18 +645,30 @@ function useProcessLabs(options = {}) {
     const normalizedLabName = normalizeText(options.labName);
     const matchesLab = (row) =>
       !normalizedLabName || trayBelongsToLab(row, normalizedLabName) || trayHasUnknownLocation(row);
-    const readyTrayRows = rows.filter((row) => row.isReady);
+    const readyTrayCandidates = rows.filter((row) => row.isReady);
+    const blockedReadyRows = readyTrayCandidates
+      .map((row) => ({ reason: resolveReadyBlockedReason(row, options), row }))
+      .filter((entry) => entry.reason);
+    const blockedReadyTrayCodes = new Set(blockedReadyRows.map((entry) => normalizeText(entry.row?.trayCode)).filter(Boolean));
+    const readyTrayRows = readyTrayCandidates.filter((row) => !blockedReadyTrayCodes.has(normalizeText(row?.trayCode)));
     const runningTrayRows = rows.filter((row) => row.isRunning && matchesLab(row));
     const remainingTrayRows = rows.filter((row) => !row.isRunning && !row.isCompleted);
 
     return {
       canStartExperiment: readyTrayRows.length > 0 && runningTrayRows.length === 0,
+      readyTrayRows,
       readyTrayCodes: readyTrayRows.map((row) => row.trayCode),
       readyTrayCount: readyTrayRows.length,
       remainingTrayCount: remainingTrayRows.length,
       runningTrayCount: runningTrayRows.length,
       startDisabledReason:
-        runningTrayRows.length > 0 ? "当前批次实验未结束" : readyTrayRows.length === 0 ? "暂无可启动托盘" : "",
+        runningTrayRows.length > 0
+          ? "当前批次实验未结束"
+          : readyTrayRows.length === 0 && blockedReadyRows.length > 0
+            ? blockedReadyRows[0].reason
+            : readyTrayRows.length === 0
+              ? "暂无可启动托盘"
+              : "",
     };
   };
 
@@ -559,7 +679,7 @@ function useProcessLabs(options = {}) {
       const taskCode = normalizeText(schedule?.task_code);
       const experimentCode = normalizeText(schedule?.experiment_code);
       const task = findTaskByCode(taskCode);
-      const actionState = buildStartExperimentState(buildTrayRows(taskCode, task, experimentCode), { labName });
+      const actionState = buildStartExperimentState(buildTrayRows(taskCode, task, experimentCode), { experimentCode, labName, taskCode });
       if (actionState.runningTrayCount > 0) {
         return null;
       }
@@ -623,11 +743,10 @@ function useProcessLabs(options = {}) {
     const hasScopedExperimentTrays = collectExperimentTrayCodes(taskCode, activeExperimentCode).length > 0;
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task, activeExperimentCode);
     const trayRows = buildTrayRows(taskCode, task, activeExperimentCode);
-    const readyTrayRows = trayRows.filter((row) => row.isReady);
     const runningTrayRows = trayRows.filter((row) => row.isRunning);
     const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
-    const actionState = buildStartExperimentState(trayRows, { labName });
+    const actionState = buildStartExperimentState(trayRows, { experimentCode: activeExperimentCode, labName, taskCode });
     const activeTray =
       trayRows.find((row) => row.trayCode === selectedTrayCode.value) ||
       runningTrayRows[0] ||
@@ -672,7 +791,7 @@ function useProcessLabs(options = {}) {
       activeExperimentCode,
       availableTasks: buildAvailableTasksForLab(labName),
       source: toText(task?.source),
-      readyTrayRows,
+      readyTrayRows: actionState.readyTrayRows,
       startDisabledReason: actionState.startDisabledReason,
       status: toText(task?.status, toText(lab?.status)),
       targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(lab?.targetExperiment))),
@@ -723,7 +842,7 @@ function useProcessLabs(options = {}) {
     let schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue(), normalizeText(scopedLab?.experimentCode));
     let activeExperimentCode = normalizeText(schedule?.experiment_code) || normalizeText(scopedLab?.experimentCode);
     let scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
-    let actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
+    let actionState = buildStartExperimentState(scopedTrayRows, { experimentCode: activeExperimentCode, labName: scopedLab?.name, taskCode });
 
     if (!explicitSelection && !actionState.canStartExperiment && actionState.runningTrayCount === 0) {
       const startableSchedule = findStartableScheduleForLab(scopedLab?.name);
@@ -736,7 +855,7 @@ function useProcessLabs(options = {}) {
         schedule = resolveScheduledRecordForLab(scopedLab, taskCode, currentTimeValue(), normalizeText(scopedLab?.experimentCode));
         activeExperimentCode = normalizeText(schedule?.experiment_code) || normalizeText(scopedLab?.experimentCode);
         scopedTrayRows = buildTrayRows(taskCode, task, activeExperimentCode);
-        actionState = buildStartExperimentState(scopedTrayRows, { labName: scopedLab?.name });
+        actionState = buildStartExperimentState(scopedTrayRows, { experimentCode: activeExperimentCode, labName: scopedLab?.name, taskCode });
       }
     }
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
@@ -945,7 +1064,11 @@ function useProcessLabs(options = {}) {
         ? startExperimentTaskDetail.value
         : buildTaskDetail(activeLab);
     const taskCode = normalizeText(detail?.code);
-    const actionState = buildStartExperimentState(detail?.trayRows);
+    const actionState = buildStartExperimentState(detail?.trayRows, {
+      experimentCode: detail?.activeExperimentCode,
+      labName: activeLab?.name,
+      taskCode,
+    });
     if (normalizeText(activeLab?.statusClass) === "is-maintenance") {
       processActionMessage.value = "设备维护中，禁止开始实验";
       return;
@@ -1007,7 +1130,11 @@ function useProcessLabs(options = {}) {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
     rebuildLabCards();
-    processActionMessage.value = `当前开始进行${actionState.readyTrayCount}个托盘，剩余${buildStartExperimentState(buildTaskDetail(activeLab).trayRows).remainingTrayCount}个托盘。`;
+    processActionMessage.value = `当前开始进行${actionState.readyTrayCount}个托盘，剩余${buildStartExperimentState(buildTaskDetail(activeLab).trayRows, {
+      experimentCode: detail?.activeExperimentCode,
+      labName: activeLab?.name,
+      taskCode,
+    }).remainingTrayCount}个托盘。`;
     startExperimentModalOpen.value = false;
     startExperimentTaskDetail.value = null;
     startExperimentLabName.value = "";
@@ -1037,17 +1164,25 @@ function useProcessLabs(options = {}) {
     selectedTaskLabName.value = "";
     selectedTrayCode.value = "";
   };
+  const handleStorageSnapshotUpdated = (event) => {
+    if (event?.key !== SNAPSHOT_UPDATED_STORAGE_KEY) {
+      return;
+    }
+    void loadLabStatus();
+  };
 
   if (autoLoad) {
     onMounted(() => {
       void loadLabStatus();
       if (typeof window !== "undefined") {
         window.addEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+        window.addEventListener("storage", handleStorageSnapshotUpdated);
       }
     });
     onBeforeUnmount(() => {
       if (typeof window !== "undefined") {
         window.removeEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+        window.removeEventListener("storage", handleStorageSnapshotUpdated);
       }
     });
   }

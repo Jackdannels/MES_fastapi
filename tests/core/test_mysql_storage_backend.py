@@ -236,6 +236,8 @@ def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) 
                 self._result = None
             elif "SHOW COLUMNS FROM md_test_type LIKE 'test_category'" in statement:
                 self._result = None
+            elif "SHOW COLUMNS FROM md_equipment LIKE 'maintenance_" in statement:
+                self._result = None
             elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
                 self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
             elif statement.startswith("SHOW COLUMNS"):
@@ -270,6 +272,10 @@ def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) 
     statements = connection.cursor_instance.statements
     assert any("ALTER TABLE md_test_type ADD COLUMN test_category VARCHAR(50) NULL" in statement for statement in statements)
     assert any("ALTER TABLE md_lab ADD COLUMN test_type_id BIGINT NULL" in statement for statement in statements)
+    assert any("ALTER TABLE md_equipment ADD COLUMN maintenance_start_at DATETIME NULL" in statement for statement in statements)
+    assert any("ALTER TABLE md_equipment ADD COLUMN maintenance_end_at DATETIME NULL" in statement for statement in statements)
+    assert any("ALTER TABLE md_equipment ADD COLUMN maintenance_type VARCHAR(30) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE md_equipment ADD COLUMN maintenance_note VARCHAR(500) NULL" in statement for statement in statements)
 
 
 def test_ensure_schema_extensions_adds_missing_master_data_indexes(monkeypatch) -> None:
@@ -872,8 +878,8 @@ def test_device_mapping_round_trip_preserves_owner_and_calibration_date() -> Non
     assert storage_item["next_cal"] == "2026-07-12"
 
 
-def test_device_mapping_round_trip_preserves_three_operational_statuses() -> None:
-    for status in ["可用", "维护/校准", "停用"]:
+def test_device_mapping_round_trip_preserves_three_safety_statuses() -> None:
+    for status in ["可用", "维修", "保养"]:
         insert_row = build_device_insert_row(
             {
                 "code": f"设备-{status}",
@@ -886,6 +892,75 @@ def test_device_mapping_round_trip_preserves_three_operational_statuses() -> Non
 
         assert insert_row["status"] == status
         assert storage_item["status"] == status
+
+
+def test_device_mapping_round_trip_preserves_maintenance_plan_fields() -> None:
+    insert_row = build_device_insert_row(
+        {
+            "code": "盐雾试验室",
+            "name": "盐雾试验室",
+            "status": "维修",
+            "maintenance_start_at": "2026-05-29T09:00:00",
+            "maintenance_end_at": "2026-05-29T12:00:00",
+            "maintenance_type": "计划维修",
+            "maintenance_note": "提前更换喷嘴",
+        }
+    )
+
+    storage_item = build_storage_device_item(insert_row)
+
+    assert insert_row["maintenance_start_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-29 09:00:00"
+    assert insert_row["maintenance_end_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-29 12:00:00"
+    assert insert_row["maintenance_type"] == "计划维修"
+    assert insert_row["maintenance_note"] == "提前更换喷嘴"
+    assert storage_item["maintenance_start_at"] == "2026-05-29T09:00:00+08:00"
+    assert storage_item["maintenance_end_at"] == "2026-05-29T12:00:00+08:00"
+    assert storage_item["maintenance_type"] == "计划维修"
+    assert storage_item["maintenance_note"] == "提前更换喷嘴"
+
+
+def test_replace_devices_persists_maintenance_plan_fields() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.execute_calls = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            self.execute_calls.append((" ".join(str(sql).split()), params))
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+    cursor = _CaptureCursor()
+
+    backend._replace_devices(
+        cursor,
+        [
+            {
+                "code": "盐雾试验室",
+                "name": "盐雾试验室",
+                "status": "保养",
+                "maintenance_start_at": "2026-05-29T09:00:00",
+                "maintenance_end_at": "2026-05-29T12:00:00",
+                "maintenance_type": "计划保养",
+                "maintenance_note": "喷嘴保养",
+            }
+        ],
+    )
+
+    insert_sql, rows = cursor.executemany_calls[0]
+    row = rows[0]
+    assert "maintenance_start_at, maintenance_end_at, maintenance_type" in insert_sql
+    assert "maintenance_note = VALUES(maintenance_note)" in insert_sql
+    assert row["maintenance_start_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-29 09:00:00"
+    assert row["maintenance_end_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-29 12:00:00"
+    assert row["maintenance_type"] == "计划保养"
+    assert row["maintenance_note"] == "喷嘴保养"
 
 
 def test_stream_mapping_round_trip_formats_quality_and_reported_flag() -> None:
