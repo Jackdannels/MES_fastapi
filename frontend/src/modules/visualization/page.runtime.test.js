@@ -750,7 +750,40 @@ describe("VisualizationPage runtime", () => {
 
     const menu = preview.get('[data-testid="visual-analysis-custom-menu"]');
     expect(menu.findAll("input")).toHaveLength(0);
-    expect(preview.get('[data-testid="visual-analysis-day-grid"]').exists()).toBe(true);
+    expect(preview.get('[data-testid="visual-analysis-day-picker"]').classes()).toContain("is-calendar");
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').classes()).toContain("visual-analysis-calendar-wheel-panel");
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').findAll(".visual-analysis-calendar-wheel")).toHaveLength(3);
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').text()).toContain("2026");
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').text()).toContain("5月");
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').text()).toContain("28日");
+    expect(preview.find('[data-testid="visual-analysis-day-grid"]').exists()).toBe(false);
+    expect(preview.get('[data-testid="visual-analysis-calendar-date-wheel"]').findAll(".visual-analysis-calendar-arrow")).toHaveLength(6);
+    await preview.get('[data-testid="visual-analysis-calendar-day-up"]').trigger("click");
+    expect(preview.text()).toContain("自定义 · 按天 · 2026-05-27");
+    await preview.get('[data-testid="visual-analysis-calendar-day-down"]').trigger("click");
+    expect(preview.text()).toContain("自定义 · 按天 · 2026-05-28");
+
+    const wheelDayUp = async () => {
+      await preview
+        .get('[data-testid="visual-analysis-calendar-day-wheel"]')
+        .get(".visual-analysis-calendar-wheel-options")
+        .trigger("wheel", { deltaY: -120 });
+    };
+    await wheelDayUp();
+    expect(preview.text()).toContain("自定义 · 按天 · 2026-05-28");
+    await wheelDayUp();
+    expect(preview.text()).toContain("自定义 · 按天 · 2026-05-27");
+
+    for (let index = 0; index < 2; index += 1) {
+      await preview.get('[data-testid="visual-analysis-calendar-year-wheel"]').trigger("wheel", { deltaY: 120 });
+    }
+    for (let index = 0; index < 4; index += 1) {
+      await preview.get('[data-testid="visual-analysis-calendar-month-wheel"]').trigger("wheel", { deltaY: -120 });
+    }
+    for (let index = 0; index < 24; index += 1) {
+      await preview.get('[data-testid="visual-analysis-calendar-day-wheel"]').trigger("wheel", { deltaY: -120 });
+    }
+    expect(preview.text()).toContain("自定义 · 按天 · 2027-03-15");
 
     const customMonth = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("按月"));
     await customMonth.trigger("click");
@@ -766,12 +799,23 @@ describe("VisualizationPage runtime", () => {
 
     const customRange = preview.findAll('[data-testid="visual-analysis-custom-mode"]').find((row) => row.text().includes("时间段"));
     await customRange.trigger("click");
-    expect(preview.get('[data-testid="visual-analysis-range-grid"]').exists()).toBe(true);
+    expect(preview.get('[data-testid="visual-analysis-range-grid"]').classes()).toContain("is-range");
     expect(preview.findAll('[data-testid="visual-analysis-calendar-range"]')).toHaveLength(4);
+    expect(preview.get('[data-testid="visual-analysis-range-grid"]').get('[data-testid="visual-analysis-calendar-date-wheel"]').findAll(".visual-analysis-calendar-wheel")).toHaveLength(3);
 
-    const selectedDay = preview.get('[data-testid="visual-analysis-range-grid"]').findAll("button").find((button) => button.text() === "15");
-    await selectedDay.trigger("click");
-    expect(preview.text()).toContain("自定义 · 时间段 · 2026-05-15 至 2026-05-28");
+    await preview.get('[data-testid="visual-analysis-calendar-range"]').trigger("click");
+    for (let index = 0; index < 2; index += 1) {
+      await preview.get('[data-testid="visual-analysis-range-grid"]').get('[data-testid="visual-analysis-calendar-year-wheel"]').trigger("wheel", { deltaY: -120 });
+    }
+    for (let index = 0; index < 6; index += 1) {
+      await preview.get('[data-testid="visual-analysis-range-grid"]').get('[data-testid="visual-analysis-calendar-month-wheel"]').trigger("wheel", { deltaY: -120 });
+    }
+    expect(preview.get('[data-testid="visual-analysis-range-grid"]').get('[data-testid="visual-analysis-calendar-day-wheel"]').findAll(".visual-analysis-calendar-wheel-track button")).toHaveLength(28);
+
+    for (let index = 0; index < 28; index += 1) {
+      await preview.get('[data-testid="visual-analysis-range-grid"]').get('[data-testid="visual-analysis-calendar-day-wheel"]').trigger("wheel", { deltaY: 120 });
+    }
+    expect(preview.text()).toContain("自定义 · 时间段 · 2025-02-15 至 2026-05-28");
   });
 
   test("opens the eight-screen combined preview from the page action", async () => {

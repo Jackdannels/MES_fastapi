@@ -135,6 +135,38 @@ describe("TaskOverviewSummaryTable", () => {
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 
+  test("renders experiment tray progress labels in the experiment status column", () => {
+    const wrapper = mount(TaskOverviewSummaryTable, {
+      props: {
+        formatTrayCount: () => "2",
+        formatTraySummary: () => "TP-001 / TP-003",
+        row: {
+          currentStatus: "任务进行中",
+          experimentCount: 1,
+          experimentSummary: "冲击试验",
+          experiments: [
+            {
+              experimentCode: "TASK-021-B",
+              experimentName: "冲击试验",
+              displayStatus: "实验进行中",
+              displayStatusLabel: "实验进行中（已完成 1/2 托盘）",
+            },
+          ],
+          plannedCount: 2,
+          sampleCount: 2,
+          scheduleCount: 1,
+          scheduleLabel: "已排程",
+          trays: [{ trayCode: "TP-001" }, { trayCode: "TP-003" }],
+        },
+      },
+    });
+
+    const statusChip = wrapper.find(".task-overview-summary-line-chip");
+
+    expect(statusChip.text()).toBe("实验进行中（已完成 1/2 托盘）");
+    expect(statusChip.classes()).toContain("is-running");
+  });
+
   test("renders experiment types as content without treating experiment names as types", () => {
     const wrapper = mount(TaskOverviewSummaryTable, {
       props: {

@@ -1232,15 +1232,33 @@ const analysisCustomModes = [
   { control: "number", granularity: "按月", key: "year", label: "按年", range: "自定义 · 按年 · 2026", scale: 1, value: "2026" },
   { control: "range", granularity: "按日", key: "range", label: "时间段", range: "自定义 · 时间段 · 2026-05-01 至 2026-05-28", scale: 0.48, value: "2026-05-01" },
 ];
-const analysisCalendarDays = Array.from({ length: 31 }, (_, index) => {
-  const day = String(index + 1).padStart(2, "0");
-  return { label: String(index + 1), value: `2026-05-${day}` };
-});
+const padCalendarPart = (value) => String(value).padStart(2, "0");
+const parseCalendarDate = (value, fallback = "2026-05-28") => {
+  const [fallbackYear, fallbackMonth, fallbackDay] = fallback.split("-");
+  const matched = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return {
+    day: matched?.[3] || fallbackDay,
+    month: matched?.[2] || fallbackMonth,
+    year: matched?.[1] || fallbackYear,
+  };
+};
+const getCalendarMonthDayCount = (year, month) => new Date(Number(year), Number(month), 0).getDate();
+const buildAnalysisCalendarDayOptions = (year, month) =>
+  Array.from({ length: getCalendarMonthDayCount(year, month) }, (_, index) => {
+    const day = padCalendarPart(index + 1);
+    return { label: `${index + 1}日`, value: day };
+  });
+const clampCalendarDay = (year, month, day) => padCalendarPart(Math.min(Math.max(Number(day) || 1, 1), getCalendarMonthDayCount(year, month)));
 const analysisCalendarMonths = Array.from({ length: 12 }, (_, index) => {
   const month = String(index + 1).padStart(2, "0");
   return { label: `${index + 1}月`, value: `2026-${month}` };
 });
+const analysisCalendarMonthOptions = Array.from({ length: 12 }, (_, index) => {
+  const month = padCalendarPart(index + 1);
+  return { label: `${index + 1}月`, value: month };
+});
 const analysisCalendarYears = Array.from({ length: 10 }, (_, index) => 2021 + index);
+const ANALYSIS_CALENDAR_WHEEL_STEP_DELTA = 240;
 
 const polarPoint = (centerX, centerY, radius, angle) => {
   const radians = ((angle - 90) * Math.PI) / 180;
@@ -1306,6 +1324,7 @@ const AnalysisScreen = {
     const customMenuOpen = ref(false);
     const activePicker = ref("day");
     const activeRangeSide = ref("start");
+    const calendarCursor = ref({ day: "28", month: "05", year: "2026" });
     const customValues = ref({
       day: "2026-05-28",
       month: "2026-05",
@@ -1313,8 +1332,42 @@ const AnalysisScreen = {
       rangeStart: "2026-05-01",
       year: "2026",
     });
+    const calendarWheelDelta = ref({ day: 0, month: 0, year: 0 });
     const selectedCustomMode = ref(null);
     const selectedTimePreset = ref("年初至今");
+    const syncCalendarCursor = (value) => {
+      const parsed = parseCalendarDate(value, customValues.value.day);
+      calendarCursor.value = {
+        month: parsed.month,
+        day: parsed.day,
+        year: parsed.year,
+      };
+    };
+    const getCalendarCursorDate = (cursor = calendarCursor.value) =>
+      `${cursor.year}-${cursor.month}-${clampCalendarDay(cursor.year, cursor.month, cursor.day)}`;
+    const commitCalendarCursorDate = (cursor = calendarCursor.value) => {
+      const value = getCalendarCursorDate(cursor);
+      if (activePicker.value === "range") {
+        customValues.value[activeRangeSide.value === "end" ? "rangeEnd" : "rangeStart"] = value;
+        selectedCustomMode.value = resolveCustomMode("range");
+        return;
+      }
+      if (activePicker.value === "day") {
+        customValues.value.day = value;
+        selectedCustomMode.value = resolveCustomMode("day");
+      }
+    };
+    const updateCalendarCursor = (partial, shouldCommit = true) => {
+      const nextCursor = {
+        ...calendarCursor.value,
+        ...partial,
+      };
+      nextCursor.day = clampCalendarDay(nextCursor.year, nextCursor.month, nextCursor.day);
+      calendarCursor.value = nextCursor;
+      if (shouldCommit) {
+        commitCalendarCursorDate(nextCursor);
+      }
+    };
     const resolveCustomMode = (modeOrKey) => {
       const key = typeof modeOrKey === "string" ? modeOrKey : modeOrKey?.key;
       const baseMode = analysisCustomModes.find((mode) => mode.key === key) || analysisCustomModes[0];
@@ -1354,17 +1407,78 @@ const AnalysisScreen = {
     const openCustomPicker = (mode, rangeSide = "start") => {
       if (mode.key === "range") {
         activeRangeSide.value = rangeSide;
+        syncCalendarCursor(customValues.value[rangeSide === "end" ? "rangeEnd" : "rangeStart"]);
+      }
+      if (mode.key === "day") {
+        syncCalendarCursor(customValues.value.day);
       }
       selectCustomMode(mode);
     };
-    const chooseDay = (value) => {
-      if (activePicker.value === "range") {
-        customValues.value[activeRangeSide.value === "end" ? "rangeEnd" : "rangeStart"] = value;
-        selectCustomMode("range");
+    const chooseCalendarYear = (year) => {
+      updateCalendarCursor({ year: String(year) });
+    };
+    const chooseCalendarMonth = (month) => {
+      updateCalendarCursor({ month });
+    };
+    const chooseCalendarDay = (day) => {
+      updateCalendarCursor({ day });
+    };
+    const stepCalendarYear = (direction) => {
+      const years = analysisCalendarYears.map(String);
+      const currentIndex = years.indexOf(calendarCursor.value.year);
+      const nextIndex = Math.min(Math.max((currentIndex >= 0 ? currentIndex : 0) + direction, 0), years.length - 1);
+      chooseCalendarYear(years[nextIndex]);
+    };
+    const stepCalendarMonth = (direction) => {
+      const currentMonth = Number(calendarCursor.value.month) || 1;
+      const nextMonth = Math.min(Math.max(currentMonth + direction, 1), 12);
+      chooseCalendarMonth(padCalendarPart(nextMonth));
+    };
+    const stepCalendarDay = (direction) => {
+      const currentDay = Number(calendarCursor.value.day) || 1;
+      const nextDay = Math.min(Math.max(currentDay + direction, 1), getCalendarMonthDayCount(calendarCursor.value.year, calendarCursor.value.month));
+      chooseCalendarDay(padCalendarPart(nextDay));
+    };
+    const handleCalendarWheel = (type, event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const deltaY = Number(event.deltaY) || 0;
+      if (deltaY === 0) {
         return;
       }
-      customValues.value.day = value;
-      selectCustomMode("day");
+      const currentDelta = calendarWheelDelta.value[type] || 0;
+      const nextDelta = currentDelta && Math.sign(currentDelta) !== Math.sign(deltaY) ? deltaY : currentDelta + deltaY;
+      if (Math.abs(nextDelta) < ANALYSIS_CALENDAR_WHEEL_STEP_DELTA) {
+        calendarWheelDelta.value = { ...calendarWheelDelta.value, [type]: nextDelta };
+        return;
+      }
+      const direction = nextDelta >= 0 ? 1 : -1;
+      const remainingDelta = nextDelta - direction * ANALYSIS_CALENDAR_WHEEL_STEP_DELTA;
+      calendarWheelDelta.value = {
+        ...calendarWheelDelta.value,
+        [type]: Math.sign(remainingDelta) === direction ? remainingDelta : 0,
+      };
+      if (type === "year") {
+        stepCalendarYear(direction);
+        return;
+      }
+      if (type === "month") {
+        stepCalendarMonth(direction);
+        return;
+      }
+      stepCalendarDay(direction);
+    };
+    const stepCalendarByType = (type, direction) => {
+      calendarWheelDelta.value = { ...calendarWheelDelta.value, [type]: 0 };
+      if (type === "year") {
+        stepCalendarYear(direction);
+        return;
+      }
+      if (type === "month") {
+        stepCalendarMonth(direction);
+        return;
+      }
+      stepCalendarDay(direction);
     };
     const chooseMonth = (value) => {
       customValues.value.month = value;
@@ -1384,23 +1498,79 @@ const AnalysisScreen = {
     const closeCustomMenu = () => {
       customMenuOpen.value = false;
     };
-    const renderCalendarDayGrid = (extraClass = "") =>
-      h("div", { class: ["visual-analysis-day-grid", extraClass], "data-testid": "visual-analysis-day-grid" }, analysisCalendarDays.map((day) =>
-        h(
-          "button",
-          {
-            class: (activePicker.value === "range"
-              ? customValues.value[activeRangeSide.value === "end" ? "rangeEnd" : "rangeStart"]
-              : customValues.value.day) === day.value
-              ? "is-active"
-              : "",
-            key: day.value,
-            type: "button",
-            onClick: () => chooseDay(day.value),
-          },
-          day.label,
+    const renderCalendarWheel = (label, testId, options, activeValue, onSelect, wheelType) =>
+      {
+        const activeIndex = Math.max(options.findIndex((option) => option.value === activeValue), 0);
+        return h("div", { class: "visual-analysis-calendar-wheel", "data-testid": testId, onWheel: (event) => handleCalendarWheel(wheelType, event) }, [
+          h("span", label),
+          h(
+            "button",
+            {
+              "aria-label": `${label}上一项`,
+              class: "visual-analysis-calendar-arrow is-up",
+              disabled: activeIndex === 0,
+              "data-testid": `visual-analysis-calendar-${wheelType}-up`,
+              type: "button",
+              onClick: () => stepCalendarByType(wheelType, -1),
+            },
+            "▲",
+          ),
+          h("div", { class: "visual-analysis-calendar-wheel-options", onWheel: (event) => handleCalendarWheel(wheelType, event) }, [
+            h("div", { class: "visual-analysis-calendar-wheel-track", style: { "--visual-wheel-index": activeIndex } }, options.map((option) =>
+              h(
+                "button",
+                {
+                  class: activeValue === option.value ? "is-active" : "",
+                  "data-testid": `visual-analysis-calendar-${wheelType}-${option.value}`,
+                  key: option.value,
+                  type: "button",
+                  onClick: () => onSelect(option.value),
+                },
+                option.label,
+              ),
+            )),
+          ]),
+          h(
+            "button",
+            {
+              "aria-label": `${label}下一项`,
+              class: "visual-analysis-calendar-arrow is-down",
+              disabled: activeIndex >= options.length - 1,
+              "data-testid": `visual-analysis-calendar-${wheelType}-down`,
+              type: "button",
+              onClick: () => stepCalendarByType(wheelType, 1),
+            },
+            "▼",
+          ),
+        ]);
+      };
+    const renderCalendarDateWheelPicker = () =>
+      h("div", { class: "visual-analysis-calendar-wheel-panel", "data-testid": "visual-analysis-calendar-date-wheel" }, [
+        renderCalendarWheel(
+          "年份",
+          "visual-analysis-calendar-year-wheel",
+          analysisCalendarYears.map((year) => ({ label: String(year), value: String(year) })),
+          calendarCursor.value.year,
+          chooseCalendarYear,
+          "year",
         ),
-      ));
+        renderCalendarWheel(
+          "月份",
+          "visual-analysis-calendar-month-wheel",
+          analysisCalendarMonthOptions,
+          calendarCursor.value.month,
+          chooseCalendarMonth,
+          "month",
+        ),
+        renderCalendarWheel(
+          "日期",
+          "visual-analysis-calendar-day-wheel",
+          buildAnalysisCalendarDayOptions(calendarCursor.value.year, calendarCursor.value.month),
+          calendarCursor.value.day,
+          chooseCalendarDay,
+          "day",
+        ),
+      ]);
     const renderDateField = (mode) => {
       if (mode.key === "range") {
         const renderRangeButton = (side, label) =>
@@ -1464,10 +1634,12 @@ const AnalysisScreen = {
             h("span", "选择起止日期"),
             renderDateField(rangeMode),
           ]),
-          renderCalendarDayGrid("is-range-grid"),
+          renderCalendarDateWheelPicker(),
         ]);
       }
-      return h("div", { class: "visual-analysis-picker-panel" }, [renderCalendarDayGrid()]);
+      return h("div", { class: "visual-analysis-picker-panel is-calendar", "data-testid": "visual-analysis-day-picker" }, [
+        renderCalendarDateWheelPicker(),
+      ]);
     };
 
     return () => {

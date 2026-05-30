@@ -64,6 +64,58 @@ describe("visualization model", () => {
     expect(panels[1].trays[0].steps.some((step) => step.label === "高低温湿热试验已完成")).toBe(true);
   });
 
+  test("keeps lab preparation steps pending when a staging tray is returned by manufacturer", () => {
+    const panels = buildLabProcessPanels({
+      labNames: ["振动一室"],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-VIB",
+          experiment_name: "振动试验",
+          required_device: "振动一室",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-VIB",
+          tray_code: "SYLU-2026-05-021-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-021-SP-001",
+          task_code: "SYLU-2026-05-021",
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: "SYLU-2026-05-021-TP-001", status: "厂家收回", quantity: 1 }],
+          history: [
+            { time: "2026-05-30T13:21:01+08:00", status: "样品运输中" },
+            { time: "2026-05-30T13:28:35+08:00", status: "送至暂存间" },
+            { time: "2026-05-30T13:59:28+08:00", status: "已到达暂存间" },
+            { time: "2026-05-30T13:59:33+08:00", status: "厂家收回" },
+          ],
+        },
+      ],
+    });
+
+    const steps = panels[0].trays[0].steps;
+    expect(panels[0].trays[0].status).toBe("厂家收回");
+    expect(steps.find((step) => step.label === "送至振动一室")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(steps.find((step) => step.label === "实验准备就绪")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(steps.find((step) => step.label === "振动试验进行中")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(steps.find((step) => step.label === "振动试验已完成")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(steps.find((step) => step.label === "厂家收回")).toEqual(expect.objectContaining({ active: true }));
+  });
+
   test("builds a three-day laboratory schedule view from real schedule data", () => {
     const view = buildLabScheduleThreeDayView({
       labNames: ["振动一室", "盐雾试验室"],

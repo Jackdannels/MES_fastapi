@@ -53,21 +53,23 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-tray-flow-list\s*{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2 \/ span 2;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-status-row\s*{[^}]*grid-column:\s*3;[^}]*grid-row:\s*2;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-ok-strip,\s*\.visual-board\.is-layout-a \.visual-alert-strip\s*{[^}]*grid-column:\s*3;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-line\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(3,\s*minmax\(78px,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-line\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(4,\s*minmax\(60px,\s*1fr\)\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)\s*{[^}]*grid-column:\s*4;[^}]*grid-row:\s*2;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(8\)\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(2\)::before,[^{]+\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(12\)::before\s*{[^}]*left:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(6\)::before,[^{]+\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(8\)::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before\s*{[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*border:\s*0;[^}]*background:\s*transparent;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-options\s*{[^}]*overflow-x:\s*auto;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(13\)::before\s*{[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*min-height:\s*60px;[^}]*padding:\s*4px 8px;[^}]*border:\s*0;[^}]*background:\s*transparent;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switchboard\s*{[^}]*grid-auto-rows:\s*minmax\(0,\s*1fr\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-group\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*min-height:\s*0;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-options\s*{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;[^}]*touch-action:\s*pan-y;/s);
   });
 
   test("layout A connects vertical flow turns across stretched rows and enlarges step labels", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*height:\s*100%;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(13\)::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*height:\s*calc\(100% \+ 10px\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step strong\s*{[^}]*font-size:\s*15px;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step small\s*{[^}]*font-size:\s*13px;/s);
   });
@@ -75,8 +77,11 @@ describe("visualization styles", () => {
   test("layout A connects manufacturer return below post-experiment staging for long flows", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(n \+ 13\):last-child\s*{[^}]*grid-column:\s*4;[^}]*grid-row:\s*4;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(n \+ 13\):last-child::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(13\)\s*{[^}]*grid-column:\s*4;[^}]*grid-row:\s*4;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(14\)\s*{[^}]*grid-column:\s*3;[^}]*grid-row:\s*4;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(15\)\s*{[^}]*grid-column:\s*2;[^}]*grid-row:\s*4;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(16\)\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*4;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(14\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(15\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(16\)::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
   });
 
   test("layout A makes task and tray switch text easier to read", () => {
@@ -118,6 +123,12 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*position:\s*absolute;[^}]*right:\s*0;/s);
     expect(source).toMatch(/\.visual-analysis-top\s*{[^}]*z-index:\s*20;/s);
     expect(source).toMatch(/\.visual-analysis-custom-menu\s*{[^}]*z-index:\s*40;/s);
+    expect(source).toMatch(/\.visual-analysis-picker-panel\.is-calendar,\s*\.visual-analysis-picker-panel\.is-range\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/s);
+    expect(source).toContain(".visual-analysis-calendar-wheel-panel");
+    expect(source).toMatch(/\.visual-analysis-calendar-wheel-panel\s*{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-analysis-calendar-wheel-options\s*{[^}]*height:\s*120px;[^}]*overflow:\s*hidden;/s);
+    expect(source).toMatch(/\.visual-analysis-calendar-wheel-track\s*{[^}]*transform:\s*translateY\(calc\(var\(--visual-wheel-index,\s*0\) \* -32px\)\);/s);
+    expect(source).toContain(".visual-analysis-calendar-arrow");
     const closeZIndex = Number(source.match(/\.visual-screen-close\s*{[^}]*z-index:\s*(\d+);/s)?.[1] || 0);
     const customMenuZIndex = Number(source.match(/\.visual-analysis-custom-menu\s*{[^}]*z-index:\s*(\d+);/s)?.[1] || 0);
     expect(closeZIndex).toBeGreaterThan(customMenuZIndex);

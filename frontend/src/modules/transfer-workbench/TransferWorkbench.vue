@@ -788,11 +788,19 @@ const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.
 const experimentSelectionLocked = computed(() => allocationReadOnly.value);
 const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
 const canDragSamples = computed(() => props.mode === "pre-allocation" && !taskEditingLocked.value);
-const hasTrayCapacityLimit = computed(() => currentTask.value?.maxAssignableTrayCount != null);
+const parseNonNegativeCount = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
+const explicitMaxAssignableTrayCount = computed(() => parseNonNegativeCount(currentTask.value?.maxAssignableTrayCount));
+const explicitRemainingTrayCount = computed(() => parseNonNegativeCount(currentTask.value?.remainingTrayCount));
+const hasTrayCapacityLimit = computed(() => explicitMaxAssignableTrayCount.value != null || explicitRemainingTrayCount.value != null);
 const maxAssignableTrayCount = computed(() => {
-  const parsed = Number.parseInt(currentTask.value?.maxAssignableTrayCount, 10);
-  if (Number.isFinite(parsed) && parsed >= 0) {
-    return parsed;
+  if (explicitMaxAssignableTrayCount.value != null) {
+    return explicitMaxAssignableTrayCount.value;
+  }
+  if (explicitRemainingTrayCount.value != null) {
+    return explicitRemainingTrayCount.value;
   }
   return loadedTrayCount.value + remainingTrayCount.value;
 });

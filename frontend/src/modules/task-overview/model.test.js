@@ -711,6 +711,55 @@ describe("taskOverviewModel", () => {
       expect.objectContaining({ experimentCode: "SYLU-2026-03-001-C", displayStatus: "待排程" }),
     ]);
   });
+
+  test("buildTaskRows labels running experiments with completed tray progress", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-05-021", test_type: "冲击试验", status: "实验进行中" }],
+      experiments: [
+        { task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-B", experiment_name: "冲击试验", status: "实验进行中" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-B", tray_code: "SYLU-2026-05-021-TP-001" },
+        { task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-B", tray_code: "SYLU-2026-05-021-TP-003" },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-021",
+          code: "SYLU-2026-05-021-SP-001",
+          status: "实验进行中",
+          trays: [{ tray_code: "SYLU-2026-05-021-TP-001", status: "实验进行中", quantity: 1 }],
+          history: [
+            { time: "2026-05-30T13:34:34.000Z", detail: "SYLU-2026-05-021 / 冲击试验 / 实验进行中" },
+          ],
+        },
+        {
+          task_code: "SYLU-2026-05-021",
+          code: "SYLU-2026-05-021-SP-003",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "SYLU-2026-05-021-TP-003", status: "放置实验后暂存间", quantity: 1 }],
+          history: [
+            { time: "2026-05-30T13:34:34.000Z", detail: "SYLU-2026-05-021 / 冲击试验 / 实验进行中" },
+            { time: "2026-05-30T13:37:58.000Z", detail: "SYLU-2026-05-021 / 冲击试验 / 实验已完成" },
+          ],
+        },
+      ],
+      schedules: [{ task_code: "SYLU-2026-05-021", experiment_code: "SYLU-2026-05-021-B", status: "实验进行中", device: "冲击一室" }],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows[0].experiments[0]).toEqual(
+      expect.objectContaining({
+        displayStatus: "实验进行中",
+        displayStatusLabel: "实验进行中（已完成 1/2 托盘）",
+        trayProgress: {
+          completedCount: 1,
+          totalCount: 2,
+        },
+      }),
+    );
+    expect(rows[0].currentStatus).toBe("任务进行中");
+  });
 });
 
 

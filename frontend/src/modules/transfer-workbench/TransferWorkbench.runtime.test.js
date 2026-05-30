@@ -863,6 +863,49 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.text()).toContain("有样品的托盘必须至少分配一个实验");
   });
 
+  test.each([
+    ["handover", {}],
+    ["pre-allocation", { mode: "pre-allocation", showHeader: false }],
+  ])("%s mode blocks saving when required trays exceed remaining trays", async (_label, props) => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    workspacePayload.task = {
+      ...workspacePayload.task,
+      remainingTrayCount: 1,
+    };
+    let saveAttempted = false;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        saveAttempted = true;
+        throw new Error("save should stay blocked");
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        ...props,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-tray-capacity-warning"]').text()).toBe("系统剩余托盘不足，当前最多可分配 1 个托盘。");
+    expect(saveAttempted).toBe(false);
+  });
+
   test("keeps unified sample limit capped at 99 and renders validation details as readable text", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();

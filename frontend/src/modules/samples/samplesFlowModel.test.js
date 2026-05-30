@@ -1411,6 +1411,77 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView keeps lab preparation steps unreached when a staging tray is returned with an explicit experiment context", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-05-021-TP-001",
+      taskCode: "SYLU-2026-05-021",
+      currentExperimentCode: "SYLU-2026-05-021-VIB",
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-VIB",
+          experiment_name: "振动试验",
+          required_device: "振动一室",
+        },
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-MOLD",
+          experiment_name: "霉菌试验",
+          required_device: "霉菌试验室",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-VIB",
+          tray_code: "SYLU-2026-05-021-TP-001",
+        },
+        {
+          task_code: "SYLU-2026-05-021",
+          experiment_code: "SYLU-2026-05-021-MOLD",
+          tray_code: "SYLU-2026-05-021-TP-001",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-05-021-SP-001",
+          task_code: "SYLU-2026-05-021",
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: "SYLU-2026-05-021-TP-001", status: "厂家收回", quantity: 1 }],
+          history: [
+            { time: "2026-05-30T13:21:01+08:00", status: "样品运输中" },
+            { time: "2026-05-30T13:28:35+08:00", status: "送至暂存间" },
+            { time: "2026-05-30T13:59:28+08:00", status: "已到达暂存间" },
+            { time: "2026-05-30T13:59:33+08:00", status: "厂家收回" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-021-TP-001 | 当前状态：厂家收回");
+    expect(view.steps.find((step) => step.label === "送至振动一室")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "已到达实验室")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "工装夹具安装")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "实验准备就绪")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "振动试验未完成")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "厂家收回")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
   test("buildTrayFlowView keeps single-experiment lab and completion steps unreached when a returned tray never completed that experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",

@@ -2,8 +2,11 @@ param(
     [string]$BackendHost = "0.0.0.0",
     [int]$BackendPort = 8000,
     [string]$FrontendHost = "0.0.0.0",
+    [int]$FrontendPort = 5173,
     [string]$CondaEnv = "fastapi",
     [int]$FrontendWaitTimeoutSeconds = 90,
+    [int]$BrowserWaitTimeoutSeconds = 120,
+    [switch]$DisableAutoOpenBrowser,
     [switch]$DryRun
 )
 
@@ -51,6 +54,43 @@ function Resolve-CondaBat {
     return $null
 }
 
+function Resolve-PrimaryLanIpv4 {
+    try {
+        $defaultRoute = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop |
+            Sort-Object RouteMetric, InterfaceMetric |
+            Select-Object -First 1
+        if ($defaultRoute) {
+            $ipConfig = Get-NetIPConfiguration -InterfaceIndex $defaultRoute.InterfaceIndex -ErrorAction Stop
+            $address = $ipConfig.IPv4Address |
+                Where-Object { $_.IPAddress -and $_.IPAddress -notlike "169.254.*" -and $_.IPAddress -ne "127.0.0.1" } |
+                Select-Object -First 1
+            if ($address) {
+                return $address.IPAddress
+            }
+        }
+    } catch {
+        # Fall back to DNS host addresses on systems without NetTCPIP cmdlets.
+    }
+
+    try {
+        $addresses = [System.Net.Dns]::GetHostEntry([System.Net.Dns]::GetHostName()).AddressList
+        $address = $addresses |
+            Where-Object {
+                $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork `
+                    -and $_.IPAddressToString -ne "127.0.0.1" `
+                    -and $_.IPAddressToString -notlike "169.254.*"
+            } |
+            Select-Object -First 1
+        if ($address) {
+            return $address.IPAddressToString
+        }
+    } catch {
+        return "127.0.0.1"
+    }
+
+    return "127.0.0.1"
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot "scripts\run_local.py"))) {
     throw "Cannot find scripts\run_local.py. Please run this script from the MES_fastapi project."
 }
@@ -61,6 +101,9 @@ if (-not (Test-Path -LiteralPath $FrontendRoot)) {
 
 $condaBat = Resolve-CondaBat
 $backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
+$frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
+$frontendNetworkHost = Resolve-PrimaryLanIpv4
+$frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
 
 if ($condaBat) {
     $backendCommand = "call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py --reload --host $BackendHost --port $BackendPort"
@@ -87,7 +130,28 @@ exit 1
 "@
 
 $encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
-$frontendCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost"
+$frontendCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost --port $FrontendPort"
+
+$browserOpenScript = @"
+`$deadline = (Get-Date).AddSeconds($BrowserWaitTimeoutSeconds)
+Write-Host "Waiting for frontend: $frontendLocalUrl"
+do {
+    try {
+        `$response = Invoke-WebRequest -UseBasicParsing -Uri "$frontendLocalUrl" -TimeoutSec 2
+        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500) {
+            Write-Host "Opening browser: $frontendNetworkUrl"
+            Start-Process "$frontendNetworkUrl"
+            exit 0
+        }
+    } catch {
+        Start-Sleep -Seconds 1
+    }
+} while ((Get-Date) -lt `$deadline)
+Write-Error "Frontend did not become ready within $BrowserWaitTimeoutSeconds seconds: $frontendLocalUrl"
+exit 1
+"@
+
+$encodedBrowserOpen = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($browserOpenScript))
 
 if ($DryRun) {
     Write-Host "Backend command:"
@@ -98,12 +162,24 @@ if ($DryRun) {
     Write-Host ""
     Write-Host "Frontend command:"
     Write-Host $frontendCommand
+    Write-Host ""
+    Write-Host "Network frontend URL:"
+    Write-Host $frontendNetworkUrl
+    Write-Host ""
+    Write-Host "Open browser:"
+    Write-Host ($(if ($DisableAutoOpenBrowser) { "disabled" } else { $browserOpenScript.Trim() }))
     exit 0
 }
 
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot
+if (-not $DisableAutoOpenBrowser) {
+    Start-Process -FilePath "powershell.exe" `
+        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encodedBrowserOpen `
+        -WorkingDirectory $ProjectRoot `
+        -WindowStyle Hidden
+}
 
 Write-Host "Started MES backend and frontend dev windows."
 Write-Host "Backend:  http://localhost:$BackendPort"
-Write-Host "Frontend: check the Vite window for the local URL."
+Write-Host "Frontend: $frontendNetworkUrl"

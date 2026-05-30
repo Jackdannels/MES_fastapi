@@ -595,7 +595,7 @@ const buildTrayExperimentFlow = (input = {}) => {
       const eventStatus = normalizeText(event?.status);
       const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
       const fallbackStatus =
-        experiment.code === explicitExperimentCode && !(normalizedStatusIsCompleted && !event)
+        experiment.code === explicitExperimentCode && normalizedStatus !== "厂家收回" && !(normalizedStatusIsCompleted && !event)
           ? normalizedStatus
           : "";
       return [experiment.code, eventStatus || fallbackStatus];
@@ -631,11 +631,17 @@ const buildTrayExperimentFlow = (input = {}) => {
     && hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
       ? orderedExperiments[explicitIndex]
       : null;
+  const explicitUnstartedReturnedExperiment =
+    normalizedStatus === "厂家收回"
+    && explicitIndex >= 0
+    && !completedCodeSet.has(orderedExperiments[explicitIndex]?.code)
+    && !hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
+      ? orderedExperiments[explicitIndex]
+      : null;
   const currentExperiment =
-    explicitExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
+    explicitExperiment || explicitUnstartedReturnedExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
   const isSyntheticUnstartedCurrent =
-    (normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
-    && completedExperiments.length > 0
+    (Boolean(explicitUnstartedReturnedExperiment) || normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
     && startedUnfinishedExperiments.length === 0
     && !explicitExperiment;
 

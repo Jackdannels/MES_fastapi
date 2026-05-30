@@ -184,6 +184,35 @@ function collectExperimentMatchedSamples({ experiment, samples, experimentTrayMa
   };
 }
 
+function buildExperimentTrayProgress({ matchedSamples, scopedTrayCodes, latestHistoryBySample }) {
+  const trayCodes = scopedTrayCodes.size > 0
+    ? Array.from(scopedTrayCodes)
+    : Array.from(new Set(
+      matchedSamples.flatMap((sample) => (Array.isArray(sample?.trays) ? sample.trays : [])
+        .map((tray) => normalizeText(tray?.tray_code))
+        .filter(Boolean)),
+    ));
+  if (trayCodes.length === 0) {
+    return {
+      completedCount: 0,
+      totalCount: 0,
+    };
+  }
+  const completedCount = trayCodes.filter((trayCode) => {
+    const traySamples = matchedSamples.filter((sample) => (
+      (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => normalizeText(tray?.tray_code) === trayCode)
+    ));
+    return traySamples.length > 0 && traySamples.every((sample) => {
+      const latestStatus = normalizeExperimentStatus(latestHistoryBySample.get(normalizeText(sample?.code))?.status);
+      return COMPLETED_EXPERIMENT_STATUSES.has(latestStatus);
+    });
+  }).length;
+  return {
+    completedCount,
+    totalCount: trayCodes.length,
+  };
+}
+
 function resolveExperimentLifecycleState({ experiment, samples, experimentTrayMap, trayExperimentCodeMap }) {
   const { matchedSamples, scopedTrayCodes, taskCode } = collectExperimentMatchedSamples({
     experiment,
@@ -219,9 +248,11 @@ function resolveExperimentLifecycleState({ experiment, samples, experimentTrayMa
 
   if (latestHistoryBySample.size > 0) {
     const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => normalizeExperimentStatus(entry.status));
+    const trayProgress = buildExperimentTrayProgress({ matchedSamples, scopedTrayCodes, latestHistoryBySample });
     return {
       completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_EXPERIMENT_STATUSES.has(status)),
       started: historyStatuses.some((status) => STARTED_EXPERIMENT_STATUSES.has(status)),
+      trayProgress,
     };
   }
 
@@ -230,17 +261,25 @@ function resolveExperimentLifecycleState({ experiment, samples, experimentTrayMa
     return {
       completed: false,
       started: false,
+      trayProgress: {
+        completedCount: 0,
+        totalCount: scopedTrayCodes.size,
+      },
     };
   }
 
   return {
     completed: false,
     started: false,
+    trayProgress: {
+      completedCount: 0,
+      totalCount: 0,
+    },
   };
 }
 
-function resolveExperimentDisplayStatus({ experiment, matchedSchedule, scheduleLabel, samples, experimentTrayMap, trayExperimentCodeMap }) {
-  const lifecycleState = resolveExperimentLifecycleState({
+function resolveExperimentDisplayStatus({ experiment, matchedSchedule, scheduleLabel, samples, experimentTrayMap, trayExperimentCodeMap, lifecycleState: providedLifecycleState }) {
+  const lifecycleState = providedLifecycleState || resolveExperimentLifecycleState({
     experiment,
     samples,
     experimentTrayMap,
@@ -269,6 +308,23 @@ function resolveExperimentDisplayStatus({ experiment, matchedSchedule, scheduleL
   }
 
   return STATUS_WAITING;
+}
+
+function buildExperimentStatusLabel(displayStatus, trayProgress) {
+  const normalizedStatus = normalizeText(displayStatus);
+  const completedCount = Number.parseInt(trayProgress?.completedCount, 10);
+  const totalCount = Number.parseInt(trayProgress?.totalCount, 10);
+  if (
+    normalizedStatus === EXPERIMENT_STATUS_RUNNING
+    && Number.isFinite(completedCount)
+    && Number.isFinite(totalCount)
+    && totalCount > 1
+    && completedCount > 0
+    && completedCount < totalCount
+  ) {
+    return `${EXPERIMENT_STATUS_RUNNING}（已完成 ${completedCount}/${totalCount} 托盘）`;
+  }
+  return normalizedStatus;
 }
 
 // 构建任务视图模式下展示的任务卡片数据。
@@ -441,6 +497,12 @@ function buildTaskRows({
         ),
       );
       const experiments = row.experiments.map((experiment) => {
+        const lifecycleState = resolveExperimentLifecycleState({
+          experiment,
+          samples: sampleList,
+          experimentTrayMap,
+          trayExperimentCodeMap,
+        });
         const displayStatus = resolveExperimentDisplayStatus({
           experiment,
           matchedSchedule: formalScheduleByExperimentCode.get(experiment.experimentCode),
@@ -448,15 +510,18 @@ function buildTaskRows({
           samples: sampleList,
           experimentTrayMap,
           trayExperimentCodeMap,
+          lifecycleState,
         });
         return {
           ...experiment,
           displayStatus,
+          displayStatusLabel: buildExperimentStatusLabel(displayStatus, lifecycleState.trayProgress),
           isOverdueWaiting:
             isTaskStored(row) &&
             normalizeText(displayStatus) === STATUS_WAITING &&
             Number.isFinite(experiment.unscheduledSince) &&
             now - experiment.unscheduledSince > OVERDUE_MS,
+          trayProgress: lifecycleState.trayProgress,
         };
       });
       const completedExperimentCount = experiments.filter(

@@ -77,7 +77,7 @@ const experimentLines = computed(() => {
       key: experiment?.experimentCode || `experiment-${index}`,
       isOverdueWaiting: Boolean(experiment?.isOverdueWaiting),
       label: experiment?.requiredDevice || experiment?.experimentName || experiment?.experimentCode || "-",
-      status: experiment?.displayStatus || props.row?.currentStatus || props.row?.scheduleLabel || "-",
+      status: experiment?.displayStatusLabel || experiment?.displayStatus || props.row?.currentStatus || props.row?.scheduleLabel || "-",
     }));
   }
   return [
@@ -104,11 +104,11 @@ function resolveExperimentStatusClass(status) {
   if (!text || text === "未排程" || text === "待排程") {
     return "is-unscheduled";
   }
-  if (text.includes("完成") || text.includes("收回")) {
-    return "is-completed";
-  }
   if (text.includes("实验中") || text.includes("进行中") || text.includes("准备")) {
     return "is-running";
+  }
+  if (text.includes("完成") || text.includes("收回")) {
+    return "is-completed";
   }
   return "is-scheduled";
 }
