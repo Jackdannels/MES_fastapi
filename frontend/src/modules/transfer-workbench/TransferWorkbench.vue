@@ -459,6 +459,8 @@ import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -529,9 +531,14 @@ const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
 const transferDispatch = useTransferDispatch();
+let flushPendingStorageRefresh = () => false;
+let hasPendingSamplesRefresh = false;
 const errorSample = useTrayErrorSampleHandling({
   onChanged: () => refreshTransferWorkspaceAfterTrayChange(),
-  onClose: () => refreshTransferWorkspaceAfterTrayChange(),
+  onClose: async () => {
+    await refreshTransferWorkspaceAfterTrayChange();
+    flushPendingRealtimeRefresh();
+  },
 });
 const MODE_CONFIGS = {
   handover: {
@@ -1198,13 +1205,55 @@ const refreshTransferWorkspaceAfterTrayChange = async () => {
   await loadWorkspace(selectedTaskId.value);
 };
 
+const isTransferRealtimeRefreshPaused = () => Boolean(
+  barcodeModalVisible.value
+  || printingAllBarcodes.value
+  || errorSample.state.open
+  || errorSample.state.loading
+  || errorSample.state.submitting
+  || (viewMode.value === "detail" && selectedTaskId.value && !allocationReadOnly.value)
+);
+
+function flushPendingRealtimeRefresh() {
+  const flushedStorage = flushPendingStorageRefresh();
+  if (!hasPendingSamplesRefresh || isTransferRealtimeRefreshPaused()) {
+    return flushedStorage;
+  }
+  hasPendingSamplesRefresh = false;
+  if (!flushedStorage) {
+    void refreshTransferWorkspaceAfterTrayChange();
+  }
+  return true;
+}
+
 const handleSamplesUpdated = (event) => {
   const source = String(event?.detail?.source || "").trim();
   if (source === "transfer-workbench" || source === "tray-error-sample") {
     return;
   }
+  if (isTransferRealtimeRefreshPaused()) {
+    hasPendingSamplesRefresh = true;
+    return;
+  }
+  hasPendingSamplesRefresh = false;
   void refreshTransferWorkspaceAfterTrayChange();
 };
+
+const storageRefresh = useStorageSnapshotRefresh({
+  keys: [
+    STORAGE_KEYS.tasks,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.schedules,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.experiment_samples,
+    STORAGE_KEYS.staging_events,
+  ],
+  refresh: refreshTransferWorkspaceAfterTrayChange,
+  paused: isTransferRealtimeRefreshPaused,
+  debounceMs: 100,
+});
+flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
 const setTaskStatusFilter = (status) => {
   taskStatusFilter.value = status;
@@ -1244,6 +1293,7 @@ const backToOverview = async () => {
   barcodeModalVisible.value = false;
   await loadBootstrap();
   viewMode.value = "overview";
+  flushPendingRealtimeRefresh();
 };
 
 const clearSelectedSample = () => {
@@ -1550,6 +1600,7 @@ const persistAllocation = async (showMessage = true) => {
     });
     applyWorkspace(payload.workspace);
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "allocate" } }));
+    flushPendingRealtimeRefresh();
     if (showMessage) showWorkbenchFeedback(payload.message, "success");
     return true;
   } catch (error) {
@@ -1562,6 +1613,7 @@ const persistAllocation = async (showMessage = true) => {
 
 const closeBarcodeModal = () => {
   barcodeModalVisible.value = false;
+  flushPendingRealtimeRefresh();
 };
 
 const buildBarcodeSummaryText = (taskNo, sampleCount) => `任务编号：${taskNo || "--"} | 样品数量：${sampleCount ?? 0}`;
@@ -1682,6 +1734,7 @@ const confirmBarcodePrint = async () => {
   }
   barcodePrintConfirmed.value = true;
   barcodeModalVisible.value = false;
+  flushPendingRealtimeRefresh();
   showWorkbenchFeedback("已发起条码打印。", "success");
 };
 
@@ -1720,6 +1773,7 @@ const printAllTrayBarcodes = async () => {
     showWorkbenchFeedback(payload.message, "success");
   } finally {
     printingAllBarcodes.value = false;
+    flushPendingRealtimeRefresh();
   }
 };
 
@@ -1745,6 +1799,7 @@ const confirmStorage = async () => {
   if (confirmedTaskId) {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
   }
+  flushPendingRealtimeRefresh();
   taskStatusFilter.value = storedStatus;
 };
 
@@ -1762,6 +1817,7 @@ const reloadWorkspace = async () => {
     : payload.message, normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "warning" : "success");
   await loadBootstrap();
   window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "reload" } }));
+  flushPendingRealtimeRefresh();
   taskStatusFilter.value = pendingStatus;
 };
 

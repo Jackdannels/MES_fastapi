@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
@@ -24,6 +25,15 @@ LEGACY_TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
 SYSTEM_TRAY_TOTAL = 10
+TRANSFER_STORAGE_UPDATE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.schedules",
+    "mes.experiments",
+    "mes.experiment_trays",
+    "mes.experiment_samples",
+    "mes.staging_events",
+)
 EXCLUDED_TASK_STATUS_KEYWORDS = (
     "实验中",
     "实验进行中",
@@ -220,6 +230,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.staging_events": snapshot["staging_events"],
         }
     )
+    publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
 
 
 def task_code(task: dict[str, Any]) -> str:

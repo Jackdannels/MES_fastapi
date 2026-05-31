@@ -141,7 +141,7 @@ const hasExplicitReturnedStatus = (task) => isReturned(resolveTaskArchiveStatus(
 const collectReturnedTrayCodes = (samples) => {
   const trayRefsByCode = collectTrayRefs(samples);
   return new Set(Array.from(trayRefsByCode.entries())
-    .filter(([_trayCode, refs]) => refs.some(trayRefIsReturned))
+    .filter((entry) => entry[1].some(trayRefIsReturned))
     .map(([trayCode]) => trayCode));
 };
 

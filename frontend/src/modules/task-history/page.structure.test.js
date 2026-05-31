@@ -61,4 +61,14 @@ describe("TaskHistoryPage structure", () => {
     expect(source).not.toContain("selectedTray.sampleCodes.join(\" / \")");
     expect(source).not.toContain("step.time || resolveTrayStepTime(step.label)");
   });
+
+  test("subscribes to task history storage updates", () => {
+    const source = readFileSync(pagePath, "utf8");
+
+    expect(source).toContain("useStorageSnapshotRefresh");
+    expect(source).toContain("refreshHistoryData");
+    expect(source).toContain("STORAGE_KEYS.tasks");
+    expect(source).toContain("STORAGE_KEYS.samples");
+    expect(source).toContain("STORAGE_KEYS.staging_events");
+  });
 });

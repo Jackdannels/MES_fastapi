@@ -2,13 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildDashboardViewModel } from "./model";
-import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 const DASHBOARD_TASK_PAGE_SIZE = 8;
-const DASHBOARD_REFRESH_INTERVAL_MS = 5000;
 
 // 读取持久化快照数据，并输出可直接渲染的总览页视图状态。
 function useDashboardPage() {
@@ -33,7 +32,6 @@ function useDashboardPage() {
   const rawTasks = ref([]);
   const loadError = ref("");
   let dashboardTimer = null;
-  let dashboardRefreshTimer = null;
 
   const viewModel = computed(() =>
     buildDashboardViewModel({
@@ -85,31 +83,37 @@ function useDashboardPage() {
     }
   };
 
+  const handleSamplesUpdated = () => {
+    void loadDashboard();
+  };
+
+  useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.tasks,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.conflicts,
+      STORAGE_KEYS.devices,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.streams,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+    ],
+    refresh: loadDashboard,
+  });
+
   onMounted(() => {
     void loadDashboard();
     dashboardTimer = window.setInterval(() => {
       now.value = Date.now();
     }, 1000);
-    dashboardRefreshTimer = window.setInterval(() => {
-      void loadDashboard();
-    }, DASHBOARD_REFRESH_INTERVAL_MS);
-    window.addEventListener(SAMPLES_UPDATED_EVENT, loadDashboard);
-    window.addEventListener(SNAPSHOT_UPDATED_EVENT, loadDashboard);
-    window.addEventListener("storage", loadDashboard);
-    window.addEventListener("focus", loadDashboard);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   onBeforeUnmount(() => {
     if (dashboardTimer) {
       window.clearInterval(dashboardTimer);
     }
-    if (dashboardRefreshTimer) {
-      window.clearInterval(dashboardRefreshTimer);
-    }
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, loadDashboard);
-    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, loadDashboard);
-    window.removeEventListener("storage", loadDashboard);
-    window.removeEventListener("focus", loadDashboard);
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   return {

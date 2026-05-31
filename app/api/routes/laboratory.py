@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
@@ -14,6 +15,7 @@ STAGING_LOCATION = "恒温恒湿间（暂存间）"
 HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
 
 
 class LaboratoryWithdrawRequest(BaseModel):
@@ -62,6 +64,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.staging_events": snapshot["staging_events"],
         }
     )
+    publish_storage_update(list(LABORATORY_STORAGE_UPDATE_KEYS))
 
 
 def find_task(snapshot: dict[str, list[dict[str, Any]]], task_code: str) -> dict[str, Any]:

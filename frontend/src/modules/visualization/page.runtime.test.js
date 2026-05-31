@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import VisualizationPage from "./page.vue";
 
 const snapshotState = vi.hoisted(() => ({
+  refreshRegistrations: [],
   snapshot: {},
 }));
 
@@ -13,11 +14,38 @@ vi.mock("@/composables/useStorageSnapshot", () => ({
   }),
 }));
 
+vi.mock("@/composables/useStorageSnapshotRefresh", () => ({
+  useStorageSnapshotRefresh: vi.fn((options) => {
+    snapshotState.refreshRegistrations.push(options);
+    return {
+      flushPendingRefresh: vi.fn(),
+      hasPendingRefresh: { value: false },
+      stop: vi.fn(),
+    };
+  }),
+}));
+
 const mountPage = () => mount(VisualizationPage);
 
 describe("VisualizationPage runtime", () => {
   beforeEach(() => {
+    snapshotState.refreshRegistrations = [];
     snapshotState.snapshot = {};
+  });
+
+  test("subscribes to realtime snapshot updates for visualization data", () => {
+    mountPage();
+
+    expect(snapshotState.refreshRegistrations).toHaveLength(1);
+    expect(snapshotState.refreshRegistrations[0].keys).toEqual(expect.arrayContaining([
+      "mes.tasks",
+      "mes.samples",
+      "mes.experiments",
+      "mes.experiment_trays",
+      "mes.schedules",
+      "mes.devices",
+      "mes.staging_events",
+    ]));
   });
 
   test("renders eight non-interactive screen thumbnails", () => {

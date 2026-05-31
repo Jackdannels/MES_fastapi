@@ -163,6 +163,7 @@ defineOptions({
 import { computed, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTasks } from "@/lib/tasksApi";
@@ -269,7 +270,7 @@ watch(selectedTask, (task) => {
   }
 }, { immediate: true });
 
-onMounted(async () => {
+const refreshHistoryData = async () => {
   try {
     const [loadedTasks, snapshot] = await Promise.all([
       readTasks({ includeArchived: true }),
@@ -285,6 +286,23 @@ onMounted(async () => {
     const detail = error instanceof Error ? error.message : "";
     loadError.value = detail ? `历史任务数据加载失败，${detail}` : "历史任务数据加载失败";
   }
+};
+
+useStorageSnapshotRefresh({
+  keys: [
+    STORAGE_KEYS.tasks,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.schedules,
+    STORAGE_KEYS.staging_events,
+  ],
+  refresh: refreshHistoryData,
+  debounceMs: 100,
+});
+
+onMounted(async () => {
+  await refreshHistoryData();
 });
 </script>
 

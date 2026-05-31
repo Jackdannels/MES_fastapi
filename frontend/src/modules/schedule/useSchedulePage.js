@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import {
   analyzeTaskTrayConflict,
   buildConflictRows,
@@ -39,7 +40,6 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
-const SCHEDULE_PAGE_REFRESH_INTERVAL_MS = 5000;
 
 function useSchedulePage() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
@@ -78,10 +78,8 @@ function useSchedulePage() {
   const pendingScheduleDraft = ref(null);
   const scheduleFormWatchSuspended = ref(false);
   let clockTimer = null;
-  let scheduleRefreshTimer = null;
-  const refreshSchedulePageWithoutReset = () => {
-    void loadSchedulePage({ resetForm: false });
-  };
+  let flushPendingStorageRefresh = () => false;
+  let hasPendingSamplesRefresh = false;
 
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
@@ -423,6 +421,7 @@ function useSchedulePage() {
 
   const closeExceptionModal = () => {
     exceptionModal.close();
+    flushPendingRealtimeRefresh();
   };
 
   const replaceScheduleForm = async (nextForm) => {
@@ -599,6 +598,7 @@ function useSchedulePage() {
   const cancelScheduleConflict = () => {
     pendingScheduleDraft.value = null;
     scheduleConflictModal.close();
+    flushPendingRealtimeRefresh();
   };
 
   const openScheduleDrawer = (scheduleId) => {
@@ -640,6 +640,7 @@ function useSchedulePage() {
     scheduleDrawer.close();
     editForm.value = createScheduleEditForm();
     editWarning.value = "";
+    flushPendingRealtimeRefresh();
   };
 
   const openTaskDetailModal = (scheduleId) => {
@@ -652,6 +653,7 @@ function useSchedulePage() {
 
   const closeTaskDetailModal = () => {
     taskDetailModal.close();
+    flushPendingRealtimeRefresh();
   };
 
   const saveSchedule = async () => {
@@ -780,6 +782,55 @@ function useSchedulePage() {
     }
   };
 
+  const refreshSchedulePageWithoutReset = () => {
+    void loadSchedulePage({ resetForm: false });
+  };
+
+  const isRealtimeRefreshPaused = () => Boolean(
+    scheduleDrawer.open.value
+    || taskDetailModal.open.value
+    || scheduleConflictModal.open.value
+    || exceptionModal.open.value
+  );
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      refreshSchedulePageWithoutReset();
+    }
+    return true;
+  };
+
+  const handleSamplesUpdated = () => {
+    if (isRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
+      return;
+    }
+    hasPendingSamplesRefresh = false;
+    refreshSchedulePageWithoutReset();
+  };
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.conflicts,
+      STORAGE_KEYS.devices,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.streams,
+      STORAGE_KEYS.tasks,
+    ],
+    refresh: () => loadSchedulePage({ resetForm: false }),
+    paused: isRealtimeRefreshPaused,
+    debounceMs: 100,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+
   const acknowledgeException = async (conflictId) => {
     const normalizedConflictId = normalizeText(conflictId);
     if (!normalizedConflictId) {
@@ -872,22 +923,14 @@ function useSchedulePage() {
   onMounted(() => {
     void loadSchedulePage();
     clockTimer = window.setInterval(syncRetentionClock, 1000);
-    scheduleRefreshTimer = window.setInterval(refreshSchedulePageWithoutReset, SCHEDULE_PAGE_REFRESH_INTERVAL_MS);
-    window.addEventListener(SAMPLES_UPDATED_EVENT, refreshSchedulePageWithoutReset);
-    window.addEventListener("storage", refreshSchedulePageWithoutReset);
-    window.addEventListener("focus", refreshSchedulePageWithoutReset);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   onBeforeUnmount(() => {
     if (clockTimer) {
       window.clearInterval(clockTimer);
     }
-    if (scheduleRefreshTimer) {
-      window.clearInterval(scheduleRefreshTimer);
-    }
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, refreshSchedulePageWithoutReset);
-    window.removeEventListener("storage", refreshSchedulePageWithoutReset);
-    window.removeEventListener("focus", refreshSchedulePageWithoutReset);
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   const buildEditLabOptions = (selectedDevice, taskCode) => {

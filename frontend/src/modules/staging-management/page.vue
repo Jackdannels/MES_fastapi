@@ -329,6 +329,7 @@ import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -498,6 +499,8 @@ const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
 const scanWarning = ref("");
 const scanSubmitting = ref(false);
+let flushPendingStorageRefresh = () => false;
+let hasPendingSamplesRefresh = false;
 
 const scanForm = reactive({
   code: "",
@@ -588,6 +591,7 @@ const cancelScan = () => {
   scanModalOpen.value = false;
   scanWarning.value = "";
   resetScanForm();
+  flushPendingRealtimeRefresh();
 };
 
 const openDestinationModal = (detail) => {
@@ -601,15 +605,18 @@ const manufacturerReturnSafe = computed(() => activeDetail.status === "放置实
 const closeDetailModal = () => {
   detailModalOpen.value = false;
   resetDetail();
+  flushPendingRealtimeRefresh();
 };
 
 const closeDestinationModal = () => {
   destinationModalOpen.value = false;
   resetDetail();
+  flushPendingRealtimeRefresh();
 };
 
 const closeReturnDanger = () => {
   returnDangerModalOpen.value = false;
+  flushPendingRealtimeRefresh();
 };
 
 const persistInventoryResult = async (result) => {
@@ -834,8 +841,47 @@ const handleSamplesUpdated = (event) => {
   if (event?.detail?.source === "staging-management") {
     return;
   }
+  if (isRealtimeRefreshPaused()) {
+    hasPendingSamplesRefresh = true;
+    return;
+  }
+  hasPendingSamplesRefresh = false;
   void loadSnapshot();
 };
+
+const isRealtimeRefreshPaused = () => Boolean(
+  scanModalOpen.value
+  || detailModalOpen.value
+  || destinationModalOpen.value
+  || returnDangerModalOpen.value
+  || scanSubmitting.value
+);
+
+const flushPendingRealtimeRefresh = () => {
+  const flushedStorage = flushPendingStorageRefresh();
+  if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
+    return flushedStorage;
+  }
+  hasPendingSamplesRefresh = false;
+  if (!flushedStorage) {
+    void loadSnapshot();
+  }
+  return true;
+};
+
+const storageRefresh = useStorageSnapshotRefresh({
+  keys: [
+    STORAGE_KEYS.tasks,
+    STORAGE_KEYS.schedules,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.staging_events,
+  ],
+  refresh: loadSnapshot,
+  paused: isRealtimeRefreshPaused,
+});
+flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
 onMounted(() => {
   void loadSnapshot();

@@ -121,6 +121,35 @@ def test_laboratory_withdraw_current_restores_handover_origin_to_arrived(monkeyp
         assert storage.read(key) == before
 
 
+def test_laboratory_withdraw_current_publishes_storage_updates(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    published_updates = []
+    monkeypatch.setattr(laboratory_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client, _storage = build_client(
+        monkeypatch,
+        base_payloads(
+            [
+                sample_with_history(
+                    "工装夹具安装",
+                    "霉菌试验室",
+                    [
+                        {"action": "样品安装", "status": "工装夹具安装", "location": "霉菌试验室", "time": "2026-05-19T10:20:00"},
+                        {"action": "任务比对", "status": "已到达实验室", "location": "霉菌试验室", "time": "2026-05-19T10:10:00"},
+                        {"action": "送至实验室", "status": "送至实验室", "location": "霉菌试验室", "time": "2026-05-19T10:00:00"},
+                        {"action": "任务样品入库", "status": "到货", "location": "接驳区", "time": "2026-05-19T09:00:00"},
+                    ],
+                )
+            ]
+        ),
+    )
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={"reason": "试验间选择错误"})
+
+    assert response.status_code == 200
+    assert published_updates == [["mes.samples", "mes.staging_events"]]
+
+
 def test_laboratory_withdraw_current_ignores_stale_staging_history_after_prior_withdraw(monkeypatch):
     client, storage = build_client(
         monkeypatch,

@@ -4,7 +4,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { readMasterLabs } from "@/lib/masterDataApi";
-import { SNAPSHOT_UPDATED_EVENT, SNAPSHOT_UPDATED_STORAGE_KEY, subscribeStorageSnapshotUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   buildTrayFlowView,
@@ -15,6 +14,7 @@ import {
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 
 const PROCESS_FILTERS = {
   idle: "idle",
@@ -228,7 +228,8 @@ function useProcessLabs(options = {}) {
   const startExperimentModalOpen = ref(false);
   const startExperimentTaskDetail = ref(null);
   let labStatusLoadVersion = 0;
-  let unsubscribeStorageSnapshotUpdates = null;
+  let flushPendingStorageRefresh = () => false;
+  let hasPendingSamplesRefresh = false;
   const taskDrawerOpen = ref(false);
 
   const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
@@ -1154,6 +1155,7 @@ function useProcessLabs(options = {}) {
     startExperimentModalOpen.value = false;
     startExperimentTaskDetail.value = null;
     startExperimentLabName.value = "";
+    flushPendingRealtimeRefresh();
 
     if (taskDrawerOpen.value && normalizeText(activeLab?.name) === selectedTaskLabName.value) {
       refreshSelectedTaskDetail("");
@@ -1164,6 +1166,7 @@ function useProcessLabs(options = {}) {
     startExperimentModalOpen.value = false;
     startExperimentTaskDetail.value = null;
     startExperimentLabName.value = "";
+    flushPendingRealtimeRefresh();
   };
 
   const confirmStartExperiment = async () => {
@@ -1179,50 +1182,49 @@ function useProcessLabs(options = {}) {
     selectedTaskDetail.value = null;
     selectedTaskLabName.value = "";
     selectedTrayCode.value = "";
+    flushPendingRealtimeRefresh();
   };
-  const handleStorageSnapshotUpdated = (event) => {
-    if (event?.key !== SNAPSHOT_UPDATED_STORAGE_KEY) {
+
+  const isProcessRealtimeRefreshPaused = () => Boolean(taskDrawerOpen.value || startExperimentModalOpen.value);
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isProcessRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      void loadLabStatus();
+    }
+    return true;
+  };
+
+  const handleSamplesUpdated = () => {
+    if (isProcessRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
       return;
     }
-    let detail = {};
-    try {
-      detail = JSON.parse(String(event?.newValue || "{}"));
-    } catch {
-      detail = {};
-    }
-    handleSnapshotUpdated(detail);
-  };
-  const snapshotUpdateTouchesProcess = (detail) => {
-    const keys = Array.isArray(detail?.keys) ? detail.keys : [];
-    return keys.length === 0 || keys.some((key) => PROCESS_SNAPSHOT_KEYS.has(key));
-  };
-  const handleSnapshotUpdated = (eventOrDetail = {}) => {
-    const detail = eventOrDetail?.detail || eventOrDetail;
-    if (!snapshotUpdateTouchesProcess(detail)) {
-      return;
-    }
+    hasPendingSamplesRefresh = false;
     void loadLabStatus();
   };
 
   if (autoLoad) {
+    const storageRefresh = useStorageSnapshotRefresh({
+      keys: Array.from(PROCESS_SNAPSHOT_KEYS),
+      refresh: loadLabStatus,
+      paused: isProcessRealtimeRefreshPaused,
+    });
+    flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+
     onMounted(() => {
       void loadLabStatus();
       if (typeof window !== "undefined") {
-        window.addEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
-        window.addEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
-        window.addEventListener("storage", handleStorageSnapshotUpdated);
-        unsubscribeStorageSnapshotUpdates = subscribeStorageSnapshotUpdates(handleSnapshotUpdated);
+        window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       }
     });
     onBeforeUnmount(() => {
       if (typeof window !== "undefined") {
-        window.removeEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
-        window.removeEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
-        window.removeEventListener("storage", handleStorageSnapshotUpdated);
-      }
-      if (unsubscribeStorageSnapshotUpdates) {
-        unsubscribeStorageSnapshotUpdates();
-        unsubscribeStorageSnapshotUpdates = null;
+        window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       }
     });
   }

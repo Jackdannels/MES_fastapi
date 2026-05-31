@@ -3,10 +3,10 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
-import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -280,6 +280,8 @@ function useTaskOverview() {
   const masterTestTypeOptions = ref([]);
   let highlightTimer = null;
   let highlightedCardElement = null;
+  let hasPendingSamplesRefresh = false;
+  let flushPendingStorageRefresh = () => false;
 
   const buildRows = (tasks, samples, schedules, experiments, experimentTrays) =>
     buildTaskRows({
@@ -582,24 +584,66 @@ function useTaskOverview() {
     { flush: "post" }
   );
 
+  const isRealtimeRefreshPaused = () => Boolean(editingTaskCode.value || deletingTaskCode.value);
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      void loadOverview();
+    }
+    return true;
+  };
+
+  const handleSamplesUpdated = () => {
+    if (isRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
+      return;
+    }
+    hasPendingSamplesRefresh = false;
+    void loadOverview();
+  };
+
+  watch(
+    () => isRealtimeRefreshPaused(),
+    (paused) => {
+      if (!paused) {
+        flushPendingRealtimeRefresh();
+      }
+    },
+  );
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.tasks,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.streams,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+    ],
+    refresh: loadOverview,
+    paused: isRealtimeRefreshPaused,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+
   onMounted(() => {
     applyRouteFilters();
     // 首次加载后挂全局点击，用于处理卡片外点击关闭编辑器。
     loadOverview();
     if (typeof window !== "undefined") {
       window.addEventListener("click", handleWindowClick);
-      window.addEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
-      window.addEventListener(SNAPSHOT_UPDATED_EVENT, loadOverview);
-      window.addEventListener("storage", loadOverview);
+      window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     }
   });
 
   onBeforeUnmount(() => {
     if (typeof window !== "undefined") {
       window.removeEventListener("click", handleWindowClick);
-      window.removeEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
-      window.removeEventListener(SNAPSHOT_UPDATED_EVENT, loadOverview);
-      window.removeEventListener("storage", loadOverview);
+      window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     }
     clearHighlightedCard();
   });

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
+from app.api.routes.storage import publish_storage_update
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 SNAPSHOT_KEYS = (
@@ -15,6 +16,10 @@ SNAPSHOT_KEYS = (
     "mes.experiments",
     "mes.experiment_trays",
     "mes.experiment_samples",
+)
+TASK_STORAGE_UPDATE_KEYS = (
+    *SNAPSHOT_KEYS,
+    "mes.conflicts",
 )
 RETURNED_STATUS = "厂家收回"
 MIN_SAMPLE_COUNT = 1
@@ -564,13 +569,16 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     snapshot["mes.samples"] = sync_task_samples([dict(sample) for sample in snapshot.get("mes.samples", [])], next_task)
     snapshot["mes.experiments"] = experiments + next_experiments
     storage.write_many(snapshot)
+    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return next_task
 
 
 @router.post("/reset")
 def reset_tasks() -> dict[str, int]:
     storage = get_storage_backend()
-    return run_demo_reset(storage)
+    result = run_demo_reset(storage)
+    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+    return result
 
 
 @router.put("/{task_id}")
@@ -662,6 +670,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             if keep_row_outside_removed_experiments(dict(row), previous_task_code, removed_or_changed_codes)
         ]
     storage.write_many(snapshot)
+    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return updated_task
 
 
@@ -683,4 +692,5 @@ def delete_task(task_id: str) -> None:
     snapshot["mes.experiment_trays"] = filter_related_rows(snapshot.get("mes.experiment_trays"), task_code)
     snapshot["mes.experiment_samples"] = filter_related_rows(snapshot.get("mes.experiment_samples"), task_code)
     storage.write_many(snapshot)
+    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return None

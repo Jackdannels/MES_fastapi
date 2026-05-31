@@ -816,6 +816,25 @@ def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypa
     ]
 
 
+def test_transfer_area_lazy_sample_backfill_publishes_storage_update(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    published_updates = []
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.samples",
+        [sample for sample in storage.read("mes.samples") if sample["task_code"] != "SYLU-2026-03-101"],
+    )
+
+    response = client.get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    assert len(published_updates) == 1
+    assert "mes.samples" in published_updates[0]
+    assert "mes.tasks" in published_updates[0]
+
+
 def test_transfer_area_limits_unassigned_samples_to_task_sample_count(monkeypatch):
     client, storage = build_client(monkeypatch)
     tasks = storage.read("mes.tasks")
@@ -886,6 +905,73 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
     assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
+
+
+def test_transfer_area_workspace_mutations_publish_storage_updates(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    published_updates = []
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client, _storage = build_client(monkeypatch)
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+    reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
+
+    assert allocated.status_code == 200
+    assert printed.status_code == 200
+    assert confirmed.status_code == 200
+    assert reloaded.status_code == 200
+    assert len(published_updates) == 4
+    for keys in published_updates:
+        assert "mes.tasks" in keys
+        assert "mes.samples" in keys
+        assert "mes.experiment_trays" in keys
+        assert "mes.experiment_samples" in keys
+        assert "mes.staging_events" in keys
+
+
+def test_transfer_area_dispatch_mutations_publish_storage_updates(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    published_updates = []
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+
+    dispatched = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+    withdrawn = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "点错暂存间"},
+    )
+
+    assert dispatched.status_code == 200
+    assert withdrawn.status_code == 200
+    assert len(published_updates) == 2
+    for keys in published_updates:
+        assert "mes.tasks" in keys
+        assert "mes.samples" in keys
+        assert "mes.staging_events" in keys
 
 
 def test_transfer_area_allocate_rejects_stale_saved_allocation_after_storage_confirmed(monkeypatch):

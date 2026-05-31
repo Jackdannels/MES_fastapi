@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
@@ -83,6 +84,8 @@ function useTasksPage() {
   const resetModal = useDialogState();
   const taskDrawer = useDialogState();
   let resetFeedbackTimer = null;
+  let flushPendingStorageRefresh = () => false;
+  let hasPendingSamplesRefresh = false;
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
   const metrics = computed(() => buildTaskMetrics(allRows.value));
@@ -215,6 +218,7 @@ function useTasksPage() {
     intakeExperimentModal.close();
     intakeExperimentDraft.value = [];
     removeTaskHash();
+    flushPendingRealtimeRefresh();
   };
 
   const toggleExperimentDraftType = (draftRef, experimentType) => {
@@ -293,6 +297,7 @@ function useTasksPage() {
     }
     resetModal.close();
     resetError.value = "";
+    flushPendingRealtimeRefresh();
   };
 
   const openTaskDrawer = (row) => {
@@ -311,6 +316,7 @@ function useTasksPage() {
     sampleCodesDraft.value = "";
     sampleCodesWarning.value = "";
     scheduledExperimentRemovalDraft.value = null;
+    flushPendingRealtimeRefresh();
   };
 
   const openSampleCodesEditor = () => {
@@ -329,6 +335,7 @@ function useTasksPage() {
     sampleCodesModal.close();
     sampleCodesDraft.value = "";
     sampleCodesWarning.value = "";
+    flushPendingRealtimeRefresh();
   };
 
   const syncModalWithHash = (hashValue) => {
@@ -875,6 +882,72 @@ function useTasksPage() {
     syncModalWithHash(typeof window !== "undefined" ? window.location.hash : route.hash || "");
   };
 
+  const isTaskEditFormDirty = () => {
+    if (!taskDrawer.open.value || !taskDrawer.payload.value) {
+      return false;
+    }
+    const baseline = buildTaskEditForm(taskDrawer.payload.value);
+    const currentTypes = Array.isArray(editForm.value.test_types) ? editForm.value.test_types.map(normalizeText) : [];
+    const baselineTypes = Array.isArray(baseline.test_types) ? baseline.test_types.map(normalizeText) : [];
+    return [
+      "name",
+      "source",
+      "priority",
+      "sample_count",
+      "sample_type",
+      "due_at",
+      "remark",
+    ].some((field) => normalizeText(editForm.value[field]) !== normalizeText(baseline[field]))
+      || currentTypes.length !== baselineTypes.length
+      || currentTypes.some((type, index) => type !== baselineTypes[index]);
+  };
+
+  const isRealtimeRefreshPaused = () => Boolean(
+    intakeModal.open.value
+    || intakeExperimentModal.open.value
+    || editExperimentModal.open.value
+    || sampleCodesModal.open.value
+    || scheduledExperimentRemovalModal.open.value
+    || resetModal.open.value
+    || (taskDrawer.open.value && isTaskEditFormDirty())
+  );
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      void loadTasksPage();
+    }
+    return true;
+  };
+
+  const handleSamplesUpdated = () => {
+    if (isRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
+      return;
+    }
+    hasPendingSamplesRefresh = false;
+    void loadTasksPage();
+  };
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.tasks,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.streams,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.experiment_samples,
+    ],
+    refresh: loadTasksPage,
+    paused: isRealtimeRefreshPaused,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+
   watch(
     () => intakeForm.value.test_types.join(" / "),
     () => {
@@ -922,7 +995,7 @@ function useTasksPage() {
     window.addEventListener("hashchange", handleHashChange);
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.addEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
-    window.addEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.addEventListener("pointerdown", handleDocumentPointerDown);
   });
 
@@ -931,7 +1004,7 @@ function useTasksPage() {
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.removeEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, loadTasksPage);
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
   });
 

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
@@ -97,6 +98,7 @@ function useDevicesPage() {
   const runningRepairChoiceDetail = ref(null);
   const now = ref(new Date());
   let deviceClockTimer = null;
+  let flushPendingStorageRefresh = () => false;
 
   const baseRows = computed(() =>
     buildDeviceRows(rawDevices.value, rawSchedules.value, now.value, rawSamples.value, rawExperimentTrays.value),
@@ -523,6 +525,7 @@ function useDevicesPage() {
 
   const closeDeviceDrawer = () => {
     deviceDrawer.close();
+    flushPendingStorageRefresh();
   };
 
   const openEditDevice = (row) => {
@@ -532,6 +535,7 @@ function useDevicesPage() {
 
   const closeEditDevice = () => {
     editDeviceModal.close();
+    flushPendingStorageRefresh();
   };
 
   const saveEditedDevice = async () => {
@@ -569,6 +573,7 @@ function useDevicesPage() {
     maintenancePlanDevice.value = null;
     maintenancePlanForm.value = createMaintenancePlanForm();
     maintenancePlanWarning.value = "";
+    flushPendingStorageRefresh();
   };
 
   const saveMaintenancePlan = async () => {
@@ -623,6 +628,7 @@ function useDevicesPage() {
   const closeRunningRepairChoice = () => {
     runningRepairChoiceDetail.value = null;
     runningRepairChoiceModal.close();
+    flushPendingStorageRefresh();
   };
 
   const persistRunningRepairChoice = async (mode) => {
@@ -699,6 +705,7 @@ function useDevicesPage() {
       maintenanceConflictDetail.value = null;
       maintenanceConflictModal.close();
       closeEditDevice();
+      flushPendingStorageRefresh();
       return;
     }
     await persistMaintenancePlan({
@@ -709,11 +716,13 @@ function useDevicesPage() {
     maintenanceConflictDetail.value = null;
     maintenanceConflictModal.close();
     closeMaintenancePlan();
+    flushPendingStorageRefresh();
   };
 
   const cancelMaintenanceConflict = () => {
     maintenanceConflictDetail.value = null;
     maintenanceConflictModal.close();
+    flushPendingStorageRefresh();
   };
 
   const openPointModal = () => {
@@ -722,6 +731,7 @@ function useDevicesPage() {
 
   const closePointModal = () => {
     pointModal.close();
+    flushPendingStorageRefresh();
   };
 
   const savePoint = () => {
@@ -747,6 +757,31 @@ function useDevicesPage() {
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
     await syncTimedMaintenanceStatuses(now.value);
   };
+
+  const isRealtimeRefreshPaused = () => Boolean(
+    deviceDrawer.open.value
+    || editDeviceModal.open.value
+    || maintenancePlanModal.open.value
+    || maintenanceConflictModal.open.value
+    || runningRepairChoiceModal.open.value
+    || pointModal.open.value
+  );
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.conflicts,
+      STORAGE_KEYS.devices,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.schedules,
+      STORAGE_KEYS.tasks,
+    ],
+    refresh: loadDevicesPage,
+    paused: isRealtimeRefreshPaused,
+    debounceMs: 100,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
   watch(
     () => deviceForm.value.location,

@@ -6,7 +6,7 @@ import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/l
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { SNAPSHOT_UPDATED_EVENT, SNAPSHOT_UPDATED_STORAGE_KEY, subscribeStorageSnapshotUpdates } from "@/lib/storageApi";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
@@ -168,7 +168,8 @@ function useLaboratoryPage(options = {}) {
   let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
-  let unsubscribeStorageSnapshotUpdates = null;
+  let flushPendingStorageRefresh = () => false;
+  let hasPendingSamplesRefresh = false;
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
 
@@ -301,6 +302,7 @@ function useLaboratoryPage(options = {}) {
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
+    flushPendingRealtimeRefresh();
   };
 
   const syncHeaderActionTarget = () => {
@@ -424,36 +426,49 @@ function useLaboratoryPage(options = {}) {
     }
   };
 
+  const isLaboratoryRealtimeRefreshPaused = () => Boolean(
+    scheduleModalOpen.value
+    || taskListModalOpen.value
+    || compareModalOpen.value
+    || installModalOpen.value
+    || readyModalOpen.value
+    || confirmedModalOpen.value
+    || resetConfirmModalOpen.value
+    || resetDangerModalOpen.value
+    || completePromptVisible.value
+  );
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isLaboratoryRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      void load();
+    }
+    return true;
+  };
+
   const handleSamplesUpdated = () => {
     if (ignoreNextSamplesUpdatedLoad) {
       ignoreNextSamplesUpdatedLoad = false;
       return;
     }
-    void load();
-  };
-  const snapshotUpdateTouchesLaboratory = (detail) => {
-    const keys = Array.isArray(detail?.keys) ? detail.keys : [];
-    return keys.length === 0 || keys.some((key) => LABORATORY_SNAPSHOT_KEYS.has(key));
-  };
-  const handleSnapshotUpdated = (eventOrDetail = {}) => {
-    const detail = eventOrDetail?.detail || eventOrDetail;
-    if (!snapshotUpdateTouchesLaboratory(detail)) {
+    if (isLaboratoryRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
       return;
     }
+    hasPendingSamplesRefresh = false;
     void load();
   };
-  const handleStorageSnapshotUpdated = (event) => {
-    if (event?.key !== SNAPSHOT_UPDATED_STORAGE_KEY) {
-      return;
-    }
-    let detail = {};
-    try {
-      detail = JSON.parse(String(event?.newValue || "{}"));
-    } catch {
-      detail = {};
-    }
-    handleSnapshotUpdated(detail);
-  };
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: Array.from(LABORATORY_SNAPSHOT_KEYS),
+    refresh: load,
+    paused: isLaboratoryRealtimeRefreshPaused,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
   onMounted(() => {
     void nextTick().then(syncHeaderActionTarget);
@@ -462,14 +477,11 @@ function useLaboratoryPage(options = {}) {
         tickNow.value = now || new Date();
       }, 1000);
       window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
-      window.addEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
-      window.addEventListener("storage", handleStorageSnapshotUpdated);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);
       window.addEventListener("wheel", handleRunningModalActivity, true);
       window.addEventListener("touchstart", handleRunningModalActivity, true);
       window.addEventListener("keydown", handleRunningModalActivity, true);
-      unsubscribeStorageSnapshotUpdates = subscribeStorageSnapshotUpdates(handleSnapshotUpdated);
     }
     void load();
   });
@@ -481,17 +493,11 @@ function useLaboratoryPage(options = {}) {
     }
     if (typeof window !== "undefined") {
       window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
-      window.removeEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
-      window.removeEventListener("storage", handleStorageSnapshotUpdated);
       window.removeEventListener("pointerdown", handleRunningModalActivity, true);
       window.removeEventListener("mousemove", handleRunningModalActivity, true);
       window.removeEventListener("wheel", handleRunningModalActivity, true);
       window.removeEventListener("touchstart", handleRunningModalActivity, true);
       window.removeEventListener("keydown", handleRunningModalActivity, true);
-    }
-    if (unsubscribeStorageSnapshotUpdates) {
-      unsubscribeStorageSnapshotUpdates();
-      unsubscribeStorageSnapshotUpdates = null;
     }
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
@@ -506,6 +512,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeScheduleBoard = () => {
     scheduleModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const openTaskList = () => {
     pendingTaskCode.value = currentTask.value?.experimentKey || currentTask.value?.taskCode || "";
@@ -513,6 +520,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeTaskList = () => {
     taskListModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const openCompare = async () => {
     if (runningInteractionLocked.value || !actionState.value.canCompare) {
@@ -524,6 +532,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeCompare = () => {
     compareModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const getCurrentTaskTrayCodesByStatus = (status) =>
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
@@ -653,6 +662,7 @@ function useLaboratoryPage(options = {}) {
       fixtureConfirmSuccessTimer = window.setTimeout(() => {
         fixtureConfirmSuccessModalOpen.value = false;
         fixtureConfirmSuccessTimer = null;
+        flushPendingRealtimeRefresh();
       }, FIXTURE_CONFIRM_SUCCESS_MS);
       void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
@@ -668,6 +678,7 @@ function useLaboratoryPage(options = {}) {
       pendingRevertTask.value = null;
     }
     resetCompareState();
+    flushPendingRealtimeRefresh();
   };
   const submitCompareScan = () => {
     if (!currentTask.value) {
@@ -700,6 +711,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeInstall = () => {
     installModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const confirmInstall = async () => {
     if (!actionState.value.canInstallSample) {
@@ -723,6 +735,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeReady = () => {
     readyModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const confirmReady = async () => {
     if (!actionState.value.canMarkReady) {
@@ -737,6 +750,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeConfirmed = () => {
     confirmedModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const openResetConfirm = () => {
     if (!canResetCurrentTask.value) {
@@ -746,6 +760,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeResetConfirm = () => {
     resetConfirmModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const confirmResetPrompt = () => {
     if (!canResetCurrentTask.value) {
@@ -757,6 +772,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeResetDanger = () => {
     resetDangerModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
   const confirmResetTask = async () => {
     if (!canResetCurrentTask.value) {
@@ -780,6 +796,7 @@ function useLaboratoryPage(options = {}) {
       ignoreNextSamplesUpdatedLoad = true;
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
+    flushPendingRealtimeRefresh();
   };
   const openCompleteConfirm = () => {
     if (!runningExperiment.value?.active) {
@@ -789,6 +806,7 @@ function useLaboratoryPage(options = {}) {
   };
   const closeCompleteConfirm = () => {
     completePromptVisible.value = false;
+    flushPendingRealtimeRefresh();
   };
   const confirmCompleteExperiment = async () => {
     if (!runningExperiment.value?.active) {
@@ -811,6 +829,7 @@ function useLaboratoryPage(options = {}) {
     }
     completePromptVisible.value = false;
     clearRunningModalRestoreTimer();
+    flushPendingRealtimeRefresh();
   };
   const confirmCurrentTask = () => {
     if (!pendingTaskCode.value || runningInteractionLocked.value) {
@@ -828,6 +847,7 @@ function useLaboratoryPage(options = {}) {
     selectedTaskCode.value = pendingTaskCode.value;
     resetCompareState();
     taskListModalOpen.value = false;
+    flushPendingRealtimeRefresh();
   };
 
   return {

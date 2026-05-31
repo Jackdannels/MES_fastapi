@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { SAMPLES_UPDATED_EVENT } from "./useSampleIntake";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { formatLocalDateTime } from "@/lib/dateTime.js";
 import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
@@ -91,6 +92,8 @@ function useSamplesFlow() {
 
   const batchModal = useDialogState();
   const detailDrawer = useDialogState();
+  let flushPendingStorageRefresh = () => false;
+  let hasPendingSamplesRefresh = false;
 
   const batchForm = reactive({
     location: DEFAULT_LABELS.intakeLocation,
@@ -367,6 +370,7 @@ function useSamplesFlow() {
 
   const closeBatchModal = () => {
     batchModal.close();
+    flushPendingRealtimeRefresh();
   };
 
   const submitBatch = async () => {
@@ -410,6 +414,7 @@ function useSamplesFlow() {
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = "";
     batchModal.close();
+    flushPendingRealtimeRefresh();
   };
 
   const openDetailDrawer = (sampleId) => {
@@ -427,6 +432,7 @@ function useSamplesFlow() {
 
   const closeDetailDrawer = () => {
     detailDrawer.close();
+    flushPendingRealtimeRefresh();
   };
 
   const saveDetail = async () => {
@@ -458,6 +464,7 @@ function useSamplesFlow() {
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = "";
     detailDrawer.close();
+    flushPendingRealtimeRefresh();
   };
 
   const updateTrayStatusInline = async (trayCode, status) => {
@@ -505,14 +512,50 @@ function useSamplesFlow() {
     { deep: true },
   );
 
+  const isRealtimeRefreshPaused = () => Boolean(batchModal.open.value || detailDrawer.open.value);
+
+  const flushPendingRealtimeRefresh = () => {
+    const flushedStorage = flushPendingStorageRefresh();
+    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
+      return flushedStorage;
+    }
+    hasPendingSamplesRefresh = false;
+    if (!flushedStorage) {
+      void load();
+    }
+    return true;
+  };
+
+  const handleSamplesUpdated = () => {
+    if (isRealtimeRefreshPaused()) {
+      hasPendingSamplesRefresh = true;
+      return;
+    }
+    hasPendingSamplesRefresh = false;
+    void load();
+  };
+
+  const storageRefresh = useStorageSnapshotRefresh({
+    keys: [
+      STORAGE_KEYS.tasks,
+      STORAGE_KEYS.samples,
+      STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.schedules,
+    ],
+    refresh: load,
+    paused: isRealtimeRefreshPaused,
+  });
+  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+
   onMounted(() => {
     void load();
     // 与收样页通过全局事件同步，保持不同子视图间的数据一致。
-    window.addEventListener(SAMPLES_UPDATED_EVENT, load);
+    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   onBeforeUnmount(() => {
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, load);
+    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   return {

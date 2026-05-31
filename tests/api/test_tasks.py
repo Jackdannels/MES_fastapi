@@ -144,6 +144,55 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert len(remaining.json()[0]["experiment_codes"]) == 2
 
 
+def test_tasks_router_publishes_storage_updates_for_mutations(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    published_updates = []
+    monkeypatch.setattr(tasks_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "SYLU-2026-03-001",
+                "code": "SYLU-2026-03-001",
+                "name": "冲击试验-批次A",
+                "contact": "张三",
+                "contact_info": "13800001234",
+                "sample_count": "2",
+                "test_types": ["冲击试验"],
+                "status": "待排程",
+            }
+        ],
+    )
+
+    created = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-03-002",
+            "code": "SYLU-2026-03-002",
+            "name": "霉菌试验",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "2",
+            "test_types": ["霉菌试验"],
+            "status": "待排程",
+        },
+    )
+    updated = client.put("/api/tasks/SYLU-2026-03-002", json={**created.json(), "name": "霉菌试验-改"})
+    deleted = client.delete("/api/tasks/SYLU-2026-03-001")
+    reset = client.post("/api/tasks/reset")
+
+    assert created.status_code == 201
+    assert updated.status_code == 200
+    assert deleted.status_code == 204
+    assert reset.status_code == 200
+    assert len(published_updates) == 4
+    for keys in published_updates:
+        assert "mes.tasks" in keys
+        assert "mes.samples" in keys
+        assert "mes.experiments" in keys
+
+
 def test_tasks_list_hides_returned_tasks_unless_archived_are_requested(monkeypatch):
     client = build_client(
         monkeypatch,

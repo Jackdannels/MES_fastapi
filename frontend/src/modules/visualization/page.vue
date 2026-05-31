@@ -221,6 +221,7 @@ defineOptions({
 
 import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
@@ -547,6 +548,19 @@ const resolveScreenComponent = (screen) => {
 const refreshSnapshot = async () => {
   rawSnapshot.value = await loadSnapshot();
 };
+useStorageSnapshotRefresh({
+  keys: [
+    STORAGE_KEYS.devices,
+    STORAGE_KEYS.tasks,
+    STORAGE_KEYS.samples,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.schedules,
+    STORAGE_KEYS.staging_events,
+  ],
+  refresh: refreshSnapshot,
+  debounceMs: 100,
+});
 const refreshViewportSize = () => {
   if (typeof window === "undefined") {
     return;
@@ -621,13 +635,11 @@ onMounted(() => {
   refreshViewportSize();
   refreshSnapshot();
   window.addEventListener("mes:samples-updated", refreshSnapshot);
-  window.addEventListener("storage", refreshSnapshot);
   window.addEventListener("resize", refreshViewportSize);
 });
 
 onUnmounted(() => {
   window.removeEventListener("mes:samples-updated", refreshSnapshot);
-  window.removeEventListener("storage", refreshSnapshot);
   window.removeEventListener("resize", refreshViewportSize);
 });
 

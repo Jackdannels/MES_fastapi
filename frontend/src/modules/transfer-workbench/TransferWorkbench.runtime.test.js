@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TransferWorkbench from "./TransferWorkbench.vue";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 
 const {
   routerPush,
@@ -415,8 +416,8 @@ describe("TransferWorkbench runtime", () => {
 
     expect(setIntervalSpy).not.toHaveBeenCalled();
     expect(addEventListenerSpy).toHaveBeenCalledWith(SAMPLES_UPDATED_EVENT, expect.any(Function));
+    expect(addEventListenerSpy).toHaveBeenCalledWith(SNAPSHOT_UPDATED_EVENT, expect.any(Function));
     expect(addEventListenerSpy).not.toHaveBeenCalledWith("focus", expect.any(Function));
-    expect(addEventListenerSpy).not.toHaveBeenCalledWith("storage", expect.any(Function));
   });
 
   test("transfer workbench refreshes when a sample stage-change event is broadcast", async () => {
