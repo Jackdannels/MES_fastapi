@@ -38,6 +38,13 @@ describe("TaskHistoryPage structure", () => {
     expect(source).toContain("history-tray-sample-code");
     expect(source).toContain("history-task-search");
     expect(source).toContain("history-task-range");
+    expect(source).toContain("task.trayCountText");
+    expect(source).toContain("task.sampleCountText");
+    expect(source).not.toContain("{{ task.trayCount }} 个托盘 · {{ task.sampleCount }} 个样品");
+    expect(source).toContain(".history-flow-strip-item.reached,");
+    expect(source).toContain(".history-flow-strip-item.current");
+    expect(source).toContain(".history-flow-strip-item .history-flow-dot");
+    expect(source).toContain(".history-flow-strip-item.reached .history-flow-dot,");
     expect(source).toContain("AppPagination");
     expect(source).toContain("pagedHistoryTasks");
     expect(source).toContain("historyPage");

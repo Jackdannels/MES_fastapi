@@ -4,7 +4,7 @@
       <aside class="card history-task-list" data-testid="history-task-list">
         <div class="history-task-list__head">
           <h3>历史任务数据</h3>
-          <span class="muted">已收回任务 {{ historyTotalCount }}</span>
+          <span class="muted">含收回托盘任务 {{ historyTotalCount }}</span>
         </div>
         <div class="history-task-controls">
           <input
@@ -38,7 +38,7 @@
         >
           <span class="history-task-row__code">{{ task.code || "-" }}</span>
           <span class="history-task-row__name">{{ task.name || "-" }}</span>
-          <span class="history-task-row__meta">{{ task.trayCount }} 个托盘 · {{ task.sampleCount }} 个样品</span>
+          <span class="history-task-row__meta">{{ task.trayCountText }} · {{ task.sampleCountText }}</span>
         </button>
         <AppPagination
           v-if="historyPageCount > 1"
@@ -393,9 +393,9 @@ onMounted(async () => {
   min-width: 0;
   min-height: 68px;
   padding: 12px 10px 10px;
-  border: 1px solid #86efac;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
-  background: #dcfce7;
+  background: #f8fafc;
   text-align: center;
 }
 
@@ -406,7 +406,7 @@ onMounted(async () => {
   top: 50%;
   width: 10px;
   height: 2px;
-  background: #86efac;
+  background: #cbd5e1;
   transform: translateY(-50%);
 }
 
@@ -414,8 +414,28 @@ onMounted(async () => {
   display: none;
 }
 
-.history-flow-strip .history-flow-dot {
+.history-flow-strip-item.reached,
+.history-flow-strip-item.current {
+  border-color: #86efac;
+  background: #dcfce7;
+}
+
+.history-flow-strip-item.reached::after,
+.history-flow-strip-item.current::after {
+  background: #86efac;
+}
+
+.history-flow-strip-item .history-flow-dot {
+  background: #94a3b8;
+}
+
+.history-flow-strip-item.reached .history-flow-dot,
+.history-flow-strip-item.current .history-flow-dot {
   background: #22c55e;
+}
+
+.history-flow-strip-item.current .history-flow-label {
+  color: #052e16;
 }
 
 .history-flow-strip .history-flow-time {

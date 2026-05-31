@@ -279,6 +279,152 @@ describe("task history model", () => {
     expect(view.tasks[0].status).toBe("厂家收回");
   });
 
+  test("includes partially returned tasks and only exposes returned tray details", () => {
+    const view = buildReturnedTaskHistoryView({
+      query: "TP-RETURNED",
+      tasks: [{ code: "TASK-MIXED", name: "部分收回任务", status: "任务进行中" }],
+      samples: [
+        {
+          code: "SP-ACTIVE-001",
+          task_code: "TASK-MIXED",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-ACTIVE-001", status: "实验进行中" }],
+          history: [{ action: "开始实验", status: "实验进行中", time: "2026-04-08T09:00:00+08:00" }],
+        },
+        {
+          code: "SP-ACTIVE-002",
+          task_code: "TASK-MIXED",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-ACTIVE-002", status: "实验进行中" }],
+          history: [{ action: "开始实验", status: "实验进行中", time: "2026-04-08T09:05:00+08:00" }],
+        },
+        {
+          code: "SP-RETURNED",
+          task_code: "TASK-MIXED",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-RETURNED", status: "厂家收回" }],
+          history: [{ action: "厂家收回", status: "厂家收回", detail: "TP-RETURNED 厂家收回", time: "2026-04-08T11:00:00+08:00" }],
+        },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0]).toEqual(expect.objectContaining({
+      code: "TASK-MIXED",
+      status: "任务进行中（收回1，剩余2）",
+      returnedTrayCount: 1,
+      remainingTrayCount: 2,
+      originalTrayCount: 3,
+      originalSampleCount: 3,
+      returnedSampleCount: 1,
+      remainingSampleCount: 2,
+      trayCount: 1,
+    }));
+    expect(view.tasks[0].trayCountText).toBe("3 个托盘（收回1，剩余2）");
+    expect(view.tasks[0].sampleCountText).toBe("3 个样品（收回1，剩余2）");
+    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-RETURNED"]);
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual([
+      ["待排程", false, true],
+      ["已排程", false, true],
+      ["任务进行中", true, true],
+      ["任务已完成", false, false],
+      ["厂家收回", false, false],
+    ]);
+  });
+
+  test("recognizes partially returned trays by location when status is stale", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-LOCATION", name: "位置收回任务", status: "任务进行中" }],
+      samples: [
+        {
+          code: "SP-LOCATION-001",
+          task_code: "TASK-LOCATION",
+          location: "厂家收回",
+          status: "实验已完成",
+          trays: [{ tray_code: "TP-LOCATION", status: "实验已完成" }],
+          history: [{ action: "厂家收回", status: "厂家收回", detail: "TP-LOCATION 厂家收回", time: "2026-04-08T11:00:00+08:00" }],
+        },
+        {
+          code: "SP-ACTIVE",
+          task_code: "TASK-LOCATION",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-ACTIVE", status: "实验进行中" }],
+        },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-LOCATION"]);
+    expect(view.tasks[0].status).toBe("任务进行中（收回1，剩余1）");
+  });
+
+  test("uses task-bound tray relations and planned sample count to avoid treating partial returns as fully returned", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [
+        {
+          code: "TASK-BOUND",
+          name: "绑定托盘任务",
+          sample_count: 8,
+          status: "任务进行中",
+          tray_codes: ["TP-001", "TP-002", "TP-003", "TP-004"],
+        },
+      ],
+      samples: [
+        {
+          code: "SP-005",
+          task_code: "TASK-BOUND",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-002", status: "厂家收回" }],
+          history: [{ action: "厂家收回", status: "厂家收回", detail: "TP-002 厂家收回", time: "2026-05-31T17:29:55+08:00" }],
+        },
+        {
+          code: "SP-006",
+          task_code: "TASK-BOUND",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-002", status: "厂家收回" }],
+        },
+        {
+          code: "SP-007",
+          task_code: "TASK-BOUND",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-002", status: "厂家收回" }],
+        },
+        {
+          code: "SP-008",
+          task_code: "TASK-BOUND",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-002", status: "厂家收回" }],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-BOUND", experiment_code: "TASK-BOUND-A", tray_code: "TP-001" },
+        { task_code: "TASK-BOUND", experiment_code: "TASK-BOUND-A", tray_code: "TP-002" },
+        { task_code: "TASK-BOUND", experiment_code: "TASK-BOUND-A", tray_code: "TP-003" },
+        { task_code: "TASK-BOUND", experiment_code: "TASK-BOUND-A", tray_code: "TP-004" },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0]).toEqual(expect.objectContaining({
+      originalTrayCount: 4,
+      returnedTrayCount: 1,
+      remainingTrayCount: 3,
+      originalSampleCount: 8,
+      returnedSampleCount: 4,
+      remainingSampleCount: 4,
+      status: "任务进行中（收回1，剩余3）",
+    }));
+    expect(view.tasks[0].trayCountText).toBe("4 个托盘（收回1，剩余3）");
+    expect(view.tasks[0].sampleCountText).toBe("8 个样品（收回4，剩余4）");
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual([
+      ["待排程", false, true],
+      ["已排程", false, true],
+      ["任务进行中", true, true],
+      ["任务已完成", false, false],
+      ["厂家收回", false, false],
+    ]);
+  });
+
   test("keeps returned tasks when one sample row for the same tray still has a stale status", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [{ code: "TASK-STALE-TRAY", name: "托盘状态滞后任务", status: "厂家收回", transfer_status: "厂家收回" }],

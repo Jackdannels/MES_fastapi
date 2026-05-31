@@ -1,7 +1,11 @@
-from datetime import datetime
+import json
+import queue
+import threading
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Body, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 
@@ -30,6 +34,8 @@ LAB_MAINTENANCE_BLOCKED_STATUSES = {
     "实验进行中",
     "实验中",
 }
+_STORAGE_UPDATE_SUBSCRIBERS: set[queue.Queue[dict[str, Any]]] = set()
+_STORAGE_UPDATE_SUBSCRIBERS_LOCK = threading.Lock()
 
 
 def _normalize_text(value: Any) -> str:
@@ -310,10 +316,55 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))
 
 
+def publish_storage_update(keys: list[str]) -> None:
+    payload = {
+        "keys": list(keys),
+        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
+        subscribers = list(_STORAGE_UPDATE_SUBSCRIBERS)
+    for subscriber in subscribers:
+        try:
+            subscriber.put_nowait(payload)
+        except queue.Full:
+            try:
+                subscriber.get_nowait()
+                subscriber.put_nowait(payload)
+            except queue.Empty:
+                pass
+
+
+def _format_sse(payload: dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _storage_update_event_stream():
+    subscriber: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=20)
+    with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
+        _STORAGE_UPDATE_SUBSCRIBERS.add(subscriber)
+    try:
+        yield ": connected\n\n"
+        while True:
+            try:
+                payload = subscriber.get(timeout=15)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            yield _format_sse(payload)
+    finally:
+        with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
+            _STORAGE_UPDATE_SUBSCRIBERS.discard(subscriber)
+
+
 @router.get("")
 def read_all() -> Dict[str, Any]:
     storage = get_storage_backend()
     return storage.read_all()
+
+
+@router.get("/events")
+def storage_update_events() -> StreamingResponse:
+    return StreamingResponse(_storage_update_event_stream(), media_type="text/event-stream")
 
 
 @router.get("/{key}")
@@ -331,6 +382,7 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
     storage = get_storage_backend()
     _validate_storage_update(storage, {key: payload})
     storage.write(key, payload)
+    publish_storage_update([key])
     return {"ok": True}
 
 
@@ -342,4 +394,5 @@ def write_many(payload: Dict[str, Any] = Body(...)) -> Dict[str, bool]:
         raise HTTPException(status_code=400, detail="No valid storage keys provided")
     _validate_storage_update(storage, updates)
     storage.write_many(updates)
+    publish_storage_update(list(updates.keys()))
     return {"ok": True}

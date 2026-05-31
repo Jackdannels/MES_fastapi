@@ -241,7 +241,7 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
     assert len(payload["assignedTrays"]) == 1
     assert len(payload["assignedTrays"]) > 0
     assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
-    assert len(payload["trayInventory"]) == 19
+    assert len(payload["trayInventory"]) == 8
 
 
 def test_transfer_area_dispatch_lookup_returns_staging_and_sorted_lab_candidates(monkeypatch):
@@ -1016,6 +1016,73 @@ def test_transfer_area_preallocation_keeps_in_transit_samples_until_storage_conf
     assert {sample["location"] for sample in stored_samples} == {"接驳区"}
 
 
+def test_transfer_area_workspace_remaining_trays_counts_current_preallocation(monkeypatch):
+    client, _storage = build_client(monkeypatch)
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3"]},
+            {"trayId": 1003, "sampleIds": ["sample-4"]},
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [1001]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [1002]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [1003]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert allocated.status_code == 200
+    assert workspace.status_code == 200
+    assert len(workspace.json()["assignedTrays"]) == 3
+    assert workspace.json()["task"]["remainingTrayCount"] == 6
+    assert len(workspace.json()["trayInventory"]) == 6
+
+
+def test_transfer_area_prints_preallocated_barcodes_before_arrival(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    tasks[0]["arrival_at"] = ""
+    storage.write("mes.tasks", tasks)
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(),
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+
+    assert allocated.status_code == 200
+    assert printed.status_code == 200
+    assert [barcode["barcodeNo"] for barcode in printed.json()["barcodes"]] == [
+        "SYLU-2026-03-101-TP-001",
+        "SYLU-2026-03-101-TP-002",
+    ]
+    assert printed.json()["workspace"]["task"]["receivedTime"] == ""
+    assert printed.json()["workspace"]["assignedTrays"][0]["barcode"]["barcodeNo"] == "SYLU-2026-03-101-TP-001"
+
+
+def test_transfer_area_print_rejects_unsaved_preallocation(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    tasks = storage.read("mes.tasks")
+    tasks[0]["arrival_at"] = ""
+    storage.write("mes.tasks", tasks)
+
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+
+    assert printed.status_code == 400
+    assert printed.json()["detail"] == "请先保存托盘，再打印条形码"
+
+
 def test_transfer_area_allocate_rejects_incomplete_experiment_tray_assignments(monkeypatch):
     client, _storage = build_client(monkeypatch)
     allocation = {
@@ -1492,8 +1559,8 @@ def test_transfer_area_returned_trays_do_not_occupy_system_inventory(monkeypatch
     workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
 
     assert workspace.status_code == 200
-    assert workspace.json()["task"]["remainingTrayCount"] == 20
-    assert len(workspace.json()["trayInventory"]) == 20
+    assert workspace.json()["task"]["remainingTrayCount"] == 9
+    assert len(workspace.json()["trayInventory"]) == 9
 
 
 def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_codes(monkeypatch):
@@ -1601,7 +1668,7 @@ def test_transfer_area_allocate_rejects_when_system_trays_are_insufficient(monke
     client, storage = build_client(monkeypatch)
 
     samples = storage.read("mes.samples")
-    for index in range(1, 21):
+    for index in range(1, 11):
       samples.append(
           {
               "id": f"occupied-sample-{index}",

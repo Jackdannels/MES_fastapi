@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { readStorageSnapshot, writeStorageUpdates } from "./storageApi";
+import { SNAPSHOT_UPDATED_EVENT, readStorageSnapshot, subscribeStorageSnapshotUpdates, writeStorageUpdates } from "./storageApi";
 import { STORAGE_KEYS } from "./storageKeys";
 
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
@@ -63,6 +63,8 @@ describe("storageApi", () => {
   test("writes updates remotely without persisting local business caches", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
+    const eventSpy = vi.fn();
+    window.addEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
 
     await writeStorageUpdates({
       [STORAGE_KEYS.tasks]: [{ code: "T-2" }],
@@ -81,6 +83,12 @@ describe("storageApi", () => {
         [STORAGE_KEYS.tasks]: [{ code: "T-2" }],
       }),
     });
+    expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        keys: [STORAGE_KEYS.tasks],
+      }),
+    }));
+    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
   });
 
   test("returns clean remote sample payloads without refreshing local sample cache", async () => {
@@ -140,6 +148,42 @@ describe("storageApi", () => {
         [STORAGE_KEYS.samples]: [],
       }),
     ).rejects.toThrow("Failed to write storage updates: 400 Bad Request，托盘尚未从接驳间出库，不能直接到达实验室");
+  });
+
+  test("subscribes to remote storage update events with EventSource", () => {
+    const instances = [];
+    class MockEventSource {
+      constructor(url, options) {
+        this.url = url;
+        this.options = options;
+        this.listeners = {};
+        this.close = vi.fn();
+        instances.push(this);
+      }
+
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      }
+    }
+    window.EventSource = MockEventSource;
+    const listener = vi.fn();
+
+    const unsubscribe = subscribeStorageSnapshotUpdates(listener);
+
+    expect(instances[0]).toEqual(expect.objectContaining({
+      options: { withCredentials: true },
+      url: buildApiUrl("/api/storage/events", getFrontendApiBaseUrl()),
+    }));
+
+    instances[0].listeners.message({ data: JSON.stringify({ keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" }) });
+
+    expect(listener).toHaveBeenCalledWith({
+      keys: [STORAGE_KEYS.samples],
+      updatedAt: "2026-04-02T10:00:00.000Z",
+    });
+
+    unsubscribe();
+    expect(instances[0].close).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -48,6 +48,15 @@ const formatDateTime = (value) => {
   return `${month}/${day} ${hours}:${minutes}`;
 };
 
+const scheduleIsActiveAt = (schedule, now) => {
+  const start = Date.parse(String(schedule?.start_at || ""));
+  if (!Number.isFinite(start) || start > now) {
+    return false;
+  }
+  const end = Date.parse(String(schedule?.end_at || ""));
+  return !Number.isFinite(end) || end >= now;
+};
+
 const resolveScheduledExperimentLabel = ({ experiments, fallback, schedule, taskCode }) => {
   const normalizedExperimentCode = String(schedule?.experiment_code || "").trim();
   const experimentList = Array.isArray(experiments) ? experiments : [];
@@ -292,11 +301,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
 
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
       const activeSchedule =
-        labSchedules.find((entry) => {
-          const start = Date.parse(String(entry?.start_at || ""));
-          const end = Date.parse(String(entry?.end_at || ""));
-          return Number.isFinite(start) && Number.isFinite(end) && start <= now && end >= now;
-        }) || null;
+        labSchedules.find((entry) => scheduleIsActiveAt(entry, now)) || null;
       const runningSchedule =
         labSchedules.find((entry) => {
           if (experimentHasRunningTrays({ experimentTrays, samples: sampleList, schedule: entry })) {

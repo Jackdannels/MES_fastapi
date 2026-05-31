@@ -3,6 +3,7 @@ import { nextTick } from "vue";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { useProcessLabs } from "./useProcessLabs";
+import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
 const masterDataMocks = vi.hoisted(() => ({
@@ -234,6 +235,7 @@ describe("useProcessLabs", () => {
 
     const wrapper = mount(Harness);
     await Promise.resolve();
+    await Promise.resolve();
     await nextTick();
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
@@ -250,6 +252,321 @@ describe("useProcessLabs", () => {
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
     wrapper.unmount();
+  });
+
+  test("enables start experiment when laboratory ready writes a storage snapshot update", async () => {
+    const loadSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({
+        "mes.devices": [],
+        "mes.schedules": [
+          {
+            device: "盐雾试验室",
+            experiment_code: "TASK-READY-A",
+            start_at: "2026-03-10T09:00:00Z",
+            end_at: "2026-03-10T11:00:00Z",
+            task_code: "TASK-READY",
+          },
+        ],
+        "mes.tasks": [{ code: "TASK-READY", name: "准备就绪任务", test_type: "盐雾试验" }],
+        "mes.experiments": [
+          {
+            task_code: "TASK-READY",
+            experiment_code: "TASK-READY-A",
+            experiment_name: "盐雾试验",
+          },
+        ],
+        "mes.experiment_trays": [
+          { task_code: "TASK-READY", experiment_code: "TASK-READY-A", tray_code: "TP-READY-001" },
+        ],
+        "mes.samples": [
+          {
+            code: "SP-READY-001",
+            task_code: "TASK-READY",
+            status: "工装夹具安装",
+            flow_status: "工装夹具安装",
+            location: "盐雾试验室",
+            trays: [{ tray_code: "TP-READY-001", status: "工装夹具安装", quantity: 1 }],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        "mes.devices": [],
+        "mes.schedules": [
+          {
+            device: "盐雾试验室",
+            experiment_code: "TASK-READY-A",
+            start_at: "2026-03-10T09:00:00Z",
+            end_at: "2026-03-10T11:00:00Z",
+            task_code: "TASK-READY",
+          },
+        ],
+        "mes.tasks": [{ code: "TASK-READY", name: "准备就绪任务", test_type: "盐雾试验" }],
+        "mes.experiments": [
+          {
+            task_code: "TASK-READY",
+            experiment_code: "TASK-READY-A",
+            experiment_name: "盐雾试验",
+          },
+        ],
+        "mes.experiment_trays": [
+          { task_code: "TASK-READY", experiment_code: "TASK-READY-A", tray_code: "TP-READY-001" },
+        ],
+        "mes.samples": [
+          {
+            code: "SP-READY-001",
+            task_code: "TASK-READY",
+            status: "实验准备就绪",
+            flow_status: "实验准备就绪",
+            location: "盐雾试验室",
+            trays: [{ tray_code: "TP-READY-001", status: "实验准备就绪", quantity: 1 }],
+          },
+        ],
+      });
+    let exposed = null;
+    const Harness = {
+      setup() {
+        exposed = useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+          loadSnapshot,
+          now: Date.parse("2026-03-10T09:30:00Z"),
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(exposed.labCards.value[0]).toEqual(expect.objectContaining({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+    }));
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.samples"] } }));
+    await Promise.resolve();
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(exposed.labCards.value[0]).toEqual(expect.objectContaining({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    }));
+    wrapper.unmount();
+  });
+
+  test("enables start experiment for impact lab when laboratory ready writes a storage snapshot update", async () => {
+    const eventSources = [];
+    class MockEventSource {
+      constructor(url, options) {
+        this.url = url;
+        this.options = options;
+        this.listeners = {};
+        this.close = vi.fn();
+        eventSources.push(this);
+      }
+
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      }
+    }
+    vi.stubGlobal("EventSource", MockEventSource);
+    const createSnapshot = (status) => ({
+      "mes.devices": [],
+      "mes.schedules": [
+        {
+          id: "schedule-impact",
+          device: "冲击一室",
+          experiment_code: "SYLU-2026-04-501-A",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+          task_code: "SYLU-2026-04-501",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-04-501", name: "冲击连接器", test_type: "冲击试验" }],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          experiment_name: "冲击试验",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-CJ-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-04-501-SP-001",
+          task_code: "SYLU-2026-04-501",
+          location: "冲击一室",
+          status,
+          flow_status: status,
+          trays: [{ tray_code: "TP-CJ-001", status, quantity: 1 }],
+        },
+      ],
+    });
+    const loadSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce(createSnapshot("工装夹具安装"))
+      .mockResolvedValueOnce(createSnapshot("实验准备就绪"));
+    let exposed = null;
+    const Harness = {
+      setup() {
+        exposed = useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "冲击一室", testType: "冲击试验" }],
+          loadSnapshot,
+          now: Date.parse("2026-04-02T10:00:00.000Z"),
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(eventSources[0]).toEqual(expect.objectContaining({
+      options: { withCredentials: true },
+    }));
+    expect(exposed.labCards.value.find((lab) => lab.name === "冲击一室")).toEqual(expect.objectContaining({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+    }));
+
+    eventSources[0].listeners.message({
+      data: JSON.stringify({ keys: ["mes.samples"], updatedAt: "2026-04-02T10:00:00.000Z" }),
+    });
+    await Promise.resolve();
+    await nextTick();
+
+    expect(exposed.labCards.value.find((lab) => lab.name === "冲击一室")).toEqual(expect.objectContaining({
+      canStartExperiment: true,
+      experimentCode: "SYLU-2026-04-501-A",
+      readyTrayCount: 1,
+      targetExperiment: "冲击试验",
+      taskCode: "SYLU-2026-04-501",
+    }));
+    wrapper.unmount();
+  });
+
+  test("enables start experiment for a ready open-ended schedule after its start time", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.devices": [],
+      "mes.schedules": [
+        {
+          device: "盐雾试验室",
+          experiment_code: "TASK-OPEN-A",
+          start_at: "2026-03-10T09:00:00Z",
+          task_code: "TASK-OPEN",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-OPEN", name: "无结束时间任务", test_type: "盐雾试验" }],
+      "mes.experiments": [
+        {
+          task_code: "TASK-OPEN",
+          experiment_code: "TASK-OPEN-A",
+          experiment_name: "盐雾试验",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-OPEN", experiment_code: "TASK-OPEN-A", tray_code: "TP-OPEN-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-OPEN-001",
+          task_code: "TASK-OPEN",
+          status: "实验准备就绪",
+          flow_status: "实验准备就绪",
+          location: "盐雾试验室",
+          trays: [{ tray_code: "TP-OPEN-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-10T09:30:00Z"),
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toEqual(expect.objectContaining({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+      statusClass: "is-scheduled",
+      taskCode: "TASK-OPEN",
+    }));
+  });
+
+  test("keeps ready state when an older lab status load returns after a newer one", async () => {
+    const createSnapshot = (status) => ({
+      "mes.devices": [],
+      "mes.schedules": [
+        {
+          device: "盐雾试验室",
+          experiment_code: "TASK-RACE-A",
+          start_at: "2026-03-10T09:00:00Z",
+          end_at: "2026-03-10T11:00:00Z",
+          task_code: "TASK-RACE",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-RACE", name: "乱序刷新任务", test_type: "盐雾试验" }],
+      "mes.experiments": [
+        {
+          task_code: "TASK-RACE",
+          experiment_code: "TASK-RACE-A",
+          experiment_name: "盐雾试验",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-RACE", experiment_code: "TASK-RACE-A", tray_code: "TP-RACE-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-RACE-001",
+          task_code: "TASK-RACE",
+          status,
+          flow_status: status,
+          location: "盐雾试验室",
+          trays: [{ tray_code: "TP-RACE-001", status, quantity: 1 }],
+        },
+      ],
+    });
+    const resolvers = [];
+    const loadSnapshot = vi.fn(() => new Promise((resolve) => {
+      resolvers.push(resolve);
+    }));
+    const { labCards, loadLabStatus } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-03-10T09:30:00Z"),
+    });
+
+    const olderLoad = loadLabStatus();
+    const newerLoad = loadLabStatus();
+
+    resolvers[1](createSnapshot("实验准备就绪"));
+    await newerLoad;
+    expect(labCards.value[0]).toEqual(expect.objectContaining({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    }));
+
+    resolvers[0](createSnapshot("工装夹具安装"));
+    await olderLoad;
+    expect(labCards.value[0]).toEqual(expect.objectContaining({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    }));
   });
 
   test("loads lab cards and opens task detail drawer in place", async () => {

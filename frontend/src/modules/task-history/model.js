@@ -1,4 +1,4 @@
-import { SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
+import { SAMPLE_FLOW_STEPS, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 const RETURNED_STATUS = "厂家收回";
 const TASK_STATUS_FLOW_STEPS = [
@@ -98,6 +98,13 @@ const resolveExperimentTime = (experiment) => normalizeText(experiment?.complete
 const resolveRelationTaskCode = (relation) => normalizeText(relation?.task_code || relation?.taskCode || relation?.taskNo || relation?.task_no);
 const resolveRelationExperimentCode = (relation) => normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experimentNo || relation?.experiment_no);
 const resolveTaskArchiveStatus = (task) => normalizeText(task?.transfer_status || task?.transferStatus || task?.status || task?.displayStatus || task?.display_status);
+const resolveTaskTrayCodes = (task) => asArray(task?.tray_codes || task?.trayCodes || task?.tray_nos || task?.trayNos)
+  .map((trayCode) => normalizeText(trayCode))
+  .filter(Boolean);
+const resolveTaskPlannedSampleCount = (task) => {
+  const parsed = Number.parseInt(String(task?.sample_count ?? task?.sampleCount ?? ""), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+};
 
 const collectTrayRefs = (samples) => {
   const trayRefsByCode = new Map();
@@ -116,19 +123,86 @@ const collectTrayRefs = (samples) => {
 };
 
 const isReturned = (status) => normalizeFlowLabel(status) === RETURNED_STATUS || normalizeText(status) === RETURNED_STATUS;
-const trayRefIsReturned = ({ sample, tray }) => isReturned(resolveStatus(tray) || resolveStatus(sample));
+const trayRefIsReturned = ({ sample, tray }) => {
+  const trayStatus = resolveStatus(tray);
+  const sampleStatus = resolveStatus(sample);
+  const sampleLocation = normalizeText(sample?.location);
+  const lifecycleStatus = normalizeLifecycleStatus(sampleLocation, trayStatus || sampleStatus);
+  return (
+    isReturned(trayStatus)
+    || isReturned(sampleStatus)
+    || isReturned(sampleLocation)
+    || isReturned(lifecycleStatus)
+  );
+};
 
 const hasExplicitReturnedStatus = (task) => isReturned(resolveTaskArchiveStatus(task));
 
-const hasAllAssignedTraysReturned = (samples, task = null) => {
+const collectReturnedTrayCodes = (samples) => {
   const trayRefsByCode = collectTrayRefs(samples);
-  if (!trayRefsByCode.size) {
+  return new Set(Array.from(trayRefsByCode.entries())
+    .filter(([_trayCode, refs]) => refs.some(trayRefIsReturned))
+    .map(([trayCode]) => trayCode));
+};
+
+const collectAssignedTrayCodes = (task, samples, experimentTrays) => {
+  const taskCode = resolveTaskCode(task) || resolveSampleTaskCode(samples[0]);
+  const trayCodes = new Set([
+    ...Array.from(collectTrayRefs(samples).keys()),
+    ...resolveTaskTrayCodes(task),
+  ]);
+  asArray(experimentTrays).forEach((relation) => {
+    if (resolveRelationTaskCode(relation) !== taskCode) {
+      return;
+    }
+    const trayCode = resolveTrayCode(relation);
+    if (trayCode) {
+      trayCodes.add(trayCode);
+    }
+  });
+  return trayCodes;
+};
+
+const hasAllAssignedTraysReturned = (samples, task = null, experimentTrays = []) => {
+  const trayRefsByCode = collectTrayRefs(samples);
+  const assignedTrayCodes = collectAssignedTrayCodes(task, samples, experimentTrays);
+  if (!trayRefsByCode.size && !assignedTrayCodes.size) {
     return hasExplicitReturnedStatus(task);
   }
-  return Array.from(trayRefsByCode.values()).every((refs) => (
-    refs.length > 0
-    && refs.some(trayRefIsReturned)
-  ));
+  const returnedTrayCodes = collectReturnedTrayCodes(samples);
+  return assignedTrayCodes.size > 0 && returnedTrayCodes.size === assignedTrayCodes.size;
+};
+
+const collectSampleStats = (task, samples, returnedTrayCodes) => {
+  const sampleCodes = asArray(samples).map(resolveSampleCode).filter(Boolean);
+  const uniqueSampleCodes = new Set(sampleCodes);
+  const plannedCount = resolveTaskPlannedSampleCount(task);
+  const originalSampleCount = Math.max(
+    plannedCount ?? 0,
+    uniqueSampleCodes.size || samples.length,
+  );
+  const returnedSampleCodes = new Set();
+  let anonymousReturnedCount = 0;
+  samples.forEach((sample) => {
+    const sampleCode = resolveSampleCode(sample);
+    const sampleTrays = asArray(sample?.trays);
+    const isOnReturnedTray = sampleTrays.some((tray) => returnedTrayCodes.has(resolveTrayCode(tray)));
+    const isReturnedSample = isOnReturnedTray || (!sampleTrays.length && isReturned(resolveStatus(sample)));
+    if (!isReturnedSample) {
+      return;
+    }
+    if (sampleCode) {
+      returnedSampleCodes.add(sampleCode);
+    } else {
+      anonymousReturnedCount += 1;
+    }
+  });
+  const returnedSampleCount = Math.min(originalSampleCount, returnedSampleCodes.size + anonymousReturnedCount);
+  return {
+    originalSampleCount,
+    remainingSampleCount: Math.max(originalSampleCount - returnedSampleCount, 0),
+    returnedSampleCount,
+  };
 };
 
 const shouldPreferFlowTime = (label, nextTime, currentTime) => {
@@ -197,6 +271,17 @@ const buildReturnedTaskStatusFlow = (flowEntries = []) => {
   }));
 };
 
+const buildRunningTaskStatusFlow = (flowEntries = []) => {
+  const activeIndex = TASK_STATUS_FLOW_STEPS.findIndex((step) => step.label === "任务进行中");
+  const timeByLabel = new Map(asArray(flowEntries).map((entry) => [normalizeText(entry?.label), normalizeText(entry?.time)]));
+  return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
+    ...step,
+    active: index === activeIndex,
+    reached: index <= activeIndex,
+    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || "",
+  }));
+};
+
 const buildExperimentRows = (task, taskSamples, experiments, experimentTrays) => {
   const taskCode = resolveTaskCode(task) || resolveSampleTaskCode(taskSamples[0]);
   const taskExperiments = experiments
@@ -234,16 +319,17 @@ const buildExperimentRows = (task, taskSamples, experiments, experimentTrays) =>
   });
 };
 
-const buildTrayRows = (samples) => {
+const buildTrayRows = (samples, includedTrayCodes = null) => {
   const trayRefsByCode = collectTrayRefs(samples);
   return Array.from(trayRefsByCode.entries())
+    .filter(([trayCode]) => !includedTrayCodes || includedTrayCodes.has(trayCode))
     .map(([trayCode, refs]) => {
       const traySamples = refs.map(({ sample }) => sample);
       const sampleCodes = Array.from(new Set(traySamples.map(resolveSampleCode).filter(Boolean))).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
-      const latestReturnedStatus = refs.find(({ tray, sample }) => isReturned(resolveStatus(tray) || resolveStatus(sample)));
+      const latestReturnedStatus = refs.find(trayRefIsReturned);
       return {
         trayCode,
-        status: resolveStatus(latestReturnedStatus?.tray) || resolveStatus(latestReturnedStatus?.sample) || resolveStatus(refs[0]?.tray) || "-",
+        status: latestReturnedStatus ? RETURNED_STATUS : (resolveStatus(refs[0]?.tray) || "-"),
         sampleCodes,
         flowSteps: collectFlowEntries(traySamples),
       };
@@ -253,23 +339,41 @@ const buildTrayRows = (samples) => {
 
 const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const code = resolveTaskCode(task) || resolveSampleTaskCode(samples[0]);
-  const trays = buildTrayRows(samples);
+  const assignedTrayCodes = collectAssignedTrayCodes(task, samples, experimentTrays);
+  const returnedTrayCodes = collectReturnedTrayCodes(samples);
+  const allTrayCount = assignedTrayCodes.size;
+  const returnedTrayCount = returnedTrayCodes.size;
+  const isFullyReturned = allTrayCount > 0
+    ? returnedTrayCount === allTrayCount
+    : hasExplicitReturnedStatus(task);
+  const trays = buildTrayRows(samples, returnedTrayCount > 0 ? returnedTrayCodes : null);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
   const sampleFlowEntries = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
   const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
+  const remainingTrayCount = Math.max(allTrayCount - returnedTrayCount, 0);
+  const sampleStats = collectSampleStats(task, samples, returnedTrayCodes);
+  const displayStatus = isFullyReturned
+    ? RETURNED_STATUS
+    : `任务进行中（收回${returnedTrayCount}，剩余${remainingTrayCount}）`;
   return {
     id: task?.id || code,
     code,
     name: normalizeText(task?.name || task?.task_name || task?.test_type || task?.experiment_type),
-    status: RETURNED_STATUS,
+    status: displayStatus,
     updatedAt: returnedAt || normalizeText(task?.updated_at || task?.created_at),
-    sampleCount: samples.length,
+    sampleCount: sampleStats.originalSampleCount,
     trayCount: trays.length,
+    originalTrayCount: allTrayCount,
+    remainingTrayCount,
+    returnedTrayCount,
+    ...sampleStats,
+    sampleCountText: `${sampleStats.originalSampleCount} 个样品（收回${sampleStats.returnedSampleCount}，剩余${sampleStats.remainingSampleCount}）`,
+    trayCountText: `${allTrayCount} 个托盘（收回${returnedTrayCount}，剩余${remainingTrayCount}）`,
     experimentCount: experimentRows.length,
     experimentCompletedCount: completedCount,
     experiments: experimentRows,
-    taskFlow: buildReturnedTaskStatusFlow(sampleFlowEntries),
+    taskFlow: isFullyReturned ? buildReturnedTaskStatusFlow(sampleFlowEntries) : buildRunningTaskStatusFlow(sampleFlowEntries),
     trays,
   };
 };
@@ -328,7 +432,8 @@ function buildReturnedTaskHistoryView(input = {}) {
     .map((taskCode) => {
       const taskSamples = samplesByTaskCode.get(taskCode) || [];
       const taskRecord = taskRecordsByCode.get(taskCode) || { code: taskCode };
-      if (!hasAllAssignedTraysReturned(taskSamples, taskRecord)) {
+      const hasReturnedTrays = collectReturnedTrayCodes(taskSamples).size > 0;
+      if (!hasAllAssignedTraysReturned(taskSamples, taskRecord, experimentTrays) && !hasReturnedTrays) {
         return null;
       }
       return buildTaskRow(taskRecord, taskSamples, experiments, experimentTrays);

@@ -206,4 +206,58 @@ describe("useTaskOverview runtime", () => {
     expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
     expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-003"]);
   });
+
+  test("reloads overview data when storage snapshot updates are broadcast", async () => {
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-002",
+            sample_count: 3,
+            status: "待排程",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [],
+        "mes.schedules": [],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-002",
+            experiment_code: "SYLU-2026-03-002-A",
+            experiment_name: "盐雾试验",
+            status: "待排程",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-004",
+            sample_count: 1,
+            status: "已排程",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [],
+        "mes.schedules": [],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-004",
+            experiment_code: "SYLU-2026-03-004-A",
+            experiment_name: "振动试验",
+            status: "实验进行中",
+          },
+        ],
+      });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.experiments"] } }));
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-004"]);
+  });
+
 });

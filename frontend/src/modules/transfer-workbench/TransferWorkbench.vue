@@ -776,7 +776,7 @@ const sortedTaskOverview = computed(() => {
 const taskPageCount = computed(() => Math.max(1, Math.ceil(sortedTaskOverview.value.length / overviewPageSize.value)));
 const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
 const pagedTaskOverview = computed(() => sortedTaskOverview.value.slice((currentTaskPage.value - 1) * overviewPageSize.value, currentTaskPage.value * overviewPageSize.value));
-const remainingTrayCount = computed(() => availableInventory.value.length);
+const rawAvailableInventoryCount = computed(() => availableInventory.value.length);
 const totalAssignedSampleCount = computed(() => assignedTrays.value.reduce((sum, tray) => sum + tray.samples.length, 0));
 const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
 const loadedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0).length);
@@ -802,7 +802,11 @@ const maxAssignableTrayCount = computed(() => {
   if (explicitRemainingTrayCount.value != null) {
     return explicitRemainingTrayCount.value;
   }
-  return loadedTrayCount.value + remainingTrayCount.value;
+  return loadedTrayCount.value + rawAvailableInventoryCount.value;
+});
+const remainingTrayCount = computed(() => {
+  const remainingAfterCurrentTask = Math.max(0, maxAssignableTrayCount.value - loadedTrayCount.value);
+  return Math.min(rawAvailableInventoryCount.value, remainingAfterCurrentTask);
 });
 const trayCapacityExceeded = computed(() => (
   Boolean(selectedTaskId.value)
@@ -815,7 +819,6 @@ const trayCapacityWarning = computed(() => (
 ));
 const canPrint = computed(() => (
   Boolean(selectedTaskId.value)
-  && Boolean(currentTask.value?.receivedTime)
   && loadedTrayCount.value > 0
   && allocationSaved.value
   && hasCompleteExperimentTrayAllocation.value
@@ -1083,6 +1086,28 @@ const applyWorkspace = (workspace) => {
   resetInteractiveState();
 };
 
+const applyWorkspaceSaveGuards = (workspace) => {
+  if (!workspace?.task || !currentTask.value) {
+    return;
+  }
+  const nextTask = normalizeTaskRecord(workspace.task);
+  currentTask.value = {
+    ...currentTask.value,
+    taskStatus: nextTask.taskStatus,
+    taskProgress: nextTask.taskProgress,
+    totalTrayCount: nextTask.totalTrayCount,
+    remainingTrayCount: nextTask.remainingTrayCount,
+    maxAssignableTrayCount: nextTask.maxAssignableTrayCount,
+    requiredTrayCount: nextTask.requiredTrayCount,
+    trayCapacityExceeded: nextTask.trayCapacityExceeded,
+    trayCapacityMessage: nextTask.trayCapacityMessage,
+    reloadBlocked: nextTask.reloadBlocked,
+    reloadBlockedReason: nextTask.reloadBlockedReason,
+  };
+  availableInventory.value = normalizeInventoryRefs(workspace.trayInventory || [], trayLimit.value);
+  allocationSaved.value = Boolean(workspace.allocationSaved);
+};
+
 const clearWorkspace = () => {
   selectedTaskId.value = null;
   currentTask.value = null;
@@ -1136,6 +1161,14 @@ const loadWorkspace = async (taskId = selectedTaskId.value) => {
       taskProgress: currentTask.value.taskProgress || "已确认入库",
     };
   }
+};
+
+const refreshWorkspaceSaveGuards = async () => {
+  if (!selectedTaskId.value) {
+    return;
+  }
+  const workspace = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/workspace`);
+  applyWorkspaceSaveGuards(workspace);
 };
 
 const openTask = async (task) => {
@@ -1425,7 +1458,7 @@ const addInventoryTray = () => {
     showWorkbenchFeedback(trayCapacityWarning.value, "warning");
     return;
   }
-  if (availableInventory.value.length <= 0) {
+  if (remainingTrayCount.value <= 0) {
     showWorkbenchFeedback("当前没有可用空托盘。", "warning");
     return;
   }
@@ -1504,6 +1537,12 @@ const persistAllocation = async (showMessage = true) => {
     return false;
   }
   try {
+    await refreshWorkspaceSaveGuards();
+    if (!canSaveAllocation.value) {
+      const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
+      if (showMessage) showWorkbenchFeedback(message, "warning");
+      return false;
+    }
     const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/allocate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

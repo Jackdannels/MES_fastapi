@@ -18,11 +18,11 @@ describe("TaskOverviewTrayTable", () => {
             trayCode: "TRAY-001",
           },
         ],
-        trayOverviewTotal: 20,
+        trayOverviewTotal: 10,
       },
     });
 
-    expect(wrapper.text()).toContain("20");
+    expect(wrapper.text()).toContain("10");
     expect(wrapper.text()).toContain("TRAY-001");
     expect(wrapper.text()).toContain("当前状态");
     expect(wrapper.text()).toContain("当前位置");

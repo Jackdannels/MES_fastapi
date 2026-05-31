@@ -6,6 +6,7 @@ import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/l
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { SNAPSHOT_UPDATED_EVENT, SNAPSHOT_UPDATED_STORAGE_KEY, subscribeStorageSnapshotUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 import {
@@ -33,6 +34,14 @@ const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
+const LABORATORY_SNAPSHOT_KEYS = new Set([
+  STORAGE_KEYS.tasks,
+  STORAGE_KEYS.schedules,
+  STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.samples,
+  STORAGE_KEYS.devices,
+]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 
@@ -159,6 +168,7 @@ function useLaboratoryPage(options = {}) {
   let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
+  let unsubscribeStorageSnapshotUpdates = null;
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
 
@@ -421,6 +431,29 @@ function useLaboratoryPage(options = {}) {
     }
     void load();
   };
+  const snapshotUpdateTouchesLaboratory = (detail) => {
+    const keys = Array.isArray(detail?.keys) ? detail.keys : [];
+    return keys.length === 0 || keys.some((key) => LABORATORY_SNAPSHOT_KEYS.has(key));
+  };
+  const handleSnapshotUpdated = (eventOrDetail = {}) => {
+    const detail = eventOrDetail?.detail || eventOrDetail;
+    if (!snapshotUpdateTouchesLaboratory(detail)) {
+      return;
+    }
+    void load();
+  };
+  const handleStorageSnapshotUpdated = (event) => {
+    if (event?.key !== SNAPSHOT_UPDATED_STORAGE_KEY) {
+      return;
+    }
+    let detail = {};
+    try {
+      detail = JSON.parse(String(event?.newValue || "{}"));
+    } catch {
+      detail = {};
+    }
+    handleSnapshotUpdated(detail);
+  };
 
   onMounted(() => {
     void nextTick().then(syncHeaderActionTarget);
@@ -429,11 +462,14 @@ function useLaboratoryPage(options = {}) {
         tickNow.value = now || new Date();
       }, 1000);
       window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+      window.addEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
+      window.addEventListener("storage", handleStorageSnapshotUpdated);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);
       window.addEventListener("wheel", handleRunningModalActivity, true);
       window.addEventListener("touchstart", handleRunningModalActivity, true);
       window.addEventListener("keydown", handleRunningModalActivity, true);
+      unsubscribeStorageSnapshotUpdates = subscribeStorageSnapshotUpdates(handleSnapshotUpdated);
     }
     void load();
   });
@@ -445,11 +481,17 @@ function useLaboratoryPage(options = {}) {
     }
     if (typeof window !== "undefined") {
       window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
+      window.removeEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
+      window.removeEventListener("storage", handleStorageSnapshotUpdated);
       window.removeEventListener("pointerdown", handleRunningModalActivity, true);
       window.removeEventListener("mousemove", handleRunningModalActivity, true);
       window.removeEventListener("wheel", handleRunningModalActivity, true);
       window.removeEventListener("touchstart", handleRunningModalActivity, true);
       window.removeEventListener("keydown", handleRunningModalActivity, true);
+    }
+    if (unsubscribeStorageSnapshotUpdates) {
+      unsubscribeStorageSnapshotUpdates();
+      unsubscribeStorageSnapshotUpdates = null;
     }
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();

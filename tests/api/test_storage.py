@@ -299,6 +299,52 @@ def test_storage_allows_idempotent_snapshot_when_sample_already_arrived_lab(monk
     assert storage.read("mes.samples") == updated
 
 
+def test_storage_bulk_update_publishes_changed_keys(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    published = []
+    client, storage = build_client(monkeypatch)
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys: published.append(keys))
+
+    response = client.put("/api/storage", json={"mes.samples": [{"code": "SP-1"}], "mes.tasks": [{"code": "T-1"}]})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == [{"code": "SP-1"}]
+    assert published == [["mes.samples", "mes.tasks"]]
+
+
+def test_storage_key_update_publishes_changed_key(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    published = []
+    client, storage = build_client(monkeypatch)
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys: published.append(keys))
+
+    response = client.put("/api/storage/mes.tasks", json=[{"code": "T-2"}])
+
+    assert response.status_code == 200
+    assert storage.read("mes.tasks") == [{"code": "T-2"}]
+    assert published == [["mes.tasks"]]
+
+
+def test_storage_update_event_stream_yields_published_keys():
+    from app.api.routes import storage as storage_route
+
+    stream = storage_route._storage_update_event_stream()
+    try:
+        assert next(stream) == ": connected\n\n"
+
+        storage_route.publish_storage_update(["mes.samples"])
+
+        event = next(stream)
+    finally:
+        stream.close()
+
+    assert event.startswith("data: ")
+    assert '"keys": ["mes.samples"]' in event
+    assert '"updatedAt":' in event
+
+
 def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch):
     samples = [
         {

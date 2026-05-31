@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildDashboardViewModel } from "./model";
+import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
@@ -93,6 +94,7 @@ function useDashboardPage() {
       void loadDashboard();
     }, DASHBOARD_REFRESH_INTERVAL_MS);
     window.addEventListener(SAMPLES_UPDATED_EVENT, loadDashboard);
+    window.addEventListener(SNAPSHOT_UPDATED_EVENT, loadDashboard);
     window.addEventListener("storage", loadDashboard);
     window.addEventListener("focus", loadDashboard);
   });
@@ -105,6 +107,7 @@ function useDashboardPage() {
       window.clearInterval(dashboardRefreshTimer);
     }
     window.removeEventListener(SAMPLES_UPDATED_EVENT, loadDashboard);
+    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, loadDashboard);
     window.removeEventListener("storage", loadDashboard);
     window.removeEventListener("focus", loadDashboard);
   });

@@ -1916,6 +1916,90 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()).not.toBeNull();
   });
 
+  test("shows the running countdown when an external process start pushes the selected impact lab snapshot update", async () => {
+    const eventSources = [];
+    class MockEventSource {
+      constructor(url, options) {
+        this.url = url;
+        this.options = options;
+        this.listeners = {};
+        this.close = vi.fn();
+        eventSources.push(this);
+      }
+
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      }
+    }
+    vi.stubGlobal("EventSource", MockEventSource);
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-04-501", name: "冲击连接器", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", experiment_name: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-CJ-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          device: "冲击一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-501-SP-001",
+          location: "冲击一室",
+          owner: "周工",
+          status: "实验准备就绪",
+          flow_status: "实验准备就绪",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-CJ-001" }],
+        },
+      ],
+    };
+
+    await mountPage();
+
+    expect(eventSources[0]).toEqual(expect.objectContaining({
+      options: { withCredentials: true },
+    }));
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: [
+        {
+          ...snapshotState[STORAGE_KEYS.samples][0],
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-CJ-001" }],
+        },
+      ],
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    eventSources[0].listeners.message({
+      data: JSON.stringify({ keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" }),
+    });
+    await waitForStorageGetCount(expectedStorageGetCalls);
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-501");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("TP-CJ-001");
+    expect(document.body.querySelector('[data-testid="laboratory-running-countdown"]')?.textContent || "").toContain("01:00:00");
+  });
+
   test("does not restore the running modal while pointer activity continues during the 10-second idle window", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [

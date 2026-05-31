@@ -4,7 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { readMasterLabs } from "@/lib/masterDataApi";
-import { SNAPSHOT_UPDATED_STORAGE_KEY } from "@/lib/storageApi";
+import { SNAPSHOT_UPDATED_EVENT, SNAPSHOT_UPDATED_STORAGE_KEY, subscribeStorageSnapshotUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   buildTrayFlowView,
@@ -28,6 +28,14 @@ const TRAY_STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
 const RUNNING_TRAY_STATUSES = new Set([TRAY_STATUS_RUNNING, "实验中"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "放置实验后暂存间", "厂家收回"]);
+const PROCESS_SNAPSHOT_KEYS = new Set([
+  STORAGE_KEYS.devices,
+  STORAGE_KEYS.tasks,
+  STORAGE_KEYS.schedules,
+  STORAGE_KEYS.samples,
+  STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.experiments,
+]);
 const TRAY_FLOW_STATUS_RANK = new Map(
   [
     "样品运输中",
@@ -219,6 +227,8 @@ function useProcessLabs(options = {}) {
   const startExperimentLabName = ref("");
   const startExperimentModalOpen = ref(false);
   const startExperimentTaskDetail = ref(null);
+  let labStatusLoadVersion = 0;
+  let unsubscribeStorageSnapshotUpdates = null;
   const taskDrawerOpen = ref(false);
 
   const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
@@ -937,12 +947,16 @@ function useProcessLabs(options = {}) {
   };
 
   const loadLabStatus = async () => {
+    const loadVersion = ++labStatusLoadVersion;
     loading.value = true;
     try {
       const [snapshot, masterLabs] = await Promise.all([
         loadSnapshot(),
         hasExplicitLabs ? Promise.resolve([]) : readMasterLabs().catch(() => []),
       ]);
+      if (loadVersion !== labStatusLoadVersion) {
+        return;
+      }
       if (!hasExplicitLabs) {
         const normalizedMasterLabs = normalizeMasterProcessLabs(masterLabs);
         processLabs.value = normalizedMasterLabs.length
@@ -963,7 +977,9 @@ function useProcessLabs(options = {}) {
         refreshStartExperimentTaskDetail();
       }
     } finally {
-      loading.value = false;
+      if (loadVersion === labStatusLoadVersion) {
+        loading.value = false;
+      }
     }
   };
 
@@ -1168,6 +1184,23 @@ function useProcessLabs(options = {}) {
     if (event?.key !== SNAPSHOT_UPDATED_STORAGE_KEY) {
       return;
     }
+    let detail = {};
+    try {
+      detail = JSON.parse(String(event?.newValue || "{}"));
+    } catch {
+      detail = {};
+    }
+    handleSnapshotUpdated(detail);
+  };
+  const snapshotUpdateTouchesProcess = (detail) => {
+    const keys = Array.isArray(detail?.keys) ? detail.keys : [];
+    return keys.length === 0 || keys.some((key) => PROCESS_SNAPSHOT_KEYS.has(key));
+  };
+  const handleSnapshotUpdated = (eventOrDetail = {}) => {
+    const detail = eventOrDetail?.detail || eventOrDetail;
+    if (!snapshotUpdateTouchesProcess(detail)) {
+      return;
+    }
     void loadLabStatus();
   };
 
@@ -1176,13 +1209,20 @@ function useProcessLabs(options = {}) {
       void loadLabStatus();
       if (typeof window !== "undefined") {
         window.addEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+        window.addEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
         window.addEventListener("storage", handleStorageSnapshotUpdated);
+        unsubscribeStorageSnapshotUpdates = subscribeStorageSnapshotUpdates(handleSnapshotUpdated);
       }
     });
     onBeforeUnmount(() => {
       if (typeof window !== "undefined") {
         window.removeEventListener(SAMPLES_UPDATED_EVENT, loadLabStatus);
+        window.removeEventListener(SNAPSHOT_UPDATED_EVENT, handleSnapshotUpdated);
         window.removeEventListener("storage", handleStorageSnapshotUpdated);
+      }
+      if (unsubscribeStorageSnapshotUpdates) {
+        unsubscribeStorageSnapshotUpdates();
+        unsubscribeStorageSnapshotUpdates = null;
       }
     });
   }

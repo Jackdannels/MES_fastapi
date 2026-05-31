@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   applyRouteFiltersState,
   buildOverviewMetrics,
+  buildTrayCountLabel,
   buildTrayTaskFilterOptions,
   cycleTaskScheduleFilter,
   filterTaskOverviewRows,
@@ -11,6 +12,15 @@ import {
 
 // 这些 helper 测试主要保护任务总览页的筛选口径、顶部计数和路由恢复逻辑。
 describe("useTaskOverview helpers", () => {
+  test("formats tray count with returned and remaining tray details", () => {
+    expect(buildTrayCountLabel({
+      originalTrayCount: 4,
+      returnedTrayCount: 1,
+      unfinishedTrayCount: 3,
+      trays: [{ trayCode: "TP-001" }, { trayCode: "TP-002" }, { trayCode: "TP-003" }],
+    })).toBe("4（收回1，剩余3）");
+  });
+
   test("filters rows by keyword, type, and custom date range", () => {
     const rows = [
       {

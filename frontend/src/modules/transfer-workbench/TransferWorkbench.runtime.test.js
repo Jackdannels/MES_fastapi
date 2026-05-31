@@ -906,6 +906,135 @@ describe("TransferWorkbench runtime", () => {
     expect(saveAttempted).toBe(false);
   });
 
+  test("pre-allocation mode refreshes tray capacity before saving and blocks stale over-allocation", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const initialWorkspacePayload = createWorkspacePayload();
+    const refreshedWorkspacePayload = {
+      ...createWorkspacePayload(),
+      task: {
+        ...createWorkspacePayload().task,
+        remainingTrayCount: 1,
+        maxAssignableTrayCount: 1,
+      },
+    };
+    let workspaceCalls = 0;
+    let saveAttempted = false;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        workspaceCalls += 1;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => (workspaceCalls === 1 ? initialWorkspacePayload : refreshedWorkspacePayload),
+        };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        saveAttempted = true;
+        return { ok: true, status: 200, json: async () => ({ message: "保存成功", workspace: initialWorkspacePayload }) };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeUndefined();
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(workspaceCalls).toBe(2);
+    expect(saveAttempted).toBe(false);
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-tray-capacity-warning"]').text()).toBe("系统剩余托盘不足，当前最多可分配 1 个托盘。");
+  });
+
+  test("remaining empty tray count subtracts trays already assigned to the current task", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    workspacePayload.task = {
+      ...workspacePayload.task,
+      maxAssignableTrayCount: 10,
+      remainingTrayCount: 10,
+    };
+    workspacePayload.experiments = [
+      { experimentCode: "SYLU-2026-03-101-A", experimentName: "盐雾试验", assignedTrayNos: ["SYLU-2026-03-101-TP-001"] },
+      { experimentCode: "SYLU-2026-03-101-B", experimentName: "振动试验", assignedTrayNos: ["SYLU-2026-03-101-TP-002"] },
+      { experimentCode: "SYLU-2026-03-101-C", experimentName: "温度冲击试验", assignedTrayNos: ["SYLU-2026-03-101-TP-003"] },
+    ];
+    workspacePayload.assignedTrays = [
+      {
+        ...workspacePayload.assignedTrays[0],
+        trayId: 1001,
+        trayNo: "SYLU-2026-03-101-TP-001",
+        experimentLabels: ["盐雾试验"],
+        experimentCodes: ["SYLU-2026-03-101-A"],
+      },
+      {
+        ...workspacePayload.assignedTrays[1],
+        trayId: 1002,
+        trayNo: "SYLU-2026-03-101-TP-002",
+        experimentLabels: ["振动试验"],
+        experimentCodes: ["SYLU-2026-03-101-B"],
+      },
+      {
+        ...workspacePayload.assignedTrays[1],
+        trayId: 1003,
+        trayNo: "SYLU-2026-03-101-TP-003",
+        experimentLabels: ["温度冲击试验"],
+        experimentCodes: ["SYLU-2026-03-101-C"],
+        samples: [
+          { sampleId: 4, sampleNo: "SYLU-2026-03-101-SP-004", sampleStatus: "未入库" },
+        ],
+      },
+    ];
+    workspacePayload.trayInventory = Array.from({ length: 10 }, (_, index) => ({
+      trayId: 2001 + index,
+      trayNo: `STOCK-TP-${String(index + 1).padStart(3, "0")}`,
+      trayType: "标准托盘",
+      capacity: 2,
+      currentTaskId: null,
+    }));
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get(".transfer-count-chip").text()).toBe("剩余空托盘 7");
+  });
+
   test("keeps unified sample limit capped at 99 and renders validation details as readable text", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();
@@ -1263,6 +1392,128 @@ describe("TransferWorkbench runtime", () => {
 
     await feedback.trigger("click");
     expect(wrapper.find('[data-testid="transfer-detail-feedback"]').exists()).toBe(false);
+  });
+
+  test("pre-allocation mode allows printing barcodes after saving even before arrival", async () => {
+    const bootstrapPayload = {
+      taskOverview: [
+        {
+          taskId: 201,
+          seq: 1,
+          taskNo: "SYLU-2026-04-201",
+          taskName: "中控新增任务",
+          sampleCount: 2,
+          taskType: "盐雾试验",
+          experimentTypeText: "盐雾试验",
+          receivedTime: "",
+          taskStatus: "未入库",
+          taskProgress: "待预接驳",
+          sampleCodes: ["SYLU-2026-04-201-SP-001", "SYLU-2026-04-201-SP-002"],
+          sampleCodesText: "SYLU-2026-04-201-SP-001 / SYLU-2026-04-201-SP-002",
+        },
+      ],
+      pendingTaskCount: 1,
+      storedTaskCount: 0,
+    };
+    const workspacePayload = {
+      allocationSaved: false,
+      task: {
+        taskId: 201,
+        taskNo: "SYLU-2026-04-201",
+        taskName: "中控新增任务",
+        taskType: "盐雾试验",
+        experimentTypeText: "盐雾试验",
+        taskStatus: "未入库",
+        taskProgress: "待预接驳",
+        receivedTime: "",
+        trayLimit: 4,
+        printedTrayCount: 0,
+      },
+      experiments: [
+        { experimentCode: "SYLU-2026-04-201-A", experimentName: "盐雾试验", assignedTrayNos: ["SYLU-2026-04-201-TP-001"] },
+      ],
+      assignedTrays: [
+        {
+          trayId: 1001,
+          trayNo: "SYLU-2026-04-201-TP-001",
+          trayType: "标准托盘",
+          trayStatus: "已预分配",
+          capacity: 4,
+          experimentLabels: ["盐雾试验"],
+          experimentCodes: ["SYLU-2026-04-201-A"],
+          samples: [
+            { sampleId: "sample-201-1", sampleNo: "SYLU-2026-04-201-SP-001", sampleStatus: "未入库" },
+            { sampleId: "sample-201-2", sampleNo: "SYLU-2026-04-201-SP-002", sampleStatus: "未入库" },
+          ],
+          barcode: null,
+          barcodeData: null,
+        },
+      ],
+      trayInventory: [],
+    };
+    const savedWorkspace = { ...workspacePayload, allocationSaved: true };
+    const printedWorkspace = {
+      ...savedWorkspace,
+      assignedTrays: savedWorkspace.assignedTrays.map((tray) => ({
+        ...tray,
+        barcode: {
+          barcodeId: 10001,
+          objectId: tray.trayId,
+          barcodeNo: tray.trayNo,
+          barcodeContent: tray.trayNo,
+        },
+      })),
+    };
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/201/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/201/allocate")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }) };
+      }
+      if (url.includes("/api/transfer-area/tasks/201/print-barcodes")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            message: "条形码已生成",
+            barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
+            workspace: printedWorkspace,
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-201"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').attributes("disabled")).toBeUndefined();
+
+    await wrapper.get('[data-testid="transfer-print-barcodes"]').trigger("click");
+    await settle(wrapper);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/tasks/201/print-barcodes"),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   test("overview task type filter shows only atomic experiment types and matches tasks containing the selected type", async () => {

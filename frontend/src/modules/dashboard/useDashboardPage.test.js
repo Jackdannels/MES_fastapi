@@ -137,6 +137,56 @@ describe("useDashboardPage", () => {
     ]);
   });
 
+  test("reloads dashboard data when storage snapshot updates are broadcast", async () => {
+    const nextSnapshot = {
+      "mes.tasks": [{ code: "SYLU-2026-04-121", source: "外部委托", status: "待排程", transfer_status: "到货" }],
+      "mes.schedules": [],
+      "mes.devices": [],
+      "mes.samples": [
+        {
+          task_code: "SYLU-2026-04-121",
+          history: [{ action: "任务已确认入库", time: "2026-03-17T09:40:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-121-TP-001", status: "到货" }],
+        },
+      ],
+      "mes.streams": [],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-04-121",
+          experiment_code: "SYLU-2026-04-121-A",
+          experiment_name: "振动试验",
+          unscheduled_since: "2026-03-17T09:40:00.000Z",
+        },
+      ],
+    };
+    mocks.loadSnapshot
+      .mockResolvedValue(nextSnapshot)
+      .mockResolvedValueOnce({
+        "mes.tasks": [],
+        "mes.schedules": [],
+        "mes.devices": [],
+        "mes.samples": [],
+        "mes.streams": [],
+        "mes.experiments": [],
+      })
+      .mockResolvedValueOnce(nextSnapshot);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.experiments"] } }));
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(wrapper.vm.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-04-121",
+        elapsedLabel: "00:20:00",
+      }),
+    ]);
+  });
+
   test("loads pending exception experiments into unscheduled timers", async () => {
     mocks.loadSnapshot.mockResolvedValueOnce({
       "mes.tasks": [{ code: "SYLU-2026-05-009", source: "外部委托", status: "待排程", transfer_status: "未入库" }],

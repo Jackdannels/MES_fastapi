@@ -1943,6 +1943,8 @@ describe("TasksPage runtime", () => {
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
+    const snapshotUpdated = vi.fn();
+    window.addEventListener("mes:snapshot-updated", snapshotUpdated);
 
     window.dispatchEvent(new CustomEvent("mes:open-task-reset"));
     await settle(wrapper);
@@ -1960,6 +1962,13 @@ describe("TasksPage runtime", () => {
     expect(state.tasks[0].test_type).toContain("盐雾试验");
     expect(wrapper.text()).toContain("任务数据已重置");
     expect(wrapper.text()).toContain("盐雾试验 / 冲击试验 / 霉菌试验");
+    expect(snapshotUpdated).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        reason: "reset",
+        source: "tasks",
+      }),
+    }));
+    window.removeEventListener("mes:snapshot-updated", snapshotUpdated);
   });
 
   test("hides the reset feedback automatically after ten seconds", async () => {

@@ -23,7 +23,7 @@ TRAY_STATUS_STORED = "到货"
 LEGACY_TRAY_STATUS_STORED = "已入库"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
-SYSTEM_TRAY_TOTAL = 20
+SYSTEM_TRAY_TOTAL = 10
 EXCLUDED_TASK_STATUS_KEYWORDS = (
     "实验中",
     "实验进行中",
@@ -715,7 +715,10 @@ def build_assigned_trays(
     return trays
 
 
-def count_system_occupied_trays(all_samples: list[dict[str, Any]]) -> int:
+def count_system_occupied_trays(
+    all_samples: list[dict[str, Any]],
+    assigned_trays: list[dict[str, Any]] | None = None,
+) -> int:
     tray_codes = {
         normalize_text(entry.get("tray_code"))
         for sample in all_samples
@@ -723,6 +726,10 @@ def count_system_occupied_trays(all_samples: list[dict[str, Any]]) -> int:
         if normalize_text(entry.get("tray_code"))
         and normalize_text(entry.get("status") or sample.get("status")) != TASK_STATUS_RETURNED
     }
+    for tray in assigned_trays or []:
+        tray_code_value = normalize_text(tray.get("trayNo") or tray.get("tray_code"))
+        if tray_code_value:
+            tray_codes.add(tray_code_value)
     return len(tray_codes)
 
 
@@ -750,7 +757,7 @@ def max_assignable_tray_count(
 
 
 def build_inventory_trays(assigned_trays: list[dict[str, Any]], capacity: int, all_samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    remaining_count = max(0, SYSTEM_TRAY_TOTAL - count_system_occupied_trays(all_samples))
+    remaining_count = max(0, SYSTEM_TRAY_TOTAL - count_system_occupied_trays(all_samples, assigned_trays))
     trays = []
     for serial in range(1, remaining_count + 1):
         trays.append(
@@ -992,7 +999,7 @@ def serialize_workspace(
             "printedTrayCount": printed_tray_count,
             "trayLimit": task_tray_limit(task),
             "totalTrayCount": SYSTEM_TRAY_TOTAL,
-            "remainingTrayCount": max(0, SYSTEM_TRAY_TOTAL - count_system_occupied_trays(global_samples)),
+            "remainingTrayCount": max(0, SYSTEM_TRAY_TOTAL - count_system_occupied_trays(global_samples, assigned_trays)),
             "maxAssignableTrayCount": max_assignable_count,
             "requiredTrayCount": required_tray_count,
             "trayCapacityExceeded": tray_capacity_exceeded,
@@ -1639,8 +1646,8 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
-    if not task_arrival_time(task):
-        raise HTTPException(status_code=400, detail="样品尚未送达接驳区，不能打印条形码")
+    if not has_saved_allocation(task_samples):
+        raise HTTPException(status_code=400, detail="请先保存托盘，再打印条形码")
 
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
     if not assigned_trays:

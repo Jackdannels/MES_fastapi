@@ -649,6 +649,12 @@ describe("taskOverviewModel", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-ACTIVE"]);
+    expect(rows[0]).toEqual(expect.objectContaining({
+      originalTrayCount: 2,
+      returnedTrayCount: 1,
+      unfinishedTrayCount: 1,
+    }));
+    expect(rows[0].returnedTrayCodes).toEqual(["TP-RETURNED"]);
   });
 
   test("buildTaskRows restores missed sibling experiments to waiting when only another shared-tray experiment has history", () => {

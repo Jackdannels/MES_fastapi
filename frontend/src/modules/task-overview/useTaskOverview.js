@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
+import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -163,6 +164,23 @@ function buildTrayTaskFilterOptions(rows) {
     numeric: true,
     sensitivity: "base",
   }));
+}
+
+function buildTrayCountLabel(row) {
+  const trays = Array.isArray(row?.trays) ? row.trays : [];
+  const returnedCount = Math.max(0, Number.parseInt(String(row?.returnedTrayCount ?? 0), 10) || 0);
+  const unfinishedCount = Math.max(0, Number.parseInt(String(row?.unfinishedTrayCount ?? trays.length), 10) || 0);
+  const originalCount = Math.max(
+    returnedCount + unfinishedCount,
+    Number.parseInt(String(row?.originalTrayCount ?? ""), 10) || 0,
+  );
+  if (originalCount > 0 && returnedCount > 0) {
+    return `${originalCount}（收回${returnedCount}，剩余${unfinishedCount}）`;
+  }
+  if (trays.length === 0) {
+    return UNASSIGNED_EXPERIMENT_LABEL;
+  }
+  return String(trays.length);
 }
 
 function cycleTaskScheduleFilter(currentFilter) {
@@ -442,12 +460,8 @@ function useTaskOverview() {
   };
 
   const formatTrayCount = (row) => {
-    // 无托盘时返回“未分配”，便于托盘列直接展示。
-    const trays = Array.isArray(row?.trays) ? row.trays : [];
-    if (trays.length === 0) {
-      return UNASSIGNED_EXPERIMENT_LABEL;
-    }
-    return String(trays.length);
+    // 无托盘时返回“未分配”，有收回托盘时展示原始分配和当前完成情况。
+    return buildTrayCountLabel(row);
   };
 
   const applyRouteFilters = () => {
@@ -575,6 +589,7 @@ function useTaskOverview() {
     if (typeof window !== "undefined") {
       window.addEventListener("click", handleWindowClick);
       window.addEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
+      window.addEventListener(SNAPSHOT_UPDATED_EVENT, loadOverview);
       window.addEventListener("storage", loadOverview);
     }
   });
@@ -583,6 +598,7 @@ function useTaskOverview() {
     if (typeof window !== "undefined") {
       window.removeEventListener("click", handleWindowClick);
       window.removeEventListener(SAMPLES_UPDATED_EVENT, loadOverview);
+      window.removeEventListener(SNAPSHOT_UPDATED_EVENT, loadOverview);
       window.removeEventListener("storage", loadOverview);
     }
     clearHighlightedCard();
@@ -638,6 +654,7 @@ function useTaskOverview() {
 export {
   applyRouteFiltersState,
   buildOverviewMetrics,
+  buildTrayCountLabel,
   buildTrayTaskFilterOptions,
   cycleTaskScheduleFilter,
   findTaskCardElement,

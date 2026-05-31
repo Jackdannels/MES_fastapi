@@ -399,6 +399,7 @@ function buildTaskRows({
       timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
       sampleCodes: [],
       trays: [],
+      returnedTrays: [],
       scheduleCount: 0,
       retentionCount: 0,
       experiments: taskExperiments,
@@ -428,6 +429,12 @@ function buildTaskRows({
           || isReturnedTrayStatus(sample?.status)
           || isReturnedTrayStatus(sample?.location)
         ) {
+          row.returnedTrays.push({
+            trayCode,
+            sampleCode,
+            status,
+            quantity: normalizeQuantity(tray?.quantity),
+          });
           return;
         }
         row.trays.push({
@@ -488,6 +495,11 @@ function buildTaskRows({
           sampleCodes: item.sampleCodes.slice().sort(compareText),
         }))
         .sort((left, right) => compareText(left.trayCode, right.trayCode));
+      const returnedTrayCodes = Array.from(new Set(row.returnedTrays.map((tray) => tray.trayCode).filter(Boolean))).sort(compareText);
+      const originalTrayCodes = Array.from(new Set([
+        ...trays.map((tray) => tray.trayCode),
+        ...returnedTrayCodes,
+      ])).sort(compareText);
 
       const scheduleLabel = row.scheduleCount > 0 ? scheduledLabel : unscheduledLabel;
       const aggregatedStatus = normalizeTaskStatus(
@@ -576,6 +588,10 @@ function buildTaskRows({
         sampleCount: uniqueSampleCodes.length,
         taskType: buildExperimentTypeSummary(row.taskType),
         trays,
+        returnedTrayCodes,
+        returnedTrayCount: returnedTrayCodes.length,
+        unfinishedTrayCount: trays.length,
+        originalTrayCount: originalTrayCodes.length,
         experiments,
         experimentCount: row.experimentCount,
         experimentSummary,
