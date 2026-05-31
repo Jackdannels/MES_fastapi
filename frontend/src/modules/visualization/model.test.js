@@ -1,8 +1,18 @@
 import { describe, expect, test } from "vitest";
 
-import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView } from "./model";
+import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
 
 describe("visualization model", () => {
+  test("uses only real device ledger entries as visualization laboratories", () => {
+    expect(getVisualizationLabNames()).toEqual([]);
+    expect(getVisualizationLabNames([
+      { code: "盐雾试验室", name: "盐雾试验箱" },
+      { code: "冲击一室", name: "冲击试验系统-1" },
+      { code: "", name: "霉菌试验室" },
+    ])).toEqual(["盐雾试验室", "冲击一室", "霉菌试验室"]);
+    expect(buildLabProcessPanels({ samples: [] })).toEqual([]);
+  });
+
   test("builds lab panels from real tray flow data grouped by laboratory", () => {
     const panels = buildLabProcessPanels({
       labNames: ["振动一室", "高低温湿热一室"],

@@ -3,14 +3,31 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import VisualizationPage from "./page.vue";
 
-const snapshotState = vi.hoisted(() => ({
-  refreshRegistrations: [],
-  snapshot: {},
+const { REAL_DEVICE_LEDGER, snapshotState } = vi.hoisted(() => ({
+  REAL_DEVICE_LEDGER: [
+    { code: "振动一室", status: "可用" },
+    { code: "高低温湿热一室", status: "可用" },
+    { code: "盐雾试验室", status: "可用" },
+    { code: "冲击一室", status: "可用" },
+    { code: "霉菌试验室", status: "可用" },
+    { code: "四综合实验室", status: "可用" },
+    { code: "冲击二室", status: "可用" },
+    { code: "温度冲击二室", status: "可用" },
+    { code: "温度冲击一室", status: "可用" },
+    { code: "振动二室", status: "可用" },
+  ],
+  snapshotState: {
+    refreshRegistrations: [],
+    snapshot: {},
+  },
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
   useStorageSnapshot: () => ({
-    loadSnapshot: vi.fn(async () => snapshotState.snapshot),
+    loadSnapshot: vi.fn(() => ({
+      "mes.devices": REAL_DEVICE_LEDGER,
+      ...snapshotState.snapshot,
+    })),
   }),
 }));
 
@@ -48,8 +65,10 @@ describe("VisualizationPage runtime", () => {
     ]));
   });
 
-  test("renders eight non-interactive screen thumbnails", () => {
+  test("renders eight non-interactive screen thumbnails", async () => {
     const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
     const cards = wrapper.findAll('[data-testid="visual-screen-card"]');
 
     expect(cards).toHaveLength(8);
@@ -682,6 +701,8 @@ describe("VisualizationPage runtime", () => {
 
   test("renders the eighth screen as a full laboratory analysis board with single-row custom time filters", async () => {
     const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
     const eighthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[7];
 
     expect(eighthCard.text()).toContain("设备状态与产品统计屏");

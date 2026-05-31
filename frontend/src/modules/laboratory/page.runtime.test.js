@@ -40,6 +40,8 @@ const flushPageUpdates = async (cycles = 4) => {
 };
 const storageGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+const storagePutCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "PUT");
 const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
 const waitForInitialLaboratoryLoad = async (storageCount, masterLabCount) => {
@@ -61,6 +63,15 @@ const waitForStorageGetCount = async (count) => {
     }
   }
   expect(storageGetCalls()).toHaveLength(count);
+};
+const waitForStoragePutCount = async (count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (storagePutCalls().length >= count) {
+      return;
+    }
+  }
+  expect(storagePutCalls()).toHaveLength(count);
 };
 const waitForSamplesUpdatedEvent = async (spy, count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -1815,8 +1826,13 @@ describe("LaboratoryPage runtime", () => {
     expect(runningModal()?.textContent || "").not.toContain("TP-007、");
   });
 
-  test("shows the completion prompt inside the overview modal when the running countdown reaches zero", async () => {
+  test("automatically completes the running experiment in storage when the countdown reaches zero", async () => {
     snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
     snapshotState[STORAGE_KEYS.samples] = [
       {
         code: "SYLU-2026-04-101-SP-001",
@@ -1836,6 +1852,7 @@ describe("LaboratoryPage runtime", () => {
         device: "盐雾试验室",
         start_at: "2026-04-02T09:59:58.000Z",
         end_at: "2026-04-02T10:00:01.000Z",
+        status: "实验进行中",
       },
     ];
 
@@ -1846,9 +1863,25 @@ describe("LaboratoryPage runtime", () => {
     vi.advanceTimersByTime(2000);
     await nextTick();
     await nextTick();
+    await waitForStoragePutCount(1);
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("确认后将把当前盐雾试验-A更新为实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").not.toContain("实验已超时");
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "实验已完成",
+      status: "实验已完成",
+      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-001" })],
+    }));
+    expect(snapshotState[STORAGE_KEYS.experiments]).toContainEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-101-A",
+      status: "实验已完成",
+    }));
+    expect(snapshotState[STORAGE_KEYS.schedules]).toContainEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-101-A",
+      status: "实验已完成",
+    }));
   });
 
   test("does not force the overview modal back open when the experiment becomes overdue while the modal is hidden", async () => {
@@ -2091,6 +2124,7 @@ describe("LaboratoryPage runtime", () => {
     document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     await nextTick();
+    await waitForStoragePutCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([

@@ -161,6 +161,7 @@ function useLaboratoryPage(options = {}) {
   const resetDangerModalOpen = ref(false);
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
+  const completedRunningExperiment = ref(null);
   const tickNow = ref(now || new Date());
   let tickTimer = null;
   let runningModalRestoreTimer = null;
@@ -168,6 +169,7 @@ function useLaboratoryPage(options = {}) {
   let fixtureConfirmSuccessTimer = null;
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
+  const completingRunningExperimentKeys = new Set();
   let flushPendingStorageRefresh = () => false;
   let hasPendingSamplesRefresh = false;
 
@@ -247,6 +249,9 @@ function useLaboratoryPage(options = {}) {
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
   const runningExperiment = computed(() => view.value.runningExperiment);
+  const runningModalExperiment = computed(() =>
+    completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value,
+  );
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = ref(false);
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
@@ -299,6 +304,7 @@ function useLaboratoryPage(options = {}) {
     resetDangerModalOpen.value = false;
     completePromptVisible.value = false;
     runningModalVisible.value = false;
+    completedRunningExperiment.value = null;
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
@@ -310,7 +316,9 @@ function useLaboratoryPage(options = {}) {
   };
 
   const showRunningModal = () => {
-    runningModalVisible.value = true;
+    if (runningExperiment.value.active || completedRunningExperiment.value?.active) {
+      runningModalVisible.value = true;
+    }
     clearRunningModalRestoreTimer();
   };
 
@@ -326,6 +334,12 @@ function useLaboratoryPage(options = {}) {
   };
 
   const hideRunningModal = () => {
+    if (completedRunningExperiment.value?.active) {
+      completedRunningExperiment.value = null;
+      runningModalVisible.value = false;
+      clearRunningModalRestoreTimer();
+      return;
+    }
     if (!runningExperiment.value.active) {
       return;
     }
@@ -360,7 +374,14 @@ function useLaboratoryPage(options = {}) {
     () => runningExperiment.value.active,
     (active) => {
       if (active) {
+        completedRunningExperiment.value = null;
         showRunningModal();
+        return;
+      }
+      if (completedRunningExperiment.value?.active) {
+        runningModalVisible.value = true;
+        completePromptVisible.value = false;
+        clearRunningModalRestoreTimer();
         return;
       }
       runningModalVisible.value = false;
@@ -376,7 +397,9 @@ function useLaboratoryPage(options = {}) {
       if (!runningExperiment.value.active || remainingSeconds > 0) {
         return;
       }
-      completePromptVisible.value = true;
+      void completeRunningExperiment({ keepModal: true }).catch((error) => {
+        console.warn(error);
+      });
     },
   );
 
@@ -577,6 +600,24 @@ function useLaboratoryPage(options = {}) {
     const persistOperation = samplesPersistQueue
       ? samplesPersistQueue.catch(() => {}).then(writeSamples)
       : writeSamples();
+    const trackedOperation = persistOperation.finally(() => {
+      if (samplesPersistQueue === trackedOperation) {
+        samplesPersistQueue = null;
+      }
+    });
+    samplesPersistQueue = trackedOperation;
+    return persistOperation;
+  };
+  const persistRunningExperimentCompletion = ({ nextExperiments, nextSamples, nextSchedules }) => {
+    const writeCompletion = () =>
+      persistSnapshot({
+        [STORAGE_KEYS.experiments]: nextExperiments,
+        [STORAGE_KEYS.samples]: nextSamples,
+        [STORAGE_KEYS.schedules]: nextSchedules,
+      });
+    const persistOperation = samplesPersistQueue
+      ? samplesPersistQueue.catch(() => {}).then(writeCompletion)
+      : writeCompletion();
     const trackedOperation = persistOperation.finally(() => {
       if (samplesPersistQueue === trackedOperation) {
         samplesPersistQueue = null;
@@ -808,10 +849,18 @@ function useLaboratoryPage(options = {}) {
     completePromptVisible.value = false;
     flushPendingRealtimeRefresh();
   };
-  const confirmCompleteExperiment = async () => {
+  const completeRunningExperiment = async ({ keepModal = false } = {}) => {
     if (!runningExperiment.value?.active) {
       return;
     }
+    const runningSnapshot = { ...runningExperiment.value };
+    const taskCode = normalizeText(currentTask.value?.taskCode);
+    const experimentCode = normalizeText(currentTask.value?.experimentCode);
+    const completionKey = `${taskCode}::${experimentCode}`;
+    if (!taskCode || !experimentCode || completingRunningExperimentKeys.has(completionKey)) {
+      return;
+    }
+    completingRunningExperimentKeys.add(completionKey);
     const nextSamples = applyLaboratoryTaskStep({
       currentTask: {
         ...currentTask.value,
@@ -822,14 +871,46 @@ function useLaboratoryPage(options = {}) {
       now: new Date().toISOString(),
       samples: samples.value,
     });
-    samples.value = nextSamples;
-    await persistSamples(nextSamples);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    const nextExperiments = experiments.value.map((experiment) =>
+      normalizeText(experiment?.task_code) === taskCode && normalizeText(experiment?.experiment_code) === experimentCode
+        ? { ...experiment, status: "实验已完成" }
+        : experiment,
+    );
+    const nextSchedules = schedules.value.map((schedule) =>
+      normalizeText(schedule?.task_code) === taskCode && normalizeText(schedule?.experiment_code) === experimentCode
+        ? { ...schedule, status: "实验已完成" }
+        : schedule,
+    );
+    try {
+      await persistRunningExperimentCompletion({ nextExperiments, nextSamples, nextSchedules });
+      completedRunningExperiment.value = keepModal
+        ? {
+            ...runningSnapshot,
+            active: true,
+            completed: true,
+            countdownLabel: "实验已完成",
+            overdue: false,
+            overdueLabel: "",
+            remainingSeconds: 0,
+            statusLabel: "实验已完成",
+          }
+        : null;
+      samples.value = nextSamples;
+      experiments.value = nextExperiments;
+      schedules.value = nextSchedules;
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+      }
+      completePromptVisible.value = false;
+      runningModalVisible.value = keepModal;
+      clearRunningModalRestoreTimer();
+      flushPendingRealtimeRefresh();
+    } finally {
+      completingRunningExperimentKeys.delete(completionKey);
     }
-    completePromptVisible.value = false;
-    clearRunningModalRestoreTimer();
-    flushPendingRealtimeRefresh();
+  };
+  const confirmCompleteExperiment = async () => {
+    await completeRunningExperiment();
   };
   const confirmCurrentTask = () => {
     if (!pendingTaskCode.value || runningInteractionLocked.value) {
@@ -906,6 +987,7 @@ function useLaboratoryPage(options = {}) {
     resetConfirmModalOpen,
     resetDangerModalOpen,
     runningExperiment,
+    runningModalExperiment,
     runningModalVisible,
     scheduleModalOpen,
     scheduleRows: computed(() => view.value.scheduleRows),

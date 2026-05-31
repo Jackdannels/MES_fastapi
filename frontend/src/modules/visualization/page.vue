@@ -50,6 +50,7 @@
             :screen="screen"
             :labs="defaultLabs"
             :lab-names="labNames"
+            :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
             compact
@@ -80,6 +81,7 @@
             :screen="selectedScreen"
             :labs="selectedLabs"
             :lab-names="labNames"
+            :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
             :interactive="selectedScreen.kind === 'lab-process' || selectedScreen.kind === 'schedule-three-day' || selectedScreen.kind === 'staging-samples' || selectedScreen.kind === 'analysis'"
@@ -167,6 +169,7 @@
                   :screen="screen"
                   :labs="screen.kind === 'lab-process' ? selectedLabs : defaultLabs"
                   :lab-names="labNames"
+                  :devices="deviceItems"
                   :schedule-view="scheduleView"
                   :staging-view="stagingSamplesView"
                   :interactive="screen.kind === 'lab-process' || screen.kind === 'schedule-three-day' || screen.kind === 'staging-samples' || screen.kind === 'analysis'"
@@ -332,12 +335,16 @@ const { loadSnapshot } = useStorageSnapshot([
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.staging_events,
 ]);
-const labNames = getVisualizationLabNames();
 const rawSnapshot = ref({});
+const deviceItems = computed(() => {
+  const devices = rawSnapshot.value?.[STORAGE_KEYS.devices];
+  return Array.isArray(devices) ? devices : [];
+});
+const labNames = computed(() => getVisualizationLabNames(deviceItems.value));
 
 const selectedScreen = ref(null);
-const selectedPrimaryLabName = ref(labNames[0] || "");
-const selectedSecondaryLabName = ref(labNames[1] || "");
+const selectedPrimaryLabName = ref("");
+const selectedSecondaryLabName = ref("");
 const combinedPreviewOpen = ref(false);
 const viewportSize = ref({ height: 1080, width: 1920 });
 const labPickerPosition = ref("");
@@ -353,7 +360,7 @@ const COMBINED_PADDING = 8;
 const labScreens = computed(() => {
   const snapshot = rawSnapshot.value || {};
   return buildLabProcessPanels({
-    labNames,
+    labNames: labNames.value,
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
@@ -367,7 +374,7 @@ const scheduleView = computed(() => {
   const anchorDate = new Date();
   anchorDate.setDate(anchorDate.getDate() + scheduleWindowOffsetDays.value);
   return buildLabScheduleThreeDayView({
-    labNames,
+    labNames: labNames.value,
     now: anchorDate,
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
@@ -414,7 +421,7 @@ const labDisplayOrder = computed(() => {
     if (leftScore !== rightScore) {
       return rightScore - leftScore;
     }
-    return labNames.indexOf(left.name) - labNames.indexOf(right.name);
+    return labNames.value.indexOf(left.name) - labNames.value.indexOf(right.name);
   });
 });
 const defaultLabs = computed(() => labDisplayOrder.value.slice(0, 2).filter(Boolean));
@@ -546,7 +553,8 @@ const resolveScreenComponent = (screen) => {
 };
 
 const refreshSnapshot = async () => {
-  rawSnapshot.value = await loadSnapshot();
+  const snapshot = loadSnapshot();
+  rawSnapshot.value = snapshot && typeof snapshot.then === "function" ? await snapshot : snapshot;
 };
 useStorageSnapshotRefresh({
   keys: [
@@ -1293,7 +1301,7 @@ const describePieSlice = (centerX, centerY, radius, startAngle, endAngle) => {
 };
 
 const buildAnalysisLabRows = (labNames, scale = 1) => {
-  const names = (Array.isArray(labNames) && labNames.length ? labNames : Object.keys(ANALYSIS_PRODUCT_COUNTS)).filter(Boolean);
+  const names = (Array.isArray(labNames) ? labNames : []).filter(Boolean);
   return names.map((name, index) => ({
     color: ANALYSIS_COLORS[index % ANALYSIS_COLORS.length],
     name,
@@ -1328,6 +1336,7 @@ const AnalysisScreen = {
   name: "AnalysisScreen",
   props: {
     compact: { type: Boolean, default: false },
+    devices: { type: Array, required: false, default: () => [] },
     interactive: { type: Boolean, default: false },
     labNames: { type: Array, required: false, default: () => [] },
     screen: { type: Object, required: false, default: null },
@@ -1664,6 +1673,18 @@ const AnalysisScreen = {
       const pieSegments = buildPieSegments(rows);
       const topRows = rows.slice().sort((left, right) => right.value - left.value);
       const visibleRows = props.compact ? topRows.slice(0, 5) : topRows;
+      const deviceRows = Array.isArray(props.devices) ? props.devices : [];
+      const abnormalCount = deviceRows.filter((device) => {
+        const status = String(device?.status || "").trim();
+        return status.includes("维修")
+          || status.includes("保养")
+          || status.includes("维护")
+          || status.includes("停用")
+          || status.includes("禁用")
+          || status.includes("故障");
+      }).length;
+      const normalCount = Math.max(0, deviceRows.length - abnormalCount);
+      const normalRate = deviceRows.length ? `${((normalCount / deviceRows.length) * 100).toFixed(1)}%` : "0.0%";
 
       return h("div", { class: ["visual-board", "visual-analysis-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top visual-analysis-top" }, [
@@ -1738,14 +1759,14 @@ const AnalysisScreen = {
               h("span", "综合 · 2026年截至05-28 · 当前快照"),
             ]),
             h("div", { class: "visual-analysis-health-metrics" }, [
-              h("div", [h("span", "设备总数"), h("strong", "110")]),
-              h("div", [h("span", "正常率"), h("strong", "78.2%")]),
-              h("div", [h("span", "异常设备"), h("strong", "24")]),
+              h("div", [h("span", "设备总数"), h("strong", String(deviceRows.length))]),
+              h("div", [h("span", "正常率"), h("strong", normalRate)]),
+              h("div", [h("span", "异常设备"), h("strong", String(abnormalCount))]),
             ]),
             h("div", { class: "visual-analysis-health-body" }, [
               h("div", { class: "visual-analysis-health-ring" }, [
                 h("span", "综合状态"),
-                h("strong", "78.2%"),
+                h("strong", normalRate),
               ]),
               h("div", { class: "visual-analysis-status-list" }, analysisStatusRows.map((row) =>
                 h("div", { class: "visual-analysis-status-row", key: row.label, style: { "--visual-status-color": row.color } }, [

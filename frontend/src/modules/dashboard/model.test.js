@@ -237,7 +237,8 @@ describe("dashboard model", () => {
       streams: [],
       devices: [
         { code: "LAB-AVAILABLE", status: "可用" },
-        { code: "LAB-MAINTAIN", status: "维护" },
+        { code: "LAB-MAINTAIN", status: "维修" },
+        { code: "LAB-CARE", status: "保养" },
         { code: "LAB-DISABLED", status: "停用" },
         { code: "LAB-RUNNING", status: "可用" },
       ],
@@ -253,8 +254,9 @@ describe("dashboard model", () => {
 
     expect(viewModel.deviceItems).toEqual([
       expect.objectContaining({ code: "LAB-AVAILABLE", status: "可用", dotClass: "timeline-dot--available" }),
-      expect.objectContaining({ code: "LAB-MAINTAIN", status: "维护", dotClass: "timeline-dot--attention" }),
-      expect.objectContaining({ code: "LAB-DISABLED", status: "停用", dotClass: "timeline-dot--disabled" }),
+      expect.objectContaining({ code: "LAB-MAINTAIN", status: "维修", dotClass: "timeline-dot--attention" }),
+      expect.objectContaining({ code: "LAB-CARE", status: "保养", dotClass: "timeline-dot--attention" }),
+      expect.objectContaining({ code: "LAB-DISABLED", status: "维修", dotClass: "timeline-dot--attention" }),
       expect.objectContaining({ code: "LAB-RUNNING", status: "可用", dotClass: "timeline-dot--available" }),
     ]);
   });
@@ -300,7 +302,44 @@ describe("dashboard model", () => {
 
     expect(viewModel.deviceItems).toEqual([
       expect.objectContaining({ code: "LAB-ACTIVE-SCHEDULE", status: "可用", dotClass: "timeline-dot--available" }),
-      expect.objectContaining({ code: "LAB-ACTUAL-RUNNING", status: "任务进行中", dotClass: "timeline-dot--running" }),
+      expect.objectContaining({ code: "LAB-ACTUAL-RUNNING", status: "工作中", dotClass: "timeline-dot--running" }),
+    ]);
+  });
+
+  test("does not keep a device running for a manufacturer-returned task with stale running experiment status", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "TASK-RETURNED-RUNNING",
+          source: "外部委托",
+          status: "厂家收回",
+          transfer_status: "厂家收回",
+        },
+      ],
+      streams: [],
+      devices: [{ code: "LAB-RETURNED", status: "可用" }],
+      experiments: [
+        {
+          task_code: "TASK-RETURNED-RUNNING",
+          experiment_code: "TASK-RETURNED-RUNNING-A",
+          status: "实验进行中",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-RETURNED-RUNNING",
+          experiment_code: "TASK-RETURNED-RUNNING-A",
+          device: "LAB-RETURNED",
+          start_at: "2026-05-31T09:00:00.000Z",
+          end_at: "2026-05-31T11:00:00.000Z",
+        },
+      ],
+      now: Date.parse("2026-05-31T10:00:00.000Z"),
+    });
+
+    expect(viewModel.taskRows).toEqual([]);
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "LAB-RETURNED", status: "可用", dotClass: "timeline-dot--available" }),
     ]);
   });
 

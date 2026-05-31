@@ -431,36 +431,36 @@
       </template>
     </AppModal>
 
-    <Teleport v-if="runningExperiment.active && runningModalVisible" to="body">
+    <Teleport v-if="runningModalExperiment.active && runningModalVisible" to="body">
       <div class="laboratory-running-overlay" data-testid="laboratory-running-overlay">
         <div class="laboratory-running-overlay__backdrop" data-testid="laboratory-running-backdrop" @click="hideRunningModal"></div>
         <div class="laboratory-running-overlay__content laboratory-running-modal" data-testid="laboratory-running-modal">
           <div class="laboratory-running-modal__head">
             <div>
-              <div class="muted">当前进行实验</div>
-              <h4>{{ runningExperiment.taskCode }} / {{ runningExperiment.experimentName }}</h4>
+              <div class="muted">{{ runningModalExperiment.completed ? "实验完成" : "当前进行实验" }}</div>
+              <h4>{{ runningModalExperiment.taskCode }} / {{ runningModalExperiment.experimentName }}</h4>
             </div>
-            <span class="pill">实验进行中</span>
+            <span class="pill">{{ runningModalExperiment.completed ? "实验已完成" : "实验进行中" }}</span>
           </div>
-          <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningExperiment.countdownLabel }}</div>
+          <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningModalExperiment.countdownLabel }}</div>
           <div class="laboratory-running-times muted">
-            <span>开始：{{ runningExperiment.startDateTimeLabel }}</span>
-            <span>预计完成：{{ runningExperiment.endDateTimeLabel }}</span>
+            <span>开始：{{ runningModalExperiment.startDateTimeLabel }}</span>
+            <span>{{ runningModalExperiment.completed ? "完成" : "预计完成" }}：{{ runningModalExperiment.endDateTimeLabel }}</span>
           </div>
           <div class="laboratory-running-grid">
             <div>
               <strong>运行托盘</strong>
               <div class="laboratory-running-tags">
                 <span
-                  v-for="trayCode in previewItems(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT)"
+                  v-for="trayCode in previewItems(runningModalExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT)"
                   :key="`running-tray-${trayCode}`"
                   class="laboratory-tray-chip"
                   :data-testid="`laboratory-running-tray-chip-${trayCode}`"
                 >
                   {{ trayCode }}
                 </span>
-                <span v-if="overflowCount(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
-                  +{{ overflowCount(runningExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) }}
+                <span v-if="overflowCount(runningModalExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
+                  +{{ overflowCount(runningModalExperiment.trayCodes, RUNNING_TRAY_PREVIEW_LIMIT) }}
                 </span>
               </div>
             </div>
@@ -468,21 +468,21 @@
               <strong>对应样品</strong>
               <div class="laboratory-running-tags">
                 <span
-                  v-for="sampleCode in previewItems(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT)"
+                  v-for="sampleCode in previewItems(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT)"
                   :key="`running-sample-${sampleCode}`"
                   class="laboratory-tray-chip"
                   :data-testid="`laboratory-running-sample-chip-${sampleCode}`"
                 >
                   {{ sampleCode }}
                 </span>
-                <span v-if="overflowCount(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
-                  +{{ overflowCount(runningExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) }}
+                <span v-if="overflowCount(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
+                  +{{ overflowCount(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) }}
                 </span>
               </div>
             </div>
           </div>
           <button
-            v-if="runningExperiment.trayCodes.length > RUNNING_TRAY_PREVIEW_LIMIT || runningExperiment.sampleCodes.length > RUNNING_SAMPLE_PREVIEW_LIMIT"
+            v-if="runningModalExperiment.trayCodes.length > RUNNING_TRAY_PREVIEW_LIMIT || runningModalExperiment.sampleCodes.length > RUNNING_SAMPLE_PREVIEW_LIMIT"
             class="laboratory-inline-link laboratory-running-show-all"
             data-testid="laboratory-running-show-all"
             type="button"
@@ -491,23 +491,23 @@
             查看全部
           </button>
           <div class="laboratory-running-modal__hint muted">
-            <span>点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。</span>
-            <span v-if="runningExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
+            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
+            <span v-if="!runningModalExperiment.completed && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
           </div>
-          <div v-if="completePromptVisible" class="laboratory-running-complete-prompt" data-testid="laboratory-complete-prompt">
-            <p><strong>任务编号</strong> {{ runningExperiment.taskCode }}</p>
-            <p><strong>实验名称</strong> {{ runningExperiment.experimentName }}</p>
-            <p><strong>托盘</strong> {{ runningExperiment.trayCodes.length }} 个</p>
-            <p><strong>样品</strong> {{ runningExperiment.sampleCodes.length }} 个</p>
+          <div v-if="completePromptVisible && !runningModalExperiment.completed" class="laboratory-running-complete-prompt" data-testid="laboratory-complete-prompt">
+            <p><strong>任务编号</strong> {{ runningModalExperiment.taskCode }}</p>
+            <p><strong>实验名称</strong> {{ runningModalExperiment.experimentName }}</p>
+            <p><strong>托盘</strong> {{ runningModalExperiment.trayCodes.length }} 个</p>
+            <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
             <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
-            <p>确认后将把当前{{ runningExperiment.experimentName || labName }}更新为实验已完成。</p>
+            <p>确认后将把当前{{ runningModalExperiment.experimentName || labName }}更新为实验已完成。</p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
               <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">确认实验完成</button>
             </div>
           </div>
           <div class="laboratory-running-actions">
-            <button v-if="!completePromptVisible" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">实验完成</button>
+            <button v-if="!completePromptVisible && !runningModalExperiment.completed" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">实验完成</button>
           </div>
         </div>
       </div>
@@ -586,6 +586,7 @@ const {
   resetDangerModalOpen,
   runningExperiment,
   runningInteractionLocked,
+  runningModalExperiment,
   runningModalVisible,
   scheduleRows,
   selectedTrayFlow,
@@ -628,10 +629,10 @@ const openTaskRowFullContent = (row) => {
 
 const runningFullContent = computed(() =>
   buildFullContentDetail({
-    experimentName: runningExperiment.value?.experimentName,
-    sampleCount: runningExperiment.value?.sampleCodes?.length || 0,
-    taskCode: runningExperiment.value?.taskCode,
-    trayRows: runningExperiment.value?.trayRows,
+    experimentName: runningModalExperiment.value?.experimentName,
+    sampleCount: runningModalExperiment.value?.sampleCodes?.length || 0,
+    taskCode: runningModalExperiment.value?.taskCode,
+    trayRows: runningModalExperiment.value?.trayRows,
   })
 );
 

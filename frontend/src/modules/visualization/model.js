@@ -1,4 +1,3 @@
-import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import {
   buildConflictRows,
   buildGanttRows,
@@ -7,8 +6,6 @@ import {
 } from "@/modules/schedule/model";
 import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
-
-const DEFAULT_LAB_NAMES = ["振动一室", "高低温湿热一室", "盐雾试验室", "冲击一室", "霉菌试验室", "四综合实验室"];
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const normalizeText = (value) => String(value ?? "").trim();
@@ -37,11 +34,15 @@ const resolveExperimentCode = (entry) => normalizeText(entry?.experiment_code ||
 const resolveTrayCode = (entry) => normalizeText(entry?.tray_code || entry?.trayCode || entry?.code);
 const resolveLabDevice = (entry) => normalizeText(entry?.device || entry?.required_device || entry?.requiredDevice || entry?.lab || entry?.labName);
 
-const getVisualizationLabNames = () => {
-  const configured = asArray(LABORATORY_OPTIONS).map((option) => normalizeText(option?.label || option?.key)).filter(Boolean);
-  const prioritized = DEFAULT_LAB_NAMES.filter((labName) => configured.includes(labName) || configured.length === 0);
-  const remaining = configured.filter((labName) => !prioritized.includes(labName));
-  return [...prioritized, ...remaining];
+const getVisualizationLabNames = (devices = []) => {
+  const names = [];
+  asArray(devices).forEach((device) => {
+    const name = normalizeText(device?.code) || normalizeText(device?.name);
+    if (name && !names.includes(name)) {
+      names.push(name);
+    }
+  });
+  return names;
 };
 
 const buildExperimentByTaskAndCode = (experiments) => {
@@ -163,7 +164,7 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentTrays, s
 };
 
 function buildLabProcessPanels(input = {}) {
-  const labNames = asArray(input.labNames).length ? input.labNames : DEFAULT_LAB_NAMES;
+  const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
