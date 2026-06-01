@@ -19,12 +19,14 @@ function useDashboardPage() {
     STORAGE_KEYS.samples,
     STORAGE_KEYS.streams,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_trays,
   ]);
 
   const currentPage = ref(1);
   const now = ref(Date.now());
   const rawDevices = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentTrays = ref([]);
   const rawConflicts = ref([]);
   const rawSchedules = ref([]);
   const rawSamples = ref([]);
@@ -37,6 +39,7 @@ function useDashboardPage() {
     buildDashboardViewModel({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
+      experimentTrays: rawExperimentTrays.value,
       conflicts: rawConflicts.value,
       samples: rawSamples.value,
       schedules: rawSchedules.value,
@@ -68,6 +71,7 @@ function useDashboardPage() {
       rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
       rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
       rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];

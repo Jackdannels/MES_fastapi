@@ -297,12 +297,71 @@ describe("dashboard model", () => {
           end_at: "2026-03-17T11:00:00.000Z",
         },
       ],
+      samples: [
+        {
+          task_code: "TASK-RUNNING",
+          location: "LAB-ACTUAL-RUNNING",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-RUNNING-001", status: "实验进行中" }],
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "TASK-RUNNING",
+          experiment_code: "TASK-RUNNING-A",
+          tray_code: "TP-RUNNING-001",
+        },
+      ],
       now: Date.parse("2026-03-17T10:00:00.000Z"),
     });
 
     expect(viewModel.deviceItems).toEqual([
       expect.objectContaining({ code: "LAB-ACTIVE-SCHEDULE", status: "可用", dotClass: "timeline-dot--available" }),
       expect.objectContaining({ code: "LAB-ACTUAL-RUNNING", status: "工作中", dotClass: "timeline-dot--running" }),
+    ]);
+  });
+
+  test("does not mark a device working when only experiment status is stale running", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      streams: [],
+      devices: [{ code: "盐雾试验室", status: "可用" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          status: "实验进行中",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          device: "盐雾试验室",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-001",
+          location: "恒温恒湿间（暂存间)",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-001", status: "已到达暂存间" }],
+        },
+        {
+          task_code: "SYLU-2026-05-001",
+          location: "接驳区",
+          status: "到货",
+          trays: [{ tray_code: "TP-002", status: "到货" }],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-B", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-B", tray_code: "TP-002" },
+      ],
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "盐雾试验室", status: "可用", dotClass: "timeline-dot--available" }),
     ]);
   });
 

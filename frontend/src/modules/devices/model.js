@@ -487,6 +487,7 @@ export {
   createPointForm,
   createPointRows,
   isDeviceInMaintenanceWindow,
+  isScheduleExperimentRunning,
   normalizeMaintenancePlan,
   resolveStatusClass,
   resolveMaintenanceScheduleImpact,
