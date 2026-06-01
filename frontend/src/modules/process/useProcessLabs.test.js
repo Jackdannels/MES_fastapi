@@ -792,8 +792,20 @@ describe("useProcessLabs", () => {
     expect(persisted["mes.schedules"]).toEqual([
       expect.objectContaining({
         id: "schedule-1",
-        start_at: "2026-03-11T08:00:00.000Z",
-        end_at: "2026-03-11T10:00:00.000Z",
+        start_at: "2026-03-11T09:30:00Z",
+        end_at: "2026-03-11T10:30:00Z",
+      }),
+    ]);
+    expect(persisted["mes.experiment_runs"]).toEqual([
+      expect.objectContaining({
+        schedule_id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: "Lab-A",
+        tray_codes: ["TRAY-READY-1", "TRAY-READY-2"],
+        status: "实验进行中",
+        started_at: "2026-03-11T08:00:00.000Z",
+        planned_end_at: "2026-03-11T10:00:00.000Z",
       }),
     ]);
     expect(persisted["mes.samples"]).toEqual(
@@ -824,6 +836,120 @@ describe("useProcessLabs", () => {
     });
     expect(selectedTaskDetail.value.runningTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-READY-1", "TRAY-READY-2"]);
     expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
+    vi.useRealTimers();
+  });
+
+  test("starts a second ready tray batch through experiment runs without overwriting the planned schedule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T01:40:00Z"));
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-salt-1",
+          device: "盐雾试验室",
+          end_at: "2026-05-31T14:14:31Z",
+          experiment_code: "TASK-SALT-A",
+          planned_hours: 3.5,
+          start_at: "2026-05-31T10:44:31Z",
+          status: "实验进行中",
+          task_code: "TASK-SALT",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-SALT", name: "盐雾分批任务", status: "任务进行中", test_type: "盐雾试验" }],
+      "mes.experiments": [
+        { task_code: "TASK-SALT", experiment_code: "TASK-SALT-A", experiment_name: "盐雾试验", status: "实验进行中" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-SALT", experiment_code: "TASK-SALT-A", tray_code: "TASK-SALT-TP-001" },
+        { task_code: "TASK-SALT", experiment_code: "TASK-SALT-A", tray_code: "TASK-SALT-TP-002" },
+      ],
+      "mes.experiment_runs": [
+        {
+          id: "run-first",
+          run_no: "run-first",
+          schedule_id: "schedule-salt-1",
+          task_code: "TASK-SALT",
+          experiment_code: "TASK-SALT-A",
+          device: "盐雾试验室",
+          tray_codes: ["TASK-SALT-TP-001"],
+          status: "实验已完成",
+          started_at: "2026-05-31T10:44:31Z",
+          ended_at: "2026-05-31T14:14:31Z",
+        },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-001",
+          task_code: "TASK-SALT",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TASK-SALT-TP-001", status: "已到达暂存间", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "TASK-SALT",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TASK-SALT-TP-002", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-06-01T01:40:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0]).toMatchObject({
+      canStartExperiment: true,
+      experimentCode: "TASK-SALT-A",
+      remainingTrayCount: 1,
+      readyTrayCount: 1,
+      statusClass: "is-scheduled",
+      taskCode: "TASK-SALT",
+    });
+
+    await startExperiment(labCards.value[0]);
+
+    const persisted = persistSnapshot.mock.calls[0][0];
+    expect(persisted["mes.schedules"]).toEqual([
+      expect.objectContaining({
+        id: "schedule-salt-1",
+        start_at: "2026-05-31T10:44:31Z",
+        end_at: "2026-05-31T14:14:31Z",
+      }),
+    ]);
+    expect(persisted["mes.experiment_runs"]).toEqual([
+      expect.objectContaining({ id: "run-first", status: "实验已完成" }),
+      expect.objectContaining({
+        schedule_id: "schedule-salt-1",
+        task_code: "TASK-SALT",
+        experiment_code: "TASK-SALT-A",
+        device: "盐雾试验室",
+        tray_codes: ["TASK-SALT-TP-002"],
+        status: "实验进行中",
+        started_at: "2026-06-01T01:40:00.000Z",
+        planned_end_at: "2026-06-01T05:10:00.000Z",
+      }),
+    ]);
+    expect(persisted["mes.samples"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SP-001",
+          trays: [expect.objectContaining({ tray_code: "TASK-SALT-TP-001", status: "已到达暂存间" })],
+        }),
+        expect.objectContaining({
+          code: "SP-002",
+          status: "实验进行中",
+          trays: [expect.objectContaining({ tray_code: "TASK-SALT-TP-002", status: "实验进行中" })],
+        }),
+      ]),
+    );
     vi.useRealTimers();
   });
 

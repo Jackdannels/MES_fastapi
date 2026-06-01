@@ -78,6 +78,78 @@ describe("devices model", () => {
     expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ activeCount: 1, idleCount: 0 }));
   });
 
+  test("marks a device active from an active experiment run before tray status refreshes", () => {
+    const rows = buildDeviceRows(
+      [{ code: "盐雾试验室", name: "盐雾试验室", status: "可用" }],
+      [],
+      new Date("2026-04-24T10:00:00"),
+      [
+        {
+          code: "SYLU-2026-03-002-SP-001",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+      [],
+      [
+        {
+          device: "盐雾试验室",
+          run_no: "RUN-001",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_codes: ["SYLU-2026-03-002-TP-001"],
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "工作中", statusClass: "status running" }));
+  });
+
+  test("ignores stale running tray statuses once experiment runs are available", () => {
+    const rows = buildDeviceRows(
+      [{ code: "盐雾试验室", name: "盐雾试验室", status: "可用" }],
+      [
+        {
+          device: "盐雾试验室",
+          experiment_code: "SYLU-2026-03-002-A",
+          task_code: "SYLU-2026-03-002",
+        },
+      ],
+      new Date("2026-04-24T10:00:00"),
+      [
+        {
+          code: "SYLU-2026-03-002-SP-001",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          task_code: "SYLU-2026-03-002",
+          trays: [{ tray_code: "SYLU-2026-03-002-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      [
+        {
+          experiment_code: "SYLU-2026-03-002-A",
+          task_code: "SYLU-2026-03-002",
+          tray_code: "SYLU-2026-03-002-TP-001",
+        },
+      ],
+      [
+        {
+          device: "盐雾试验室",
+          run_no: "RUN-001",
+          status: "实验已完成",
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_codes: ["SYLU-2026-03-002-TP-001"],
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "空闲", statusClass: "status" }));
+  });
+
   test("keeps hot-humid lab manual maintenance visible in the device list", () => {
     const rows = buildDeviceRows(
       [

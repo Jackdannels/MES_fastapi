@@ -11,6 +11,7 @@ class FakeTransferStorage:
             "mes.experiments": [],
             "mes.experiment_trays": [],
             "mes.experiment_samples": [],
+            "mes.experiment_runs": [],
             "mes.staging_events": [],
             "mes.devices": [],
             "mes.streams": [],
@@ -139,6 +140,7 @@ def create_payloads():
         ],
         "mes.experiment_trays": [],
         "mes.experiment_samples": [],
+        "mes.experiment_runs": [],
     }
 
 
@@ -904,6 +906,7 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert storage.read("mes.tasks")[0]["tray_codes"] == []
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
+    assert storage.read("mes.experiment_runs") == []
     assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
 
 
@@ -943,6 +946,7 @@ def test_transfer_area_workspace_mutations_publish_storage_updates(monkeypatch):
     for keys in published_updates:
         assert "mes.tasks" in keys
         assert "mes.samples" in keys
+        assert "mes.experiment_runs" in keys
         assert "mes.experiment_trays" in keys
         assert "mes.experiment_samples" in keys
         assert "mes.staging_events" in keys
@@ -1705,6 +1709,51 @@ def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_
     assert updated_samples[0]["history"][0]["detail"] == "SYLU-2026-03-101-TP-001"
     assert all(entry["action"] != "任务已确认入库" for entry in updated_samples[0]["history"])
     assert all(entry["detail"] != "SYLU-2026-03-101-TP-003" for entry in updated_samples[2]["history"])
+
+
+def test_transfer_area_reallocate_clears_stale_experiment_runs_for_task(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "RUN-STALE",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-A",
+                "tray_codes": ["SYLU-2026-03-101-TP-001"],
+                "status": "实验进行中",
+            },
+            {
+                "run_no": "RUN-OTHER",
+                "task_code": "OTHER",
+                "experiment_code": "OTHER-A",
+                "tray_codes": ["OTHER-TP-001"],
+                "status": "实验进行中",
+            },
+        ],
+    )
+
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(),
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert allocated.status_code == 200
+    assert storage.read("mes.experiment_runs") == [
+        {
+            "run_no": "RUN-OTHER",
+            "task_code": "OTHER",
+            "experiment_code": "OTHER-A",
+            "tray_codes": ["OTHER-TP-001"],
+            "status": "实验进行中",
+        }
+    ]
 
 
 def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_barcodes(monkeypatch):

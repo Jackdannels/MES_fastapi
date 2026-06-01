@@ -9,6 +9,7 @@ from app.core.mysql_storage_backend import (
     backfill_missing_unscheduled_since,
     normalize_storage_payload,
     build_experiment_insert_row,
+    build_experiment_run_insert_row,
     build_experiment_sample_insert_row,
     build_experiment_tray_insert_row,
     build_sample_insert_row,
@@ -20,6 +21,7 @@ from app.core.mysql_storage_backend import (
     build_schedule_insert_row,
     build_storage_device_item,
     build_storage_schedule_item,
+    build_storage_experiment_run_item,
     build_storage_stream_item,
     build_storage_task_item,
     build_storage_task_tray_codes,
@@ -1616,6 +1618,41 @@ def test_experiment_and_schedule_rows_round_trip_with_existing_task_codes() -> N
     assert schedule_item["experiment_code"] == "SYLU-2026-04-106-A"
 
 
+def test_experiment_run_row_round_trips_tray_scoped_batch_times() -> None:
+    normalized = normalize_storage_payload(
+        {
+            "mes.experiment_runs": [
+                {
+                    "id": "run-001",
+                    "run_no": "run-001",
+                    "schedule_id": "schedule-001",
+                    "task_code": "SYLU-2026-05-001",
+                    "experiment_code": "SYLU-2026-05-001-B",
+                    "device": "盐雾试验室",
+                    "planned_hours": 3.5,
+                    "status": "实验中",
+                    "started_at": "2026-06-01T09:40:00+08:00",
+                    "planned_end_at": "2026-06-01T13:10:00+08:00",
+                    "ended_at": "",
+                    "tray_codes": ["SYLU-2026-05-001-TP-002"],
+                }
+            ]
+        }
+    )
+
+    row = build_experiment_run_insert_row(normalized["mes.experiment_runs"][0])
+    item = build_storage_experiment_run_item(row, tray_codes=["SYLU-2026-05-001-TP-002"])
+
+    assert row["run_no"] == "run-001"
+    assert row["schedule_no"] == "schedule-001"
+    assert row["experiment_no"] == "SYLU-2026-05-001-B"
+    assert row["run_status"] == "实验进行中"
+    assert item["schedule_id"] == "schedule-001"
+    assert item["tray_codes"] == ["SYLU-2026-05-001-TP-002"]
+    assert item["started_at"] == "2026-06-01T09:40:00+08:00"
+    assert item["planned_end_at"] == "2026-06-01T13:10:00+08:00"
+
+
 class _DummySnapshotRepository:
     def read_all(self):
         return {}
@@ -1680,6 +1717,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
     monkeypatch.setattr(backend, "_replace_streams", lambda cursor, rows: order.append("streams"))
     monkeypatch.setattr(backend, "_replace_samples", lambda cursor, rows: order.append("samples"))
     monkeypatch.setattr(backend, "_replace_experiments", lambda cursor, rows: order.append("experiments"))
+    monkeypatch.setattr(backend, "_replace_experiment_runs", lambda cursor, rows: order.append("experiment_runs"))
     monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
     monkeypatch.setattr(backend, "_replace_experiment_samples", lambda cursor, rows: order.append("experiment_samples"))
     monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: order.append("schedule_task_ids"))
@@ -1690,6 +1728,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
             "mes.tasks": [{"code": "SYLU-2026-03-001"}],
             "mes.samples": [{"code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"}],
             "mes.experiments": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
+            "mes.experiment_runs": [{"id": "run-001", "experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
             "mes.experiment_trays": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "tray_code": "SYLU-2026-03-001-TP-001"}],
             "mes.experiment_samples": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "sample_code": "SYLU-2026-03-001-SP-001"}],
         }
@@ -1699,6 +1738,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "tasks:False",
         "samples",
         "experiments",
+        "experiment_runs",
         "experiment_trays",
         "experiment_samples",
         "tasks:True",
@@ -1753,6 +1793,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
         ],
     )
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_samples", lambda cursor: [])
     monkeypatch.setattr(
         backend,

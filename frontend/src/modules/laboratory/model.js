@@ -687,6 +687,7 @@ const buildRunningExperimentView = ({ currentTask, now }) => {
     overdue: remainingSeconds < 0,
     overdueLabel: overdueSeconds ? formatDuration(overdueSeconds) : "",
     remainingSeconds,
+    runNo: normalizeText(currentTask?.runNo),
     sampleCodes: uniqueValues(runningTrayRows.flatMap((row) => asArray(row?.sampleCodes))),
     startDateTimeLabel: formatDateTime(currentTask?.startAt),
     startTime,
@@ -735,6 +736,24 @@ const buildExperimentCodesByTrayCode = (experimentTrayCodeMap) => {
     });
   });
   return trayMap;
+};
+
+const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
+
+const findActiveExperimentRun = ({ device, experimentCode, experimentRuns, taskCode }) => {
+  const normalizedDevice = normalizeText(device);
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const normalizedTaskCode = normalizeText(taskCode);
+  const matchedRuns = asArray(experimentRuns)
+    .filter(
+      (run) =>
+        normalizeText(run?.task_code) === normalizedTaskCode
+        && normalizeText(run?.experiment_code) === normalizedExperimentCode
+        && (!normalizedDevice || !normalizeText(run?.device) || normalizeText(run?.device) === normalizedDevice)
+        && RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
+    )
+    .sort((left, right) => (toTime(right?.started_at) || 0) - (toTime(left?.started_at) || 0));
+  return matchedRuns[0] || null;
 };
 
 const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experimentKey, relatedSamples, taskCode }) => {
@@ -841,7 +860,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
   return trayRows;
 };
 
-const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experimentTrayCodeMap, sampleMap, schedule, taskMap }) => {
+const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experimentRuns, experimentTrayCodeMap, sampleMap, schedule, taskMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const task = taskMap.get(taskCode) || null;
@@ -866,29 +885,38 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
   });
   const startAt = String(schedule?.start_at || "");
   const endAt = String(schedule?.end_at || "");
+  const activeRun = findActiveExperimentRun({
+    device,
+    experimentCode,
+    experimentRuns,
+    taskCode,
+  });
+  const displayStartAt = normalizeText(activeRun?.started_at) || startAt;
+  const displayEndAt = normalizeText(activeRun?.planned_end_at) || normalizeText(activeRun?.ended_at) || endAt;
 
   return {
     device,
-    endAt,
-    endTimeLabel: formatTime(endAt),
+    endAt: displayEndAt,
+    endTimeLabel: formatTime(displayEndAt),
     experimentCode,
     experimentKey,
     experimentName,
     id: normalizeText(schedule?.id) || `${taskCode}-${experimentCode}-${startAt}`,
     owner,
     sampleCount: trayRows.reduce((count, row) => count + Math.max(1, row.sampleCodes.length || 0), 0) || relatedSamples.length,
-    startAt,
-    startDateTimeLabel: formatDateTime(startAt),
-    startTimeLabel: formatTime(startAt),
+    runNo: normalizeText(activeRun?.run_no) || normalizeText(activeRun?.id),
+    startAt: displayStartAt,
+    startDateTimeLabel: formatDateTime(displayStartAt),
+    startTimeLabel: formatTime(displayStartAt),
     status: normalizeText(experiment?.status),
     taskCode,
     taskName: normalizeText(task?.name) || taskCode || "-",
-    dateTimeRange: `${formatDateTime(startAt)} - ${formatDateTime(endAt)}`,
-    timeRange: `${formatTime(startAt)} - ${formatTime(endAt)}`,
-    title: `${taskCode} / ${experimentName} / ${formatDateTime(startAt)} - ${formatDateTime(endAt)}`,
+    dateTimeRange: `${formatDateTime(displayStartAt)} - ${formatDateTime(displayEndAt)}`,
+    timeRange: `${formatTime(displayStartAt)} - ${formatTime(displayEndAt)}`,
+    title: `${taskCode} / ${experimentName} / ${formatDateTime(displayStartAt)} - ${formatDateTime(displayEndAt)}`,
     trayCodes: trayRows.map((row) => row.trayCode),
     trayRows,
-    endDateTimeLabel: formatDateTime(endAt),
+    endDateTimeLabel: formatDateTime(displayEndAt),
   };
 };
 
@@ -896,6 +924,7 @@ function buildLaboratoryWorkbenchView({
   tasks = [],
   schedules = [],
   experiments = [],
+  experimentRuns = [],
   experimentTrays = [],
   samples = [],
   now = new Date(),
@@ -908,7 +937,7 @@ function buildLaboratoryWorkbenchView({
   const experimentRecordMap = buildExperimentRecordMap(experiments);
   const sampleMap = buildSampleMap(samples);
   const experimentTrayCodeMap = buildExperimentTrayCodeMap(experimentTrays);
-  const rowBuilderInput = { experimentMap, experimentRecordMap, experimentTrayCodeMap, sampleMap, taskMap };
+  const rowBuilderInput = { experimentMap, experimentRecordMap, experimentRuns, experimentTrayCodeMap, sampleMap, taskMap };
 
   const activeSchedules = asArray(schedules).filter(
     (schedule) => !scheduleExperimentIsCompleted({ experiments, experimentTrays, samples, schedule }),

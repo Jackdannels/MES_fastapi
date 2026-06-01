@@ -16,6 +16,7 @@ SNAPSHOT_KEYS = (
     "mes.experiments",
     "mes.experiment_trays",
     "mes.experiment_samples",
+    "mes.experiment_runs",
 )
 TASK_STORAGE_UPDATE_KEYS = (
     *SNAPSHOT_KEYS,
@@ -653,6 +654,11 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             for row in snapshot.get("mes.experiment_samples", [])
             if keep_row_outside_task(dict(row), previous_task_code)
         ]
+        snapshot["mes.experiment_runs"] = [
+            dict(row)
+            for row in snapshot.get("mes.experiment_runs", [])
+            if keep_row_outside_task(dict(row), previous_task_code)
+        ]
     elif removed_or_changed_codes:
         snapshot["mes.schedules"] = [
             schedule
@@ -667,6 +673,11 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         snapshot["mes.experiment_samples"] = [
             dict(row)
             for row in snapshot.get("mes.experiment_samples", [])
+            if keep_row_outside_removed_experiments(dict(row), previous_task_code, removed_or_changed_codes)
+        ]
+        snapshot["mes.experiment_runs"] = [
+            dict(row)
+            for row in snapshot.get("mes.experiment_runs", [])
             if keep_row_outside_removed_experiments(dict(row), previous_task_code, removed_or_changed_codes)
         ]
     storage.write_many(snapshot)
@@ -691,6 +702,7 @@ def delete_task(task_id: str) -> None:
     snapshot["mes.experiments"] = filter_related_rows(snapshot.get("mes.experiments"), task_code)
     snapshot["mes.experiment_trays"] = filter_related_rows(snapshot.get("mes.experiment_trays"), task_code)
     snapshot["mes.experiment_samples"] = filter_related_rows(snapshot.get("mes.experiment_samples"), task_code)
+    snapshot["mes.experiment_runs"] = filter_related_rows(snapshot.get("mes.experiment_runs"), task_code)
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return None

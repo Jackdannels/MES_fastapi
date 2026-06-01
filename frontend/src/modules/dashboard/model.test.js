@@ -365,6 +365,93 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("marks a device working from an active experiment run even before sample refresh arrives", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      streams: [],
+      devices: [{ code: "盐雾试验室", status: "可用" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          status: "实验进行中",
+        },
+      ],
+      experimentRuns: [
+        {
+          run_no: "run-salt-second",
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          device: "盐雾试验室",
+          tray_codes: ["TP-002"],
+          status: "实验进行中",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          device: "盐雾试验室",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-001",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-002", status: "实验准备就绪" }],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-B", tray_code: "TP-002" },
+      ],
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "盐雾试验室", status: "工作中", dotClass: "timeline-dot--running" }),
+    ]);
+  });
+
+  test("does not keep a device working from stale tray status after runs are completed", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      streams: [],
+      devices: [{ code: "盐雾试验室", status: "可用" }],
+      experimentRuns: [
+        {
+          run_no: "run-salt-old",
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          device: "盐雾试验室",
+          tray_codes: ["TP-002"],
+          status: "实验已完成",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-05-001",
+          experiment_code: "SYLU-2026-05-001-B",
+          device: "盐雾试验室",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-05-001",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-002", status: "实验进行中" }],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-001", experiment_code: "SYLU-2026-05-001-B", tray_code: "TP-002" },
+      ],
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "盐雾试验室", status: "可用", dotClass: "timeline-dot--available" }),
+    ]);
+  });
+
   test("does not keep a device running for a manufacturer-returned task with stale running experiment status", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

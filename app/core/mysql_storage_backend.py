@@ -37,6 +37,7 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.streams",
     "mes.samples",
     "mes.experiments",
+    "mes.experiment_runs",
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
@@ -378,6 +379,78 @@ def build_storage_experiment_sample_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
+
+
+def build_experiment_run_insert_row(run: Dict[str, Any]) -> Dict[str, Any]:
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    run_no = normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
+    return {
+        "run_no": run_no,
+        "schedule_no": normalize_text(run.get("schedule_id")) or normalize_text(run.get("schedule_no")),
+        "task_no": normalize_text(run.get("task_code")),
+        "experiment_no": normalize_text(run.get("experiment_code")),
+        "device_name": normalize_text(run.get("device")),
+        "planned_hours": parse_float_value(run.get("planned_hours")),
+        "run_status": normalize_experiment_status(run.get("status")),
+        "started_at": parse_storage_datetime(run.get("started_at")),
+        "planned_end_at": parse_storage_datetime(run.get("planned_end_at")),
+        "ended_at": parse_storage_datetime(run.get("ended_at")),
+        "created_at": parse_storage_datetime(run.get("created_at")) or now_utc,
+        "updated_at": parse_storage_datetime(run.get("updated_at")) or now_utc,
+    }
+
+
+def build_storage_experiment_run_item(row: Dict[str, Any], tray_codes: list[str] | None = None) -> Dict[str, Any]:
+    run_no = normalize_text(row.get("run_no"))
+    planned_hours = row.get("planned_hours")
+    return {
+        "id": run_no,
+        "run_no": run_no,
+        "schedule_id": normalize_text(row.get("schedule_no")),
+        "task_code": normalize_text(row.get("task_no")),
+        "experiment_code": normalize_text(row.get("experiment_no")),
+        "device": normalize_text(row.get("device_name")),
+        "planned_hours": 0 if planned_hours in (None, "") else float(planned_hours),
+        "status": normalize_experiment_status(row.get("run_status")),
+        "started_at": format_iso_storage_datetime(row.get("started_at")),
+        "planned_end_at": format_iso_storage_datetime(row.get("planned_end_at")),
+        "ended_at": format_iso_storage_datetime(row.get("ended_at")),
+        "tray_codes": list(tray_codes or []),
+        "created_at": format_iso_storage_datetime(row.get("created_at")),
+        "updated_at": format_iso_storage_datetime(row.get("updated_at")),
+    }
+
+
+def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str, Any]]:
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    run_no = normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
+    task_no = normalize_text(run.get("task_code"))
+    experiment_no = normalize_text(run.get("experiment_code"))
+    status = normalize_experiment_status(run.get("status"))
+    started_at = parse_storage_datetime(run.get("started_at"))
+    ended_at = parse_storage_datetime(run.get("ended_at"))
+    rows: list[Dict[str, Any]] = []
+    tray_codes = run.get("tray_codes")
+    if not isinstance(tray_codes, list):
+        tray_codes = []
+    for tray_code in tray_codes:
+        normalized_tray_code = normalize_text(tray_code)
+        if not run_no or not normalized_tray_code:
+            continue
+        rows.append(
+            {
+                "run_no": run_no,
+                "task_no": task_no,
+                "experiment_no": experiment_no,
+                "tray_no": normalized_tray_code,
+                "run_tray_status": status,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "created_at": parse_storage_datetime(run.get("created_at")) or now_utc,
+                "updated_at": parse_storage_datetime(run.get("updated_at")) or now_utc,
+            }
+        )
+    return rows
 
 
 def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
@@ -1098,6 +1171,50 @@ class MySQLMesStorageBackend(StorageBackend):
                 )
                 cursor.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS biz_experiment_run (
+                      run_id BIGINT NOT NULL AUTO_INCREMENT,
+                      run_no VARCHAR(80) NOT NULL,
+                      schedule_no VARCHAR(80) NULL,
+                      task_no VARCHAR(50) NOT NULL,
+                      experiment_no VARCHAR(50) NOT NULL,
+                      device_name VARCHAR(100) NULL,
+                      planned_hours DECIMAL(10,2) NULL,
+                      run_status VARCHAR(30) NULL,
+                      started_at DATETIME NULL,
+                      planned_end_at DATETIME NULL,
+                      ended_at DATETIME NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (run_id),
+                      UNIQUE KEY uk_biz_experiment_run_no (run_no),
+                      KEY idx_biz_experiment_run_task_exp (task_no, experiment_no),
+                      KEY idx_biz_experiment_run_schedule (schedule_no),
+                      KEY idx_biz_experiment_run_status (run_status)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS biz_experiment_run_tray (
+                      relation_id BIGINT NOT NULL AUTO_INCREMENT,
+                      run_no VARCHAR(80) NOT NULL,
+                      task_no VARCHAR(50) NOT NULL,
+                      experiment_no VARCHAR(50) NOT NULL,
+                      tray_no VARCHAR(80) NOT NULL,
+                      run_tray_status VARCHAR(30) NULL,
+                      started_at DATETIME NULL,
+                      ended_at DATETIME NULL,
+                      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (relation_id),
+                      UNIQUE KEY uk_biz_experiment_run_tray_unique (run_no, tray_no),
+                      KEY idx_biz_experiment_run_tray_exp (task_no, experiment_no),
+                      KEY idx_biz_experiment_run_tray_no (tray_no)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                )
+                cursor.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS biz_mq_message_log (
                       message_log_id BIGINT NOT NULL AUTO_INCREMENT,
                       message_id VARCHAR(100) NULL,
@@ -1410,6 +1527,64 @@ class MySQLMesStorageBackend(StorageBackend):
             """,
             rows,
         )
+
+    def _replace_experiment_runs(self, cursor, experiment_runs: list[dict[str, Any]]) -> None:
+        rows = [
+            build_experiment_run_insert_row(run)
+            for run in experiment_runs
+            if normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
+        ]
+        tray_rows = [
+            tray_row
+            for run in experiment_runs
+            for tray_row in build_experiment_run_tray_insert_rows(run)
+        ]
+        cursor.execute("DELETE FROM biz_experiment_run_tray")
+        cursor.execute("DELETE FROM biz_experiment_run")
+        if rows:
+            cursor.executemany(
+                """
+                INSERT INTO biz_experiment_run (
+                  run_no, schedule_no, task_no, experiment_no, device_name, planned_hours,
+                  run_status, started_at, planned_end_at, ended_at, created_at, updated_at
+                ) VALUES (
+                  %(run_no)s, %(schedule_no)s, %(task_no)s, %(experiment_no)s, %(device_name)s, %(planned_hours)s,
+                  %(run_status)s, %(started_at)s, %(planned_end_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
+                )
+                ON DUPLICATE KEY UPDATE
+                  schedule_no = VALUES(schedule_no),
+                  task_no = VALUES(task_no),
+                  experiment_no = VALUES(experiment_no),
+                  device_name = VALUES(device_name),
+                  planned_hours = VALUES(planned_hours),
+                  run_status = VALUES(run_status),
+                  started_at = VALUES(started_at),
+                  planned_end_at = VALUES(planned_end_at),
+                  ended_at = VALUES(ended_at),
+                  updated_at = VALUES(updated_at)
+                """,
+                rows,
+            )
+        if tray_rows:
+            cursor.executemany(
+                """
+                INSERT INTO biz_experiment_run_tray (
+                  run_no, task_no, experiment_no, tray_no, run_tray_status,
+                  started_at, ended_at, created_at, updated_at
+                ) VALUES (
+                  %(run_no)s, %(task_no)s, %(experiment_no)s, %(tray_no)s, %(run_tray_status)s,
+                  %(started_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
+                )
+                ON DUPLICATE KEY UPDATE
+                  task_no = VALUES(task_no),
+                  experiment_no = VALUES(experiment_no),
+                  run_tray_status = VALUES(run_tray_status),
+                  started_at = VALUES(started_at),
+                  ended_at = VALUES(ended_at),
+                  updated_at = VALUES(updated_at)
+                """,
+                tray_rows,
+            )
 
     def _backfill_schedule_task_ids(self, cursor) -> None:
         cursor.execute(
@@ -2247,6 +2422,31 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         return [build_storage_experiment_sample_item(row) for row in cursor.fetchall()]
 
+    def _load_experiment_runs(self, cursor) -> list[dict[str, Any]]:
+        cursor.execute(
+            """
+            SELECT run_no, tray_no
+            FROM biz_experiment_run_tray
+            ORDER BY run_no ASC, tray_no ASC
+            """
+        )
+        tray_map: dict[str, list[str]] = {}
+        for row in cursor.fetchall():
+            run_no = normalize_text(row.get("run_no"))
+            tray_no = normalize_text(row.get("tray_no"))
+            if run_no and tray_no:
+                tray_map.setdefault(run_no, []).append(tray_no)
+
+        cursor.execute(
+            """
+            SELECT run_no, schedule_no, task_no, experiment_no, device_name, planned_hours,
+                   run_status, started_at, planned_end_at, ended_at, created_at, updated_at
+            FROM biz_experiment_run
+            ORDER BY started_at DESC, run_no DESC
+            """
+        )
+        return [build_storage_experiment_run_item(row, tray_codes=tray_map.get(normalize_text(row.get("run_no")))) for row in cursor.fetchall()]
+
     def _load_devices(self, cursor) -> list[dict[str, Any]]:
         cursor.execute(
             """
@@ -2420,6 +2620,8 @@ class MySQLMesStorageBackend(StorageBackend):
                     self._replace_samples(cursor, relational_updates["mes.samples"] or [])
                 if "mes.experiments" in relational_updates:
                     self._replace_experiments(cursor, relational_updates["mes.experiments"] or [])
+                if "mes.experiment_runs" in relational_updates:
+                    self._replace_experiment_runs(cursor, relational_updates["mes.experiment_runs"] or [])
                 if "mes.experiment_trays" in relational_updates:
                     self._replace_experiment_trays(cursor, relational_updates["mes.experiment_trays"] or [])
                 if "mes.experiment_samples" in relational_updates:
@@ -2446,6 +2648,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     schedules = self._load_schedules(cursor)
                     samples = self._load_samples(cursor)
                     experiments = self._load_experiments(cursor)
+                    experiment_runs = self._load_experiment_runs(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
                     experiments, repaired = self._backfill_unscheduled_since_for_reads(
@@ -2466,6 +2669,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "mes.streams": self._load_streams(cursor),
                         "mes.samples": samples,
                         "mes.experiments": experiments,
+                        "mes.experiment_runs": experiment_runs,
                         "mes.experiment_trays": experiment_trays,
                         "mes.experiment_samples": experiment_samples,
                     }
@@ -2491,6 +2695,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     schedules = self._load_schedules(cursor)
                     samples = self._load_samples(cursor)
                     experiments = self._load_experiments(cursor)
+                    experiment_runs = self._load_experiment_runs(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
                     experiments, repaired = self._backfill_unscheduled_since_for_reads(
@@ -2516,6 +2721,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         return samples
                     if key == "mes.experiments":
                         return experiments
+                    if key == "mes.experiment_runs":
+                        return experiment_runs
                     if key == "mes.experiment_trays":
                         return experiment_trays
                     if key == "mes.experiment_samples":

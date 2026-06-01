@@ -97,6 +97,7 @@ const createSnapshot = () => ({
     { task_code: "SYLU-2026-04-301", experiment_code: "SYLU-2026-04-301-B", experiment_name: "盐雾试验" },
     { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", experiment_name: "振动试验" },
   ],
+  [STORAGE_KEYS.experiment_runs]: [],
   [STORAGE_KEYS.experiment_trays]: [
     { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
     { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-002" },
@@ -1833,6 +1834,9 @@ describe("LaboratoryPage runtime", () => {
         ? { ...experiment, status: "实验进行中" }
         : experiment,
     );
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
     snapshotState[STORAGE_KEYS.samples] = [
       {
         code: "SYLU-2026-04-101-SP-001",
@@ -1853,6 +1857,20 @@ describe("LaboratoryPage runtime", () => {
         start_at: "2026-04-02T09:59:58.000Z",
         end_at: "2026-04-02T10:00:01.000Z",
         status: "实验进行中",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [
+      {
+        id: "run-1",
+        run_no: "run-1",
+        schedule_id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        tray_codes: ["TP-001"],
+        status: "实验进行中",
+        started_at: "2026-04-02T09:59:58.000Z",
+        planned_end_at: "2026-04-02T10:00:01.000Z",
       },
     ];
 
@@ -1881,6 +1899,99 @@ describe("LaboratoryPage runtime", () => {
     expect(snapshotState[STORAGE_KEYS.schedules]).toContainEqual(expect.objectContaining({
       experiment_code: "SYLU-2026-04-101-A",
       status: "实验已完成",
+    }));
+    expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
+      run_no: "run-1",
+      status: "实验已完成",
+      ended_at: expect.any(String),
+    }));
+  });
+
+  test("completing one experiment run keeps the schedule active when another tray still needs the same experiment", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-101-SP-002",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验准备就绪",
+        flow_status: "实验准备就绪",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验准备就绪", tray_code: "TP-002" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:00:01.000Z",
+        status: "实验进行中",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [
+      {
+        id: "run-1",
+        run_no: "run-1",
+        schedule_id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        tray_codes: ["TP-001"],
+        status: "实验进行中",
+        started_at: "2026-04-02T09:59:58.000Z",
+        planned_end_at: "2026-04-02T10:00:01.000Z",
+      },
+    ];
+
+    await mountPage();
+
+    vi.advanceTimersByTime(2000);
+    await nextTick();
+    await nextTick();
+    await waitForStoragePutCount(1);
+
+    expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "SYLU-2026-04-101-SP-001",
+          status: "实验已完成",
+          trays: [expect.objectContaining({ tray_code: "TP-001", status: "实验已完成" })],
+        }),
+        expect.objectContaining({
+          code: "SYLU-2026-04-101-SP-002",
+          status: "实验准备就绪",
+          trays: [expect.objectContaining({ tray_code: "TP-002", status: "实验准备就绪" })],
+        }),
+      ]),
+    );
+    expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
+      run_no: "run-1",
+      status: "实验已完成",
+    }));
+    expect(snapshotState[STORAGE_KEYS.experiments]).toContainEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-101-A",
+      status: "实验进行中",
+    }));
+    expect(snapshotState[STORAGE_KEYS.schedules]).toContainEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-101-A",
+      status: "实验进行中",
     }));
   });
 

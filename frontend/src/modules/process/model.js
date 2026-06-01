@@ -18,6 +18,7 @@ const PROCESS_LABS = [
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验进行中";
+const STATUS_READY = "实验准备就绪";
 const TASK_STATUS_RUNNING = "任务进行中";
 const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
@@ -257,6 +258,32 @@ const experimentHasRunningTrays = ({ schedule, experimentTrays, samples }) => {
   );
 };
 
+const experimentHasReadyTrays = ({ schedule, experimentTrays, samples }) => {
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  const labName = normalizeText(schedule?.device);
+  if (!taskCode) {
+    return false;
+  }
+
+  const scopedTrayCodes = buildExperimentTrayCodeSet({ experimentTrays, experimentCode, taskCode });
+  if (experimentCode && !scopedTrayCodes.size) {
+    return false;
+  }
+
+  return asArray(samples).some((sample) =>
+    normalizeText(sample?.task_code) === taskCode
+    && (!labName || !normalizeText(sample?.location) || normalizeText(sample?.location) === labName)
+    && asArray(sample?.trays).some((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (scopedTrayCodes.size && !scopedTrayCodes.has(trayCode)) {
+        return false;
+      }
+      return normalizeText(tray?.status) === STATUS_READY || normalizeText(sample?.status) === STATUS_READY;
+    })
+  );
+};
+
 const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, experiments = [], experimentTrays = [], devices = []) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
   const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
@@ -300,8 +327,6 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
         .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
 
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
-      const activeSchedule =
-        labSchedules.find((entry) => scheduleIsActiveAt(entry, now)) || null;
       const runningSchedule =
         labSchedules.find((entry) => {
           if (experimentHasRunningTrays({ experimentTrays, samples: sampleList, schedule: entry })) {
@@ -313,6 +338,10 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
           }
           return taskStatusMap.get(normalizeText(entry?.task_code)) === TASK_STATUS_RUNNING;
         }) || null;
+      const activeSchedule =
+        labSchedules.find((entry) => scheduleIsActiveAt(entry, now)) || null;
+      const readySchedule =
+        labSchedules.find((entry) => experimentHasReadyTrays({ experimentTrays, samples: sampleList, schedule: entry })) || null;
 
       // 没有进行中的情况下，展示最近的未来排程。
       const upcomingSchedule =
@@ -320,7 +349,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
           const start = Date.parse(String(entry?.start_at || ""));
           return Number.isFinite(start) && start > now;
         }) || null;
-      const nextSchedule = activeSchedule || runningSchedule || upcomingSchedule || null;
+      const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || null;
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
@@ -343,7 +372,7 @@ const buildProcessLabCards = (labs, tasks, schedules, samplesOrNow, nowMaybe, ex
       } else if (deviceUnavailable) {
         status = normalizeText(device?.status) || STATUS_MAINTENANCE;
         statusClass = "is-maintenance";
-      } else if (activeSchedule || upcomingSchedule) {
+      } else if (activeSchedule || readySchedule || upcomingSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";
       }

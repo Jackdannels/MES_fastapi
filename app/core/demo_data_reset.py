@@ -114,6 +114,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
             "mes.schedules": [],
             "mes.experiment_trays": [],
             "mes.experiment_samples": [],
+            "mes.experiment_runs": [],
             "mes.streams": [],
             "mes.conflicts": [],
         }

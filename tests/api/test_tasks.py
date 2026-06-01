@@ -14,6 +14,7 @@ class FakeTaskStorage:
         experiments=None,
         experiment_trays=None,
         experiment_samples=None,
+        experiment_runs=None,
         conflicts=None,
         devices=None,
         meta=None,
@@ -26,6 +27,7 @@ class FakeTaskStorage:
             "mes.experiments": list(experiments or []),
             "mes.experiment_trays": list(experiment_trays or []),
             "mes.experiment_samples": list(experiment_samples or []),
+            "mes.experiment_runs": list(experiment_runs or []),
             "mes.conflicts": list(conflicts or []),
             "mes.devices": list(devices or []),
             "mes.meta": dict(meta or {}),
@@ -62,6 +64,7 @@ def build_client(
     experiments=None,
     experiment_trays=None,
     experiment_samples=None,
+    experiment_runs=None,
     conflicts=None,
     devices=None,
     meta=None,
@@ -76,6 +79,7 @@ def build_client(
         experiments=experiments,
         experiment_trays=experiment_trays,
         experiment_samples=experiment_samples,
+        experiment_runs=experiment_runs,
         conflicts=conflicts,
         devices=devices,
         meta=meta,
@@ -920,6 +924,11 @@ def test_update_task_confirmed_scheduled_experiment_removal_cleans_related_rows(
             {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "sample_code": "SP-A"},
             {"task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-B", "sample_code": "SP-B"},
         ],
+        experiment_runs=[
+            {"run_no": "RUN-KEEP", "task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-A", "tray_codes": ["TP-A"]},
+            {"run_no": "RUN-REMOVE", "task_code": "SYLU-2026-05-006", "experiment_code": "SYLU-2026-05-006-B", "tray_codes": ["TP-B"]},
+            {"run_no": "RUN-OTHER", "task_code": "OTHER", "experiment_code": "OTHER-A", "tray_codes": ["OTHER-TP-001"]},
+        ],
     )
 
     response = client.put(
@@ -947,6 +956,7 @@ def test_update_task_confirmed_scheduled_experiment_removal_cleans_related_rows(
     assert [item["id"] for item in storage.read("mes.schedules")] == ["SCH-OTHER"]
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
+    assert [item["run_no"] for item in storage.read("mes.experiment_runs")] == ["RUN-OTHER"]
 
 
 def test_update_task_type_change_after_preallocation_resets_handover_allocation(monkeypatch):
@@ -1010,6 +1020,10 @@ def test_update_task_type_change_after_preallocation_resets_handover_allocation(
             {"task_code": "SYLU-2026-05-020", "experiment_code": "SYLU-2026-05-020-A", "sample_code": "SYLU-2026-05-020-SP-001"},
             {"task_code": "OTHER", "experiment_code": "OTHER-A", "sample_code": "OTHER-SP-001"},
         ],
+        experiment_runs=[
+            {"run_no": "RUN-OLD", "task_code": "SYLU-2026-05-020", "experiment_code": "SYLU-2026-05-020-A", "tray_codes": ["SYLU-2026-05-020-TP-001"]},
+            {"run_no": "RUN-OTHER", "task_code": "OTHER", "experiment_code": "OTHER-A", "tray_codes": ["OTHER-TP-001"]},
+        ],
     )
 
     response = client.put(
@@ -1050,6 +1064,9 @@ def test_update_task_type_change_after_preallocation_resets_handover_allocation(
     ]
     assert storage.read("mes.experiment_samples") == [
         {"task_code": "OTHER", "experiment_code": "OTHER-A", "sample_code": "OTHER-SP-001"}
+    ]
+    assert storage.read("mes.experiment_runs") == [
+        {"run_no": "RUN-OTHER", "task_code": "OTHER", "experiment_code": "OTHER-A", "tray_codes": ["OTHER-TP-001"]}
     ]
     assert all(sample["status"] == "运输中" for sample in stored_samples)
     assert all(sample["flow_status"] == "运输中" for sample in stored_samples)
@@ -1416,6 +1433,10 @@ def test_delete_task_also_removes_related_records(monkeypatch):
             {"id": "EXS-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "sample_code": "SYLU-2026-03-001-SP-001"},
             {"id": "EXS-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "sample_code": "SYLU-2026-03-002-SP-001"},
         ],
+        experiment_runs=[
+            {"run_no": "RUN-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "tray_codes": ["SYLU-2026-03-001-TP-001"]},
+            {"run_no": "RUN-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "tray_codes": ["SYLU-2026-03-002-TP-001"]},
+        ],
     )
 
     deleted = client.delete("/api/tasks/SYLU-2026-03-001")
@@ -1430,6 +1451,7 @@ def test_delete_task_also_removes_related_records(monkeypatch):
     assert [item["task_code"] for item in storage.read("mes.experiments")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_trays")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_samples")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.experiment_runs")] == ["SYLU-2026-03-002"]
 
 
 def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and_meta(monkeypatch):
@@ -1442,6 +1464,7 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
         experiments=[{"id": "EXP-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "experiment_name": "振动试验", "status": "实验进行中"}],
         experiment_trays=[{"id": "REL-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
         experiment_samples=[{"id": "EXS-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
+        experiment_runs=[{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
         conflicts=[{"task_code": "SYLU-2026-03-999"}],
         devices=[{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
         meta={"schema_version": 2},
@@ -1469,6 +1492,7 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert storage.read("mes.streams") == []
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
+    assert storage.read("mes.experiment_runs") == []
     assert storage.read("mes.conflicts") == []
     assert storage.read("mes.devices") == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
     assert storage.read_all()["mes.meta"] == {"schema_version": 2}

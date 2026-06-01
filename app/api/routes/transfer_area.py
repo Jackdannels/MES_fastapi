@@ -30,6 +30,7 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.samples",
     "mes.schedules",
     "mes.experiments",
+    "mes.experiment_runs",
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.staging_events",
@@ -210,6 +211,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
+        "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -225,6 +227,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.samples": snapshot["samples"],
             "mes.schedules": snapshot["schedules"],
             "mes.experiments": snapshot["experiments"],
+            "mes.experiment_runs": snapshot["experiment_runs"],
             "mes.experiment_trays": snapshot["experiment_trays"],
             "mes.experiment_samples": snapshot["experiment_samples"],
             "mes.staging_events": snapshot["staging_events"],
@@ -1568,6 +1571,9 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     next_experiment_samples = [
         entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
+    snapshot["experiment_runs"] = [
+        entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     tray_codes = []
     tray_code_by_id: dict[int, str] = {}
@@ -1782,6 +1788,9 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     ]
     snapshot["experiment_samples"] = [
         entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
+    snapshot["experiment_runs"] = [
+        entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
 
     task["transfer_status"] = TASK_STATUS_PENDING

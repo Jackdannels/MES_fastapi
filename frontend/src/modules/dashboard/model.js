@@ -19,6 +19,7 @@ const DEVICE_STATUS_AVAILABLE = "可用";
 const DEVICE_STATUS_WORKING = "工作中";
 const DEVICE_STATUS_REPAIR = "维修";
 const DEVICE_STATUS_CARE = "保养";
+const RUNNING_EXPERIMENT_RUN_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_RUNNING]);
 const LEGACY_STATUS_COMPLETED = "实验完成";
 const LEGACY_STATUS_COMPLETED_ALT = "实验已经完成";
 const LEGACY_STATUS_RETENTION = "暂存间排放";
@@ -202,8 +203,21 @@ function resolveTaskStatus(task, schedules, experiments) {
 }
 
 // 推导设备汇总区当前显示的设备状态标签。
-function computeDeviceStatus(device, schedules, samples, experimentTrays, returnedTaskCodes = new Set()) {
+function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, returnedTaskCodes = new Set()) {
   const deviceCode = normalizeText(device?.code);
+  const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
+  const runningRun = experimentRunList.find(
+    (run) =>
+      normalizeText(run?.device) === deviceCode
+      && RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
+      && !returnedTaskCodes.has(normalizeText(run?.task_code)),
+  );
+  if (runningRun) {
+    return DEVICE_STATUS_WORKING;
+  }
+  if (experimentRunList.length > 0) {
+    return normalizeDeviceStatus(device?.status);
+  }
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (entry) => normalizeText(entry?.device) === deviceCode
   );
@@ -255,7 +269,7 @@ function resolveDeviceDotClass(status) {
 }
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
-function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, samples, experimentTrays, conflicts, now = Date.now() }) {
+function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, samples, experimentTrays, conflicts, now = Date.now() }) {
   const returnedTaskCodes = new Set(
     (Array.isArray(tasks) ? tasks : [])
       .filter((task) => isReturnedTaskRecord(task, schedules))
@@ -270,6 +284,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   const activeExperimentList = experimentList.filter((experiment) => !returnedTaskCodes.has(normalizeText(experiment?.task_code)));
   const sampleList = Array.isArray(samples) ? samples : [];
   const experimentTrayList = Array.isArray(experimentTrays) ? experimentTrays : [];
+  const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
   const pendingExceptionExperimentKeys = buildPendingExceptionExperimentKeys(conflicts);
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
   const samplesByTaskCode = new Map();
@@ -319,7 +334,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
   const deviceItems = deviceList.map((device) => {
-    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, returnedTaskCodes);
+    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, experimentRunList, returnedTaskCodes);
     return {
       code: normalizeText(device?.code) || "-",
       dotClass: resolveDeviceDotClass(deviceStatus),

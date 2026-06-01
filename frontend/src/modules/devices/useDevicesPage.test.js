@@ -39,6 +39,17 @@ const buildRunningExperimentSnapshot = () => ({
   "mes.experiment_trays": [
     { experiment_code: "TASK-001-A", task_code: "TASK-001", tray_code: "TASK-001-TP-001" },
   ],
+  "mes.experiment_runs": [
+    {
+      device: "冲击一室",
+      experiment_code: "TASK-001-A",
+      planned_end_at: "2099-03-20T10:00",
+      run_no: "RUN-001",
+      status: "实验进行中",
+      task_code: "TASK-001",
+      tray_codes: ["TASK-001-TP-001"],
+    },
+  ],
   "mes.samples": [
     {
       code: "TASK-001-SP-001",
@@ -87,6 +98,7 @@ describe("useDevicesPage", () => {
         { code: "冲击一室", name: "冲击试验系统-1", status: "可用" },
       ],
       "mes.experiment_trays": [],
+      "mes.experiment_runs": [],
       "mes.samples": [
         {
           task_code: "TASK-001",
@@ -450,6 +462,7 @@ describe("useDevicesPage", () => {
             trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TASK-001-TP-001" })],
           }),
         ],
+        "mes.experiment_runs": [],
       }),
     );
   });
@@ -490,9 +503,40 @@ describe("useDevicesPage", () => {
             trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TASK-001-TP-001" })],
           }),
         ],
+        "mes.experiment_runs": [
+          expect.objectContaining({
+            ended_at: "2099-03-20T07:30:00",
+            run_no: "RUN-001",
+            status: "实验已完成",
+          }),
+        ],
         "mes.schedules": [],
       }),
     );
+  });
+
+  test("detects a running repair conflict from experiment runs before sample refreshes", async () => {
+    const snapshot = buildRunningExperimentSnapshot();
+    snapshot["mes.samples"] = snapshot["mes.samples"].map((sample) => ({
+      ...sample,
+      flow_status: "实验准备就绪",
+      status: "实验准备就绪",
+      trays: [{ tray_code: "TASK-001-TP-001", status: "实验准备就绪" }],
+    }));
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = "维修";
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(wrapper.vm.runningRepairChoiceOpen).toBe(true);
+    expect(wrapper.vm.runningRepairChoiceDetail.runningSchedules).toEqual([
+      expect.objectContaining({ experiment_code: "TASK-001-A", task_code: "TASK-001" }),
+    ]);
   });
 
   test("sets a device back to available and clears maintenance fields", async () => {

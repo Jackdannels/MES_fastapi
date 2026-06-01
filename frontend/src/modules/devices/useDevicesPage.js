@@ -66,6 +66,7 @@ function useDevicesPage() {
     STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_runs,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
@@ -74,6 +75,7 @@ function useDevicesPage() {
   const rawConflicts = ref([]);
   const rawDevices = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentRuns = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
@@ -101,7 +103,7 @@ function useDevicesPage() {
   let flushPendingStorageRefresh = () => false;
 
   const baseRows = computed(() =>
-    buildDeviceRows(rawDevices.value, rawSchedules.value, now.value, rawSamples.value, rawExperimentTrays.value),
+    buildDeviceRows(rawDevices.value, rawSchedules.value, now.value, rawSamples.value, rawExperimentTrays.value, rawExperimentRuns.value),
   );
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
@@ -292,6 +294,12 @@ function useDevicesPage() {
     );
 
   const resolveScheduleTrayCodes = (schedule) => {
+    const scheduleTrayCodes = (Array.isArray(schedule?.tray_codes) ? schedule.tray_codes : [])
+      .map(normalizeText)
+      .filter(Boolean);
+    if (scheduleTrayCodes.length > 0) {
+      return scheduleTrayCodes;
+    }
     const taskCode = normalizeText(schedule?.task_code);
     const experimentCode = normalizeText(schedule?.experiment_code);
     const scopedCodes = rawExperimentTrays.value
@@ -330,9 +338,29 @@ function useDevicesPage() {
   };
 
   const findRunningSchedulesForDevice = (deviceCode) =>
-    rawSchedules.value.filter(
-      (schedule) => normalizeText(schedule?.device) === normalizeText(deviceCode) && scheduleHasRunningTray(schedule, deviceCode),
-    );
+    rawExperimentRuns.value.length > 0
+      ? rawExperimentRuns.value
+          .filter((run) => normalizeText(run?.device) === normalizeText(deviceCode) && isRunningExperimentStatus(run?.status))
+          .map((run) => {
+            const matchedSchedule = rawSchedules.value.find(
+              (schedule) =>
+                normalizeText(schedule?.device) === normalizeText(deviceCode)
+                && normalizeText(schedule?.task_code) === normalizeText(run?.task_code)
+                && normalizeText(schedule?.experiment_code) === normalizeText(run?.experiment_code),
+            );
+            return {
+              ...(matchedSchedule || {}),
+              device: normalizeText(run?.device) || normalizeText(matchedSchedule?.device),
+              experiment_code: normalizeText(run?.experiment_code) || normalizeText(matchedSchedule?.experiment_code),
+              id: normalizeText(matchedSchedule?.id) || normalizeText(run?.schedule_id),
+              run_no: normalizeText(run?.run_no) || normalizeText(run?.id),
+              task_code: normalizeText(run?.task_code) || normalizeText(matchedSchedule?.task_code),
+              tray_codes: Array.isArray(run?.tray_codes) ? run.tray_codes : [],
+            };
+          })
+      : rawSchedules.value.filter(
+          (schedule) => normalizeText(schedule?.device) === normalizeText(deviceCode) && scheduleHasRunningTray(schedule, deviceCode),
+        );
 
   const buildLaboratoryTaskFromSchedule = (schedule) => {
     const experiment = findExperimentBySchedule(schedule);
@@ -398,6 +426,9 @@ function useDevicesPage() {
     const runningExperimentKeys = new Set(
       runningSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
     );
+    const runningRunNos = new Set(
+      runningSchedules.map((schedule) => normalizeText(schedule?.run_no)).filter(Boolean),
+    );
     const deviceCode = normalizeText(maintenancePlanDevice.value?.code);
     const plan = normalizeMaintenancePlan(form);
     const nextDevices = rawDevices.value.map((device) =>
@@ -451,9 +482,30 @@ function useDevicesPage() {
       ...task,
       status: resolveTaskStatus(task, nextSchedules, nextSamples, new Date(timestamp), rawExperimentTrays.value),
     }));
+    const nextExperimentRuns =
+      mode === "complete"
+        ? rawExperimentRuns.value.map((run) => {
+            const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
+            const key = `${normalizeText(run?.task_code)}::${normalizeText(run?.experiment_code)}`;
+            if (!runningRunNos.has(runNo) && !runningExperimentKeys.has(key)) {
+              return { ...run };
+            }
+            return {
+              ...run,
+              ended_at: timestamp,
+              status: STATUS_COMPLETED,
+              updated_at: timestamp,
+            };
+          })
+        : rawExperimentRuns.value.filter((run) => {
+            const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
+            const key = `${normalizeText(run?.task_code)}::${normalizeText(run?.experiment_code)}`;
+            return !runningRunNos.has(runNo) && !runningExperimentKeys.has(key);
+          });
     return {
       [STORAGE_KEYS.devices]: nextDevices,
       [STORAGE_KEYS.experiments]: nextExperiments,
+      [STORAGE_KEYS.experiment_runs]: nextExperimentRuns,
       [STORAGE_KEYS.samples]: nextSamples,
       [STORAGE_KEYS.schedules]: nextSchedules,
       [STORAGE_KEYS.tasks]: nextTasks,
@@ -649,6 +701,7 @@ function useDevicesPage() {
     });
     rawDevices.value = updates[STORAGE_KEYS.devices];
     rawExperiments.value = updates[STORAGE_KEYS.experiments];
+    rawExperimentRuns.value = updates[STORAGE_KEYS.experiment_runs];
     rawSamples.value = updates[STORAGE_KEYS.samples];
     rawSchedules.value = updates[STORAGE_KEYS.schedules];
     rawTasks.value = updates[STORAGE_KEYS.tasks];
@@ -749,6 +802,7 @@ function useDevicesPage() {
     rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
     rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
     rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
       ? snapshot[STORAGE_KEYS.experiment_trays]
       : [];
@@ -772,6 +826,7 @@ function useDevicesPage() {
       STORAGE_KEYS.conflicts,
       STORAGE_KEYS.devices,
       STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.schedules,
