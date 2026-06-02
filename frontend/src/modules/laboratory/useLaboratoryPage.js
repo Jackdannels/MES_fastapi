@@ -1,6 +1,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
+import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
+import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
 import { withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
@@ -30,7 +32,9 @@ const RUNNING_MODAL_RESTORE_MS = 10_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
+const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成"]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
+const SALT_SPRAY_LAB_CODE = "LAB_SALT";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
@@ -49,7 +53,7 @@ const normalizeText = (value) => String(value ?? "").trim();
 const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
 
 const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
-  labCode: "",
+  labCode: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : labName,
   labId: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName,
   labName,
   testTypeName: "",
@@ -77,8 +81,11 @@ const writeStoredLabName = (labName) => {
 
 const resolveLabId = (lab, labName) =>
   normalizeText(lab?.mqttLabId || lab?.mqtt_lab_id)
-  || (normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT" ? SALT_SPRAY_LAB_ID : normalizeText(lab?.code || lab?.lab_code))
+  || (normalizeText(lab?.code || lab?.lab_code) === SALT_SPRAY_LAB_CODE ? SALT_SPRAY_LAB_ID : normalizeText(lab?.code || lab?.lab_code))
   || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName);
+const resolveLabCode = (lab, labName) =>
+  normalizeText(lab?.code || lab?.lab_code)
+  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : normalizeText(labName));
 
 const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
   const enabledLabs = (Array.isArray(masterLabs) ? masterLabs : []).filter((lab) => {
@@ -94,7 +101,7 @@ const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
     : null;
   const matchedLab =
     matchedRequestedLab
-    || enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === "LAB_SALT")
+    || enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === SALT_SPRAY_LAB_CODE)
     || enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === SALT_SPRAY_LAB);
   if (!matchedLab) {
     const fallbackLabName = requestedLabName && STATIC_LAB_NAMES.includes(requestedLabName) ? requestedLabName : SALT_SPRAY_LAB;
@@ -103,7 +110,7 @@ const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
   const labName = normalizeText(matchedLab?.name || matchedLab?.lab_name);
   const resolvedLabName = labName || requestedLabName || SALT_SPRAY_LAB;
   return {
-    labCode: normalizeText(matchedLab?.code || matchedLab?.lab_code),
+    labCode: resolveLabCode(matchedLab, resolvedLabName),
     labId: resolveLabId(matchedLab, resolvedLabName),
     labName: resolvedLabName,
     testTypeName: normalizeText(matchedLab?.testTypeName || matchedLab?.test_type_name || matchedLab?.testType || matchedLab?.test_type),
@@ -173,8 +180,10 @@ function useLaboratoryPage(options = {}) {
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
   const completingRunningExperimentKeys = new Set();
+  let lastActiveRunningExperiment = null;
   let flushPendingStorageRefresh = () => false;
   let hasPendingSamplesRefresh = false;
+  let hostInterfaceModeSync = null;
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
 
@@ -358,6 +367,52 @@ function useLaboratoryPage(options = {}) {
     scheduleRunningModalRestore();
   };
 
+  const runMatchesCompletedSnapshot = (run, runningSnapshot) => {
+    const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
+    if (normalizeText(runningSnapshot?.runNo) && runNo === normalizeText(runningSnapshot?.runNo)) {
+      return true;
+    }
+    if (
+      normalizeText(run?.task_code) !== normalizeText(runningSnapshot?.taskCode)
+      || normalizeText(run?.experiment_code) !== normalizeText(runningSnapshot?.experimentCode)
+    ) {
+      return false;
+    }
+    const snapshotTrayCodes = new Set((runningSnapshot?.trayCodes || []).map(normalizeText).filter(Boolean));
+    const runTrayCodes = new Set((Array.isArray(run?.tray_codes) ? run.tray_codes : []).map(normalizeText).filter(Boolean));
+    return snapshotTrayCodes.size > 0 && Array.from(snapshotTrayCodes).every((trayCode) => runTrayCodes.has(trayCode));
+  };
+
+  const preserveExternallyCompletedRunningExperiment = (runningSnapshot) => {
+    if (!runningSnapshot?.active) {
+      return false;
+    }
+    const matchedCompletedRun = experimentRuns.value.find(
+      (run) =>
+        COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
+        && runMatchesCompletedSnapshot(run, runningSnapshot),
+    );
+    if (!matchedCompletedRun) {
+      return false;
+    }
+    const completedAt = normalizeText(matchedCompletedRun?.ended_at) || normalizeText(matchedCompletedRun?.updated_at);
+    completedRunningExperiment.value = {
+      ...runningSnapshot,
+      active: true,
+      completed: true,
+      countdownLabel: "实验已完成",
+      endDateTimeLabel: completedAt || runningSnapshot.endDateTimeLabel,
+      overdue: false,
+      overdueLabel: "",
+      remainingSeconds: 0,
+      statusLabel: "实验已完成",
+    };
+    runningModalVisible.value = true;
+    completePromptVisible.value = false;
+    clearRunningModalRestoreTimer();
+    return true;
+  };
+
   watch(
     () => view.value.currentExperimentTrayRows,
     (trayRows) => {
@@ -379,9 +434,15 @@ function useLaboratoryPage(options = {}) {
     (active) => {
       if (active) {
         completedRunningExperiment.value = null;
+        lastActiveRunningExperiment = { ...runningExperiment.value };
         showRunningModal();
         return;
       }
+      if (preserveExternallyCompletedRunningExperiment(lastActiveRunningExperiment)) {
+        lastActiveRunningExperiment = null;
+        return;
+      }
+      lastActiveRunningExperiment = null;
       if (completedRunningExperiment.value?.active) {
         runningModalVisible.value = true;
         completePromptVisible.value = false;
@@ -511,6 +572,7 @@ function useLaboratoryPage(options = {}) {
       window.addEventListener("touchstart", handleRunningModalActivity, true);
       window.addEventListener("keydown", handleRunningModalActivity, true);
     }
+    void ensureHostInterfaceModeSynced().catch((error) => console.warn(error));
     void load();
   });
 
@@ -570,8 +632,22 @@ function useLaboratoryPage(options = {}) {
   const getCurrentTaskTrayRowsByStatus = (status) =>
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
+  const isMqttHostInterfaceMode = () => readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt;
+  const ensureHostInterfaceModeSynced = async () => {
+    if (!isMqttHostInterfaceMode()) {
+      return;
+    }
+    hostInterfaceModeSync = hostInterfaceModeSync || syncHostInterfaceMode(HOST_INTERFACE_MODES.mqtt).finally(() => {
+      hostInterfaceModeSync = null;
+    });
+    await hostInterfaceModeSync;
+  };
   const publishLaboratoryMqSafely = async (publisher, payload) => {
+    if (!isMqttHostInterfaceMode()) {
+      return;
+    }
     try {
+      await ensureHostInterfaceModeSynced();
       await publisher(payload);
     } catch (error) {
       console.warn(error);
@@ -587,15 +663,15 @@ function useLaboratoryPage(options = {}) {
   const buildFixtureInstallPayload = () => {
     const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
     return {
-      labId: laboratoryConfig.value.labId,
-      sampleCount: countTrayRowSamples(targetTrayRows),
-      sampleType: "",
-      taskId: currentTask.value?.taskCode || "",
+      lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+      sample_count: countTrayRowSamples(targetTrayRows),
+      sample_type: "",
+      task_code: currentTask.value?.taskCode || "",
     };
   };
   const buildReadyPayload = () => ({
-    labId: laboratoryConfig.value.labId,
-    taskId: currentTask.value?.taskCode || "",
+    lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+    task_code: currentTask.value?.taskCode || "",
   });
   const persistSamples = (nextSamples) => {
     const writeSamples = () =>
@@ -650,7 +726,7 @@ function useLaboratoryPage(options = {}) {
             samples: samples.value,
           })
         : samples.value;
-    const nextSamples = applyLaboratoryTaskStep({
+    let nextSamples = applyLaboratoryTaskStep({
       currentTask: currentTask.value,
       historyAction,
       nextStatus,
@@ -658,6 +734,13 @@ function useLaboratoryPage(options = {}) {
       samples: baseSamples,
       targetTrayCodes,
     });
+    if (nextStatus === LAB_INSTALL_STATUS) {
+      nextSamples = clearFixtureReadyForTask({
+        nextSamples,
+        taskCode: currentTask.value?.taskCode,
+        trayCodes: targetTrayCodes,
+      });
+    }
     samples.value = nextSamples;
     await persistSamples(nextSamples);
     if (typeof window !== "undefined") {
@@ -689,6 +772,42 @@ function useLaboratoryPage(options = {}) {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
   };
+  const clearFixtureReadyForTask = ({ nextSamples, taskCode, trayCodes }) => {
+    const targetTaskCode = String(taskCode || "").trim();
+    const targetTrayCodes = new Set((Array.isArray(trayCodes) ? trayCodes : []).map((code) => String(code || "").trim()).filter(Boolean));
+    if (!targetTaskCode || targetTrayCodes.size === 0) {
+      return nextSamples;
+    }
+    return nextSamples.map((sample) => {
+      if (String(sample?.task_code || "").trim() !== targetTaskCode || !Array.isArray(sample?.trays)) {
+        return sample;
+      }
+      return {
+        ...sample,
+        trays: sample.trays.map((tray) => {
+          if (!targetTrayCodes.has(String(tray?.tray_code || "").trim())) {
+            return tray;
+          }
+          const { fixtureReady, fixture_ready, ...rest } = tray;
+          return rest;
+        }),
+      };
+    });
+  };
+  const openFixtureConfirmSuccess = () => {
+    clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
+    fixtureConfirmModalOpen.value = false;
+    fixtureConfirmSuccessModalOpen.value = true;
+    if (typeof window === "undefined") {
+      return;
+    }
+    fixtureConfirmSuccessTimer = window.setTimeout(() => {
+      fixtureConfirmSuccessModalOpen.value = false;
+      fixtureConfirmSuccessTimer = null;
+      flushPendingRealtimeRefresh();
+    }, FIXTURE_CONFIRM_SUCCESS_MS);
+  };
   const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
@@ -704,16 +823,21 @@ function useLaboratoryPage(options = {}) {
         return;
       }
       clearFixtureConfirmTimer();
-      fixtureConfirmModalOpen.value = false;
-      fixtureConfirmSuccessModalOpen.value = true;
-      fixtureConfirmSuccessTimer = window.setTimeout(() => {
-        fixtureConfirmSuccessModalOpen.value = false;
-        fixtureConfirmSuccessTimer = null;
-        flushPendingRealtimeRefresh();
-      }, FIXTURE_CONFIRM_SUCCESS_MS);
+      if (isMqttHostInterfaceMode()) {
+        return;
+      }
+      openFixtureConfirmSuccess();
       void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
   };
+  watch(
+    () => workflow.value.fixtureReadyDone,
+    (fixtureReadyDone) => {
+      if (fixtureReadyDone && fixtureConfirmModalOpen.value && isMqttHostInterfaceMode()) {
+        openFixtureConfirmSuccess();
+      }
+    },
+  );
   const confirmCompare = async () => {
     if (!currentTask.value || !canCompleteCompare.value) {
       return;

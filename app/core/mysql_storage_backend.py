@@ -2509,22 +2509,46 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         tray_rows = cursor.fetchall()
         task_nos = sorted({normalize_text(row.get("task_no")) for row in sample_rows if normalize_text(row.get("task_no"))})
-        fixture_ready_task_nos: set[str] = set()
+        fixture_ready_task_times: Dict[str, datetime] = {}
+        latest_install_task_times: Dict[str, datetime] = {}
         if task_nos:
             task_placeholders = ", ".join(["%s"] * len(task_nos))
             cursor.execute(
                 f"""
-                SELECT DISTINCT task_no
+                SELECT task_no, MAX(event_time) AS event_time
                 FROM biz_experiment_event
                 WHERE event_type = 'FIXTURE_READY'
                   AND task_no IN ({task_placeholders})
+                GROUP BY task_no
                 """,
                 task_nos,
             )
-            fixture_ready_task_nos = {normalize_text(row.get("task_no")) for row in cursor.fetchall()}
+            fixture_ready_task_times = {
+                normalize_text(row.get("task_no")): parse_storage_datetime(row.get("event_time"))
+                for row in cursor.fetchall()
+                if normalize_text(row.get("task_no")) and parse_storage_datetime(row.get("event_time")) is not None
+            }
+            cursor.execute(
+                f"""
+                SELECT task_no, MAX(event_time) AS event_time
+                FROM biz_sample_event
+                WHERE action_type IN ('样品安装', '工装夹具安装')
+                  AND task_no IN ({task_placeholders})
+                GROUP BY task_no
+                """,
+                task_nos,
+            )
+            latest_install_task_times = {
+                normalize_text(row.get("task_no")): parse_storage_datetime(row.get("event_time"))
+                for row in cursor.fetchall()
+                if normalize_text(row.get("task_no")) and parse_storage_datetime(row.get("event_time")) is not None
+            }
         tray_map: Dict[int, list[dict[str, Any]]] = {}
         for row in tray_rows:
-            if normalize_text(row.get("task_no")) in fixture_ready_task_nos:
+            task_no = normalize_text(row.get("task_no"))
+            fixture_ready_time = fixture_ready_task_times.get(task_no)
+            install_time = latest_install_task_times.get(task_no)
+            if fixture_ready_time is not None and (install_time is None or fixture_ready_time >= install_time):
                 row["fixture_ready"] = True
                 row["fixtureReady"] = True
             tray_map.setdefault(row["sample_id"], []).append(row)

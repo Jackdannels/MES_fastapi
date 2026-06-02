@@ -3,6 +3,7 @@ import { nextTick } from "vue";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { useProcessLabs } from "./useProcessLabs";
+import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
@@ -19,6 +20,14 @@ describe("useProcessLabs", () => {
   beforeEach(() => {
     masterDataMocks.readMasterLabs.mockReset();
     masterDataMocks.readMasterLabs.mockResolvedValue([]);
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn(() => null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+    });
   });
 
   test("uses enabled formal master labs for process cards when explicit labs are not provided", async () => {
@@ -2000,6 +2009,68 @@ describe("useProcessLabs", () => {
     );
     expect(selectedTaskDetail.value.remainingTrayCount).toBe(0);
     vi.useRealTimers();
+  });
+
+  test("blocks manual experiment start in mqtt mode and waits for the upper computer event", async () => {
+    window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? HOST_INTERFACE_MODES.mqtt : null));
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-1",
+          device: "盐雾试验室",
+          end_at: "2026-04-03T11:30:00Z",
+          experiment_code: "SYLU-2026-03-005-A",
+          planned_hours: 3.5,
+          start_at: "2026-04-03T08:00:00Z",
+          task_code: "SYLU-2026-03-005",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-03-005", name: "任务005", status: "已排程", test_type: "盐雾试验" }],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-03-005", experiment_code: "SYLU-2026-03-005-A", experiment_name: "盐雾试验" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-03-005", experiment_code: "SYLU-2026-03-005-A", tray_code: "SYLU-2026-03-005-TP-001" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-005-SP-001",
+          task_code: "SYLU-2026-03-005",
+          location: "盐雾试验室",
+          owner: "张三",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-03-005-TP-001", status: "实验准备就绪", quantity: 1 }],
+          history: [],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const {
+      labCards,
+      loadLabStatus,
+      openStartExperimentModal,
+      processActionMessage,
+      startExperiment,
+      startExperimentModalOpen,
+    } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value[0].readyTrayCount).toBe(1);
+    expect(labCards.value[0].canStartExperiment).toBe(false);
+    expect(labCards.value[0].startDisabledReason).toBe("MQTT模式下等待上位机发送实验开始信号");
+
+    await openStartExperimentModal(labCards.value[0]);
+    await startExperiment(labCards.value[0]);
+
+    expect(startExperimentModalOpen.value).toBe(false);
+    expect(processActionMessage.value).toBe("MQTT模式下等待上位机发送实验开始信号");
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("starts ready trays when the sample is ready but tray-level status is blank", async () => {

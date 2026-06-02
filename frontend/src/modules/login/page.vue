@@ -30,6 +30,29 @@
             </option>
           </select>
         </label>
+        <div class="login-field">
+          <span>接口模式</span>
+          <div class="login-interface-mode" role="group" aria-label="接口模式">
+            <button
+              class="login-interface-mode__option"
+              :class="{ 'is-active': interfaceMode === 'mock' }"
+              type="button"
+              :aria-pressed="interfaceMode === 'mock'"
+              @click="setInterfaceMode('mock')"
+            >
+              Mock
+            </button>
+            <button
+              class="login-interface-mode__option"
+              :class="{ 'is-active': interfaceMode === 'mqtt' }"
+              type="button"
+              :aria-pressed="interfaceMode === 'mqtt'"
+              @click="setInterfaceMode('mqtt')"
+            >
+              MQTT
+            </button>
+          </div>
+        </div>
         <button class="action-btn login-submit" type="submit" :disabled="submitting">
           {{ submitting ? "登录中..." : "登录" }}
         </button>
@@ -54,7 +77,7 @@ const router = useRouter();
 const route = useRoute();
 const redirectPath =
   typeof route.query.redirect === "string" && route.query.redirect.trim() ? route.query.redirect.trim() : "";
-const { errorMessage, moduleKey, password, selectedLabName, submitLogin, submitting, username } = useLoginForm({
+const { errorMessage, interfaceMode, moduleKey, password, selectedLabName, setInterfaceMode, submitLogin, submitting, username } = useLoginForm({
   login: loginWithCredentials,
   navigate: (target) => router.replace(target),
   redirectPath,

@@ -1,70 +1,73 @@
 {
   "name": "MES与上位机MQTT接口定义",
-  "version": "1.0",
+  "version": "2.0",
   "encoding": "UTF-8",
   "payloadFormat": "JSON",
+  "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
   "topicPrefix": "mes/v1",
   "send": [
     {
       "name": "安装夹具，校验信息",
       "direction": "MES_TO_HOST",
-      "topic": "mes/v1/labs/{labId}/commands/fixture-install",
+      "topic": "mes/v1/labs/{lab_code}/commands/fixture-install",
       "payload": {
-        "messageType": "INSTALL_FIXTURE",
-        "taskId": "任务id",
-        "labId": "实验室id",
-        "sampleType": "样品类型",
-        "sampleCount": 0
+        "task_code": "任务编号",
+        "lab_code": "试验间编码",
+        "sample_type": "样品类型",
+        "sample_count": 0
+      }
+    },
+    {
+      "name": "实验准备就绪",
+      "direction": "MES_TO_HOST",
+      "topic": "mes/v1/labs/{lab_code}/commands/experiment-ready",
+      "payload": {
+        "task_code": "任务编号",
+        "lab_code": "试验间编码"
       }
     }
   ],
   "receive": [
     {
-      "name": "夹具安装完成，启动准备就绪",
+      "name": "夹具安装完成",
       "direction": "HOST_TO_MES",
-      "topic": "mes/v1/labs/{labId}/events/fixture-ready",
+      "topic": "mes/v1/labs/{lab_code}/events/fixture-ready",
       "payload": {
-        "messageType": "FIXTURE_READY",
-        "taskId": "任务id",
-        "labId": "实验室id",
-        "successId": "成功id"
+        "lab_code": "试验间编码",
+        "success_id": "成功标识",
+        "fixture_ready_at": "2026-05-16 09:31:00"
       }
     },
     {
-      "name": "实验开始时间",
+      "name": "实验开始",
       "direction": "HOST_TO_MES",
-      "topic": "mes/v1/labs/{labId}/events/experiment-started",
+      "topic": "mes/v1/labs/{lab_code}/events/experiment-started",
       "payload": {
-        "messageType": "EXPERIMENT_STARTED",
-        "taskId": "任务id",
-        "experimentId": "实验id",
-        "labId": "实验室id",
-        "time": "2026-05-16T09:30:00+08:00"
+        "lab_code": "试验间编码",
+        "started_at": "2026-05-16 10:00:00"
       }
     },
     {
-      "name": "实验结束时间",
+      "name": "实验结束",
       "direction": "HOST_TO_MES",
-      "topic": "mes/v1/labs/{labId}/events/experiment-ended",
+      "topic": "mes/v1/labs/{lab_code}/events/experiment-ended",
       "payload": {
-        "messageType": "EXPERIMENT_ENDED",
-        "taskId": "任务id",
-        "experimentId": "实验id",
-        "labId": "实验室id",
-        "time": "2026-05-16T11:30:00+08:00"
+        "lab_code": "试验间编码",
+        "ended_at": "2026-05-16 17:30:00"
       }
     },
     {
-      "name": "结果接收",
+      "name": "实验结果",
       "direction": "HOST_TO_MES",
-      "topic": "mes/v1/labs/{labId}/events/experiment-result",
+      "topic": "mes/v1/labs/{lab_code}/events/experiment-result",
       "payload": {
-        "messageType": "EXPERIMENT_RESULT",
-        "taskId": "任务id",
-        "experimentId": "实验id",
-        "labId": "实验室id",
-        "time": "2026-05-16T11:31:00+08:00",
-        "resultPackage": {}
+        "lab_code": "试验间编码",
+        "result_at": "2026-05-16 17:31:00",
+        "result_package": {
+          "conclusion": "PASS",
+          "summary": "实验结果正常",
+          "files": []
+        }
       }
     }
   ]

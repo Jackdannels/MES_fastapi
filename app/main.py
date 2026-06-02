@@ -1,15 +1,29 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import Settings, settings
 from app.modules.registry import API_ROUTERS
+from app.services.mq_runtime import MqttRuntimeController
 from app.web import routes as web_routes
 
 
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     configured_settings = app_settings or settings
-    app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG)
+    mq_runtime = MqttRuntimeController(configured_settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        _app.state.mq_runtime = mq_runtime
+        try:
+            yield
+        finally:
+            mq_runtime.shutdown()
+
+    app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG, lifespan=lifespan)
+    app.state.mq_runtime = mq_runtime
 
     app.add_middleware(
         CORSMiddleware,

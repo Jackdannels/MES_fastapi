@@ -3,6 +3,8 @@ import { nextTick, reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import LaboratoryPage from "./page.vue";
+import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
+import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
 
@@ -44,6 +46,21 @@ const storagePutCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "PUT");
 const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
+const laboratoryMqCalls = () =>
+  fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory"));
+const waitForLaboratoryMqCall = async (endpoint) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    const matchedCall = fetch.mock.calls.find(([input]) => String(input).includes(endpoint));
+    if (matchedCall) {
+      return matchedCall;
+    }
+  }
+  return fetch.mock.calls.find(([input]) => String(input).includes(endpoint));
+};
+const useHostInterfaceMode = (mode) => {
+  window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? mode : null));
+};
 const waitForInitialLaboratoryLoad = async (storageCount, masterLabCount) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -294,6 +311,9 @@ describe("LaboratoryPage runtime", () => {
         };
         return { ok: true, status: 200, json: async () => ({ ok: true, samples: snapshotState[STORAGE_KEYS.samples] }) };
       }
+      if (url.includes("/api/mq/interface-mode")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, mode: HOST_INTERFACE_MODES.mqtt, subscriber_running: true }) };
+      }
       if (url.includes("/api/storage")) {
         if ((options.method || "GET") === "PUT") {
           const payload = JSON.parse(String(options.body || "{}"));
@@ -353,6 +373,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("uses the laboratory query to render and publish commands for a non-salt workbench", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     reactiveRoute.query = { lab: "冲击一室" };
     masterLabsState = [
       { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
@@ -413,10 +434,43 @@ describe("LaboratoryPage runtime", () => {
 
     const fixtureInstallCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
     expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({
-      labId: "LAB_IMPACT_1",
-      taskId: "SYLU-2026-04-501",
+      lab_code: "LAB_IMPACT_1",
+      sample_count: 1,
+      sample_type: "",
+      task_code: "SYLU-2026-04-501",
     }));
     expect(window.localStorage.setItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1", "冲击一室");
+  });
+
+  test("keeps laboratory MQ calls local when the host interface mode is mock", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        flow_status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(laboratoryMqCalls()).toHaveLength(0);
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "工装夹具安装",
+      status: "工装夹具安装",
+    }));
   });
 
   test("renders the salt-spray laboratory console and excludes other laboratory tasks", async () => {
@@ -1517,6 +1571,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("persists compare, install, and ready steps into sample tray statuses and keeps progress after remount", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
       {
@@ -1526,7 +1581,7 @@ describe("LaboratoryPage runtime", () => {
         status: "送至实验室",
         flow_status: "送至实验室",
         task_code: "SYLU-2026-04-101",
-        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+        trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
       },
       {
         code: "SYLU-2026-04-101-SP-002",
@@ -1570,13 +1625,13 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
     await nextTick();
 
-    const fixtureInstallCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
+    const fixtureInstallCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     expect(fixtureInstallCall).toBeDefined();
     expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual({
-      labId: "salt-spray-lab-01",
-      sampleCount: 1,
-      sampleType: "",
-      taskId: "SYLU-2026-04-101",
+      lab_code: "LAB_SALT",
+      sample_count: 1,
+      sample_type: "",
+      task_code: "SYLU-2026-04-101",
     });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "工装夹具安装",
@@ -1599,6 +1654,25 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
     vi.advanceTimersByTime(3000);
     await flushPageUpdates();
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(snapshotState[STORAGE_KEYS.samples][0].trays[0]).not.toEqual(expect.objectContaining({ fixture_ready: true }));
+
+    snapshotState[STORAGE_KEYS.samples] = snapshotState[STORAGE_KEYS.samples].map((sample) =>
+      sample.task_code === "SYLU-2026-04-101"
+        ? {
+            ...sample,
+            trays: sample.trays.map((tray) =>
+              tray.tray_code === "TP-001" ? { ...tray, fixtureReady: true, fixture_ready: true } : tray,
+            ),
+          }
+        : sample,
+    );
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await waitForStorageGetCount(expectedStorageGetCalls);
+    await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-fixture-success-modal"]').text()).toContain("上位机已确认夹具安装完成");
@@ -1612,11 +1686,11 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
     await nextTick();
 
-    const readyCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/mq/laboratory/ready"));
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
     expect(readyCall).toBeDefined();
     expect(JSON.parse(String(readyCall[1].body))).toEqual({
-      labId: "salt-spray-lab-01",
-      taskId: "SYLU-2026-04-101",
+      lab_code: "LAB_SALT",
+      task_code: "SYLU-2026-04-101",
     });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "实验准备就绪",
@@ -1905,6 +1979,82 @@ describe("LaboratoryPage runtime", () => {
       status: "实验已完成",
       ended_at: expect.any(String),
     }));
+  });
+
+  test("keeps the running modal open as completed when MQTT storage marks the run completed", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:30:00.000Z",
+        status: "实验进行中",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [
+      {
+        id: "run-1",
+        run_no: "run-1",
+        schedule_id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        tray_codes: ["TP-001"],
+        status: "实验进行中",
+        started_at: "2026-04-02T09:59:58.000Z",
+        planned_end_at: "2026-04-02T10:30:00.000Z",
+      },
+    ];
+
+    await mountPage();
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中");
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) => ({
+        ...sample,
+        flow_status: "实验已完成",
+        status: "实验已完成",
+        trays: sample.trays.map((tray) => ({ ...tray, status: "实验已完成" })),
+      })),
+      [STORAGE_KEYS.experiment_runs]: snapshotState[STORAGE_KEYS.experiment_runs].map((run) => ({
+        ...run,
+        ended_at: "2026-04-02T10:05:00.000Z",
+        status: "实验已完成",
+      })),
+    };
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs] },
+    }));
+    await waitForStorageGetCount(2);
+    await flushPageUpdates();
+
+    const modalText = document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "";
+    expect(modalText).toContain("实验已完成");
+    expect(modalText).not.toContain("实验已超时");
   });
 
   test("completing one experiment run keeps the schedule active when another tray still needs the same experiment", async () => {

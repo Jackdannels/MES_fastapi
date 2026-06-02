@@ -1239,7 +1239,7 @@ def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
                     }
                 ]
             elif "FROM biz_experiment_event" in statement:
-                self._result = [{"task_no": "SYLU-2026-03-003"}]
+                self._result = [{"task_no": "SYLU-2026-03-003", "event_time": "2026-03-17 09:05:00"}]
             elif "FROM biz_sample_event" in statement:
                 self._result = []
             else:
@@ -1252,6 +1252,71 @@ def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
 
     assert samples[0]["trays"][0]["fixture_ready"] is True
     assert samples[0]["trays"][0]["fixtureReady"] is True
+
+
+def test_load_samples_ignores_stale_fixture_ready_before_latest_install() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self._result = []
+
+        def execute(self, statement, params=None):
+            normalized = " ".join(str(statement).split())
+            if "FROM biz_sample s" in normalized:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "sample_no": "SYLU-2026-03-003-SP-001",
+                        "task_no": "SYLU-2026-03-003",
+                        "sample_type": "",
+                        "batch_no": "",
+                        "arrival_time": None,
+                        "quantity": 1,
+                        "storage_condition": "",
+                        "barcode_no": "",
+                        "location_desc": "盐雾试验室",
+                        "sample_status": "工装夹具安装",
+                        "flow_status": "工装夹具安装",
+                        "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:10:00",
+                    }
+                ]
+            elif "FROM biz_tray_item" in normalized:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "task_no": "SYLU-2026-03-003",
+                        "tray_code": "SYLU-2026-03-003-TP-001",
+                        "sample_code": "SYLU-2026-03-003-SP-001",
+                        "quantity": 1,
+                        "status": "工装夹具安装",
+                        "test_state": "",
+                        "tray_status": "",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:10:00",
+                    }
+                ]
+            elif "FROM biz_experiment_event" in normalized:
+                self._result = [{"task_no": "SYLU-2026-03-003", "event_time": "2026-03-17 09:05:00"}]
+            elif "FROM biz_sample_event" in normalized and "action_type IN" in normalized:
+                self._result = [{"task_no": "SYLU-2026-03-003", "event_time": "2026-03-17 09:10:00"}]
+            elif "FROM biz_sample_event" in normalized:
+                self._result = []
+            else:
+                self._result = []
+
+        def fetchall(self):
+            return self._result
+
+    samples = backend._load_samples(_Cursor())
+
+    assert samples[0]["trays"][0]["fixture_ready"] is False
+    assert samples[0]["trays"][0]["fixtureReady"] is False
 
 
 def test_replace_samples_persists_real_tray_item_status() -> None:

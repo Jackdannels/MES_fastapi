@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
@@ -77,6 +78,7 @@ const BATCH_SUFFIX_PATTERNS = [
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const API_BASE_URL = getFrontendApiBaseUrl();
+const MQTT_START_DISABLED_REASON = "MQTT模式下等待上位机发送实验开始信号";
 
 const normalizeMasterProcessLabs = (rows) =>
   asArray(rows)
@@ -914,6 +916,7 @@ function useProcessLabs(options = {}) {
     }
     const scheduledExperimentName = getScheduledExperimentName(taskCode, activeExperimentCode);
     const hasScheduledTask = Boolean(scopedLab?.hasTask);
+    const mqttMode = readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt;
     if (normalizeText(scopedLab?.statusClass) === "is-maintenance") {
       return {
         ...scopedLab,
@@ -930,11 +933,11 @@ function useProcessLabs(options = {}) {
     const statusClass = actionState.runningTrayCount > 0 ? "is-running" : hasScheduledTask ? "is-scheduled" : "is-idle";
     return {
       ...scopedLab,
-      canStartExperiment: actionState.canStartExperiment,
+      canStartExperiment: actionState.canStartExperiment && !mqttMode,
       readyTrayCount: actionState.readyTrayCount,
       remainingTrayCount: actionState.remainingTrayCount,
       runningTrayCount: actionState.runningTrayCount,
-      startDisabledReason: actionState.startDisabledReason,
+      startDisabledReason: mqttMode && actionState.canStartExperiment ? MQTT_START_DISABLED_REASON : actionState.startDisabledReason,
       status,
       statusClass,
       experimentCode: activeExperimentCode,
@@ -1107,6 +1110,10 @@ function useProcessLabs(options = {}) {
       await ensureTaskWorkspaceLoaded(taskCode);
       refreshStartExperimentTaskDetail();
     }
+    if (readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt) {
+      processActionMessage.value = MQTT_START_DISABLED_REASON;
+      return;
+    }
     if (!startExperimentTaskDetail.value?.canStartExperiment) {
       return;
     }
@@ -1132,6 +1139,10 @@ function useProcessLabs(options = {}) {
     });
     if (normalizeText(activeLab?.statusClass) === "is-maintenance") {
       processActionMessage.value = "设备维护中，禁止开始实验";
+      return;
+    }
+    if (readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt) {
+      processActionMessage.value = MQTT_START_DISABLED_REASON;
       return;
     }
     if (!actionState.canStartExperiment) {
