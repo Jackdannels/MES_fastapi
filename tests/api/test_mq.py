@@ -810,6 +810,7 @@ def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
 
         def __init__(self):
             self.executed_sql = []
+            self.sample_event_rows = []
 
         def __enter__(self):
             return self
@@ -819,12 +820,20 @@ def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
 
         def execute(self, sql, params=None):
             self.executed_sql.append(sql)
-            if "SELECT task_no, experiment_no" in sql:
+            normalized_sql = " ".join(str(sql).split())
+            if "SELECT task_no, experiment_no" in normalized_sql:
                 self.description = (("task_no",), ("experiment_no",))
-            elif "SELECT tray_no" in sql:
+            elif "SELECT tray_no" in normalized_sql:
                 self.description = (("tray_no",),)
+            elif "SELECT DISTINCT sm.sample_id, sm.sample_no" in normalized_sql:
+                self.description = (("sample_id",), ("sample_no",), ("task_id",), ("experiment_name",))
             else:
                 self.description = None
+
+        def executemany(self, sql, rows):
+            self.executed_sql.append(sql)
+            if "INSERT INTO biz_sample_event" in sql:
+                self.sample_event_rows.extend(rows)
 
         def fetchone(self):
             columns = [column[0] for column in (self.description or [])]
@@ -836,6 +845,8 @@ def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
             columns = [column[0] for column in (self.description or [])]
             if columns == ["tray_no"]:
                 return [("SYLU-2026-03-001-TP-001",)]
+            if columns == ["sample_id", "sample_no", "task_id", "experiment_name"]:
+                return [(101, "SYLU-2026-03-001-SP-001", 7, "盐雾试验")]
             return []
 
     class TupleConnection:
@@ -862,6 +873,18 @@ def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
 
     assert connection.committed is True
     assert any("UPDATE biz_tray" in sql for sql in connection.cursor_obj.executed_sql)
+    assert connection.cursor_obj.sample_event_rows == [
+        {
+            "sample_id": 101,
+            "sample_no": "SYLU-2026-03-001-SP-001",
+            "task_id": 7,
+            "task_no": "SYLU-2026-03-001",
+            "action_type": "实验完成",
+            "sample_status": "实验已完成",
+            "detail": "SYLU-2026-03-001 / 盐雾试验 / 实验已完成",
+            "event_time": "2026-05-16 12:00:00",
+        }
+    ]
 
 
 def test_process_experiment_started_rejects_lab_without_ready_context():

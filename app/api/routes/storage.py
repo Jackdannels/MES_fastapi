@@ -15,8 +15,11 @@ LAB_DISPATCHED_STATUS = "送至实验室"
 LAB_ARRIVED_STATUS = "已到达实验室"
 LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL = "托盘尚未从接驳间出库，不能直接到达实验室"
 STAGING_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能暂存间入库。"
+RETURNED_REARRIVAL_BLOCKED_DETAIL = "该托盘已厂家收回，不能再次到货。"
 STAGING_LOCATION_KEYWORD = "暂存间"
 STAGING_INBOUND_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
+RETURNED_STATUS = "厂家收回"
+HANDOVER_ARRIVAL_STATUSES = {"到货", "已入库"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES = {
     LAB_DISPATCHED_STATUS,
@@ -179,6 +182,32 @@ def _tray_has_blocked_lab_status(sample: Any, tray: Any) -> bool:
     return _status(tray) in STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES or _sample_has_blocked_lab_status(sample)
 
 
+def _sample_was_returned(sample: Any) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    return RETURNED_STATUS in {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+        _normalize_text(sample.get("location")),
+    }
+
+
+def _tray_was_returned(sample: Any, tray: Any) -> bool:
+    return _status(tray) == RETURNED_STATUS or _sample_was_returned(sample)
+
+
+def _is_handover_arrival(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    return bool(statuses & HANDOVER_ARRIVAL_STATUSES)
+
+
 def _is_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
     if not isinstance(sample, dict):
         return False
@@ -276,6 +305,33 @@ def _validate_samples_staging_reentry_transition(current_samples: Any, next_samp
             raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
 
 
+def _validate_samples_returned_rearrival_transition(current_samples: Any, next_samples: Any) -> None:
+    if not isinstance(next_samples, list):
+        return
+
+    current_by_code = _index_samples(current_samples)
+    if not current_by_code:
+        return
+
+    for next_sample in next_samples:
+        if not isinstance(next_sample, dict):
+            continue
+        current_sample = current_by_code.get(_sample_code(next_sample))
+        if not current_sample:
+            continue
+
+        current_trays = _index_trays(current_sample)
+        for next_tray in _as_list(next_sample.get("trays")):
+            if not isinstance(next_tray, dict):
+                continue
+            current_tray = current_trays.get(_tray_code(next_tray))
+            if _tray_was_returned(current_sample, current_tray) and _is_handover_arrival(next_sample, next_tray):
+                raise HTTPException(status_code=400, detail=RETURNED_REARRIVAL_BLOCKED_DETAIL)
+
+        if _sample_was_returned(current_sample) and _is_handover_arrival(next_sample):
+            raise HTTPException(status_code=400, detail=RETURNED_REARRIVAL_BLOCKED_DETAIL)
+
+
 def _validate_samples_maintenance_lock(current_samples: Any, next_samples: Any, devices: Any) -> None:
     if not isinstance(next_samples, list):
         return
@@ -313,6 +369,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
     current_samples = storage.read("mes.samples")
     _validate_samples_lab_arrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_staging_reentry_transition(current_samples, updates["mes.samples"])
+    _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))
 
 

@@ -48,6 +48,8 @@ const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
 const laboratoryMqCalls = () =>
   fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory"));
+const laboratoryCompleteCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/complete") && (options.method || "GET") === "POST");
 const waitForLaboratoryMqCall = async (endpoint) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -57,6 +59,15 @@ const waitForLaboratoryMqCall = async (endpoint) => {
     }
   }
   return fetch.mock.calls.find(([input]) => String(input).includes(endpoint));
+};
+const waitForLaboratoryCompleteCount = async (count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (laboratoryCompleteCalls().length >= count) {
+      return;
+    }
+  }
+  expect(laboratoryCompleteCalls()).toHaveLength(count);
 };
 const useHostInterfaceMode = (mode) => {
   window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? mode : null));
@@ -268,6 +279,111 @@ describe("LaboratoryPage runtime", () => {
       const url = String(input);
       if (url.includes("/api/master/labs")) {
         return { ok: true, status: 200, json: async () => masterLabsState };
+      }
+      if (url.includes("/api/laboratory/") && url.includes("/complete")) {
+        const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/complete/);
+        const taskCode = decodeURIComponent(match?.[1] || "");
+        const experimentCode = decodeURIComponent(match?.[2] || "");
+        const body = JSON.parse(String(options.body || "{}"));
+        const completedAt = body.completedAt || new Date().toISOString();
+        const trayCodes = new Set(
+          (Array.isArray(body.trayCodes) && body.trayCodes.length ? body.trayCodes : (snapshotState[STORAGE_KEYS.experiment_trays] || [])
+            .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
+            .map((entry) => entry.tray_code))
+            .map(String),
+        );
+        const experiment = (snapshotState[STORAGE_KEYS.experiments] || []).find(
+          (entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode,
+        );
+        const experimentName = experiment?.experiment_name || experimentCode;
+        const completedStatuses = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回", "已到达暂存间"]);
+        const scopedTrayCodes = new Set(
+          (snapshotState[STORAGE_KEYS.experiment_trays] || [])
+            .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
+            .map((entry) => String(entry.tray_code || "").trim())
+            .filter(Boolean),
+        );
+        const runNo = String(body.runNo || "").trim();
+        snapshotState = {
+          ...snapshotState,
+          [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
+            if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
+              return sample;
+            }
+            const touchesCompletedTray = sample.trays.some((tray) => trayCodes.has(String(tray.tray_code || "")));
+            if (!touchesCompletedTray) {
+              return sample;
+            }
+            return {
+              ...sample,
+              flow_status: "实验已完成",
+              status: "实验已完成",
+              trays: sample.trays.map((tray) =>
+                trayCodes.has(String(tray.tray_code || "")) ? { ...tray, status: "实验已完成", updated_at: completedAt } : tray,
+              ),
+              history: [
+                {
+                  action: "实验完成",
+                  detail: `${taskCode} / ${experimentName} / 实验已完成`,
+                  location: sample.location || "",
+                  owner: sample.owner || "",
+                  status: "实验已完成",
+                  time: completedAt,
+                },
+                ...(Array.isArray(sample.history) ? sample.history : []),
+              ],
+            };
+          }),
+          [STORAGE_KEYS.experiment_runs]: (snapshotState[STORAGE_KEYS.experiment_runs] || []).map((entry) =>
+            (runNo && [entry.run_no, entry.id].map((value) => String(value || "").trim()).includes(runNo))
+              || (
+                !runNo
+                && entry.task_code === taskCode
+                && entry.experiment_code === experimentCode
+                && String(entry.status || "").trim() === "实验进行中"
+                && Array.from(trayCodes).every((trayCode) => (Array.isArray(entry.tray_codes) ? entry.tray_codes : []).map(String).includes(trayCode))
+              )
+              ? { ...entry, ended_at: completedAt, status: "实验已完成", updated_at: completedAt }
+              : entry,
+          ),
+        };
+        const allExperimentTraysCompleted =
+          scopedTrayCodes.size > 0
+          && Array.from(scopedTrayCodes).every((trayCode) => {
+            const statuses = [];
+            (snapshotState[STORAGE_KEYS.samples] || []).forEach((sample) => {
+              if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
+                return;
+              }
+              sample.trays.forEach((tray) => {
+                if (String(tray.tray_code || "").trim() === trayCode) {
+                  statuses.push(String(tray.status || sample.status || "").trim());
+                }
+              });
+            });
+            return statuses.length > 0 && statuses.every((status) => completedStatuses.has(status));
+          });
+        const nextExperimentStatus = allExperimentTraysCompleted ? "实验已完成" : "实验进行中";
+        snapshotState = {
+          ...snapshotState,
+          [STORAGE_KEYS.experiments]: (snapshotState[STORAGE_KEYS.experiments] || []).map((entry) =>
+            entry.task_code === taskCode && entry.experiment_code === experimentCode ? { ...entry, status: nextExperimentStatus } : entry,
+          ),
+          [STORAGE_KEYS.schedules]: (snapshotState[STORAGE_KEYS.schedules] || []).map((entry) =>
+            entry.task_code === taskCode && entry.experiment_code === experimentCode ? { ...entry, status: nextExperimentStatus } : entry,
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            samples: snapshotState[STORAGE_KEYS.samples],
+            experiments: snapshotState[STORAGE_KEYS.experiments],
+            schedules: snapshotState[STORAGE_KEYS.schedules],
+            experimentRuns: snapshotState[STORAGE_KEYS.experiment_runs],
+          }),
+        };
       }
       if (url.includes("/api/laboratory/") && url.includes("/withdraw-current")) {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/withdraw-current/);
@@ -2040,7 +2156,7 @@ describe("LaboratoryPage runtime", () => {
     vi.advanceTimersByTime(2000);
     await nextTick();
     await nextTick();
-    await waitForStoragePutCount(1);
+    await waitForLaboratoryCompleteCount(1);
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
@@ -2063,6 +2179,12 @@ describe("LaboratoryPage runtime", () => {
       run_no: "run-1",
       status: "实验已完成",
       ended_at: expect.any(String),
+    }));
+    const completeCall = laboratoryCompleteCalls()[0];
+    expect(String(completeCall[0])).toContain("/api/laboratory/tasks/SYLU-2026-04-101/experiments/SYLU-2026-04-101-A/complete");
+    expect(JSON.parse(String(completeCall[1].body))).toEqual(expect.objectContaining({
+      runNo: "run-1",
+      trayCodes: ["TP-001"],
     }));
   });
 
@@ -2200,7 +2322,7 @@ describe("LaboratoryPage runtime", () => {
     vi.advanceTimersByTime(2000);
     await nextTick();
     await nextTick();
-    await waitForStoragePutCount(1);
+    await waitForLaboratoryCompleteCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([
@@ -2470,7 +2592,7 @@ describe("LaboratoryPage runtime", () => {
     document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     await nextTick();
-    await waitForStoragePutCount(1);
+    await waitForLaboratoryCompleteCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([

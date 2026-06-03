@@ -980,6 +980,8 @@ function applyZancunInventoryAction(input = {}) {
   }
 
   if (actionMode === "stockOut") {
+    const targetExperimentCode =
+      normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: "暂存间扫码出库",
       historyDetail: `${matchedRow.trayCode} 送至 ${selectedTargetLab}`,
@@ -990,7 +992,18 @@ function applyZancunInventoryAction(input = {}) {
       status: "送至实验室",
       trayCodes: [matchedRow.trayCode],
     });
-    nextSnapshot[SAMPLES_KEY] = synced.samples;
+    nextSnapshot[SAMPLES_KEY] = synced.samples.map((sample) => ({
+      ...sample,
+      trays: asArray(sample?.trays).map((tray) =>
+        normalizeText(tray?.tray_code) === normalizeText(matchedRow.trayCode)
+          ? {
+              ...tray,
+              target_experiment_code: targetExperimentCode,
+              target_lab: selectedTargetLab,
+            }
+          : tray,
+      ),
+    }));
   }
 
   if (actionMode === "manufacturerReturn") {

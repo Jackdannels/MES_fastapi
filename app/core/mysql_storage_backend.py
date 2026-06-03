@@ -522,6 +522,26 @@ def derive_experiment_status_map(
     sample_events: list[Dict[str, Any]],
 ) -> dict[str, str]:
     schedule_by_experiment = {normalize_text(row.get("experiment_no")) for row in schedules if normalize_text(row.get("experiment_no"))}
+    completed_by_experiment = {
+        normalize_text(row.get("experiment_no"))
+        for row in experiments
+        if normalize_experiment_status_text(row.get("experiment_status") or row.get("status")) == CANONICAL_COMPLETED_STATUS
+    }
+    completed_by_experiment.update(
+        normalize_text(row.get("experiment_no"))
+        for row in schedules
+        if normalize_experiment_status_text(row.get("schedule_status") or row.get("status")) == CANONICAL_COMPLETED_STATUS
+    )
+    running_by_experiment = {
+        normalize_text(row.get("experiment_no"))
+        for row in experiments
+        if normalize_experiment_status_text(row.get("experiment_status") or row.get("status")) == EXPERIMENT_RUNNING_STATUS
+    }
+    running_by_experiment.update(
+        normalize_text(row.get("experiment_no"))
+        for row in schedules
+        if normalize_experiment_status_text(row.get("schedule_status") or row.get("status")) == EXPERIMENT_RUNNING_STATUS
+    )
     sample_codes_by_experiment: dict[str, set[str]] = {}
     for row in experiment_samples:
         experiment_no = normalize_text(row.get("experiment_no"))
@@ -556,7 +576,11 @@ def derive_experiment_status_map(
 
         if related_sample_codes and completed_count == len(related_sample_codes):
             status_map[experiment_no] = "实验已完成"
+        elif experiment_no in completed_by_experiment:
+            status_map[experiment_no] = "实验已完成"
         elif started_or_completed_count > 0:
+            status_map[experiment_no] = EXPERIMENT_RUNNING_STATUS
+        elif experiment_no in running_by_experiment:
             status_map[experiment_no] = EXPERIMENT_RUNNING_STATUS
         elif experiment_no in schedule_by_experiment:
             status_map[experiment_no] = "已排程"

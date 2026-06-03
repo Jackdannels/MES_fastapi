@@ -389,6 +389,8 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
     assert all(sample["flow_status"] == "送至实验室" for sample in updated_samples)
     assert all(sample["location"] == "振动一室" for sample in updated_samples)
     assert all(sample["trays"][0]["status"] == "送至实验室" for sample in updated_samples)
+    assert all(sample["trays"][0]["target_lab"] == "振动一室" for sample in updated_samples)
+    assert all(sample["trays"][0]["target_experiment_code"] == "SYLU-2026-03-102-B" for sample in updated_samples)
     assert all(sample["history"][0]["action"] == "送至实验室" for sample in updated_samples)
     assert all("SYLU-2026-03-102-TP-001 -> 振动一室" in sample["history"][0]["detail"] for sample in updated_samples)
 

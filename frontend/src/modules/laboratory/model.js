@@ -424,7 +424,7 @@ const buildNotDispatchedComparisonResult = (trayCode, tray = null) => {
 };
 const buildWrongLaboratoryDispatchResult = (trayCode, tray = null, currentTask = null) => {
   const normalizedTrayCode = normalizeText(trayCode);
-  const location = normalizeText(tray?.currentLocation || tray?.location);
+  const location = normalizeText(tray?.targetLab || tray?.target_lab || tray?.currentLocation || tray?.location);
   const currentLab = normalizeText(currentTask?.device);
   return {
     guidance: `${normalizedTrayCode} 已出库至${location || "其他试验间"}，请在${currentLab || "当前试验间"}出库后再比对。`,
@@ -600,7 +600,12 @@ const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   if (trayStatus !== LAB_RESET_STATUS) {
     return true;
   }
-  const location = normalizeText(row?.currentLocation || row?.location);
+  const targetExperimentCode = normalizeText(row?.targetExperimentCode || row?.target_experiment_code);
+  const currentExperimentCode = normalizeText(currentTask?.experimentCode);
+  if (targetExperimentCode && currentExperimentCode && targetExperimentCode !== currentExperimentCode) {
+    return false;
+  }
+  const location = normalizeText(row?.targetLab || row?.target_lab || row?.currentLocation || row?.location);
   const currentLab = normalizeText(currentTask?.device);
   return !location || !currentLab || location === currentLab;
 };
@@ -761,11 +766,22 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
   const indexByTrayCode = new Map();
   const experimentCodesByTrayCode = buildExperimentCodesByTrayCode(experimentTrayCodeMap);
 
-  const pushRow = (trayCode, sampleCode = "", quantity = "", owner = "", location = "", fixtureReady = false) => {
+  const pushRow = (
+    trayCode,
+    sampleCode = "",
+    quantity = "",
+    owner = "",
+    location = "",
+    fixtureReady = false,
+    targetLab = "",
+    targetExperimentCode = "",
+  ) => {
     const normalizedTrayCode = normalizeText(trayCode);
     if (!normalizedTrayCode) {
       return;
     }
+    const normalizedTargetLab = normalizeText(targetLab);
+    const normalizedTargetExperimentCode = normalizeText(targetExperimentCode);
     const existingIndex = indexByTrayCode.get(normalizedTrayCode);
     if (existingIndex !== undefined) {
       const current = trayRows[existingIndex];
@@ -781,6 +797,12 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       if (!current.currentLocation && location) {
         current.currentLocation = location;
       }
+      if (!current.targetLab && normalizedTargetLab) {
+        current.targetLab = normalizedTargetLab;
+      }
+      if (!current.targetExperimentCode && normalizedTargetExperimentCode) {
+        current.targetExperimentCode = normalizedTargetExperimentCode;
+      }
       current.fixtureReady = current.fixtureReady || isFixtureReady(fixtureReady);
       return;
     }
@@ -795,6 +817,8 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       owner: normalizeText(owner),
       quantity: quantity || "",
       sampleCodes: sampleCode ? [sampleCode] : [],
+      targetExperimentCode: normalizedTargetExperimentCode,
+      targetLab: normalizedTargetLab,
       fixtureReady: isFixtureReady(fixtureReady),
       trayStatus: "",
       trayCode: normalizedTrayCode,
@@ -814,7 +838,9 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       if (scopedTrayCodes.length > 0 && !scopedTrayCodes.includes(trayCode)) {
         return;
       }
-      pushRow(trayCode, sampleCode, quantity, owner, location, tray?.fixtureReady ?? tray?.fixture_ready);
+      const targetLab = normalizeText(tray?.target_lab || tray?.targetLab);
+      const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+      pushRow(trayCode, sampleCode, quantity, owner, location, tray?.fixtureReady ?? tray?.fixture_ready, targetLab, targetExperimentCode);
       const row = trayRows[indexByTrayCode.get(trayCode)];
       row.completedForCurrentExperiment =
         row.completedForCurrentExperiment
@@ -842,11 +868,16 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       if (resolveLaboratoryStatusRank(nextStatus) >= currentRank) {
         row.trayStatus = nextStatus;
       }
+      if (physicalTrayStatus === LAB_RESET_STATUS && targetLab) {
+        row.currentLocation = targetLab;
+        row.lifecycleLocation = targetLab;
+      }
       const currentDisplayRank = resolveLaboratoryStatusRank(row?.displayStatus);
       if (resolveLaboratoryStatusRank(displayStatusCandidate) >= currentDisplayRank) {
         row.displayStatus = displayStatusCandidate;
       }
-      const lifecycleCandidate = resolveUnifiedTrayLifecycleCandidate({ location, sample, tray });
+      const lifecycleLocation = physicalTrayStatus === LAB_RESET_STATUS && targetLab ? targetLab : location;
+      const lifecycleCandidate = resolveUnifiedTrayLifecycleCandidate({ location: lifecycleLocation, sample, tray });
       if (
         lifecycleCandidate.status
         && (!row.lifecycleStatus || lifecycleCandidate.rank > resolveUnifiedTrayFlowRank(row.lifecycleStatus))
@@ -968,6 +999,7 @@ function buildLaboratoryWorkbenchView({
         currentExperimentCode: normalizeText(currentTask?.experimentCode),
         experimentTrays,
         experiments,
+        dispatchTargetLab: normalizeText(selectedTrayRow?.targetLab || selectedTrayRow?.target_lab),
         location: normalizeText(selectedTrayRow?.lifecycleLocation) || normalizeText(selectedTrayRow?.currentLocation),
         samples,
         schedules,

@@ -738,6 +738,32 @@ def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> No
     }
 
 
+def test_derive_experiment_status_map_keeps_completed_status_without_history_detail() -> None:
+    experiments = [
+        {
+            "experiment_no": "SYLU-2026-03-008-A",
+            "task_no": "SYLU-2026-03-008",
+            "experiment_name": "盐雾试验",
+            "experiment_status": "实验已完成",
+        }
+    ]
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-03-008",
+            "experiment_no": "SYLU-2026-03-008-A",
+            "schedule_status": "实验已完成",
+        }
+    ]
+    experiment_samples = [
+        {"experiment_no": "SYLU-2026-03-008-A", "sample_no": "SP-001"},
+    ]
+
+    assert derive_experiment_status_map(experiments, schedules, experiment_samples, []) == {
+        "SYLU-2026-03-008-A": "实验已完成",
+    }
+
+
 def test_derive_task_status_map_keeps_task_running_once_any_experiment_started_or_completed() -> None:
     tasks = [{"task_no": "SYLU-2026-03-002"}]
     experiments = [

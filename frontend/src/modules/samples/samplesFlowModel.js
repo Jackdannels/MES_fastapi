@@ -1132,7 +1132,7 @@ function buildTrayFlowView(input = {}) {
         : buildExperimentRouteSteps();
       const normalizedRouteStatus = normalizeLifecycleStatus(input.location, activeExperiment?.routeStatus || input.status);
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
-      const currentLabDestination = normalizeText(activeExperiment?.destinationLab);
+      const currentLabDestination = normalizeText(input.dispatchTargetLab) || normalizeText(activeExperiment?.destinationLab);
       const routeIndexes = routeSteps.map((label, index) =>
         pushStep({
           key: `route-${currentExperimentIndex}-${index}`,
@@ -1253,7 +1253,7 @@ function buildTrayFlowView(input = {}) {
         parseTimeValue(stepTimeMap.get(completedLabel)),
         parseTimeValue(stepTimeMap.get(completedIdentityLabel)),
       );
-      const finalLabDestination = normalizeText(lastExperiment?.destinationLab);
+      const finalLabDestination = normalizeText(input.dispatchTargetLab) || normalizeText(lastExperiment?.destinationLab);
       routeSteps.forEach((label, index) => {
         pushStep({
           key: `route-final-${index}`,
@@ -1316,7 +1316,7 @@ function buildTrayFlowView(input = {}) {
   const singleExperiment = resolveSingleTrayExperiment(input);
   const singleExperimentName = normalizeText(singleExperiment?.displayName || singleExperiment?.name);
   const singleExperimentIdentityName = normalizeText(singleExperiment?.name);
-  const singleExperimentDestinationLab = normalizeText(singleExperiment?.destinationLab);
+  const singleExperimentDestinationLab = normalizeText(input.dispatchTargetLab) || normalizeText(singleExperiment?.destinationLab);
   const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
   const singleExperimentEvent = singleExperiment
     ? resolveExperimentEvent(

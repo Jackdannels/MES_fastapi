@@ -1437,7 +1437,15 @@ describe("laboratory model", () => {
           owner: "王工",
           status: "送至实验室",
           task_code: "SYLU-2026-04-303",
-          trays: [{ tray_code: "TP-303", quantity: 1, status: "送至实验室" }],
+          trays: [
+            {
+              tray_code: "TP-303",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "盐雾试验室",
+              target_experiment_code: "SYLU-2026-04-303-A",
+            },
+          ],
         },
       ],
       schedules: [
@@ -1489,6 +1497,115 @@ describe("laboratory model", () => {
       ok: false,
       tone: "error",
       trayCode: "TP-303",
+    }));
+    expect(view.selectedTrayFlow.steps.find((step) => step.key === "route-0-2")?.label).toBe("送至盐雾试验室");
+  });
+
+  test("uses tray target lab when task trays are dispatched to different laboratories", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-A", tray_code: "TP-A" },
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-B", tray_code: "TP-B" },
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-C", tray_code: "TP-C" },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-A",
+          experiment_name: "盐雾试验",
+          status: "已排程",
+        },
+        {
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-B",
+          experiment_name: "霉菌试验",
+          status: "已排程",
+        },
+        {
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-C",
+          experiment_name: "高低温湿热试验",
+          status: "已排程",
+        },
+      ],
+      labName: "盐雾试验室",
+      now: NOW,
+      samples: [
+        {
+          code: "SP-601",
+          location: "霉菌试验室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-06-001",
+          trays: [
+            {
+              tray_code: "TP-A",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "盐雾试验室",
+              target_experiment_code: "SYLU-2026-06-001-A",
+            },
+            {
+              tray_code: "TP-B",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "霉菌试验室",
+              target_experiment_code: "SYLU-2026-06-001-B",
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-601-a",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-A",
+          device: "盐雾试验室",
+          start_at: "2026-06-01T09:30:00.000Z",
+          end_at: "2026-06-01T11:00:00.000Z",
+        },
+        {
+          id: "schedule-601-b",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-B",
+          device: "霉菌试验室",
+          start_at: "2026-06-01T11:30:00.000Z",
+          end_at: "2026-06-01T13:00:00.000Z",
+        },
+        {
+          id: "schedule-601-c",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-C",
+          device: "高低温湿热一室",
+          start_at: "2026-06-01T13:30:00.000Z",
+          end_at: "2026-06-01T15:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-06-001", name: "复合实验任务", test_type: "盐雾试验 / 霉菌试验 / 高低温湿热试验" }],
+    });
+
+    expect(view.currentTask.trayRows).toEqual([
+      expect.objectContaining({
+        currentLocation: "盐雾试验室",
+        targetExperimentCode: "SYLU-2026-06-001-A",
+        targetLab: "盐雾试验室",
+        trayCode: "TP-A",
+      }),
+    ]);
+    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask))).toEqual({
+      canCompare: true,
+      canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: "TP-A",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      trayCode: "TP-A",
     }));
   });
 

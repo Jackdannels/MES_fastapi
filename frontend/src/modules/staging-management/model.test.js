@@ -624,6 +624,10 @@ describe("staging-management model", () => {
       status: "送至实验室",
       flow_status: "送至实验室",
     });
+    expect(stockOutSample?.trays[0]).toMatchObject({
+      target_experiment_code: "SYLU-2026-04-102-A",
+      target_lab: "振动一室",
+    });
     expect(metrics.stockedOutTodayCount).toBe(2);
   });
 

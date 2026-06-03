@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
 from app.db.session import get_connection
+from app.services.laboratory_completion import COMPLETED_STATUS, COMPLETION_ACTION, completion_history_detail
 
 
 PROTOCOL_NAME = "MES_LAB_MQTT"
@@ -799,6 +800,53 @@ class MySQLMqEventRepository:
                         """,
                         [*tray_nos, task_no],
                     )
+                    cursor.execute(
+                        f"""
+                        SELECT DISTINCT
+                          sm.sample_id,
+                          sm.sample_no,
+                          task.task_id,
+                          COALESCE(exp.experiment_name, exp.experiment_no, %s) AS experiment_name
+                        FROM biz_sample sm
+                        JOIN biz_tray_item ti ON ti.sample_id = sm.sample_id
+                        JOIN biz_tray tr ON tr.tray_id = ti.tray_id
+                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
+                        LEFT JOIN biz_experiment exp
+                          ON exp.task_no = %s AND exp.experiment_no = %s
+                        WHERE tr.tray_no IN ({tray_placeholders})
+                          AND (task.task_no = %s OR task.task_no IS NULL)
+                        ORDER BY sm.sample_no ASC
+                        """,
+                        [experiment_no, task_no, experiment_no, *tray_nos, task_no],
+                    )
+                    sample_rows = cursor_rows_as_dicts(cursor)
+                    event_rows = [
+                        {
+                            "sample_id": row.get("sample_id"),
+                            "sample_no": normalize_text(row.get("sample_no")),
+                            "task_id": row.get("task_id"),
+                            "task_no": task_no,
+                            "action_type": COMPLETION_ACTION,
+                            "sample_status": COMPLETED_STATUS,
+                            "detail": completion_history_detail(task_no, normalize_text(row.get("experiment_name")) or experiment_no),
+                            "event_time": occurred_at,
+                        }
+                        for row in sample_rows
+                        if row.get("sample_id") and normalize_text(row.get("sample_no"))
+                    ]
+                    if event_rows:
+                        cursor.executemany(
+                            """
+                            INSERT INTO biz_sample_event (
+                              sample_id, sample_no, task_id, task_no, action_type,
+                              location_desc, owner_name, sample_status, detail, event_time, created_at
+                            ) VALUES (
+                              %(sample_id)s, %(sample_no)s, %(task_id)s, %(task_no)s, %(action_type)s,
+                              NULL, NULL, %(sample_status)s, %(detail)s, %(event_time)s, CURRENT_TIMESTAMP
+                            )
+                            """,
+                            event_rows,
+                        )
             connection.commit()
 
 

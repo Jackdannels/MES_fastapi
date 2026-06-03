@@ -34,4 +34,41 @@ const withdrawCurrentLaboratoryExperiment = async ({ taskCode, experimentCode, r
   return response.json();
 };
 
-export { withdrawCurrentLaboratoryExperiment };
+const completeLaboratoryExperiment = async ({
+  completedAt = "",
+  experimentCode,
+  runNo = "",
+  taskCode,
+  trayCodes = [],
+}) => {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  const normalizedExperimentCode = String(experimentCode || "").trim();
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    throw new Error("缺少当前任务或实验信息。");
+  }
+  const response = await fetch(
+    buildApiUrl(
+      `/api/laboratory/tasks/${encodeURIComponent(normalizedTaskCode)}/experiments/${encodeURIComponent(normalizedExperimentCode)}/complete`,
+      API_BASE_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        completedAt,
+        runNo,
+        trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
+export { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };

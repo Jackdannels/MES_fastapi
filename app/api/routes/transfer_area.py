@@ -1486,6 +1486,12 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
             if normalize_text(normalized.get("tray_code")) == normalize_text(tray_code):
                 normalized["status"] = next_status
                 normalized["updated_at"] = timestamp
+                if target_type == "lab":
+                    normalized["target_lab"] = next_location
+                    normalized["target_experiment_code"] = normalize_text(request.experiment_code)
+                else:
+                    normalized.pop("target_lab", None)
+                    normalized.pop("target_experiment_code", None)
             next_trays.append(normalized)
         sample["trays"] = next_trays
         append_history(sample, next_status, detail)

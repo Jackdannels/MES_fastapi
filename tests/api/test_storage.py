@@ -121,6 +121,32 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
     assert storage.read("mes.samples") == updated
 
 
+def test_storage_rejects_rearrival_after_manufacturer_return(monkeypatch):
+    samples = [
+        {
+            "code": "SP-RETURNED",
+            "location": "厂家收回",
+            "status": "厂家收回",
+            "flow_status": "厂家收回",
+            "task_code": "SYLU-2026-05-704",
+            "trays": [{"tray_code": "TP-RETURNED", "status": "厂家收回", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "接驳区"
+    attempted[0]["status"] = "到货"
+    attempted[0]["flow_status"] = "到货"
+    attempted[0]["trays"][0]["status"] = "到货"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已厂家收回，不能再次到货。"
+    assert storage.read("mes.samples") == samples
+
+
 def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):
     samples = [
         {

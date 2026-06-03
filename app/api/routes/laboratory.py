@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
+from app.services.laboratory_completion import complete_storage_laboratory_experiment
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 
@@ -16,11 +17,25 @@ HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
+LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
+    "mes.samples",
+    "mes.experiments",
+    "mes.schedules",
+    "mes.experiment_runs",
+)
 
 
 class LaboratoryWithdrawRequest(BaseModel):
     reason: str = ""
     operation_id: str = Field(default="", alias="operationId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LaboratoryCompleteRequest(BaseModel):
+    completed_at: str = Field(default="", alias="completedAt")
+    run_no: str = Field(default="", alias="runNo")
+    tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -51,6 +66,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
+        "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -65,6 +81,18 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
         }
     )
     publish_storage_update(list(LABORATORY_STORAGE_UPDATE_KEYS))
+
+
+def write_completion_snapshot(result: dict[str, Any]) -> None:
+    get_storage_backend().write_many(
+        {
+            "mes.samples": result["samples"],
+            "mes.experiments": result["experiments"],
+            "mes.schedules": result["schedules"],
+            "mes.experiment_runs": result["experimentRuns"],
+        }
+    )
+    publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
 def find_task(snapshot: dict[str, list[dict[str, Any]]], task_code: str) -> dict[str, Any]:
@@ -321,6 +349,36 @@ def withdrawable_sample_matches(
         if withdrawable_codes:
             result.append((sample, sorted(set(withdrawable_codes))))
     return result
+
+
+@router.post("/tasks/{task_code}/experiments/{experiment_code}/complete")
+def complete_current_experiment(
+    task_code: str,
+    experiment_code: str,
+    request: LaboratoryCompleteRequest = Body(default_factory=LaboratoryCompleteRequest),
+) -> dict[str, Any]:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    snapshot = read_snapshot()
+    find_task(snapshot, normalized_task_code)
+    current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
+    try:
+        result = complete_storage_laboratory_experiment(
+            snapshot,
+            task_code=normalized_task_code,
+            experiment_code=normalized_experiment_code,
+            run_no=request.run_no,
+            tray_codes=request.tray_codes,
+            completed_at=request.completed_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    write_completion_snapshot(result)
+    return {
+        "ok": True,
+        "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
+        **result,
+    }
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/withdraw-current")

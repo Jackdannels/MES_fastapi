@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } fro
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
-import { withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
+import { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -704,14 +704,8 @@ function useLaboratoryPage(options = {}) {
     samplesPersistQueue = trackedOperation;
     return persistOperation;
   };
-  const persistRunningExperimentCompletion = ({ nextExperiments, nextExperimentRuns, nextSamples, nextSchedules }) => {
-    const writeCompletion = () =>
-      persistSnapshot({
-        [STORAGE_KEYS.experiments]: nextExperiments,
-        [STORAGE_KEYS.experiment_runs]: nextExperimentRuns,
-        [STORAGE_KEYS.samples]: nextSamples,
-        [STORAGE_KEYS.schedules]: nextSchedules,
-      });
+  const persistRunningExperimentCompletion = (payload) => {
+    const writeCompletion = () => completeLaboratoryExperiment(payload);
     const persistOperation = samplesPersistQueue
       ? samplesPersistQueue.catch(() => {}).then(writeCompletion)
       : writeCompletion();
@@ -1006,79 +1000,17 @@ function useLaboratoryPage(options = {}) {
       return;
     }
     completingRunningExperimentKeys.add(completionKey);
-    const nextSamples = applyLaboratoryTaskStep({
-      currentTask: {
-        ...currentTask.value,
-        trayCodes: runningExperiment.value.trayCodes,
-      },
-      historyAction: "实验完成",
-      nextStatus: "实验已完成",
-      now: new Date().toISOString(),
-      samples: samples.value,
-    });
     const completedAt = new Date().toISOString();
     const runningRunNo = normalizeText(runningExperiment.value?.runNo);
-    const runningTrayCodes = new Set((runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean));
-    const nextExperimentRuns = experimentRuns.value.map((run) => {
-      const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
-      const runTrayCodes = new Set((Array.isArray(run?.tray_codes) ? run.tray_codes : []).map(normalizeText).filter(Boolean));
-      const matchesActiveRun =
-        (runningRunNo && runNo === runningRunNo)
-        || (
-          !runningRunNo
-          && normalizeText(run?.task_code) === taskCode
-          && normalizeText(run?.experiment_code) === experimentCode
-          && normalizeText(run?.status) === "实验进行中"
-          && Array.from(runningTrayCodes).every((trayCode) => runTrayCodes.has(trayCode))
-        );
-      return matchesActiveRun
-        ? {
-            ...run,
-            ended_at: completedAt,
-            status: "实验已完成",
-            updated_at: completedAt,
-          }
-        : run;
-    });
-    const scopedTrayCodes = new Set(
-      experimentTrays.value
-        .filter(
-          (entry) =>
-            normalizeText(entry?.task_code) === taskCode
-            && normalizeText(entry?.experiment_code) === experimentCode
-        )
-        .map((entry) => normalizeText(entry?.tray_code))
-        .filter(Boolean),
-    );
-    const completedStatuses = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回", "已到达暂存间"]);
-    const allExperimentTraysCompleted =
-      scopedTrayCodes.size > 0
-      && Array.from(scopedTrayCodes).every((trayCode) => {
-        const statuses = [];
-        nextSamples.forEach((sample) => {
-          if (normalizeText(sample?.task_code) !== taskCode) {
-            return;
-          }
-          (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
-            if (normalizeText(tray?.tray_code) === trayCode) {
-              statuses.push(normalizeText(tray?.status) || normalizeText(sample?.status));
-            }
-          });
-        });
-        return statuses.length > 0 && statuses.every((status) => completedStatuses.has(status));
-      });
-    const nextExperiments = experiments.value.map((experiment) =>
-      normalizeText(experiment?.task_code) === taskCode && normalizeText(experiment?.experiment_code) === experimentCode
-        ? { ...experiment, status: allExperimentTraysCompleted ? "实验已完成" : "实验进行中" }
-        : experiment,
-    );
-    const nextSchedules = schedules.value.map((schedule) =>
-      normalizeText(schedule?.task_code) === taskCode && normalizeText(schedule?.experiment_code) === experimentCode
-        ? { ...schedule, status: allExperimentTraysCompleted ? "实验已完成" : "实验进行中" }
-        : schedule,
-    );
+    const runningTrayCodes = (runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean);
     try {
-      await persistRunningExperimentCompletion({ nextExperiments, nextExperimentRuns, nextSamples, nextSchedules });
+      const completionResult = await persistRunningExperimentCompletion({
+        completedAt,
+        experimentCode,
+        runNo: runningRunNo,
+        taskCode,
+        trayCodes: runningTrayCodes,
+      });
       completedRunningExperiment.value = keepModal
         ? {
             ...runningSnapshot,
@@ -1091,10 +1023,19 @@ function useLaboratoryPage(options = {}) {
             statusLabel: "实验已完成",
           }
         : null;
-      samples.value = nextSamples;
-      experiments.value = nextExperiments;
-      experimentRuns.value = nextExperimentRuns;
-      schedules.value = nextSchedules;
+      const hasCompletionSnapshot =
+        Array.isArray(completionResult?.samples)
+        && Array.isArray(completionResult?.experiments)
+        && Array.isArray(completionResult?.experimentRuns)
+        && Array.isArray(completionResult?.schedules);
+      if (hasCompletionSnapshot) {
+        samples.value = completionResult.samples;
+        experiments.value = completionResult.experiments;
+        experimentRuns.value = completionResult.experimentRuns;
+        schedules.value = completionResult.schedules;
+      } else {
+        await load();
+      }
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
       }
