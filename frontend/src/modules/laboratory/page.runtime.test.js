@@ -434,12 +434,95 @@ describe("LaboratoryPage runtime", () => {
 
     const fixtureInstallCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
     expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-501-A",
       lab_code: "LAB_IMPACT_1",
       sample_count: 1,
       sample_type: "",
       task_code: "SYLU-2026-04-501",
     }));
+    snapshotState[STORAGE_KEYS.samples] = snapshotState[STORAGE_KEYS.samples].map((sample) =>
+      sample.task_code === "SYLU-2026-04-501"
+        ? {
+            ...sample,
+            trays: sample.trays.map((tray) =>
+              tray.tray_code === "TP-CJ-001" ? { ...tray, fixtureReady: true, fixture_ready: true } : tray,
+            ),
+          }
+        : sample,
+    );
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await flushPageUpdates();
+    vi.advanceTimersByTime(1000);
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    expect(readyCall).toBeDefined();
+    expect(JSON.parse(String(readyCall[1].body))).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-501-A",
+      lab_code: "LAB_IMPACT_1",
+      task_code: "SYLU-2026-04-501",
+    }));
     expect(window.localStorage.setItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1", "冲击一室");
+  });
+
+  test("falls back to the known lab code for a non-salt workbench when master labs are unavailable", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-502-SP-001",
+          location: "冲击一室",
+          owner: "周工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-502",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-CJ-002" }],
+        },
+      ],
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-04-502", name: "冲击连接器-兜底", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-04-502", experiment_code: "SYLU-2026-04-502-A", experiment_name: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-502", experiment_code: "SYLU-2026-04-502-A", tray_code: "TP-CJ-002" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-fallback",
+          task_code: "SYLU-2026-04-502",
+          experiment_code: "SYLU-2026-04-502-A",
+          device: "冲击一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("冲击一室操作台");
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-CJ-002");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const fixtureInstallCall = fetch.mock.calls.findLast(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"));
+    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-502-A",
+      lab_code: "LAB_IMPACT_1",
+      task_code: "SYLU-2026-04-502",
+    }));
   });
 
   test("keeps laboratory MQ calls local when the host interface mode is mock", async () => {
@@ -1628,6 +1711,7 @@ describe("LaboratoryPage runtime", () => {
     const fixtureInstallCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     expect(fixtureInstallCall).toBeDefined();
     expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual({
+      experiment_code: "SYLU-2026-04-101-A",
       lab_code: "LAB_SALT",
       sample_count: 1,
       sample_type: "",
@@ -1689,6 +1773,7 @@ describe("LaboratoryPage runtime", () => {
     const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
     expect(readyCall).toBeDefined();
     expect(JSON.parse(String(readyCall[1].body))).toEqual({
+      experiment_code: "SYLU-2026-04-101-A",
       lab_code: "LAB_SALT",
       task_code: "SYLU-2026-04-101",
     });

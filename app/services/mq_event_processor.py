@@ -430,13 +430,17 @@ class MySQLMqEventRepository:
                 tray_sample_rows = cursor_rows_as_dicts(cursor)
                 tray_nos = []
                 sample_nos = []
+                location_names = []
                 for row in tray_sample_rows:
                     tray_no = normalize_text(row.get("tray_no"))
                     sample_no = normalize_text(row.get("sample_no"))
+                    location_name = normalize_text(row.get("location_desc"))
                     if tray_no and tray_no not in tray_nos:
                         tray_nos.append(tray_no)
                     if sample_no and sample_no not in sample_nos:
                         sample_nos.append(sample_no)
+                    if location_name and location_name not in location_names:
+                        location_names.append(location_name)
                 if not tray_nos:
                     return None
 
@@ -445,6 +449,14 @@ class MySQLMqEventRepository:
                 if command_experiment_no:
                     schedule_filters.append("s.experiment_no = %s")
                     schedule_params.append(command_experiment_no)
+                device_names = []
+                for candidate in [*lab_candidates, *location_names]:
+                    if candidate and candidate not in device_names:
+                        device_names.append(candidate)
+                if device_names:
+                    device_placeholders = ", ".join(["%s"] * len(device_names))
+                    schedule_filters.append(f"s.device_name IN ({device_placeholders})")
+                    schedule_params.extend(device_names)
                 tray_placeholders = ", ".join(["%s"] * len(tray_nos))
                 cursor.execute(
                     f"""

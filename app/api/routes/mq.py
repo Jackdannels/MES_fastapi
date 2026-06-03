@@ -15,10 +15,11 @@ router = APIRouter(prefix="/api/mq", tags=["mq"])
 class FixtureInstallRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
+    experiment_code: str = ""
     sample_type: str = ""
     sample_count: int = Field(ge=0)
 
-    @field_validator("task_code", "lab_code", "sample_type", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", "sample_type", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -27,8 +28,9 @@ class FixtureInstallRequest(BaseModel):
 class ReadyRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
+    experiment_code: str = ""
 
-    @field_validator("task_code", "lab_code", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -67,6 +69,7 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
+        "experiment_code": request.experiment_code,
         "sample_type": request.sample_type,
         "sample_count": request.sample_count,
     }
@@ -82,6 +85,7 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
+        "experiment_code": request.experiment_code,
     }
     try:
         result = publish_laboratory_command("READY", payload)

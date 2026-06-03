@@ -42,12 +42,13 @@ def test_fixture_install_endpoint_publishes_minimal_payload(monkeypatch):
     assert published == [
         {
             "command": "INSTALL_FIXTURE",
-            "payload": {
-                "task_code": "SYLU-2026-03-001",
-                "lab_code": "LAB_SALT",
-                "sample_type": "",
-                "sample_count": 8,
-            },
+                "payload": {
+                    "task_code": "SYLU-2026-03-001",
+                    "lab_code": "LAB_SALT",
+                    "experiment_code": "",
+                    "sample_type": "",
+                    "sample_count": 8,
+                },
         }
     ]
 
@@ -68,12 +69,13 @@ def test_ready_endpoint_publishes_minimal_payload(monkeypatch):
     assert published == [
         {
             "command": "READY",
-            "payload": {
-                "task_code": "SYLU-2026-03-001",
-                "lab_code": "LAB_SALT",
-            },
-        }
-    ]
+                "payload": {
+                    "task_code": "SYLU-2026-03-001",
+                    "lab_code": "LAB_SALT",
+                    "experiment_code": "",
+                },
+            }
+        ]
 
 
 def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch):
@@ -313,6 +315,15 @@ class FakeMqEventRepository:
                 "planned_hours": 3.5,
                 "tray_nos": ["SYLU-2026-03-001-TP-001"],
                 "sample_nos": ["SYLU-2026-03-001-SP-001"],
+            },
+            "LAB_IMPACT_1": {
+                "task_no": "SYLU-2026-06-002",
+                "experiment_no": "SYLU-2026-06-002-C",
+                "schedule_no": "schedule-impact",
+                "device_name": "冲击一室",
+                "planned_hours": 3.5,
+                "tray_nos": ["SYLU-2026-06-002-TP-002"],
+                "sample_nos": ["SYLU-2026-06-002-SP-005", "SYLU-2026-06-002-SP-006"],
             }
         }
         self.runs_by_lab = {
@@ -426,6 +437,30 @@ def test_process_fixture_ready_resolves_task_from_lab_code_without_host_task_cod
     }
 
 
+def test_process_fixture_ready_resolves_non_salt_lab_context_without_host_task_code():
+    repository = FakeMqEventRepository()
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/fixture-ready",
+        {
+            "lab_code": "LAB_IMPACT_1",
+            "success_id": "PLC-OK-IMPACT",
+            "fixture_ready_at": "2026-06-03 09:31:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.events[0]["task_no"] == "SYLU-2026-06-002"
+    assert repository.events[0]["experiment_no"] == "SYLU-2026-06-002-C"
+    assert repository.events[0]["lab_code"] == "LAB_IMPACT_1"
+    assert repository.events[0]["payload"] == {
+        "lab_code": "LAB_IMPACT_1",
+        "success_id": "PLC-OK-IMPACT",
+        "fixture_ready_at": "2026-06-03 09:31:00",
+    }
+
+
 def test_process_duplicate_message_returns_ack_without_duplicate_event():
     repository = FakeMqEventRepository(existing_message_ids={"HOST-FIXTURE_READY-LAB_SALT-2026-05-16 09:31:00"})
 
@@ -493,6 +528,42 @@ def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_a
     ]
     assert repository.messages[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.messages[0]["experiment_no"] == "SYLU-2026-03-001-A"
+    assert repository.events[0]["event_type"] == "EXPERIMENT_STARTED"
+
+
+def test_process_experiment_started_creates_run_from_non_salt_ready_context():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab = {}
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        {
+            "lab_code": "LAB_IMPACT_1",
+            "started_at": "2026-06-03 10:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.started == []
+    assert repository.started_contexts == [
+        (
+            {
+                "task_no": "SYLU-2026-06-002",
+                "experiment_no": "SYLU-2026-06-002-C",
+                "schedule_no": "schedule-impact",
+                "device_name": "冲击一室",
+                "planned_hours": 3.5,
+                "tray_nos": ["SYLU-2026-06-002-TP-002"],
+                "sample_nos": ["SYLU-2026-06-002-SP-005", "SYLU-2026-06-002-SP-006"],
+                "candidate_statuses": ["实验准备就绪"],
+            },
+            "2026-06-03 10:00:00",
+        )
+    ]
+    assert repository.messages[0]["lab_code"] == "LAB_IMPACT_1"
+    assert repository.messages[0]["task_no"] == "SYLU-2026-06-002"
+    assert repository.messages[0]["experiment_no"] == "SYLU-2026-06-002-C"
     assert repository.events[0]["event_type"] == "EXPERIMENT_STARTED"
 
 
@@ -621,6 +692,116 @@ def test_mysql_find_active_run_by_lab_matches_tray_lab_code_when_device_name_dif
         "run_status": "实验进行中",
     }
     assert any(params and params[-1] == "LAB_SALT" for params in connection.cursor_obj.params)
+
+
+def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch):
+    class TupleCursor:
+        description = None
+
+        def __init__(self):
+            self.schedule_query_params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            if "FROM md_lab" in sql:
+                self.description = (("lab_name",),)
+            elif "FROM biz_mq_message_log" in sql:
+                self.description = (("task_no",), ("experiment_no",), ("payload_json",))
+            elif "FROM biz_tray tr" in sql:
+                self.description = (("tray_no",), ("sample_no",), ("location_desc",), ("current_lab_id",))
+            elif "FROM biz_schedule s" in sql:
+                self.description = (
+                    ("schedule_no",),
+                    ("task_no",),
+                    ("experiment_no",),
+                    ("device_name",),
+                    ("planned_hours",),
+                    ("schedule_end_time",),
+                )
+                self.schedule_query_params = list(params or [])
+            else:
+                self.description = None
+
+        def fetchone(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["lab_name"]:
+                return ("冲击一室",)
+            return None
+
+        def fetchall(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["task_no", "experiment_no", "payload_json"]:
+                return [("SYLU-2026-06-002", "", "{}")]
+            if columns == ["tray_no", "sample_no", "location_desc", "current_lab_id"]:
+                return [
+                    ("SYLU-2026-06-002-TP-002", "SYLU-2026-06-002-SP-005", "冲击一室", 4),
+                    ("SYLU-2026-06-002-TP-002", "SYLU-2026-06-002-SP-006", "冲击一室", 4),
+                ]
+            if columns == ["schedule_no", "task_no", "experiment_no", "device_name", "planned_hours", "schedule_end_time"]:
+                if self.schedule_query_params and "冲击一室" in self.schedule_query_params:
+                    return [
+                        (
+                            "schedule-impact",
+                            "SYLU-2026-06-002",
+                            "SYLU-2026-06-002-C",
+                            "冲击一室",
+                            3.5,
+                            "2026-06-03 15:30:00",
+                        )
+                    ]
+                return [
+                    (
+                        "schedule-salt",
+                        "SYLU-2026-06-002",
+                        "SYLU-2026-06-002-B",
+                        "盐雾试验室",
+                        3.5,
+                        "2026-06-03 11:30:00",
+                    ),
+                    (
+                        "schedule-impact",
+                        "SYLU-2026-06-002",
+                        "SYLU-2026-06-002-C",
+                        "冲击一室",
+                        3.5,
+                        "2026-06-03 15:30:00",
+                    ),
+                ]
+            return []
+
+    class TupleConnection:
+        def __init__(self):
+            self.cursor_obj = TupleCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+    connection = TupleConnection()
+    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+
+    context = MySQLMqEventRepository().find_current_context_by_lab("LAB_IMPACT_1", ["工装夹具安装"])
+
+    assert context == {
+        "task_no": "SYLU-2026-06-002",
+        "experiment_no": "SYLU-2026-06-002-C",
+        "schedule_no": "schedule-impact",
+        "device_name": "冲击一室",
+        "planned_hours": 3.5,
+        "schedule_end_time": "2026-06-03 15:30:00",
+        "tray_nos": ["SYLU-2026-06-002-TP-002"],
+        "sample_nos": ["SYLU-2026-06-002-SP-005", "SYLU-2026-06-002-SP-006"],
+    }
 
 
 def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):

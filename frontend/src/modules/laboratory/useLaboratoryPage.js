@@ -51,10 +51,22 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 
 const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
+const STATIC_LAB_CODES_BY_NAME = Object.freeze({
+  "冲击一室": "LAB_IMPACT_1",
+  "冲击二室": "LAB_IMPACT_2",
+  "振动一室": "LAB_VIBRATION_1",
+  "振动二室": "LAB_VIBRATION_2",
+  "四综合实验室": "LAB_COMPREHENSIVE",
+  "温度冲击一室": "LAB_TEMP_SHOCK_1",
+  "温度冲击二室": "LAB_TEMP_SHOCK_2",
+  "高低温湿热一室": "LAB_HOT_HUMID",
+  "盐雾试验室": SALT_SPRAY_LAB_CODE,
+  "霉菌试验室": "LAB_MOLD",
+});
 
 const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
-  labCode: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : labName,
-  labId: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName,
+  labCode: STATIC_LAB_CODES_BY_NAME[labName] || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : labName),
+  labId: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : (STATIC_LAB_CODES_BY_NAME[labName] || labName),
   labName,
   testTypeName: "",
 });
@@ -82,9 +94,10 @@ const writeStoredLabName = (labName) => {
 const resolveLabId = (lab, labName) =>
   normalizeText(lab?.mqttLabId || lab?.mqtt_lab_id)
   || (normalizeText(lab?.code || lab?.lab_code) === SALT_SPRAY_LAB_CODE ? SALT_SPRAY_LAB_ID : normalizeText(lab?.code || lab?.lab_code))
-  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : labName);
+  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : (STATIC_LAB_CODES_BY_NAME[labName] || labName));
 const resolveLabCode = (lab, labName) =>
   normalizeText(lab?.code || lab?.lab_code)
+  || STATIC_LAB_CODES_BY_NAME[labName]
   || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : normalizeText(labName));
 
 const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
@@ -663,6 +676,7 @@ function useLaboratoryPage(options = {}) {
   const buildFixtureInstallPayload = () => {
     const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
     return {
+      experiment_code: currentTask.value?.experimentCode || "",
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
       sample_count: countTrayRowSamples(targetTrayRows),
       sample_type: "",
@@ -670,6 +684,7 @@ function useLaboratoryPage(options = {}) {
     };
   };
   const buildReadyPayload = () => ({
+    experiment_code: currentTask.value?.experimentCode || "",
     lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
     task_code: currentTask.value?.taskCode || "",
   });
