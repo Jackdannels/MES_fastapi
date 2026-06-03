@@ -5,7 +5,12 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
 from app.db.session import get_connection
-from app.services.laboratory_completion import COMPLETED_STATUS, COMPLETION_ACTION, completion_history_detail
+from app.services.laboratory_completion import (
+    COMPLETED_STATUS,
+    COMPLETION_ACTION,
+    experiment_trays_are_completed,
+    completion_history_detail,
+)
 
 
 PROTOCOL_NAME = "MES_LAB_MQTT"
@@ -742,7 +747,42 @@ class MySQLMqEventRepository:
                 )
                 task_no = normalize_text(row.get("task_no") if isinstance(row, dict) else row[0] if row else "")
                 experiment_no = normalize_text(row.get("experiment_no") if isinstance(row, dict) else row[1] if row else "")
+                all_experiment_trays_completed = False
                 if task_no and experiment_no:
+                    cursor.execute(
+                        """
+                        SELECT tray_no
+                        FROM biz_experiment_tray
+                        WHERE task_no = %s AND experiment_no = %s
+                        ORDER BY tray_no ASC
+                        """,
+                        (task_no, experiment_no),
+                    )
+                    scoped_rows = cursor_rows_as_dicts(cursor)
+                    scoped_tray_nos = {
+                        normalize_text(item.get("tray_no"))
+                        for item in scoped_rows
+                        if normalize_text(item.get("tray_no"))
+                    }
+                    cursor.execute(
+                        """
+                        SELECT DISTINCT tray_no
+                        FROM biz_experiment_run_tray
+                        WHERE task_no = %s
+                          AND experiment_no = %s
+                          AND run_tray_status IN ('实验已完成', '实验完成', '实验已经完成', '放置实验后暂存间', '厂家收回', '已到达暂存间')
+                        ORDER BY tray_no ASC
+                        """,
+                        (task_no, experiment_no),
+                    )
+                    completed_rows = cursor_rows_as_dicts(cursor)
+                    completed_tray_nos = {
+                        normalize_text(item.get("tray_no"))
+                        for item in completed_rows
+                        if normalize_text(item.get("tray_no"))
+                    }
+                    all_experiment_trays_completed = experiment_trays_are_completed(scoped_tray_nos, completed_tray_nos)
+                if all_experiment_trays_completed:
                     cursor.execute(
                         """
                         UPDATE biz_experiment
@@ -869,18 +909,24 @@ def process_laboratory_event(
         return build_ack(message_id, "DUPLICATE")
 
     context = None
-    run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_STARTED", "EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
+    run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
     created_run_from_context = False
     if message_type == "FIXTURE_READY" and not first_text(payload, "task_code"):
         context = repo.find_current_context_by_lab(lab_code, ["工装夹具安装"])
         if not context:
             raise ValueError(f"fixture install context is required for lab_code: {lab_code}")
-    if message_type == "EXPERIMENT_STARTED" and not run:
+    if message_type == "EXPERIMENT_STARTED":
         context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"])
-        if not context:
-            raise ValueError(f"ready experiment context is required for lab_code: {lab_code}")
-        run = repo.start_run_for_context(context, occurred_at)
-        created_run_from_context = True
+        if context:
+            run = repo.start_run_for_context(context, occurred_at)
+            created_run_from_context = True
+        else:
+            return build_ack(
+                message_id,
+                "REJECTED",
+                "READY_CONTEXT_REQUIRED",
+                f"ready experiment context is required for lab_code: {lab_code}",
+            )
     if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
     task_no = first_text(payload, "task_code") or normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
@@ -926,12 +972,10 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_STARTED":
         if not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
-        if experiment_no:
+        if experiment_no and not created_run_from_context:
             repo.mark_experiment_started(task_no, experiment_no, occurred_at)
     elif message_type == "EXPERIMENT_ENDED":
         repo.mark_run_ended(run_no, occurred_at)
-        if experiment_no:
-            repo.mark_experiment_ended(task_no, experiment_no, occurred_at)
     elif message_type == "EXPERIMENT_RESULT":
         result_package = payload.get("result_package")
         if not isinstance(result_package, dict):

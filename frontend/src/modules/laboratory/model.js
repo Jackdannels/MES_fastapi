@@ -365,7 +365,13 @@ const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode
 const experimentIsCompletedInSampleHistory = ({ experimentName, sample, taskCode }) =>
   COMPLETED_TRAY_STATUSES.has(resolveLatestExperimentHistoryStatus({ experimentName, sample, taskCode }));
 
+const completedPhysicalStatusCanRepresentPreviousExperiment = ({ currentExperimentCode, experimentCodes }) => {
+  const currentExperimentIndex = asArray(experimentCodes).indexOf(normalizeText(currentExperimentCode));
+  return currentExperimentIndex > 0;
+};
+
 const resolveCurrentExperimentTrayStatus = ({
+  currentExperimentCode,
   device,
   experimentCodes = [],
   experimentName,
@@ -392,7 +398,9 @@ const resolveCurrentExperimentTrayStatus = ({
     return normalizedStatus;
   }
   if (COMPLETED_TRAY_STATUSES.has(normalizedStatus)) {
-    return normalizedStatus;
+    return completedPhysicalStatusCanRepresentPreviousExperiment({ currentExperimentCode, experimentCodes })
+      ? normalizedStatus
+      : LAB_RESET_STATUS;
   }
   if (normalizedStatus === LAB_RESET_STATUS) {
     return normalizedStatus;
@@ -605,6 +613,14 @@ const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   if (targetExperimentCode && currentExperimentCode && targetExperimentCode !== currentExperimentCode) {
     return false;
   }
+  if (
+    !targetExperimentCode
+    && row?.completedForOtherExperiment === true
+    && row?.completedForCurrentExperiment !== true
+    && currentExperimentCode
+  ) {
+    return true;
+  }
   const location = normalizeText(row?.targetLab || row?.target_lab || row?.currentLocation || row?.location);
   const currentLab = normalizeText(currentTask?.device);
   return !location || !currentLab || location === currentLab;
@@ -620,6 +636,10 @@ const trayLifecycleIsBeforeLaboratoryDispatch = (row) => {
 };
 const taskHasWrongLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => !trayIsDispatchedToCurrentLaboratory(row, task));
+const trayBelongsToCurrentLaboratoryWorkflow = (row, currentTask) =>
+  trayIsDispatchedToCurrentLaboratory(row, currentTask);
+const taskHasCurrentLaboratoryDispatch = (task) =>
+  asArray(task?.trayRows).some((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
 const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null) => {
   const currentKey = laboratoryOperationKey(currentTask);
   const lockedRow = asArray(scheduleRows).find((row) => {
@@ -765,6 +785,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
   const trayRows = [];
   const indexByTrayCode = new Map();
   const experimentCodesByTrayCode = buildExperimentCodesByTrayCode(experimentTrayCodeMap);
+  const currentExperimentCode = normalizeText(String(experimentKey).split("::")[1]);
 
   const pushRow = (
     trayCode,
@@ -810,6 +831,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
     trayRows.push({
       currentLocation: normalizeText(location),
       completedForCurrentExperiment: false,
+      completedForOtherExperiment: false,
       displayStatus: "",
       experimentCodes: experimentCodesByTrayCode.get(normalizedTrayCode) || [],
       lifecycleLocation: normalizeText(location),
@@ -845,10 +867,14 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       row.completedForCurrentExperiment =
         row.completedForCurrentExperiment
         || experimentIsCompletedInSampleHistory({ experimentName, sample, taskCode });
+      row.completedForOtherExperiment =
+        row.completedForOtherExperiment
+        || Boolean(resolvePreviousCompletedExperimentSnapshot(sample, taskCode, experimentName));
       const currentRank = resolveLaboratoryStatusRank(row?.trayStatus);
       const physicalTrayStatus = normalizeText(tray?.status);
       const nextStatus = physicalTrayStatus
         ? resolveCurrentExperimentTrayStatus({
+            currentExperimentCode,
             device,
             experimentCodes: row?.experimentCodes,
             experimentName,
@@ -858,6 +884,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
           })
         : "";
       const displayStatusCandidate = resolveCurrentExperimentTrayStatus({
+        currentExperimentCode,
         device,
         experimentCodes: row?.experimentCodes,
         experimentName,
@@ -1056,12 +1083,13 @@ function createLaboratoryWorkflow() {
 
 function buildLaboratoryWorkflowFromTask(task) {
   const trayRows = asArray(task?.trayRows);
-  const trayRanks = trayRows.map((row) => (
+  const workflowTrayRows = trayRows.filter((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
+  const trayRanks = workflowTrayRows.map((row) => (
     isPreviousExperimentCompletionForCurrentTask(row, task)
       ? 0
       : resolveLaboratoryStatusRank(row?.trayStatus)
   ));
-  const installedWaitingReadyRows = trayRows.filter((row) => resolveLaboratoryStatusRank(row?.trayStatus) === 2);
+  const installedWaitingReadyRows = workflowTrayRows.filter((row) => resolveLaboratoryStatusRank(row?.trayStatus) === 2);
   const hasCompared = trayRanks.some((rank) => rank >= 1);
   const comparisonDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 1);
   const hasInstalled = trayRanks.some((rank) => rank >= 2 && rank < 5);
@@ -1092,6 +1120,9 @@ function buildLaboratoryWorkflowFromTask(task) {
     hasWrongLaboratoryDispatch: {
       value: taskHasWrongLaboratoryDispatch(task),
     },
+    hasCurrentLaboratoryDispatch: {
+      value: taskHasCurrentLaboratoryDispatch(task),
+    },
   });
   return workflow;
 }
@@ -1116,11 +1147,11 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
   const fixtureReadyDone = Object.prototype.hasOwnProperty.call(workflow, "fixtureReadyDone")
     ? workflow.fixtureReadyDone
     : false;
-  const hasWrongLaboratoryDispatch = Object.prototype.hasOwnProperty.call(workflow, "hasWrongLaboratoryDispatch")
-    ? workflow.hasWrongLaboratoryDispatch
-    : false;
+  const hasCurrentLaboratoryDispatch = Object.prototype.hasOwnProperty.call(workflow, "hasCurrentLaboratoryDispatch")
+    ? workflow.hasCurrentLaboratoryDispatch
+    : true;
   return {
-    canCompare: !hasWrongLaboratoryDispatch && !workflow.comparisonDone && !hasInProgressPreparation,
+    canCompare: hasCurrentLaboratoryDispatch && !workflow.comparisonDone && !hasInProgressPreparation,
     canInstallSample: Boolean(hasComparedWaitingInstall),
     canMarkReady: Boolean(hasInstalledWaitingReady && fixtureReadyDone),
   };
@@ -1170,6 +1201,9 @@ function confirmLaboratoryExperiment(workflow = createLaboratoryWorkflow()) {
 function buildLaboratoryProgressMessage(workflow, currentTask, labName = SALT_SPRAY_LAB) {
   if (!currentTask) {
     return `当前${normalizeText(labName) || SALT_SPRAY_LAB}暂无排程`;
+  }
+  if (asArray(currentTask?.trayRows).some((row) => RUNNING_EXPERIMENT_STATUSES.has(normalizeText(row?.trayStatus)))) {
+    return `当前任务 ${currentTask.taskCode} 已进入实验进行中`;
   }
   if (workflow.experimentConfirmed) {
     return "当前任务已确认全部托盘实验准备就绪";

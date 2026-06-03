@@ -74,6 +74,94 @@ describe("visualization model", () => {
     expect(panels[1].trays[0].steps.some((step) => step.label === "高低温湿热试验已完成")).toBe(true);
   });
 
+  test("uses tray target lab instead of future experiment relations for lab process ownership", () => {
+    const panels = buildLabProcessPanels({
+      labNames: ["冲击一室", "振动一室"],
+      experiments: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", experiment_name: "冲击试验", required_device: "冲击一室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", experiment_name: "振动试验", required_device: "振动一室" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-001" },
+      ],
+      schedules: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", device: "冲击一室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", device: "振动一室" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          task_code: "SYLU-2026-06-021",
+          location: "冲击一室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-021-TP-001",
+              status: "送至实验室",
+              target_lab: "冲击一室",
+              quantity: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(panels.find((panel) => panel.name === "冲击一室")?.trays.map((tray) => tray.trayCode)).toEqual([
+      "SYLU-2026-06-021-TP-001",
+    ]);
+    expect(panels.find((panel) => panel.name === "冲击一室")?.trays[0].steps.some((step) => step.label === "送至冲击一室" && step.active)).toBe(true);
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays).toEqual([]);
+  });
+
+  test("uses the next unfinished experiment lab after a tray completes the previous experiment", () => {
+    const panels = buildLabProcessPanels({
+      labNames: ["振动一室", "盐雾试验室", "霉菌试验室"],
+      experiments: [
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", experiment_name: "振动试验", required_device: "振动一室" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-B", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-C", experiment_name: "霉菌试验", required_device: "霉菌试验室" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", tray_code: "SYLU-2026-06-002-TP-001" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-B", tray_code: "SYLU-2026-06-002-TP-001" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-C", tray_code: "SYLU-2026-06-002-TP-001" },
+      ],
+      schedules: [
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", device: "振动一室" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-B", device: "盐雾试验室" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-C", device: "霉菌试验室" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-002-SP-001",
+          task_code: "SYLU-2026-06-002",
+          location: "振动一室",
+          status: "实验已完成",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-002-TP-001",
+              status: "实验已完成",
+              target_lab: "振动一室",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { detail: "SYLU-2026-06-002 / 振动试验 / 实验已完成", status: "实验已完成", time: "2026-06-04T01:04:34+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays).toEqual([]);
+    expect(panels.find((panel) => panel.name === "盐雾试验室")?.trays.map((tray) => tray.trayCode)).toEqual([
+      "SYLU-2026-06-002-TP-001",
+    ]);
+    expect(panels.find((panel) => panel.name === "盐雾试验室")?.trays[0].steps.map((step) => step.label)).toEqual(
+      expect.arrayContaining(["振动试验已完成", "送至盐雾试验室", "盐雾试验未完成"]),
+    );
+  });
+
   test("keeps lab preparation steps pending when a staging tray is returned by manufacturer", () => {
     const panels = buildLabProcessPanels({
       labNames: ["振动一室"],

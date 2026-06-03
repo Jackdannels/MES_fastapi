@@ -206,6 +206,88 @@ describe("samplesFlowModel", () => {
     expect(view.status).toBe("送至实验室");
   });
 
+  test("buildTrayFlowView uses the tray target lab to choose the current shared-tray experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-021-TP-002",
+      taskCode: "SYLU-2026-06-021",
+      status: "送至实验室",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          experiment_name: "温度冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          experiment_name: "振动试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          tray_code: "SYLU-2026-06-021-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          tray_code: "SYLU-2026-06-021-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          tray_code: "SYLU-2026-06-021-TP-002",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "冲击一室",
+          start_at: "2026-06-04T08:00:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          device: "温度冲击一室",
+          start_at: "2026-06-04T08:00:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          device: "振动一室",
+          start_at: "2026-06-04T08:00:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-002",
+          task_code: "SYLU-2026-06-021",
+          location: "温度冲击一室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-021-TP-002",
+              status: "送至实验室",
+              target_lab: "温度冲击一室",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "送至温度冲击一室")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+    expect(view.steps.some((step) => step.label === "送至冲击一室" && step.active)).toBe(false);
+  });
+
   test("buildTrayFlowView labels tray experiment requirements by test type instead of experiment name", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-101-TP-001",
@@ -895,6 +977,184 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "A实验进行中")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView expands the next unfinished experiment route after later experiments completed out of order", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-003-TP-002",
+      taskCode: "SYLU-2026-06-003",
+      currentExperimentCode: "SYLU-2026-06-003-A",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-B",
+          experiment_name: "四综合试验",
+        },
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-C",
+          experiment_name: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-003", experiment_code: "SYLU-2026-06-003-A", tray_code: "SYLU-2026-06-003-TP-002" },
+        { task_code: "SYLU-2026-06-003", experiment_code: "SYLU-2026-06-003-B", tray_code: "SYLU-2026-06-003-TP-002" },
+        { task_code: "SYLU-2026-06-003", experiment_code: "SYLU-2026-06-003-C", tray_code: "SYLU-2026-06-003-TP-002" },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-A",
+          device: "冲击一室",
+          start_at: "2026-06-04T08:00:00+08:00",
+          end_at: "2026-06-04T11:30:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-B",
+          device: "四综合实验室",
+          start_at: "2026-06-04T08:00:00+08:00",
+          end_at: "2026-06-04T11:30:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-003",
+          experiment_code: "SYLU-2026-06-003-C",
+          device: "盐雾试验室",
+          start_at: "2026-06-04T08:00:00+08:00",
+          end_at: "2026-06-04T11:30:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-003-SP-008",
+          task_code: "SYLU-2026-06-003",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-003-TP-002",
+              status: "实验已完成",
+              target_lab: "四综合实验室",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "实验完成", detail: "SYLU-2026-06-003 / 盐雾试验 / 实验已完成", status: "实验已完成", time: "2026-06-04T00:13:04+08:00" },
+            { action: "实验完成", detail: "SYLU-2026-06-003 / 四综合试验 / 实验已完成", status: "实验已完成", time: "2026-06-04T00:09:48+08:00" },
+            { action: "送至实验室", location: "四综合实验室", status: "送至实验室", detail: "SYLU-2026-06-003-TP-002 -> 四综合实验室", time: "2026-06-04T00:07:24+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-06-003-TP-002 | 当前状态：送至实验室");
+    expect(view.steps.map((step) => step.label)).toEqual([
+      "样品运输中",
+      "到货",
+      "四综合试验已完成",
+      "盐雾试验已完成",
+      "送至暂存间",
+      "已到达暂存间",
+      "送至冲击一室",
+      "已到达实验室",
+      "工装夹具安装",
+      "实验准备就绪",
+      "冲击试验未完成",
+      "放置实验后暂存间",
+      "厂家收回",
+    ]);
+    expect(view.steps.find((step) => step.label === "送至冲击一室")).toEqual(expect.objectContaining({
+      active: true,
+      time: "",
+    }));
+    expect(view.steps.find((step) => step.label === "送至四综合实验室")).toBeUndefined();
+  });
+
+  test("buildTrayFlowView does not reuse a completed experiment target lab for the next unfinished route", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-002-TP-001",
+      taskCode: "SYLU-2026-06-002",
+      currentExperimentCode: "SYLU-2026-06-002-A",
+      dispatchTargetLab: "振动一室",
+      location: "振动一室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-A",
+          experiment_name: "振动试验",
+        },
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-B",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-C",
+          experiment_name: "霉菌试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-A", tray_code: "SYLU-2026-06-002-TP-001" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-B", tray_code: "SYLU-2026-06-002-TP-001" },
+        { task_code: "SYLU-2026-06-002", experiment_code: "SYLU-2026-06-002-C", tray_code: "SYLU-2026-06-002-TP-001" },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-A",
+          device: "振动一室",
+          start_at: "2026-06-04T00:00:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-B",
+          device: "盐雾试验室",
+          start_at: "2026-06-04T02:00:00+08:00",
+        },
+        {
+          task_code: "SYLU-2026-06-002",
+          experiment_code: "SYLU-2026-06-002-C",
+          device: "霉菌试验室",
+          start_at: "2026-06-04T04:00:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-002-SP-001",
+          task_code: "SYLU-2026-06-002",
+          location: "振动一室",
+          status: "实验已完成",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-002-TP-001",
+              status: "实验已完成",
+              target_lab: "振动一室",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "实验完成", detail: "SYLU-2026-06-002 / 振动试验 / 实验已完成", status: "实验已完成", time: "2026-06-04T01:04:34+08:00" },
+            { action: "送至实验室", location: "振动一室", status: "送至实验室", detail: "SYLU-2026-06-002-TP-001 -> 振动一室", time: "2026-06-04T01:03:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-06-002-TP-001 | 当前状态：振动试验已完成");
+    expect(view.steps.find((step) => step.label === "振动试验已完成")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "送至盐雾试验室")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+    expect(view.steps.find((step) => step.label === "送至振动一室")).toBeUndefined();
+  });
+
   test("buildTrayFlowView highlights the latest completed experiment when the next experiment has not started", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-002-TP-001",
@@ -1031,6 +1291,56 @@ describe("samplesFlowModel", () => {
         expect.objectContaining({ reached: false, active: false, time: "" }),
       );
     });
+  });
+
+  test("buildTrayFlowView keeps lab dispatch and arrival times scoped before the completed experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-001-TP-001",
+      taskCode: "SYLU-2026-06-001",
+      location: "四综合试验室",
+      status: "实验已完成",
+      experimentFlow: [
+        {
+          destinationLab: "盐雾试验室",
+          displayName: "盐雾试验",
+          name: "盐雾试验",
+          state: "completed",
+        },
+        {
+          destinationLab: "四综合试验室",
+          displayName: "四综合试验",
+          name: "四综合试验",
+          state: "completed",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-001-SP-001",
+          location: "四综合试验室",
+          status: "实验已完成",
+          task_code: "SYLU-2026-06-001",
+          trays: [{ tray_code: "SYLU-2026-06-001-TP-001", status: "实验已完成", quantity: 1 }],
+          history: [
+            { time: "2026-06-03T10:00:00+08:00", detail: "SYLU-2026-06-001 / 盐雾试验 / 实验已完成" },
+            { time: "2026-06-03T10:20:00+08:00", status: "送至实验室", detail: "SYLU-2026-06-001-TP-001 -> 四综合试验室" },
+            { time: "2026-06-03T10:25:00+08:00", status: "已到达实验室", detail: "SYLU-2026-06-001 / 四综合试验 / 已到达实验室" },
+            { time: "2026-06-03T11:00:00+08:00", detail: "SYLU-2026-06-001 / 四综合试验 / 实验已完成" },
+            { time: "2026-06-03T11:20:00+08:00", status: "送至实验室", detail: "SYLU-2026-06-001-TP-001 -> 盐雾试验室" },
+            { time: "2026-06-03T11:25:00+08:00", status: "已到达实验室", detail: "SYLU-2026-06-001 / 盐雾试验 / 已到达实验室" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "送至四综合试验室")).toEqual(
+      expect.objectContaining({ time: "2026-06-03T10:20:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "已到达实验室")).toEqual(
+      expect.objectContaining({ time: "2026-06-03T10:25:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "四综合试验已完成")).toEqual(
+      expect.objectContaining({ time: "2026-06-03T11:00:00+08:00" }),
+    );
   });
 
   test("buildTrayFlowView uses the real tray status for the current experiment even without an explicit experiment code", () => {

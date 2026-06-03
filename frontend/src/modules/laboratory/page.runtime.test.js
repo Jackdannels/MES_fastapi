@@ -3,7 +3,7 @@ import { nextTick, reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import LaboratoryPage from "./page.vue";
-import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
+import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES, writeHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -48,6 +48,8 @@ const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
 const laboratoryMqCalls = () =>
   fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory"));
+const interfaceModeCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/interface-mode") && (options.method || "GET") === "POST");
 const laboratoryCompleteCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/complete") && (options.method || "GET") === "POST");
 const waitForLaboratoryMqCall = async (endpoint) => {
@@ -670,6 +672,25 @@ describe("LaboratoryPage runtime", () => {
       flow_status: "工装夹具安装",
       status: "工装夹具安装",
     }));
+  });
+
+  test("resyncs the MQTT subscriber when host interface mode changes while laboratory page stays open", async () => {
+    let hostInterfaceMode = null;
+    window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? hostInterfaceMode : null));
+    window.localStorage.setItem.mockImplementation((key, value) => {
+      if (key === HOST_INTERFACE_MODE_STORAGE_KEY) {
+        hostInterfaceMode = value;
+      }
+    });
+    const mounted = await mountPage();
+    expect(mounted.text()).toContain("盐雾试验室操作台");
+    const callsBeforeSwitch = interfaceModeCalls().length;
+
+    writeHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    await flushPageUpdates();
+
+    expect(interfaceModeCalls()).toHaveLength(callsBeforeSwitch + 1);
+    expect(JSON.parse(String(interfaceModeCalls().at(-1)?.[1]?.body))).toEqual({ mode: HOST_INTERFACE_MODES.mqtt });
   });
 
   test("renders the salt-spray laboratory console and excludes other laboratory tasks", async () => {
@@ -1913,6 +1934,81 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
   });
 
+  test("refreshes into running state when MQTT experiment start arrives while ready success modal is open", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "工装夹具安装",
+        flow_status: "工装夹具安装",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "工装夹具安装", tray_code: "TP-001" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) => ({
+        ...sample,
+        flow_status: "实验进行中",
+        status: "实验进行中",
+        trays: sample.trays.map((tray) => ({ ...tray, status: "实验进行中" })),
+      })),
+      [STORAGE_KEYS.experiments]: snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+        experiment.experiment_code === "SYLU-2026-04-101-A" ? { ...experiment, status: "实验进行中" } : experiment,
+      ),
+      [STORAGE_KEYS.schedules]: snapshotState[STORAGE_KEYS.schedules].map((schedule) =>
+        schedule.experiment_code === "SYLU-2026-04-101-A" ? { ...schedule, status: "实验进行中" } : schedule,
+      ),
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-mqtt-start",
+          run_no: "run-mqtt-start",
+          schedule_id: "schedule-1",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          tray_codes: ["TP-001"],
+          status: "实验进行中",
+          started_at: "2026-04-02T10:00:00.000Z",
+          planned_end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: {
+        keys: [
+          STORAGE_KEYS.samples,
+          STORAGE_KEYS.experiments,
+          STORAGE_KEYS.experiment_runs,
+          STORAGE_KEYS.schedules,
+        ],
+      },
+    }));
+
+    await waitForStorageGetCount(expectedStorageGetCalls);
+    await flushPageUpdates();
+
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中");
+    expect(mounted.text()).toContain("当前任务 SYLU-2026-04-101 已进入实验进行中");
+  });
+
   test("shows fixture countdown immediately while install persistence is still pending", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
@@ -2499,6 +2595,80 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-501");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("TP-CJ-001");
     expect(document.body.querySelector('[data-testid="laboratory-running-countdown"]')?.textContent || "").toContain("01:00:00");
+  });
+
+  test("refreshes into running while the MQTT ready confirmation modal is still open for the selected lab", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-04-501", name: "冲击连接器", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", experiment_name: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-501", experiment_code: "SYLU-2026-04-501-A", tray_code: "TP-CJ-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          device: "冲击一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-501-SP-001",
+          location: "冲击一室",
+          owner: "周工",
+          status: "工装夹具安装",
+          flow_status: "工装夹具安装",
+          task_code: "SYLU-2026-04-501",
+          trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "工装夹具安装", tray_code: "TP-CJ-001" }],
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    await flushPageUpdates();
+
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: [
+        {
+          ...snapshotState[STORAGE_KEYS.samples][0],
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "实验进行中", tray_code: "TP-CJ-001" }],
+        },
+      ],
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" },
+    }));
+    await waitForStorageGetCount(expectedStorageGetCalls);
+    await flushPageUpdates();
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-501");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("TP-CJ-001");
+    expect(document.body.querySelector('[data-testid="laboratory-running-countdown"]')?.textContent || "").toContain("01:00:00");
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
   });
 
   test("does not restore the running modal while pointer activity continues during the 10-second idle window", async () => {

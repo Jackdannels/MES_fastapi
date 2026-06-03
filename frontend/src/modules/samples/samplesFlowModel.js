@@ -461,6 +461,85 @@ const resolveSingleTrayExperiment = (input = {}) => {
   return orderedExperiments.length === 1 ? orderedExperiments[0] : null;
 };
 
+const resolveTrayDispatchTarget = (input = {}) => {
+  const normalizedTaskCode = normalizeText(input.taskCode);
+  const normalizedTrayCode = normalizeText(input.trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode) {
+    return { targetLab: "", targetExperimentCode: "" };
+  }
+
+  let targetLab = "";
+  let targetExperimentCode = "";
+  let latestHistoryMatch = null;
+
+  asArray(input.samples).forEach((sample) => {
+    if (resolveEntryTaskCode(sample) !== normalizedTaskCode) {
+      return;
+    }
+    asArray(sample?.trays).forEach((tray) => {
+      if (resolveEntryTrayCode(tray) !== normalizedTrayCode) {
+        return;
+      }
+      targetLab = targetLab || normalizeText(tray?.target_lab || tray?.targetLab);
+      targetExperimentCode = targetExperimentCode
+        || normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+    });
+    asArray(sample?.history).forEach((entry) => {
+      const detail = normalizeText(entry?.detail);
+      if (!detail.includes(normalizedTrayCode)) {
+        return;
+      }
+      const eventTargetLab = resolveLabDestinationName(
+        entry?.target_lab,
+        entry?.targetLab,
+        detail,
+        entry?.location,
+      );
+      if (!eventTargetLab) {
+        return;
+      }
+      const eventTime = entryTimeValue(entry);
+      if (!latestHistoryMatch || eventTime >= latestHistoryMatch.time) {
+        latestHistoryMatch = { targetLab: eventTargetLab, time: eventTime };
+      }
+    });
+  });
+
+  return {
+    targetLab: targetLab || latestHistoryMatch?.targetLab || "",
+    targetExperimentCode,
+  };
+};
+
+const resolveLatestWithdrawalRestoreTarget = ({ taskCode, trayCode, samples = [] } = {}) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode) {
+    return null;
+  }
+
+  return asArray(samples).reduce((latest, sample) => {
+    if (resolveEntryTaskCode(sample) !== normalizedTaskCode) {
+      return latest;
+    }
+    const touchesTray = getSampleTrayList(sample).some((tray) => resolveEntryTrayCode(tray) === normalizedTrayCode);
+    if (!touchesTray) {
+      return latest;
+    }
+    const withdrawal = latestWithdrawalHistoryEntry(sample?.history);
+    const restoreTarget = withdrawal
+      ? parseWithdrawalRestoreTarget(withdrawal.entry?.detail, normalizedTaskCode)
+      : null;
+    if (!restoreTarget) {
+      return latest;
+    }
+    if (!latest || withdrawal.time >= latest.time) {
+      return { ...restoreTarget, time: withdrawal.time };
+    }
+    return latest;
+  }, null);
+};
+
 const buildSingleExperimentStatusLabel = (experimentName, status) => {
   const normalizedName = normalizeText(experimentName);
   const normalizedStatus = normalizeText(status);
@@ -580,7 +659,16 @@ const buildTrayExperimentFlow = (input = {}) => {
   }
 
   const normalizedStatus = normalizeLifecycleStatus(input.location, input.status);
-  const explicitExperimentCode = normalizeText(input.currentExperimentCode);
+  const dispatchTarget = resolveTrayDispatchTarget(input);
+  const targetLabExperimentCode = normalizeText(dispatchTarget.targetLab)
+    ? normalizeText(
+      orderedExperiments.find((experiment) => normalizeText(experiment.destinationLab) === normalizeText(dispatchTarget.targetLab))?.code,
+    )
+    : "";
+  const explicitExperimentCode =
+    normalizeText(input.currentExperimentCode)
+    || normalizeText(dispatchTarget.targetExperimentCode)
+    || targetLabExperimentCode;
   const explicitIndex = explicitExperimentCode
     ? orderedExperiments.findIndex((experiment) => experiment.code === explicitExperimentCode)
     : -1;
@@ -620,6 +708,11 @@ const buildTrayExperimentFlow = (input = {}) => {
     .filter(Boolean)
     .sort((left, right) => left.completedAt - right.completedAt);
   const completedCodeSet = new Set(completedExperiments.map((experiment) => experiment.code));
+  const completedExperimentIndexes = completedExperiments
+    .map((experiment) => orderedExperiments.findIndex((orderedExperiment) => orderedExperiment.code === experiment.code))
+    .filter((index) => index >= 0);
+  const hasCompletedExperimentBeforeExplicit =
+    explicitIndex >= 0 && completedExperimentIndexes.some((index) => index < explicitIndex);
   const unfinishedExperiments = orderedExperiments.filter((experiment) => !completedCodeSet.has(experiment.code));
   const startedUnfinishedExperiments = unfinishedExperiments.filter((experiment) =>
     hasExperimentEnteredLabFlow(experimentStatusMap.get(experiment.code)),
@@ -631,6 +724,11 @@ const buildTrayExperimentFlow = (input = {}) => {
     && hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
       ? orderedExperiments[explicitIndex]
       : null;
+  const explicitUnfinishedExperiment =
+    explicitIndex >= 0
+    && !completedCodeSet.has(orderedExperiments[explicitIndex]?.code)
+      ? orderedExperiments[explicitIndex]
+      : null;
   const explicitUnstartedReturnedExperiment =
     normalizedStatus === "厂家收回"
     && explicitIndex >= 0
@@ -638,8 +736,26 @@ const buildTrayExperimentFlow = (input = {}) => {
     && !hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
       ? orderedExperiments[explicitIndex]
       : null;
+  const latestWithdrawalRestoreTarget = resolveLatestWithdrawalRestoreTarget({
+    taskCode,
+    trayCode,
+    samples: input.samples,
+  });
+  const explicitUnstartedAfterOtherCompletion =
+    explicitUnfinishedExperiment
+    && normalizeLifecycleStatus("", normalizedStatus) === "实验已完成"
+    && completedExperiments.length > 0
+    && !latestWithdrawalRestoreTarget
+    && !hasExperimentEnteredLabFlow(experimentStatusMap.get(explicitUnfinishedExperiment.code))
+      ? explicitUnfinishedExperiment
+      : null;
   const currentExperiment =
-    explicitExperiment || explicitUnstartedReturnedExperiment || startedUnfinishedExperiments[0] || unfinishedExperiments[0] || null;
+    explicitExperiment
+    || explicitUnstartedReturnedExperiment
+    || explicitUnstartedAfterOtherCompletion
+    || startedUnfinishedExperiments[0]
+    || unfinishedExperiments[0]
+    || null;
   const isSyntheticUnstartedCurrent =
     (Boolean(explicitUnstartedReturnedExperiment) || normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
     && startedUnfinishedExperiments.length === 0
@@ -658,7 +774,10 @@ const buildTrayExperimentFlow = (input = {}) => {
     }));
   }
 
-  const routeStatus = experimentStatusMap.get(currentExperiment.code) || normalizedStatus;
+  const routeStatus =
+    explicitUnstartedAfterOtherCompletion && currentExperiment.code === explicitUnstartedAfterOtherCompletion.code
+      ? (hasCompletedExperimentBeforeExplicit ? normalizedStatus : "送至实验室")
+      : experimentStatusMap.get(currentExperiment.code) || normalizedStatus;
   const orderedFlowExperiments = [
     ...orderedExperiments.filter((experiment) => completedCodeSet.has(experiment.code)),
     currentExperiment,
@@ -689,6 +808,10 @@ const buildTrayExperimentFlow = (input = {}) => {
         aliases: currentExperiment.aliases,
         state: "current",
         unstarted: isSyntheticUnstartedCurrent,
+        useExperimentDestinationLab: Boolean(
+          explicitUnstartedAfterOtherCompletion
+          && currentExperiment.code === explicitUnstartedAfterOtherCompletion.code,
+        ),
         routeSteps: buildExperimentRouteSteps(),
         routeStatus,
       };
@@ -878,12 +1001,25 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
   return FLOW_STEP_KEY_BY_LABEL.has(normalized) ? normalized : "";
 };
 
-const setLatestFlowTime = (timeMap, label, time, sourceMap = new Map(), source = "history") => {
+const appendFlowTimeHistory = (timeHistoryMap, label, time) => {
+  const normalizedLabel = normalizeText(label);
+  const normalizedTime = normalizeText(time);
+  if (!timeHistoryMap || !normalizedLabel || !normalizedTime) {
+    return;
+  }
+  const existing = timeHistoryMap.get(normalizedLabel) || [];
+  if (!existing.includes(normalizedTime)) {
+    timeHistoryMap.set(normalizedLabel, [...existing, normalizedTime]);
+  }
+};
+
+const setLatestFlowTime = (timeMap, label, time, sourceMap = new Map(), source = "history", timeHistoryMap = null) => {
   const normalizedLabel = normalizeText(label);
   const normalizedTime = normalizeText(time);
   if (!normalizedLabel || !normalizedTime) {
     return;
   }
+  appendFlowTimeHistory(timeHistoryMap, normalizedLabel, normalizedTime);
   const existing = timeMap.get(normalizedLabel);
   const existingSource = sourceMap.get(normalizedLabel) || "";
   const historyPreferredLabel = normalizedLabel === "到货" || normalizedLabel === "厂家收回";
@@ -919,7 +1055,11 @@ const buildTrayFlowTimeMap = (input = {}) => {
   const trayCode = normalizeText(input.trayCode);
   const timeMap = new Map();
   const timeSourceMap = new Map();
+  const timeHistoryMap = new Map();
+  const recordLatestFlowTime = (label, time, source = "history") =>
+    setLatestFlowTime(timeMap, label, time, timeSourceMap, source, timeHistoryMap);
   if (!trayCode) {
+    timeMap.timeHistoryMap = timeHistoryMap;
     return timeMap;
   }
 
@@ -968,19 +1108,21 @@ const buildTrayFlowTimeMap = (input = {}) => {
           `${restoreTarget.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
           restoredCompletedEntry?.entry?.time || withdrawalTime,
           timeSourceMap,
+          "history",
+          timeHistoryMap,
         );
       } else {
         const restoreLabel = normalizeHistoryFlowLabel(
           restoreTarget?.status || latestWithdrawalEntry?.status,
           latestWithdrawalEntry?.location,
         );
-        setLatestFlowTime(timeMap, restoreLabel, withdrawalTime, timeSourceMap);
+        recordLatestFlowTime(restoreLabel, withdrawalTime);
       }
     }
 
     const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     if (parseTimeValue(sample?.created_at) > 0 && resolveFlowStatusRank("", sampleStatus) >= (FLOW_STEP_INDEX_BY_KEY.get("arrived") ?? 1)) {
-      setLatestFlowTime(timeMap, "到货", sample?.created_at, timeSourceMap, "fallback");
+      recordLatestFlowTime("到货", sample?.created_at, "fallback");
     }
 
     trayEntries.forEach((tray) => {
@@ -988,7 +1130,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const trayStatusLabel = isPostRetentionLocation(sample?.location) && isAmbiguousStagingStatus(trayStatus)
         ? "放置实验后暂存间"
         : trayStatus;
-      setLatestFlowTime(timeMap, trayStatusLabel, tray?.updated_at || sample?.updated_at, timeSourceMap, "fallback");
+      recordLatestFlowTime(trayStatusLabel, tray?.updated_at || sample?.updated_at, "fallback");
     });
 
     historyEntries.forEach((entry) => {
@@ -1004,7 +1146,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
         if (!label || shouldIgnoreHistoryTime(entry, label, entry?.location)) {
           return;
         }
-        setLatestFlowTime(timeMap, label, time, timeSourceMap);
+        recordLatestFlowTime(label, time);
       });
 
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
@@ -1023,26 +1165,30 @@ const buildTrayFlowTimeMap = (input = {}) => {
               `${retainedCompleted.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`,
               time,
               timeSourceMap,
+              "history",
+              timeHistoryMap,
             );
           }
           return;
         }
         const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
         if (experimentStatus === "实验进行中" || experimentStatus === "实验中") {
-          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time, timeSourceMap);
+          recordLatestFlowTime(`${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time);
         }
         if (experimentStatus === "实验已完成" || experimentStatus === "实验完成") {
-          setLatestFlowTime(timeMap, `${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time, timeSourceMap);
+          recordLatestFlowTime(`${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time);
         }
       }
     });
   });
 
+  timeMap.timeHistoryMap = timeHistoryMap;
   return timeMap;
 };
 
 function buildTrayFlowView(input = {}) {
   const stepTimeMap = buildTrayFlowTimeMap(input);
+  const stepTimeHistoryMap = stepTimeMap.timeHistoryMap instanceof Map ? stepTimeMap.timeHistoryMap : new Map();
   const experimentFlow = Array.isArray(input.experimentFlow) && input.experimentFlow.length > 0
     ? input.experimentFlow
     : buildTrayExperimentFlow(input);
@@ -1083,6 +1229,21 @@ function buildTrayFlowView(input = {}) {
       parseTimeValue(stepTimeMap.get(experimentIdentityStatusLabel(experiment, index, "completed"))),
     );
     const routeStepTimeAfter = (label, floorTime = 0, ceilingTime = 0) => {
+      const matchingTimes = asArray(stepTimeHistoryMap.get(label))
+        .filter((time) => {
+          const parsedTime = parseTimeValue(time);
+          if (floorTime && parsedTime <= floorTime) {
+            return false;
+          }
+          if (ceilingTime && parsedTime >= ceilingTime) {
+            return false;
+          }
+          return parsedTime > 0;
+        })
+        .sort((left, right) => parseTimeValue(right) - parseTimeValue(left));
+      if (matchingTimes.length > 0) {
+        return matchingTimes[0];
+      }
       const time = stepTimeMap.get(label) || "";
       const parsedTime = parseTimeValue(time);
       if (!floorTime) {
@@ -1132,7 +1293,15 @@ function buildTrayFlowView(input = {}) {
         : buildExperimentRouteSteps();
       const normalizedRouteStatus = normalizeLifecycleStatus(input.location, activeExperiment?.routeStatus || input.status);
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
-      const currentLabDestination = normalizeText(input.dispatchTargetLab) || normalizeText(activeExperiment?.destinationLab);
+      const shouldUseExperimentDestinationLab =
+        activeExperiment?.useExperimentDestinationLab
+        || (
+          activeExperiment?.unstarted
+          && (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
+        );
+      const currentLabDestination = shouldUseExperimentDestinationLab
+        ? normalizeText(activeExperiment?.destinationLab) || normalizeText(input.dispatchTargetLab)
+        : normalizeText(input.dispatchTargetLab) || normalizeText(activeExperiment?.destinationLab);
       const routeIndexes = routeSteps.map((label, index) =>
         pushStep({
           key: `route-${currentExperimentIndex}-${index}`,
@@ -1253,7 +1422,7 @@ function buildTrayFlowView(input = {}) {
         parseTimeValue(stepTimeMap.get(completedLabel)),
         parseTimeValue(stepTimeMap.get(completedIdentityLabel)),
       );
-      const finalLabDestination = normalizeText(input.dispatchTargetLab) || normalizeText(lastExperiment?.destinationLab);
+      const finalLabDestination = normalizeText(lastExperiment?.destinationLab) || normalizeText(input.dispatchTargetLab);
       routeSteps.forEach((label, index) => {
         pushStep({
           key: `route-final-${index}`,

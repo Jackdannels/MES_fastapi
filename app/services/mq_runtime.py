@@ -43,6 +43,9 @@ class MqttRuntimeController:
                 self.mode = normalized_mode
                 return self._status_locked()
 
+            if self._subscriber is not None and not self._subscriber_is_running_locked():
+                self._stop_locked()
+
             if self._subscriber is None:
                 subscriber = self._starter(self.app_settings)
                 self._subscriber = subscriber
@@ -59,8 +62,20 @@ class MqttRuntimeController:
         if subscriber is not None:
             subscriber.stop()
 
+    def _subscriber_is_running_locked(self) -> bool:
+        subscriber = self._subscriber
+        if subscriber is None:
+            return False
+        is_running = getattr(subscriber, "is_running", None)
+        if not callable(is_running):
+            return True
+        try:
+            return bool(is_running())
+        except Exception:
+            return True
+
     def _status_locked(self) -> dict[str, object]:
-        subscriber_running = self._subscriber is not None
+        subscriber_running = self._subscriber_is_running_locked()
         reason = ""
         if self.mode == "mock":
             reason = "paused"

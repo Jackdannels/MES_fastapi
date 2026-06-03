@@ -764,6 +764,48 @@ def test_derive_experiment_status_map_keeps_completed_status_without_history_det
     }
 
 
+def test_derive_experiment_status_map_reopens_stale_completed_batch_when_run_trays_are_incomplete() -> None:
+    experiments = [
+        {
+            "experiment_no": "SYLU-2026-06-001-A",
+            "task_no": "SYLU-2026-06-001",
+            "experiment_name": "盐雾试验",
+            "experiment_status": "实验已完成",
+        }
+    ]
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "schedule_status": "实验已完成",
+        }
+    ]
+    experiment_trays = [
+        {"task_no": "SYLU-2026-06-001", "experiment_no": "SYLU-2026-06-001-A", "tray_no": "TP-001"},
+        {"task_no": "SYLU-2026-06-001", "experiment_no": "SYLU-2026-06-001-A", "tray_no": "TP-002"},
+    ]
+    experiment_run_trays = [
+        {
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "tray_no": "TP-001",
+            "run_tray_status": "实验已完成",
+        }
+    ]
+
+    assert derive_experiment_status_map(
+        experiments,
+        schedules,
+        [],
+        [],
+        experiment_trays=experiment_trays,
+        experiment_run_trays=experiment_run_trays,
+    ) == {
+        "SYLU-2026-06-001-A": "实验进行中",
+    }
+
+
 def test_derive_task_status_map_keeps_task_running_once_any_experiment_started_or_completed() -> None:
     tasks = [{"task_no": "SYLU-2026-03-002"}]
     experiments = [
@@ -1179,6 +1221,113 @@ def test_build_storage_sample_item_preserves_tray_status() -> None:
     )
 
     assert storage_item["trays"][0]["status"] == "实验进行中"
+
+
+def test_build_storage_sample_item_recovers_tray_target_lab_from_dispatch_history() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 103,
+            "sample_no": "SYLU-2026-06-021-SP-002",
+            "task_no": "SYLU-2026-06-021",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "温度冲击一室",
+            "sample_status": "送至实验室",
+            "flow_status": "送至实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-03 18:50:19",
+            "updated_at": "2026-06-03 18:51:57",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-021-TP-002",
+                "tray_code": "SYLU-2026-06-021-TP-002",
+                "sample_code": "SYLU-2026-06-021-SP-002",
+                "quantity": 1,
+                "status": "送至实验室",
+                "created_at": "2026-06-03 18:50:35",
+                "updated_at": "2026-06-03 18:51:57",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 406912,
+                "event_time": "2026-06-03 18:51:57",
+                "action_type": "送至实验室",
+                "location_desc": "温度冲击一室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-06-021-TP-002 -> 温度冲击一室",
+            },
+            {
+                "event_id": 406913,
+                "event_time": "2026-06-03 18:51:28",
+                "action_type": "任务已确认入库",
+                "location_desc": "接驳区",
+                "sample_status": "到货",
+                "detail": "SYLU-2026-06-021",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "温度冲击一室"
+
+
+def test_build_storage_sample_item_does_not_recover_target_lab_for_completed_tray() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 104,
+            "sample_no": "SYLU-2026-06-002-SP-001",
+            "task_no": "SYLU-2026-06-002",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "振动一室",
+            "sample_status": "实验已完成",
+            "flow_status": "实验已完成",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-04 01:00:00",
+            "updated_at": "2026-06-04 01:04:34",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-002-TP-001",
+                "tray_code": "SYLU-2026-06-002-TP-001",
+                "sample_code": "SYLU-2026-06-002-SP-001",
+                "quantity": 1,
+                "status": "实验已完成",
+                "created_at": "2026-06-04 01:00:00",
+                "updated_at": "2026-06-04 01:04:34",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 406914,
+                "event_time": "2026-06-04 01:03:00",
+                "action_type": "送至实验室",
+                "location_desc": "振动一室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-06-002-TP-001 -> 振动一室",
+            },
+            {
+                "event_id": 406915,
+                "event_time": "2026-06-04 01:04:34",
+                "action_type": "实验完成",
+                "location_desc": "振动一室",
+                "sample_status": "实验已完成",
+                "detail": "SYLU-2026-06-002 / 振动试验 / 实验已完成",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["status"] == "实验已完成"
+    assert storage_item["trays"][0]["target_lab"] == ""
 
 
 def test_build_storage_sample_item_preserves_fixture_ready_marker() -> None:
@@ -1836,6 +1985,71 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "schedule_task_ids",
         "progress_statuses",
     ]
+
+
+def test_sync_progress_statuses_reads_existing_run_tray_relation_column(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class SyncCursor:
+        def __init__(self):
+            self.result = []
+
+        def execute(self, sql, params=None):
+            normalized_sql = " ".join(str(sql).split())
+            assert "run_tray_id" not in normalized_sql
+            if "FROM biz_task" in normalized_sql:
+                self.result = [{"task_id": 1, "task_no": "TASK-001", "task_status": "进行中"}]
+            elif "FROM biz_experiment_run_tray" in normalized_sql:
+                self.result = [
+                    {
+                        "relation_id": 10,
+                        "run_no": "RUN-001",
+                        "task_no": "TASK-001",
+                        "experiment_no": "TASK-001-A",
+                        "tray_no": "TP-001",
+                        "run_tray_status": "实验已完成",
+                    }
+                ]
+            elif "FROM biz_experiment_tray" in normalized_sql:
+                self.result = [{"relation_id": 20, "experiment_no": "TASK-001-A", "task_no": "TASK-001", "tray_no": "TP-001"}]
+            elif "FROM biz_experiment_sample" in normalized_sql or "FROM biz_sample_event" in normalized_sql:
+                self.result = []
+            elif "FROM biz_experiment" in normalized_sql:
+                self.result = [
+                    {
+                        "experiment_id": 1,
+                        "experiment_no": "TASK-001-A",
+                        "task_id": 1,
+                        "task_no": "TASK-001",
+                        "experiment_name": "盐雾试验",
+                        "experiment_status": "实验进行中",
+                    }
+                ]
+            elif "FROM biz_schedule" in normalized_sql:
+                self.result = [
+                    {
+                        "schedule_id": 1,
+                        "task_id": 1,
+                        "task_no": "TASK-001",
+                        "experiment_no": "TASK-001-A",
+                        "schedule_status": "实验进行中",
+                    }
+                ]
+            else:
+                self.result = []
+
+        def fetchall(self):
+            return self.result
+
+        def executemany(self, _sql, _params):
+            return None
+
+    monkeypatch.setattr(backend, "_normalize_legacy_status_columns", lambda cursor: None)
+
+    backend._sync_progress_statuses(SyncCursor())
 
 
 def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) -> None:

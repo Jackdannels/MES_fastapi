@@ -101,9 +101,51 @@ const relationMatchesLab = (relation, labName) =>
   resolveLabDevice(relation?.schedule) === labName || resolveLabDevice(relation?.experiment) === labName;
 
 const sampleMatchesLab = (sample, labName) => normalizeText(sample?.location) === labName || normalizeText(sample?.current_location) === labName;
+const resolveTrayTargetLab = (tray, sample) =>
+  normalizeText(tray?.target_lab || tray?.targetLab || sample?.target_lab || sample?.targetLab);
+const TARGET_LAB_OWNERSHIP_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
+const resolveRelationExperimentName = (experiment) =>
+  normalizeText(
+    experiment?.experiment_name
+    || experiment?.experimentName
+    || experiment?.name
+    || experiment?.experiment_type
+    || experiment?.experimentType,
+  );
+const sampleHasCompletedExperiment = (sample, relation) => {
+  const taskCode = resolveTaskCode(relation);
+  const experimentName = resolveRelationExperimentName(relation?.experiment);
+  if (!taskCode || !experimentName) {
+    return false;
+  }
+  return asArray(sample?.history).some((entry) => {
+    const detail = normalizeText(entry?.detail);
+    return detail.includes(taskCode) && detail.includes(experimentName) && detail.includes("实验已完成");
+  });
+};
+const relationIsCompletedForSample = (sample, relation) => {
+  const experimentStatus = normalizeLifecycleStatus("", normalizeText(relation?.experiment?.status));
+  return experimentStatus === "实验已完成" || experimentStatus === "实验完成" || sampleHasCompletedExperiment(sample, relation);
+};
+const resolveCurrentRelation = (relations, sample) =>
+  asArray(relations).find((relation) => !relationIsCompletedForSample(sample, relation))
+  || asArray(relations).at(-1)
+  || {};
+const resolveSampleKnownLab = (sample, knownLabNames) => {
+  const location = normalizeText(sample?.location);
+  if (knownLabNames.has(location)) {
+    return location;
+  }
+  const currentLocation = normalizeText(sample?.current_location);
+  if (knownLabNames.has(currentLocation)) {
+    return currentLocation;
+  }
+  return "";
+};
 
-const buildTrayRowsForLab = ({ labName, samples, experiments, experimentTrays, schedules }) => {
+const buildTrayRowsForLab = ({ labName, labNames = [], samples, experiments, experimentTrays, schedules }) => {
   const { relationsByTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
+  const knownLabNames = new Set(asArray(labNames).map(normalizeText).filter(Boolean));
   const trayMap = new Map();
 
   asArray(samples).forEach((sample) => {
@@ -116,11 +158,26 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentTrays, s
       }
       const relations = relationsByTrayCode.get(trayCode) || [];
       const labRelations = relations.filter((relation) => relationMatchesLab(relation, labName));
-      if (labRelations.length === 0 && !sampleMatchesLab(sample, labName)) {
+      const lifecycleStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
+      const targetLabCanOwnTray = TARGET_LAB_OWNERSHIP_STATUSES.has(lifecycleStatus);
+      const targetLab = targetLabCanOwnTray ? resolveTrayTargetLab(tray, sample) : "";
+      const currentKnownLab = targetLabCanOwnTray ? resolveSampleKnownLab(sample, knownLabNames) : "";
+      const currentRelation = resolveCurrentRelation(relations, sample);
+      const relationLab = resolveLabDevice(currentRelation?.schedule) || resolveLabDevice(currentRelation?.experiment);
+      const actualLab = targetLab || currentKnownLab || relationLab;
+      if (actualLab) {
+        if (actualLab !== labName) {
+          return;
+        }
+      } else if (labRelations.length === 0 && !sampleMatchesLab(sample, labName)) {
         return;
       }
 
-      const relation = labRelations[0] || relations[0] || {};
+      const relation =
+        (actualLab ? relations.find((entry) => relationMatchesLab(entry, actualLab)) : null)
+        || currentRelation
+        || labRelations[0]
+        || {};
       const flow = buildTrayFlowView({
         currentExperimentCode: relation.experimentCode || "",
         experimentTrays,
@@ -173,6 +230,7 @@ function buildLabProcessPanels(input = {}) {
   return labNames.map((labName) => {
     const trays = buildTrayRowsForLab({
       labName,
+      labNames,
       samples,
       experiments,
       experimentTrays,

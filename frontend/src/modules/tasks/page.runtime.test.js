@@ -865,57 +865,63 @@ describe("TasksPage runtime", () => {
   });
 
   test("uses archived returned task codes when generating a new intake task number", async () => {
-    const { fetchMock, state } = installApiFetchMock({
-      tasks: [
-        createTask({
-          id: "task-returned",
-          code: "SYLU-2026-05-001",
-          status: "厂家收回",
-          transfer_status: "厂家收回",
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-20T08:00:00.000Z"));
+    try {
+      const { fetchMock, state } = installApiFetchMock({
+        tasks: [
+          createTask({
+            id: "task-returned",
+            code: "SYLU-2026-05-001",
+            status: "厂家收回",
+            transfer_status: "厂家收回",
+          }),
+        ],
+        samples: [
+          {
+            id: "sample-returned",
+            code: "SYLU-2026-05-001-SP-001",
+            task_code: "SYLU-2026-05-001",
+            status: "厂家收回",
+            flow_status: "厂家收回",
+            trays: [{ tray_code: "SYLU-2026-05-001-TP-001", status: "厂家收回" }],
+          },
+        ],
+      });
+      window.location.hash = "#task-intake-modal";
+
+      const wrapper = mount(TasksPage);
+      await settle(wrapper);
+
+      await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+      await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+      await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+      await settle(wrapper);
+
+      expect(wrapper.get('input[name="code"]').element.value).toBe("SYLU-2026-05-002");
+
+      await wrapper.get('input[name="name"]').setValue("归档后新任务");
+      await wrapper.get('input[name="contact"]').setValue("张三");
+      await wrapper.get('input[name="contact_info"]').setValue("13800001234");
+      await wrapper.get('input[name="sample_count"]').setValue("2");
+      await wrapper.get('[data-testid="task-submit"]').trigger("click");
+      await settle(wrapper);
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${TASKS_ENDPOINT}?includeArchived=true`,
+        expect.objectContaining({
+          credentials: "include",
         }),
-      ],
-      samples: [
-        {
-          id: "sample-returned",
-          code: "SYLU-2026-05-001-SP-001",
-          task_code: "SYLU-2026-05-001",
-          status: "厂家收回",
-          flow_status: "厂家收回",
-          trays: [{ tray_code: "SYLU-2026-05-001-TP-001", status: "厂家收回" }],
-        },
-      ],
-    });
-    window.location.hash = "#task-intake-modal";
-
-    const wrapper = mount(TasksPage);
-    await settle(wrapper);
-
-    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.get('input[name="code"]').element.value).toBe("SYLU-2026-05-002");
-
-    await wrapper.get('input[name="name"]').setValue("归档后新任务");
-    await wrapper.get('input[name="contact"]').setValue("张三");
-    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
-    await wrapper.get('input[name="sample_count"]').setValue("2");
-    await wrapper.get('[data-testid="task-submit"]').trigger("click");
-    await settle(wrapper);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${TASKS_ENDPOINT}?includeArchived=true`,
-      expect.objectContaining({
-        credentials: "include",
-      }),
-    );
-    expect(state.tasks[0]).toEqual(
-      expect.objectContaining({
-        code: "SYLU-2026-05-002",
-        name: "归档后新任务",
-      }),
-    );
+      );
+      expect(state.tasks[0]).toEqual(
+        expect.objectContaining({
+          code: "SYLU-2026-05-002",
+          name: "归档后新任务",
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("submits an intake task after selecting all experiment types", async () => {

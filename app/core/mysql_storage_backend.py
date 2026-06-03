@@ -488,6 +488,7 @@ EXPERIMENT_RUNNING_STATUS = CANONICAL_RUNNING_STATUS
 LEGACY_EXPERIMENT_RUNNING_STATUS = next(iter(LEGACY_RUNNING_STATUSES))
 EXPERIMENT_RUNNING_STATUSES = {EXPERIMENT_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}
 EXPERIMENT_COMPLETED_STATUSES = {CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}
+RUN_TRAY_COMPLETED_STATUSES = {*EXPERIMENT_COMPLETED_STATUSES, "放置实验后暂存间", "厂家收回", "已到达暂存间"}
 TASK_RUNNING_STATUS = CANONICAL_TASK_RUNNING_STATUS
 TASK_COMPLETED_STATUS = CANONICAL_TASK_COMPLETED_STATUS
 TASK_STORED_STATUS = "到货"
@@ -520,6 +521,9 @@ def derive_experiment_status_map(
     schedules: list[Dict[str, Any]],
     experiment_samples: list[Dict[str, Any]],
     sample_events: list[Dict[str, Any]],
+    *,
+    experiment_trays: list[Dict[str, Any]] | None = None,
+    experiment_run_trays: list[Dict[str, Any]] | None = None,
 ) -> dict[str, str]:
     schedule_by_experiment = {normalize_text(row.get("experiment_no")) for row in schedules if normalize_text(row.get("experiment_no"))}
     completed_by_experiment = {
@@ -550,6 +554,28 @@ def derive_experiment_status_map(
             continue
         sample_codes_by_experiment.setdefault(experiment_no, set()).add(sample_no)
 
+    tray_codes_by_experiment: dict[str, set[str]] = {}
+    for row in experiment_trays or []:
+        experiment_no = normalize_text(row.get("experiment_no"))
+        tray_no = normalize_text(row.get("tray_no") or row.get("tray_code"))
+        if not experiment_no or not tray_no:
+            continue
+        tray_codes_by_experiment.setdefault(experiment_no, set()).add(tray_no)
+
+    completed_run_tray_codes_by_experiment: dict[str, set[str]] = {}
+    touched_run_tray_codes_by_experiment: dict[str, set[str]] = {}
+    for row in experiment_run_trays or []:
+        experiment_no = normalize_text(row.get("experiment_no") or row.get("experiment_code"))
+        tray_no = normalize_text(row.get("tray_no") or row.get("tray_code"))
+        if not experiment_no or not tray_no:
+            continue
+        raw_status = normalize_text(row.get("run_tray_status") or row.get("status"))
+        status = normalize_experiment_status_text(raw_status)
+        if status in (EXPERIMENT_RUNNING_STATUSES | EXPERIMENT_COMPLETED_STATUSES) or raw_status in RUN_TRAY_COMPLETED_STATUSES:
+            touched_run_tray_codes_by_experiment.setdefault(experiment_no, set()).add(tray_no)
+        if status in EXPERIMENT_COMPLETED_STATUSES or raw_status in RUN_TRAY_COMPLETED_STATUSES:
+            completed_run_tray_codes_by_experiment.setdefault(experiment_no, set()).add(tray_no)
+
     event_statuses_by_sample_and_experiment: dict[tuple[str, str], set[str]] = {}
     for row in sample_events:
         sample_no = normalize_text(row.get("sample_no"))
@@ -565,6 +591,9 @@ def derive_experiment_status_map(
         experiment_no = normalize_text(experiment.get("experiment_no"))
         experiment_name = normalize_text(experiment.get("experiment_name"))
         related_sample_codes = sample_codes_by_experiment.get(experiment_no, set())
+        related_tray_codes = tray_codes_by_experiment.get(experiment_no, set())
+        touched_run_tray_codes = touched_run_tray_codes_by_experiment.get(experiment_no, set())
+        completed_run_tray_codes = completed_run_tray_codes_by_experiment.get(experiment_no, set())
         started_or_completed_count = 0
         completed_count = 0
         for sample_no in related_sample_codes:
@@ -574,7 +603,12 @@ def derive_experiment_status_map(
             if statuses & EXPERIMENT_COMPLETED_STATUSES:
                 completed_count += 1
 
-        if related_sample_codes and completed_count == len(related_sample_codes):
+        if related_tray_codes and touched_run_tray_codes:
+            if related_tray_codes.issubset(completed_run_tray_codes):
+                status_map[experiment_no] = "实验已完成"
+            else:
+                status_map[experiment_no] = EXPERIMENT_RUNNING_STATUS
+        elif related_sample_codes and completed_count == len(related_sample_codes):
             status_map[experiment_no] = "实验已完成"
         elif experiment_no in completed_by_experiment:
             status_map[experiment_no] = "实验已完成"
@@ -863,6 +897,43 @@ def build_sample_insert_row(sample: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def extract_dispatch_target_lab(detail: Any, tray_code: str = "") -> str:
+    text = normalize_text(detail)
+    if not text:
+        return ""
+    normalized_tray_code = normalize_text(tray_code)
+    if normalized_tray_code and normalized_tray_code not in text:
+        return ""
+    arrow_match = re.search(r"(?:->|→)\s*(?P<lab>[^，,；;/\s]+室)", text)
+    if arrow_match:
+        return normalize_text(arrow_match.group("lab"))
+    dispatch_match = re.search(r"送至\s*(?P<lab>[^，,；;/\s]+室)", text)
+    return normalize_text(dispatch_match.group("lab")) if dispatch_match else ""
+
+
+def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) -> Dict[str, str]:
+    dispatch_events: list[tuple[datetime, str, str]] = []
+    for event in event_rows or []:
+        action = normalize_text(event.get("action") or event.get("action_type"))
+        status = normalize_experiment_status_text(event.get("status") or event.get("sample_status"))
+        if action != "送至实验室" and status != "送至实验室":
+            continue
+        detail = normalize_experiment_detail_text(event.get("detail"))
+        tray_match = re.search(r"(?P<tray_code>\S+-TP-\d+)", detail)
+        tray_code = normalize_text(tray_match.group("tray_code")) if tray_match else ""
+        target_lab = (
+            extract_dispatch_target_lab(detail, tray_code)
+            or normalize_text(event.get("target_lab") or event.get("targetLab"))
+            or normalize_text(event.get("location") or event.get("location_desc"))
+        )
+        if not tray_code or not target_lab:
+            continue
+        event_time = parse_storage_datetime(event.get("time") or event.get("event_time")) or datetime.min
+        dispatch_events.append((event_time, tray_code, target_lab))
+    dispatch_events.sort(key=lambda item: item[0])
+    return {tray_code: target_lab for _event_time, tray_code, target_lab in dispatch_events}
+
+
 def build_storage_sample_item(
     row: Dict[str, Any],
     *,
@@ -871,21 +942,31 @@ def build_storage_sample_item(
 ) -> Dict[str, Any]:
     meta = decode_sample_meta(row.get("remark"))
     resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
-    trays = [
-        {
+    target_lab_by_tray_code = build_tray_dispatch_target_map(event_rows)
+    trays = []
+    for tray in tray_rows or []:
+        tray_code = normalize_text(tray.get("tray_code"))
+        if not tray_code:
+            continue
+        tray_status = normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status"))
+        tray_completed = tray_status in EXPERIMENT_COMPLETED_STATUSES
+        target_lab = "" if tray_completed else (
+            normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+            or target_lab_by_tray_code.get(tray_code, "")
+        )
+        trays.append({
             "id": normalize_text(tray.get("tray_code") or tray.get("id")),
-            "tray_code": normalize_text(tray.get("tray_code")),
+            "tray_code": tray_code,
             "sample_code": normalize_text(tray.get("sample_code") or row.get("sample_no")),
             "quantity": 0 if tray.get("quantity") in (None, "") else int(tray.get("quantity")),
-            "status": normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status")),
+            "status": tray_status,
+            "target_lab": target_lab,
+            "target_experiment_code": "" if tray_completed else normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode")),
             "fixture_ready": parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))),
             "fixtureReady": parse_fixture_ready_flag(tray.get("fixtureReady", tray.get("fixture_ready"))),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
-        }
-        for tray in (tray_rows or [])
-        if normalize_text(tray.get("tray_code"))
-    ]
+        })
     history = [
         {
             "id": normalize_text(event.get("id") or event.get("event_id") or event.get("sample_no")),
@@ -1905,6 +1986,24 @@ class MySQLMesStorageBackend(StorageBackend):
 
         cursor.execute(
             """
+            SELECT relation_id, experiment_no, task_no, tray_no
+            FROM biz_experiment_tray
+            ORDER BY task_no ASC, experiment_no ASC, tray_no ASC
+            """
+        )
+        experiment_trays = cursor.fetchall()
+
+        cursor.execute(
+            """
+            SELECT relation_id, run_no, task_no, experiment_no, tray_no, run_tray_status
+            FROM biz_experiment_run_tray
+            ORDER BY task_no ASC, experiment_no ASC, tray_no ASC
+            """
+        )
+        experiment_run_trays = cursor.fetchall()
+
+        cursor.execute(
+            """
             SELECT sample_no, task_no, detail
             FROM biz_sample_event
             WHERE task_no IN (
@@ -1916,7 +2015,14 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         sample_events = cursor.fetchall()
 
-        experiment_status_map = derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events)
+        experiment_status_map = derive_experiment_status_map(
+            experiments,
+            schedules,
+            experiment_samples,
+            sample_events,
+            experiment_trays=experiment_trays,
+            experiment_run_trays=experiment_run_trays,
+        )
         if experiment_status_map:
             cursor.executemany(
                 "UPDATE biz_experiment SET experiment_status = %s WHERE experiment_no = %s",

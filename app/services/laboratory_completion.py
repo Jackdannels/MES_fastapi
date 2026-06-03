@@ -25,6 +25,36 @@ def completion_history_detail(task_code: Any, experiment_name: Any) -> str:
     return f"{normalize_text(task_code)} / {normalize_text(experiment_name)} / {COMPLETED_STATUS}"
 
 
+def run_tray_completed_statuses_for_experiment(
+    experiment_runs: list[dict[str, Any]],
+    *,
+    completed_tray_codes: set[str] | None = None,
+    experiment_code: str,
+    task_code: str,
+) -> set[str]:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    completed = {normalize_text(code) for code in (completed_tray_codes or set()) if normalize_text(code)}
+    for run in experiment_runs:
+        if (
+            normalize_text(run.get("task_code")) != normalized_task_code
+            or normalize_text(run.get("experiment_code")) != normalized_experiment_code
+            or normalize_text(run.get("status")) not in EXPERIMENT_TRAY_FINISHED_STATUSES
+        ):
+            continue
+        completed.update(normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code))
+    return completed
+
+
+def experiment_trays_are_completed(
+    scoped_tray_codes: set[str],
+    completed_tray_codes: set[str],
+) -> bool:
+    required = {normalize_text(code) for code in scoped_tray_codes if normalize_text(code)}
+    completed = {normalize_text(code) for code in completed_tray_codes if normalize_text(code)}
+    return bool(required) and required.issubset(completed)
+
+
 def complete_storage_laboratory_experiment(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
@@ -91,6 +121,8 @@ def complete_storage_laboratory_experiment(
                     "status": COMPLETED_STATUS,
                     "updated_at": completed_time,
                 }
+                for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
+                    next_tray.pop(target_key, None)
                 touched = True
             else:
                 next_tray = tray
@@ -121,19 +153,15 @@ def complete_storage_laboratory_experiment(
     if affected_sample_count == 0:
         raise ValueError("current experiment has no matching tray samples")
 
-    def tray_statuses(tray_code: str) -> list[str]:
-        statuses: list[str] = []
-        for sample in samples:
-            if normalize_text(sample.get("task_code")) != normalized_task_code:
-                continue
-            for tray in sample.get("trays", []):
-                if normalize_text(tray.get("tray_code")) == tray_code:
-                    statuses.append(normalize_text(tray.get("status")) or normalize_text(sample.get("status")))
-        return statuses
-
-    all_experiment_trays_completed = bool(scoped_tray_codes) and all(
-        statuses and all(status in EXPERIMENT_TRAY_FINISHED_STATUSES for status in statuses)
-        for statuses in (tray_statuses(tray_code) for tray_code in scoped_tray_codes)
+    completed_experiment_tray_codes = run_tray_completed_statuses_for_experiment(
+        experiment_runs,
+        completed_tray_codes=affected_tray_codes,
+        experiment_code=normalized_experiment_code,
+        task_code=normalized_task_code,
+    )
+    all_experiment_trays_completed = experiment_trays_are_completed(
+        scoped_tray_codes,
+        completed_experiment_tray_codes,
     )
     next_experiment_status = COMPLETED_STATUS if all_experiment_trays_completed else RUNNING_STATUS
 

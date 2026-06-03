@@ -12,6 +12,15 @@ from app.services.mq_event_processor import process_laboratory_event
 class MqttSubscriberHandle:
     client: Any
 
+    def is_running(self) -> bool:
+        is_connected = getattr(self.client, "is_connected", None)
+        if not callable(is_connected):
+            return True
+        try:
+            return bool(is_connected())
+        except Exception:
+            return True
+
     def stop(self) -> None:
         self.client.loop_stop()
         self.client.disconnect()

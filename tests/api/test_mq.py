@@ -250,6 +250,40 @@ def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_mode
     assert calls == [("start", True), "stop"]
 
 
+def test_interface_mode_endpoint_restarts_stale_mqtt_subscriber_when_switching_to_mqtt_again():
+    calls = []
+    handles = []
+
+    class FakeHandle:
+        def __init__(self, running):
+            self.running = running
+            handles.append(self)
+
+        def is_running(self):
+            return self.running
+
+        def stop(self):
+            calls.append("stop")
+
+    def fake_start(app_settings):
+        calls.append(("start", app_settings.MQTT_ENABLED))
+        return FakeHandle(running=True)
+
+    app = FastAPI()
+    app.state.mq_runtime = mq_runtime.MqttRuntimeController(Settings(MQTT_ENABLED=True), starter=fake_start)
+    app.include_router(mq_route.router)
+    client = TestClient(app)
+
+    assert client.post("/api/mq/interface-mode", json={"mode": "mqtt"}).json()["subscriber_running"] is True
+    handles[0].running = False
+
+    response = client.post("/api/mq/interface-mode", json={"mode": "mqtt"})
+
+    assert response.status_code == 200
+    assert response.json()["subscriber_running"] is True
+    assert calls == [("start", True), "stop", ("start", True)]
+
+
 def test_interface_mode_endpoint_does_not_start_subscriber_when_env_disabled():
     calls = []
     app = FastAPI()
@@ -480,8 +514,9 @@ def test_process_duplicate_message_returns_ack_without_duplicate_event():
     assert repository.events == []
 
 
-def test_process_experiment_started_marks_actual_start():
+def test_process_experiment_started_starts_ready_context_even_when_active_run_exists():
     repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_SALT"]["run_status"] = "实验进行中"
 
     ack = process_laboratory_event(
         "mes/v1/labs/salt-spray-lab-01/events/experiment-started",
@@ -493,7 +528,102 @@ def test_process_experiment_started_marks_actual_start():
     )
 
     assert ack["status"] == "PROCESSED"
-    assert repository.started == [("RUN-SALT-001", "2026-05-16 10:00:00")]
+    assert repository.started == []
+    assert repository.legacy_started == []
+    assert repository.started_contexts[0][0]["task_no"] == "SYLU-2026-03-001"
+    assert repository.started_contexts[0][0]["experiment_no"] == "SYLU-2026-03-001-A"
+
+
+def test_process_experiment_started_rejects_before_ready_even_when_stale_run_exists():
+    repository = FakeMqEventRepository()
+    repository.contexts_by_lab = {}
+    repository.runs_by_lab = {
+        "LAB_IMPACT_1": {
+            "run_no": "RUN-STALE",
+            "task_no": "SYLU-2026-06-OLD",
+            "experiment_no": "SYLU-2026-06-OLD-A",
+            "lab_code": "LAB_IMPACT_1",
+            "run_status": "实验进行中",
+        }
+    }
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        {
+            "lab_code": "LAB_IMPACT_1",
+            "started_at": "2026-06-03 10:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "READY_CONTEXT_REQUIRED"
+    assert repository.messages == []
+    assert repository.events == []
+    assert repository.started == []
+    assert repository.legacy_started == []
+    assert repository.started_contexts == []
+
+
+def test_process_experiment_started_ready_context_takes_precedence_over_stale_run():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab = {
+        "LAB_IMPACT_1": {
+            "run_no": "RUN-STALE",
+            "task_no": "SYLU-2026-06-OLD",
+            "experiment_no": "SYLU-2026-06-OLD-A",
+            "lab_code": "LAB_IMPACT_1",
+            "run_status": "实验进行中",
+        }
+    }
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        {
+            "lab_code": "LAB_IMPACT_1",
+            "started_at": "2026-06-03 10:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.started == []
+    assert repository.started_contexts[0][0]["task_no"] == "SYLU-2026-06-002"
+    assert repository.started_contexts[0][0]["experiment_no"] == "SYLU-2026-06-002-C"
+    assert repository.messages[0]["task_no"] == "SYLU-2026-06-002"
+    assert repository.messages[0]["experiment_no"] == "SYLU-2026-06-002-C"
+    assert repository.legacy_started == []
+
+
+def test_process_experiment_started_rejected_early_event_can_be_retried_after_ready():
+    repository = FakeMqEventRepository()
+    ready_context = dict(repository.contexts_by_lab["LAB_IMPACT_1"])
+    repository.contexts_by_lab = {}
+    repository.runs_by_lab = {}
+    payload = {
+        "message_id": "HOST-START-LAB-IMPACT-001",
+        "lab_code": "LAB_IMPACT_1",
+        "started_at": "2026-06-03 10:00:00",
+    }
+
+    rejected = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        payload,
+        repository=repository,
+    )
+    repository.contexts_by_lab = {"LAB_IMPACT_1": ready_context}
+    processed = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        payload,
+        repository=repository,
+    )
+
+    assert rejected["status"] == "REJECTED"
+    assert rejected["error_code"] == "READY_CONTEXT_REQUIRED"
+    assert processed["status"] == "PROCESSED"
+    assert repository.messages[0]["message_id"] == "HOST-START-LAB-IMPACT-001"
+    assert len(repository.messages) == 1
+    assert repository.started_contexts[0][0]["task_no"] == "SYLU-2026-06-002"
 
 
 def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_active_run():
@@ -887,24 +1017,123 @@ def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
     ]
 
 
+def test_mysql_mark_run_ended_keeps_experiment_open_when_bound_tray_is_not_finished(monkeypatch):
+    class TupleCursor:
+        description = None
+
+        def __init__(self):
+            self.completed_experiment_updates = []
+            self.completed_schedule_updates = []
+            self.run_updates = []
+            self.run_tray_updates = []
+            self.query_kind = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            normalized_sql = " ".join(str(sql).split())
+            if "SELECT task_no, experiment_no" in normalized_sql:
+                self.description = (("task_no",), ("experiment_no",))
+                self.query_kind = "run"
+            elif "FROM biz_experiment_tray" in normalized_sql:
+                self.description = (("tray_no",),)
+                self.query_kind = "bound"
+            elif "FROM biz_experiment_run_tray" in normalized_sql and "run_tray_status IN" in normalized_sql:
+                self.description = (("tray_no",),)
+                self.query_kind = "completed"
+            elif "SELECT tray_no" in normalized_sql:
+                self.description = (("tray_no",),)
+                self.query_kind = "run_trays"
+            elif "SELECT DISTINCT sm.sample_id, sm.sample_no" in normalized_sql:
+                self.description = (("sample_id",), ("sample_no",), ("task_id",), ("experiment_name",))
+                self.query_kind = "samples"
+            elif "UPDATE biz_experiment_run SET run_status = '实验已完成'" in normalized_sql:
+                self.run_updates.append((sql, params))
+                self.description = None
+            elif "UPDATE biz_experiment_run_tray SET run_tray_status = '实验已完成'" in normalized_sql:
+                self.run_tray_updates.append((sql, params))
+                self.description = None
+            elif "UPDATE biz_experiment SET" in normalized_sql and "experiment_status = '实验已完成'" in normalized_sql:
+                self.completed_experiment_updates.append((sql, params))
+                self.description = None
+            elif "UPDATE biz_schedule SET" in normalized_sql and "schedule_status = '实验已完成'" in normalized_sql:
+                self.completed_schedule_updates.append((sql, params))
+                self.description = None
+            else:
+                self.description = None
+
+        def executemany(self, _sql, _rows):
+            return None
+
+        def fetchone(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["task_no", "experiment_no"]:
+                return ("SYLU-2026-03-001", "SYLU-2026-03-001-A")
+            return None
+
+        def fetchall(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["tray_no"] and self.query_kind == "run_trays":
+                return [("SYLU-2026-03-001-TP-001",)]
+            if columns == ["tray_no"] and self.query_kind == "bound":
+                return [("SYLU-2026-03-001-TP-001",), ("SYLU-2026-03-001-TP-002",)]
+            if columns == ["tray_no"] and self.query_kind == "completed":
+                return [("SYLU-2026-03-001-TP-001",)]
+            if columns == ["sample_id", "sample_no", "task_id", "experiment_name"]:
+                return [(101, "SYLU-2026-03-001-SP-001", 7, "盐雾试验")]
+            return []
+
+    class TupleConnection:
+        def __init__(self):
+            self.cursor_obj = TupleCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+        def commit(self):
+            self.committed = True
+
+    connection = TupleConnection()
+    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+
+    MySQLMqEventRepository().mark_run_ended("RUN-SALT-001", "2026-05-16 12:00:00")
+
+    assert connection.committed is True
+    assert connection.cursor_obj.run_updates
+    assert connection.cursor_obj.run_tray_updates
+    assert connection.cursor_obj.completed_experiment_updates == []
+    assert connection.cursor_obj.completed_schedule_updates == []
+
+
 def test_process_experiment_started_rejects_lab_without_ready_context():
     repository = FakeMqEventRepository()
     repository.runs_by_lab = {}
     repository.contexts_by_lab = {}
 
-    try:
-        process_laboratory_event(
-            "mes/v1/labs/LAB_SALT/events/experiment-started",
-            {
-                "lab_code": "LAB_SALT",
-                "started_at": "2026-05-16 10:00:00",
-            },
-            repository=repository,
-        )
-    except ValueError as exc:
-        assert "ready experiment context is required" in str(exc)
-    else:
-        raise AssertionError("expected ready context validation error")
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-started",
+        {
+            "lab_code": "LAB_SALT",
+            "started_at": "2026-05-16 10:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "READY_CONTEXT_REQUIRED"
+    assert repository.messages == []
+    assert repository.events == []
 
 
 def test_process_experiment_ended_marks_active_run_by_lab_code():
@@ -923,6 +1152,7 @@ def test_process_experiment_ended_marks_active_run_by_lab_code():
     assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00")]
     assert repository.events[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
+    assert repository.legacy_ended == []
 
 
 def test_process_experiment_result_records_result_package():

@@ -1,7 +1,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
-import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
+import {
+  HOST_INTERFACE_MODE_CHANGED_EVENT,
+  HOST_INTERFACE_MODE_STORAGE_KEY,
+  HOST_INTERFACE_MODES,
+  readHostInterfaceMode,
+} from "@/lib/hostInterfaceMode";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
 import { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
@@ -448,6 +453,8 @@ function useLaboratoryPage(options = {}) {
       if (active) {
         completedRunningExperiment.value = null;
         lastActiveRunningExperiment = { ...runningExperiment.value };
+        readyModalOpen.value = false;
+        confirmedModalOpen.value = false;
         showRunningModal();
         return;
       }
@@ -534,7 +541,6 @@ function useLaboratoryPage(options = {}) {
     || compareModalOpen.value
     || installModalOpen.value
     || readyModalOpen.value
-    || confirmedModalOpen.value
     || resetConfirmModalOpen.value
     || resetDangerModalOpen.value
     || completePromptVisible.value
@@ -572,6 +578,13 @@ function useLaboratoryPage(options = {}) {
   });
   flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
+  const handleHostInterfaceModeChanged = (event = {}) => {
+    if (event?.type === "storage" && event?.key !== HOST_INTERFACE_MODE_STORAGE_KEY) {
+      return;
+    }
+    void ensureHostInterfaceModeSynced().catch((error) => console.warn(error));
+  };
+
   onMounted(() => {
     void nextTick().then(syncHeaderActionTarget);
     if (typeof window !== "undefined") {
@@ -584,6 +597,8 @@ function useLaboratoryPage(options = {}) {
       window.addEventListener("wheel", handleRunningModalActivity, true);
       window.addEventListener("touchstart", handleRunningModalActivity, true);
       window.addEventListener("keydown", handleRunningModalActivity, true);
+      window.addEventListener("storage", handleHostInterfaceModeChanged);
+      window.addEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
     void ensureHostInterfaceModeSynced().catch((error) => console.warn(error));
     void load();
@@ -601,6 +616,8 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener("wheel", handleRunningModalActivity, true);
       window.removeEventListener("touchstart", handleRunningModalActivity, true);
       window.removeEventListener("keydown", handleRunningModalActivity, true);
+      window.removeEventListener("storage", handleHostInterfaceModeChanged);
+      window.removeEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();

@@ -128,6 +128,44 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
     assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
 
 
+def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):
+    sample = sample_with_history(
+        "实验进行中",
+        "振动一室",
+        [{"action": "开始实验", "detail": "TASK-501 / 振动试验 / 实验进行中", "status": "实验进行中", "time": "2026-05-19T09:00:00"}],
+    )
+    sample["trays"][0]["target_lab"] = "振动一室"
+    sample["trays"][0]["target_experiment_code"] = "EXP-C"
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-C", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+        ],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-VIB-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-C",
+            "tray_codes": ["TP-501"],
+            "status": "实验进行中",
+        }
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-C/complete",
+        json={"runNo": "RUN-VIB-501", "trayCodes": ["TP-501"], "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 200
+    completed_tray = storage.read("mes.samples")[0]["trays"][0]
+    assert completed_tray["status"] == "实验已完成"
+    assert "target_lab" not in completed_tray
+    assert "target_experiment_code" not in completed_tray
+
+
 def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_finish(monkeypatch):
     payloads = base_payloads(
         [
@@ -169,6 +207,60 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
     assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_runs")[1]["status"] == "实验准备就绪"
+
+
+def test_laboratory_complete_experiment_ignores_other_experiment_completion_when_checking_remaining_trays(monkeypatch):
+    salt_running = sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501")
+    mold_completed = sample_with_history(
+        "实验已完成",
+        "霉菌试验室",
+        [
+            {
+                "action": "实验完成",
+                "detail": "TASK-501 / 霉菌试验 / 实验已完成",
+                "location": "霉菌试验室",
+                "status": "实验已完成",
+                "time": "2026-05-19T09:30:00",
+            },
+        ],
+        tray_code="TP-502",
+    )
+    payloads = base_payloads(
+        [salt_running, mold_completed],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-502"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-502"},
+        ],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-SALT-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_codes": ["TP-501"],
+            "status": "实验进行中",
+        },
+        {
+            "run_no": "RUN-MOLD-502",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-B",
+            "tray_codes": ["TP-502"],
+            "status": "实验已完成",
+        },
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-SALT-501", "trayCodes": ["TP-501"], "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
 
 
 def test_laboratory_withdraw_current_restores_handover_origin_to_arrived(monkeypatch):
