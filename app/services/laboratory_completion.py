@@ -75,6 +75,39 @@ def experiment_status_for_completed_trays(
     return COMPLETED_STATUS if experiment_trays_are_completed(scoped_tray_codes, completed_tray_codes) else RUNNING_STATUS
 
 
+def tray_assigned_experiments_are_completed(
+    *,
+    task_code: str,
+    tray_code: str,
+    experiment_trays: list[dict[str, Any]] | None = None,
+    experiment_run_trays: list[dict[str, Any]] | None = None,
+) -> bool:
+    normalized_task_code = normalize_text(task_code)
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_task_code or not normalized_tray_code:
+        return False
+
+    assigned_experiment_codes = {
+        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+        for item in experiment_trays or []
+        if normalize_text(item.get("task_code") or item.get("task_no")) == normalized_task_code
+        and normalize_text(item.get("tray_code") or item.get("tray_no")) == normalized_tray_code
+        and normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+    }
+    if not assigned_experiment_codes:
+        return False
+
+    completed_experiment_codes = {
+        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+        for item in experiment_run_trays or []
+        if normalize_text(item.get("task_code") or item.get("task_no")) == normalized_task_code
+        and normalize_text(item.get("tray_code") or item.get("tray_no")) == normalized_tray_code
+        and normalize_text(item.get("status") or item.get("run_tray_status")) in EXPERIMENT_TRAY_FINISHED_STATUSES
+        and normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+    }
+    return assigned_experiment_codes.issubset(completed_experiment_codes)
+
+
 def complete_storage_laboratory_experiment(
     snapshot: dict[str, list[dict[str, Any]]],
     *,

@@ -463,7 +463,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { buildCode128Svg } from "../handover-system/barcode.js";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";

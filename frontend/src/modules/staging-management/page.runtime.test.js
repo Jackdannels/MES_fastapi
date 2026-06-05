@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import StagingManagementPage from "./page.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 let wrapper;
 let headerActions;

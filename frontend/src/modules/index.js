@@ -41,6 +41,3 @@ export const routes = MODULES.map((module) => module.route);
 // 侧边导航只展示与当前界面分组匹配且显式标记了 nav 的模块。
 export const getNavigationModules = (moduleKey) =>
   MODULES.filter((module) => module.nav && module.route.meta?.module === moduleKey);
-
-// 根据路由 name 反查模块配置，常用于标题、导航和权限等场景。
-export const getRouteModuleByName = (name) => MODULES.find((module) => module.route.name === name) || null;

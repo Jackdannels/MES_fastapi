@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -43,9 +43,7 @@ describe("legacy isolation", () => {
     });
   });
 
-  test("legacy archive carries a local isolation note", () => {
-    const source = readSource("src/legacy/README.md");
-
-    expect(source).toContain("已隔离为归档区");
+  test("legacy archive directory has been removed", () => {
+    expect(existsSync(resolve(process.cwd(), "src/legacy"))).toBe(false);
   });
 });

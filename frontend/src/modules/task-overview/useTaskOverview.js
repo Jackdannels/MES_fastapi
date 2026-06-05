@@ -9,7 +9,7 @@ import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { buildTaskRows, buildTrayOverviewRows as buildTrayOverviewRowsModel } from "./model";
 import { useTaskOverviewEditor } from "./useTaskOverviewEditor";
 
@@ -709,9 +709,7 @@ export {
   buildTrayCountLabel,
   buildTrayTaskFilterOptions,
   cycleTaskScheduleFilter,
-  findTaskCardElement,
   filterTaskOverviewRows,
   filterTrayOverviewRows,
-  getTodayDateValue,
   useTaskOverview,
 };

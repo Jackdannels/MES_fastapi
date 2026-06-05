@@ -2,7 +2,7 @@ import { reactive } from "vue";
 
 import { useFeedback } from "@/composables/useFeedback";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 

@@ -688,6 +688,108 @@ describe("staging-management model", () => {
     });
   });
 
+  test("manufacturer return prunes schedules for experiments whose scoped trays are completed or returned", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-021",
+      code: taskCode,
+      test_type: "冲击试验 / 温度冲击试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      { id: "exp-021-a", task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室" },
+      { id: "exp-021-b", task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-021-a-1", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-001` },
+      { id: "rel-021-a-3", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-003` },
+      { id: "rel-021-b-2", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-002` },
+      { id: "rel-021-b-4", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-004` },
+    );
+    snapshot[STORAGE_KEYS.schedules].push(
+      { id: "schedule-021-a", task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", device: "冲击二室" },
+      { id: "schedule-021-b", task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", device: "温度冲击二室" },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      ...(snapshot[STORAGE_KEYS.experiment_run_trays] || []),
+      { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-001`, run_tray_status: "实验已完成" },
+      { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-002`, run_tray_status: "实验已完成" },
+    ];
+    snapshot[STORAGE_KEYS.samples].push(
+      {
+        id: "sample-021-1",
+        code: `${taskCode}-SP-001`,
+        task_code: taskCode,
+        location: "冲击二室",
+        status: "实验已完成",
+        trays: [{ tray_code: `${taskCode}-TP-001`, status: "实验已完成", quantity: 1 }],
+      },
+      {
+        id: "sample-021-2",
+        code: `${taskCode}-SP-002`,
+        task_code: taskCode,
+        location: "温度冲击二室",
+        status: "实验已完成",
+        trays: [{ tray_code: `${taskCode}-TP-002`, status: "实验已完成", quantity: 1 }],
+      },
+      {
+        id: "sample-021-3",
+        code: `${taskCode}-SP-003`,
+        task_code: taskCode,
+        location: "恒温恒湿间（实验后暂存间）",
+        status: "放置实验后暂存间",
+        trays: [{ tray_code: `${taskCode}-TP-003`, status: "放置实验后暂存间", quantity: 1 }],
+      },
+      {
+        id: "sample-021-4",
+        code: `${taskCode}-SP-004`,
+        task_code: taskCode,
+        location: "厂家收回",
+        status: "厂家收回",
+        trays: [{ tray_code: `${taskCode}-TP-004`, status: "厂家收回", quantity: 1 }],
+      },
+    );
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-021-3-in",
+        action: "stock_in",
+        task_code: taskCode,
+        time: "2026-06-05T12:30:00",
+        tray_code: `${taskCode}-TP-003`,
+      },
+      {
+        id: "evt-021-4-return",
+        action: "manufacturer_return",
+        task_code: taskCode,
+        target_lab: "厂家收回",
+        time: "2026-06-05T12:31:00",
+        tray_code: `${taskCode}-TP-004`,
+      },
+    );
+
+    const result = applyZancunInventoryAction({
+      now: "2026-06-05T12:35:00",
+      payload: {
+        code: `${taskCode}-TP-003`,
+        mode: "manufacturerReturn",
+      },
+      snapshot,
+    });
+
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.schedules].map((schedule) => schedule.id)).not.toEqual(
+      expect.arrayContaining(["schedule-021-a", "schedule-021-b"]),
+    );
+    expect(result.snapshot[STORAGE_KEYS.experiments]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ experiment_code: `${taskCode}-A`, status: "实验已完成" }),
+        expect.objectContaining({ experiment_code: `${taskCode}-B`, status: "实验已完成" }),
+      ]),
+    );
+  });
+
   test("rejects stock-in after a tray has been returned to manufacturer", () => {
     const returnedResult = applyZancunInventoryAction({
       now: TODAY,
@@ -855,6 +957,115 @@ describe("staging-management model", () => {
     const updatedRow = updatedRows.find((row) => row.trayCode === "SYLU-2026-04-107-TP-001");
     expect(updatedRow?.status).toBe("放置实验后暂存间");
     expect(updatedSections.currentStagingRows.map((row) => row.trayCode)).toContain("SYLU-2026-04-107-TP-001");
+  });
+
+  test("treats a stale running tray as post-experiment inbound when all assigned run-trays are completed", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-021",
+      code: "SYLU-2026-06-021",
+      test_type: "冲击试验 / 振动试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-021-a",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-A",
+        experiment_name: "冲击试验",
+        required_device: "冲击二室",
+      },
+      {
+        id: "exp-021-c",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-C",
+        experiment_name: "振动试验",
+        required_device: "振动二室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      {
+        id: "rel-021-a-003",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-A",
+        tray_code: "SYLU-2026-06-021-TP-003",
+      },
+      {
+        id: "rel-021-c-003",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-C",
+        tray_code: "SYLU-2026-06-021-TP-003",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      {
+        run_no: "run-impact-003",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-A",
+        tray_code: "SYLU-2026-06-021-TP-003",
+        run_tray_status: "实验已完成",
+      },
+      {
+        run_no: "run-vibration-003",
+        task_code: "SYLU-2026-06-021",
+        experiment_code: "SYLU-2026-06-021-C",
+        tray_code: "SYLU-2026-06-021-TP-003",
+        run_tray_status: "实验已完成",
+      },
+    ];
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-021-003",
+      code: "SYLU-2026-06-021-SP-003",
+      task_code: "SYLU-2026-06-021",
+      owner: "周工",
+      location: "冲击二室",
+      status: "实验进行中",
+      flow_status: "实验进行中",
+      trays: [
+        {
+          tray_code: "SYLU-2026-06-021-TP-003",
+          status: "实验进行中",
+          target_experiment_code: "SYLU-2026-06-021-A",
+          target_lab: "冲击二室",
+          quantity: 1,
+        },
+      ],
+      history: [],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-021-003-in",
+        tray_code: "SYLU-2026-06-021-TP-003",
+        task_code: "SYLU-2026-06-021",
+        action: "stock_in",
+        time: "2026-06-05 17:49:11",
+      },
+      {
+        id: "evt-021-003-out",
+        tray_code: "SYLU-2026-06-021-TP-003",
+        task_code: "SYLU-2026-06-021",
+        action: "stock_out",
+        target_experiment_code: "SYLU-2026-06-021-A",
+        target_lab: "冲击二室",
+        time: "2026-06-05 17:49:14",
+      },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-05 17:55:00" });
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-06-021-TP-003");
+    const result = applyZancunInventoryAction({
+      now: "2026-06-05 17:55:00",
+      payload: {
+        code: "SYLU-2026-06-021-TP-003",
+        mode: "stockIn",
+      },
+      snapshot,
+    });
+
+    expect(row).toEqual(expect.objectContaining({ isPostExperimentInbound: true, status: "待入库" }));
+    expect(result.error).toBe("");
+    expect(result.row).toEqual(expect.objectContaining({ status: "放置实验后暂存间" }));
   });
 
   test("does not fall back to task-level experiment types for fully completed mapped trays", () => {

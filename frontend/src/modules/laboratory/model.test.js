@@ -792,6 +792,81 @@ describe("laboratory model", () => {
     });
   });
 
+  test("buildLaboratoryWorkbenchView hides returned shared-tray experiment schedules", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const baseInput = {
+      experimentRunTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-001`, run_tray_status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-002`, run_tray_status: "实验已完成" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-001` },
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-003` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-002` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-004` },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", status: "实验进行中" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", status: "实验进行中" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "厂家收回",
+          status: "厂家收回",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "厂家收回", tray_code: `${taskCode}-TP-001` }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          location: "厂家收回",
+          status: "厂家收回",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "厂家收回", tray_code: `${taskCode}-TP-002` }],
+        },
+        {
+          code: `${taskCode}-SP-003`,
+          location: "厂家收回",
+          status: "厂家收回",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "厂家收回", tray_code: `${taskCode}-TP-003` }],
+        },
+        {
+          code: `${taskCode}-SP-004`,
+          location: "厂家收回",
+          status: "厂家收回",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "厂家收回", tray_code: `${taskCode}-TP-004` }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-021-a",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          device: "冲击二室",
+          start_at: "2026-06-05T08:00:00.000Z",
+          end_at: "2026-06-05T12:00:00.000Z",
+        },
+        {
+          id: "schedule-021-b",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          device: "温度冲击二室",
+          start_at: "2026-06-05T13:00:00.000Z",
+          end_at: "2026-06-05T17:00:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: taskCode, name: "厂家回收任务", test_type: "冲击试验 / 温度冲击试验" },
+      ],
+    };
+
+    expect(buildLaboratoryWorkbenchView({ ...baseInput, labName: "冲击二室" }).currentTask).toBeNull();
+    expect(buildLaboratoryWorkbenchView({ ...baseInput, labName: "温度冲击二室" }).currentTask).toBeNull();
+  });
+
   test("buildLaboratoryWorkbenchView keeps an unsampled scheduled tray at the initial flow state", () => {
     const view = buildLaboratoryWorkbenchView({
       experimentTrays: [
@@ -1368,6 +1443,109 @@ describe("laboratory model", () => {
       ok: true,
       tone: "success",
       trayCode: "SYLU-2026-06-021-TP-003",
+    }));
+  });
+
+  test("validateLaboratoryTrayScan allows vibration comparison after impact and temperature completed with stale impact target", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-005",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          tray_code: "SYLU-2026-06-021-TP-005",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-05 17:50:53",
+        },
+        {
+          run_no: "run-temp-005",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          tray_code: "SYLU-2026-06-021-TP-005",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-05 16:26:11",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-005" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-005" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-005" },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          experiment_name: "温度冲击试验",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      labName: "振动二室",
+      now: new Date("2026-06-05T17:55:00+08:00"),
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-005",
+          history: [],
+          location: "冲击二室",
+          owner: "扫码登记",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-021",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验进行中",
+              target_experiment_code: "SYLU-2026-06-021-A",
+              target_lab: "冲击二室",
+              tray_code: "SYLU-2026-06-021-TP-005",
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-impact",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "冲击二室",
+        },
+        {
+          id: "schedule-temp",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          device: "温度冲击二室",
+        },
+        {
+          id: "schedule-vibration",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          device: "振动二室",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-06-021", name: "复合实验任务", test_type: "冲击试验 / 温度冲击试验 / 振动试验" }],
+    });
+
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: "SYLU-2026-06-021-TP-005",
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      tone: "success",
+      trayCode: "SYLU-2026-06-021-TP-005",
     }));
   });
 
@@ -2716,7 +2894,7 @@ describe("laboratory model", () => {
     expect(view.currentTaskStatus).not.toBe("实验进行中");
   });
 
-  test("rejects run-tray completed scans even when sample tray status has not refreshed yet", () => {
+  test("hides run-tray completed schedules even when sample tray status has not refreshed yet", () => {
     const view = buildLaboratoryWorkbenchView({
       experimentRunTrays: [
         {
@@ -2758,24 +2936,9 @@ describe("laboratory model", () => {
       tasks: [{ code: "TASK-COMPLETE-ONLY", name: "托盘明细完成任务", test_type: "盐雾试验" }],
     });
 
-    expect(view.currentTask.trayRows).toEqual([]);
-    expect(view.currentTask.allTrayRows).toEqual([
-      expect.objectContaining({
-        completedForCurrentExperiment: true,
-        trayCode: "TP-COMPLETE-ONLY",
-        trayStatus: "实验已完成",
-      }),
-    ]);
-    expect(validateLaboratoryTrayScan({
-      allScheduleRows: view.allScheduleRows,
-      currentTask: view.currentTask,
-      scanCode: "TP-COMPLETE-ONLY",
-      scheduleRows: view.scheduleRows,
-    })).toEqual(expect.objectContaining({
-      message: "托盘已完成实验",
-      ok: false,
-      trayCode: "TP-COMPLETE-ONLY",
-    }));
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows).toEqual([]);
+    expect(view.allScheduleRows).toEqual([]);
   });
 
   test("uses active mqtt run state in selected tray flow when tray status is still ready", () => {
@@ -3801,6 +3964,257 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至温度冲击二室")).toEqual(
       expect.objectContaining({ active: true, time: "2026-06-05 14:55:01" }),
     );
+  });
+
+  test("blocks mold comparison when a tray completed impact and has been dispatched to temperature shock", () => {
+    const taskCode = "SYLU-2026-06-022";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          started_at: "2026-06-05 18:54:19",
+          ended_at: "2026-06-05 18:54:27",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      experiments: [
+        {
+          experiment_code: `${taskCode}-A`,
+          experiment_name: "冲击试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-B`,
+          experiment_name: "霉菌试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-C`,
+          experiment_name: "温度冲击试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      labName: "霉菌试验室",
+      samples: [
+        {
+          code: `${taskCode}-SP-007`,
+          flow_status: "送至实验室",
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${trayCode} 送至 温度冲击一室`,
+              location: "温度冲击一室",
+              status: "送至实验室",
+              time: "2026-06-05 18:55:08",
+            },
+            {
+              action: "暂存间扫码入库",
+              detail: `${trayCode} 已到达暂存间`,
+              location: "恒温恒湿间（暂存间）",
+              status: "已到达暂存间",
+              time: "2026-06-05 18:54:54",
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 实验已完成`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-06-05 18:54:27",
+            },
+          ],
+          location: "温度冲击一室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: `${taskCode}-C`,
+              target_lab: "温度冲击一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "霉菌试验室",
+          experiment_code: `${taskCode}-B`,
+          start_at: "2026-06-06 12:00:00",
+          task_code: taskCode,
+        },
+        {
+          device: "温度冲击一室",
+          experiment_code: `${taskCode}-C`,
+          start_at: "2026-06-07 08:00:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "复合实验任务", test_type: "冲击试验 / 霉菌试验 / 温度冲击试验" }],
+    });
+
+    expect(view.currentTask.experimentCode).toBe(`${taskCode}-B`);
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至温度冲击一室`);
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至温度冲击一室")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-06-05 18:55:08" }),
+    );
+    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask))).toEqual({
+      canCompare: false,
+      canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: trayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘未送达当前试验间",
+      ok: false,
+      trayCode,
+    }));
+  });
+
+  test("shows staging arrival after a shared tray completes another experiment before the next lab dispatch", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const baseInput = {
+      experimentRunTrays: [
+        {
+          run_no: "run-mold-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          started_at: "2026-06-05 19:19:42",
+          ended_at: "2026-06-05 19:20:01",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      experiments: [
+        {
+          experiment_code: `${taskCode}-A`,
+          experiment_name: "冲击试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-B`,
+          experiment_name: "霉菌试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-C`,
+          experiment_name: "温度冲击试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      labName: "温度冲击一室",
+      samples: [
+        {
+          code: `${taskCode}-SP-007`,
+          flow_status: "已到达暂存间",
+          history: [
+            {
+              action: "暂存间扫码入库",
+              detail: `${trayCode} 已到达暂存间`,
+              location: "恒温恒湿间（暂存间）",
+              status: "已到达暂存间",
+              time: "2026-06-05 19:20:18",
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 霉菌试验 / 实验已完成`,
+              location: "霉菌试验室",
+              status: "实验已完成",
+              time: "2026-06-05 19:20:01",
+            },
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 霉菌试验 / 已到达实验室`,
+              location: "霉菌试验室",
+              status: "已到达实验室",
+              time: "2026-06-05 19:19:21",
+            },
+          ],
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "已到达暂存间",
+              target_experiment_code: `${taskCode}-B`,
+              target_lab: "霉菌试验室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "冲击一室",
+          experiment_code: `${taskCode}-A`,
+          start_at: "2026-06-06 08:00:00",
+          task_code: taskCode,
+        },
+        {
+          device: "温度冲击一室",
+          experiment_code: `${taskCode}-C`,
+          start_at: "2026-06-07 08:00:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "复合实验任务", test_type: "冲击试验 / 霉菌试验 / 温度冲击试验" }],
+    };
+
+    [
+      { experimentCode: `${taskCode}-A`, labName: "冲击一室" },
+      { experimentCode: `${taskCode}-C`, labName: "温度冲击一室" },
+    ].forEach(({ experimentCode, labName }) => {
+      const view = buildLaboratoryWorkbenchView({ ...baseInput, labName });
+
+      expect(view.currentTask.experimentCode).toBe(experimentCode);
+      expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：已到达暂存间`);
+      expect(view.selectedTrayFlow.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
+        expect.objectContaining({ reached: true, time: "2026-06-05 19:20:01" }),
+      );
+      expect(view.selectedTrayFlow.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+        expect.objectContaining({ active: true, time: "2026-06-05 19:20:18" }),
+      );
+      expect(validateLaboratoryTrayScan({
+        allScheduleRows: view.allScheduleRows,
+        currentTask: view.currentTask,
+        scanCode: trayCode,
+        scheduleRows: view.scheduleRows,
+      })).toEqual(expect.objectContaining({
+        message: "托盘尚未出库",
+        ok: false,
+        trayCode,
+      }));
+    });
   });
 
   test("revertLaboratoryTaskToPreviousStableState keeps running trays locked unless explicitly allowed", () => {

@@ -1,5 +1,6 @@
 // 提供设备页所需的行数据、表单和点位管理工厂与映射函数。
 import { LAB_LOCATIONS, LAB_TEST_MAP, TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { isExperimentRunningStatus } from "@/lib/statusNormalization";
 
 const DEFAULT_DEVICE_STATUS = "可用";
 const IDLE_DEVICE_STATUS = "空闲";
@@ -8,8 +9,6 @@ const REPAIR_DEVICE_STATUS = "维修";
 const CARE_DEVICE_STATUS = "保养";
 const MAINTENANCE_DEVICE_STATUS = REPAIR_DEVICE_STATUS;
 const DISABLED_DEVICE_STATUS = "停用";
-const RUNNING_TRAY_STATUSES = new Set(["实验进行中", "实验中"]);
-const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
 
 const DEFAULT_POINT_ROWS = Object.freeze([
   {
@@ -82,9 +81,9 @@ const createId = (prefix) => {
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
-const isRunningTrayStatus = (status) => RUNNING_TRAY_STATUSES.has(normalizeText(status));
+const isRunningTrayStatus = (status) => isExperimentRunningStatus(status);
 
-const isRunningExperimentRunStatus = (status) => RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(status));
+const isRunningExperimentRunStatus = (status) => isExperimentRunningStatus(status);
 
 const buildDeviceMatchLabels = (device) => {
   if (typeof device === "string") {
@@ -482,11 +481,7 @@ function appendPoint(points, form) {
 }
 
 export {
-  ACTIVE_DEVICE_STATUS,
-  CARE_DEVICE_STATUS,
-  IDLE_DEVICE_STATUS,
   MAINTENANCE_DEVICE_STATUS,
-  REPAIR_DEVICE_STATUS,
   appendPoint,
   appendDevice,
   buildDeviceForm,

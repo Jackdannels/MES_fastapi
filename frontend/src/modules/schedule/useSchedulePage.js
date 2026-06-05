@@ -38,7 +38,7 @@ import {
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
 

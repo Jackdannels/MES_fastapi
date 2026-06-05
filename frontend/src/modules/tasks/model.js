@@ -1,22 +1,23 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
-import { TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
+import {
+  EXPERIMENT_STATUS_COMPLETED,
+  EXPERIMENT_STATUS_RUNNING,
+  RETURNED_STATUS as STATUS_RETENTION,
+  TASK_STATUS_COMPLETED as STATUS_COMPLETED,
+  TASK_STATUS_RUNNING as STATUS_RUNNING,
+  TASK_STATUS_WAITING as STATUS_WAITING,
+  normalizeExperimentStatusLabel,
+  normalizeTaskStatusLabel,
+} from "@/lib/statusNormalization";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
-const STATUS_WAITING = "待排程";
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RUNNING = "任务进行中";
-const STATUS_COMPLETED = "任务已完成";
-const STATUS_RETENTION = "厂家收回";
-const LEGACY_STATUS_RETENTION = "暂存间排放";
-const LEGACY_STATUS_STORAGE = "暂存间存放";
 const TEMPORARY_STAGING_DEVICE_KEYWORD = "暂存间";
-const EXPERIMENT_STATUS_RUNNING = "实验进行中";
-const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
 const LEGACY_STATUS_RUNNING = "实验中";
 const LEGACY_STATUS_COMPLETED = "实验已经完成";
 const LEGACY_STATUS_COMPLETED_ALT = "实验完成";
@@ -24,8 +25,6 @@ const ACTIVE_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_R
 const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT, "放置实验后暂存间", "厂家收回"]);
 const COMPLETED_EXPERIMENT_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
-const RANDOM_SAMPLE_TYPES = ["结构件", "整机", "粉末", "线缆", "组件"];
-const RANDOM_PRIORITIES = ["高", "中", "低"];
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
 const MIN_SAMPLE_COUNT = 1;
 const MAX_SAMPLE_COUNT = 999;
@@ -39,16 +38,6 @@ const TASK_TEXT_FIELD_LABELS = {
   name: "任务名称",
   remark: "备注",
   sample_type: "样品类型",
-};
-
-// 本地随机演示数据在候选数组中抽取一个元素。
-const randomFrom = (items) => items[Math.floor(Math.random() * items.length)] || "";
-
-// 演示数据会基于当前时间推导到达/截止时间，因此抽出小时偏移工具函数。
-const addHours = (date, hours) => {
-  const nextDate = new Date(date.getTime());
-  nextDate.setHours(nextDate.getHours() + hours);
-  return nextDate;
 };
 
 // 所有输入字段统一走字符串规范化，减少 null / undefined 分支。
@@ -100,39 +89,6 @@ const validateTaskTextFields = (form = {}, options = {}) => {
 };
 // 兼容历史脏数据：旧版本可能残留暂存间“排程”记录，当前业务中暂存间只是临时放置位置。
 const isLegacyTemporaryStagingSchedule = (value) => normalizeText(value).includes(TEMPORARY_STAGING_DEVICE_KEYWORD);
-// 兼容历史状态文案，统一收敛到当前页面使用的状态标签。
-const normalizeTaskStatusLabel = (value) => {
-  const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING) {
-    return STATUS_RUNNING;
-  }
-  if (
-    normalized === LEGACY_STATUS_COMPLETED
-    || normalized === LEGACY_STATUS_COMPLETED_ALT
-    || normalized === EXPERIMENT_STATUS_COMPLETED
-  ) {
-    return STATUS_COMPLETED;
-  }
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
-    return STATUS_WAITING;
-  }
-  if (normalized === STATUS_RETENTION) {
-    return STATUS_RETENTION;
-  }
-  return normalized;
-};
-
-const normalizeExperimentStatusLabel = (value) => {
-  const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RUNNING) {
-    return EXPERIMENT_STATUS_RUNNING;
-  }
-  if (normalized === LEGACY_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED_ALT) {
-    return EXPERIMENT_STATUS_COMPLETED;
-  }
-  return normalized;
-};
-
 const resolveBuildTaskRowsArgs = (samplesOrNow, nowMaybe) => {
   if (Array.isArray(samplesOrNow)) {
     return {
@@ -542,39 +498,6 @@ function createTaskIntakeForm() {
   };
 }
 
-// 用于判断受理弹窗是否仍处于初始态，方便关闭前提示。
-function isTaskIntakeFormPristine(form) {
-  const defaultForm = createTaskIntakeForm();
-  const keys = Object.keys(defaultForm);
-
-  return keys.every((key) => normalizeText(form?.[key]) === normalizeText(defaultForm[key]));
-}
-
-// 快速生成一份随机内部任务，便于演示和联调。
-function createRandomTaskIntakeForm(now = new Date()) {
-  const testType = randomFrom(Object.keys(TEST_PREFIX_MAP));
-  const sampleCount = String(Math.floor(Math.random() * 5) + 1);
-  const source = SOURCE_INTERNAL;
-  const arrivalAt = addHours(now, Math.floor(Math.random() * 6));
-  const dueAt = addHours(arrivalAt, Math.floor(Math.random() * 48) + 8);
-  const suffix = Math.floor(Math.random() * 900) + 100;
-
-  return {
-    ...createTaskIntakeForm(),
-    client: source === SOURCE_EXTERNAL ? `外部客户${suffix}` : "内部部门",
-    contact: `调度员${suffix}`,
-    contact_info: `1380000${suffix}`,
-    due_at: formatLocalDateTime(dueAt, { includeSeconds: false }),
-    name: `${testType}-随机任务${suffix}`,
-    priority: randomFrom(RANDOM_PRIORITIES),
-    sample_count: sampleCount,
-    sample_type: randomFrom(RANDOM_SAMPLE_TYPES),
-    source,
-    test_type: testType,
-    test_types: [testType],
-  };
-}
-
 function createTaskEditForm() {
   return {
     arrival_at: "",
@@ -894,19 +817,14 @@ export {
   buildTaskStatusLabel,
   createTaskEditForm,
   createTaskIntakeForm,
-  createRandomTaskIntakeForm,
   createTaskRecord,
   deleteTaskSnapshot,
-  fromDateTimeLocalValue,
-  isTaskIntakeFormPristine,
   normalizeText,
   applyTaskSampleCodes,
   aggregateTaskStatusFromSamples,
-  collectTaskTrayStatuses,
   resolveTaskStatus,
   splitSampleCodeText,
   syncTaskSamples,
-  toDateTimeLocalValue,
   updateTaskRecord,
   validateSampleCodeDraft,
   validateTaskSampleCount,

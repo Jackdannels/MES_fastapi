@@ -12,6 +12,7 @@ class FakeStorage:
             "mes.samples": [],
             "mes.streams": [],
             "mes.experiments": [],
+            "mes.experiment_run_trays": [],
             "mes.experiment_trays": [],
             "mes.experiment_samples": [],
             "mes.conflicts": [],
@@ -395,3 +396,67 @@ def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch)
     assert response.status_code == 400
     assert response.json()["detail"] == "该托盘已进入试验间流程，不能暂存间入库。"
     assert storage.read("mes.samples") == samples
+
+
+def test_storage_allows_post_staging_stock_in_when_all_tray_experiments_completed(monkeypatch):
+    samples = [
+        {
+            "code": "SYLU-2026-06-021-SP-003",
+            "location": "冲击二室",
+            "status": "实验进行中",
+            "flow_status": "实验进行中",
+            "task_code": "SYLU-2026-06-021",
+            "trays": [
+                {
+                    "tray_code": "SYLU-2026-06-021-TP-003",
+                    "status": "实验进行中",
+                    "quantity": 1,
+                    "target_lab": "冲击二室",
+                    "target_experiment_code": "SYLU-2026-06-021-A",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiment_trays": [
+                {
+                    "task_code": "SYLU-2026-06-021",
+                    "experiment_code": "SYLU-2026-06-021-A",
+                    "tray_code": "SYLU-2026-06-021-TP-003",
+                },
+                {
+                    "task_code": "SYLU-2026-06-021",
+                    "experiment_code": "SYLU-2026-06-021-C",
+                    "tray_code": "SYLU-2026-06-021-TP-003",
+                },
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-06-021",
+                    "experiment_code": "SYLU-2026-06-021-A",
+                    "tray_code": "SYLU-2026-06-021-TP-003",
+                    "run_tray_status": "实验已完成",
+                },
+                {
+                    "task_code": "SYLU-2026-06-021",
+                    "experiment_code": "SYLU-2026-06-021-C",
+                    "tray_code": "SYLU-2026-06-021-TP-003",
+                    "run_tray_status": "实验已完成",
+                },
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
+    attempted[0]["status"] = "放置实验后暂存间"
+    attempted[0]["flow_status"] = "放置实验后暂存间"
+    attempted[0]["trays"][0]["status"] = "放置实验后暂存间"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted

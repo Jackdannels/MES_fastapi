@@ -108,17 +108,6 @@ const resolveTrayTargetLab = (tray) => normalizeText(tray?.target_lab || tray?.t
 const resolveTrayTargetExperimentCode = (tray) => normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
 const resolveRelationLabName = (relation) =>
   resolveLabDevice(relation?.schedule) || resolveLabDevice(relation?.experiment);
-const selectLabRelationsForTray = ({ activeTargetExperimentCode = "", activeTargetLab = "", labName, relations }) => {
-  const labRelations = asArray(relations).filter((relation) => relationMatchesLab(relation, labName));
-
-  if (activeTargetExperimentCode) {
-    return labRelations.filter((relation) => relation.experimentCode === activeTargetExperimentCode);
-  }
-  if (activeTargetLab) {
-    return activeTargetLab === labName ? labRelations : [];
-  }
-  return labRelations;
-};
 
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成"]);
 const resolveRelationStatus = (relation) =>
@@ -153,8 +142,32 @@ const relationIsCompletedForSample = ({ experimentRunTrays = [], sample, relatio
   return relationIsCompletedByRunTray({ experimentRunTrays, relation })
     || sampleHasCompletedExperiment(sample, relation);
 };
-const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules }) => {
+
+const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
+  const map = new Map();
+  asArray(stagingEvents).forEach((event) => {
+    if (normalizeText(event?.action) !== "stock_out") {
+      return;
+    }
+    const taskCode = resolveTaskCode(event);
+    const trayCode = resolveTrayCode(event);
+    if (!taskCode || !trayCode) {
+      return;
+    }
+    const key = `${taskCode}::${trayCode}`;
+    const current = map.get(key);
+    const nextTime = Date.parse(normalizeText(event?.time)) || 0;
+    const currentTime = Date.parse(normalizeText(current?.time)) || -1;
+    if (!current || nextTime >= currentTime) {
+      map.set(key, event);
+    }
+  });
+  return map;
+};
+
+const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules, stagingEvents }) => {
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
+  const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
   const trayMap = new Map();
 
   asArray(samples).forEach((sample) => {
@@ -165,9 +178,13 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
       if (!trayCode || !taskCode) {
         return;
       }
-      const relations = relationsByTaskAndTrayCode.get(`${taskCode}::${trayCode}`) || [];
-      const targetExperimentCode = resolveTrayTargetExperimentCode(tray);
-      const targetLab = resolveTrayTargetLab(tray);
+      const trayMapKey = `${taskCode}::${trayCode}`;
+      const relations = relationsByTaskAndTrayCode.get(trayMapKey) || [];
+      const latestStockOutTarget = latestStockOutTargetByTaskAndTray.get(trayMapKey) || {};
+      const targetExperimentCode =
+        resolveTrayTargetExperimentCode(tray)
+        || normalizeText(latestStockOutTarget?.target_experiment_code || latestStockOutTarget?.targetExperimentCode);
+      const targetLab = resolveTrayTargetLab(tray) || normalizeText(latestStockOutTarget?.target_lab || latestStockOutTarget?.targetLab);
       const targetExperimentRelations = targetExperimentCode
         ? relations.filter((relation) => relation.experimentCode === targetExperimentCode)
         : [];
@@ -184,12 +201,7 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
         && targetLabRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
           ? targetLab
           : "";
-      const labRelations = selectLabRelationsForTray({
-        activeTargetExperimentCode,
-        activeTargetLab,
-        labName,
-        relations,
-      });
+      const labRelations = relations.filter((relation) => relationMatchesLab(relation, labName));
       const incompleteLabRelations = labRelations.filter((relation) =>
         !relationIsCompletedForSample({ experimentRunTrays, sample, relation }),
       );
@@ -217,7 +229,6 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
         trayCode,
       });
 
-      const trayMapKey = `${taskCode}::${trayCode}`;
       if (!trayMap.has(trayMapKey)) {
         trayMap.set(trayMapKey, {
           canonicalStatus: flow.canonicalStatus || flow.status || "-",
@@ -268,6 +279,7 @@ function buildLabProcessPanels(input = {}) {
       experimentRuns,
       experimentRunTrays,
       experimentTrays,
+      stagingEvents: input.stagingEvents || input.staging_events,
       schedules,
     });
     const sampleCodes = new Set(trays.flatMap((tray) => tray.sampleCodes));

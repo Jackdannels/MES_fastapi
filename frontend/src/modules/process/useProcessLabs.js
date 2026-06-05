@@ -13,7 +13,7 @@ import {
   resolveFlowStatusByLocation,
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
@@ -257,6 +257,7 @@ function useProcessLabs(options = {}) {
   const isCompletedSchedule = (schedule) =>
     scheduleExperimentIsCompleted({
       experiments: experiments.value,
+      experimentRunTrays: experimentRunTrays.value,
       experimentTrays: experimentTrays.value,
       samples: samples.value,
       schedule,
@@ -1407,4 +1408,4 @@ function useProcessLabs(options = {}) {
   };
 }
 
-export { PROCESS_FILTERS, sanitizeTaskDisplayName, useProcessLabs };
+export { PROCESS_FILTERS, useProcessLabs };

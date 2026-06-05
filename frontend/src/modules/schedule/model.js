@@ -2112,7 +2112,6 @@ function deleteScheduleRecord({ experimentTrays = [], experiments, samples = [],
 
 export {
   RETENTION_DEVICE,
-  SLOT_RANGES,
   STATUS_COMPLETED,
   STATUS_RETENTION,
   STATUS_RUNNING,

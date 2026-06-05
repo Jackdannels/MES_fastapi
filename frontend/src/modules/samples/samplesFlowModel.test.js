@@ -2439,6 +2439,88 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView does not show next experiment as running without tray-scoped runtime evidence", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-021-TP-005",
+      taskCode: "SYLU-2026-06-021",
+      location: "冲击二室",
+      status: "实验进行中",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击二室",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          experiment_name: "温度冲击试验",
+          required_device: "温度冲击二室",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-C",
+          experiment_name: "振动试验",
+          required_device: "振动二室",
+          status: "实验进行中",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-005" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-005" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-005" },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-005",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          tray_code: "SYLU-2026-06-021-TP-005",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-05 17:50:53",
+        },
+        {
+          run_no: "run-temp-005",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          tray_code: "SYLU-2026-06-021-TP-005",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-05 16:26:11",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-005",
+          task_code: "SYLU-2026-06-021",
+          location: "冲击二室",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-021-TP-005",
+              status: "实验进行中",
+              target_experiment_code: "SYLU-2026-06-021-A",
+              target_lab: "冲击二室",
+              quantity: 1,
+            },
+          ],
+          history: [],
+        },
+      ],
+      schedules: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", device: "冲击二室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", device: "温度冲击二室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", device: "振动二室", status: "实验进行中" },
+      ],
+    });
+
+    expect(view.currentStatus).not.toContain("振动试验进行中");
+    expect(view.steps.find((step) => step.label === "振动试验未完成")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
   test("buildTrayFlowView keeps single-experiment lab and completion steps unreached when a returned tray never completed that experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",

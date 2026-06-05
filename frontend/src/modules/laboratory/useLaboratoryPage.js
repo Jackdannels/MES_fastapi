@@ -16,7 +16,7 @@ import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
   applyLaboratoryTaskStep,
   buildLaboratoryChecklist,

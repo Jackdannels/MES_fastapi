@@ -1,20 +1,21 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
 import { isScheduleExperimentRunning } from "@/modules/devices/model";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
+import {
+  EXPERIMENT_STATUS_COMPLETED,
+  EXPERIMENT_STATUS_RUNNING,
+  RETURNED_STATUS as STATUS_RETENTION,
+  TASK_STATUS_RUNNING as STATUS_RUNNING,
+  TASK_STATUS_WAITING as STATUS_WAITING,
+  TRANSFER_STATUS_ARRIVED,
+  isTransferArrivedStatus,
+  normalizeTaskStatusLabel,
+} from "@/lib/statusNormalization";
 
 const SOURCE_EXTERNAL = "外部委托";
 const SOURCE_INTERNAL = "内部新增";
-const STATUS_RUNNING = "任务进行中";
-const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const LEGACY_STATUS_RUNNING = "实验中";
-const TASK_LEGACY_RUNNING = "任务进行中";
 const STATUS_SCHEDULED = "已排程";
-const STATUS_WAITING = "待排程";
-const TRANSFER_STATUS_STORED = "到货";
-const LEGACY_TRANSFER_STATUS_STORED = "已入库";
-const STATUS_RETENTION = "厂家收回";
-const STATUS_COMPLETED = "任务已完成";
-const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
 const DEVICE_STATUS_AVAILABLE = "可用";
 const DEVICE_STATUS_WORKING = "工作中";
 const DEVICE_STATUS_REPAIR = "维修";
@@ -22,12 +23,9 @@ const DEVICE_STATUS_CARE = "保养";
 const RUNNING_EXPERIMENT_RUN_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_RUNNING]);
 const LEGACY_STATUS_COMPLETED = "实验完成";
 const LEGACY_STATUS_COMPLETED_ALT = "实验已经完成";
-const LEGACY_STATUS_RETENTION = "暂存间排放";
-const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_LOCATION = "暂存间";
 const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
-  TRANSFER_STATUS_STORED,
-  LEGACY_TRANSFER_STATUS_STORED,
+  TRANSFER_STATUS_ARRIVED,
   "送至实验室",
   "实验准备就绪",
   EXPERIMENT_STATUS_RUNNING,
@@ -50,25 +48,10 @@ const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOC
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const isRunningStatus = (value) => {
   const normalized = normalizeText(value);
-  return normalized === STATUS_RUNNING || normalized === TASK_LEGACY_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
+  return normalized === STATUS_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING;
 };
 // 兼容历史状态文案，保证统计口径一致。
-const normalizeStatusLabel = (value) => {
-  const normalized = normalizeText(value);
-  if (normalized === EXPERIMENT_STATUS_RUNNING || normalized === LEGACY_STATUS_RUNNING || normalized === STATUS_RUNNING) {
-    return STATUS_RUNNING;
-  }
-  if (normalized === EXPERIMENT_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED || normalized === LEGACY_STATUS_COMPLETED_ALT || normalized === STATUS_COMPLETED) {
-    return STATUS_COMPLETED;
-  }
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
-    return STATUS_WAITING;
-  }
-  if (normalized === STATUS_RETENTION) {
-    return STATUS_RETENTION;
-  }
-  return normalized;
-};
+const normalizeStatusLabel = normalizeTaskStatusLabel;
 
 const isArrivedOrLaterSampleStatus = (value) => ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeStatusLabel(value)) || ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeText(value));
 const isTaskStoredBySamples = (taskSamples) => {
@@ -85,7 +68,7 @@ const isTaskStoredBySamples = (taskSamples) => {
   });
 };
 const isTaskStored = (task, taskSamples = []) =>
-  [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status)) ||
+  isTransferArrivedStatus(task?.transfer_status) ||
   isTaskStoredBySamples(taskSamples);
 const isReturnedTaskRecord = (task, schedules) => {
   const taskCode = normalizeText(task?.code);

@@ -379,6 +379,105 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards hides returned shared-tray experiments when every scoped tray is completed or returned", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const cards = buildProcessLabCards(
+      [
+        { name: "冲击二室", testType: "冲击试验" },
+        { name: "温度冲击二室", testType: "温度冲击试验" },
+      ],
+      [{ code: taskCode, test_type: "冲击试验 / 温度冲击试验 / 振动试验" }],
+      [
+        {
+          device: "冲击二室",
+          end_at: "2026-06-05T12:00:00+08:00",
+          experiment_code: `${taskCode}-A`,
+          start_at: "2026-06-05T08:00:00+08:00",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          device: "温度冲击二室",
+          end_at: "2026-06-05T18:00:00+08:00",
+          experiment_code: `${taskCode}-B`,
+          start_at: "2026-06-05T14:00:00+08:00",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+      ],
+      [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-001`, status: "厂家收回", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 10:00:00" },
+            { detail: `${taskCode} / 温度冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 16:00:00" },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-002`, status: "厂家收回", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 温度冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 16:10:00" },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-003`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-003`, status: "厂家收回", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-004`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-004`, status: "厂家收回", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 10:20:00" },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-005`,
+          task_code: taskCode,
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-005`, status: "厂家收回", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 10:30:00" },
+            { detail: `${taskCode} / 温度冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 16:30:00" },
+          ],
+        },
+      ],
+      Date.parse("2026-06-05T17:00:00+08:00"),
+      [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验" },
+      ],
+      [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-001` },
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-003` },
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-004` },
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: `${taskCode}-TP-005` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-001` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-002` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-004` },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: `${taskCode}-TP-005` },
+      ],
+    );
+
+    expect(cards.find((card) => card.name === "冲击二室")).toEqual(
+      expect.objectContaining({ hasTask: false, status: "空闲", taskCode: "-" }),
+    );
+    expect(cards.find((card) => card.name === "温度冲击二室")).toEqual(
+      expect.objectContaining({ hasTask: false, status: "空闲", taskCode: "-" }),
+    );
+  });
+
   test("buildProcessLabCards keeps shared-tray follow-up labs scheduled until that experiment code completes", () => {
     const cards = buildProcessLabCards(
       [{ name: "高低温湿热二室", testType: "高低温湿热试验" }],

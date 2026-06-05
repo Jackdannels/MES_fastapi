@@ -5,7 +5,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildDashboardViewModel } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 const DASHBOARD_TASK_PAGE_SIZE = 8;
 

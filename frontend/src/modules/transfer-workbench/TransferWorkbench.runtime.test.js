@@ -2,7 +2,7 @@ import { mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TransferWorkbench from "./TransferWorkbench.vue";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 
 const {

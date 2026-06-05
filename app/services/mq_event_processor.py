@@ -84,13 +84,6 @@ def build_ack(correlation_id: str, status: str, error_code: str = "", error_mess
     }
 
 
-def require_text(payload: dict[str, Any], key: str) -> str:
-    value = normalize_text(payload.get(key))
-    if not value:
-        raise ValueError(f"{key} is required")
-    return value
-
-
 def event_type_from_topic(topic: str) -> str:
     suffix = normalize_text(topic).rstrip("/").split("/")[-1]
     return EVENT_TYPE_BY_TOPIC_SUFFIX.get(suffix, "")

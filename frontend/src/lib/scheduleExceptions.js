@@ -1,10 +1,18 @@
 import { STORAGE_KEYS } from "./storageKeys";
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { formatLocalDateTime } from "./dateTime";
+import {
+  EXPERIMENT_STATUS_COMPLETED,
+  EXPERIMENT_STATUS_RUNNING,
+  RETURNED_STATUS,
+  isExperimentCompletedStatus,
+  isExperimentRunningStatus,
+  normalizeExperimentStatusLabel,
+} from "./statusNormalization";
 import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 
-const STARTED_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
-const COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const STARTED_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
+const COMPLETED_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
 
 const SCHEDULE_EXCEPTION_TYPE = "schedule_missed_start";
 const SCHEDULE_EXCEPTION_REASON = "排程时段内未开始实验，系统已自动撤销排程";
@@ -155,8 +163,8 @@ const resolveScheduleLifecycle = ({
   if (latestHistoryBySample.size > 0) {
     const historyStatuses = Array.from(latestHistoryBySample.values()).map((entry) => entry.status);
     return {
-      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_STATUSES.has(status)),
-      started: historyStatuses.some((status) => STARTED_STATUSES.has(status)),
+      completed: matchedSamples.length > 0 && latestHistoryBySample.size === matchedSamples.length && historyStatuses.every((status) => COMPLETED_STATUSES.has(normalizeExperimentStatusLabel(status)) || isExperimentCompletedStatus(status)),
+      started: historyStatuses.some((status) => STARTED_STATUSES.has(normalizeExperimentStatusLabel(status)) || isExperimentRunningStatus(status)),
       trayStatuses,
     };
   }
@@ -170,8 +178,8 @@ const resolveScheduleLifecycle = ({
     };
   }
 
-  const startedByStatus = trayStatuses.some((status) => STARTED_STATUSES.has(status));
-  const completedByStatus = trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_STATUSES.has(status));
+  const startedByStatus = trayStatuses.some((status) => STARTED_STATUSES.has(normalizeExperimentStatusLabel(status)) || isExperimentRunningStatus(status));
+  const completedByStatus = trayStatuses.length > 0 && trayStatuses.every((status) => COMPLETED_STATUSES.has(normalizeExperimentStatusLabel(status)) || isExperimentCompletedStatus(status));
 
   return {
     completed: completedByStatus,

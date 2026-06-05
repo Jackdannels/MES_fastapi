@@ -1,11 +1,13 @@
 import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
+import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
 const SCHEDULES_KEY = "mes.schedules";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
+const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
@@ -23,6 +25,12 @@ const STOCK_IN_CANDIDATE_STATUSES = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
+const COMPLETED_RUN_TRAY_STATUSES = new Set([
+  ...COMPLETED_EXPERIMENT_STATUSES,
+  "实验已经完成",
+  "已到达暂存间",
+  "厂家收回",
+]);
 const STAGING_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘已进入试验间流程，不能暂存间入库。";
 
 const createId = (prefix) => {
@@ -170,7 +178,7 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
   const hasStoredStatus = statuses.some((status) => normalizeText(status) === "已到达暂存间" || normalizeText(status) === "暂存间存放");
   const hasStockInCandidateStatus = statuses.some((status) => STOCK_IN_CANDIDATE_STATUSES.has(normalizeText(status)));
   const hasCompletedExperimentStatus = statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
-  if (normalizeText(latestEvent?.action) === "stock_out" && hasCompletedExperimentStatus) {
+  if (normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
     return "待入库";
   }
   if (normalizeText(latestEvent?.action) === "stock_out") {
@@ -216,6 +224,24 @@ const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => 
   return codes;
 };
 
+const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays, taskCode, trayCode }) =>
+  asArray(experimentRunTrays).some((entry) =>
+    normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) === taskCode
+    && normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) === trayCode
+    && normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo) === experimentCode
+    && COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status)),
+  );
+
+const trayAssignedExperimentsAreCompleted = ({ taskCode, trayCode, experimentTrays, experimentRunTrays }) => {
+  const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
+  if (trayExperimentCodes.size === 0) {
+    return false;
+  }
+  return Array.from(trayExperimentCodes).every((experimentCode) =>
+    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode }),
+  );
+};
+
 const resolveTrayExperimentTypeText = ({ taskCode, trayCode, experiments, experimentTrays }) => {
   const experimentMap = buildExperimentMap(experiments);
   const names = [];
@@ -248,7 +274,7 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
   return names;
 };
 
-const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays }) => {
+const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunTrays }) => {
   const experimentMap = buildExperimentMap(experiments);
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   if (trayExperimentCodes.size === 0) {
@@ -257,12 +283,15 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
 
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   return Array.from(trayExperimentCodes).some((experimentCode) => {
+    if (trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode })) {
+      return false;
+    }
     const experimentName = resolveExperimentName(experimentMap.get(experimentCode));
     return !experimentName || !completedExperimentNames.has(experimentName);
   });
 };
 
-const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays }) => {
+const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunTrays }) => {
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
   if (!taskCode || !trayCode) {
@@ -274,6 +303,9 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
   const isUnfinishedExperiment = (experimentCode, fallbackName = "") => {
+    if (trayExperimentRunIsCompleted({ experimentCode: normalizeText(experimentCode), experimentRunTrays, taskCode, trayCode })) {
+      return false;
+    }
     const experiment = experimentMap.get(normalizeText(experimentCode));
     const experimentName = resolveExperimentName(experiment, fallbackName);
     return !experimentName || !completedExperimentNames.has(experimentName);
@@ -486,11 +518,56 @@ const markReturnedTaskIfComplete = (snapshot, taskCode) => {
   );
 };
 
+const pruneTerminalExperimentSchedules = (snapshot, taskCode) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  if (!normalizedTaskCode) {
+    return;
+  }
+  const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
+  const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
+  const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
+  const samples = asArray(snapshot[SAMPLES_KEY]);
+  const terminalExperimentCodes = new Set();
+
+  experiments.forEach((experiment) => {
+    const experimentCode = normalizeText(experiment?.experiment_code);
+    if (normalizeText(experiment?.task_code) !== normalizedTaskCode || !experimentCode) {
+      return;
+    }
+    if (experimentScopeIsTerminal({
+      experiments,
+      experimentCode,
+      experimentRunTrays,
+      experimentTrays,
+      samples,
+      taskCode: normalizedTaskCode,
+    })) {
+      terminalExperimentCodes.add(experimentCode);
+    }
+  });
+
+  if (!terminalExperimentCodes.size) {
+    return;
+  }
+
+  snapshot[SCHEDULES_KEY] = asArray(snapshot[SCHEDULES_KEY]).filter((schedule) =>
+    normalizeText(schedule?.task_code) !== normalizedTaskCode
+    || !terminalExperimentCodes.has(normalizeText(schedule?.experiment_code)),
+  );
+  snapshot[EXPERIMENTS_KEY] = experiments.map((experiment) =>
+    normalizeText(experiment?.task_code) === normalizedTaskCode
+      && terminalExperimentCodes.has(normalizeText(experiment?.experiment_code))
+      ? { ...experiment, status: "实验已完成" }
+      : experiment,
+  );
+};
+
 function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const tasks = asArray(snapshot[TASKS_KEY]);
   const schedules = asArray(snapshot[SCHEDULES_KEY]);
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
+  const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
@@ -565,10 +642,17 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         .reverse()
         .find((event) => normalizeText(event?.action) === "stock_in") || null;
       const hasCompletedExperimentStatus = row.statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
+      const allAssignedExperimentsCompleted = trayAssignedExperimentsAreCompleted({
+        experimentRunTrays,
+        experimentTrays,
+        taskCode: normalizeText(row.taskCode),
+        trayCode: normalizeText(row.trayCode),
+      });
       const isPostExperimentInbound =
-        hasCompletedExperimentStatus
+        (hasCompletedExperimentStatus || allAssignedExperimentsCompleted)
         && !hasRemainingMappedExperiment({
           experiments,
+          experimentRunTrays,
           experimentTrays,
           samples,
           taskCode: normalizeText(row.taskCode),
@@ -584,6 +668,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
 
       const targetDestinations = resolveTrayTargetDestinations({
         experiments,
+        experimentRunTrays,
         experimentTrays,
         row,
         samples,
@@ -803,6 +888,7 @@ function applyZancunInventoryAction(input = {}) {
     [SCHEDULES_KEY]: asArray(snapshot[SCHEDULES_KEY]).map((schedule) => ({ ...schedule })),
     [EXPERIMENTS_KEY]: asArray(snapshot[EXPERIMENTS_KEY]).map((experiment) => ({ ...experiment })),
     [EXPERIMENT_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_TRAYS_KEY]).map((entry) => ({ ...entry })),
+    [EXPERIMENT_RUN_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]).map((entry) => ({ ...entry })),
     [SAMPLES_KEY]: asArray(snapshot[SAMPLES_KEY]).map((sample) => ({
       ...sample,
       trays: asArray(sample?.trays).map((tray) => ({ ...tray })),
@@ -1020,6 +1106,7 @@ function applyZancunInventoryAction(input = {}) {
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples;
     markReturnedTaskIfComplete(nextSnapshot, matchedRow.taskCode);
+    pruneTerminalExperimentSchedules(nextSnapshot, matchedRow.taskCode);
   }
 
   const nextRows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime });

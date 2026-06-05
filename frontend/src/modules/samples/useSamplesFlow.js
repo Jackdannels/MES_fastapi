@@ -1,7 +1,7 @@
 // 负责样品流转页的筛选、批量接样、详情编辑和暂存派发流程。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
-import { SAMPLES_UPDATED_EVENT } from "./useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "./sampleEvents";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";

@@ -115,7 +115,10 @@ describe("visualization model", () => {
       "SYLU-2026-06-021-TP-001",
     ]);
     expect(panels.find((panel) => panel.name === "冲击一室")?.trays[0].steps.some((step) => step.label === "送至冲击一室" && step.active)).toBe(true);
-    expect(panels.find((panel) => panel.name === "振动一室")?.trays).toEqual([]);
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays.map((tray) => tray.trayCode)).toEqual([
+      "SYLU-2026-06-021-TP-001",
+    ]);
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays[0].steps.map((step) => step.label)).toContain("振动试验未完成");
   });
 
   test("keeps planned future lab flow identical to the actual active mqtt tray flow", () => {
@@ -155,7 +158,7 @@ describe("visualization model", () => {
     const impactSteps = panels.find((panel) => panel.name === "冲击一室")?.trays[0].steps || [];
     const vibrationTrays = panels.find((panel) => panel.name === "振动一室")?.trays || [];
 
-    expect(vibrationTrays).toEqual([]);
+    expect(vibrationTrays.map((tray) => tray.trayCode)).toEqual(["SYLU-2026-06-021-TP-001"]);
     expect(impactSteps.find((step) => step.label === "冲击试验进行中")).toEqual(
       expect.objectContaining({ active: true }),
     );
@@ -506,7 +509,50 @@ describe("visualization model", () => {
       expect.objectContaining({ active: true }),
     );
     expect(tempShockTray?.steps.map((step) => step.label)).not.toContain("送至振动二室");
-    expect(vibrationTrays).toEqual(["SYLU-2026-06-021-TP-003"]);
+    expect(vibrationTrays).toEqual(["SYLU-2026-06-021-TP-003", trayCode]);
+  });
+
+  test("keeps a staging-dispatched tray visible in a lab when a stale target experiment points elsewhere", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-005`;
+    const panels = buildLabProcessPanels({
+      labNames: ["温度冲击二室", "振动二室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "振动试验", required_device: "振动二室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室" },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-005`,
+          task_code: taskCode,
+          location: "恒温恒湿间（暂存间）",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: trayCode,
+              status: "送至实验室",
+              target_lab: "温度冲击二室",
+              target_experiment_code: `${taskCode}-C`,
+              quantity: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    const tempShockTrays = panels.find((panel) => panel.name === "温度冲击二室")?.trays.map((tray) => tray.trayCode);
+    const vibrationTrays = panels.find((panel) => panel.name === "振动二室")?.trays.map((tray) => tray.trayCode);
+
+    expect(tempShockTrays).toEqual([trayCode]);
+    expect(vibrationTrays).toEqual([trayCode]);
   });
 
   test("keeps same tray code from different tasks as separate lab tray rows", () => {

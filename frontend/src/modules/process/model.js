@@ -1,4 +1,13 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
+import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
+import {
+  EXPERIMENT_STATUS_COMPLETED,
+  EXPERIMENT_STATUS_RUNNING as STATUS_RUNNING,
+  RETURNED_STATUS,
+  isExperimentCompletedStatus,
+  isExperimentRunningStatus,
+  normalizeExperimentStatusLabel,
+} from "@/lib/statusNormalization";
 
 // 根据当前排程状态生成过程管控页的实验室卡片和跳转目标。
 const PROCESS_LABS = [
@@ -17,15 +26,12 @@ const PROCESS_LABS = [
 // 中文名称排序时统一使用简体中文排序规则。
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 const STATUS_SCHEDULED = "已排程";
-const STATUS_RUNNING = "实验进行中";
 const STATUS_READY = "实验准备就绪";
 const TASK_STATUS_RUNNING = "任务进行中";
 const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
 const STATUS_MAINTENANCE = "维护/校准";
-const RUNNING_EXPERIMENT_RUN_STATUSES = new Set([STATUS_RUNNING, "实验中"]);
-const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
-const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const isDeviceUnavailable = (device) => {
@@ -159,7 +165,7 @@ const collectScheduleSamples = ({ experimentTrays, samples, schedule }) => {
   };
 };
 
-const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, schedule, taskStatusMap }) => {
+const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], experimentTrays, samples, schedule, taskStatusMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   if (!taskCode) {
@@ -176,11 +182,21 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, 
       && normalizeText(experiment?.experiment_code) === experimentCode
   );
   const { matchedSamples, scopedTrayCodes } = collectScheduleSamples({ experimentTrays, samples, schedule });
-  if (COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(matchedExperiment?.status)) && scopedTrayCodes.size === 0) {
+  if (isExperimentCompletedStatus(matchedExperiment?.status) && scopedTrayCodes.size === 0) {
     return true;
   }
   if (!matchedSamples.length) {
     return false;
+  }
+  if (experimentScopeIsTerminal({
+    experiments,
+    experimentCode,
+    experimentRunTrays,
+    experimentTrays,
+    samples,
+    taskCode,
+  })) {
+    return true;
   }
 
   const experimentName = normalizeText(matchedExperiment?.experiment_name);
@@ -212,7 +228,7 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, 
       const requiredTrayCodes = scopedTrayCodes.size ? Array.from(scopedTrayCodes) : Array.from(latestHistoryByTray.keys());
       return (
         requiredTrayCodes.length > 0
-        && requiredTrayCodes.every((trayCode) => COMPLETED_TRAY_STATUSES.has(normalizeText(latestHistoryByTray.get(trayCode)?.status)))
+        && requiredTrayCodes.every((trayCode) => COMPLETED_TRAY_STATUSES.has(normalizeExperimentStatusLabel(latestHistoryByTray.get(trayCode)?.status)))
       );
     }
   }
@@ -245,7 +261,7 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentTrays, samples, 
     });
   });
 
-  return statuses.length > 0 && statuses.every((status) => COMPLETED_TRAY_STATUSES.has(status));
+  return statuses.length > 0 && statuses.every((status) => COMPLETED_TRAY_STATUSES.has(normalizeExperimentStatusLabel(status)));
 };
 
 const experimentHasRunningTrays = ({ experimentRuns = [], experimentRunTrays = [], experimentTrays = [], schedule }) => {
@@ -273,7 +289,7 @@ const experimentHasRunningTrays = ({ experimentRuns = [], experimentRunTrays = [
 
   const hasRunningRunTray = asArray(experimentRunTrays).some((entry) =>
     matchesTaskExperiment(entry)
-    && RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(entry))
+    && isExperimentRunningStatus(resolveRunStatus(entry))
     && (!scopedTrayCodes.size || scopedTrayCodes.has(resolveTrayCode(entry)))
   );
   if (hasRunningRunTray) {
@@ -281,7 +297,7 @@ const experimentHasRunningTrays = ({ experimentRuns = [], experimentRunTrays = [
   }
 
   return asArray(experimentRuns).some((run) => {
-    if (!matchesTaskExperiment(run) || !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(run))) {
+    if (!matchesTaskExperiment(run) || !isExperimentRunningStatus(resolveRunStatus(run))) {
       return false;
     }
     const runLabName = normalizeText(run?.device || run?.lab || run?.labName);
@@ -364,6 +380,7 @@ const buildProcessLabCards = (
           (entry) =>
             !scheduleExperimentIsCompleted({
               experiments,
+              experimentRunTrays,
               experimentTrays,
               samples: sampleList,
               schedule: entry,

@@ -269,6 +269,91 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
     ]
 
 
+def test_normalize_storage_payload_closes_experiment_schedules_when_scoped_trays_are_completed_or_returned() -> None:
+    task_code = "SYLU-2026-06-021"
+    payload = {
+        "mes.tasks": [{"code": task_code, "status": "任务进行中", "transfer_status": "厂家收回"}],
+        "mes.experiments": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "冲击试验",
+                "status": "实验进行中",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "experiment_name": "温度冲击试验",
+                "status": "实验进行中",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-C",
+                "experiment_name": "振动试验",
+                "status": "实验已完成",
+            },
+        ],
+        "mes.schedules": [
+            {"id": "schedule-a", "task_code": task_code, "experiment_code": f"{task_code}-A", "device": "冲击二室", "status": "实验进行中"},
+            {"id": "schedule-b", "task_code": task_code, "experiment_code": f"{task_code}-B", "device": "温度冲击二室", "status": "实验进行中"},
+            {"id": "schedule-c", "task_code": task_code, "experiment_code": f"{task_code}-C", "device": "振动二室", "status": "实验已完成"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-001"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-003"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-004"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-005"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-001"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-002"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-004"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-005"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-C", "tray_code": f"{task_code}-TP-002"},
+        ],
+        "mes.experiment_run_trays": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-001", "run_tray_status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-004", "run_tray_status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-005", "run_tray_status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-001", "run_tray_status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-002", "run_tray_status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-005", "run_tray_status": "实验已完成"},
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-{index:03d}",
+                "task_code": task_code,
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "location": "厂家收回",
+                "trays": [{"tray_code": f"{task_code}-TP-{index:03d}", "status": "厂家收回"}],
+            }
+            for index in range(1, 6)
+        ],
+        "mes.staging_events": [
+            {
+                "action": "manufacturer_return",
+                "task_code": task_code,
+                "target_lab": "厂家收回",
+                "time": f"2026-06-05 18:29:{10 + index:02d}",
+                "tray_code": f"{task_code}-TP-{index:03d}",
+            }
+            for index in range(1, 6)
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert [schedule["id"] for schedule in normalized["mes.schedules"]] == []
+    assert {
+        experiment["experiment_code"]: experiment["status"]
+        for experiment in normalized["mes.experiments"]
+    } == {
+        f"{task_code}-A": "实验已完成",
+        f"{task_code}-B": "实验已完成",
+        f"{task_code}-C": "实验已完成",
+    }
+
+
 def test_normalize_storage_payload_converts_legacy_handover_stored_status_to_arrived() -> None:
     payload = {
         "mes.tasks": [

@@ -16,6 +16,14 @@ UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 RETURNED_STATUS = "厂家收回"
 CANONICAL_HANDOVER_STORED_STATUS = "到货"
 LEGACY_HANDOVER_STORED_STATUSES = {"已入库"}
+EXPERIMENT_TERMINAL_STATUSES = {
+    "实验已完成",
+    RETURNED_STATUS,
+    "实验完成",
+    "实验已经完成",
+    "放置实验后暂存间",
+    "已到达暂存间",
+}
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
@@ -586,6 +594,104 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
     return normalized, True
 
 
+def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    experiment_trays = [
+        dict(item)
+        for item in (payload.get("mes.experiment_trays") if isinstance(payload.get("mes.experiment_trays"), list) else [])
+    ]
+    staging_events = [
+        dict(item)
+        for item in (payload.get("mes.staging_events") if isinstance(payload.get("mes.staging_events"), list) else [])
+    ]
+    if not experiment_trays or not staging_events:
+        return payload, False
+
+    returned_by_tray = _latest_staging_events_by_tray(
+        [
+            event
+            for event in staging_events
+            if str(event.get("action") or "").strip() == "manufacturer_return"
+        ]
+    )
+    touched_task_codes = {
+        str(event.get("task_code") or event.get("taskCode") or "").strip()
+        for event in returned_by_tray.values()
+        if str(event.get("task_code") or event.get("taskCode") or "").strip()
+    }
+    if not touched_task_codes:
+        return payload, False
+
+    scoped_trays: dict[tuple[str, str], set[str]] = {}
+    for relation in experiment_trays:
+        task_code = str(relation.get("task_code") or relation.get("taskCode") or "").strip()
+        experiment_code = str(relation.get("experiment_code") or relation.get("experimentCode") or "").strip()
+        tray_code = str(relation.get("tray_code") or relation.get("trayCode") or relation.get("trayNo") or "").strip()
+        if task_code in touched_task_codes and experiment_code and tray_code:
+            scoped_trays.setdefault((task_code, experiment_code), set()).add(tray_code)
+
+    if not scoped_trays:
+        return payload, False
+
+    completed_run_trays: set[tuple[str, str, str]] = set()
+    for relation in payload.get("mes.experiment_run_trays") if isinstance(payload.get("mes.experiment_run_trays"), list) else []:
+        task_code = str(relation.get("task_code") or relation.get("taskCode") or relation.get("task_no") or relation.get("taskNo") or "").strip()
+        experiment_code = str(
+            relation.get("experiment_code")
+            or relation.get("experimentCode")
+            or relation.get("experiment_no")
+            or relation.get("experimentNo")
+            or ""
+        ).strip()
+        tray_code = str(relation.get("tray_code") or relation.get("trayCode") or relation.get("tray_no") or relation.get("trayNo") or "").strip()
+        status = str(relation.get("run_tray_status") or relation.get("runTrayStatus") or relation.get("status") or "").strip()
+        if task_code and experiment_code and tray_code and status in EXPERIMENT_TERMINAL_STATUSES:
+            completed_run_trays.add((task_code, experiment_code, tray_code))
+
+    terminal_experiments = {
+        (task_code, experiment_code)
+        for (task_code, experiment_code), tray_codes in scoped_trays.items()
+        if tray_codes
+        and all(
+            (task_code, experiment_code, tray_code) in completed_run_trays
+            or tray_code in returned_by_tray
+            for tray_code in tray_codes
+        )
+    }
+    if not terminal_experiments:
+        return payload, False
+
+    changed = False
+    experiments = [dict(item) for item in (payload.get("mes.experiments") if isinstance(payload.get("mes.experiments"), list) else [])]
+    for experiment in experiments:
+        key = (
+            str(experiment.get("task_code") or experiment.get("taskCode") or "").strip(),
+            str(experiment.get("experiment_code") or experiment.get("experimentCode") or "").strip(),
+        )
+        if key in terminal_experiments and experiment.get("status") != CANONICAL_COMPLETED_STATUS:
+            experiment["status"] = CANONICAL_COMPLETED_STATUS
+            changed = True
+
+    schedules = [dict(item) for item in (payload.get("mes.schedules") if isinstance(payload.get("mes.schedules"), list) else [])]
+    filtered_schedules = [
+        schedule
+        for schedule in schedules
+        if (
+            str(schedule.get("task_code") or schedule.get("taskCode") or "").strip(),
+            str(schedule.get("experiment_code") or schedule.get("experimentCode") or "").strip(),
+        )
+        not in terminal_experiments
+    ]
+    if filtered_schedules != schedules:
+        changed = True
+
+    if not changed:
+        return payload, False
+    normalized = dict(payload)
+    normalized["mes.experiments"] = experiments
+    normalized["mes.schedules"] = filtered_schedules
+    return normalized, True
+
+
 def _normalize_value(key: str, value: Any) -> Any:
     value = _normalize_datetime_collection(value)
     if key == "mes.samples" and isinstance(value, list):
@@ -627,6 +733,9 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         changed = True
     normalized, returned_changed = _apply_staging_returned_tasks(normalized)
     if returned_changed:
+        changed = True
+    normalized, terminal_experiment_changed = _apply_terminal_experiments_for_returned_trays(normalized)
+    if terminal_experiment_changed:
         changed = True
     return normalized, changed
 

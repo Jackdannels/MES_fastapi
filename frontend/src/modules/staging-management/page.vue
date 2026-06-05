@@ -333,7 +333,7 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
   applyZancunInventoryAction,
   buildZancunInventorySections,

@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { useProcessLabs } from "./useProcessLabs";
 import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 const masterDataMocks = vi.hoisted(() => ({
   readMasterLabs: vi.fn(async () => []),

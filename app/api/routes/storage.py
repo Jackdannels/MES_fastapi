@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
+from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -214,6 +215,35 @@ def _is_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
     return bool(statuses & STAGING_INBOUND_STATUSES) or STAGING_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
 
 
+def _is_post_experiment_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    location = _normalize_text(sample.get("location"))
+    return "放置实验后暂存间" in statuses or "实验后暂存间" in location
+
+
+def _post_staging_reentry_is_completed(
+    sample: Any,
+    tray: Any,
+    experiment_trays: Any,
+    experiment_run_trays: Any,
+) -> bool:
+    if not isinstance(sample, dict) or not isinstance(tray, dict):
+        return False
+    return tray_assigned_experiments_are_completed(
+        task_code=_normalize_text(sample.get("task_code") or sample.get("task_no")),
+        tray_code=_tray_code(tray),
+        experiment_trays=[item for item in _as_list(experiment_trays) if isinstance(item, dict)],
+        experiment_run_trays=[item for item in _as_list(experiment_run_trays) if isinstance(item, dict)],
+    )
+
+
 def _index_samples(samples: Any) -> dict[str, dict[str, Any]]:
     return {
         code: sample
@@ -272,7 +302,12 @@ def _validate_samples_lab_arrival_transition(current_samples: Any, next_samples:
             raise HTTPException(status_code=400, detail=LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL)
 
 
-def _validate_samples_staging_reentry_transition(current_samples: Any, next_samples: Any) -> None:
+def _validate_samples_staging_reentry_transition(
+    current_samples: Any,
+    next_samples: Any,
+    experiment_trays: Any,
+    experiment_run_trays: Any,
+) -> None:
     if not isinstance(next_samples, list):
         return
 
@@ -293,9 +328,30 @@ def _validate_samples_staging_reentry_transition(current_samples: Any, next_samp
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
             if _tray_has_blocked_lab_status(current_sample, current_tray) and _is_staging_inbound(next_sample, next_tray):
+                if _is_post_experiment_staging_inbound(next_sample, next_tray) and _post_staging_reentry_is_completed(
+                    current_sample,
+                    current_tray,
+                    experiment_trays,
+                    experiment_run_trays,
+                ):
+                    continue
                 raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
 
         if _sample_has_blocked_lab_status(current_sample) and _is_staging_inbound(next_sample):
+            next_trays = [tray for tray in _as_list(next_sample.get("trays")) if isinstance(tray, dict)]
+            completed_post_staging_trays = [
+                tray
+                for tray in next_trays
+                if _is_post_experiment_staging_inbound(next_sample, tray)
+                and _post_staging_reentry_is_completed(
+                    current_sample,
+                    current_trays.get(_tray_code(tray)),
+                    experiment_trays,
+                    experiment_run_trays,
+                )
+            ]
+            if next_trays and len(completed_post_staging_trays) == len(next_trays):
+                continue
             raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
 
 
@@ -362,7 +418,12 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         return
     current_samples = storage.read("mes.samples")
     _validate_samples_lab_arrival_transition(current_samples, updates["mes.samples"])
-    _validate_samples_staging_reentry_transition(current_samples, updates["mes.samples"])
+    _validate_samples_staging_reentry_transition(
+        current_samples,
+        updates["mes.samples"],
+        storage.read("mes.experiment_trays"),
+        storage.read("mes.experiment_run_trays"),
+    )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))
 

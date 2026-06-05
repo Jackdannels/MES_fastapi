@@ -6,7 +6,7 @@ import LaboratoryPage from "./page.vue";
 import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES, writeHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
+import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 let wrapper;
 let pageHeader;

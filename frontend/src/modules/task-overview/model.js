@@ -1,24 +1,22 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
+import {
+  EXPERIMENT_STATUS_COMPLETED as EXPERIMENT_COMPLETED_STATUS,
+  EXPERIMENT_STATUS_RUNNING,
+  RETURNED_STATUS as STATUS_RETENTION,
+  TASK_STATUS_COMPLETED as TASK_COMPLETED_STATUS,
+  TASK_STATUS_RUNNING as STATUS_RUNNING,
+  TASK_STATUS_WAITING as STATUS_WAITING,
+  isTransferArrivedStatus,
+  normalizeExperimentStatusLabel,
+  normalizeTaskStatusLabel,
+} from "@/lib/statusNormalization";
 import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
-const STATUS_WAITING = "待排程";
-const STATUS_RUNNING = "任务进行中";
 const STATUS_SCHEDULED = "已排程";
-const LEGACY_STATUS_RUNNING = "实验中";
-const EXPERIMENT_STATUS_RUNNING = "实验进行中";
-const STATUS_RETENTION = "厂家收回";
-const TRANSFER_STATUS_STORED = "到货";
-const LEGACY_TRANSFER_STATUS_STORED = "已入库";
-const LEGACY_STATUS_RETENTION = "暂存间排放";
-const LEGACY_STATUS_STORAGE = "暂存间存放";
 const RETENTION_KEYWORD = "暂存间";
-const TASK_COMPLETED_STATUS = "任务已完成";
-const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
-const LEGACY_TASK_COMPLETED_STATUS = "实验已经完成";
-const LEGACY_OVERVIEW_COMPLETED_STATUS = "实验完成";
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const SCHEDULED_EXPERIMENT_STATUSES = new Set([
   "已排程",
@@ -52,39 +50,8 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-// 历史状态“暂存间排放/暂存间存放”在总览里统一视为“厂家收回”。
-function normalizeTaskStatus(value) {
-  const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RUNNING || normalized === EXPERIMENT_STATUS_RUNNING) {
-    return STATUS_RUNNING;
-  }
-  if (normalized === LEGACY_STATUS_RETENTION || normalized === LEGACY_STATUS_STORAGE) {
-    return STATUS_WAITING;
-  }
-  if (normalized === STATUS_RETENTION) {
-    return STATUS_RETENTION;
-  }
-  if (
-    normalized === LEGACY_TASK_COMPLETED_STATUS
-    || normalized === LEGACY_OVERVIEW_COMPLETED_STATUS
-    || normalized === EXPERIMENT_COMPLETED_STATUS
-    || normalized === TASK_COMPLETED_STATUS
-  ) {
-    return TASK_COMPLETED_STATUS;
-  }
-  return normalized;
-}
-
-function normalizeExperimentStatus(value) {
-  const normalized = normalizeText(value);
-  if (normalized === LEGACY_STATUS_RUNNING) {
-    return EXPERIMENT_STATUS_RUNNING;
-  }
-  if (normalized === LEGACY_TASK_COMPLETED_STATUS || normalized === LEGACY_OVERVIEW_COMPLETED_STATUS) {
-    return EXPERIMENT_COMPLETED_STATUS;
-  }
-  return normalized;
-}
+const normalizeTaskStatus = normalizeTaskStatusLabel;
+const normalizeExperimentStatus = normalizeExperimentStatusLabel;
 
 // 判断排程设备是否属于暂存间，用于区分正式实验和留样暂存。
 function isRetentionDevice(value) {
@@ -109,7 +76,7 @@ function resolveFlowViewActiveStatus(flowView, fallbackStatus = "") {
 }
 
 function isTaskStored(task) {
-  return [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status));
+  return isTransferArrivedStatus(task?.transfer_status);
 }
 
 function upsertLatestSchedule(map, key, schedule) {

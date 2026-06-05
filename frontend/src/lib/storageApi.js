@@ -6,16 +6,6 @@ const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
 const SNAPSHOT_UPDATED_EVENT = "mes:snapshot-updated";
 const STORAGE_EVENTS_ENDPOINT = buildApiUrl("/api/storage/events", API_BASE_URL);
 
-function readLocalArray(key) {
-  void key;
-  return [];
-}
-
-function writeLocalArray(key, value) {
-  void key;
-  void value;
-}
-
 async function readStorageSnapshot(keys) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
   const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
@@ -107,9 +97,7 @@ export {
   SNAPSHOT_UPDATED_EVENT,
   SNAPSHOT_UPDATED_STORAGE_KEY,
   notifyStorageSnapshotUpdated,
-  readLocalArray,
   readStorageSnapshot,
   subscribeStorageSnapshotUpdates,
-  writeLocalArray,
   writeStorageUpdates,
 };

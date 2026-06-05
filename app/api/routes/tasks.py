@@ -116,11 +116,6 @@ def load_tasks(include_archived: bool = False) -> list[dict[str, Any]]:
     return [task for task in task_list if not is_returned_task(task, samples)]
 
 
-def load_experiments() -> list[dict[str, Any]]:
-    experiments = load_snapshot().get("mes.experiments", [])
-    return [dict(experiment) for experiment in experiments] if isinstance(experiments, list) else []
-
-
 def find_task_index(tasks: list[dict[str, Any]], task_id: str) -> int:
     normalized_id = normalize_text(task_id)
     for index, task in enumerate(tasks):

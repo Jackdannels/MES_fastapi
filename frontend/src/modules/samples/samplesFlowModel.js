@@ -949,7 +949,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         && !suppressInputCurrentFallback
         && normalizedStatus !== "厂家收回"
         && !(normalizedStatusIsCompleted && !event)
-        && (!normalizedStatusIsRunning || hasTrayScopedRunningEvidence)
+        && (!normalizedStatusIsRunning || hasTrayScopedRunningEvidence || explicitFromInputCurrent)
           ? normalizedStatus
           : "";
       const explicitRuntimeStatus =
@@ -1072,6 +1072,19 @@ const buildTrayExperimentFlow = (input = {}) => {
     explicitUnstartedAfterOtherCompletion && currentExperiment.code === explicitUnstartedAfterOtherCompletion.code
       ? (hasCompletedExperimentBeforeExplicit ? normalizedStatus : "送至实验室")
       : experimentStatusMap.get(currentExperiment.code) || routeStatusFallback;
+  const currentExperimentEvent = currentExperiment ? resolveExperimentEvent(experimentEventMap, currentExperiment) : null;
+  const currentExperimentHasRunningEvent = RUNNING_EXPERIMENT_RUN_STATUSES.has(
+    normalizeLifecycleStatus("", normalizeText(currentExperimentEvent?.status)),
+  );
+  const currentExperimentUnstarted =
+    (Boolean(explicitUnstartedReturnedExperiment) || normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
+    && startedUnfinishedExperiments.length === 0
+    && !explicitExperiment
+    || (
+      !normalizeText(routeStatus)
+      && !hasExperimentEnteredLabFlow(experimentStatusMap.get(currentExperiment.code))
+      && !currentExperimentHasRunningEvent
+    );
   const orderedFlowExperiments = [
     ...completedExperiments,
     currentExperiment,
@@ -1101,7 +1114,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         destinationLab: currentExperiment.destinationLab,
         aliases: currentExperiment.aliases,
         state: "current",
-        unstarted: isSyntheticUnstartedCurrent,
+        unstarted: currentExperimentUnstarted,
         suppressDestinationLab: shouldSuppressGuessedNextLab,
         useExperimentDestinationLab: Boolean(
           explicitUnstartedAfterOtherCompletion
@@ -1631,7 +1644,12 @@ function buildTrayFlowView(input = {}) {
       const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
         ? activeExperiment.routeSteps.filter(Boolean)
         : buildExperimentRouteSteps();
-      const normalizedRouteStatus = normalizeLifecycleStatus(input.location, activeExperiment?.routeStatus || input.status);
+      const explicitRouteStatus = normalizeText(activeExperiment?.routeStatus);
+      const normalizedRouteStatus = explicitRouteStatus
+        ? normalizeLifecycleStatus(input.location, explicitRouteStatus)
+        : activeExperiment?.unstarted
+          ? ""
+          : normalizeLifecycleStatus(input.location, input.status);
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
       const suppressRouteDestinationLab = Boolean(activeExperiment?.suppressDestinationLab);
       const shouldUseExperimentDestinationLab =
@@ -1698,6 +1716,9 @@ function buildTrayFlowView(input = {}) {
             steps[stepIndex].reached = true;
           }
         });
+      } else if (activeExperiment?.unstarted && !normalizedRouteStatus) {
+        currentStatus = currentExperimentLabel;
+        activeIndex = currentExperimentIndexInSteps;
       } else if (normalizedRouteStatus === "实验进行中" || normalizedRouteStatus === "实验中") {
         currentStatus = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`;
         activeIndex = currentExperimentIndexInSteps;
@@ -2473,7 +2494,6 @@ export {
   dispatchStagingSamples,
   getSampleTrayList,
   normalizeLifecycleStatus,
-  normalizeSampleRecord,
   normalizeSamplesSnapshot,
   resolveFlowStatusByLocation,
   synchronizeSamplesForTrayCodes,

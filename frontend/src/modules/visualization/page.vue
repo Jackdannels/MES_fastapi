@@ -371,6 +371,7 @@ const labScreens = computed(() => {
     experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
+    stagingEvents: snapshot[STORAGE_KEYS.staging_events],
     devices: snapshot[STORAGE_KEYS.devices],
   });
 });

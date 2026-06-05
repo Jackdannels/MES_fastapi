@@ -1,12 +1,10 @@
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
+import { TRANSFER_STATUS_ARRIVED, isTransferArrivedStatus, normalizeTaskStatusLabel } from "./statusNormalization";
 
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
-const TRANSFER_STATUS_STORED = "到货";
-const LEGACY_TRANSFER_STATUS_STORED = "已入库";
 const RETENTION_KEYWORD = "暂存间";
 const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
-  TRANSFER_STATUS_STORED,
-  LEGACY_TRANSFER_STATUS_STORED,
+  TRANSFER_STATUS_ARRIVED,
   "送至实验室",
   "实验准备就绪",
   "实验进行中",
@@ -20,7 +18,8 @@ const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 
-const isArrivedOrLaterSampleStatus = (value) => ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeText(value));
+const isArrivedOrLaterSampleStatus = (value) =>
+  ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeTaskStatusLabel(value)) || ARRIVED_OR_LATER_SAMPLE_STATUSES.has(normalizeText(value));
 
 const buildSamplesByTaskCode = (samples) => {
   const grouped = new Map();
@@ -35,7 +34,7 @@ const buildSamplesByTaskCode = (samples) => {
 };
 
 const isTaskArrived = (task, samples) => {
-  if ([TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status))) {
+  if (isTransferArrivedStatus(task?.transfer_status)) {
     return true;
   }
   const taskSamples = Array.isArray(samples) ? samples : [];
