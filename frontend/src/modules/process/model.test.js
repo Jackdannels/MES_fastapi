@@ -194,6 +194,16 @@ describe("processLabModel", () => {
       [
         { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
         { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TASK-001-TP-002" },
+      ],
+      [],
+      [],
+      [
+        {
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          tray_code: "TASK-001-TP-001",
+          run_tray_status: "实验进行中",
+        },
       ]
     );
 
@@ -208,6 +218,40 @@ describe("processLabModel", () => {
         status: "已排程",
         statusClass: "is-scheduled",
       })
+    );
+  });
+
+  test("buildProcessLabCards does not mark lab cards running from stale sample text without an active run", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Salt Lab", testType: "盐雾试验" }],
+      [{ code: "TASK-STALE", test_type: "盐雾试验" }],
+      [
+        {
+          device: "Salt Lab",
+          end_at: "2026-04-09T21:35:00Z",
+          experiment_code: "TASK-STALE-A",
+          start_at: "2026-04-09T18:05:00Z",
+          task_code: "TASK-STALE",
+        },
+      ],
+      [
+        {
+          code: "TASK-STALE-SP-001",
+          task_code: "TASK-STALE",
+          status: "实验进行中",
+          trays: [{ tray_code: "TASK-STALE-TP-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T18:30:00Z"),
+      [{ task_code: "TASK-STALE", experiment_code: "TASK-STALE-A", experiment_name: "盐雾试验" }],
+      [{ task_code: "TASK-STALE", experiment_code: "TASK-STALE-A", tray_code: "TASK-STALE-TP-001" }],
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        status: "已排程",
+        statusClass: "is-scheduled",
+      }),
     );
   });
 
@@ -245,6 +289,49 @@ describe("processLabModel", () => {
         taskCode: "-",
         targetExperiment: "未分配",
       })
+    );
+  });
+
+  test("buildProcessLabCards keeps scoped trays visible when only the experiment global status is completed", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Impact Lab 1", testType: "冲击试验" }],
+      [{ code: "TASK-GLOBAL", test_type: "冲击试验" }],
+      [
+        {
+          device: "Impact Lab 1",
+          end_at: "2026-04-09T12:00:00Z",
+          experiment_code: "TASK-GLOBAL-A",
+          start_at: "2026-04-09T08:00:00Z",
+          task_code: "TASK-GLOBAL",
+        },
+      ],
+      [
+        {
+          code: "TASK-GLOBAL-SP-001",
+          task_code: "TASK-GLOBAL",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TASK-GLOBAL-TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T09:00:00Z"),
+      [
+        {
+          experiment_code: "TASK-GLOBAL-A",
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+          task_code: "TASK-GLOBAL",
+        },
+      ],
+      [{ task_code: "TASK-GLOBAL", experiment_code: "TASK-GLOBAL-A", tray_code: "TASK-GLOBAL-TP-001" }],
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        hasTask: true,
+        status: "已排程",
+        statusClass: "is-scheduled",
+        taskCode: "TASK-GLOBAL",
+      }),
     );
   });
 
@@ -351,6 +438,91 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards removes a completed shared-tray experiment from history while the tray is ready for the next lab", () => {
+    const cards = buildProcessLabCards(
+      [
+        { name: "冲击一室", testType: "冲击试验" },
+        { name: "温度冲击一室", testType: "温度冲击试验" },
+      ],
+      [{ code: "TASK-SHARED", test_type: "冲击试验 / 温度冲击试验" }],
+      [
+        {
+          device: "冲击一室",
+          end_at: "2026-06-04T12:00:00Z",
+          experiment_code: "EXP-IMPACT",
+          start_at: "2026-06-04T08:00:00Z",
+          task_code: "TASK-SHARED",
+        },
+        {
+          device: "温度冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-TEMP",
+          start_at: "2026-06-04T12:30:00Z",
+          task_code: "TASK-SHARED",
+        },
+      ],
+      [
+        {
+          code: "SP-SHARED",
+          history: [
+            {
+              action: "实验完成",
+              detail: "TASK-SHARED / 冲击试验 / 实验已完成",
+              status: "实验已完成",
+              time: "2026-06-04T11:00:00Z",
+            },
+          ],
+          location: "冲击一室",
+          status: "实验准备就绪",
+          task_code: "TASK-SHARED",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_experiment_code: "EXP-TEMP",
+              target_lab: "温度冲击一室",
+              tray_code: "TP-SHARED",
+            },
+          ],
+        },
+      ],
+      Date.parse("2026-06-04T12:45:00Z"),
+      [
+        {
+          experiment_code: "EXP-IMPACT",
+          experiment_name: "冲击试验",
+          status: "已排程",
+          task_code: "TASK-SHARED",
+        },
+        {
+          experiment_code: "EXP-TEMP",
+          experiment_name: "温度冲击试验",
+          status: "已排程",
+          task_code: "TASK-SHARED",
+        },
+      ],
+      [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", tray_code: "TP-SHARED" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", tray_code: "TP-SHARED" },
+      ]
+    );
+
+    expect(cards.find((card) => card.name === "冲击一室")).toEqual(
+      expect.objectContaining({
+        hasTask: false,
+        status: "空闲",
+        statusClass: "is-idle",
+      })
+    );
+    expect(cards.find((card) => card.name === "温度冲击一室")).toEqual(
+      expect.objectContaining({
+        experimentCode: "EXP-TEMP",
+        hasTask: true,
+        status: "已排程",
+      })
+    );
+  });
+
   test("buildProcessLabCards does not mark future labs running when shared trays are still located in the current lab", () => {
     const cards = buildProcessLabCards(
       [
@@ -409,6 +581,22 @@ describe("processLabModel", () => {
         { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-A", tray_code: "SYLU-2026-03-002-TP-002" },
         { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-B", tray_code: "SYLU-2026-03-002-TP-002" },
         { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-C", tray_code: "SYLU-2026-03-002-TP-001" },
+      ],
+      [],
+      [],
+      [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-001",
+          run_tray_status: "实验进行中",
+        },
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-002",
+          run_tray_status: "实验进行中",
+        },
       ]
     );
 

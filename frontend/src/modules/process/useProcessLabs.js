@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
@@ -37,6 +38,7 @@ const PROCESS_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiments,
 ]);
 const TRAY_FLOW_STATUS_RANK = new Map(
@@ -140,19 +142,25 @@ const normalizeLocationList = (locations) =>
     left.localeCompare(right, "zh-Hans-CN"),
   );
 
+const trayLabNames = (trayRow) =>
+  normalizeLocationList([
+    ...asArray(trayRow?.locationNames),
+    ...asArray(trayRow?.targetLabNames),
+  ]);
+
 const trayBelongsToLab = (trayRow, labName) => {
   const normalizedLabName = normalizeText(labName);
   if (!normalizedLabName) {
     return false;
   }
-  const locationNames = normalizeLocationList(trayRow?.locationNames);
-  if (locationNames.length === 0) {
+  const labNames = trayLabNames(trayRow);
+  if (labNames.length === 0) {
     return false;
   }
-  return locationNames.includes(normalizedLabName);
+  return labNames.includes(normalizedLabName);
 };
 
-const trayHasUnknownLocation = (trayRow) => normalizeLocationList(trayRow?.locationNames).length === 0;
+const trayHasUnknownLocation = (trayRow) => trayLabNames(trayRow).length === 0;
 
 const resolveTrayFlowStatusRank = (location, status) => {
   const normalizedStatus = normalizeLifecycleStatus(location, status);
@@ -187,6 +195,7 @@ function useProcessLabs(options = {}) {
       STORAGE_KEYS.samples,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiments,
     ]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
@@ -222,6 +231,7 @@ function useProcessLabs(options = {}) {
   const samples = ref([]);
   const experimentTrays = ref([]);
   const experimentRuns = ref([]);
+  const experimentRunTrays = ref([]);
   const experiments = ref([]);
   const transferWorkspaceByTaskCode = ref({});
   const activeFilter = ref(PROCESS_FILTERS.overview);
@@ -295,44 +305,25 @@ function useProcessLabs(options = {}) {
     );
     return normalizeText(matchedExperiment?.experiment_name);
   };
-  const getExperimentLabels = (taskCode, experimentCode) => {
-    const normalizedTaskCode = normalizeText(taskCode);
-    const normalizedExperimentCode = normalizeText(experimentCode);
-    if (!normalizedTaskCode || !normalizedExperimentCode) {
-      return [];
-    }
-    const experimentName = getScheduledExperimentName(normalizedTaskCode, normalizedExperimentCode);
-    return Array.from(new Set([normalizedExperimentCode, experimentName].map(normalizeText).filter(Boolean)));
-  };
-  const historyEntryText = (entry) =>
-    [entry?.detail, entry?.experiment_code, entry?.experimentCode, entry?.experiment_name, entry?.experimentName]
-      .map(normalizeText)
-      .filter(Boolean)
-      .join(" / ");
-  const historyEntryMatchesExperiment = (entry, taskCode, experimentCode) => {
-    const normalizedTaskCode = normalizeText(taskCode);
-    const text = historyEntryText(entry);
-    if (!text || (normalizedTaskCode && !text.includes(normalizedTaskCode))) {
+  const historyMatchesExperimentStatus = ({ entry, experimentCode, experimentName, status, taskCode }) => {
+    const normalizedStatus = normalizeText(status);
+    if (!normalizedStatus || normalizeText(entry?.status) !== normalizedStatus) {
       return false;
     }
-    return getExperimentLabels(taskCode, experimentCode).some((label) => text.includes(label));
-  };
-  const resolveHistoryExperimentName = (entry, taskCode) => {
-    const text = historyEntryText(entry);
-    if (!text) {
-      return "";
+    const entryExperimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    if (experimentCode && entryExperimentCode === experimentCode) {
+      return true;
     }
-    const matchedExperiment = experiments.value.find((experiment) => {
-      if (normalizeText(experiment?.task_code) !== normalizeText(taskCode)) {
-        return false;
-      }
-      const labels = [
-        normalizeText(experiment?.experiment_code),
-        normalizeText(experiment?.experiment_name),
-      ].filter(Boolean);
-      return labels.some((label) => text.includes(label));
-    });
-    return normalizeText(matchedExperiment?.experiment_name) || normalizeText(matchedExperiment?.experiment_code);
+    const segments = normalizeText(entry?.detail)
+      .split("/")
+      .map((segment) => normalizeText(segment))
+      .filter(Boolean);
+    return (
+      segments.length >= 3
+      && segments[0] === normalizeText(taskCode)
+      && segments[1] === normalizeText(experimentName)
+      && segments[2] === normalizedStatus
+    );
   };
   const isSharedExperimentTray = (taskCode, trayCode) => {
     const experimentCodes = new Set();
@@ -347,35 +338,6 @@ function useProcessLabs(options = {}) {
     });
     return experimentCodes.size > 1;
   };
-  const findLatestTrayExperimentHistory = (taskCode, trayCode) => {
-    const matchedEntries = [];
-    getTaskSamples(taskCode).forEach((sample) => {
-      const hasTray = asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === normalizeText(trayCode));
-      if (!hasTray) {
-        return;
-      }
-      asArray(sample?.history).forEach((entry, index) => {
-        const status = normalizeText(entry?.status);
-        const detail = normalizeText(entry?.detail);
-        if (
-          status !== TRAY_STATUS_READY
-          && !RUNNING_TRAY_STATUSES.has(status)
-          && !detail.includes(TRAY_STATUS_READY)
-          && !detail.includes(TRAY_STATUS_RUNNING)
-          && !detail.includes("实验中")
-        ) {
-          return;
-        }
-        matchedEntries.push({ entry, index, time: parseScheduleTime(entry?.time) });
-      });
-    });
-    matchedEntries.sort((left, right) => {
-      const leftTime = Number.isFinite(left.time) ? left.time : 0;
-      const rightTime = Number.isFinite(right.time) ? right.time : 0;
-      return rightTime - leftTime || left.index - right.index;
-    });
-    return matchedEntries[0]?.entry || null;
-  };
   const resolveReadyBlockedReason = (row, options = {}) => {
     if (!row?.isReady) {
       return "";
@@ -386,14 +348,13 @@ function useProcessLabs(options = {}) {
     if (!taskCode || !experimentCode || !trayCode || !isSharedExperimentTray(taskCode, trayCode)) {
       return "";
     }
-
-    const latestHistory = findLatestTrayExperimentHistory(taskCode, trayCode);
-    if (latestHistory) {
-      if (historyEntryMatchesExperiment(latestHistory, taskCode, experimentCode)) {
-        return "";
-      }
-      const experimentName = resolveHistoryExperimentName(latestHistory, taskCode);
-      return `托盘正在${experimentName || "其他实验"}中，不能开始当前实验`;
+    const targetExperimentCodes = asArray(row?.targetExperimentCodes).map(normalizeText).filter(Boolean);
+    if (row?.hasCurrentExperimentReadyEvidence === true) {
+      return "";
+    }
+    if (targetExperimentCodes.length > 0 && !targetExperimentCodes.includes(experimentCode)) {
+      const targetExperimentName = getScheduledExperimentName(taskCode, targetExperimentCodes[0]);
+      return `托盘正在${targetExperimentName || "其他实验"}中，不能开始当前实验`;
     }
 
     const labName = normalizeText(options.labName);
@@ -452,6 +413,31 @@ function useProcessLabs(options = {}) {
     const normalizedExperimentCode = normalizeText(experimentCode);
     const trayStatusMap = new Map();
     if (!normalizedTaskCode || !normalizedExperimentCode) {
+      return trayStatusMap;
+    }
+
+    const scopedRunTrays = experimentRunTrays.value.filter((relation) => (
+      normalizeText(relation?.task_code) === normalizedTaskCode
+      && normalizeText(relation?.experiment_code) === normalizedExperimentCode
+    ));
+    if (scopedRunTrays.length > 0) {
+      scopedRunTrays.forEach((relation) => {
+        const trayCode = normalizeText(relation?.tray_code || relation?.tray_no);
+        if (!trayCode) {
+          return;
+        }
+        const status = normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
+        const isRunning = RUNNING_TRAY_STATUSES.has(status);
+        const isCompleted = COMPLETED_EXPERIMENT_RUN_STATUSES.has(status);
+        if (!isRunning && !isCompleted) {
+          return;
+        }
+        const current = trayStatusMap.get(trayCode) || { isCompleted: false, isRunning: false };
+        trayStatusMap.set(trayCode, {
+          isCompleted: current.isCompleted || isCompleted,
+          isRunning: current.isRunning || isRunning,
+        });
+      });
       return trayStatusMap;
     }
 
@@ -565,6 +551,7 @@ function useProcessLabs(options = {}) {
     const scopedTrayCodes = collectExperimentTrayCodes(taskCode, experimentCode);
     const scopedTrayCodeSet = scopedTrayCodes.length ? new Set(scopedTrayCodes) : null;
     const experimentRunTrayStatusMap = buildExperimentRunTrayStatusMap(taskCode, experimentCode);
+    const currentExperimentName = getScheduledExperimentName(taskCode, experimentCode);
     const fallbackContext = buildTaskFallbackTrayContext(taskCode, scopedTrayCodeSet);
     const workspaceTrays = asArray(getTransferWorkspace(taskCode)?.assignedTrays);
 
@@ -575,6 +562,9 @@ function useProcessLabs(options = {}) {
         owners: [],
         sampleCodes: [],
         status: "",
+        targetExperimentCodes: [],
+        targetLabs: [],
+        hasCurrentExperimentReadyEvidence: false,
         trayCode,
       });
     });
@@ -600,6 +590,9 @@ function useProcessLabs(options = {}) {
             owners: [],
             sampleCodes: [],
             status: normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)),
+            targetExperimentCodes: [],
+            targetLabs: [],
+            hasCurrentExperimentReadyEvidence: false,
             trayCode,
           });
         }
@@ -610,6 +603,20 @@ function useProcessLabs(options = {}) {
           row.sampleCodes.push(sampleCode);
         }
         const nextStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
+        if (
+          nextStatus === TRAY_STATUS_READY
+          && asArray(sample?.history).some((entry) =>
+            historyMatchesExperimentStatus({
+              entry,
+              experimentCode,
+              experimentName: currentExperimentName,
+              status: TRAY_STATUS_READY,
+              taskCode,
+            }),
+          )
+        ) {
+          row.hasCurrentExperimentReadyEvidence = true;
+        }
         const currentRank = resolveTrayFlowStatusRank(sample?.location, row.status);
         const nextRank = resolveTrayFlowStatusRank(sample?.location, nextStatus);
         if (!row.status || nextRank >= currentRank) {
@@ -617,6 +624,8 @@ function useProcessLabs(options = {}) {
         }
         row.locations.push(normalizeText(sample?.location));
         row.owners.push(normalizeText(sample?.owner));
+        row.targetExperimentCodes.push(normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode));
+        row.targetLabs.push(normalizeText(tray?.target_lab || tray?.targetLab));
         row.flowStatuses.push(
           resolveFlowStatusByLocation(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)),
         );
@@ -639,6 +648,9 @@ function useProcessLabs(options = {}) {
           owners: [],
           sampleCodes: [],
           status: "",
+          targetExperimentCodes: [],
+          targetLabs: [],
+          hasCurrentExperimentReadyEvidence: false,
           trayCode,
         });
       }
@@ -665,11 +677,12 @@ function useProcessLabs(options = {}) {
         const status = normalizeText(row.status) || fallbackContext.status;
         const sampleCodes = row.sampleCodes.slice().sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
         const runTrayStatus = experimentRunTrayStatusMap.get(row.trayCode);
-        const isRunning = RUNNING_TRAY_STATUSES.has(status) || Boolean(runTrayStatus?.isRunning);
+        const isRunning = Boolean(runTrayStatus?.isRunning);
+        const isCompleted = !isRunning && (COMPLETED_TRAY_STATUSES.has(status) || Boolean(runTrayStatus?.isCompleted));
         return {
           flowStatus: row.flowStatuses.length ? summarizeUniqueTexts(row.flowStatuses) : toText(fallbackContext.flowStatus),
-          isCompleted: !isRunning && (COMPLETED_TRAY_STATUSES.has(status) || Boolean(runTrayStatus?.isCompleted)),
-          isReady: status === TRAY_STATUS_READY,
+          isCompleted,
+          isReady: !isCompleted && status === TRAY_STATUS_READY,
           isRunning,
           locationNames: normalizeLocationList(row.locations),
           locationSummary: summarizeUniqueTexts(row.locations, fallbackContext.locationSummary),
@@ -678,6 +691,9 @@ function useProcessLabs(options = {}) {
           sampleCount: sampleCodes.length,
           sampleSummary: sampleCodes.length ? sampleCodes.join("、") : "-",
           status,
+          targetExperimentCodes: normalizeLocationList(row.targetExperimentCodes),
+          targetLabNames: normalizeLocationList(row.targetLabs),
+          hasCurrentExperimentReadyEvidence: row.hasCurrentExperimentReadyEvidence === true,
           trayCode: row.trayCode,
         };
       })
@@ -700,8 +716,8 @@ function useProcessLabs(options = {}) {
     const rows = asArray(trayRows);
     const normalizedLabName = normalizeText(options.labName);
     const matchesLab = (row) =>
-      !normalizedLabName || trayBelongsToLab(row, normalizedLabName) || trayHasUnknownLocation(row);
-    const readyTrayCandidates = rows.filter((row) => row.isReady);
+      row.isRunning || !normalizedLabName || trayBelongsToLab(row, normalizedLabName) || trayHasUnknownLocation(row);
+    const readyTrayCandidates = rows.filter((row) => row.isReady && !row.isCompleted);
     const blockedReadyRows = readyTrayCandidates
       .map((row) => ({ reason: resolveReadyBlockedReason(row, options), row }))
       .filter((entry) => entry.reason);
@@ -716,6 +732,7 @@ function useProcessLabs(options = {}) {
       readyTrayCodes: readyTrayRows.map((row) => row.trayCode),
       readyTrayCount: readyTrayRows.length,
       remainingTrayCount: remainingTrayRows.length,
+      runningTrayRows,
       runningTrayCount: runningTrayRows.length,
       startDisabledReason:
         runningTrayRows.length > 0
@@ -799,10 +816,10 @@ function useProcessLabs(options = {}) {
     const hasScopedExperimentTrays = collectExperimentTrayCodes(taskCode, activeExperimentCode).length > 0;
     const { trayCodes, trayCount, traySummary } = buildTraySummary(taskCode, task, activeExperimentCode);
     const trayRows = buildTrayRows(taskCode, task, activeExperimentCode);
-    const runningTrayRows = trayRows.filter((row) => row.isRunning);
+    const actionState = buildStartExperimentState(trayRows, { experimentCode: activeExperimentCode, labName, taskCode });
+    const runningTrayRows = actionState.runningTrayRows;
     const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
-    const actionState = buildStartExperimentState(trayRows, { experimentCode: activeExperimentCode, labName, taskCode });
     const activeTray =
       trayRows.find((row) => row.trayCode === selectedTrayCode.value) ||
       runningTrayRows[0] ||
@@ -810,6 +827,8 @@ function useProcessLabs(options = {}) {
       remainingTrayRows[0] ||
       trayRows[0] ||
       null;
+    const selectedTrayFlowExperimentCode =
+      activeTray && asArray(activeTray.targetLabNames).length > 0 ? "" : activeExperimentCode;
     const filteredSampleCount = Array.from(new Set(trayRows.flatMap((row) => row.sampleCodes))).length;
 
     return {
@@ -832,7 +851,9 @@ function useProcessLabs(options = {}) {
       selectedTrayCode: activeTray?.trayCode || "",
       selectedTrayFlow: activeTray
         ? buildTrayFlowView({
-            currentExperimentCode: activeExperimentCode,
+            currentExperimentCode: selectedTrayFlowExperimentCode,
+            experimentRuns: experimentRuns.value,
+            experimentRunTrays: experimentRunTrays.value,
             experimentTrays: experimentTrays.value,
             experiments: experiments.value,
             location: activeTray.locationSummary,
@@ -873,7 +894,18 @@ function useProcessLabs(options = {}) {
           )
         : schedules.value;
       return (
-        buildProcessLabCards([lab], tasks.value, sourceSchedules, samples.value, currentTimeValue(), experiments.value, experimentTrays.value, devices.value)[0]
+        buildProcessLabCards(
+          [lab],
+          tasks.value,
+          sourceSchedules,
+          samples.value,
+          currentTimeValue(),
+          experiments.value,
+          experimentTrays.value,
+          devices.value,
+          experimentRuns.value,
+          experimentRunTrays.value,
+        )[0]
         || lab
       );
     };
@@ -955,6 +987,8 @@ function useProcessLabs(options = {}) {
       experiments.value,
       experimentTrays.value,
       devices.value,
+      experimentRuns.value,
+      experimentRunTrays.value,
     ).map(enrichLabCard);
   };
 
@@ -1016,6 +1050,7 @@ function useProcessLabs(options = {}) {
       samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
       experimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       experimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+      experimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
       experiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       rebuildLabCards();
       if (taskDrawerOpen.value) {
@@ -1151,13 +1186,15 @@ function useProcessLabs(options = {}) {
 
     const startedTrayCodes = new Set(actionState.readyTrayCodes);
     const startedTrayText = actionState.readyTrayCodes.join("、");
-    const timestamp = new Date().toISOString();
-    const currentTime = Date.parse(timestamp);
+    const now = new Date();
+    const timestamp = formatLocalDateTime(now);
+    const currentTime = now.getTime();
     const targetSchedule = resolveScheduledRecordForLab(activeLab, taskCode, currentTime, detail?.activeExperimentCode);
     const startedExperimentName = detail?.targetExperiment || detail?.testType || "";
     const durationHours = resolveScheduleDurationHours(targetSchedule);
-    const plannedEndAt = durationHours > 0 ? new Date(currentTime + durationHours * 60 * 60 * 1000).toISOString() : timestamp;
+    const plannedEndAt = durationHours > 0 ? formatLocalDateTime(new Date(currentTime + durationHours * 60 * 60 * 1000)) : timestamp;
     const nextSamples = synchronizeTaskSamplesForTrayCodes({
+      clearTrayTarget: true,
       historyAction: "开始实验",
       historyDetail: `${taskCode} / ${startedExperimentName || "-"} / ${TRAY_STATUS_RUNNING} / 托盘：${startedTrayText}`,
       location: normalizeText(activeLab?.name),
@@ -1176,6 +1213,34 @@ function useProcessLabs(options = {}) {
           }
         : task,
     );
+    const activeExperimentCode = normalizeText(detail?.activeExperimentCode);
+    const activeScheduleId = normalizeText(targetSchedule?.id);
+    const nextSchedules = schedules.value.map((schedule) =>
+      (
+        (activeScheduleId && normalizeText(schedule?.id) === activeScheduleId)
+        || (
+          normalizeText(schedule?.task_code) === taskCode
+          && normalizeText(schedule?.experiment_code) === activeExperimentCode
+          && normalizeText(schedule?.device) === normalizeText(activeLab?.name)
+        )
+      )
+        ? {
+            ...schedule,
+            status: TRAY_STATUS_RUNNING,
+            updated_at: timestamp,
+          }
+        : schedule,
+    );
+    const nextExperiments = experiments.value.map((experiment) =>
+      normalizeText(experiment?.task_code) === taskCode && normalizeText(experiment?.experiment_code) === activeExperimentCode
+        ? {
+            ...experiment,
+            actual_start_time: normalizeText(experiment?.actual_start_time) || timestamp,
+            status: TRAY_STATUS_RUNNING,
+            updated_at: timestamp,
+          }
+        : experiment,
+    );
     const runNo = `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
     const nextExperimentRuns = [
       ...experimentRuns.value,
@@ -1184,28 +1249,50 @@ function useProcessLabs(options = {}) {
         run_no: runNo,
         schedule_id: normalizeText(targetSchedule?.id),
         task_code: taskCode,
-        experiment_code: normalizeText(detail?.activeExperimentCode),
+        experiment_code: activeExperimentCode,
         device: normalizeText(activeLab?.name),
         tray_codes: Array.from(startedTrayCodes),
         status: TRAY_STATUS_RUNNING,
         started_at: timestamp,
+        planned_hours: durationHours,
         planned_end_at: plannedEndAt,
         ended_at: "",
         created_at: timestamp,
         updated_at: timestamp,
       },
     ];
+    const nextExperimentRunTrays = [
+      ...experimentRunTrays.value,
+      ...Array.from(startedTrayCodes).map((trayCode) => ({
+        id: `${runNo}:${trayCode}`,
+        run_no: runNo,
+        task_code: taskCode,
+        experiment_code: activeExperimentCode,
+        tray_code: trayCode,
+        status: TRAY_STATUS_RUNNING,
+        run_tray_status: TRAY_STATUS_RUNNING,
+        started_at: timestamp,
+        ended_at: "",
+        created_at: timestamp,
+        updated_at: timestamp,
+      })),
+    ];
 
     await persistSnapshot({
       [STORAGE_KEYS.samples]: nextSamples,
-      [STORAGE_KEYS.schedules]: schedules.value,
+      [STORAGE_KEYS.schedules]: nextSchedules,
       [STORAGE_KEYS.tasks]: nextTasks,
+      [STORAGE_KEYS.experiments]: nextExperiments,
       [STORAGE_KEYS.experiment_runs]: nextExperimentRuns,
+      [STORAGE_KEYS.experiment_run_trays]: nextExperimentRunTrays,
     });
 
     samples.value = nextSamples;
+    schedules.value = nextSchedules;
     tasks.value = nextTasks;
+    experiments.value = nextExperiments;
     experimentRuns.value = nextExperimentRuns;
+    experimentRunTrays.value = nextExperimentRunTrays;
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }

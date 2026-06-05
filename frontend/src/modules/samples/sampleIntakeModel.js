@@ -1,4 +1,6 @@
 // 提供样品收样子视图所需的表单工厂和持久化辅助函数。
+import { formatLocalDateTime } from "@/lib/dateTime";
+
 const STATUS_TRANSIT = "样品运输中";
 const STATUS_WAITING = "待排程";
 
@@ -7,7 +9,7 @@ const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
 // 新样品和历史记录都使用时间戳可读 ID，便于前端调试。
-const createId = (prefix, now = new Date().toISOString()) => {
+const createId = (prefix, now = formatLocalDateTime()) => {
   const safeNow = String(now).replace(/[^0-9]/g, "").slice(0, 14) || "0";
   const random = Math.floor(Math.random() * 1000)
     .toString()
@@ -80,7 +82,7 @@ const buildFallbackSampleCode = (now = new Date()) => `SP-${String(now.getTime()
 function submitSampleIntake(input = {}) {
   const form = input.form && typeof input.form === "object" ? input.form : createSampleIntakeForm();
   const mode = normalizeText(input.mode) === "draft" ? "draft" : "submit";
-  const now = input.now || new Date().toISOString();
+  const now = input.now || formatLocalDateTime();
   const tasks = asArray(input.tasks).map((task) => ({ ...task }));
   const samples = asArray(input.samples).map((sample) => ({ ...sample }));
   const taskCode = normalizeText(form.task_code);

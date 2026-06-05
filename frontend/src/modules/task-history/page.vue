@@ -185,11 +185,15 @@ const historySearch = ref("");
 const historyDateRange = ref("");
 const historyPage = ref(1);
 const experiments = ref([]);
+const experimentRuns = ref([]);
+const experimentRunTrays = ref([]);
 const experimentTrays = ref([]);
 const schedules = ref([]);
 const { loadSnapshot } = useStorageSnapshot([
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
 ]);
@@ -225,7 +229,8 @@ const selectedTrayFlow = computed(() => {
     return buildTrayFlowView();
   }
   return buildTrayFlowView({
-    currentExperimentCode: "",
+    experimentRuns: experimentRuns.value,
+    experimentRunTrays: experimentRunTrays.value,
     experimentTrays: experimentTrays.value,
     experiments: experiments.value,
     location: selectedTray.value.status,
@@ -279,6 +284,8 @@ const refreshHistoryData = async () => {
     tasks.value = Array.isArray(loadedTasks) ? loadedTasks : [];
     samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+    experimentRuns.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+    experimentRunTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
     experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
     schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     loadError.value = "";
@@ -293,6 +300,8 @@ useStorageSnapshotRefresh({
     STORAGE_KEYS.tasks,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.staging_events,

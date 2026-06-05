@@ -1,4 +1,5 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./lib/apiBase.js";
+import { formatLocalDateTime } from "./lib/dateTime.js";
 import { MODULE_ROUTES } from "./lib/moduleCatalog.js";
 
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
@@ -157,7 +158,7 @@ async function loginWithCredentials(username, password, moduleKey) {
     const session = normalizeAuthSession({
       username: payload.username || user,
       module: payload.module || module,
-      logged_at: payload.logged_at || new Date().toISOString(),
+      logged_at: payload.logged_at || formatLocalDateTime(),
     });
     if (!session) {
       clearAuthSession();

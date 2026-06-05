@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from threading import Lock
 from typing import Any, Dict, Iterable
 
@@ -23,6 +23,7 @@ from app.core.storage_backend import (
     normalize_experiment_status_text,
     normalize_task_status_text,
 )
+from app.core.time_utils import BEIJING_TZ, format_business_datetime, now_business_datetime, parse_business_datetime
 from app.core.master_data import DEFAULT_LABS, DEFAULT_TEST_TYPES
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
@@ -38,15 +39,13 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.samples",
     "mes.experiments",
     "mes.experiment_runs",
+    "mes.experiment_run_trays",
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
 SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", "mes.staging_events", STORAGE_META_KEY)
 RETENTION_KEYWORD = "暂存间"
 SAMPLE_TASK_CODE_PATTERN = re.compile(r"^(?P<task_code>.+)-SP-\d+$")
-BEIJING_TZ = timezone(timedelta(hours=8))
-
-
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -77,40 +76,15 @@ def normalize_storage_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def parse_storage_datetime(value: Any) -> datetime | None:
-    text = normalize_text(value)
-    if not text:
-        return None
+    return parse_business_datetime(value)
 
-    iso_candidate = text.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(iso_candidate)
-    except ValueError:
-        parsed = None
 
-    if parsed is None:
-        for pattern in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
-            try:
-                parsed = datetime.strptime(text, pattern)
-                break
-            except ValueError:
-                continue
-
-    if parsed is None:
-        return None
-
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(BEIJING_TZ).replace(tzinfo=None)
-
-    return parsed
+def current_beijing_datetime() -> datetime:
+    return now_business_datetime()
 
 
 def format_iso_storage_datetime(value: Any) -> str:
-    parsed = parse_storage_datetime(value) if not isinstance(value, datetime) else value
-    if parsed is None:
-        return ""
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(BEIJING_TZ).replace(tzinfo=None)
-    return f"{parsed.strftime('%Y-%m-%dT%H:%M:%S')}+08:00"
+    return format_business_datetime(value)
 
 
 def format_display_storage_datetime(value: Any) -> str:
@@ -231,7 +205,7 @@ def decode_sample_meta(value: Any) -> dict[str, str]:
 
 
 def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     return {
         "task_no": normalize_text(task.get("code")),
         "task_source_type": normalize_text(task.get("source")),
@@ -253,8 +227,8 @@ def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
         "conditions_text": normalize_text(task.get("conditions")),
         "attachment_path": normalize_text(task.get("attachment")),
         "remark": normalize_text(task.get("remark")),
-        "created_at": parse_storage_datetime(task.get("created_at")) or now_utc,
-        "updated_at": parse_storage_datetime(task.get("updated_at")) or now_utc,
+        "created_at": parse_storage_datetime(task.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(task.get("updated_at")) or now_beijing,
     }
 
 
@@ -301,7 +275,7 @@ def build_storage_task_item(row: Dict[str, Any], tray_codes: Iterable[str] | Non
 
 
 def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     return {
         "experiment_no": normalize_text(experiment.get("experiment_code")),
         "task_no": normalize_text(experiment.get("task_code")),
@@ -311,8 +285,8 @@ def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
         "planned_hours": parse_float_value(experiment.get("planned_hours")),
         "experiment_status": normalize_experiment_status(experiment.get("status")),
         "unscheduled_since": parse_storage_datetime(experiment.get("unscheduled_since")),
-        "created_at": parse_storage_datetime(experiment.get("created_at")) or now_utc,
-        "updated_at": parse_storage_datetime(experiment.get("updated_at")) or now_utc,
+        "created_at": parse_storage_datetime(experiment.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(experiment.get("updated_at")) or now_beijing,
     }
 
 
@@ -334,13 +308,13 @@ def build_storage_experiment_item(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_experiment_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     return {
         "experiment_no": normalize_text(relation.get("experiment_code")),
         "task_no": normalize_text(relation.get("task_code")),
         "tray_no": normalize_text(relation.get("tray_code")),
-        "created_at": parse_storage_datetime(relation.get("created_at")) or now_utc,
-        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_utc,
+        "created_at": parse_storage_datetime(relation.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_beijing,
     }
 
 
@@ -358,13 +332,13 @@ def build_storage_experiment_tray_item(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_experiment_sample_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     return {
         "experiment_no": normalize_text(relation.get("experiment_code")),
         "task_no": normalize_text(relation.get("task_code")),
         "sample_no": normalize_text(relation.get("sample_code")),
-        "created_at": parse_storage_datetime(relation.get("created_at")) or now_utc,
-        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_utc,
+        "created_at": parse_storage_datetime(relation.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_beijing,
     }
 
 
@@ -382,7 +356,7 @@ def build_storage_experiment_sample_item(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def build_experiment_run_insert_row(run: Dict[str, Any]) -> Dict[str, Any]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     run_no = normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
     return {
         "run_no": run_no,
@@ -395,8 +369,8 @@ def build_experiment_run_insert_row(run: Dict[str, Any]) -> Dict[str, Any]:
         "started_at": parse_storage_datetime(run.get("started_at")),
         "planned_end_at": parse_storage_datetime(run.get("planned_end_at")),
         "ended_at": parse_storage_datetime(run.get("ended_at")),
-        "created_at": parse_storage_datetime(run.get("created_at")) or now_utc,
-        "updated_at": parse_storage_datetime(run.get("updated_at")) or now_utc,
+        "created_at": parse_storage_datetime(run.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(run.get("updated_at")) or now_beijing,
     }
 
 
@@ -421,8 +395,42 @@ def build_storage_experiment_run_item(row: Dict[str, Any], tray_codes: list[str]
     }
 
 
+def build_storage_experiment_run_tray_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    relation_id = normalize_text(row.get("relation_id"))
+    run_no = normalize_text(row.get("run_no"))
+    tray_no = normalize_text(row.get("tray_no"))
+    return {
+        "id": relation_id or f"{run_no}:{tray_no}",
+        "run_no": run_no,
+        "task_code": normalize_text(row.get("task_no")),
+        "experiment_code": normalize_text(row.get("experiment_no")),
+        "tray_code": tray_no,
+        "status": normalize_experiment_status(row.get("run_tray_status") or row.get("status")),
+        "run_tray_status": normalize_experiment_status(row.get("run_tray_status") or row.get("status")),
+        "started_at": format_iso_storage_datetime(row.get("started_at")),
+        "ended_at": format_iso_storage_datetime(row.get("ended_at")),
+        "created_at": format_iso_storage_datetime(row.get("created_at")),
+        "updated_at": format_iso_storage_datetime(row.get("updated_at")),
+    }
+
+
+def build_experiment_run_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
+    now_beijing = current_beijing_datetime()
+    return {
+        "run_no": normalize_text(relation.get("run_no")) or normalize_text(relation.get("runNo")),
+        "task_no": normalize_text(relation.get("task_code") or relation.get("task_no")),
+        "experiment_no": normalize_text(relation.get("experiment_code") or relation.get("experiment_no")),
+        "tray_no": normalize_text(relation.get("tray_code") or relation.get("tray_no")),
+        "run_tray_status": normalize_experiment_status(relation.get("run_tray_status") or relation.get("runTrayStatus") or relation.get("status")),
+        "started_at": parse_storage_datetime(relation.get("started_at")),
+        "ended_at": parse_storage_datetime(relation.get("ended_at")),
+        "created_at": parse_storage_datetime(relation.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(relation.get("updated_at")) or now_beijing,
+    }
+
+
 def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str, Any]]:
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    now_beijing = current_beijing_datetime()
     run_no = normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
     task_no = normalize_text(run.get("task_code"))
     experiment_no = normalize_text(run.get("experiment_code"))
@@ -446,8 +454,8 @@ def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str,
                 "run_tray_status": status,
                 "started_at": started_at,
                 "ended_at": ended_at,
-                "created_at": parse_storage_datetime(run.get("created_at")) or now_utc,
-                "updated_at": parse_storage_datetime(run.get("updated_at")) or now_utc,
+                "created_at": parse_storage_datetime(run.get("created_at")) or now_beijing,
+                "updated_at": parse_storage_datetime(run.get("updated_at")) or now_beijing,
             }
         )
     return rows
@@ -892,8 +900,8 @@ def build_sample_insert_row(sample: Dict[str, Any]) -> Dict[str, Any]:
         "location_desc": normalize_text(sample.get("location")),
         "flow_status": normalize_experiment_status_text(sample.get("flow_status")),
         "remark": encode_sample_meta(owner=sample.get("owner"), remark=sample.get("remark")),
-        "created_at": parse_storage_datetime(sample.get("created_at")) or datetime.now(timezone.utc).replace(tzinfo=None),
-        "updated_at": parse_storage_datetime(sample.get("updated_at")) or datetime.now(timezone.utc).replace(tzinfo=None),
+        "created_at": parse_storage_datetime(sample.get("created_at")) or current_beijing_datetime(),
+        "updated_at": parse_storage_datetime(sample.get("updated_at")) or current_beijing_datetime(),
     }
 
 
@@ -922,9 +930,9 @@ def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) 
         tray_match = re.search(r"(?P<tray_code>\S+-TP-\d+)", detail)
         tray_code = normalize_text(tray_match.group("tray_code")) if tray_match else ""
         target_lab = (
-            extract_dispatch_target_lab(detail, tray_code)
-            or normalize_text(event.get("target_lab") or event.get("targetLab"))
+            normalize_text(event.get("target_lab") or event.get("targetLab"))
             or normalize_text(event.get("location") or event.get("location_desc"))
+            or extract_dispatch_target_lab(detail, tray_code)
         )
         if not tray_code or not target_lab:
             continue
@@ -934,15 +942,85 @@ def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) 
     return {tray_code: target_lab for _event_time, tray_code, target_lab in dispatch_events}
 
 
+def build_staging_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) -> Dict[str, dict[str, str]]:
+    ordered_events: list[tuple[datetime, str, dict[str, Any]]] = []
+    for event in event_rows or []:
+        tray_code = normalize_text(event.get("tray_code") or event.get("trayCode"))
+        if not tray_code:
+            continue
+        event_time = parse_storage_datetime(event.get("time") or event.get("event_time")) or datetime.min
+        ordered_events.append((event_time, tray_code, event))
+    ordered_events.sort(key=lambda item: item[0])
+
+    targets: Dict[str, dict[str, str]] = {}
+    for _event_time, tray_code, event in ordered_events:
+        action = normalize_text(event.get("action"))
+        if action == "stock_in":
+            targets.pop(tray_code, None)
+            continue
+        if action != "stock_out":
+            continue
+        target_lab = normalize_text(event.get("target_lab") or event.get("targetLab"))
+        target_experiment_code = normalize_text(
+            event.get("target_experiment_code")
+            or event.get("targetExperimentCode")
+            or event.get("experiment_code")
+            or event.get("experimentCode")
+        )
+        if target_lab or target_experiment_code:
+            targets[tray_code] = {
+                "target_lab": target_lab,
+                "target_experiment_code": target_experiment_code,
+            }
+    return targets
+
+
+def build_scheduled_dispatch_target_map(
+    schedules: Iterable[Dict[str, Any]] | None,
+    experiment_trays: Iterable[Dict[str, Any]] | None,
+) -> Dict[tuple[str, str, str], str]:
+    assigned_pairs = {
+        (
+            normalize_text(entry.get("task_code") or entry.get("taskCode") or entry.get("task_no")),
+            normalize_text(entry.get("experiment_code") or entry.get("experimentCode") or entry.get("experiment_no")),
+            normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no")),
+        )
+        for entry in experiment_trays or []
+        if normalize_text(entry.get("task_code") or entry.get("taskCode") or entry.get("task_no"))
+        and normalize_text(entry.get("experiment_code") or entry.get("experimentCode") or entry.get("experiment_no"))
+        and normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no"))
+    }
+    candidates: Dict[tuple[str, str, str], set[str]] = {}
+    for schedule in schedules or []:
+        task_code = normalize_text(schedule.get("task_code") or schedule.get("taskCode") or schedule.get("task_no"))
+        experiment_code = normalize_text(schedule.get("experiment_code") or schedule.get("experimentCode") or schedule.get("experiment_no"))
+        device = normalize_text(schedule.get("device") or schedule.get("device_name") or schedule.get("target_lab"))
+        if not task_code or not experiment_code or not device:
+            continue
+        for assigned_task, assigned_experiment, tray_code in assigned_pairs:
+            if assigned_task == task_code and assigned_experiment == experiment_code:
+                candidates.setdefault((task_code, tray_code, device), set()).add(experiment_code)
+    return {
+        key: next(iter(experiment_codes))
+        for key, experiment_codes in candidates.items()
+        if len(experiment_codes) == 1
+    }
+
+
 def build_storage_sample_item(
     row: Dict[str, Any],
     *,
     tray_rows: Iterable[Dict[str, Any]] | None = None,
     event_rows: Iterable[Dict[str, Any]] | None = None,
+    staging_event_rows: Iterable[Dict[str, Any]] | None = None,
+    schedules: Iterable[Dict[str, Any]] | None = None,
+    experiment_trays: Iterable[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     meta = decode_sample_meta(row.get("remark"))
     resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
     target_lab_by_tray_code = build_tray_dispatch_target_map(event_rows)
+    staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_rows)
+    scheduled_target_by_key = build_scheduled_dispatch_target_map(schedules, experiment_trays)
     trays = []
     for tray in tray_rows or []:
         tray_code = normalize_text(tray.get("tray_code"))
@@ -950,9 +1028,16 @@ def build_storage_sample_item(
             continue
         tray_status = normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status"))
         tray_completed = tray_status in EXPERIMENT_COMPLETED_STATUSES
+        staging_target = staging_target_by_tray_code.get(tray_code, {})
         target_lab = "" if tray_completed else (
             normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+            or normalize_text(staging_target.get("target_lab"))
             or target_lab_by_tray_code.get(tray_code, "")
+        )
+        target_experiment_code = "" if tray_completed else (
+            normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
+            or normalize_text(staging_target.get("target_experiment_code"))
+            or scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
         )
         trays.append({
             "id": normalize_text(tray.get("tray_code") or tray.get("id")),
@@ -961,7 +1046,7 @@ def build_storage_sample_item(
             "quantity": 0 if tray.get("quantity") in (None, "") else int(tray.get("quantity")),
             "status": tray_status,
             "target_lab": target_lab,
-            "target_experiment_code": "" if tray_completed else normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode")),
+            "target_experiment_code": target_experiment_code,
             "fixture_ready": parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))),
             "fixtureReady": parse_fixture_ready_flag(tray.get("fixtureReady", tray.get("fixture_ready"))),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
@@ -1633,7 +1718,37 @@ class MySQLMesStorageBackend(StorageBackend):
             rows,
         )
 
-    def _replace_experiment_runs(self, cursor, experiment_runs: list[dict[str, Any]]) -> None:
+    def _replace_experiment_run_trays(self, cursor, experiment_run_trays: list[dict[str, Any]]) -> None:
+        rows = [
+            build_experiment_run_tray_insert_row(relation)
+            for relation in experiment_run_trays
+            if normalize_text(relation.get("run_no") or relation.get("runNo"))
+            and normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+        ]
+        cursor.execute("DELETE FROM biz_experiment_run_tray")
+        if not rows:
+            return
+        cursor.executemany(
+            """
+            INSERT INTO biz_experiment_run_tray (
+              run_no, task_no, experiment_no, tray_no, run_tray_status,
+              started_at, ended_at, created_at, updated_at
+            ) VALUES (
+              %(run_no)s, %(task_no)s, %(experiment_no)s, %(tray_no)s, %(run_tray_status)s,
+              %(started_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
+            )
+            ON DUPLICATE KEY UPDATE
+              task_no = VALUES(task_no),
+              experiment_no = VALUES(experiment_no),
+              run_tray_status = VALUES(run_tray_status),
+              started_at = VALUES(started_at),
+              ended_at = VALUES(ended_at),
+              updated_at = VALUES(updated_at)
+            """,
+            rows,
+        )
+
+    def _replace_experiment_runs(self, cursor, experiment_runs: list[dict[str, Any]], *, replace_trays: bool = True) -> None:
         rows = [
             build_experiment_run_insert_row(run)
             for run in experiment_runs
@@ -1644,7 +1759,8 @@ class MySQLMesStorageBackend(StorageBackend):
             for run in experiment_runs
             for tray_row in build_experiment_run_tray_insert_rows(run)
         ]
-        cursor.execute("DELETE FROM biz_experiment_run_tray")
+        if replace_trays:
+            cursor.execute("DELETE FROM biz_experiment_run_tray")
         cursor.execute("DELETE FROM biz_experiment_run")
         if rows:
             cursor.executemany(
@@ -1670,7 +1786,7 @@ class MySQLMesStorageBackend(StorageBackend):
                 """,
                 rows,
             )
-        if tray_rows:
+        if replace_trays and tray_rows:
             cursor.executemany(
                 """
                 INSERT INTO biz_experiment_run_tray (
@@ -2195,9 +2311,13 @@ class MySQLMesStorageBackend(StorageBackend):
                         "test_state": normalize_text(tray.get("status")) or normalize_text(sample.get("status")),
                         "bind_time": parse_storage_datetime(tray.get("created_at")) or parse_storage_datetime(sample.get("updated_at")),
                         "remark": TRAY_META_PREFIX,
+                        "target_lab": normalize_text(tray.get("target_lab") or tray.get("targetLab")),
                         "samples": [],
                     },
                 )
+                target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+                if target_lab:
+                    tray_defs[tray_code]["target_lab"] = target_lab
                 quantity = parse_int_value(tray.get("quantity")) or 1
                 tray_defs[tray_code]["samples"].append((sample_code, quantity, tray))
                 tray_defs[tray_code]["load_qty"] += quantity
@@ -2282,15 +2402,40 @@ class MySQLMesStorageBackend(StorageBackend):
         sample_task_id_map = {row["sample_no"]: row["task_id"] for row in sample_id_rows}
 
         if tray_defs:
+            target_lab_names = sorted({tray["target_lab"] for tray in tray_defs.values() if tray.get("target_lab")})
+            target_lab_id_by_name: Dict[str, int] = {}
+            if target_lab_names:
+                placeholders = ", ".join(["%s"] * len(target_lab_names))
+                cursor.execute(
+                    f"""
+                    SELECT lab_id, lab_code, lab_name
+                    FROM md_lab
+                    WHERE COALESCE(status, 1) = 1
+                      AND (lab_name IN ({placeholders}) OR lab_code IN ({placeholders}))
+                    """,
+                    [*target_lab_names, *target_lab_names],
+                )
+                for row in cursor.fetchall():
+                    lab_id = row.get("lab_id")
+                    if lab_id is None:
+                        continue
+                    lab_name = normalize_text(row.get("lab_name"))
+                    lab_code = normalize_text(row.get("lab_code"))
+                    if lab_name:
+                        target_lab_id_by_name[lab_name] = lab_id
+                    if lab_code:
+                        target_lab_id_by_name[lab_code] = lab_id
             tray_upsert_rows = []
             for tray_code, tray in tray_defs.items():
                 task_id = None
                 if tray["task_no"]:
                     task_id = next((sample_task_id_map.get(sample_code) for sample_code, _, _ in tray["samples"] if sample_task_id_map.get(sample_code)), None)
+                current_lab_id = target_lab_id_by_name.get(normalize_text(tray.get("target_lab")))
                 tray_upsert_rows.append(
                     {
                         "tray_no": tray_code,
                         "task_id": task_id,
+                        "current_lab_id": current_lab_id,
                         "tray_type": STORAGE_MARKER,
                         "capacity": tray["capacity"] or tray["load_qty"],
                         "load_qty": tray["load_qty"],
@@ -2308,7 +2453,7 @@ class MySQLMesStorageBackend(StorageBackend):
                   out_temp_room_time, current_barcode_id, unbind_time, last_barcode_print_time, current_owner_id,
                   remark
                 ) VALUES (
-                  %(tray_no)s, %(tray_type)s, %(task_id)s, NULL, NULL, NULL,
+                  %(tray_no)s, %(tray_type)s, %(task_id)s, NULL, %(current_lab_id)s, NULL,
                   NULL, %(capacity)s, %(load_qty)s, %(tray_status)s, %(test_state)s, %(bind_time)s, NULL,
                   NULL, NULL, NULL, NULL, NULL,
                   %(remark)s
@@ -2316,6 +2461,7 @@ class MySQLMesStorageBackend(StorageBackend):
                 ON DUPLICATE KEY UPDATE
                   tray_type = VALUES(tray_type),
                   task_id = VALUES(task_id),
+                  current_lab_id = COALESCE(VALUES(current_lab_id), current_lab_id),
                   capacity = VALUES(capacity),
                   load_qty = VALUES(load_qty),
                   tray_status = VALUES(tray_status),
@@ -2403,7 +2549,7 @@ class MySQLMesStorageBackend(StorageBackend):
                 event_time = (
                     parse_storage_datetime(tray.get("updated_at"))
                     or parse_storage_datetime(sample.get("updated_at"))
-                    or datetime.now(timezone.utc).replace(tzinfo=None)
+                    or current_beijing_datetime()
                 )
                 current_time = fixture_ready_task_times.get(task_no)
                 if current_time is None or event_time > current_time:
@@ -2577,6 +2723,17 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         return [build_storage_experiment_run_item(row, tray_codes=tray_map.get(normalize_text(row.get("run_no")))) for row in cursor.fetchall()]
 
+    def _load_experiment_run_trays(self, cursor) -> list[dict[str, Any]]:
+        cursor.execute(
+            """
+            SELECT relation_id, run_no, task_no, experiment_no, tray_no, run_tray_status,
+                   started_at, ended_at, created_at, updated_at
+            FROM biz_experiment_run_tray
+            ORDER BY task_no ASC, experiment_no ASC, run_no ASC, tray_no ASC
+            """
+        )
+        return [build_storage_experiment_run_tray_item(row) for row in cursor.fetchall()]
+
     def _load_devices(self, cursor) -> list[dict[str, Any]]:
         cursor.execute(
             """
@@ -2604,7 +2761,13 @@ class MySQLMesStorageBackend(StorageBackend):
         )
         return [build_storage_stream_item(row) for row in cursor.fetchall()]
 
-    def _load_samples(self, cursor) -> list[dict[str, Any]]:
+    def _load_samples(
+        self,
+        cursor,
+        staging_event_rows: Iterable[Dict[str, Any]] | None = None,
+        schedules: Iterable[Dict[str, Any]] | None = None,
+        experiment_trays: Iterable[Dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         cursor.execute(
             """
             SELECT s.sample_id, s.sample_no, t.task_no, s.sample_type, s.batch_no, s.arrival_time,
@@ -2702,6 +2865,9 @@ class MySQLMesStorageBackend(StorageBackend):
                 row,
                 tray_rows=tray_map.get(row["sample_id"], []),
                 event_rows=event_map.get(row["sample_id"], []),
+                staging_event_rows=staging_event_rows,
+                schedules=schedules,
+                experiment_trays=experiment_trays,
             )
             for row in sample_rows
         ]
@@ -2775,7 +2941,13 @@ class MySQLMesStorageBackend(StorageBackend):
                 if "mes.experiments" in relational_updates:
                     self._replace_experiments(cursor, relational_updates["mes.experiments"] or [])
                 if "mes.experiment_runs" in relational_updates:
-                    self._replace_experiment_runs(cursor, relational_updates["mes.experiment_runs"] or [])
+                    self._replace_experiment_runs(
+                        cursor,
+                        relational_updates["mes.experiment_runs"] or [],
+                        replace_trays="mes.experiment_run_trays" not in relational_updates,
+                    )
+                if "mes.experiment_run_trays" in relational_updates:
+                    self._replace_experiment_run_trays(cursor, relational_updates["mes.experiment_run_trays"] or [])
                 if "mes.experiment_trays" in relational_updates:
                     self._replace_experiment_trays(cursor, relational_updates["mes.experiment_trays"] or [])
                 if "mes.experiment_samples" in relational_updates:
@@ -2800,11 +2972,17 @@ class MySQLMesStorageBackend(StorageBackend):
                     connection.commit()
                     tasks = self._load_tasks(cursor)
                     schedules = self._load_schedules(cursor)
-                    samples = self._load_samples(cursor)
                     experiments = self._load_experiments(cursor)
                     experiment_runs = self._load_experiment_runs(cursor)
+                    experiment_run_trays = self._load_experiment_run_trays(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
+                    samples = self._load_samples(
+                        cursor,
+                        snapshot_values.get("mes.staging_events"),
+                        schedules=schedules,
+                        experiment_trays=experiment_trays,
+                    )
                     experiments, repaired = self._backfill_unscheduled_since_for_reads(
                         cursor,
                         tasks=tasks,
@@ -2824,6 +3002,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "mes.samples": samples,
                         "mes.experiments": experiments,
                         "mes.experiment_runs": experiment_runs,
+                        "mes.experiment_run_trays": experiment_run_trays,
                         "mes.experiment_trays": experiment_trays,
                         "mes.experiment_samples": experiment_samples,
                     }
@@ -2847,11 +3026,18 @@ class MySQLMesStorageBackend(StorageBackend):
                     connection.commit()
                     tasks = self._load_tasks(cursor)
                     schedules = self._load_schedules(cursor)
-                    samples = self._load_samples(cursor)
+                    snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
                     experiments = self._load_experiments(cursor)
                     experiment_runs = self._load_experiment_runs(cursor)
+                    experiment_run_trays = self._load_experiment_run_trays(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
+                    samples = self._load_samples(
+                        cursor,
+                        snapshot_values.get("mes.staging_events"),
+                        schedules=schedules,
+                        experiment_trays=experiment_trays,
+                    )
                     experiments, repaired = self._backfill_unscheduled_since_for_reads(
                         cursor,
                         tasks=tasks,
@@ -2877,6 +3063,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         return experiments
                     if key == "mes.experiment_runs":
                         return experiment_runs
+                    if key == "mes.experiment_run_trays":
+                        return experiment_run_trays
                     if key == "mes.experiment_trays":
                         return experiment_trays
                     if key == "mes.experiment_samples":

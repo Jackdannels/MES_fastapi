@@ -1,4 +1,5 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+import { formatLocalDateTime } from "./dateTime.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
@@ -62,7 +63,7 @@ function notifyStorageSnapshotUpdated(updates = {}) {
   }
   const marker = JSON.stringify({
     keys: Object.keys(updates || {}),
-    updatedAt: new Date().toISOString(),
+    updatedAt: formatLocalDateTime(),
   });
   let detail = null;
   try {
@@ -72,7 +73,7 @@ function notifyStorageSnapshotUpdated(updates = {}) {
     // localStorage may be unavailable in private or embedded browser contexts.
     detail = {
       keys: Object.keys(updates || {}),
-      updatedAt: new Date().toISOString(),
+      updatedAt: formatLocalDateTime(),
     };
   }
   try {

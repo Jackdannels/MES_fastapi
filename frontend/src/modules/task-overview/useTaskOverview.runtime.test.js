@@ -260,4 +260,101 @@ describe("useTaskOverview runtime", () => {
     expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-004"]);
   });
 
+  test("uses experiment run state for tray overview flows when tray status is still ready", async () => {
+    reactiveRoute.query = {};
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-06-021",
+          sample_count: 1,
+          status: "任务进行中",
+          test_type: "振动试验 / 冲击试验 / 温度冲击试验",
+          transfer_status: "到货",
+        },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          task_code: "SYLU-2026-06-021",
+          location: "冲击一室",
+          status: "实验准备就绪",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-021-TP-001",
+              status: "实验准备就绪",
+            },
+          ],
+        },
+      ],
+      "mes.schedules": [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-VIBRATION",
+          device: "振动一室",
+          start_at: "2026-06-04T08:00:00.000Z",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          start_at: "2026-06-04T10:00:00.000Z",
+          status: "实验准备就绪",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-TEMP-SHOCK",
+          device: "温度冲击一室",
+          start_at: "2026-06-04T12:00:00.000Z",
+          status: "已排程",
+        },
+      ],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-VIBRATION",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          status: "实验准备就绪",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-TEMP-SHOCK",
+          experiment_name: "温度冲击试验",
+          required_device: "温度冲击试验",
+          status: "已排程",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-06-021", experiment_code: "EXP-VIBRATION", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "EXP-IMPACT", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "EXP-TEMP-SHOCK", tray_code: "SYLU-2026-06-021-TP-001" },
+      ],
+      "mes.experiment_runs": [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT",
+          tray_codes: ["SYLU-2026-06-021-TP-001"],
+          status: "实验进行中",
+          updated_at: "2026-06-04T10:30:00.000Z",
+        },
+      ],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.trayOverviewRows[0]).toMatchObject({
+      trayCode: "SYLU-2026-06-021-TP-001",
+      currentStatus: "冲击试验进行中",
+    });
+  });
+
 });

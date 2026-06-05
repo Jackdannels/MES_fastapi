@@ -6,6 +6,7 @@ import TrayManagementPanel from "./TrayManagementPanel.vue";
 const buildSamplesFlow = (overrides = {}) => ({
   rawExperimentTrays: [],
   rawExperiments: [],
+  rawExperimentRuns: [],
   rawSamples: [],
   rawSchedules: [],
   rawTasks: [],
@@ -245,5 +246,87 @@ describe("TrayManagementPanel", () => {
 
     expect(wrapper.get('[data-testid="samples-tray-flow-step-arrived"]').text()).toContain("2026-04-28 11:31:20");
     expect(wrapper.get('[data-testid="samples-tray-flow-step-returned"]').text()).toContain("2026-04-28 11:36:00");
+  });
+
+  test("uses experiment runs in the unified tray flow for running experiment time", () => {
+    const wrapper = mount(TrayManagementPanel, {
+      props: {
+        samplesFlow: buildSamplesFlow({
+          rawExperimentRuns: [
+            {
+              task_code: "SYLU-2026-06-021",
+              experiment_code: "SYLU-2026-06-021-A",
+              tray_codes: ["SYLU-2026-06-021-TP-001"],
+              status: "实验进行中",
+              started_at: "2026-06-04T19:12:09+08:00",
+            },
+          ],
+          rawExperimentTrays: [
+            { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
+            { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-001" },
+          ],
+          rawExperiments: [
+            {
+              task_code: "SYLU-2026-06-021",
+              experiment_code: "SYLU-2026-06-021-A",
+              experiment_name: "冲击试验",
+              required_device: "冲击试验",
+              status: "实验进行中",
+            },
+            {
+              task_code: "SYLU-2026-06-021",
+              experiment_code: "SYLU-2026-06-021-B",
+              experiment_name: "温度冲击试验",
+              required_device: "温度冲击试验",
+              status: "已排程",
+            },
+          ],
+          rawSamples: [
+            {
+              code: "SYLU-2026-06-021-SP-001",
+              task_code: "SYLU-2026-06-021",
+              location: "冲击一室",
+              status: "实验进行中",
+              trays: [
+                {
+                  tray_code: "SYLU-2026-06-021-TP-001",
+                  sample_code: "SYLU-2026-06-021-SP-001",
+                  quantity: 1,
+                  status: "实验进行中",
+                  target_lab: "冲击一室",
+                },
+              ],
+              history: [
+                {
+                  action: "实验确认",
+                  detail: "SYLU-2026-06-021 / 冲击试验 / 实验准备就绪",
+                  location: "冲击一室",
+                  status: "实验准备就绪",
+                  time: "2026-06-04T19:12:07+08:00",
+                },
+              ],
+            },
+          ],
+          rawSchedules: [
+            { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", device: "冲击一室", status: "实验进行中" },
+          ],
+          rawTasks: [{ code: "SYLU-2026-06-021", status: "任务进行中" }],
+          trayRows: [
+            {
+              sampleCodes: ["SYLU-2026-06-021-SP-001"],
+              sampleCount: 1,
+              sampleSummary: "SYLU-2026-06-021-SP-001",
+              status: "实验进行中",
+              taskCode: "SYLU-2026-06-021",
+              trayCode: "SYLU-2026-06-021-TP-001",
+            },
+          ],
+        }),
+      },
+    });
+
+    const runningStep = wrapper.get('[data-testid="samples-tray-flow-step-experiment-current-0"]');
+    expect(runningStep.text()).toContain("冲击试验进行中");
+    expect(runningStep.text()).toContain("2026-06-04 19:12:09");
   });
 });

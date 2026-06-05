@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable
 
 from app.core.config import settings
+from app.core.time_utils import format_business_datetime, parse_business_datetime
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
 STORAGE_META_KEY = "mes.meta"
@@ -21,6 +22,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_runs",
+    "mes.experiment_run_trays",
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.samples",
@@ -82,6 +84,48 @@ STATUS_VALUE_KEYS = {
     "sampleStatus",
     "tray_status",
     "trayStatus",
+    "run_tray_status",
+    "runTrayStatus",
+}
+DATETIME_VALUE_KEYS = {
+    "acknowledged_at",
+    "acknowledgedAt",
+    "arrival_at",
+    "arrivalAt",
+    "completed_at",
+    "completedAt",
+    "created_at",
+    "createdAt",
+    "due_at",
+    "dueAt",
+    "end_at",
+    "endAt",
+    "ended_at",
+    "endedAt",
+    "event_time",
+    "eventTime",
+    "fixture_ready_at",
+    "fixtureReadyAt",
+    "maintenance_end_at",
+    "maintenanceEndAt",
+    "maintenance_start_at",
+    "maintenanceStartAt",
+    "planned_end_at",
+    "plannedEndAt",
+    "processed_at",
+    "processedAt",
+    "result_at",
+    "resultAt",
+    "start_at",
+    "startAt",
+    "started_at",
+    "startedAt",
+    "time",
+    "timestamp",
+    "updated_at",
+    "updatedAt",
+    "unscheduled_since",
+    "unscheduledSince",
 }
 
 def _sanitize_sample_text(value: str) -> str:
@@ -152,19 +196,21 @@ def _sanitize_sample_collection(value: Any) -> Any:
 
 
 def _parse_storage_datetime(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        pass
-    for pattern in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(text, pattern)
-        except ValueError:
-            continue
-    return None
+    return parse_business_datetime(value)
+
+
+def _format_storage_datetime(value: Any) -> str:
+    return format_business_datetime(value) or str(value or "").strip()
+
+
+def _normalize_datetime_collection(value: Any, *, field_name: str = "") -> Any:
+    if isinstance(value, list):
+        return [_normalize_datetime_collection(item, field_name=field_name) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_datetime_collection(entry, field_name=key) for key, entry in value.items()}
+    if isinstance(value, str) and field_name in DATETIME_VALUE_KEYS:
+        return _format_storage_datetime(value)
+    return value
 
 
 def _normalize_meta(value: Any) -> dict[str, Any]:
@@ -541,11 +587,12 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
 
 
 def _normalize_value(key: str, value: Any) -> Any:
+    value = _normalize_datetime_collection(value)
     if key == "mes.samples" and isinstance(value, list):
         return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")
     if key == "mes.tasks" and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="task")
-    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs"} and isinstance(value, list):
+    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs", "mes.experiment_run_trays"} and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="experiment")
     if key == STORAGE_META_KEY:
         return _normalize_meta(value)

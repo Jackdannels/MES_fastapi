@@ -59,7 +59,7 @@ describe("scheduleExceptions", () => {
         task_code: "TASK-001",
         experiment_code: "TASK-001-A",
         status: "待排程",
-        unscheduled_since: "2099-03-19T07:15:00.000Z",
+        unscheduled_since: "2099-03-19 15:15:00",
       }),
     ]);
     expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([

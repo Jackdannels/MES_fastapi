@@ -8,6 +8,7 @@ import {
   nextTaskSampleCode,
   submitSampleIntake,
 } from "./sampleIntakeModel";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 const SAMPLES_UPDATED_EVENT = "mes:samples-updated";
@@ -55,7 +56,7 @@ function useSampleIntake() {
       mode,
       tasks: rawTasks.value,
       samples: rawSamples.value,
-      now: new Date().toISOString(),
+      now: formatLocalDateTime(),
     });
     if (result.error) {
       warning.value = result.error;

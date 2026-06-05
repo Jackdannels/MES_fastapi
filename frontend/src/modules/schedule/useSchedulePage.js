@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import {
   analyzeTaskTrayConflict,
   buildConflictRows,
@@ -509,8 +510,8 @@ function useSchedulePage() {
     };
     const resolved = resolveScheduleTimes(scheduleForm.value, now.value, activeSchedules.value);
     if (!resolved.error) {
-      candidate.start_at = resolved.startAt.toISOString();
-      candidate.end_at = resolved.endAt.toISOString();
+      candidate.start_at = formatLocalDateTime(resolved.startAt);
+      candidate.end_at = formatLocalDateTime(resolved.endAt);
       candidate.planned_hours = resolved.plannedHours;
       const taskConflict = analyzeTaskTrayConflict({
         candidate,
@@ -836,7 +837,7 @@ function useSchedulePage() {
     if (!normalizedConflictId) {
       return;
     }
-    const timestamp = new Date().toISOString();
+    const timestamp = formatLocalDateTime();
     const nextConflicts = rawConflicts.value.map((entry) =>
       normalizeText(entry?.id) === normalizedConflictId
         ? {

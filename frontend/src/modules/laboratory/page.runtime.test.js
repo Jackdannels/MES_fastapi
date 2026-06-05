@@ -42,8 +42,6 @@ const flushPageUpdates = async (cycles = 4) => {
 };
 const storageGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
-const storagePutCalls = () =>
-  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "PUT");
 const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
 const laboratoryMqCalls = () =>
@@ -93,15 +91,6 @@ const waitForStorageGetCount = async (count) => {
     }
   }
   expect(storageGetCalls()).toHaveLength(count);
-};
-const waitForStoragePutCount = async (count) => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await flushPageUpdates();
-    if (storagePutCalls().length >= count) {
-      return;
-    }
-  }
-  expect(storagePutCalls()).toHaveLength(count);
 };
 const waitForSamplesUpdatedEvent = async (spy, count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -207,6 +196,38 @@ const createSnapshot = () => ({
     },
   ],
 });
+
+const addActiveExperimentRun = ({
+  device = "盐雾试验室",
+  endedAt = "",
+  experimentCode = "SYLU-2026-04-101-A",
+  plannedEndAt = "2026-04-02T11:00:00.000Z",
+  runNo = "run-1",
+  scheduleId = "schedule-1",
+  snapshot = snapshotState,
+  startedAt = "2026-04-02T09:30:00.000Z",
+  status = "实验进行中",
+  taskCode = "SYLU-2026-04-101",
+  trayCodes = ["TP-001"],
+} = {}) => {
+  snapshot[STORAGE_KEYS.experiment_runs] = [
+    ...(Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : []),
+    {
+      id: runNo,
+      run_no: runNo,
+      schedule_id: scheduleId,
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      device,
+      tray_codes: trayCodes,
+      status,
+      started_at: startedAt,
+      planned_end_at: plannedEndAt,
+      ...(endedAt ? { ended_at: endedAt } : {}),
+    },
+  ];
+  return snapshot;
+};
 
 const mountPage = async () => {
   const expectedStorageGetCalls = storageGetCalls().length + 1;
@@ -1593,7 +1614,6 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
       },
     ];
-
     const mounted = await mountPage();
     const staleSnapshot = JSON.parse(JSON.stringify(snapshotState));
     storageGetSnapshotOverride = () => staleSnapshot;
@@ -2114,12 +2134,15 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-002" }],
       },
     ];
+    addActiveExperimentRun({ trayCodes: ["TP-001", "TP-002"] });
 
     const mounted = await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
     const findRunningBackdrop = () => document.body.querySelector('[data-testid="laboratory-running-backdrop"]');
 
-    expect(document.body.querySelector('[data-testid="laboratory-show-running-modal"]')?.getAttribute("disabled")).toBeNull();
+    const showRunningButton = () => document.body.querySelector('[data-testid="laboratory-show-running-modal"]');
+
+    expect(showRunningButton()?.getAttribute("disabled")).toBeNull();
     expect(document.body.querySelectorAll(".modal.is-open")).toHaveLength(0);
     expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
@@ -2136,8 +2159,9 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(findRunningModal()).toBeNull();
+    expect(showRunningButton()?.getAttribute("disabled")).toBeNull();
 
-    document.body.querySelector('[data-testid="laboratory-show-running-modal"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    showRunningButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
     expect(findRunningModal()).not.toBeNull();
@@ -2169,6 +2193,9 @@ describe("LaboratoryPage runtime", () => {
         task_code: "SYLU-2026-04-101",
         trays: [{ quantity: 1, status: "实验进行中", tray_code: `TP-${number}` }],
       };
+    });
+    addActiveExperimentRun({
+      trayCodes: Array.from({ length: 7 }, (_, index) => `TP-${String(index + 1).padStart(3, "0")}`),
     });
 
     const mounted = await mountPage();
@@ -2330,7 +2357,6 @@ describe("LaboratoryPage runtime", () => {
         planned_end_at: "2026-04-02T10:30:00.000Z",
       },
     ];
-
     await mountPage();
 
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中");
@@ -2412,7 +2438,6 @@ describe("LaboratoryPage runtime", () => {
         planned_end_at: "2026-04-02T10:00:01.000Z",
       },
     ];
-
     await mountPage();
 
     vi.advanceTimersByTime(2000);
@@ -2471,7 +2496,6 @@ describe("LaboratoryPage runtime", () => {
         end_at: "2026-04-02T10:00:01.000Z",
       },
     ];
-
     await mountPage();
 
     document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -2498,6 +2522,7 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
       },
     ];
+    addActiveExperimentRun();
 
     await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
@@ -2585,10 +2610,24 @@ describe("LaboratoryPage runtime", () => {
           trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-CJ-001" }],
         },
       ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-impact",
+          run_no: "run-impact",
+          schedule_id: "schedule-impact",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          device: "冲击一室",
+          tray_codes: ["TP-CJ-001"],
+          status: "实验进行中",
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
     };
     const expectedStorageGetCalls = storageGetCalls().length + 1;
     eventSources[0].listeners.message({
-      data: JSON.stringify({ keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" }),
+      data: JSON.stringify({ keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs], updatedAt: "2026-04-02T10:00:00.000Z" }),
     });
     await waitForStorageGetCount(expectedStorageGetCalls);
 
@@ -2657,10 +2696,24 @@ describe("LaboratoryPage runtime", () => {
           trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "实验进行中", tray_code: "TP-CJ-001" }],
         },
       ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-impact",
+          run_no: "run-impact",
+          schedule_id: "schedule-impact",
+          task_code: "SYLU-2026-04-501",
+          experiment_code: "SYLU-2026-04-501-A",
+          device: "冲击一室",
+          tray_codes: ["TP-CJ-001"],
+          status: "实验进行中",
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
     };
     const expectedStorageGetCalls = storageGetCalls().length + 1;
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
-      detail: { keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" },
+      detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs], updatedAt: "2026-04-02T10:00:00.000Z" },
     }));
     await waitForStorageGetCount(expectedStorageGetCalls);
     await flushPageUpdates();
@@ -2684,6 +2737,7 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
       },
     ];
+    addActiveExperimentRun();
 
     await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
@@ -2709,7 +2763,7 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()).not.toBeNull();
   });
 
-  test("completes only the current salt spray experiment trays and hides the running modal after confirmation", async () => {
+  test("completes only the current salt spray experiment trays and keeps the completed modal after confirmation", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.tasks] = [
@@ -2753,6 +2807,13 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-301-B" }],
       },
     ];
+    addActiveExperimentRun({
+      experimentCode: "SYLU-2026-04-301-B",
+      runNo: "run-salt-301",
+      scheduleId: "schedule-salt",
+      taskCode: "SYLU-2026-04-301",
+      trayCodes: ["TP-301-B"],
+    });
 
     await mountPage();
     const findRunningModal = () => document.body.querySelector('[data-testid="laboratory-running-modal"]');
@@ -2779,7 +2840,9 @@ describe("LaboratoryPage runtime", () => {
         }),
       ]),
     );
-    expect(findRunningModal()).toBeNull();
+    expect(findRunningModal()?.textContent || "").toContain("实验已完成");
+    expect(findRunningModal()?.textContent || "").toContain("TP-301-B");
+    expect(findRunningModal()?.textContent || "").not.toContain("TP-301-A");
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
   });
 });

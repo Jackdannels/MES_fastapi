@@ -1,13 +1,14 @@
 import json
 import queue
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
+from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -50,13 +51,7 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _parse_datetime(value: Any) -> datetime | None:
-    text = _normalize_text(value)
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    return parse_business_datetime(value)
 
 
 def _sample_code(sample: Any) -> str:
@@ -85,8 +80,7 @@ def _device_is_unavailable(device: Any) -> bool:
     status = _normalize_text(device.get("status"))
     start_at = _parse_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
     end_at = _parse_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
-    timezone = start_at.tzinfo if start_at and start_at.tzinfo else end_at.tzinfo if end_at and end_at.tzinfo else None
-    now = datetime.now(timezone) if timezone else datetime.now()
+    now = now_business_datetime()
     if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
         return True
     if any(keyword in status for keyword in ["维护", "维修", "保养"]) and not (end_at and end_at < now):
@@ -376,7 +370,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
 def publish_storage_update(keys: list[str]) -> None:
     payload = {
         "keys": list(keys),
-        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "updatedAt": now_business_text(),
     }
     with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
         subscribers = list(_STORAGE_UPDATE_SUBSCRIBERS)

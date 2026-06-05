@@ -131,6 +131,8 @@ describe("useTaskOverviewEditor", () => {
       expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001" })]),
       snapshot[STORAGE_KEYS.schedules],
       expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001", experiment_code: "TASK-001-A" })]),
+      [],
+      [],
       []
     );
   });
@@ -200,6 +202,14 @@ describe("useTaskOverviewEditor", () => {
         { id: "stream-1", task_code: "TASK-001" },
         { id: "stream-2", task_code: "TASK-002" },
       ],
+      [STORAGE_KEYS.experiment_runs]: [
+        { id: "run-1", task_code: "TASK-001", experiment_code: "TASK-001-A" },
+        { id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        { id: "run-tray-1", task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TP-001" },
+        { id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TP-002" },
+      ],
     };
     const { requestDeleteTask, confirmDeleteTask, deleteConfirm, persistSnapshot, replaceOverview } = createEditor({
       loadSnapshot: vi.fn(async () => snapshot),
@@ -222,6 +232,8 @@ describe("useTaskOverviewEditor", () => {
         [STORAGE_KEYS.samples]: [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
         [STORAGE_KEYS.schedules]: [{ id: "schedule-2", task_code: "TASK-002" }],
         [STORAGE_KEYS.streams]: [{ id: "stream-2", task_code: "TASK-002" }],
+        [STORAGE_KEYS.experiment_runs]: [{ id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
+        [STORAGE_KEYS.experiment_run_trays]: [{ id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TP-002" }],
       })
     );
     expect(replaceOverview).toHaveBeenCalledWith(
@@ -229,7 +241,9 @@ describe("useTaskOverviewEditor", () => {
       [{ id: "sample-2", code: "TASK-002-SP-001", task_code: "TASK-002" }],
       [{ id: "schedule-2", task_code: "TASK-002" }],
       [],
-      []
+      [],
+      [{ id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
+      [{ id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TP-002" }]
     );
   });
 
@@ -243,6 +257,14 @@ describe("useTaskOverviewEditor", () => {
       [STORAGE_KEYS.experiment_trays]: [
         { id: "rel-1", task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
         { id: "rel-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        { id: "run-1", task_code: "TASK-001", experiment_code: "TASK-001-A" },
+        { id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        { id: "run-tray-1", task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TASK-001-TP-001" },
+        { id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" },
       ],
       [STORAGE_KEYS.samples]: [],
       [STORAGE_KEYS.schedules]: [],
@@ -259,6 +281,8 @@ describe("useTaskOverviewEditor", () => {
       expect.objectContaining({
         [STORAGE_KEYS.experiments]: [{ id: "exp-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
         [STORAGE_KEYS.experiment_trays]: [{ id: "rel-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" }],
+        [STORAGE_KEYS.experiment_runs]: [{ id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
+        [STORAGE_KEYS.experiment_run_trays]: [{ id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TASK-002-TP-001" }],
       })
     );
   });

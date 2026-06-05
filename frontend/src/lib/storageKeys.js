@@ -3,6 +3,7 @@ const STORAGE_KEYS = {
   schedules: "mes.schedules",
   experiments: "mes.experiments",
   experiment_runs: "mes.experiment_runs",
+  experiment_run_trays: "mes.experiment_run_trays",
   experiment_trays: "mes.experiment_trays",
   experiment_samples: "mes.experiment_samples",
   samples: "mes.samples",

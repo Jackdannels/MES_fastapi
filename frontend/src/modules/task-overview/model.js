@@ -102,6 +102,12 @@ function parseTimeValue(value) {
   return Number.isFinite(parsed) ? parsed : -1;
 }
 
+function resolveFlowViewActiveStatus(flowView, fallbackStatus = "") {
+  const activeStep = (Array.isArray(flowView?.steps) ? flowView.steps : [])
+    .find((step) => step?.active && normalizeText(step?.label));
+  return normalizeText(activeStep?.label) || normalizeText(flowView?.status) || normalizeText(fallbackStatus);
+}
+
 function isTaskStored(task) {
   return [TRANSFER_STATUS_STORED, LEGACY_TRANSFER_STATUS_STORED].includes(normalizeText(task?.transfer_status));
 }
@@ -120,9 +126,9 @@ function upsertLatestSchedule(map, key, schedule) {
 function buildExperimentTrayMap(experimentTrays) {
   const trayMap = new Map();
   (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
-    const taskCode = normalizeText(entry?.task_code);
-    const experimentCode = normalizeText(entry?.experiment_code);
-    const trayCode = normalizeText(entry?.tray_code);
+    const taskCode = normalizeText(entry?.task_code || entry?.taskCode);
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    const trayCode = normalizeText(entry?.tray_code || entry?.trayCode);
     if (!taskCode || !experimentCode || !trayCode) {
       return;
     }
@@ -137,16 +143,81 @@ function buildExperimentTrayMap(experimentTrays) {
 function buildTrayExperimentCodeMap(experimentTrays) {
   const trayMap = new Map();
   (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
-    const trayCode = normalizeText(entry?.tray_code);
-    const experimentCode = normalizeText(entry?.experiment_code);
-    if (!trayCode || !experimentCode) {
+    const taskCode = normalizeText(entry?.task_code || entry?.taskCode);
+    const trayCode = normalizeText(entry?.tray_code || entry?.trayCode);
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    if (!taskCode || !trayCode || !experimentCode) {
       return;
     }
-    const current = trayMap.get(trayCode) || new Set();
+    const key = `${taskCode}::${trayCode}`;
+    const current = trayMap.get(key) || new Set();
     current.add(experimentCode);
-    trayMap.set(trayCode, current);
+    trayMap.set(key, current);
   });
   return trayMap;
+}
+
+function resolveExperimentName(experiment) {
+  return normalizeText(experiment?.experiment_name)
+    || normalizeText(experiment?.experimentName)
+    || normalizeText(experiment?.experiment_type)
+    || normalizeText(experiment?.experimentType)
+    || normalizeText(experiment?.required_device)
+    || normalizeText(experiment?.requiredDevice)
+    || normalizeText(experiment?.experiment_code)
+    || normalizeText(experiment?.experimentCode);
+}
+
+function buildTrayAssignedExperimentLabelMap({ experiments = [], experimentTrays = [] }) {
+  const experimentInfoByKey = new Map();
+  const experimentOrderByKey = new Map();
+  (Array.isArray(experiments) ? experiments : []).forEach((experiment, index) => {
+    const taskCode = normalizeText(experiment?.task_code || experiment?.taskCode);
+    const experimentCode = normalizeText(experiment?.experiment_code || experiment?.experimentCode);
+    if (!taskCode || !experimentCode) {
+      return;
+    }
+    const key = `${taskCode}::${experimentCode}`;
+    experimentInfoByKey.set(key, {
+      label: resolveExperimentName(experiment),
+      order: index,
+    });
+    experimentOrderByKey.set(key, index);
+  });
+
+  const assignedByTray = new Map();
+  (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry, index) => {
+    const taskCode = normalizeText(entry?.task_code || entry?.taskCode);
+    const trayCode = normalizeText(entry?.tray_code || entry?.trayCode);
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    if (!taskCode || !trayCode || !experimentCode) {
+      return;
+    }
+    const experimentKey = `${taskCode}::${experimentCode}`;
+    const trayKey = `${taskCode}::${trayCode}`;
+    const current = assignedByTray.get(trayKey) || [];
+    const info = experimentInfoByKey.get(experimentKey);
+    current.push({
+      code: experimentCode,
+      label: info?.label || experimentCode,
+      order: info?.order ?? experimentOrderByKey.get(experimentKey) ?? index,
+    });
+    assignedByTray.set(trayKey, current);
+  });
+
+  const labelByTray = new Map();
+  assignedByTray.forEach((items, trayKey) => {
+    labelByTray.set(
+      trayKey,
+      buildExperimentTypeSummary(
+        items
+          .slice()
+          .sort((left, right) => left.order - right.order || compareText(left.code, right.code))
+          .map((item) => item.label),
+      ),
+    );
+  });
+  return labelByTray;
 }
 
 function parseExperimentHistoryDetail(detail, taskCode) {
@@ -256,7 +327,7 @@ function resolveExperimentLifecycleState({ experiment, samples, experimentTrayMa
     };
   }
 
-  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(`${taskCode}::${trayCode}`)?.size || 0) > 1);
   if (hasSharedScopedTray) {
     return {
       completed: false,
@@ -604,6 +675,8 @@ function buildTaskRows({
 function buildTrayOverviewRows({
   tasks,
   experiments = [],
+  experimentRuns = [],
+  experimentRunTrays = [],
   experimentTrays = [],
   samples,
   schedules,
@@ -627,28 +700,9 @@ function buildTrayOverviewRows({
 
   const experimentList = Array.isArray(experiments) ? experiments : [];
   const experimentTrayList = Array.isArray(experimentTrays) ? experimentTrays : [];
-
-  const scheduleByTaskCode = new Map();
-  // 同一任务可能有多次排程，托盘视图只保留最近的一次正式排程作为流程上下文，不作为当前位置来源。
-  scheduleList.forEach((entry) => {
-    const taskCode = String(entry?.task_code || "").trim();
-    if (!taskCode) {
-      return;
-    }
-    if (isRetentionDevice(entry?.device)) {
-      return;
-    }
-    const device = String(entry?.device || "").trim();
-    const ts = Date.parse(String(entry?.start_at || entry?.created_at || ""));
-    const current = scheduleByTaskCode.get(taskCode);
-    const next = {
-      device,
-      experimentCode: normalizeText(entry?.experiment_code),
-      ts: Number.isFinite(ts) ? ts : -1,
-    };
-    if (!current || next.ts >= current.ts) {
-      scheduleByTaskCode.set(taskCode, next);
-    }
+  const trayAssignedExperimentLabelMap = buildTrayAssignedExperimentLabelMap({
+    experiments: experimentList,
+    experimentTrays: experimentTrayList,
   });
 
   const trayMap = new Map();
@@ -662,12 +716,11 @@ function buildTrayOverviewRows({
     if (!taskCode || !taskTypeByCode.has(taskCode)) {
       return;
     }
-    const targetExperiment = taskTypeByCode.get(taskCode) || "-";
-
     (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
       const trayCode = String(tray?.tray_code || "").trim();
-      // 托盘视图每个托盘只需要一条记录，重复 trayCode 直接跳过。
-      if (!trayCode || trayMap.has(trayCode)) {
+      const trayMapKey = `${taskCode}::${trayCode}`;
+      // 托盘视图按任务和托盘共同唯一，避免不同任务复用同一托盘号时互相覆盖。
+      if (!trayCode || trayMap.has(trayMapKey)) {
         return;
       }
       const location = summarizeUniqueTexts([sample?.location]);
@@ -680,9 +733,13 @@ function buildTrayOverviewRows({
       ) {
         return;
       }
-      const scheduleInfo = scheduleByTaskCode.get(taskCode);
-      const currentStatus = buildTrayFlowView({
-        currentExperimentCode: scheduleInfo?.experimentCode || "",
+      const targetExperiment =
+        trayAssignedExperimentLabelMap.get(trayMapKey)
+        || taskTypeByCode.get(taskCode)
+        || "-";
+      const flowView = buildTrayFlowView({
+        experimentRuns,
+        experimentRunTrays,
         experimentTrays: experimentTrayList,
         experiments: experimentList,
         location,
@@ -691,8 +748,10 @@ function buildTrayOverviewRows({
         status,
         taskCode,
         trayCode,
-      }).status || status;
-      trayMap.set(trayCode, {
+      });
+      const currentStatus = resolveFlowViewActiveStatus(flowView, status);
+      trayMap.set(trayMapKey, {
+        canonicalStatus: normalizeText(flowView?.canonicalStatus) || normalizeText(flowView?.status) || status,
         trayCode,
         taskCode,
         targetExperiment,
@@ -719,6 +778,7 @@ function buildTrayOverviewRows({
         targetExperiment: tray.targetExperiment || "-",
         currentLocation: tray.currentLocation || "-",
         currentStatus: tray.currentStatus || "-",
+        canonicalStatus: tray.canonicalStatus || tray.currentStatus || "-",
         hasTray: true,
       };
     }

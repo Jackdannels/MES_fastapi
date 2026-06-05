@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
+from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -31,6 +32,7 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_runs",
+    "mes.experiment_run_trays",
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.staging_events",
@@ -151,17 +153,11 @@ def as_list(value: Any) -> list[Any]:
 
 
 def now_text() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
+    return now_business_text(include_seconds=False)
 
 
 def parse_datetime_value(value: Any) -> datetime | None:
-    text = normalize_text(value)
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    return parse_business_datetime(value)
 
 
 def is_staging_device(value: Any) -> bool:
@@ -174,8 +170,7 @@ def device_is_unavailable(device: dict[str, Any] | None) -> bool:
     status = normalize_text(device.get("status"))
     start_at = parse_datetime_value(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
     end_at = parse_datetime_value(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
-    timezone = start_at.tzinfo if start_at and start_at.tzinfo else end_at.tzinfo if end_at and end_at.tzinfo else None
-    now = datetime.now(timezone) if timezone else datetime.now()
+    now = now_business_datetime()
     if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
         return True
     if any(keyword in status for keyword in ["维护", "维修", "保养"]) and not (end_at and end_at < now):
@@ -212,6 +207,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
+        "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -228,6 +224,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
             "mes.schedules": snapshot["schedules"],
             "mes.experiments": snapshot["experiments"],
             "mes.experiment_runs": snapshot["experiment_runs"],
+            "mes.experiment_run_trays": snapshot["experiment_run_trays"],
             "mes.experiment_trays": snapshot["experiment_trays"],
             "mes.experiment_samples": snapshot["experiment_samples"],
             "mes.staging_events": snapshot["staging_events"],
@@ -325,7 +322,7 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
     existing_codes = {sample_code(sample) for sample in task_samples if sample_code(sample)}
     current_task_status = transfer_status_for_task(task, task_samples)
     received_time = task_arrival_time(task)
-    now_iso = datetime.now().isoformat(timespec="seconds")
+    now_iso = now_business_text()
 
     if is_handover_stored_status(current_task_status):
         location = "接驳区"
@@ -569,7 +566,7 @@ def append_history(sample: dict[str, Any], action: str, detail: str) -> None:
         0,
         {
             "id": f"sample-event-{normalize_text(sample.get('id')) or normalize_text(sample.get('code'))}-{len(history) + 1}",
-            "time": datetime.now().isoformat(timespec="seconds"),
+            "time": now_business_text(),
             "action": action,
             "location": normalize_text(sample.get("location")),
             "owner": normalize_text(sample.get("owner")),
@@ -910,7 +907,7 @@ def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str,
         sample["trays"] = next_trays
 
     task["tray_codes"] = expected_codes
-    task["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    task["updated_at"] = now_business_text()
     return True
 
 
@@ -1275,7 +1272,7 @@ def apply_tray_withdrawal(
         raise HTTPException(status_code=400, detail="该托盘当前不在可撤回的出库状态")
 
     target_status, target_location, restore_scope = restore_status_for_withdrawal(snapshot, task_samples, tray_code)
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    timestamp = now_business_text()
     normalized_tray_code = normalize_text(tray_code)
     affected_count = 0
     for sample in task_samples:
@@ -1474,7 +1471,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
     else:
         raise HTTPException(status_code=400, detail="请选择有效的目标位置")
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    timestamp = now_business_text()
     for sample in tray_samples:
         sample["location"] = next_location
         sample["status"] = next_status
@@ -1580,6 +1577,9 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     snapshot["experiment_runs"] = [
         entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
+    snapshot["experiment_run_trays"] = [
+        entry for entry in snapshot["experiment_run_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     tray_codes = []
     tray_code_by_id: dict[int, str] = {}
@@ -1645,7 +1645,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     task["tray_limit"] = request.tray_limit
     task["tray_codes"] = sorted(set(tray_codes))
     task["transfer_status"] = TASK_STATUS_PENDING
-    task["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    task["updated_at"] = now_business_text()
     snapshot["experiment_trays"] = next_experiment_trays
     snapshot["experiment_samples"] = next_experiment_samples
     write_snapshot(snapshot)
@@ -1738,7 +1738,7 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请先保存托盘，再确认入库")
 
     task["transfer_status"] = TASK_STATUS_STORED
-    now_iso = datetime.now().isoformat(timespec="seconds")
+    now_iso = now_business_text()
     if not task_arrival_time(task):
         task["arrival_at"] = now_iso
     task["updated_at"] = now_iso
@@ -1798,10 +1798,13 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot["experiment_runs"] = [
         entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
     ]
+    snapshot["experiment_run_trays"] = [
+        entry for entry in snapshot["experiment_run_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
+    ]
 
     task["transfer_status"] = TASK_STATUS_PENDING
     task["tray_codes"] = []
-    task["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    task["updated_at"] = now_business_text()
     update_task_samples_for_pending(task, task_samples)
 
     for sample in task_samples:

@@ -1,6 +1,7 @@
 // 提供排程页所需的表单、看板行、甘特数据和增删改辅助函数。
 import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
@@ -945,9 +946,9 @@ const formatScheduleWindow = (startAt, endAt) => {
 const buildExperimentTrayMap = (experimentTrays) => {
   const trayMap = new Map();
   (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
-    const taskCode = normalizeText(entry?.task_code);
-    const experimentCode = normalizeText(entry?.experiment_code);
-    const trayCode = normalizeText(entry?.tray_code);
+    const taskCode = normalizeText(entry?.task_code || entry?.taskCode);
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    const trayCode = normalizeText(entry?.tray_code || entry?.trayCode);
     if (!taskCode || !experimentCode || !trayCode) {
       return;
     }
@@ -962,14 +963,16 @@ const buildExperimentTrayMap = (experimentTrays) => {
 const buildTrayExperimentCodeMap = (experimentTrays) => {
   const trayMap = new Map();
   (Array.isArray(experimentTrays) ? experimentTrays : []).forEach((entry) => {
-    const trayCode = normalizeText(entry?.tray_code);
-    const experimentCode = normalizeText(entry?.experiment_code);
-    if (!trayCode || !experimentCode) {
+    const taskCode = normalizeText(entry?.task_code || entry?.taskCode);
+    const trayCode = normalizeText(entry?.tray_code || entry?.trayCode);
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode);
+    if (!taskCode || !trayCode || !experimentCode) {
       return;
     }
-    const current = trayMap.get(trayCode) || new Set();
+    const key = `${taskCode}::${trayCode}`;
+    const current = trayMap.get(key) || new Set();
     current.add(experimentCode);
-    trayMap.set(trayCode, current);
+    trayMap.set(key, current);
   });
   return trayMap;
 };
@@ -1084,7 +1087,7 @@ const resolveScheduleLifecycleState = ({
   }
 
   const trayStatuses = collectScheduleTrayStatuses({ schedule, samples, experimentTrayMap });
-  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
+  const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(`${taskCode}::${trayCode}`)?.size || 0) > 1);
   if (hasSharedScopedTray) {
     return {
       completed: false,
@@ -1841,7 +1844,7 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
     return {
       ...experiment,
       status: hasFormalSchedule ? experiment.status : STATUS_WAITING,
-      unscheduled_since: hasFormalSchedule ? "" : confirmedAt?.toISOString() || "",
+      unscheduled_since: hasFormalSchedule ? "" : confirmedAt ? formatLocalDateTime(confirmedAt) : "",
     };
   });
 }
@@ -1970,10 +1973,10 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
       const candidate = {
         device,
-        end_at: resolved.endAt.toISOString(),
+        end_at: formatLocalDateTime(resolved.endAt),
         experiment_code: normalizeText(form?.experiment_code),
         planned_hours: resolved.plannedHours,
-        start_at: resolved.startAt.toISOString(),
+        start_at: formatLocalDateTime(resolved.startAt),
         task_code: taskCode,
   };
   const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules });
@@ -2038,10 +2041,10 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
 
   const candidate = {
     device,
-    end_at: resolved.endAt.toISOString(),
+    end_at: formatLocalDateTime(resolved.endAt),
     experiment_code: normalizeText(form?.experiment_code),
     planned_hours: resolved.plannedHours,
-    start_at: resolved.startAt.toISOString(),
+    start_at: formatLocalDateTime(resolved.startAt),
     task_code: normalizeText(form?.task_code),
   };
   const deviceRecord = findDeviceRecord(devices, device);

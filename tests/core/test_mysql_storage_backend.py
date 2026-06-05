@@ -15,6 +15,7 @@ from app.core.mysql_storage_backend import (
     build_sample_insert_row,
     build_storage_experiment_item,
     build_storage_experiment_sample_item,
+    build_storage_experiment_run_tray_item,
     build_storage_experiment_tray_item,
     build_storage_sample_item,
     build_device_insert_row,
@@ -500,11 +501,11 @@ def test_experiment_mapping_round_trip_preserves_unscheduled_since() -> None:
     )
 
     assert insert_row["unscheduled_since"] is not None
-    assert storage_item["unscheduled_since"] == "2026-03-17T17:36:00+08:00"
+    assert storage_item["unscheduled_since"] == "2026-03-17 17:36:00"
 
 
 def test_mysql_storage_datetimes_use_beijing_timezone_for_api_payloads() -> None:
-    assert format_iso_storage_datetime(datetime(2026, 4, 21, 15, 4, 5)) == "2026-04-21T15:04:05+08:00"
+    assert format_iso_storage_datetime(datetime(2026, 4, 21, 15, 4, 5)) == "2026-04-21 15:04:05"
     assert parse_storage_datetime("2026-04-21T07:04:05Z") == datetime(2026, 4, 21, 15, 4, 5)
 
     storage_item = build_storage_experiment_item(
@@ -522,7 +523,57 @@ def test_mysql_storage_datetimes_use_beijing_timezone_for_api_payloads() -> None
         }
     )
 
-    assert storage_item["unscheduled_since"] == "2026-04-21T15:04:05+08:00"
+    assert storage_item["unscheduled_since"] == "2026-04-21 15:04:05"
+
+
+def test_normalize_storage_payload_rewrites_legacy_timezone_datetimes() -> None:
+    normalized = normalize_storage_payload(
+        {
+            "mes.tasks": [
+                {
+                    "code": "TASK-TIMEZONE",
+                    "created_at": "2026-06-04T12:00:00Z",
+                    "updated_at": "2026-06-04T20:10:00+08:00",
+                }
+            ],
+            "mes.samples": [
+                {
+                    "code": "SP-TIMEZONE",
+                    "task_code": "TASK-TIMEZONE",
+                    "created_at": "2026-06-04T12:00:00Z",
+                    "updated_at": "2026-06-04T20:10:00+08:00",
+                    "history": [
+                        {"action": "到货", "time": "2026-06-04T12:00:00Z"},
+                        {"action": "实验开始", "time": "2026-06-04T20:10:00+08:00"},
+                    ],
+                    "trays": [
+                        {
+                            "tray_code": "TP-TIMEZONE",
+                            "created_at": "2026-06-04T12:00:00Z",
+                            "updated_at": "2026-06-04T20:10:00+08:00",
+                        }
+                    ],
+                }
+            ],
+            "mes.experiment_runs": [
+                {
+                    "run_no": "RUN-TIMEZONE",
+                    "task_code": "TASK-TIMEZONE",
+                    "experiment_code": "EXP-TIMEZONE",
+                    "started_at": "2026-06-04T12:00:00Z",
+                    "ended_at": "2026-06-04T20:10:00+08:00",
+                }
+            ],
+        }
+    )
+
+    assert normalized["mes.tasks"][0]["created_at"] == "2026-06-04 20:00:00"
+    assert normalized["mes.tasks"][0]["updated_at"] == "2026-06-04 20:10:00"
+    assert normalized["mes.samples"][0]["history"][0]["time"] == "2026-06-04 20:00:00"
+    assert normalized["mes.samples"][0]["history"][1]["time"] == "2026-06-04 20:10:00"
+    assert normalized["mes.samples"][0]["trays"][0]["created_at"] == "2026-06-04 20:00:00"
+    assert normalized["mes.experiment_runs"][0]["started_at"] == "2026-06-04 20:00:00"
+    assert normalized["mes.experiment_runs"][0]["ended_at"] == "2026-06-04 20:10:00"
 
 
 def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() -> None:
@@ -584,7 +635,7 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
         ],
     )
 
-    assert experiments[0]["unscheduled_since"] == "2026-03-17T17:00:00+08:00"
+    assert experiments[0]["unscheduled_since"] == "2026-03-17 17:00:00"
     assert repaired == {
         "SYLU-2026-04-106-A": datetime(2026, 3, 17, 17, 0),
     }
@@ -983,8 +1034,8 @@ def test_device_mapping_round_trip_preserves_maintenance_plan_fields() -> None:
     assert insert_row["maintenance_end_at"].strftime("%Y-%m-%d %H:%M:%S") == "2026-05-29 12:00:00"
     assert insert_row["maintenance_type"] == "计划维修"
     assert insert_row["maintenance_note"] == "提前更换喷嘴"
-    assert storage_item["maintenance_start_at"] == "2026-05-29T09:00:00+08:00"
-    assert storage_item["maintenance_end_at"] == "2026-05-29T12:00:00+08:00"
+    assert storage_item["maintenance_start_at"] == "2026-05-29 09:00:00"
+    assert storage_item["maintenance_end_at"] == "2026-05-29 12:00:00"
     assert storage_item["maintenance_type"] == "计划维修"
     assert storage_item["maintenance_note"] == "提前更换喷嘴"
 
@@ -1276,6 +1327,184 @@ def test_build_storage_sample_item_recovers_tray_target_lab_from_dispatch_histor
     assert storage_item["trays"][0]["target_lab"] == "温度冲击一室"
 
 
+def test_build_storage_sample_item_recovers_tray_target_experiment_from_staging_event() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 104,
+            "sample_no": "SYLU-2026-06-021-SP-002",
+            "task_no": "SYLU-2026-06-021",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "温度冲击二室",
+            "sample_status": "送至实验室",
+            "flow_status": "送至实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-05 14:49:52",
+            "updated_at": "2026-06-05 14:54:18",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-021-TP-002",
+                "tray_code": "SYLU-2026-06-021-TP-002",
+                "sample_code": "SYLU-2026-06-021-SP-002",
+                "quantity": 1,
+                "status": "送至实验室",
+                "created_at": "2026-06-05 14:46:52",
+                "updated_at": "2026-06-05 14:54:18",
+            }
+        ],
+        staging_event_rows=[
+            {
+                "tray_code": "SYLU-2026-06-021-TP-002",
+                "task_code": "SYLU-2026-06-021",
+                "action": "stock_in",
+                "time": "2026-06-05 14:54:01",
+            },
+            {
+                "tray_code": "SYLU-2026-06-021-TP-002",
+                "task_code": "SYLU-2026-06-021",
+                "action": "stock_out",
+                "time": "2026-06-05 14:54:18",
+                "target_lab": "温度冲击二室",
+                "target_experiment_code": "SYLU-2026-06-021-B",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "温度冲击二室"
+    assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-06-021-B"
+
+
+def test_build_storage_sample_item_recovers_direct_dispatch_target_experiment_from_schedule() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 106,
+            "sample_no": "SYLU-2026-06-021-SP-005",
+            "task_no": "SYLU-2026-06-021",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "温度冲击二室",
+            "sample_status": "送至实验室",
+            "flow_status": "送至实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-05 14:49:52",
+            "updated_at": "2026-06-05 14:50:57",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-021-TP-005",
+                "tray_code": "SYLU-2026-06-021-TP-005",
+                "sample_code": "SYLU-2026-06-021-SP-005",
+                "quantity": 1,
+                "status": "送至实验室",
+                "created_at": "2026-06-05 14:46:52",
+                "updated_at": "2026-06-05 14:50:57",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 406914,
+                "event_time": "2026-06-05 14:50:57",
+                "action_type": "送至实验室",
+                "location_desc": "温度冲击二室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-06-021-TP-005 -> 温度冲击二室",
+            },
+        ],
+        schedules=[
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-A",
+                "device": "冲击二室",
+            },
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-B",
+                "device": "温度冲击二室",
+            },
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-C",
+                "device": "振动二室",
+            },
+        ],
+        experiment_trays=[
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-A",
+                "tray_code": "SYLU-2026-06-021-TP-005",
+            },
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-B",
+                "tray_code": "SYLU-2026-06-021-TP-005",
+            },
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-C",
+                "tray_code": "SYLU-2026-06-021-TP-005",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "温度冲击二室"
+    assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-06-021-B"
+
+
+def test_build_storage_sample_item_prefers_structured_dispatch_target_over_detail_text() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 105,
+            "sample_no": "SYLU-2026-06-022-SP-001",
+            "task_no": "SYLU-2026-06-022",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "冲击一室",
+            "sample_status": "送至实验室",
+            "flow_status": "送至实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-03 18:50:19",
+            "updated_at": "2026-06-03 18:51:57",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-022-TP-001",
+                "tray_code": "SYLU-2026-06-022-TP-001",
+                "sample_code": "SYLU-2026-06-022-SP-001",
+                "quantity": 1,
+                "status": "送至实验室",
+                "created_at": "2026-06-03 18:50:35",
+                "updated_at": "2026-06-03 18:51:57",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 406916,
+                "event_time": "2026-06-03 18:51:57",
+                "action_type": "送至实验室",
+                "target_lab": "冲击一室",
+                "location_desc": "冲击一室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-06-022-TP-001 -> 霉菌试验室",
+            }
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "冲击一室"
+
+
 def test_build_storage_sample_item_does_not_recover_target_lab_for_completed_tray() -> None:
     storage_item = build_storage_sample_item(
         {
@@ -1553,6 +1782,69 @@ def test_replace_samples_persists_real_tray_item_status() -> None:
         if "INSERT INTO biz_tray_item" in sql
     )
     assert tray_item_call[0]["status"] == "实验进行中"
+
+
+def test_replace_samples_binds_dispatched_tray_to_target_lab() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 1, "task_no": "TASK-SHARED"}]
+            elif "SELECT lab_id, lab_code, lab_name FROM md_lab" in statement:
+                self._result = [{"lab_id": 8, "lab_code": "LAB_TEMP_SHOCK_1", "lab_name": "温度冲击一室"}]
+            elif "SELECT sample_id, sample_no, task_id FROM biz_sample" in statement:
+                self._result = [{"sample_id": 11, "sample_no": "SP-SHARED", "task_id": 1}]
+            elif "SELECT tray_id, tray_no FROM biz_tray" in statement:
+                self._result = [{"tray_id": 21, "tray_no": "TP-SHARED"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_samples(
+        cursor,
+        [
+            {
+                "code": "SP-SHARED",
+                "task_code": "TASK-SHARED",
+                "status": "送至实验室",
+                "flow_status": "送至实验室",
+                "location": "温度冲击一室",
+                "updated_at": "2026-06-04T12:00:00Z",
+                "trays": [
+                    {
+                        "quantity": 1,
+                        "status": "送至实验室",
+                        "target_lab": "温度冲击一室",
+                        "tray_code": "TP-SHARED",
+                        "updated_at": "2026-06-04T12:00:00Z",
+                    }
+                ],
+                "history": [],
+            }
+        ],
+    )
+
+    tray_call = next(
+        rows
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_tray" in sql
+    )
+    assert tray_call[0]["current_lab_id"] == 8
 
 
 def test_replace_samples_persists_fixture_ready_as_compat_experiment_event() -> None:
@@ -1889,8 +2181,39 @@ def test_experiment_run_row_round_trips_tray_scoped_batch_times() -> None:
     assert row["run_status"] == "实验进行中"
     assert item["schedule_id"] == "schedule-001"
     assert item["tray_codes"] == ["SYLU-2026-05-001-TP-002"]
-    assert item["started_at"] == "2026-06-01T09:40:00+08:00"
-    assert item["planned_end_at"] == "2026-06-01T13:10:00+08:00"
+    assert item["started_at"] == "2026-06-01 09:40:00"
+    assert item["planned_end_at"] == "2026-06-01 13:10:00"
+
+
+def test_experiment_run_tray_item_exposes_tray_scoped_status() -> None:
+    item = build_storage_experiment_run_tray_item(
+        {
+            "relation_id": 7,
+            "run_no": "RUN-001",
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "tray_no": "SYLU-2026-06-001-TP-002",
+            "run_tray_status": "实验中",
+            "started_at": "2026-06-05 08:30:00",
+            "ended_at": None,
+            "created_at": "2026-06-05 08:30:00",
+            "updated_at": "2026-06-05 08:35:00",
+        }
+    )
+
+    assert item == {
+        "id": "7",
+        "run_no": "RUN-001",
+        "task_code": "SYLU-2026-06-001",
+        "experiment_code": "SYLU-2026-06-001-A",
+        "tray_code": "SYLU-2026-06-001-TP-002",
+        "run_tray_status": "实验进行中",
+        "status": "实验进行中",
+        "started_at": "2026-06-05 08:30:00",
+        "ended_at": "",
+        "created_at": "2026-06-05 08:30:00",
+        "updated_at": "2026-06-05 08:35:00",
+    }
 
 
 class _DummySnapshotRepository:
@@ -1957,7 +2280,12 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
     monkeypatch.setattr(backend, "_replace_streams", lambda cursor, rows: order.append("streams"))
     monkeypatch.setattr(backend, "_replace_samples", lambda cursor, rows: order.append("samples"))
     monkeypatch.setattr(backend, "_replace_experiments", lambda cursor, rows: order.append("experiments"))
-    monkeypatch.setattr(backend, "_replace_experiment_runs", lambda cursor, rows: order.append("experiment_runs"))
+    monkeypatch.setattr(
+        backend,
+        "_replace_experiment_runs",
+        lambda cursor, rows, replace_trays=True: order.append(f"experiment_runs:{replace_trays}"),
+    )
+    monkeypatch.setattr(backend, "_replace_experiment_run_trays", lambda cursor, rows: order.append("experiment_run_trays"))
     monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
     monkeypatch.setattr(backend, "_replace_experiment_samples", lambda cursor, rows: order.append("experiment_samples"))
     monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: order.append("schedule_task_ids"))
@@ -1969,6 +2297,15 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
             "mes.samples": [{"code": "SYLU-2026-03-001-SP-001", "task_code": "SYLU-2026-03-001"}],
             "mes.experiments": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
             "mes.experiment_runs": [{"id": "run-001", "experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001"}],
+            "mes.experiment_run_trays": [
+                {
+                    "run_no": "run-001",
+                    "experiment_code": "SYLU-2026-03-001-A",
+                    "task_code": "SYLU-2026-03-001",
+                    "tray_code": "SYLU-2026-03-001-TP-001",
+                    "run_tray_status": "实验进行中",
+                }
+            ],
             "mes.experiment_trays": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "tray_code": "SYLU-2026-03-001-TP-001"}],
             "mes.experiment_samples": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "sample_code": "SYLU-2026-03-001-SP-001"}],
         }
@@ -1978,7 +2315,8 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "tasks:False",
         "samples",
         "experiments",
-        "experiment_runs",
+        "experiment_runs:False",
+        "experiment_run_trays",
         "experiment_trays",
         "experiment_samples",
         "tasks:True",
@@ -2074,7 +2412,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     monkeypatch.setattr(
         backend,
         "_load_samples",
-        lambda cursor: [
+        lambda cursor, *args, **kwargs: [
             {
                 "code": "TASK-001-SP-001",
                 "task_code": "TASK-001",
@@ -2099,6 +2437,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     )
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_samples", lambda cursor: [])
     monkeypatch.setattr(
         backend,
@@ -2108,7 +2447,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
 
     snapshot = backend.read_all()
 
-    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17T17:00:00+08:00"
+    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17 17:00:00"
     assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 17, 0)}
     assert connection.commit_count == 2
 

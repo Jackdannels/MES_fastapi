@@ -8,6 +8,10 @@ import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/s
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const firstNonEmptyArray = (...values) => {
+  const arrays = values.filter(Array.isArray);
+  return arrays.find((value) => value.length > 0) || arrays[0] || [];
+};
 const normalizeText = (value) => String(value ?? "").trim();
 const compareText = (left, right) => normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 const normalizeQuantity = (value) => {
@@ -72,7 +76,7 @@ const buildScheduleByTaskAndExperiment = (schedules) => {
 const buildRelationIndexes = ({ experimentTrays, experiments, schedules }) => {
   const experimentByKey = buildExperimentByTaskAndCode(experiments);
   const scheduleByKey = buildScheduleByTaskAndExperiment(schedules);
-  const relationsByTrayCode = new Map();
+  const relationsByTaskAndTrayCode = new Map();
 
   asArray(experimentTrays).forEach((relation) => {
     const taskCode = resolveTaskCode(relation);
@@ -89,21 +93,36 @@ const buildRelationIndexes = ({ experimentTrays, experiments, schedules }) => {
       taskCode,
       trayCode,
     };
-    const existing = relationsByTrayCode.get(trayCode) || [];
+    const trayKey = `${taskCode}::${trayCode}`;
+    const existing = relationsByTaskAndTrayCode.get(trayKey) || [];
     existing.push(indexedRelation);
-    relationsByTrayCode.set(trayCode, existing);
+    relationsByTaskAndTrayCode.set(trayKey, existing);
   });
 
-  return { relationsByTrayCode };
+  return { relationsByTaskAndTrayCode };
 };
 
 const relationMatchesLab = (relation, labName) =>
   resolveLabDevice(relation?.schedule) === labName || resolveLabDevice(relation?.experiment) === labName;
+const resolveTrayTargetLab = (tray) => normalizeText(tray?.target_lab || tray?.targetLab);
+const resolveTrayTargetExperimentCode = (tray) => normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+const resolveRelationLabName = (relation) =>
+  resolveLabDevice(relation?.schedule) || resolveLabDevice(relation?.experiment);
+const selectLabRelationsForTray = ({ activeTargetExperimentCode = "", activeTargetLab = "", labName, relations }) => {
+  const labRelations = asArray(relations).filter((relation) => relationMatchesLab(relation, labName));
 
-const sampleMatchesLab = (sample, labName) => normalizeText(sample?.location) === labName || normalizeText(sample?.current_location) === labName;
-const resolveTrayTargetLab = (tray, sample) =>
-  normalizeText(tray?.target_lab || tray?.targetLab || sample?.target_lab || sample?.targetLab);
-const TARGET_LAB_OWNERSHIP_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
+  if (activeTargetExperimentCode) {
+    return labRelations.filter((relation) => relation.experimentCode === activeTargetExperimentCode);
+  }
+  if (activeTargetLab) {
+    return activeTargetLab === labName ? labRelations : [];
+  }
+  return labRelations;
+};
+
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成"]);
+const resolveRelationStatus = (relation) =>
+  normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
 const resolveRelationExperimentName = (experiment) =>
   normalizeText(
     experiment?.experiment_name
@@ -123,29 +142,19 @@ const sampleHasCompletedExperiment = (sample, relation) => {
     return detail.includes(taskCode) && detail.includes(experimentName) && detail.includes("实验已完成");
   });
 };
-const relationIsCompletedForSample = (sample, relation) => {
-  const experimentStatus = normalizeLifecycleStatus("", normalizeText(relation?.experiment?.status));
-  return experimentStatus === "实验已完成" || experimentStatus === "实验完成" || sampleHasCompletedExperiment(sample, relation);
+const relationIsCompletedByRunTray = ({ experimentRunTrays, relation }) =>
+  asArray(experimentRunTrays).some((entry) =>
+    resolveTaskCode(entry) === resolveTaskCode(relation)
+    && resolveExperimentCode(entry) === resolveExperimentCode(relation)
+    && resolveTrayCode(entry) === resolveTrayCode(relation)
+    && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
+  );
+const relationIsCompletedForSample = ({ experimentRunTrays = [], sample, relation }) => {
+  return relationIsCompletedByRunTray({ experimentRunTrays, relation })
+    || sampleHasCompletedExperiment(sample, relation);
 };
-const resolveCurrentRelation = (relations, sample) =>
-  asArray(relations).find((relation) => !relationIsCompletedForSample(sample, relation))
-  || asArray(relations).at(-1)
-  || {};
-const resolveSampleKnownLab = (sample, knownLabNames) => {
-  const location = normalizeText(sample?.location);
-  if (knownLabNames.has(location)) {
-    return location;
-  }
-  const currentLocation = normalizeText(sample?.current_location);
-  if (knownLabNames.has(currentLocation)) {
-    return currentLocation;
-  }
-  return "";
-};
-
-const buildTrayRowsForLab = ({ labName, labNames = [], samples, experiments, experimentTrays, schedules }) => {
-  const { relationsByTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
-  const knownLabNames = new Set(asArray(labNames).map(normalizeText).filter(Boolean));
+const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules }) => {
+  const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const trayMap = new Map();
 
   asArray(samples).forEach((sample) => {
@@ -156,42 +165,62 @@ const buildTrayRowsForLab = ({ labName, labNames = [], samples, experiments, exp
       if (!trayCode || !taskCode) {
         return;
       }
-      const relations = relationsByTrayCode.get(trayCode) || [];
-      const labRelations = relations.filter((relation) => relationMatchesLab(relation, labName));
+      const relations = relationsByTaskAndTrayCode.get(`${taskCode}::${trayCode}`) || [];
+      const targetExperimentCode = resolveTrayTargetExperimentCode(tray);
+      const targetLab = resolveTrayTargetLab(tray);
+      const targetExperimentRelations = targetExperimentCode
+        ? relations.filter((relation) => relation.experimentCode === targetExperimentCode)
+        : [];
+      const activeTargetExperimentCode =
+        targetExperimentCode
+        && targetExperimentRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
+          ? targetExperimentCode
+          : "";
+      const targetLabRelations = !activeTargetExperimentCode && targetLab
+        ? relations.filter((relation) => resolveRelationLabName(relation) === targetLab)
+        : [];
+      const activeTargetLab =
+        targetLab
+        && targetLabRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
+          ? targetLab
+          : "";
+      const labRelations = selectLabRelationsForTray({
+        activeTargetExperimentCode,
+        activeTargetLab,
+        labName,
+        relations,
+      });
+      const incompleteLabRelations = labRelations.filter((relation) =>
+        !relationIsCompletedForSample({ experimentRunTrays, sample, relation }),
+      );
+      if (labRelations.length > 0 && incompleteLabRelations.length === 0) {
+        return;
+      }
       const lifecycleStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
-      const targetLabCanOwnTray = TARGET_LAB_OWNERSHIP_STATUSES.has(lifecycleStatus);
-      const targetLab = targetLabCanOwnTray ? resolveTrayTargetLab(tray, sample) : "";
-      const currentKnownLab = targetLabCanOwnTray ? resolveSampleKnownLab(sample, knownLabNames) : "";
-      const currentRelation = resolveCurrentRelation(relations, sample);
-      const relationLab = resolveLabDevice(currentRelation?.schedule) || resolveLabDevice(currentRelation?.experiment);
-      const actualLab = targetLab || currentKnownLab || relationLab;
-      if (actualLab) {
-        if (actualLab !== labName) {
-          return;
-        }
-      } else if (labRelations.length === 0 && !sampleMatchesLab(sample, labName)) {
+      const scheduledLabMatches = incompleteLabRelations.length > 0;
+      if (!scheduledLabMatches) {
         return;
       }
 
-      const relation =
-        (actualLab ? relations.find((entry) => relationMatchesLab(entry, actualLab)) : null)
-        || currentRelation
-        || labRelations[0]
-        || {};
       const flow = buildTrayFlowView({
-        currentExperimentCode: relation.experimentCode || "",
+        currentExperimentCode: activeTargetExperimentCode,
+        dispatchTargetLab: activeTargetLab,
+        experimentRuns,
+        experimentRunTrays,
         experimentTrays,
         experiments,
         location: sample?.location,
         samples,
         schedules,
-        status: normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status)),
+        status: lifecycleStatus,
         taskCode,
         trayCode,
       });
 
-      if (!trayMap.has(trayCode)) {
-        trayMap.set(trayCode, {
+      const trayMapKey = `${taskCode}::${trayCode}`;
+      if (!trayMap.has(trayMapKey)) {
+        trayMap.set(trayMapKey, {
+          canonicalStatus: flow.canonicalStatus || flow.status || "-",
           quantity: 0,
           sampleCodes: [],
           status: flow.status || "-",
@@ -200,12 +229,13 @@ const buildTrayRowsForLab = ({ labName, labNames = [], samples, experiments, exp
           trayCode,
         });
       }
-      const current = trayMap.get(trayCode);
+      const current = trayMap.get(trayMapKey);
       current.quantity += normalizeQuantity(tray?.quantity);
       if (sampleCode && !current.sampleCodes.includes(sampleCode)) {
         current.sampleCodes.push(sampleCode);
       }
       if ((flow.steps || []).some((step) => step.active)) {
+        current.canonicalStatus = flow.canonicalStatus || current.canonicalStatus;
         current.status = flow.status || current.status;
         current.steps = asArray(flow.steps);
       }
@@ -224,6 +254,8 @@ function buildLabProcessPanels(input = {}) {
   const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
+  const experimentRuns = asArray(input.experimentRuns || input.experiment_runs);
+  const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const schedules = asArray(input.schedules);
 
@@ -233,6 +265,8 @@ function buildLabProcessPanels(input = {}) {
       labNames,
       samples,
       experiments,
+      experimentRuns,
+      experimentRunTrays,
       experimentTrays,
       schedules,
     });
@@ -370,9 +404,16 @@ function buildLabScheduleThreeDayView(input = {}) {
   };
 }
 
-const STAGING_CURRENT_STATUSES = new Set(["到货", "已入库", "暂存间存放", "已到达暂存间", "放置实验后暂存间"]);
+const STAGING_CURRENT_STATUSES = new Set(["已入库", "暂存间存放", "已到达暂存间"]);
 const STAGING_OUT_ACTIONS = new Set(["stock_out", "manufacturer_return"]);
-const STAGING_LOCATION_KEYWORD = "暂存间";
+const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
+const PLANNED_STAGING_STATUSES = new Set(["送至暂存间"]);
+const PLANNED_STAGING_ACTIONS = new Set(["送至暂存间"]);
+const STAGING_KIND_LABELS = {
+  current: "实际在暂存间",
+  planned: "计划进入暂存间",
+  "post-test": "实验后暂存间",
+};
 
 const resolveTaskName = (task) => normalizeText(task?.name || task?.task_name || task?.code);
 const resolveTaskTestType = (task) => normalizeText(task?.test_type || task?.sample_type || task?.type);
@@ -430,26 +471,40 @@ const buildExperimentLabelByTray = ({ experiments, experimentTrays }) => {
   return labelsByTray;
 };
 
-const isStagingLocation = (value) => normalizeText(value).includes(STAGING_LOCATION_KEYWORD);
 const isCurrentStagingStatus = (status) => STAGING_CURRENT_STATUSES.has(normalizeText(status));
-const isExplicitOutStatus = (status) => ["已出库", "厂家收回"].includes(normalizeText(status));
+const isPostTestStagingLocation = (value) => normalizeText(value).includes(POST_TEST_STAGING_KEYWORD);
+const isPostTestStagingStatus = (status) => normalizeText(status) === "放置实验后暂存间";
+const isPlannedStagingStatus = (status) => PLANNED_STAGING_STATUSES.has(normalizeText(status));
 
-const resolveStagingTrayStatus = (row, latestEvent) => {
+const buildStagingKind = (kind, status = "") => ({
+  kind,
+  label: STAGING_KIND_LABELS[kind],
+  status: normalizeText(status) || STAGING_KIND_LABELS[kind],
+});
+
+const resolveStagingTrayKind = (row, latestEvent) => {
   const latestAction = normalizeText(latestEvent?.action);
   if (STAGING_OUT_ACTIONS.has(latestAction)) {
-    return "";
+    return null;
+  }
+  if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
+    return buildStagingKind("post-test", "放置实验后暂存间");
   }
   const currentStatus = row.statuses.find((status) => isCurrentStagingStatus(status));
   if (currentStatus) {
-    return currentStatus;
+    return buildStagingKind("current", currentStatus);
   }
   if (latestAction === "stock_in") {
-    return "已入库";
+    return buildStagingKind("current", "已入库");
   }
-  if (row.hasStagingLocation && !row.statuses.some((status) => isExplicitOutStatus(status))) {
-    return normalizeText(row.statuses[0]) || "暂存间存放";
+  const plannedStatus = row.statuses.find((status) => isPlannedStagingStatus(status));
+  if (plannedStatus) {
+    return buildStagingKind("planned", plannedStatus);
   }
-  return "";
+  if (PLANNED_STAGING_ACTIONS.has(latestAction)) {
+    return buildStagingKind("planned", latestAction);
+  }
+  return null;
 };
 
 const clampRemaining = (capacity, used) => Math.max(0, capacity - used);
@@ -500,7 +555,7 @@ function buildStagingSamplesView(input = {}) {
       const key = `${taskCode}::${trayCode}`;
       const current = trayMap.get(key) || {
         experimentLabels: labelsByTray.get(trayCode) || [],
-        hasStagingLocation: false,
+        hasPostTestStagingLocation: false,
         sampleCodes: [],
         sampleTypeFallback: "",
         statuses: [],
@@ -509,11 +564,21 @@ function buildStagingSamplesView(input = {}) {
         testType: resolveTaskTestType(task),
         trayCode,
       };
-      current.hasStagingLocation =
-        current.hasStagingLocation || isStagingLocation(sample?.location) || isStagingLocation(sample?.current_location);
+      current.hasPostTestStagingLocation =
+        current.hasPostTestStagingLocation
+        || isPostTestStagingLocation(sample?.location)
+        || isPostTestStagingLocation(sample?.current_location);
       current.sampleTypeFallback =
         current.sampleTypeFallback || normalizeText(sample?.sample_type || task?.sample_type || task?.test_type);
-      current.statuses.push(normalizeText(tray?.status) || normalizeText(sample?.status));
+      [
+        normalizeText(tray?.status),
+        normalizeText(sample?.status),
+        normalizeText(sample?.flow_status),
+      ].filter(Boolean).forEach((status) => {
+        if (!current.statuses.includes(status)) {
+          current.statuses.push(status);
+        }
+      });
       if (sampleCode && !current.sampleCodes.includes(sampleCode)) {
         current.sampleCodes.push(sampleCode);
       }
@@ -534,7 +599,7 @@ function buildStagingSamplesView(input = {}) {
       const task = taskByCode.get(taskCode) || {};
       trayMap.set(key, {
         experimentLabels: labelsByTray.get(trayCode) || [],
-        hasStagingLocation: true,
+        hasPostTestStagingLocation: false,
         sampleCodes: [],
         sampleTypeFallback: "",
         statuses: [],
@@ -549,8 +614,8 @@ function buildStagingSamplesView(input = {}) {
   const trays = Array.from(trayMap.values())
     .map((row) => {
       const latestEvent = latestEventByTray.get(row.trayCode);
-      const status = resolveStagingTrayStatus(row, latestEvent);
-      if (!status) {
+      const stagingKind = resolveStagingTrayKind(row, latestEvent);
+      if (!stagingKind) {
         return null;
       }
       const experimentType = row.experimentLabels.join(" / ") || row.testType || row.sampleTypeFallback || "待确认实验";
@@ -560,7 +625,9 @@ function buildStagingSamplesView(input = {}) {
         overflowSampleCount: Math.max(0, sampleCodes.length - 5),
         sampleCodes,
         sampleCount: sampleCodes.length,
-        status,
+        stagingKind: stagingKind.kind,
+        stagingKindLabel: stagingKind.label,
+        status: stagingKind.status,
         taskCode: row.taskCode,
         taskName: row.taskName || row.taskCode,
         trayCode: row.trayCode,
@@ -595,8 +662,11 @@ function buildStagingSamplesView(input = {}) {
 
   return {
     summary: {
+      currentTrayCount: trays.filter((tray) => tray.stagingKind === "current").length,
       moldRemaining: clampRemaining(capacity, moldTrayCount),
       moldTrayCount,
+      plannedTrayCount: trays.filter((tray) => tray.stagingKind === "planned").length,
+      postTestTrayCount: trays.filter((tray) => tray.stagingKind === "post-test").length,
       saltSprayRemaining: clampRemaining(capacity, saltSprayTrayCount),
       saltSprayTrayCount,
       totalSampleCount: trays.reduce((total, tray) => total + tray.sampleCount, 0),

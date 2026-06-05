@@ -262,6 +262,8 @@ function useTaskOverview() {
     STORAGE_KEYS.streams,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
   ]);
 
   const loading = ref(false);
@@ -295,10 +297,12 @@ function useTaskOverview() {
     });
 
   // 托盘视图和任务视图共享同一份底层快照，但会产出不同结构。
-  const buildTrayOverviewRows = (tasks, samples, schedules, experiments, experimentTrays) =>
+  const buildTrayOverviewRows = (tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays) =>
     buildTrayOverviewRowsModel({
       tasks,
       experiments,
+      experimentRuns,
+      experimentRunTrays,
       experimentTrays,
       samples,
       schedules,
@@ -308,10 +312,10 @@ function useTaskOverview() {
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,
     });
 
-  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = []) => {
+  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = [], experimentRuns = [], experimentRunTrays = []) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
     rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays);
-    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays);
+    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays);
   };
 
   const testTypeOptions = computed(() => {
@@ -364,6 +368,8 @@ function useTaskOverview() {
         snapshot[STORAGE_KEYS.schedules],
         snapshot[STORAGE_KEYS.experiments],
         snapshot[STORAGE_KEYS.experiment_trays],
+        snapshot[STORAGE_KEYS.experiment_runs],
+        snapshot[STORAGE_KEYS.experiment_run_trays],
       );
     } finally {
       loading.value = false;
@@ -624,6 +630,8 @@ function useTaskOverview() {
       STORAGE_KEYS.streams,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
     ],
     refresh: loadOverview,
     paused: isRealtimeRefreshPaused,

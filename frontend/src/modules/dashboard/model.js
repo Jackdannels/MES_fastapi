@@ -41,6 +41,8 @@ const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
 const normalizeText = (value) => String(value ?? "").trim();
+const buildDeviceMatchLabels = (device) =>
+  Array.from(new Set([normalizeText(device?.code), normalizeText(device?.name)].filter(Boolean)));
 const compareTaskCodes = (left, right) =>
   normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 // 带“暂存间”标识的设备会被视为留样暂存位置，而非正式实验室。
@@ -203,12 +205,40 @@ function resolveTaskStatus(task, schedules, experiments) {
 }
 
 // 推导设备汇总区当前显示的设备状态标签。
-function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, returnedTaskCodes = new Set()) {
+function buildRunByNo(experimentRuns) {
+  const runByNo = new Map();
+  (Array.isArray(experimentRuns) ? experimentRuns : []).forEach((run) => {
+    const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
+    if (runNo) {
+      runByNo.set(runNo, run);
+    }
+  });
+  return runByNo;
+}
+
+function runTrayIsRunning(relation) {
+  return RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status));
+}
+
+function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, experimentRunTrays = [], returnedTaskCodes = new Set()) {
   const deviceCode = normalizeText(device?.code);
+  const deviceLabels = buildDeviceMatchLabels(device);
   const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
+  const experimentRunTrayList = Array.isArray(experimentRunTrays) ? experimentRunTrays : [];
+  const runByNo = buildRunByNo(experimentRunList);
+  const runningRunTray = experimentRunTrayList.find((relation) => {
+    const run = runByNo.get(normalizeText(relation?.run_no) || normalizeText(relation?.runNo));
+    return run
+      && deviceLabels.includes(normalizeText(run?.device))
+      && runTrayIsRunning(relation)
+      && !returnedTaskCodes.has(normalizeText(relation?.task_code || run?.task_code));
+  });
+  if (runningRunTray) {
+    return DEVICE_STATUS_WORKING;
+  }
   const runningRun = experimentRunList.find(
     (run) =>
-      normalizeText(run?.device) === deviceCode
+      deviceLabels.includes(normalizeText(run?.device))
       && RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
       && !returnedTaskCodes.has(normalizeText(run?.task_code)),
   );
@@ -269,7 +299,7 @@ function resolveDeviceDotClass(status) {
 }
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
-function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, samples, experimentTrays, conflicts, now = Date.now() }) {
+function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, experimentRunTrays, samples, experimentTrays, conflicts, now = Date.now() }) {
   const returnedTaskCodes = new Set(
     (Array.isArray(tasks) ? tasks : [])
       .filter((task) => isReturnedTaskRecord(task, schedules))
@@ -285,6 +315,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   const sampleList = Array.isArray(samples) ? samples : [];
   const experimentTrayList = Array.isArray(experimentTrays) ? experimentTrays : [];
   const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
+  const experimentRunTrayList = Array.isArray(experimentRunTrays) ? experimentRunTrays : [];
   const pendingExceptionExperimentKeys = buildPendingExceptionExperimentKeys(conflicts);
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
   const samplesByTaskCode = new Map();
@@ -316,8 +347,20 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
       .filter(Boolean),
   );
   const unscheduledCount = normalizedTasks.filter((task) => normalizeText(task?.displayStatus) === STATUS_WAITING).length;
+  const runningExperimentKeysFromRunTrays = new Set(
+    experimentRunTrayList
+      .filter((relation) => runTrayIsRunning(relation) && !returnedTaskCodes.has(normalizeText(relation?.task_code)))
+      .map((relation) => `${normalizeText(relation?.task_code)}::${normalizeText(relation?.experiment_code)}`)
+      .filter((key) => key !== "::"),
+  );
+  const experimentKeysWithRunTrays = new Set(
+    experimentRunTrayList
+      .map((relation) => `${normalizeText(relation?.task_code)}::${normalizeText(relation?.experiment_code)}`)
+      .filter((key) => key !== "::"),
+  );
   const runningExperimentCount = activeExperimentList.filter((experiment) => {
-    return isExperimentRunning(experiment);
+    const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;
+    return runningExperimentKeysFromRunTrays.has(key) || (!experimentKeysWithRunTrays.has(key) && isExperimentRunning(experiment));
   }).length;
   const scheduledCount = normalizedTasks.filter((task) => formalScheduledTaskCodes.has(normalizeText(task?.code))).length;
   const gapCount = streamList.filter((stream) => normalizeText(stream?.status).includes("缺口")).length;
@@ -334,7 +377,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
   const deviceItems = deviceList.map((device) => {
-    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, experimentRunList, returnedTaskCodes);
+    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, experimentRunList, experimentRunTrayList, returnedTaskCodes);
     return {
       code: normalizeText(device?.code) || "-",
       dotClass: resolveDeviceDotClass(deviceStatus),

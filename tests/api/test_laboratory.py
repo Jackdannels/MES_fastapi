@@ -12,6 +12,7 @@ class FakeLaboratoryStorage:
             "mes.schedules": [],
             "mes.experiments": [],
             "mes.experiment_runs": [],
+            "mes.experiment_run_trays": [],
             "mes.experiment_trays": [],
             "mes.experiment_samples": [],
             "mes.staging_events": [],
@@ -121,11 +122,25 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
         "location": "盐雾试验室",
         "owner": "",
         "status": "实验已完成",
-        "time": "2026-05-19T10:00:00",
+        "time": "2026-05-19 10:00:00",
     }
     assert storage.read("mes.experiments")[0]["status"] == "实验已完成"
     assert storage.read("mes.schedules")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
+    assert storage.read("mes.experiment_run_trays") == [
+        {
+            "run_no": "RUN-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-501",
+            "status": "实验已完成",
+            "run_tray_status": "实验已完成",
+            "started_at": "",
+            "ended_at": "2026-05-19 10:00:00",
+            "created_at": "2026-05-19 10:00:00",
+            "updated_at": "2026-05-19 10:00:00",
+        }
+    ]
 
 
 def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):
@@ -207,6 +222,86 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
     assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_runs")[1]["status"] == "实验准备就绪"
+
+
+def test_laboratory_complete_experiment_infers_batch_trays_from_run_when_tray_codes_omitted(monkeypatch):
+    payloads = base_payloads(
+        [
+            sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501"),
+            sample_with_history("实验准备就绪", "盐雾试验室", [], tray_code="TP-502"),
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-502"},
+        ],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-501-A",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_codes": ["TP-501"],
+            "status": "实验进行中",
+        },
+        {
+            "run_no": "RUN-501-B",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_codes": ["TP-502"],
+            "status": "实验准备就绪",
+        },
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-501-A", "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["affectedTrayCodes"] == ["TP-501"]
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
+    assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
+    assert storage.read("mes.experiment_run_trays") == [
+        {
+            "run_no": "RUN-501-A",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-501",
+            "status": "实验已完成",
+            "run_tray_status": "实验已完成",
+            "started_at": "",
+            "ended_at": "2026-05-19 10:00:00",
+            "created_at": "2026-05-19 10:00:00",
+            "updated_at": "2026-05-19 10:00:00",
+        }
+    ]
+
+
+def test_laboratory_complete_experiment_rejects_ambiguous_multi_tray_completion(monkeypatch):
+    payloads = base_payloads(
+        [
+            sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501"),
+            sample_with_history("实验准备就绪", "盐雾试验室", [], tray_code="TP-502"),
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-502"},
+        ],
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 400
+    assert "trayCodes" in response.json()["detail"]
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验进行中"
+    assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
 
 
 def test_laboratory_complete_experiment_ignores_other_experiment_completion_when_checking_remaining_trays(monkeypatch):

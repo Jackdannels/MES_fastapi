@@ -175,7 +175,7 @@ describe("useDevicesPage", () => {
         "mes.experiments": [
           expect.objectContaining({
             experiment_code: "TASK-001-A",
-            unscheduled_since: "2099-03-19T07:15:00.000Z",
+            unscheduled_since: "2099-03-19 15:15:00",
           }),
         ],
       }),
@@ -310,7 +310,7 @@ describe("useDevicesPage", () => {
         "mes.devices": [
           expect.objectContaining({
             code: "冲击一室",
-            maintenance_start_at: "2099-03-20T07:30:00",
+            maintenance_start_at: "2099-03-20 07:30:00",
             maintenance_type: "维修",
             status: "维修",
           }),
@@ -448,7 +448,7 @@ describe("useDevicesPage", () => {
         "mes.devices": [
           expect.objectContaining({
             code: "冲击一室",
-            maintenance_start_at: "2099-03-20T07:30:00",
+            maintenance_start_at: "2099-03-20 07:30:00",
             maintenance_type: "维修",
             status: "维修",
           }),
@@ -483,14 +483,14 @@ describe("useDevicesPage", () => {
         "mes.devices": [
           expect.objectContaining({
             code: "冲击一室",
-            maintenance_start_at: "2099-03-20T07:30:00",
+            maintenance_start_at: "2099-03-20 07:30:00",
             maintenance_type: "维修",
             status: "维修",
           }),
         ],
         "mes.experiments": [
           expect.objectContaining({
-            actual_end_time: "2099-03-20T07:30:00",
+            actual_end_time: "2099-03-20 07:30:00",
             experiment_code: "TASK-001-A",
             status: "实验已完成",
           }),
@@ -505,7 +505,7 @@ describe("useDevicesPage", () => {
         ],
         "mes.experiment_runs": [
           expect.objectContaining({
-            ended_at: "2099-03-20T07:30:00",
+            ended_at: "2099-03-20 07:30:00",
             run_no: "RUN-001",
             status: "实验已完成",
           }),

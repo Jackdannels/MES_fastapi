@@ -412,6 +412,32 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("matches active experiment runs by device name when dashboard device code is different", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      streams: [],
+      devices: [{ code: "LAB_TEMP_2", name: "温度冲击二室", status: "可用" }],
+      experiments: [],
+      experimentRuns: [
+        {
+          run_no: "run-temp-second",
+          task_code: "TASK-TEMP",
+          experiment_code: "TASK-TEMP-B",
+          device: "温度冲击二室",
+          tray_codes: ["TP-TEMP-002"],
+          status: "实验进行中",
+        },
+      ],
+      schedules: [],
+      samples: [],
+      experimentTrays: [],
+    });
+
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "LAB_TEMP_2", status: "工作中", dotClass: "timeline-dot--running" }),
+    ]);
+  });
+
   test("does not keep a device working from stale tray status after runs are completed", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [],

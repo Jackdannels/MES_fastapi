@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from "./storageKeys";
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
+import { formatLocalDateTime } from "./dateTime";
 import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 
 const STARTED_STATUSES = new Set(["实验进行中", "实验中", "实验已完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
@@ -192,7 +193,7 @@ const buildScheduleExceptionDetail = (schedule, experiments, now) => {
     normalizeText(experimentName) || experimentCode || "-",
     normalizeText(schedule?.device) || "-",
     `${formatDateTime(schedule?.start_at)} - ${formatDateTime(schedule?.end_at)}`.trim(),
-    `触发时间：${formatDateTime(now.toISOString())}`,
+    `触发时间：${formatDateTime(formatLocalDateTime(now))}`,
   ].join(" / ");
 };
 
@@ -258,12 +259,12 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
       samples: samplesByTaskCode.get(taskCode),
       task: taskByCode.get(taskCode),
     });
-    const unscheduledSince = confirmedAt?.toISOString() || "";
+    const unscheduledSince = confirmedAt ? formatLocalDateTime(confirmedAt) : "";
     return {
       ...experiment,
       status: STATUS_WAITING,
       unscheduled_since: unscheduledSince,
-      updated_at: now.toISOString(),
+      updated_at: formatLocalDateTime(now),
     };
   });
   const nextConflicts = conflicts.slice();
@@ -281,7 +282,7 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     }
     nextConflicts.push({
       acknowledged_at: "",
-      created_at: now.toISOString(),
+      created_at: formatLocalDateTime(now),
       detail: buildScheduleExceptionDetail(schedule, nextExperiments, now),
       device: normalizeText(schedule?.device),
       experiment_code: normalizeText(schedule?.experiment_code),

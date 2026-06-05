@@ -108,6 +108,28 @@ describe("devices model", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ status: "工作中", statusClass: "status running" }));
   });
 
+  test("matches active experiment runs by device name when the device code is different", () => {
+    const rows = buildDeviceRows(
+      [{ code: "LAB_TEMP_2", name: "温度冲击二室", status: "可用" }],
+      [],
+      new Date("2026-04-24T10:00:00"),
+      [],
+      [],
+      [
+        {
+          device: "温度冲击二室",
+          run_no: "RUN-TEMP-002",
+          status: "实验进行中",
+          task_code: "TASK-TEMP",
+          experiment_code: "TASK-TEMP-B",
+          tray_codes: ["TP-TEMP-002"],
+        },
+      ],
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "工作中", statusClass: "status running" }));
+  });
+
   test("ignores stale running tray statuses once experiment runs are available", () => {
     const rows = buildDeviceRows(
       [{ code: "盐雾试验室", name: "盐雾试验室", status: "可用" }],

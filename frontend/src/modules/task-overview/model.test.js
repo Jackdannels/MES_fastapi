@@ -311,6 +311,176 @@ describe("taskOverviewModel", () => {
     expect(rows[0].lab).toBeUndefined();
   });
 
+  test("buildTrayOverviewRows keeps each tray directed to its own target lab instead of the task latest schedule", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-MULTI-LAB", test_type: "冲击试验 / 温度冲击试验 / 振动试验", status: "已排程" }],
+      experiments: [
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-TEMP", experiment_name: "温度冲击试验", status: "已排程" },
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-VIBRATION", experiment_name: "振动试验", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-TEMP", tray_code: "TP-002" },
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-VIBRATION", tray_code: "TP-001" },
+        { task_code: "TASK-MULTI-LAB", experiment_code: "EXP-VIBRATION", tray_code: "TP-002" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-MULTI-LAB",
+          code: "SP-001",
+          location: "冲击一室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "TP-001",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "冲击一室",
+              target_experiment_code: "EXP-IMPACT",
+            },
+          ],
+        },
+        {
+          task_code: "TASK-MULTI-LAB",
+          code: "SP-002",
+          location: "温度冲击一室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "TP-002",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "温度冲击一室",
+              target_experiment_code: "EXP-TEMP",
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-MULTI-LAB",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          start_at: "2026-06-04 08:00:00",
+        },
+        {
+          task_code: "TASK-MULTI-LAB",
+          experiment_code: "EXP-TEMP",
+          device: "温度冲击一室",
+          start_at: "2026-06-04 10:00:00",
+        },
+        {
+          task_code: "TASK-MULTI-LAB",
+          experiment_code: "EXP-VIBRATION",
+          device: "振动一室",
+          start_at: "2026-06-04 12:00:00",
+        },
+      ],
+      totalSlots: 2,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.map((row) => row.currentStatus)).toEqual(["送至冲击一室", "送至温度冲击一室"]);
+    expect(rows.map((row) => row.canonicalStatus)).toEqual(["送至实验室", "送至实验室"]);
+    expect(rows.map((row) => row.currentStatus)).not.toContain("送至振动一室");
+  });
+
+  test("buildTrayOverviewRows shows tray-assigned experiments instead of the full task experiment list", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "SYLU-2026-06-021", test_type: "冲击试验 / 温度冲击试验 / 振动试验", status: "已排程" }],
+      experiments: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", experiment_name: "温度冲击试验", status: "已排程" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", experiment_name: "振动试验", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-002" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-002" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-003" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-003" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-004" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-004" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", tray_code: "SYLU-2026-06-021-TP-004" },
+      ],
+      samples: [
+        { task_code: "SYLU-2026-06-021", code: "SP-001", status: "送至暂存间", trays: [{ tray_code: "SYLU-2026-06-021-TP-001" }] },
+        { task_code: "SYLU-2026-06-021", code: "SP-002", status: "送至暂存间", trays: [{ tray_code: "SYLU-2026-06-021-TP-002" }] },
+        { task_code: "SYLU-2026-06-021", code: "SP-003", status: "送至暂存间", trays: [{ tray_code: "SYLU-2026-06-021-TP-003" }] },
+        { task_code: "SYLU-2026-06-021", code: "SP-004", status: "送至实验室", location: "冲击二室", trays: [{ tray_code: "SYLU-2026-06-021-TP-004" }] },
+      ],
+      schedules: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", device: "冲击二室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", device: "温度冲击二室" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-C", device: "振动二室" },
+      ],
+      totalSlots: 4,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.map((row) => row.targetExperiment)).toEqual([
+      "冲击试验 / 温度冲击试验",
+      "温度冲击试验 / 振动试验",
+      "冲击试验 / 振动试验",
+      "冲击试验 / 温度冲击试验 / 振动试验",
+    ]);
+  });
+
+  test("buildTrayOverviewRows derives tray experiment from target lab when tray target experiment code is missing", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-TARGET-LAB", test_type: "冲击试验 / 振动试验", status: "已排程" }],
+      experiments: [
+        { task_code: "TASK-TARGET-LAB", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "TASK-TARGET-LAB", experiment_code: "EXP-VIBRATION", experiment_name: "振动试验", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-TARGET-LAB", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+        { task_code: "TASK-TARGET-LAB", experiment_code: "EXP-VIBRATION", tray_code: "TP-001" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-TARGET-LAB",
+          code: "SP-001",
+          location: "冲击一室",
+          status: "送至实验室",
+          trays: [
+            {
+              tray_code: "TP-001",
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "冲击一室",
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-TARGET-LAB",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          start_at: "2026-06-04 08:00:00",
+        },
+        {
+          task_code: "TASK-TARGET-LAB",
+          experiment_code: "EXP-VIBRATION",
+          device: "振动一室",
+          start_at: "2026-06-04 12:00:00",
+        },
+      ],
+      totalSlots: 1,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0].currentStatus).toBe("送至冲击一室");
+    expect(rows[0].canonicalStatus).toBe("送至实验室");
+  });
+
   test("buildTrayOverviewRows ignores orphan tray rows whose task no longer exists", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "SYLU-2026-03-001", test_type: "温度冲击试验" }],
@@ -327,6 +497,28 @@ describe("taskOverviewModel", () => {
 
     expect(rows[0].trayCode).toBe("SYLU-2026-03-001-TP-001");
     expect(rows[1].taskCode).toBe("-");
+  });
+
+  test("buildTrayOverviewRows keeps the same tray code from different tasks as separate tray rows", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [
+        { code: "TASK-A", test_type: "振动试验" },
+        { code: "TASK-B", test_type: "盐雾试验" },
+      ],
+      samples: [
+        { task_code: "TASK-A", location: "振动一室", trays: [{ tray_code: "TP-001", status: "已到达实验室" }] },
+        { task_code: "TASK-B", location: "盐雾试验室", trays: [{ tray_code: "TP-001", status: "已到达实验室" }] },
+      ],
+      totalSlots: 3,
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.filter((row) => row.trayCode === "TP-001" && row.hasTray)).toEqual([
+      expect.objectContaining({ taskCode: "TASK-A", currentLocation: "振动一室" }),
+      expect.objectContaining({ taskCode: "TASK-B", currentLocation: "盐雾试验室" }),
+    ]);
   });
 
   test("buildTrayOverviewRows resets returned task trays back to unassigned slots", () => {
@@ -765,6 +957,63 @@ describe("taskOverviewModel", () => {
       }),
     );
     expect(rows[0].currentStatus).toBe("任务进行中");
+  });
+
+  test("buildTrayOverviewRows prefers tray-scoped run status over parent run status", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-TRAY", test_type: "盐雾试验" }],
+      experiments: [
+        {
+          task_code: "TASK-TRAY",
+          experiment_code: "TASK-TRAY-A",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-TRAY", experiment_code: "TASK-TRAY-A", tray_code: "TP-001" },
+        { task_code: "TASK-TRAY", experiment_code: "TASK-TRAY-A", tray_code: "TP-002" },
+      ],
+      experimentRuns: [
+        {
+          id: "run-shared",
+          run_no: "run-shared",
+          task_code: "TASK-TRAY",
+          experiment_code: "TASK-TRAY-A",
+          tray_codes: ["TP-001", "TP-002"],
+          status: "实验已完成",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-shared",
+          task_code: "TASK-TRAY",
+          experiment_code: "TASK-TRAY-A",
+          tray_code: "TP-001",
+          run_tray_status: "实验已完成",
+        },
+        {
+          run_no: "run-shared",
+          task_code: "TASK-TRAY",
+          experiment_code: "TASK-TRAY-A",
+          tray_code: "TP-002",
+          run_tray_status: "实验进行中",
+        },
+      ],
+      samples: [
+        { task_code: "TASK-TRAY", code: "SP-001", location: "盐雾试验室", status: "实验进行中", trays: [{ tray_code: "TP-001", status: "实验进行中" }] },
+        { task_code: "TASK-TRAY", code: "SP-002", location: "盐雾试验室", status: "实验进行中", trays: [{ tray_code: "TP-002", status: "实验进行中" }] },
+      ],
+      schedules: [{ task_code: "TASK-TRAY", experiment_code: "TASK-TRAY-A", device: "盐雾试验室" }],
+      totalSlots: 2,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.find((row) => row.trayCode === "TP-002")).toEqual(
+      expect.objectContaining({
+        currentStatus: "盐雾试验进行中",
+      }),
+    );
   });
 });
 

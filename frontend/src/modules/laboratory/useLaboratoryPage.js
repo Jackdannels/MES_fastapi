@@ -9,6 +9,7 @@ import {
 } from "@/lib/hostInterfaceMode";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
 import { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -48,6 +49,7 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.devices,
@@ -151,6 +153,7 @@ function useLaboratoryPage(options = {}) {
       STORAGE_KEYS.schedules,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.devices,
@@ -164,6 +167,7 @@ function useLaboratoryPage(options = {}) {
   const schedules = ref([]);
   const experiments = ref([]);
   const experimentRuns = ref([]);
+  const experimentRunTrays = ref([]);
   const experimentTrays = ref([]);
   const samples = ref([]);
   const devices = ref([]);
@@ -209,6 +213,7 @@ function useLaboratoryPage(options = {}) {
     buildLaboratoryWorkbenchView({
       experiments: experiments.value,
       experimentRuns: experimentRuns.value,
+      experimentRunTrays: experimentRunTrays.value,
       experimentTrays: experimentTrays.value,
       now: tickNow.value,
       samples: samples.value,
@@ -521,6 +526,7 @@ function useLaboratoryPage(options = {}) {
       schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       experimentRuns.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+      experimentRunTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
       experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
       devices.value = Array.isArray(snapshot?.[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
@@ -735,7 +741,7 @@ function useLaboratoryPage(options = {}) {
     return persistOperation;
   };
   const persistCurrentTaskStep = async (nextStatus, historyAction, options = {}) => {
-    const actionTime = new Date().toISOString();
+    const actionTime = formatLocalDateTime();
     const targetTrayCodes =
       nextStatus === LAB_COMPARE_STATUS
         ? verifiedTrayCodes.value
@@ -814,8 +820,10 @@ function useLaboratoryPage(options = {}) {
           if (!targetTrayCodes.has(String(tray?.tray_code || "").trim())) {
             return tray;
           }
-          const { fixtureReady, fixture_ready, ...rest } = tray;
-          return rest;
+          const nextTray = { ...tray };
+          delete nextTray.fixtureReady;
+          delete nextTray.fixture_ready;
+          return nextTray;
         }),
       };
     });
@@ -1017,7 +1025,7 @@ function useLaboratoryPage(options = {}) {
       return;
     }
     completingRunningExperimentKeys.add(completionKey);
-    const completedAt = new Date().toISOString();
+    const completedAt = formatLocalDateTime();
     const runningRunNo = normalizeText(runningExperiment.value?.runNo);
     const runningTrayCodes = (runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean);
     try {
@@ -1049,6 +1057,9 @@ function useLaboratoryPage(options = {}) {
         samples.value = completionResult.samples;
         experiments.value = completionResult.experiments;
         experimentRuns.value = completionResult.experimentRuns;
+        if (Array.isArray(completionResult?.experimentRunTrays)) {
+          experimentRunTrays.value = completionResult.experimentRunTrays;
+        }
         schedules.value = completionResult.schedules;
       } else {
         await load();

@@ -1770,7 +1770,7 @@ describe("schedulePageModel", () => {
     });
 
     expect(result.schedules).toEqual([]);
-    expect(result.experiments[0].unscheduled_since).toBe("2099-03-09T07:15:00.000Z");
+    expect(result.experiments[0].unscheduled_since).toBe("2099-03-09 15:15:00");
     expect(result.experiments[0].status).toBe(STATUS_WAITING);
   });
 

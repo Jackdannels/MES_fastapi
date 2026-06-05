@@ -104,7 +104,11 @@ describe("visualization styles", () => {
     expect(source).toContain(".visual-staging-board");
     expect(source).toContain(".visual-staging-overview");
     expect(source).toMatch(/\.visual-staging-layout\s*{[^}]*grid-template-columns:\s*minmax\(220px,\s*0\.23fr\) minmax\(0,\s*1fr\) minmax\(260px,\s*0\.26fr\);/s);
-    expect(source).toMatch(/\.visual-staging-task-option,\s*\.visual-staging-tray-option\s*{[^}]*min-height:\s*48px;/s);
+    expect(source).toMatch(/\.visual-staging-main\s*{[^}]*grid-template-columns:\s*minmax\(240px,\s*0\.34fr\) minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
+    expect(source).toMatch(/\.visual-staging-tray-switch\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*max-height:\s*none;/s);
+    expect(source).toMatch(/\.visual-staging-tray-detail\s*{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2;/s);
+    expect(source).toMatch(/\.visual-staging-sample-grid\s*{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(150px,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-staging-task-option,\s*\.visual-staging-tray-option\s*{[^}]*min-height:\s*58px;/s);
     expect(source).toContain(".visual-staging-capacity");
     expect(source).toContain(".visual-staging-capacity-ticks");
     expect(source).toContain(".visual-staging-capacity-tick");

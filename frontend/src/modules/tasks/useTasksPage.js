@@ -7,6 +7,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
@@ -726,7 +727,7 @@ function useTasksPage() {
     const updatedTask = {
       ...originalTask,
       sample_count: codes.length,
-      updated_at: new Date().toISOString(),
+      updated_at: formatLocalDateTime(),
     };
     try {
       await updateTaskByApi(taskId, updatedTask);

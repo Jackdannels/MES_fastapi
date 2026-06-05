@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
+from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
@@ -22,6 +23,7 @@ LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
     "mes.experiments",
     "mes.schedules",
     "mes.experiment_runs",
+    "mes.experiment_run_trays",
 )
 
 
@@ -49,13 +51,7 @@ def as_list(value: Any) -> list[Any]:
 
 
 def parse_datetime_value(value: Any) -> datetime | None:
-    text = normalize_text(value)
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        return None
+    return parse_business_datetime(value)
 
 
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
@@ -67,6 +63,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
+        "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -90,6 +87,7 @@ def write_completion_snapshot(result: dict[str, Any]) -> None:
             "mes.experiments": result["experiments"],
             "mes.schedules": result["schedules"],
             "mes.experiment_runs": result["experimentRuns"],
+            "mes.experiment_run_trays": result["experimentRunTrays"],
         }
     )
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
@@ -401,7 +399,7 @@ def withdraw_current_experiment(
     if not withdrawable_matches:
         raise HTTPException(status_code=400, detail="当前实验没有可撤回的已比对、已安装或已准备就绪托盘")
 
-    now = datetime.now().isoformat(timespec="seconds")
+    now = now_business_text()
     affected_sample_count = 0
     affected_tray_codes: set[str] = set()
     restored_targets: list[dict[str, str]] = []

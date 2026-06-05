@@ -86,8 +86,15 @@ const isRunningTrayStatus = (status) => RUNNING_TRAY_STATUSES.has(normalizeText(
 
 const isRunningExperimentRunStatus = (status) => RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(status));
 
-const experimentRunIsActiveForDevice = (run, deviceCode) =>
-  normalizeText(run?.device) === normalizeText(deviceCode) && isRunningExperimentRunStatus(run?.status);
+const buildDeviceMatchLabels = (device) => {
+  if (typeof device === "string") {
+    return [normalizeText(device)].filter(Boolean);
+  }
+  return Array.from(new Set([normalizeText(device?.code), normalizeText(device?.name)].filter(Boolean)));
+};
+
+const experimentRunIsActiveForDevice = (run, device) =>
+  buildDeviceMatchLabels(device).includes(normalizeText(run?.device)) && isRunningExperimentRunStatus(run?.status);
 
 const isScheduleExperimentRunning = (schedule, deviceCode, samples = [], experimentTrays = []) => {
   const taskCode = normalizeText(schedule?.task_code);
@@ -147,7 +154,7 @@ function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = 
   }
   const runList = asArray(experimentRuns);
   if (runList.length > 0) {
-    return runList.some((run) => experimentRunIsActiveForDevice(run, deviceCode)) ? ACTIVE_DEVICE_STATUS : IDLE_DEVICE_STATUS;
+    return runList.some((run) => experimentRunIsActiveForDevice(run, device)) ? ACTIVE_DEVICE_STATUS : IDLE_DEVICE_STATUS;
   }
   const runningSchedule = asArray(schedules).find((schedule) =>
     isScheduleExperimentRunning(schedule, deviceCode, samples, experimentTrays),

@@ -15,6 +15,7 @@ class FakeTaskStorage:
         experiment_trays=None,
         experiment_samples=None,
         experiment_runs=None,
+        experiment_run_trays=None,
         conflicts=None,
         devices=None,
         meta=None,
@@ -28,6 +29,7 @@ class FakeTaskStorage:
             "mes.experiment_trays": list(experiment_trays or []),
             "mes.experiment_samples": list(experiment_samples or []),
             "mes.experiment_runs": list(experiment_runs or []),
+            "mes.experiment_run_trays": list(experiment_run_trays or []),
             "mes.conflicts": list(conflicts or []),
             "mes.devices": list(devices or []),
             "mes.meta": dict(meta or {}),
@@ -65,6 +67,7 @@ def build_client(
     experiment_trays=None,
     experiment_samples=None,
     experiment_runs=None,
+    experiment_run_trays=None,
     conflicts=None,
     devices=None,
     meta=None,
@@ -80,6 +83,7 @@ def build_client(
         experiment_trays=experiment_trays,
         experiment_samples=experiment_samples,
         experiment_runs=experiment_runs,
+        experiment_run_trays=experiment_run_trays,
         conflicts=conflicts,
         devices=devices,
         meta=meta,
@@ -1437,6 +1441,10 @@ def test_delete_task_also_removes_related_records(monkeypatch):
             {"run_no": "RUN-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "tray_codes": ["SYLU-2026-03-001-TP-001"]},
             {"run_no": "RUN-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "tray_codes": ["SYLU-2026-03-002-TP-001"]},
         ],
+        experiment_run_trays=[
+            {"run_no": "RUN-1", "task_code": "SYLU-2026-03-001", "experiment_code": "SYLU-2026-03-001-A", "tray_code": "SYLU-2026-03-001-TP-001"},
+            {"run_no": "RUN-2", "task_code": "SYLU-2026-03-002", "experiment_code": "SYLU-2026-03-002-A", "tray_code": "SYLU-2026-03-002-TP-001"},
+        ],
     )
 
     deleted = client.delete("/api/tasks/SYLU-2026-03-001")
@@ -1452,6 +1460,7 @@ def test_delete_task_also_removes_related_records(monkeypatch):
     assert [item["task_code"] for item in storage.read("mes.experiment_trays")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_samples")] == ["SYLU-2026-03-002"]
     assert [item["task_code"] for item in storage.read("mes.experiment_runs")] == ["SYLU-2026-03-002"]
+    assert [item["task_code"] for item in storage.read("mes.experiment_run_trays")] == ["SYLU-2026-03-002"]
 
 
 def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and_meta(monkeypatch):

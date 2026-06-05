@@ -8,7 +8,8 @@ from app.db.session import get_connection
 from app.services.laboratory_completion import (
     COMPLETED_STATUS,
     COMPLETION_ACTION,
-    experiment_trays_are_completed,
+    RUNNING_STATUS,
+    experiment_status_for_completed_trays,
     completion_history_detail,
 )
 
@@ -181,6 +182,7 @@ def publish_realtime_update() -> None:
     publish_storage_update([
         "mes.experiments",
         "mes.experiment_runs",
+        "mes.experiment_run_trays",
         "mes.samples",
         "mes.schedules",
     ])
@@ -436,17 +438,18 @@ class MySQLMqEventRepository:
                 tray_sample_rows = cursor_rows_as_dicts(cursor)
                 tray_nos = []
                 sample_nos = []
-                location_names = []
+                sample_nos_by_tray: dict[str, list[str]] = {}
                 for row in tray_sample_rows:
                     tray_no = normalize_text(row.get("tray_no"))
                     sample_no = normalize_text(row.get("sample_no"))
-                    location_name = normalize_text(row.get("location_desc"))
                     if tray_no and tray_no not in tray_nos:
                         tray_nos.append(tray_no)
                     if sample_no and sample_no not in sample_nos:
                         sample_nos.append(sample_no)
-                    if location_name and location_name not in location_names:
-                        location_names.append(location_name)
+                    if tray_no and sample_no:
+                        sample_list = sample_nos_by_tray.setdefault(tray_no, [])
+                        if sample_no not in sample_list:
+                            sample_list.append(sample_no)
                 if not tray_nos:
                     return None
 
@@ -456,7 +459,7 @@ class MySQLMqEventRepository:
                     schedule_filters.append("s.experiment_no = %s")
                     schedule_params.append(command_experiment_no)
                 device_names = []
-                for candidate in [*lab_candidates, *location_names]:
+                for candidate in lab_candidates:
                     if candidate and candidate not in device_names:
                         device_names.append(candidate)
                 if device_names:
@@ -472,7 +475,8 @@ class MySQLMqEventRepository:
                       s.experiment_no,
                       s.device_name,
                       s.planned_hours,
-                      s.schedule_end_time
+                      s.schedule_end_time,
+                      et.tray_no AS scoped_tray_no
                     FROM biz_schedule s
                     JOIN biz_experiment_tray et
                       ON et.task_no = s.task_no AND et.experiment_no = s.experiment_no
@@ -504,10 +508,16 @@ class MySQLMqEventRepository:
                     "device_name": device_name,
                     "planned_hours": row.get("planned_hours"),
                     "schedule_end_time": row.get("schedule_end_time"),
-                    "tray_nos": list(tray_nos),
-                    "sample_nos": list(sample_nos),
+                    "tray_nos": [],
+                    "sample_nos": [],
                 },
             )
+            scoped_tray_no = normalize_text(row.get("scoped_tray_no"))
+            if scoped_tray_no and scoped_tray_no not in context["tray_nos"]:
+                context["tray_nos"].append(scoped_tray_no)
+            for sample_no in sample_nos_by_tray.get(scoped_tray_no, []):
+                if sample_no not in context["sample_nos"]:
+                    context["sample_nos"].append(sample_no)
 
         if not contexts:
             return None
@@ -747,7 +757,7 @@ class MySQLMqEventRepository:
                 )
                 task_no = normalize_text(row.get("task_no") if isinstance(row, dict) else row[0] if row else "")
                 experiment_no = normalize_text(row.get("experiment_no") if isinstance(row, dict) else row[1] if row else "")
-                all_experiment_trays_completed = False
+                next_experiment_status = ""
                 if task_no and experiment_no:
                     cursor.execute(
                         """
@@ -781,8 +791,9 @@ class MySQLMqEventRepository:
                         for item in completed_rows
                         if normalize_text(item.get("tray_no"))
                     }
-                    all_experiment_trays_completed = experiment_trays_are_completed(scoped_tray_nos, completed_tray_nos)
-                if all_experiment_trays_completed:
+                    if scoped_tray_nos:
+                        next_experiment_status = experiment_status_for_completed_trays(scoped_tray_nos, completed_tray_nos)
+                if next_experiment_status == COMPLETED_STATUS:
                     cursor.execute(
                         """
                         UPDATE biz_experiment
@@ -797,6 +808,25 @@ class MySQLMqEventRepository:
                         """
                         UPDATE biz_schedule
                         SET schedule_status = '实验已完成',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE task_no = %s AND experiment_no = %s
+                        """,
+                        (task_no, experiment_no),
+                    )
+                elif next_experiment_status == RUNNING_STATUS:
+                    cursor.execute(
+                        """
+                        UPDATE biz_experiment
+                        SET experiment_status = '实验进行中',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE task_no = %s AND experiment_no = %s
+                        """,
+                        (task_no, experiment_no),
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE biz_schedule
+                        SET schedule_status = '实验进行中',
                             updated_at = CURRENT_TIMESTAMP
                         WHERE task_no = %s AND experiment_no = %s
                         """,
@@ -929,10 +959,19 @@ def process_laboratory_event(
             )
     if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
-    task_no = first_text(payload, "task_code") or normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
+    context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
+    authoritative_context = created_run_from_context or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
+    if authoritative_context:
+        task_no = context_task_no or first_text(payload, "task_code")
+    else:
+        task_no = first_text(payload, "task_code") or context_task_no
     if not task_no:
         raise ValueError("task_code is required")
-    experiment_no = first_text(payload, "experiment_code") or normalize_text((run or {}).get("experiment_no")) or normalize_text((context or {}).get("experiment_no"))
+    context_experiment_no = normalize_text((run or {}).get("experiment_no")) or normalize_text((context or {}).get("experiment_no"))
+    if authoritative_context:
+        experiment_no = context_experiment_no or first_text(payload, "experiment_code")
+    else:
+        experiment_no = first_text(payload, "experiment_code") or context_experiment_no
     run_no = normalize_text((run or {}).get("run_no"))
     correlation_id = first_text(payload, "correlation_id", "correlationId")
     message_log_id = repo.record_message(

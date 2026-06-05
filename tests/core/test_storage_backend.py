@@ -24,7 +24,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
 
     assert len(tasks) == 20
     assert [task["code"] for task in tasks] == [f"SYLU-2026-05-{index:03d}" for index in range(1, 21)]
-    assert tasks[0]["created_at"].startswith("2026-05-13T")
+    assert tasks[0]["created_at"].startswith("2026-05-13 ")
     assert tasks[0]["arrival_at"].startswith("2026-05-13")
     assert tasks[0]["due_at"].startswith("2026-05-20")
     assert all(task["source"] == "外部委托" for task in tasks[:10])
@@ -136,6 +136,29 @@ def test_normalize_storage_payload_does_not_use_task_name_as_experiment_type() -
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["冲击试验"]
 
 
+def test_normalize_storage_payload_normalizes_experiment_run_tray_status_and_times() -> None:
+    payload = {
+        "mes.experiment_run_trays": [
+            {
+                "run_no": "run-001",
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "tray_code": "TP-001",
+                "run_tray_status": "实验中",
+                "started_at": "2026-06-04T12:00:00Z",
+                "updated_at": "2026-06-04T12:05:00Z",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.experiment_run_trays"][0]["run_tray_status"] == "实验进行中"
+    assert normalized["mes.experiment_run_trays"][0]["started_at"] == "2026-06-04 20:00:00"
+    assert normalized["mes.experiment_run_trays"][0]["updated_at"] == "2026-06-04 20:05:00"
+
+
 def test_normalize_storage_payload_uses_test_types_over_stale_experiment_count() -> None:
     payload = {
         "mes.tasks": [
@@ -241,7 +264,7 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
             "sample_code": "SYLU-2026-03-001-SP-001",
             "status": "厂家收回",
             "quantity": 1,
-            "updated_at": "2026-04-28T03:32:34Z",
+                "updated_at": "2026-04-28 11:32:34",
         }
     ]
 
@@ -342,7 +365,7 @@ def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_s
     assert normalized["mes.samples"][0]["status"] == "厂家收回"
     assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
     assert normalized["mes.samples"][0]["trays"][0]["status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["trays"][0]["updated_at"] == "2026-04-28T03:32:34Z"
+    assert normalized["mes.samples"][0]["trays"][0]["updated_at"] == "2026-04-28 11:32:34"
 
 
 def test_normalize_storage_payload_keeps_other_task_trays_active_when_one_tray_returned() -> None:

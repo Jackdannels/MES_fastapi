@@ -35,7 +35,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
         experiment_types = [MANDATORY_EXPERIMENT_TYPE, *rng.sample(remaining_experiment_types, 2)]
         rng.shuffle(experiment_types)
         sample_count = rng.randint(5, 12)
-        created_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        created_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%d %H:%M:%S")
         arrival_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%d %H:%M")
         due_at = (base_time + timedelta(days=7, hours=index)).strftime("%Y-%m-%d %H:%M")
         experiment_codes = [f"{task_code}-{suffix}" for suffix in ("A", "B", "C")]

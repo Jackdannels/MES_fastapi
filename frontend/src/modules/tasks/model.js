@@ -1,6 +1,7 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 
@@ -207,14 +208,7 @@ const fromDateTimeLocalValue = (value) => {
   return normalized.replace("T", " ").slice(0, sliceLength);
 };
 
-const formatBeijingDateTime = (value) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const beijingDate = new Date(date.getTime() + 8 * 60 * 60 * 1000);
-  return beijingDate.toISOString().slice(0, 16).replace("T", " ");
-};
+const formatBeijingDateTime = (value) => formatLocalDateTime(value, { includeSeconds: false });
 
 const buildDefaultDueAt = (now = new Date()) => formatBeijingDateTime(new Date(now.getTime() + 72 * 60 * 60 * 1000));
 
@@ -570,7 +564,7 @@ function createRandomTaskIntakeForm(now = new Date()) {
     client: source === SOURCE_EXTERNAL ? `外部客户${suffix}` : "内部部门",
     contact: `调度员${suffix}`,
     contact_info: `1380000${suffix}`,
-    due_at: dueAt.toISOString().slice(0, 16),
+    due_at: formatLocalDateTime(dueAt, { includeSeconds: false }),
     name: `${testType}-随机任务${suffix}`,
     priority: randomFrom(RANDOM_PRIORITIES),
     sample_count: sampleCount,
@@ -651,7 +645,7 @@ function createTaskRecord(form, tasks) {
     attachment: normalizeText(form?.attachment),
     remark: normalizeText(form?.remark),
     status: STATUS_WAITING,
-    created_at: new Date().toISOString(),
+    created_at: formatLocalDateTime(),
   };
 }
 
@@ -684,7 +678,7 @@ function updateTaskRecord(tasks, editForm) {
     status: taskList[targetIndex].status,
     test_type: testTypeSummary,
     test_types: collectExperimentTypes(selectedTestTypes, testTypeSummary),
-    updated_at: new Date().toISOString(),
+    updated_at: formatLocalDateTime(),
   };
 
   return { previousCode, tasks: taskList };
@@ -787,7 +781,7 @@ function applyTaskSampleCodes(samples, task, codes) {
     return sampleList;
   }
 
-  const now = new Date().toISOString();
+  const now = formatLocalDateTime();
   const relatedSamples = sampleList
     .filter((sample) => normalizeText(sample?.task_code) === taskCode)
     .sort((left, right) => compareTaskCodes(left?.code, right?.code));
@@ -875,7 +869,7 @@ function syncTaskSamples(samples, task, previousTaskCode = "", options = {}) {
       owner: "",
       status: "样品运输中",
       flow_status: "样品运输中",
-      created_at: new Date().toISOString(),
+      created_at: formatLocalDateTime(),
     });
   });
 

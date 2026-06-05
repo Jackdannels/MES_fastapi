@@ -4,6 +4,7 @@ import {
   normalizeLifecycleStatus,
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import {
   STATUS_COMPLETED,
   STATUS_RETENTION,
@@ -17,6 +18,7 @@ const LAB_COMPARE_STATUS = "已到达实验室";
 const LAB_INSTALL_STATUS = "工装夹具安装";
 const LAB_READY_STATUS = "实验准备就绪";
 const LAB_RESET_STATUS = "送至实验室";
+const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
 const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
 const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
@@ -365,18 +367,17 @@ const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode
 const experimentIsCompletedInSampleHistory = ({ experimentName, sample, taskCode }) =>
   COMPLETED_TRAY_STATUSES.has(resolveLatestExperimentHistoryStatus({ experimentName, sample, taskCode }));
 
-const completedPhysicalStatusCanRepresentPreviousExperiment = ({ currentExperimentCode, experimentCodes }) => {
-  const currentExperimentIndex = asArray(experimentCodes).indexOf(normalizeText(currentExperimentCode));
-  return currentExperimentIndex > 0;
-};
-
 const resolveCurrentExperimentTrayStatus = ({
+  completedForCurrentExperiment = false,
+  completedForOtherExperiment = false,
   currentExperimentCode,
   device,
   experimentCodes = [],
   experimentName,
   physicalStatus,
   sample,
+  targetExperimentCode = "",
+  targetLab = "",
   taskCode,
 }) => {
   const historyStatus = resolveLatestExperimentHistoryStatus({ experimentName, sample, taskCode });
@@ -398,12 +399,33 @@ const resolveCurrentExperimentTrayStatus = ({
     return normalizedStatus;
   }
   if (COMPLETED_TRAY_STATUSES.has(normalizedStatus)) {
-    return completedPhysicalStatusCanRepresentPreviousExperiment({ currentExperimentCode, experimentCodes })
+    const normalizedTargetLab = normalizeText(targetLab);
+    const normalizedDevice = normalizeText(device);
+    if (
+      completedForOtherExperiment
+      && !completedForCurrentExperiment
+      && normalizedTargetLab
+      && normalizedDevice
+      && normalizedTargetLab !== normalizedDevice
+    ) {
+      return LAB_RESET_STATUS;
+    }
+    return completedForCurrentExperiment || completedForOtherExperiment
       ? normalizedStatus
       : LAB_RESET_STATUS;
   }
   if (normalizedStatus === LAB_RESET_STATUS) {
     return normalizedStatus;
+  }
+  const normalizedTargetExperimentCode = normalizeText(targetExperimentCode);
+  const normalizedCurrentExperimentCode = normalizeText(currentExperimentCode);
+  if (
+    normalizedTargetExperimentCode
+    && normalizedCurrentExperimentCode
+    && normalizedTargetExperimentCode !== normalizedCurrentExperimentCode
+    && resolveLaboratoryStatusRank(normalizedStatus) > 0
+  ) {
+    return LAB_RESET_STATUS;
   }
 
   const location = normalizeText(sample?.location);
@@ -437,6 +459,20 @@ const buildWrongLaboratoryDispatchResult = (trayCode, tray = null, currentTask =
   return {
     guidance: `${normalizedTrayCode} 已出库至${location || "其他试验间"}，请在${currentLab || "当前试验间"}出库后再比对。`,
     message: "托盘未送达当前试验间",
+    ok: false,
+    tone: "error",
+    trayCode: normalizedTrayCode,
+  };
+};
+
+const buildActiveOtherExperimentComparisonResult = (trayCode, lock = null) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  const experimentName = normalizeText(lock?.experimentName);
+  const device = normalizeText(lock?.device);
+  const runningLabel = [device, experimentName].filter(Boolean).join(" / ") || "其他实验";
+  return {
+    guidance: `${normalizedTrayCode} 正在${runningLabel}进行实验，完成后才可在当前试验间比对。`,
+    message: "托盘正在其他实验中",
     ok: false,
     tone: "error",
     trayCode: normalizedTrayCode,
@@ -584,10 +620,7 @@ const resolveLaboratoryTaskStatus = (currentTask) => {
   if (!currentTask) {
     return STATUS_WAITING;
   }
-  const trayStatuses = asArray(currentTask?.trayRows)
-    .map((row) => normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus))
-    .filter(Boolean);
-  if (trayStatuses.some((status) => RUNNING_EXPERIMENT_STATUSES.has(status))) {
+  if (getRunningTrayRowsForCurrentTask(currentTask).length > 0) {
     return STATUS_RUNNING;
   }
   return STATUS_SCHEDULED;
@@ -660,14 +693,14 @@ const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null) => {
 const isPreviousExperimentCompletionForCurrentTask = (row, currentTask) => {
   const trayStatus = normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus);
   const currentExperimentStatus = normalizeText(currentTask?.status);
-  const currentExperimentIndex = asArray(row?.experimentCodes).indexOf(normalizeText(currentTask?.experimentCode));
+  const hasScopedOtherExperimentCompletion = row?.completedForOtherExperiment === true;
   return (
     COMPLETED_EXPERIMENT_STATUSES.has(trayStatus)
     && row?.completedForCurrentExperiment !== true
     && !COMPLETED_EXPERIMENT_STATUSES.has(currentExperimentStatus)
     && normalizeText(currentTask?.experimentCode)
     && asArray(row?.experimentCodes).length > 1
-    && currentExperimentIndex > 0
+    && hasScopedOtherExperimentCompletion
   );
 };
 
@@ -676,8 +709,92 @@ const trayIsCompletedForCurrentExperiment = (row, currentTask) => {
   return COMPLETED_EXPERIMENT_STATUSES.has(trayStatus) && !isPreviousExperimentCompletionForCurrentTask(row, currentTask);
 };
 
+const trayHasActiveRunForCurrentExperiment = (row, currentTask) => {
+  if (!normalizeText(currentTask?.runNo)) {
+    return false;
+  }
+  const activeRunTrayCodes = asArray(currentTask?.activeRunTrayCodes).map((trayCode) => normalizeText(trayCode)).filter(Boolean);
+  if (!activeRunTrayCodes.length) {
+    return true;
+  }
+  return activeRunTrayCodes.includes(normalizeText(row?.trayCode));
+};
+
+const rowHasRunningStatus = (row) => RUNNING_EXPERIMENT_STATUSES.has(normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus));
+
+const getRunningTrayRowsForCurrentTask = (currentTask) => {
+  const runningTrayRows = asArray(currentTask?.trayRows).filter((row) => rowHasRunningStatus(row));
+  if (!normalizeText(currentTask?.runNo)) {
+    return [];
+  }
+  return runningTrayRows.filter((row) => trayHasActiveRunForCurrentExperiment(row, currentTask));
+};
+
+const resolveCurrentWorkflowTrayRank = (row, currentTask) => {
+  if (isPreviousExperimentCompletionForCurrentTask(row, currentTask)) {
+    return 0;
+  }
+  if (rowHasRunningStatus(row) && normalizeText(currentTask?.runNo) && !trayHasActiveRunForCurrentExperiment(row, currentTask)) {
+    return 0;
+  }
+  return resolveLaboratoryStatusRank(row?.trayStatus);
+};
+
+const resolveSelectedTrayFlowStatus = (row, currentTask) => {
+  const lifecycleStatus = normalizeText(row?.lifecycleStatus);
+  const displayStatus = normalizeText(row?.displayStatus);
+  const trayStatus = normalizeText(row?.trayStatus);
+  if (RUNNING_EXPERIMENT_STATUSES.has(lifecycleStatus) && !trayHasActiveRunForCurrentExperiment(row, currentTask)) {
+    return displayStatus || trayStatus || lifecycleStatus;
+  }
+  return lifecycleStatus || displayStatus || trayStatus;
+};
+
+const trayHasCurrentExperimentFlowContext = (row, currentTask) => {
+  if (!row || !currentTask) {
+    return false;
+  }
+  const currentExperimentCode = normalizeText(currentTask?.experimentCode);
+  const targetExperimentCode = normalizeText(row?.targetExperimentCode || row?.target_experiment_code);
+  if (targetExperimentCode) {
+    return !currentExperimentCode || targetExperimentCode === currentExperimentCode;
+  }
+  if (row?.completedForCurrentExperiment === true || trayHasActiveRunForCurrentExperiment(row, currentTask)) {
+    return true;
+  }
+  const trayStatus = normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus);
+  const trayStatusRank = resolveLaboratoryStatusRank(trayStatus);
+  if (trayStatusRank > 0 && trayStatusRank < 5 && !isPreviousExperimentCompletionForCurrentTask(row, currentTask)) {
+    return true;
+  }
+  const lifecycleStatus = normalizeLifecycleStatus(
+    normalizeText(row?.lifecycleLocation) || normalizeText(row?.currentLocation),
+    normalizeText(row?.lifecycleStatus),
+  );
+  if (
+    COMPLETED_TRAY_STATUSES.has(lifecycleStatus)
+    && row?.completedForOtherExperiment === true
+    && row?.completedForCurrentExperiment !== true
+  ) {
+    return false;
+  }
+  if (
+    row?.completedForOtherExperiment === true
+    && row?.completedForCurrentExperiment !== true
+    && row?.hasCurrentExperimentHistory !== true
+  ) {
+    return false;
+  }
+  const targetLab = normalizeText(row?.targetLab || row?.target_lab);
+  const currentLab = normalizeText(currentTask?.device);
+  if (trayStatus === LAB_RESET_STATUS && targetLab && currentLab && targetLab === currentLab) {
+    return true;
+  }
+  return trayStatusRank > 0 && trayStatusRank < 5 && !isPreviousExperimentCompletionForCurrentTask(row, currentTask);
+};
+
 const buildRunningExperimentView = ({ currentTask, now }) => {
-  const runningTrayRows = asArray(currentTask?.trayRows).filter((row) => normalizeText(row?.trayStatus) === "实验进行中");
+  const runningTrayRows = getRunningTrayRowsForCurrentTask(currentTask);
   if (!currentTask || !runningTrayRows.length) {
     return {
       active: false,
@@ -764,6 +881,66 @@ const buildExperimentCodesByTrayCode = (experimentTrayCodeMap) => {
 };
 
 const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
+const resolveRunNo = (run) => normalizeText(run?.run_no || run?.runNo || run?.id);
+const resolveRunTaskCode = (run) => normalizeText(run?.task_code || run?.taskCode || run?.task_no || run?.taskNo);
+const resolveRunExperimentCode = (run) =>
+  normalizeText(run?.experiment_code || run?.experimentCode || run?.experiment_no || run?.experimentNo);
+const resolveRunDevice = (run) => normalizeText(run?.device || run?.device_name || run?.deviceName || run?.lab_name || run?.labName);
+const resolveRunStatus = (run) => normalizeText(run?.status || run?.run_status || run?.runStatus);
+const resolveRelationRunNo = (relation) => normalizeText(relation?.run_no || relation?.runNo);
+const resolveRelationTaskCode = (relation) => normalizeText(relation?.task_code || relation?.taskCode || relation?.task_no || relation?.taskNo);
+const resolveRelationExperimentCode = (relation) =>
+  normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experiment_no || relation?.experimentNo);
+const resolveRelationTrayCode = (relation) => normalizeText(relation?.tray_code || relation?.trayCode || relation?.tray_no || relation?.trayNo);
+const resolveRelationStatus = (relation) => normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
+const relationIsCompleted = (relation) =>
+  COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.status))
+  || COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.run_tray_status))
+  || COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.runTrayStatus));
+
+const buildCompletedExperimentCodesByTrayCode = ({ experimentRunTrays = [], taskCode }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const completedCodesByTrayCode = new Map();
+  asArray(experimentRunTrays).forEach((relation) => {
+    if (resolveRelationTaskCode(relation) !== normalizedTaskCode || !relationIsCompleted(relation)) {
+      return;
+    }
+    const trayCode = resolveRelationTrayCode(relation);
+    const experimentCode = resolveRelationExperimentCode(relation);
+    if (!trayCode || !experimentCode) {
+      return;
+    }
+    const existing = completedCodesByTrayCode.get(trayCode) || new Set();
+    existing.add(experimentCode);
+    completedCodesByTrayCode.set(trayCode, existing);
+  });
+  return completedCodesByTrayCode;
+};
+
+const buildCompletedExperimentRecordCodesByTrayCode = ({ experimentRecordMap, experimentTrayCodeMap, taskCode }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const completedCodesByTrayCode = new Map();
+  experimentTrayCodeMap.forEach((trayCodes, experimentKey) => {
+    const [entryTaskCode, experimentCode] = String(experimentKey).split("::");
+    if (normalizeText(entryTaskCode) !== normalizedTaskCode || !normalizeText(experimentCode)) {
+      return;
+    }
+    const experiment = experimentRecordMap?.get(experimentKey);
+    if (!COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(experiment?.status))) {
+      return;
+    }
+    asArray(trayCodes).forEach((trayCode) => {
+      const normalizedTrayCode = normalizeText(trayCode);
+      if (!normalizedTrayCode) {
+        return;
+      }
+      const existing = completedCodesByTrayCode.get(normalizedTrayCode) || new Set();
+      existing.add(experimentCode);
+      completedCodesByTrayCode.set(normalizedTrayCode, existing);
+    });
+  });
+  return completedCodesByTrayCode;
+};
 
 const findActiveExperimentRun = ({ device, experimentCode, experimentRuns, taskCode }) => {
   const normalizedDevice = normalizeText(device);
@@ -772,20 +949,119 @@ const findActiveExperimentRun = ({ device, experimentCode, experimentRuns, taskC
   const matchedRuns = asArray(experimentRuns)
     .filter(
       (run) =>
-        normalizeText(run?.task_code) === normalizedTaskCode
-        && normalizeText(run?.experiment_code) === normalizedExperimentCode
-        && (!normalizedDevice || !normalizeText(run?.device) || normalizeText(run?.device) === normalizedDevice)
-        && RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
+        resolveRunTaskCode(run) === normalizedTaskCode
+        && resolveRunExperimentCode(run) === normalizedExperimentCode
+        && (!normalizedDevice || !resolveRunDevice(run) || resolveRunDevice(run) === normalizedDevice)
+        && RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(run))
     )
     .sort((left, right) => (toTime(right?.started_at) || 0) - (toTime(left?.started_at) || 0));
   return matchedRuns[0] || null;
 };
 
-const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experimentKey, relatedSamples, taskCode }) => {
+const findActiveExperimentRunTrayRelations = ({ device, experimentCode, experimentRuns, experimentRunTrays, taskCode }) => {
+  const normalizedDevice = normalizeText(device);
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const normalizedTaskCode = normalizeText(taskCode);
+  const runByNo = new Map(
+    asArray(experimentRuns)
+      .map((run) => [resolveRunNo(run), run])
+      .filter(([runNo]) => Boolean(runNo)),
+  );
+  return asArray(experimentRunTrays)
+    .filter((relation) => {
+      if (
+        resolveRelationTaskCode(relation) !== normalizedTaskCode
+        || resolveRelationExperimentCode(relation) !== normalizedExperimentCode
+        || !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRelationStatus(relation))
+      ) {
+        return false;
+      }
+      const run = runByNo.get(resolveRelationRunNo(relation));
+      return !normalizedDevice || !run || !resolveRunDevice(run) || resolveRunDevice(run) === normalizedDevice;
+    })
+    .sort((left, right) => (toTime(right?.started_at || right?.startedAt) || 0) - (toTime(left?.started_at || left?.startedAt) || 0));
+};
+
+const buildActiveOtherExperimentRunLocks = ({
+  currentExperimentCode,
+  experimentMap,
+  experimentRuns,
+  experimentRunTrays,
+  taskCode,
+  trayCode,
+}) => {
+  const normalizedCurrentExperimentCode = normalizeText(currentExperimentCode);
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode || !normalizedCurrentExperimentCode) {
+    return [];
+  }
+
+  const runByNo = new Map(
+    asArray(experimentRuns)
+      .map((run) => [resolveRunNo(run), run])
+      .filter(([runNo]) => Boolean(runNo)),
+  );
+  const locksByKey = new Map();
+  const pushLock = ({ experimentCode, relation = null, run = null }) => {
+    const normalizedExperimentCode = normalizeText(experimentCode);
+    if (!normalizedExperimentCode || normalizedExperimentCode === normalizedCurrentExperimentCode) {
+      return;
+    }
+    const runNo = resolveRunNo(run) || resolveRelationRunNo(relation);
+    const key = `${runNo || "run"}::${normalizedExperimentCode}`;
+    if (locksByKey.has(key)) {
+      return;
+    }
+    locksByKey.set(key, {
+      device: resolveRunDevice(run),
+      experimentCode: normalizedExperimentCode,
+      experimentName: normalizeText(experimentMap?.get(`${normalizedTaskCode}::${normalizedExperimentCode}`)) || normalizedExperimentCode,
+      runNo,
+      trayCode: normalizedTrayCode,
+    });
+  };
+
+  asArray(experimentRunTrays).forEach((relation) => {
+    if (
+      resolveRelationTaskCode(relation) !== normalizedTaskCode
+      || resolveRelationTrayCode(relation) !== normalizedTrayCode
+      || !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRelationStatus(relation))
+    ) {
+      return;
+    }
+    const run = runByNo.get(resolveRelationRunNo(relation));
+    if (run && !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(run))) {
+      return;
+    }
+    pushLock({ experimentCode: resolveRelationExperimentCode(relation), relation, run });
+  });
+
+  asArray(experimentRuns).forEach((run) => {
+    if (
+      resolveRunTaskCode(run) !== normalizedTaskCode
+      || !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(run))
+      || !asArray(run?.tray_codes || run?.trayCodes).map(normalizeText).includes(normalizedTrayCode)
+    ) {
+      return;
+    }
+    pushLock({ experimentCode: resolveRunExperimentCode(run), run });
+  });
+
+  return Array.from(locksByKey.values());
+};
+
+const collectTrayRows = ({ device, experimentName, experimentRecordMap, experimentRunTrays, experimentTrayCodeMap, experimentKey, relatedSamples, taskCode }) => {
   const trayRows = [];
   const indexByTrayCode = new Map();
   const experimentCodesByTrayCode = buildExperimentCodesByTrayCode(experimentTrayCodeMap);
   const currentExperimentCode = normalizeText(String(experimentKey).split("::")[1]);
+  const completedExperimentCodesByTrayCode = buildCompletedExperimentCodesByTrayCode({ experimentRunTrays, taskCode });
+  const completedExperimentRecordCodesByTrayCode = buildCompletedExperimentRecordCodesByTrayCode({
+    experimentRecordMap,
+    experimentTrayCodeMap,
+    taskCode,
+  });
 
   const pushRow = (
     trayCode,
@@ -796,6 +1072,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
     fixtureReady = false,
     targetLab = "",
     targetExperimentCode = "",
+    hasCurrentExperimentHistory = false,
   ) => {
     const normalizedTrayCode = normalizeText(trayCode);
     if (!normalizedTrayCode) {
@@ -824,6 +1101,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       if (!current.targetExperimentCode && normalizedTargetExperimentCode) {
         current.targetExperimentCode = normalizedTargetExperimentCode;
       }
+      current.hasCurrentExperimentHistory = current.hasCurrentExperimentHistory || Boolean(hasCurrentExperimentHistory);
       current.fixtureReady = current.fixtureReady || isFixtureReady(fixtureReady);
       return;
     }
@@ -836,6 +1114,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       experimentCodes: experimentCodesByTrayCode.get(normalizedTrayCode) || [],
       lifecycleLocation: normalizeText(location),
       lifecycleStatus: "",
+      hasCurrentExperimentHistory: false,
       owner: normalizeText(owner),
       quantity: quantity || "",
       sampleCodes: sampleCode ? [sampleCode] : [],
@@ -862,34 +1141,64 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
       }
       const targetLab = normalizeText(tray?.target_lab || tray?.targetLab);
       const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
-      pushRow(trayCode, sampleCode, quantity, owner, location, tray?.fixtureReady ?? tray?.fixture_ready, targetLab, targetExperimentCode);
+      const sampleHasCurrentExperimentHistory = Boolean(resolveLatestExperimentHistoryStatus({ experimentName, sample, taskCode }));
+      pushRow(
+        trayCode,
+        sampleCode,
+        quantity,
+        owner,
+        location,
+        tray?.fixtureReady ?? tray?.fixture_ready,
+        targetLab,
+        targetExperimentCode,
+        sampleHasCurrentExperimentHistory,
+      );
       const row = trayRows[indexByTrayCode.get(trayCode)];
+      const completedExperimentCodes = completedExperimentCodesByTrayCode.get(trayCode) || new Set();
+      const completedExperimentRecordCodes = completedExperimentRecordCodesByTrayCode.get(trayCode) || new Set();
       row.completedForCurrentExperiment =
         row.completedForCurrentExperiment
+        || completedExperimentCodes.has(currentExperimentCode)
+        || completedExperimentRecordCodes.has(currentExperimentCode)
         || experimentIsCompletedInSampleHistory({ experimentName, sample, taskCode });
       row.completedForOtherExperiment =
         row.completedForOtherExperiment
+        || asArray(row?.experimentCodes).some((experimentCode) =>
+          experimentCode !== currentExperimentCode
+          && (completedExperimentCodes.has(experimentCode) || completedExperimentRecordCodes.has(experimentCode)),
+        )
         || Boolean(resolvePreviousCompletedExperimentSnapshot(sample, taskCode, experimentName));
+      row.hasCurrentExperimentHistory =
+        row.hasCurrentExperimentHistory
+        || sampleHasCurrentExperimentHistory;
       const currentRank = resolveLaboratoryStatusRank(row?.trayStatus);
       const physicalTrayStatus = normalizeText(tray?.status);
       const nextStatus = physicalTrayStatus
         ? resolveCurrentExperimentTrayStatus({
+            completedForCurrentExperiment: row.completedForCurrentExperiment,
+            completedForOtherExperiment: row.completedForOtherExperiment,
             currentExperimentCode,
             device,
             experimentCodes: row?.experimentCodes,
             experimentName,
             physicalStatus: physicalTrayStatus,
             sample,
+            targetExperimentCode,
+            targetLab,
             taskCode,
           })
         : "";
       const displayStatusCandidate = resolveCurrentExperimentTrayStatus({
+        completedForCurrentExperiment: row.completedForCurrentExperiment,
+        completedForOtherExperiment: row.completedForOtherExperiment,
         currentExperimentCode,
         device,
         experimentCodes: row?.experimentCodes,
         experimentName,
         physicalStatus: physicalTrayStatus || normalizeText(sample?.status),
         sample,
+        targetExperimentCode,
+        targetLab,
         taskCode,
       });
       if (resolveLaboratoryStatusRank(nextStatus) >= currentRank) {
@@ -918,7 +1227,7 @@ const collectTrayRows = ({ device, experimentName, experimentTrayCodeMap, experi
   return trayRows;
 };
 
-const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experimentRuns, experimentTrayCodeMap, sampleMap, schedule, taskMap }) => {
+const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experimentRuns, experimentRunTrays, experimentTrayCodeMap, sampleMap, schedule, taskMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const task = taskMap.get(taskCode) || null;
@@ -936,6 +1245,8 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
   const trayRows = collectTrayRows({
     device,
     experimentName,
+    experimentRecordMap,
+    experimentRunTrays,
     experimentTrayCodeMap,
     experimentKey,
     relatedSamples,
@@ -949,10 +1260,71 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     experimentRuns,
     taskCode,
   });
-  const displayStartAt = normalizeText(activeRun?.started_at) || startAt;
+  const activeRunTrayRelations = findActiveExperimentRunTrayRelations({
+    device,
+    experimentCode,
+    experimentRuns,
+    experimentRunTrays,
+    taskCode,
+  });
+  const activeRunTrayCodes = activeRunTrayRelations.length > 0
+    ? uniqueValues(activeRunTrayRelations.map(resolveRelationTrayCode))
+    : uniqueValues(asArray(activeRun?.tray_codes).map((trayCode) => normalizeText(trayCode)));
+  const displayStartAt = normalizeText(activeRunTrayRelations[0]?.started_at || activeRunTrayRelations[0]?.startedAt) || normalizeText(activeRun?.started_at) || startAt;
   const displayEndAt = normalizeText(activeRun?.planned_end_at) || normalizeText(activeRun?.ended_at) || endAt;
+  const activeRunStatus = activeRunTrayRelations.length > 0 || RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(activeRun?.status)) ? "实验进行中" : "";
+  if (activeRunStatus) {
+    trayRows.forEach((row) => {
+      if (activeRunTrayCodes.length > 0 && !activeRunTrayCodes.includes(normalizeText(row?.trayCode))) {
+        return;
+      }
+      if (COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(row?.trayStatus))) {
+        return;
+      }
+      row.displayStatus = activeRunStatus;
+      row.lifecycleStatus = activeRunStatus;
+      row.trayStatus = activeRunStatus;
+    });
+  }
+  const completedRunTrayCodes = new Set(
+    asArray(experimentRunTrays)
+      .filter((relation) =>
+        resolveRelationTaskCode(relation) === taskCode
+        && resolveRelationExperimentCode(relation) === experimentCode
+        && relationIsCompleted(relation),
+      )
+      .map(resolveRelationTrayCode)
+      .filter(Boolean),
+  );
+  trayRows.forEach((row) => {
+    const activeOtherExperimentRuns = buildActiveOtherExperimentRunLocks({
+      currentExperimentCode: experimentCode,
+      experimentMap,
+      experimentRuns,
+      experimentRunTrays,
+      taskCode,
+      trayCode: row?.trayCode,
+    });
+    row.activeOtherExperimentRuns = activeOtherExperimentRuns;
+    row.activeOtherExperimentRun = activeOtherExperimentRuns[0] || null;
+
+    if (!completedRunTrayCodes.has(normalizeText(row?.trayCode))) {
+      return;
+    }
+    row.completedForCurrentExperiment = true;
+    row.displayStatus = EXPERIMENT_COMPLETED_STATUS;
+    row.lifecycleStatus = EXPERIMENT_COMPLETED_STATUS;
+    row.trayStatus = EXPERIMENT_COMPLETED_STATUS;
+  });
+  const visibleTrayRows = trayRows.filter((row) =>
+    row?.completedForCurrentExperiment !== true
+    && !completedRunTrayCodes.has(normalizeText(row?.trayCode)),
+  );
 
   return {
+    activeRunTrayCodes,
+    allTrayCodes: trayRows.map((row) => row.trayCode),
+    allTrayRows: trayRows,
     device,
     endAt: displayEndAt,
     endTimeLabel: formatTime(displayEndAt),
@@ -961,8 +1333,12 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     experimentName,
     id: normalizeText(schedule?.id) || `${taskCode}-${experimentCode}-${startAt}`,
     owner,
-    sampleCount: trayRows.reduce((count, row) => count + Math.max(1, row.sampleCodes.length || 0), 0) || relatedSamples.length,
-    runNo: normalizeText(activeRun?.run_no) || normalizeText(activeRun?.id),
+    sampleCount: visibleTrayRows.reduce((count, row) => count + Math.max(1, row.sampleCodes.length || 0), 0) || visibleTrayRows.length,
+    runNo:
+      normalizeText(activeRun?.run_no)
+      || normalizeText(activeRun?.id)
+      || normalizeText(activeRunTrayRelations[0]?.run_no)
+      || normalizeText(activeRunTrayRelations[0]?.runNo),
     startAt: displayStartAt,
     startDateTimeLabel: formatDateTime(displayStartAt),
     startTimeLabel: formatTime(displayStartAt),
@@ -972,8 +1348,8 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     dateTimeRange: `${formatDateTime(displayStartAt)} - ${formatDateTime(displayEndAt)}`,
     timeRange: `${formatTime(displayStartAt)} - ${formatTime(displayEndAt)}`,
     title: `${taskCode} / ${experimentName} / ${formatDateTime(displayStartAt)} - ${formatDateTime(displayEndAt)}`,
-    trayCodes: trayRows.map((row) => row.trayCode),
-    trayRows,
+    trayCodes: visibleTrayRows.map((row) => row.trayCode),
+    trayRows: visibleTrayRows,
     endDateTimeLabel: formatDateTime(displayEndAt),
   };
 };
@@ -983,6 +1359,7 @@ function buildLaboratoryWorkbenchView({
   schedules = [],
   experiments = [],
   experimentRuns = [],
+  experimentRunTrays = [],
   experimentTrays = [],
   samples = [],
   now = new Date(),
@@ -995,7 +1372,7 @@ function buildLaboratoryWorkbenchView({
   const experimentRecordMap = buildExperimentRecordMap(experiments);
   const sampleMap = buildSampleMap(samples);
   const experimentTrayCodeMap = buildExperimentTrayCodeMap(experimentTrays);
-  const rowBuilderInput = { experimentMap, experimentRecordMap, experimentRuns, experimentTrayCodeMap, sampleMap, taskMap };
+  const rowBuilderInput = { experimentMap, experimentRecordMap, experimentRuns, experimentRunTrays, experimentTrayCodeMap, sampleMap, taskMap };
 
   const activeSchedules = asArray(schedules).filter(
     (schedule) => !scheduleExperimentIsCompleted({ experiments, experimentTrays, samples, schedule }),
@@ -1019,20 +1396,32 @@ function buildLaboratoryWorkbenchView({
     currentExperimentTrayRows.find((row) => row.trayCode === normalizeText(selectedTrayCode))
     || currentExperimentTrayRows[0]
     || null;
+  const selectedTrayHasCurrentExperimentContext = trayHasCurrentExperimentFlowContext(selectedTrayRow, currentTask);
+  const selectedTrayOnlyHasOtherExperimentCompletion =
+    !selectedTrayHasCurrentExperimentContext
+    && selectedTrayRow?.completedForOtherExperiment === true
+    && selectedTrayRow?.completedForCurrentExperiment !== true;
+  const selectedTrayFlowStatus =
+    selectedTrayOnlyHasOtherExperimentCompletion
+      ? EXPERIMENT_COMPLETED_STATUS
+      : resolveSelectedTrayFlowStatus(selectedTrayRow, currentTask);
   const currentTaskStatus = resolveLaboratoryTaskStatus(currentTask);
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus);
   const selectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
-        currentExperimentCode: normalizeText(currentTask?.experimentCode),
+        currentExperimentCode: selectedTrayHasCurrentExperimentContext ? normalizeText(currentTask?.experimentCode) : "",
+        experimentRuns,
+        experimentRunTrays,
         experimentTrays,
         experiments,
-        dispatchTargetLab: normalizeText(selectedTrayRow?.targetLab || selectedTrayRow?.target_lab),
+        dispatchTargetLab: selectedTrayHasCurrentExperimentContext
+          ? normalizeText(selectedTrayRow?.targetLab || selectedTrayRow?.target_lab)
+          : "",
         location: normalizeText(selectedTrayRow?.lifecycleLocation) || normalizeText(selectedTrayRow?.currentLocation),
         samples,
         schedules,
-        status: normalizeText(selectedTrayRow?.lifecycleStatus)
-          || normalizeText(selectedTrayRow?.displayStatus)
-          || normalizeText(selectedTrayRow?.trayStatus),
+        status: selectedTrayFlowStatus,
+        suppressGuessedDestinationLab: selectedTrayOnlyHasOtherExperimentCompletion,
         taskCode: normalizeText(currentTask?.taskCode),
         trayCode: normalizeText(selectedTrayRow?.trayCode),
       })
@@ -1084,11 +1473,8 @@ function createLaboratoryWorkflow() {
 function buildLaboratoryWorkflowFromTask(task) {
   const trayRows = asArray(task?.trayRows);
   const workflowTrayRows = trayRows.filter((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
-  const trayRanks = workflowTrayRows.map((row) => (
-    isPreviousExperimentCompletionForCurrentTask(row, task)
-      ? 0
-      : resolveLaboratoryStatusRank(row?.trayStatus)
-  ));
+  const activeOtherExperimentRows = workflowTrayRows.filter((row) => asArray(row?.activeOtherExperimentRuns).length > 0);
+  const trayRanks = workflowTrayRows.map((row) => resolveCurrentWorkflowTrayRank(row, task));
   const installedWaitingReadyRows = workflowTrayRows.filter((row) => resolveLaboratoryStatusRank(row?.trayStatus) === 2);
   const hasCompared = trayRanks.some((rank) => rank >= 1);
   const comparisonDone = trayRanks.length > 0 && trayRanks.every((rank) => rank >= 1);
@@ -1113,6 +1499,15 @@ function buildLaboratoryWorkflowFromTask(task) {
     },
     hasInstalledWaitingReady: {
       value: trayRanks.some((rank) => rank === 2),
+    },
+    hasActiveOtherExperimentRun: {
+      value: activeOtherExperimentRows.length > 0,
+    },
+    activeOtherExperimentRows: {
+      value: activeOtherExperimentRows,
+    },
+    activeOtherExperimentRun: {
+      value: activeOtherExperimentRows[0]?.activeOtherExperimentRun || null,
     },
     hasInProgressPreparation: {
       value: trayRanks.some((rank) => rank >= 2 && rank < 5),
@@ -1150,6 +1545,16 @@ function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
   const hasCurrentLaboratoryDispatch = Object.prototype.hasOwnProperty.call(workflow, "hasCurrentLaboratoryDispatch")
     ? workflow.hasCurrentLaboratoryDispatch
     : true;
+  const hasActiveOtherExperimentRun = Object.prototype.hasOwnProperty.call(workflow, "hasActiveOtherExperimentRun")
+    ? workflow.hasActiveOtherExperimentRun
+    : false;
+  if (hasActiveOtherExperimentRun) {
+    return {
+      canCompare: false,
+      canInstallSample: false,
+      canMarkReady: false,
+    };
+  }
   return {
     canCompare: hasCurrentLaboratoryDispatch && !workflow.comparisonDone && !hasInProgressPreparation,
     canInstallSample: Boolean(hasComparedWaitingInstall),
@@ -1202,8 +1607,13 @@ function buildLaboratoryProgressMessage(workflow, currentTask, labName = SALT_SP
   if (!currentTask) {
     return `当前${normalizeText(labName) || SALT_SPRAY_LAB}暂无排程`;
   }
-  if (asArray(currentTask?.trayRows).some((row) => RUNNING_EXPERIMENT_STATUSES.has(normalizeText(row?.trayStatus)))) {
+  if (getRunningTrayRowsForCurrentTask(currentTask).length > 0) {
     return `当前任务 ${currentTask.taskCode} 已进入实验进行中`;
+  }
+  if (workflow.hasActiveOtherExperimentRun) {
+    const lock = workflow.activeOtherExperimentRun || {};
+    const target = normalizeText(lock.device) || normalizeText(lock.experimentName) || "其他实验";
+    return `托盘正在${target}进行实验，完成后才可继续当前试验间流程`;
   }
   if (workflow.experimentConfirmed) {
     return "当前任务已确认全部托盘实验准备就绪";
@@ -1234,7 +1644,7 @@ function applyLaboratoryTaskStep({
   currentTask = null,
   nextStatus = "",
   historyAction = "",
-  now = new Date().toISOString(),
+  now = formatLocalDateTime(),
   targetTrayCodes = [],
 }) {
   if (!currentTask) {
@@ -1290,7 +1700,7 @@ function applyLaboratoryTaskStep({
 function resetLaboratoryExperimentTrays({
   samples = [],
   currentTask = null,
-  now = new Date().toISOString(),
+  now = formatLocalDateTime(),
 }) {
   if (!currentTask || !asArray(currentTask?.trayCodes).length) {
     return asArray(samples);
@@ -1309,7 +1719,7 @@ function resetLaboratoryExperimentTrays({
 function revertLaboratoryTaskToPreDispatch({
   samples = [],
   currentTask = null,
-  now = new Date().toISOString(),
+  now = formatLocalDateTime(),
 }) {
   if (!currentTask || !asArray(currentTask?.trayCodes).length) {
     return asArray(samples);
@@ -1367,7 +1777,7 @@ function revertLaboratoryTaskToPreviousStableState({
   allowRunningRevert = false,
   samples = [],
   currentTask = null,
-  now = new Date().toISOString(),
+  now = formatLocalDateTime(),
 }) {
   if (!currentTask || !asArray(currentTask?.trayCodes).length) {
     return asArray(samples);
@@ -1463,9 +1873,17 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
     };
   }
 
-  if (asArray(currentTask.trayCodes).includes(normalizedScanCode)) {
-    const matchedTray = asArray(currentTask.trayRows).find((row) => normalizeText(row?.trayCode) === normalizedScanCode) || null;
+  const currentTaskTrayCodes = uniqueValues([...asArray(currentTask.trayCodes), ...asArray(currentTask.allTrayCodes)]);
+  if (currentTaskTrayCodes.includes(normalizedScanCode)) {
+    const matchedTray =
+      asArray(currentTask.trayRows).find((row) => normalizeText(row?.trayCode) === normalizedScanCode)
+      || asArray(currentTask.allTrayRows).find((row) => normalizeText(row?.trayCode) === normalizedScanCode)
+      || null;
     const trayStatus = normalizeText(matchedTray?.trayStatus) || normalizeText(matchedTray?.displayStatus);
+    const activeOtherExperimentRun = asArray(matchedTray?.activeOtherExperimentRuns)[0] || matchedTray?.activeOtherExperimentRun || null;
+    if (activeOtherExperimentRun) {
+      return buildActiveOtherExperimentComparisonResult(normalizedScanCode, activeOtherExperimentRun);
+    }
     if (trayLifecycleIsBeforeLaboratoryDispatch(matchedTray)) {
       return buildNotDispatchedComparisonResult(normalizedScanCode, {
         ...matchedTray,
@@ -1477,12 +1895,9 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
       if (trayIsCompletedForCurrentExperiment(matchedTray, currentTask)) {
         return buildBlockedComparisonResult(normalizedScanCode, trayStatus);
       }
-      const currentExperimentIndex = asArray(matchedTray?.experimentCodes).indexOf(normalizeText(currentTask?.experimentCode));
       const canEnterNextExperiment =
         (trayStatus === "实验已完成" || trayStatus === "实验完成" || trayStatus === "实验已经完成")
-        && normalizeText(currentTask?.experimentCode)
-        && asArray(matchedTray?.experimentCodes).length > 1
-        && currentExperimentIndex > 0;
+        && isPreviousExperimentCompletionForCurrentTask(matchedTray, currentTask);
       if (canEnterNextExperiment) {
         return {
           guidance: `${normalizedScanCode} 属于当前任务 ${currentTask.taskCode}`,
@@ -1512,7 +1927,9 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
   }
 
   const searchRows = asArray(allScheduleRows).length ? asArray(allScheduleRows) : asArray(scheduleRows);
-  const matchedRows = searchRows.filter((row) => asArray(row.trayCodes).includes(normalizedScanCode));
+  const matchedRows = searchRows.filter((row) =>
+    uniqueValues([...asArray(row.trayCodes), ...asArray(row.allTrayCodes)]).includes(normalizedScanCode),
+  );
   if (matchedRows.length > 0) {
     const destinationLabels = uniqueValues(matchedRows.map((row) => row.device));
     return {

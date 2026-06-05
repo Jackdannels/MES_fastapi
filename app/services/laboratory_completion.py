@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
+
+from app.core.time_utils import format_business_datetime, now_business_text
 
 
 COMPLETED_STATUS = "实验已完成"
@@ -16,7 +17,6 @@ EXPERIMENT_TRAY_FINISHED_STATUSES = {
     "已到达暂存间",
 }
 
-
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -30,11 +30,24 @@ def run_tray_completed_statuses_for_experiment(
     *,
     completed_tray_codes: set[str] | None = None,
     experiment_code: str,
+    experiment_run_trays: list[dict[str, Any]] | None = None,
     task_code: str,
 ) -> set[str]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
     completed = {normalize_text(code) for code in (completed_tray_codes or set()) if normalize_text(code)}
+    for relation in experiment_run_trays or []:
+        if (
+            normalize_text(relation.get("task_code")) != normalized_task_code
+            or normalize_text(relation.get("experiment_code")) != normalized_experiment_code
+            or normalize_text(relation.get("status") or relation.get("run_tray_status")) not in EXPERIMENT_TRAY_FINISHED_STATUSES
+        ):
+            continue
+        tray_code = normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+        if tray_code:
+            completed.add(tray_code)
+    if experiment_run_trays:
+        return completed
     for run in experiment_runs:
         if (
             normalize_text(run.get("task_code")) != normalized_task_code
@@ -55,6 +68,13 @@ def experiment_trays_are_completed(
     return bool(required) and required.issubset(completed)
 
 
+def experiment_status_for_completed_trays(
+    scoped_tray_codes: set[str],
+    completed_tray_codes: set[str],
+) -> str:
+    return COMPLETED_STATUS if experiment_trays_are_completed(scoped_tray_codes, completed_tray_codes) else RUNNING_STATUS
+
+
 def complete_storage_laboratory_experiment(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
@@ -67,13 +87,14 @@ def complete_storage_laboratory_experiment(
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
     normalized_run_no = normalize_text(run_no)
-    completed_time = normalize_text(completed_at) or datetime.now().isoformat(timespec="seconds")
+    completed_time = format_business_datetime(completed_at) or normalize_text(completed_at) or now_business_text()
     if not normalized_task_code or not normalized_experiment_code:
         raise ValueError("task_code and experiment_code are required")
 
     experiments = [dict(item) for item in snapshot.get("experiments", [])]
     schedules = [dict(item) for item in snapshot.get("schedules", [])]
     experiment_runs = [dict(item) for item in snapshot.get("experiment_runs", [])]
+    experiment_run_trays = [dict(item) for item in snapshot.get("experiment_run_trays", [])]
     experiment_trays = [dict(item) for item in snapshot.get("experiment_trays", [])]
     samples = [
         {
@@ -102,7 +123,41 @@ def complete_storage_laboratory_experiment(
         and normalize_text(item.get("tray_code"))
     }
     requested_tray_codes = {normalize_text(code) for code in (tray_codes or []) if normalize_text(code)}
-    affected_tray_codes = requested_tray_codes or scoped_tray_codes
+    def run_matches_request(run: dict[str, Any]) -> bool:
+        run_key = normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
+        return (
+            run_key == normalized_run_no
+            and normalize_text(run.get("task_code")) == normalized_task_code
+            and normalize_text(run.get("experiment_code")) == normalized_experiment_code
+        )
+
+    def infer_tray_codes_from_run() -> set[str]:
+        if not normalized_run_no:
+            return set()
+        inferred_from_relations = {
+            normalize_text(item.get("tray_code") or item.get("tray_no"))
+            for item in experiment_run_trays
+            if normalize_text(item.get("run_no") or item.get("runNo")) == normalized_run_no
+            and normalize_text(item.get("task_code")) == normalized_task_code
+            and normalize_text(item.get("experiment_code")) == normalized_experiment_code
+            and normalize_text(item.get("tray_code") or item.get("tray_no"))
+        }
+        if inferred_from_relations:
+            return inferred_from_relations
+        matched_run = next((run for run in experiment_runs if run_matches_request(run)), None)
+        if not matched_run:
+            return set()
+        return {normalize_text(code) for code in matched_run.get("tray_codes", []) if normalize_text(code)}
+
+    inferred_run_tray_codes = infer_tray_codes_from_run()
+    if requested_tray_codes:
+        affected_tray_codes = requested_tray_codes
+    elif inferred_run_tray_codes:
+        affected_tray_codes = inferred_run_tray_codes
+    elif len(scoped_tray_codes) == 1:
+        affected_tray_codes = set(scoped_tray_codes)
+    else:
+        raise ValueError("trayCodes are required for multi-tray experiment completion")
     if not affected_tray_codes:
         raise ValueError("current experiment has no tray assignment")
 
@@ -157,13 +212,13 @@ def complete_storage_laboratory_experiment(
         experiment_runs,
         completed_tray_codes=affected_tray_codes,
         experiment_code=normalized_experiment_code,
+        experiment_run_trays=experiment_run_trays,
         task_code=normalized_task_code,
     )
-    all_experiment_trays_completed = experiment_trays_are_completed(
+    next_experiment_status = experiment_status_for_completed_trays(
         scoped_tray_codes,
         completed_experiment_tray_codes,
     )
-    next_experiment_status = COMPLETED_STATUS if all_experiment_trays_completed else RUNNING_STATUS
 
     experiments = [
         {
@@ -189,7 +244,7 @@ def complete_storage_laboratory_experiment(
     ]
     def run_matches_completion(item: dict[str, Any]) -> bool:
         if normalized_run_no:
-            return normalized_run_no in {normalize_text(item.get("run_no")), normalize_text(item.get("id"))}
+            return run_matches_request(item)
         if (
             normalize_text(item.get("task_code")) != normalized_task_code
             or normalize_text(item.get("experiment_code")) != normalized_experiment_code
@@ -211,11 +266,63 @@ def complete_storage_laboratory_experiment(
         for item in experiment_runs
     ]
 
+    existing_relation_keys = {
+        (
+            normalize_text(item.get("run_no") or item.get("runNo")),
+            normalize_text(item.get("tray_code") or item.get("tray_no")),
+        )
+        for item in experiment_run_trays
+    }
+    experiment_run_trays = [
+        {
+            **item,
+            "status": COMPLETED_STATUS,
+            "run_tray_status": COMPLETED_STATUS,
+            "ended_at": completed_time,
+            "updated_at": completed_time,
+        }
+        if (
+            normalize_text(item.get("task_code")) == normalized_task_code
+            and normalize_text(item.get("experiment_code")) == normalized_experiment_code
+            and (not normalized_run_no or normalize_text(item.get("run_no") or item.get("runNo")) == normalized_run_no)
+            and normalize_text(item.get("tray_code") or item.get("tray_no")) in affected_tray_codes
+        )
+        else item
+        for item in experiment_run_trays
+    ]
+    for run in experiment_runs:
+        run_key = normalize_text(run.get("run_no") or run.get("id"))
+        if normalized_run_no and run_key != normalized_run_no:
+            continue
+        if (
+            normalize_text(run.get("task_code")) != normalized_task_code
+            or normalize_text(run.get("experiment_code")) != normalized_experiment_code
+        ):
+            continue
+        for tray_code in affected_tray_codes:
+            if (run_key, tray_code) in existing_relation_keys:
+                continue
+            experiment_run_trays.append(
+                {
+                    "run_no": run_key,
+                    "task_code": normalized_task_code,
+                    "experiment_code": normalized_experiment_code,
+                    "tray_code": tray_code,
+                    "status": COMPLETED_STATUS,
+                    "run_tray_status": COMPLETED_STATUS,
+                    "started_at": normalize_text(run.get("started_at")),
+                    "ended_at": completed_time,
+                    "created_at": normalize_text(run.get("created_at")) or completed_time,
+                    "updated_at": completed_time,
+                }
+            )
+
     return {
         "affectedSampleCount": affected_sample_count,
         "affectedTrayCodes": sorted(affected_tray_codes),
         "completedAt": completed_time,
         "experiments": experiments,
+        "experimentRunTrays": experiment_run_trays,
         "experimentRuns": experiment_runs,
         "samples": samples,
         "schedules": schedules,

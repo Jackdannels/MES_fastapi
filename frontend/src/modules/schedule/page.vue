@@ -435,7 +435,7 @@
           </div>
           <div class="schedule-exception-card__reason">{{ row.reason }}</div>
           <div class="schedule-exception-card__detail">{{ row.detail || "-" }}</div>
-          <div class="schedule-exception-card__meta">触发时间：{{ row.created_at ? row.created_at.replace("T", " ").replace(".000Z", "") : "-" }}</div>
+          <div class="schedule-exception-card__meta">触发时间：{{ formatLocalDateTime(row.created_at) || "-" }}</div>
           <div class="schedule-exception-card__actions">
             <button
               class="action-btn schedule-header-action-button schedule-header-action-button--exception"
@@ -547,6 +547,7 @@ import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSchedulePage } from "./useSchedulePage";
 
 const uiText = {

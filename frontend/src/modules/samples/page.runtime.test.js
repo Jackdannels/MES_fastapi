@@ -221,5 +221,85 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.text()).not.toContain("SYLU-2026-04-101-SP-001");
     expect(wrapper.text()).not.toContain("SYLU-2026-04-102-SP-001");
   });
+
+  test("tray flow receives experiment runs from the page and shows the active running experiment", async () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = "SYLU-2026-06-021-TP-001";
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => createWorkspacePayload() };
+      }
+      if (url.includes("/api/storage")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            "mes.experiment_runs": [
+              {
+                task_code: taskCode,
+                experiment_code: `${taskCode}-A`,
+                tray_codes: [trayCode],
+                status: "实验进行中",
+                started_at: "2026-06-04T19:33:56+08:00",
+              },
+            ],
+            "mes.experiment_trays": [
+              { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+              { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+            ],
+            "mes.experiments": [
+              { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击试验", status: "实验准备就绪" },
+              { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击试验", status: "已排程" },
+            ],
+            "mes.samples": [
+              {
+                code: `${taskCode}-SP-001`,
+                task_code: taskCode,
+                location: "冲击一室",
+                status: "实验进行中",
+                trays: [{ tray_code: trayCode, status: "实验进行中", quantity: 1 }],
+                history: [
+                  {
+                    action: "实验确认",
+                    detail: `${taskCode} / 冲击试验 / 实验准备就绪`,
+                    location: "冲击一室",
+                    status: "实验准备就绪",
+                    time: "2026-06-04T19:33:54+08:00",
+                  },
+                ],
+              },
+            ],
+            "mes.schedules": [
+              { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击一室", status: "实验进行中" },
+            ],
+          }),
+        };
+      }
+      if (url.includes("/api/tasks")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ([{ id: 1, code: taskCode, name: "当前任务", test_type: "冲击试验", sample_count: 1 }]),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]');
+    const runningStep = trayFlowCard.get('[data-testid="samples-tray-flow-step-experiment-current-0"]');
+    expect(runningStep.text()).toContain("冲击试验进行中");
+    expect(runningStep.text()).toContain("2026-06-04 19:33:56");
+    expect(runningStep.classes()).toContain("current");
+    expect(trayFlowCard.get('[data-testid="samples-tray-flow-step-route-0-5"]').classes()).toContain("reached");
+  });
 });
 

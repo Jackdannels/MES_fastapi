@@ -12,6 +12,7 @@ class FakeTransferStorage:
             "mes.experiment_trays": [],
             "mes.experiment_samples": [],
             "mes.experiment_runs": [],
+            "mes.experiment_run_trays": [],
             "mes.staging_events": [],
             "mes.devices": [],
             "mes.streams": [],
@@ -1734,6 +1735,25 @@ def test_transfer_area_reallocate_clears_stale_experiment_runs_for_task(monkeypa
             },
         ],
     )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "RUN-STALE",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-A",
+                "tray_code": "SYLU-2026-03-101-TP-001",
+                "run_tray_status": "实验进行中",
+            },
+            {
+                "run_no": "RUN-OTHER",
+                "task_code": "OTHER",
+                "experiment_code": "OTHER-A",
+                "tray_code": "OTHER-TP-001",
+                "run_tray_status": "实验进行中",
+            },
+        ],
+    )
 
     allocation = {
         "trayLimit": 2,
@@ -1754,6 +1774,15 @@ def test_transfer_area_reallocate_clears_stale_experiment_runs_for_task(monkeypa
             "experiment_code": "OTHER-A",
             "tray_codes": ["OTHER-TP-001"],
             "status": "实验进行中",
+        }
+    ]
+    assert storage.read("mes.experiment_run_trays") == [
+        {
+            "run_no": "RUN-OTHER",
+            "task_code": "OTHER",
+            "experiment_code": "OTHER-A",
+            "tray_code": "OTHER-TP-001",
+            "run_tray_status": "实验进行中",
         }
     ]
 

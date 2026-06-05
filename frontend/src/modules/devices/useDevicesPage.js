@@ -5,6 +5,7 @@ import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 import { revertLaboratoryTaskToPreviousStableState } from "@/modules/laboratory/model";
@@ -46,19 +47,7 @@ const parseTime = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
-const toLocalDateTimeValue = (value = new Date()) => {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  const seconds = String(date.getSeconds()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
-};
+const toBusinessDateTimeValue = (value = new Date()) => formatLocalDateTime(value);
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPage() {
@@ -67,6 +56,7 @@ function useDevicesPage() {
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
@@ -76,6 +66,7 @@ function useDevicesPage() {
   const rawDevices = ref([]);
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
+  const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
@@ -165,7 +156,7 @@ function useDevicesPage() {
         return {
           ...device,
           status: targetStatus,
-          updated_at: toLocalDateTimeValue(currentDate),
+          updated_at: toBusinessDateTimeValue(currentDate),
         };
       }
       if (endAt && endAt < current && normalizeText(device?.status) !== "可用") {
@@ -173,7 +164,7 @@ function useDevicesPage() {
         return {
           ...device,
           status: "可用",
-          updated_at: toLocalDateTimeValue(currentDate),
+          updated_at: toBusinessDateTimeValue(currentDate),
         };
       }
       return { ...device };
@@ -264,7 +255,7 @@ function useDevicesPage() {
       return {
         ...experiment,
         status: STATUS_WAITING,
-        unscheduled_since: confirmedAt?.toISOString() || "",
+        unscheduled_since: confirmedAt ? formatLocalDateTime(confirmedAt) : "",
         updated_at: timestamp,
       };
     });
@@ -502,10 +493,32 @@ function useDevicesPage() {
             const key = `${normalizeText(run?.task_code)}::${normalizeText(run?.experiment_code)}`;
             return !runningRunNos.has(runNo) && !runningExperimentKeys.has(key);
           });
+    const nextExperimentRunTrays =
+      mode === "complete"
+        ? rawExperimentRunTrays.value.map((relation) => {
+            const runNo = normalizeText(relation?.run_no) || normalizeText(relation?.runNo);
+            const key = `${normalizeText(relation?.task_code)}::${normalizeText(relation?.experiment_code)}`;
+            if (!runningRunNos.has(runNo) && !runningExperimentKeys.has(key)) {
+              return { ...relation };
+            }
+            return {
+              ...relation,
+              ended_at: timestamp,
+              run_tray_status: STATUS_COMPLETED,
+              status: STATUS_COMPLETED,
+              updated_at: timestamp,
+            };
+          })
+        : rawExperimentRunTrays.value.filter((relation) => {
+            const runNo = normalizeText(relation?.run_no) || normalizeText(relation?.runNo);
+            const key = `${normalizeText(relation?.task_code)}::${normalizeText(relation?.experiment_code)}`;
+            return !runningRunNos.has(runNo) && !runningExperimentKeys.has(key);
+          });
     return {
       [STORAGE_KEYS.devices]: nextDevices,
       [STORAGE_KEYS.experiments]: nextExperiments,
       [STORAGE_KEYS.experiment_runs]: nextExperimentRuns,
+      [STORAGE_KEYS.experiment_run_trays]: nextExperimentRunTrays,
       [STORAGE_KEYS.samples]: nextSamples,
       [STORAGE_KEYS.schedules]: nextSchedules,
       [STORAGE_KEYS.tasks]: nextTasks,
@@ -534,7 +547,7 @@ function useDevicesPage() {
       return {
         ...experiment,
         status: STATUS_WAITING,
-        unscheduled_since: confirmedAt?.toISOString() || "",
+        unscheduled_since: confirmedAt ? formatLocalDateTime(confirmedAt) : "",
         updated_at: timestamp,
       };
     });
@@ -558,7 +571,7 @@ function useDevicesPage() {
   };
 
   const persistMaintenancePlan = async ({ conflictingSchedules = [], deviceCode, form }) => {
-    const timestamp = toLocalDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(new Date());
     const updates = buildMaintenancePlanUpdates({ conflictingSchedules, deviceCode, form, timestamp });
     rawConflicts.value = updates[STORAGE_KEYS.conflicts];
     rawDevices.value = updates[STORAGE_KEYS.devices];
@@ -634,7 +647,7 @@ function useDevicesPage() {
     if (!deviceCode) {
       return;
     }
-    const timestamp = toLocalDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(new Date());
     const form = { ...maintenancePlanForm.value };
     const runningSchedules = findRunningSchedulesForDevice(deviceCode);
     if (runningSchedules.length > 0) {
@@ -689,7 +702,7 @@ function useDevicesPage() {
       runningRepairChoiceModal.close();
       return;
     }
-    const timestamp = toLocalDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(new Date());
     const updates = buildRunningRepairUpdates({
       form: {
         ...detail.form,
@@ -702,6 +715,7 @@ function useDevicesPage() {
     rawDevices.value = updates[STORAGE_KEYS.devices];
     rawExperiments.value = updates[STORAGE_KEYS.experiments];
     rawExperimentRuns.value = updates[STORAGE_KEYS.experiment_runs];
+    rawExperimentRunTrays.value = updates[STORAGE_KEYS.experiment_run_trays];
     rawSamples.value = updates[STORAGE_KEYS.samples];
     rawSchedules.value = updates[STORAGE_KEYS.schedules];
     rawTasks.value = updates[STORAGE_KEYS.tasks];
@@ -728,7 +742,7 @@ function useDevicesPage() {
             maintenance_start_at: "",
             maintenance_type: "",
             status: "可用",
-            updated_at: toLocalDateTimeValue(new Date()),
+            updated_at: toBusinessDateTimeValue(new Date()),
           }
         : { ...device },
     );
@@ -743,7 +757,7 @@ function useDevicesPage() {
       return;
     }
     if (detail.mode === "deviceStatus") {
-      const timestamp = toLocalDateTimeValue(new Date());
+      const timestamp = toBusinessDateTimeValue(new Date());
       const updates = buildUnavailableDeviceStatusUpdates({
         conflictingSchedules: detail.conflictingSchedules,
         form: detail.form,
@@ -803,6 +817,7 @@ function useDevicesPage() {
     rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
     rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
     rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+    rawExperimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
     rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
       ? snapshot[STORAGE_KEYS.experiment_trays]
       : [];
@@ -827,6 +842,7 @@ function useDevicesPage() {
       STORAGE_KEYS.devices,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.schedules,

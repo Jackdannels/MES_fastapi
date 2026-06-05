@@ -225,6 +225,7 @@ defineOptions({
 import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
@@ -331,6 +332,8 @@ const { loadSnapshot } = useStorageSnapshot([
   STORAGE_KEYS.tasks,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.staging_events,
@@ -364,6 +367,8 @@ const labScreens = computed(() => {
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentRuns: snapshot[STORAGE_KEYS.experiment_runs],
+    experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
     devices: snapshot[STORAGE_KEYS.devices],
@@ -562,6 +567,8 @@ useStorageSnapshotRefresh({
     STORAGE_KEYS.tasks,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.staging_events,
@@ -620,23 +627,8 @@ const formatBeijingFlowTime = (value) => {
   if (!text) {
     return "";
   }
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) {
-    return text.replace(/T/g, " ").replace(/\+08:00$/i, "");
-  }
-  const parts = new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(date).reduce((result, part) => {
-    result[part.type] = part.value;
-    return result;
-  }, {});
-  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+  const formatted = formatLocalDateTime(text) || text;
+  return formatted.length >= 19 ? formatted.slice(5, 19) : formatted;
 };
 
 onMounted(() => {
@@ -1076,12 +1068,22 @@ const StagingSamplesScreen = {
             props.compact ? null : h("span", { class: "visual-board-time" }, `托盘基准 ${SYSTEM_TRAY_TOTAL}`),
           ]),
         ]),
-        h("div", { class: "visual-staging-overview", "data-testid": "visual-staging-overview" }, overviewMetrics.map((metric) =>
-          h("div", { class: "visual-staging-overview-item", key: metric.label }, [
+        h("div", { class: "visual-staging-overview", "data-testid": "visual-staging-overview" }, [
+          ...overviewMetrics.map((metric) => h("div", { class: "visual-staging-overview-item", key: metric.label }, [
             h("span", metric.label),
             h("strong", metric.value),
+          ])),
+          h("div", { class: ["visual-staging-overview-item", "visual-staging-kind-summary"], "data-testid": "visual-staging-kind-summary" }, [
+            h("span", "实际进入暂存/计划暂存/实验后暂存"),
+            h("strong", [
+              h("b", { class: "kind-current" }, String(summary.currentTrayCount ?? 0)),
+              h("i", "/"),
+              h("b", { class: "kind-planned" }, String(summary.plannedTrayCount ?? 0)),
+              h("i", "/"),
+              h("b", { class: "kind-post-test" }, String(summary.postTestTrayCount ?? 0)),
+            ]),
           ]),
-        )),
+        ]),
         h("div", { class: "visual-staging-layout" }, [
           h("section", { class: "visual-staging-task-rail" }, [
             h("div", { class: "visual-staging-section-title" }, "任务切换"),
@@ -1127,7 +1129,11 @@ const StagingSamplesScreen = {
                   : h(
                     "button",
                     {
-                      class: ["visual-staging-tray-option", tray.trayCode === selectedTray?.trayCode ? "is-active" : ""],
+                      class: [
+                        "visual-staging-tray-option",
+                        tray.trayCode === selectedTray?.trayCode ? "is-active" : "",
+                        tray.stagingKind ? `kind-${tray.stagingKind}` : "",
+                      ],
                       "data-testid": "visual-staging-tray-option",
                       type: "button",
                       onClick: () => selectTray(tray.trayCode),
@@ -1135,19 +1141,19 @@ const StagingSamplesScreen = {
                     [
                       h("strong", tray.trayCode),
                       h("span", tray.experimentType),
-                      h("small", tray.status),
+                      h("small", `${tray.stagingKindLabel || ""} ${tray.status}`.trim()),
                     ],
                   ),
               )
               : [h("div", { class: "visual-staging-empty" }, "暂无托盘")]),
             selectedTray
-              ? h("div", { class: "visual-staging-tray-detail" }, [
+              ? h("div", { class: ["visual-staging-tray-detail", selectedTray.stagingKind ? `kind-${selectedTray.stagingKind}` : ""] }, [
                 h("div", { class: "visual-staging-tray-detail-head" }, [
                   h("div", [
                     h("span", selectedTray.taskCode),
                     h("strong", selectedTray.trayCode),
                   ]),
-                  h("div", { class: "visual-staging-tray-status" }, selectedTray.status),
+                  h("div", { class: "visual-staging-tray-status" }, selectedTray.stagingKindLabel || selectedTray.status),
                 ]),
                 h("div", { class: "visual-staging-tray-meta" }, [
                   h("div", [h("span", "实验类型"), h("strong", selectedTray.experimentType)]),
@@ -1155,7 +1161,10 @@ const StagingSamplesScreen = {
                 ]),
                 h("div", { class: "visual-staging-sample-grid" }, [
                   ...(selectedTray.visibleSampleCodes || []).map((sampleCode) =>
-                    h("span", { class: "visual-staging-sample-code", key: sampleCode }, sampleCode),
+                    h("span", {
+                      class: ["visual-staging-sample-code", selectedTray.stagingKind ? `kind-${selectedTray.stagingKind}` : ""],
+                      key: sampleCode,
+                    }, sampleCode),
                   ),
                   selectedTray.overflowSampleCount > 0 && props.interactive && !props.compact
                     ? h(

@@ -58,6 +58,7 @@ describe("VisualizationPage runtime", () => {
       "mes.tasks",
       "mes.samples",
       "mes.experiments",
+      "mes.experiment_runs",
       "mes.experiment_trays",
       "mes.schedules",
       "mes.devices",
@@ -605,6 +606,60 @@ describe("VisualizationPage runtime", () => {
 
     expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-MOLD-001");
     expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("MOLD-SAMPLE-001");
+  });
+
+  test("renders staging legend and distinct staging kind styles", async () => {
+    snapshotState.snapshot = {
+      "mes.tasks": [
+        { code: "TASK-STAGING-KINDS", name: "暂存分类任务", test_type: "盐雾试验" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-CURRENT",
+          task_code: "TASK-STAGING-KINDS",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-CURRENT", status: "已到达暂存间", quantity: 1 }],
+        },
+        {
+          code: "SP-PLANNED",
+          task_code: "TASK-STAGING-KINDS",
+          location: "室外接驳区",
+          status: "送至暂存间",
+          trays: [{ tray_code: "TP-PLANNED", status: "送至暂存间", quantity: 1 }],
+        },
+        {
+          code: "SP-POST",
+          task_code: "TASK-STAGING-KINDS",
+          location: "恒温恒湿间（实验后暂存间）",
+          status: "放置实验后暂存间",
+          trays: [{ tray_code: "TP-POST", status: "放置实验后暂存间", quantity: 1 }],
+        },
+      ],
+    };
+    const wrapper = mountPage();
+
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[5].trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    const overview = preview.get('[data-testid="visual-staging-overview"]');
+    const kindSummary = preview.get('[data-testid="visual-staging-kind-summary"]');
+    expect(overview.text()).toContain("实际进入暂存/计划暂存/实验后暂存");
+    expect(kindSummary.text()).toContain("1/1/1");
+    expect(kindSummary.find(".kind-planned").exists()).toBe(true);
+    expect(kindSummary.find(".kind-post-test").exists()).toBe(true);
+    expect(preview.find('[data-testid="visual-staging-legend"]').exists()).toBe(false);
+
+    const trayOptions = preview.findAll('[data-testid="visual-staging-tray-option"]');
+    expect(trayOptions.some((option) => option.classes().includes("kind-planned"))).toBe(true);
+    expect(trayOptions.some((option) => option.classes().includes("kind-post-test"))).toBe(true);
+
+    await trayOptions.find((option) => option.text().includes("TP-POST"))?.trigger("click");
+
+    expect(preview.find(".visual-staging-tray-detail").classes()).toContain("kind-post-test");
+    expect(preview.find(".visual-staging-sample-code").classes()).toContain("kind-post-test");
   });
 
   test("shows a red warning marker when tray remaining is at or below ten percent", async () => {

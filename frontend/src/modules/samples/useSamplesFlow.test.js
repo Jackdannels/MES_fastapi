@@ -45,6 +45,7 @@ describe("useSamplesFlow", () => {
     mocks.loadSnapshot.mockResolvedValue({
       "mes.samples": [],
       "mes.experiments": [],
+      "mes.experiment_runs": [],
       "mes.experiment_trays": [],
       "mes.schedules": [],
     });
@@ -88,6 +89,7 @@ describe("useSamplesFlow", () => {
         },
       ],
       "mes.experiments": [],
+      "mes.experiment_runs": [],
       "mes.experiment_trays": [],
       "mes.schedules": [],
     });
@@ -117,6 +119,7 @@ describe("useSamplesFlow", () => {
         },
       ],
       "mes.experiments": [{ task_code: "TASK-001", experiment_code: "EXP-001", experiment_type: "盐雾试验" }],
+      "mes.experiment_runs": [],
       "mes.experiment_trays": [{ task_code: "TASK-001", experiment_code: "EXP-001", tray_code: "TP-001" }],
       "mes.schedules": [],
     });
@@ -132,6 +135,50 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-001 | 当前状态：盐雾试验进行中");
     expect(wrapper.vm.detailSampleTrayFlow.steps.find((step) => step.key === "running")).toEqual(
       expect.objectContaining({ active: true }),
+    );
+  });
+
+  test("loads experiment runs for tray flow runtime times", async () => {
+    mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-RUN", name: "运行任务" }]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "SP-RUN-001",
+          task_code: "TASK-RUN",
+          location: "冲击一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-RUN-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-RUN", experiment_code: "EXP-RUN", experiment_name: "冲击试验", status: "实验进行中" },
+        { task_code: "TASK-RUN", experiment_code: "EXP-NEXT", experiment_name: "振动试验", status: "已排程" },
+      ],
+      "mes.experiment_runs": [
+        {
+          task_code: "TASK-RUN",
+          experiment_code: "EXP-RUN",
+          tray_codes: ["TP-RUN-001"],
+          status: "实验进行中",
+          started_at: "2026-06-04T19:12:09+08:00",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-RUN", experiment_code: "EXP-RUN", tray_code: "TP-RUN-001" },
+        { task_code: "TASK-RUN", experiment_code: "EXP-NEXT", tray_code: "TP-RUN-001" },
+      ],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.rawExperimentRuns).toHaveLength(1);
+    wrapper.vm.openDetailDrawer("SP-RUN-001");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.detailSampleTrayFlow.steps.find((step) => step.label === "冲击试验进行中")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-06-04T19:12:09+08:00" }),
     );
   });
 });

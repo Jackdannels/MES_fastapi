@@ -1,4 +1,5 @@
 import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
 
 const TASKS_KEY = "mes.tasks";
@@ -794,7 +795,7 @@ function applyZancunInventoryAction(input = {}) {
         ? "stockOut"
         : "stockIn";
   const normalizedCode = normalizeText(payload.code);
-  const actionTime = normalizeText(payload.actionTime || input.now) || new Date().toISOString();
+  const actionTime = normalizeText(payload.actionTime || input.now) || formatLocalDateTime();
 
   const nextSnapshot = {
     ...snapshot,

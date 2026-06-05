@@ -736,6 +736,9 @@ describe("useProcessLabs", () => {
         },
       ],
       "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "已排程", test_type: "Impact Test" }],
+      "mes.experiments": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "Impact Test", status: "已排程" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -801,8 +804,18 @@ describe("useProcessLabs", () => {
     expect(persisted["mes.schedules"]).toEqual([
       expect.objectContaining({
         id: "schedule-1",
+        status: "实验进行中",
         start_at: "2026-03-11T09:30:00Z",
         end_at: "2026-03-11T10:30:00Z",
+        updated_at: "2026-03-11 16:00:00",
+      }),
+    ]);
+    expect(persisted["mes.experiments"]).toEqual([
+      expect.objectContaining({
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        status: "实验进行中",
+        updated_at: "2026-03-11 16:00:00",
       }),
     ]);
     expect(persisted["mes.experiment_runs"]).toEqual([
@@ -813,8 +826,25 @@ describe("useProcessLabs", () => {
         device: "Lab-A",
         tray_codes: ["TRAY-READY-1", "TRAY-READY-2"],
         status: "实验进行中",
-        started_at: "2026-03-11T08:00:00.000Z",
-        planned_end_at: "2026-03-11T10:00:00.000Z",
+        started_at: "2026-03-11 16:00:00",
+        planned_hours: 2,
+        planned_end_at: "2026-03-11 18:00:00",
+      }),
+    ]);
+    expect(persisted["mes.experiment_run_trays"]).toEqual([
+      expect.objectContaining({
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        tray_code: "TRAY-READY-1",
+        run_tray_status: "实验进行中",
+        started_at: "2026-03-11 16:00:00",
+      }),
+      expect.objectContaining({
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        tray_code: "TRAY-READY-2",
+        run_tray_status: "实验进行中",
+        started_at: "2026-03-11 16:00:00",
       }),
     ]);
     expect(persisted["mes.samples"]).toEqual(
@@ -886,6 +916,17 @@ describe("useProcessLabs", () => {
           ended_at: "2026-05-31T14:14:31Z",
         },
       ],
+      "mes.experiment_run_trays": [
+        {
+          id: "run-first:TASK-SALT-TP-001",
+          run_no: "run-first",
+          task_code: "TASK-SALT",
+          experiment_code: "TASK-SALT-A",
+          tray_code: "TASK-SALT-TP-001",
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+        },
+      ],
       "mes.samples": [
         {
           code: "SP-001",
@@ -942,8 +983,22 @@ describe("useProcessLabs", () => {
         device: "盐雾试验室",
         tray_codes: ["TASK-SALT-TP-002"],
         status: "实验进行中",
-        started_at: "2026-06-01T01:40:00.000Z",
-        planned_end_at: "2026-06-01T05:10:00.000Z",
+        started_at: "2026-06-01 09:40:00",
+        planned_end_at: "2026-06-01 13:10:00",
+      }),
+    ]);
+    expect(persisted["mes.experiment_run_trays"]).toEqual([
+      expect.objectContaining({
+        run_no: "run-first",
+        tray_code: "TASK-SALT-TP-001",
+        run_tray_status: "实验已完成",
+      }),
+      expect.objectContaining({
+        task_code: "TASK-SALT",
+        experiment_code: "TASK-SALT-A",
+        tray_code: "TASK-SALT-TP-002",
+        run_tray_status: "实验进行中",
+        started_at: "2026-06-01 09:40:00",
       }),
     ]);
     expect(persisted["mes.samples"]).toEqual(
@@ -1093,11 +1148,26 @@ describe("useProcessLabs", () => {
         {
           device: "Lab-A",
           end_at: "2026-03-11T10:30:00Z",
+          experiment_code: "TASK-001-A",
           start_at: "2026-03-11T09:30:00Z",
           task_code: "TASK-001",
         },
       ],
       "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "实验中", test_type: "Impact Test" }],
+      "mes.experiment_runs": [
+        {
+          run_no: "RUN-TASK-001-A",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "Lab-A",
+          tray_codes: ["TRAY-RUNNING"],
+          status: "实验进行中",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-RUNNING" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-READY" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -1291,11 +1361,15 @@ describe("useProcessLabs", () => {
         {
           device: "Lab-A",
           end_at: "2026-03-11T10:30:00Z",
+          experiment_code: "TASK-001-A",
           start_at: "2026-03-11T09:30:00Z",
           task_code: "TASK-001",
         },
       ],
       "mes.tasks": [{ code: "TASK-001", test_type: "Impact Test", status: "已排程" }],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-001" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -1327,11 +1401,25 @@ describe("useProcessLabs", () => {
         {
           device: "Lab-A",
           end_at: "2026-03-11T10:30:00Z",
+          experiment_code: "TASK-001-A",
           start_at: "2026-03-11T09:30:00Z",
           task_code: "TASK-001",
         },
       ],
       "mes.tasks": [{ code: "TASK-001", test_type: "Impact Test", status: "已排程" }],
+      "mes.experiment_runs": [
+        {
+          run_no: "RUN-TASK-001-A",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "Lab-A",
+          tray_codes: ["TRAY-001"],
+          status: "实验进行中",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-001" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -1608,6 +1696,16 @@ describe("useProcessLabs", () => {
         { id: "rel-1", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-001" },
         { id: "rel-2", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-002" },
         { id: "rel-3", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", tray_code: "SYLU-2026-03-001-TP-003" },
+      ],
+      "mes.experiment_runs": [
+        {
+          run_no: "RUN-2026-03-001-A",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "冲击一室",
+          tray_codes: ["SYLU-2026-03-001-TP-001"],
+          status: "实验进行中",
+        },
       ],
       "mes.samples": [
         {
@@ -2176,6 +2274,16 @@ describe("useProcessLabs", () => {
         { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-B", tray_code: "SYLU-2026-03-002-TP-002" },
         { task_code: "SYLU-2026-03-002", experiment_code: "SYLU-2026-03-002-C", tray_code: "SYLU-2026-03-002-TP-001" },
       ],
+      "mes.experiment_runs": [
+        {
+          run_no: "RUN-SALT-002",
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          device: "盐雾试验室",
+          tray_codes: ["SYLU-2026-03-002-TP-001", "SYLU-2026-03-002-TP-002"],
+          status: "实验进行中",
+        },
+      ],
       "mes.samples": [
         {
           code: "SYLU-2026-03-002-SP-001",
@@ -2194,7 +2302,7 @@ describe("useProcessLabs", () => {
       ],
     }));
 
-    const { labCards, loadLabStatus } = useProcessLabs({
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
       autoLoad: false,
       labs: [
         { name: "盐雾试验室", testType: "盐雾试验" },
@@ -2222,6 +2330,12 @@ describe("useProcessLabs", () => {
       status: "已排程",
       statusClass: "is-scheduled",
     });
+
+    await openTaskOverview(labCards.value.find((card) => card.name === "高低温湿热一室"));
+
+    expect(selectedTaskDetail.value.activeExperimentCode).toBe("SYLU-2026-03-002-B");
+    expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
+    expect(selectedTaskDetail.value.selectedTrayFlow.currentStatus).not.toContain("高低温湿热试验进行中");
   });
 
   test("blocks other laboratories from starting a shared tray that is ready in the current experiment", async () => {
@@ -2289,13 +2403,443 @@ describe("useProcessLabs", () => {
     expect(vibrationCard).toMatchObject({
       canStartExperiment: false,
       readyTrayCount: 0,
-      startDisabledReason: "托盘正在盐雾试验中，不能开始当前实验",
+      startDisabledReason: "托盘正在其他实验中，不能开始当前实验",
       status: "已排程",
       statusClass: "is-scheduled",
     });
 
     setSelectedTaskForLab("振动一室", "SYLU-2026-03-006", "SYLU-2026-03-006-B");
     await startExperiment(labCards.value.find((card) => card.name === "振动一室"));
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("does not allow restarting impact after the shared tray is ready for temperature shock", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-IMPACT",
+          start_at: "2026-06-04T08:00:00Z",
+          task_code: "TASK-SHARED",
+        },
+        {
+          device: "温度冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-TEMP",
+          start_at: "2026-06-04T12:30:00Z",
+          task_code: "TASK-SHARED",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-SHARED", name: "共享托盘任务", status: "已排程", test_type: "冲击试验 / 温度冲击试验" }],
+      "mes.experiments": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", experiment_name: "温度冲击试验", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", tray_code: "TP-SHARED" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", tray_code: "TP-SHARED" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-SHARED",
+          history: [
+            {
+              action: "实验完成",
+              detail: "TASK-SHARED / 冲击试验 / 实验已完成",
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-06-04T11:00:00Z",
+            },
+            {
+              action: "实验确认",
+              detail: "TASK-SHARED / 温度冲击试验 / 实验准备就绪",
+              location: "温度冲击一室",
+              status: "实验准备就绪",
+              time: "2026-06-04T12:40:00Z",
+            },
+          ],
+          location: "冲击一室",
+          status: "实验准备就绪",
+          task_code: "TASK-SHARED",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_experiment_code: "EXP-TEMP",
+              target_lab: "温度冲击一室",
+              tray_code: "TP-SHARED",
+            },
+          ],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { name: "冲击一室", testType: "冲击试验" },
+        { name: "温度冲击一室", testType: "温度冲击试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-06-04T12:45:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    const impactCard = labCards.value.find((card) => card.name === "冲击一室");
+    const tempCard = labCards.value.find((card) => card.name === "温度冲击一室");
+    expect(impactCard).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+    });
+    expect(tempCard).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    });
+
+    setSelectedTaskForLab("冲击一室", "TASK-SHARED", "EXP-IMPACT");
+    await startExperiment(impactCard);
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("does not treat temperature shock ready history as impact ready for the same tray", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击二室",
+          end_at: "2026-06-05T18:16:00+08:00",
+          experiment_code: "SYLU-2026-06-021-A",
+          start_at: "2026-06-05T14:46:00+08:00",
+          task_code: "SYLU-2026-06-021",
+        },
+        {
+          device: "温度冲击二室",
+          end_at: "2026-06-05T18:17:00+08:00",
+          experiment_code: "SYLU-2026-06-021-B",
+          start_at: "2026-06-05T14:47:00+08:00",
+          task_code: "SYLU-2026-06-021",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-06-021", name: "复合任务", status: "已排程", test_type: "冲击试验 / 温度冲击试验" }],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", experiment_name: "温度冲击试验", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-005" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-005" },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-06-021-SP-005",
+          history: [
+            {
+              action: "实验确认",
+              detail: "SYLU-2026-06-021 / 温度冲击试验 / 实验准备就绪",
+              location: "温度冲击二室",
+              status: "实验准备就绪",
+              time: "2026-06-05T15:37:51+08:00",
+            },
+            {
+              action: "送至实验室",
+              detail: "SYLU-2026-06-021-TP-005 -> 温度冲击二室",
+              location: "温度冲击二室",
+              status: "送至实验室",
+              time: "2026-06-05T14:50:57+08:00",
+            },
+          ],
+          location: "温度冲击二室",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-06-021",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_experiment_code: "SYLU-2026-06-021-B",
+              target_lab: "温度冲击二室",
+              tray_code: "SYLU-2026-06-021-TP-005",
+            },
+          ],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { name: "冲击二室", testType: "冲击试验" },
+        { name: "温度冲击二室", testType: "温度冲击试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-06-05T15:38:00+08:00"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    const impactCard = labCards.value.find((card) => card.name === "冲击二室");
+    const tempShockCard = labCards.value.find((card) => card.name === "温度冲击二室");
+    expect(impactCard).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+    });
+    expect(tempShockCard).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    });
+
+    setSelectedTaskForLab("冲击二室", "SYLU-2026-06-021", "SYLU-2026-06-021-A");
+    await startExperiment(impactCard);
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("starts all ready trays in the current laboratory even when previous target fields are stale", async () => {
+    const readyTrayCodes = [
+      "SYLU-2026-06-021-TP-001",
+      "SYLU-2026-06-021-TP-004",
+      "SYLU-2026-06-021-TP-005",
+    ];
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "温度冲击二室",
+          end_at: "2026-06-05T19:19:00+08:00",
+          experiment_code: "SYLU-2026-06-021-B",
+          id: "schedule-temp-shock",
+          planned_hours: 3.5,
+          start_at: "2026-06-05T15:49:00+08:00",
+          task_code: "SYLU-2026-06-021",
+        },
+      ],
+      "mes.tasks": [
+        {
+          code: "SYLU-2026-06-021",
+          name: "复合任务",
+          status: "任务进行中",
+          test_type: "冲击试验 / 温度冲击试验 / 振动试验",
+        },
+      ],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", experiment_name: "冲击试验", status: "实验进行中" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", experiment_name: "温度冲击试验", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-004" },
+        ...readyTrayCodes.map((trayCode) => ({
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          tray_code: trayCode,
+        })),
+      ],
+      "mes.samples": readyTrayCodes.map((trayCode, index) => ({
+        code: `SYLU-2026-06-021-SP-${String(index + 1).padStart(3, "0")}`,
+        history: [
+          {
+            action: "实验确认",
+            detail: "SYLU-2026-06-021 / 温度冲击试验 / 实验准备就绪",
+            location: "温度冲击二室",
+            status: "实验准备就绪",
+            time: "2026-06-05T15:53:47+08:00",
+          },
+        ],
+        location: "温度冲击二室",
+        status: "实验准备就绪",
+        task_code: "SYLU-2026-06-021",
+        trays: [
+          {
+            quantity: 1,
+            status: "实验准备就绪",
+            target_experiment_code: trayCode.endsWith("005") ? "SYLU-2026-06-021-B" : "SYLU-2026-06-021-A",
+            target_lab: trayCode.endsWith("005") ? "温度冲击二室" : "冲击二室",
+            tray_code: trayCode,
+          },
+        ],
+      })),
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "温度冲击二室", testType: "温度冲击试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-06-05T15:54:00+08:00"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    const tempShockCard = labCards.value.find((card) => card.name === "温度冲击二室");
+    expect(tempShockCard).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 3,
+    });
+
+    setSelectedTaskForLab("温度冲击二室", "SYLU-2026-06-021", "SYLU-2026-06-021-B");
+    await startExperiment(tempShockCard);
+
+    expect(persistSnapshot).toHaveBeenCalledTimes(1);
+    const persistedPayload = persistSnapshot.mock.calls[0][0];
+    expect(persistedPayload["mes.experiment_runs"][0]).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-06-021-B",
+      tray_codes: readyTrayCodes,
+    }));
+    expect(persistedPayload["mes.experiment_run_trays"].map((row) => row.tray_code)).toEqual(readyTrayCodes);
+    expect(
+      persistedPayload["mes.samples"].flatMap((sample) => sample.trays).map((tray) => ({
+        status: tray.status,
+        targetExperimentCode: tray.target_experiment_code,
+        targetLab: tray.target_lab,
+        trayCode: tray.tray_code,
+      })),
+    ).toEqual(readyTrayCodes.map((trayCode) => ({
+      status: "实验进行中",
+      targetExperimentCode: undefined,
+      targetLab: undefined,
+      trayCode,
+    })));
+  });
+
+  test("shows selected tray flow by tray target lab instead of the old laboratory schedule", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-IMPACT",
+          start_at: "2026-06-04T08:00:00Z",
+          task_code: "TASK-SHARED",
+        },
+        {
+          device: "温度冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-TEMP",
+          start_at: "2026-06-04T12:30:00Z",
+          task_code: "TASK-SHARED",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-SHARED", name: "共享托盘任务", status: "已排程", test_type: "冲击试验 / 温度冲击试验" }],
+      "mes.experiments": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", experiment_name: "温度冲击试验", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", tray_code: "TP-SHARED" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", tray_code: "TP-SHARED" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-SHARED",
+          history: [],
+          location: "冲击一室",
+          status: "送至实验室",
+          task_code: "TASK-SHARED",
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_lab: "温度冲击一室",
+              tray_code: "TP-SHARED",
+            },
+          ],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail, setSelectedTaskForLab } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { name: "冲击一室", testType: "冲击试验" },
+        { name: "温度冲击一室", testType: "温度冲击试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-06-04T12:45:00Z"),
+    });
+
+    await loadLabStatus();
+    setSelectedTaskForLab("冲击一室", "TASK-SHARED", "EXP-IMPACT");
+    await openTaskOverview(labCards.value.find((card) => card.name === "冲击一室"));
+
+    expect(selectedTaskDetail.value.selectedTrayFlow.currentStatus).toBe("当前托盘：TP-SHARED | 当前状态：送至温度冲击一室");
+    expect(selectedTaskDetail.value.selectedTrayFlow.status).toBe("送至温度冲击一室");
+    expect(selectedTaskDetail.value.selectedTrayFlow.canonicalStatus).toBe("送至实验室");
+  });
+
+  test("blocks old laboratory start when only tray target lab points to the next experiment", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-06-04T12:00:00Z",
+          experiment_code: "EXP-IMPACT",
+          start_at: "2026-06-04T08:00:00Z",
+          task_code: "TASK-SHARED",
+        },
+        {
+          device: "温度冲击一室",
+          end_at: "2026-06-04T16:00:00Z",
+          experiment_code: "EXP-TEMP",
+          start_at: "2026-06-04T12:30:00Z",
+          task_code: "TASK-SHARED",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-SHARED", name: "共享托盘任务", status: "已排程", test_type: "冲击试验 / 温度冲击试验" }],
+      "mes.experiments": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", status: "已排程" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", experiment_name: "温度冲击试验", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", tray_code: "TP-SHARED" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", tray_code: "TP-SHARED" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-SHARED",
+          history: [],
+          location: "",
+          status: "实验准备就绪",
+          task_code: "TASK-SHARED",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_lab: "温度冲击一室",
+              tray_code: "TP-SHARED",
+            },
+          ],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { name: "冲击一室", testType: "冲击试验" },
+        { name: "温度冲击一室", testType: "温度冲击试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-06-04T12:45:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    const impactCard = labCards.value.find((card) => card.name === "冲击一室");
+    const tempCard = labCards.value.find((card) => card.name === "温度冲击一室");
+    expect(impactCard).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 0,
+    });
+    expect(tempCard).toMatchObject({
+      canStartExperiment: true,
+      readyTrayCount: 1,
+    });
+
+    setSelectedTaskForLab("冲击一室", "TASK-SHARED", "EXP-IMPACT");
+    await startExperiment(impactCard);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
@@ -2359,5 +2903,61 @@ describe("useProcessLabs", () => {
       "放置实验后暂存间",
       "厂家收回",
     ]);
+  });
+
+  test("uses mqtt experiment run state in selected tray flow when process samples still report ready", async () => {
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "盐雾试验室",
+          end_at: "2026-04-03T11:30:00Z",
+          experiment_code: "SYLU-2026-03-006-A",
+          start_at: "2026-04-03T08:00:00Z",
+          task_code: "SYLU-2026-03-006",
+        },
+      ],
+      "mes.tasks": [{ code: "SYLU-2026-03-006", name: "任务006", status: "实验进行中", test_type: "盐雾试验" }],
+      "mes.experiments": [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "盐雾试验", status: "实验准备就绪" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", tray_code: "SYLU-2026-03-006-TP-001" },
+      ],
+      "mes.experiment_runs": [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          tray_codes: ["SYLU-2026-03-006-TP-001"],
+          status: "实验进行中",
+          started_at: "2026-04-03 08:30:00",
+        },
+      ],
+      "mes.samples": [
+        {
+          code: "SYLU-2026-03-006-SP-001",
+          task_code: "SYLU-2026-03-006",
+          location: "盐雾试验室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "SYLU-2026-03-006-TP-001", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-04-03T09:00:00Z"),
+    });
+
+    await loadLabStatus();
+    await openTaskOverview(labCards.value[0]);
+
+    expect(selectedTaskDetail.value.selectedTrayFlow.currentStatus).toBe(
+      "当前托盘：SYLU-2026-03-006-TP-001 | 当前状态：盐雾试验进行中",
+    );
+    expect(selectedTaskDetail.value.selectedTrayFlow.steps.find((step) => step.label === "盐雾试验进行中")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
   });
 });

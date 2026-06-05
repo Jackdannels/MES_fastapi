@@ -65,6 +65,8 @@ function useSamplesFlow() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.samples,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.schedules,
   ]);
@@ -72,6 +74,8 @@ function useSamplesFlow() {
   const rawTasks = ref([]);
   const rawSamples = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentRuns = ref([]);
+  const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSchedules = ref([]);
   const loading = ref(false);
@@ -181,7 +185,8 @@ function useSamplesFlow() {
     const trayRow = detailSampleTrayRow.value;
     const status = String(trayRow?.status || detailSampleTray.value?.status || sample?.status || "").trim();
     return buildTrayFlowView({
-      currentExperimentCode: "",
+      experimentRuns: rawExperimentRuns.value,
+      experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       location: status === "已到达暂存间" ? DEFAULT_LABELS.preRetentionLocation : "",
@@ -216,7 +221,7 @@ function useSamplesFlow() {
   };
 
   const load = async () => {
-    // 当前页面只消费任务与样品快照，不依赖排程和流数据。
+    // 托盘流程需要同时读取实验、排程和运行记录，保持中控与试验间/可视化口径一致。
     loading.value = true;
     try {
       const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
@@ -226,6 +231,8 @@ function useSamplesFlow() {
         DEFAULT_LABELS,
       );
       rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+      rawExperimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
       rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
       rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
       rawSamples.value = normalizedSamples;
@@ -338,7 +345,7 @@ function useSamplesFlow() {
   const submitStagingDispatch = async () => {
     const result = dispatchStagingSamples({
       labels: DEFAULT_LABELS,
-      now: new Date().toISOString(),
+      now: formatLocalDateTime(),
       payload: stagingForm,
       samples: rawSamples.value,
       selectedCodes: stagingSelectedCodes.value,
@@ -375,7 +382,7 @@ function useSamplesFlow() {
 
   const submitBatch = async () => {
     const now = new Date();
-    const nowIso = now.toISOString();
+    const nowIso = formatLocalDateTime(now);
     const arrivalTime = formatLocalDateTime(now);
     const result = submitSamplesBatchIntake({
       samples: rawSamples.value,
@@ -447,7 +454,7 @@ function useSamplesFlow() {
         remark: detailForm.remark,
       },
       labels: DEFAULT_LABELS,
-      now: new Date().toISOString(),
+      now: formatLocalDateTime(),
     });
     if (result.error) {
       warning.value = result.error;
@@ -472,7 +479,7 @@ function useSamplesFlow() {
       trayCode,
       status,
       labels: DEFAULT_LABELS,
-      now: new Date().toISOString(),
+      now: formatLocalDateTime(),
       samples: rawSamples.value,
     });
     if (result.error) {
@@ -540,6 +547,8 @@ function useSamplesFlow() {
       STORAGE_KEYS.tasks,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.schedules,
     ],
@@ -579,6 +588,8 @@ function useSamplesFlow() {
     query,
     rawSamples,
     rawExperiments,
+    rawExperimentRuns,
+    rawExperimentRunTrays,
     rawExperimentTrays,
     rawSchedules,
     rawTasks,

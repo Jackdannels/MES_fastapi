@@ -2,6 +2,7 @@
 import { ref, unref } from "vue";
 
 import { TEST_PREFIX_MAP } from "@/lib/labs";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { deleteTask as deleteTaskByApi } from "@/lib/tasksApi";
 import { useFeedback } from "@/composables/useFeedback";
@@ -321,6 +322,8 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const schedules = snapshot[STORAGE_KEYS.schedules];
       const experiments = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       const experimentTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+      const experimentRuns = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+      const experimentRunTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
       const taskIndex = tasks.findIndex((task) => String(task?.code || "").trim() === code);
       if (taskIndex < 0) {
         showEditError(`Task ${code} was not found.`);
@@ -369,7 +372,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         return;
       }
 
-      const now = new Date().toISOString();
+      const now = formatLocalDateTime();
       const taskSamples = samples
         .filter((sample) => String(sample?.task_code || "").trim() === code)
         .sort((left, right) => compareText(left?.code, right?.code));
@@ -450,7 +453,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         [STORAGE_KEYS.samples]: nextSamples,
       });
 
-      replaceOverview(nextTasks, nextSamples, schedules, nextExperiments, experimentTrays);
+      replaceOverview(nextTasks, nextSamples, schedules, nextExperiments, experimentTrays, experimentRuns, experimentRunTrays);
       editForm.value.sampleCount = finalCodes.length;
       editForm.value.sampleCodesText = finalCodes.join("\n");
       editForm.value.experiments = normalizedExperiments;
@@ -508,24 +511,30 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const streams = snapshot[STORAGE_KEYS.streams];
       const experiments = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
       const experimentTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
+      const experimentRuns = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
+      const experimentRunTrays = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
       const nextTasks = tasks.filter((task) => String(task?.code || "").trim() !== code);
       const nextSamples = samples.filter((sample) => String(sample?.task_code || "").trim() !== code);
       const nextSchedules = schedules.filter((entry) => String(entry?.task_code || "").trim() !== code);
       const nextStreams = streams.filter((entry) => String(entry?.task_code || "").trim() !== code);
       const nextExperiments = experiments.filter((entry) => String(entry?.task_code || "").trim() !== code);
       const nextExperimentTrays = experimentTrays.filter((entry) => String(entry?.task_code || "").trim() !== code);
+      const nextExperimentRuns = experimentRuns.filter((entry) => String(entry?.task_code || "").trim() !== code);
+      const nextExperimentRunTrays = experimentRunTrays.filter((entry) => String(entry?.task_code || "").trim() !== code);
 
       await deleteTask(code);
       await persistSnapshot({
         [STORAGE_KEYS.tasks]: nextTasks,
         [STORAGE_KEYS.experiments]: nextExperiments,
         [STORAGE_KEYS.experiment_trays]: nextExperimentTrays,
+        [STORAGE_KEYS.experiment_runs]: nextExperimentRuns,
+        [STORAGE_KEYS.experiment_run_trays]: nextExperimentRunTrays,
         [STORAGE_KEYS.samples]: nextSamples,
         [STORAGE_KEYS.schedules]: nextSchedules,
         [STORAGE_KEYS.streams]: nextStreams,
       });
 
-      replaceOverview(nextTasks, nextSamples, nextSchedules, nextExperiments, nextExperimentTrays);
+      replaceOverview(nextTasks, nextSamples, nextSchedules, nextExperiments, nextExperimentTrays, nextExperimentRuns, nextExperimentRunTrays);
       selectedTaskCode.value = "";
       cancelEdit();
     } catch (error) {

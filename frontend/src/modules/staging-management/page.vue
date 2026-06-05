@@ -330,6 +330,7 @@ import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/useSampleIntake";
@@ -358,7 +359,7 @@ const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
 
-const nowValue = () => new Date().toISOString();
+const nowValue = () => formatLocalDateTime();
 
 const overviewSourceRows = computed(() =>
   buildZancunRowsFromSnapshot(snapshot.value, {
