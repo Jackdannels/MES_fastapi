@@ -35,6 +35,12 @@ const LABORATORY_TASK_FLOW_STEPS = [
 const LABORATORY_TASK_FLOW_INDEX = new Map(LABORATORY_TASK_FLOW_STEPS.map((step, index) => [step.label, index]));
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
+  ...COMPLETED_EXPERIMENT_STATUSES,
+  "放置实验后暂存间",
+  "已到达暂存间",
+  "厂家收回",
+]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -541,9 +547,6 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], e
   }
 
   const { matchedSamples, scopedTrayCodes } = collectScheduleSamples({ experimentTrays, samples, schedule });
-  if (matchedSamples.length === 0) {
-    return false;
-  }
   if (experimentScopeIsTerminal({
     experiments,
     experimentCode,
@@ -553,6 +556,9 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], e
     taskCode,
   })) {
     return true;
+  }
+  if (matchedSamples.length === 0) {
+    return false;
   }
 
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
@@ -776,6 +782,11 @@ const trayHasActiveRunForCurrentExperiment = (row, currentTask) => {
 };
 
 const rowHasRunningStatus = (row) => RUNNING_EXPERIMENT_STATUSES.has(normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus));
+const rowHasReturnedStatus = (row) =>
+  normalizeText(row?.trayStatus) === "厂家收回"
+  || normalizeText(row?.displayStatus) === "厂家收回"
+  || normalizeText(row?.currentLocation) === "厂家收回"
+  || normalizeText(row?.lifecycleLocation) === "厂家收回";
 
 const getRunningTrayRowsForCurrentTask = (currentTask) => {
   const runningTrayRows = asArray(currentTask?.trayRows).filter((row) => rowHasRunningStatus(row));
@@ -949,9 +960,9 @@ const resolveRelationExperimentCode = (relation) =>
 const resolveRelationTrayCode = (relation) => normalizeText(relation?.tray_code || relation?.trayCode || relation?.tray_no || relation?.trayNo);
 const resolveRelationStatus = (relation) => normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
 const relationIsCompleted = (relation) =>
-  COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.status))
-  || COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.run_tray_status))
-  || COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(relation?.runTrayStatus));
+  EXPERIMENT_TRAY_TERMINAL_STATUSES.has(normalizeText(relation?.status))
+  || EXPERIMENT_TRAY_TERMINAL_STATUSES.has(normalizeText(relation?.run_tray_status))
+  || EXPERIMENT_TRAY_TERMINAL_STATUSES.has(normalizeText(relation?.runTrayStatus));
 
 const buildCompletedExperimentCodesByTrayCode = ({ experimentRunTrays = [], taskCode }) => {
   const normalizedTaskCode = normalizeText(taskCode);
@@ -1361,6 +1372,16 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
       .map(resolveRelationTrayCode)
       .filter(Boolean),
   );
+  const returnedRunTrayCodes = new Set(
+    asArray(experimentRunTrays)
+      .filter((relation) =>
+        resolveRelationTaskCode(relation) === taskCode
+        && resolveRelationExperimentCode(relation) === experimentCode
+        && normalizeText(resolveRelationStatus(relation)) === "厂家收回",
+      )
+      .map(resolveRelationTrayCode)
+      .filter(Boolean),
+  );
   trayRows.forEach((row) => {
     const activeOtherExperimentRuns = buildActiveOtherExperimentRunLocks({
       currentExperimentCode: experimentCode,
@@ -1384,12 +1405,15 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
   });
   const visibleTrayRows = trayRows.filter((row) =>
     row?.completedForCurrentExperiment !== true
-    && !completedRunTrayCodes.has(normalizeText(row?.trayCode)),
+    && !completedRunTrayCodes.has(normalizeText(row?.trayCode))
+    && !rowHasReturnedStatus(row),
   );
 
   return {
     activeRunTrayCodes,
-    allTrayCodes: trayRows.map((row) => row.trayCode),
+    allTrayCodes: trayRows
+      .filter((row) => !returnedRunTrayCodes.has(normalizeText(row?.trayCode)) && !rowHasReturnedStatus(row))
+      .map((row) => row.trayCode),
     allTrayRows: trayRows,
     device,
     endAt: displayEndAt,
@@ -2018,7 +2042,7 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
 
   return {
     guidance: "未匹配到该托盘",
-    message: "比对不正确",
+    message: "未匹配到任务",
     ok: false,
     tone: "error",
     trayCode: normalizedScanCode,

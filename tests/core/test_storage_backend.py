@@ -204,6 +204,13 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
                 "status": "已入库",
                 "flow_status": "已入库",
                 "trays": [],
+                "history": [
+                    {
+                        "action": "暂存间扫码入库",
+                        "status": "已到达暂存间",
+                        "time": "2026-04-28T03:00:00Z",
+                    }
+                ],
             },
             {
                 "code": "SYLU-2026-03-001-SP-002",
@@ -258,6 +265,7 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
     assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
     assert normalized["mes.samples"][0]["status"] == "厂家收回"
     assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["history"][1]["status"] == "已到达暂存间"
     assert normalized["mes.samples"][0]["trays"] == [
         {
             "tray_code": "SYLU-2026-03-001-TP-001",
@@ -351,6 +359,239 @@ def test_normalize_storage_payload_closes_experiment_schedules_when_scoped_trays
         f"{task_code}-A": "实验已完成",
         f"{task_code}-B": "实验已完成",
         f"{task_code}-C": "实验已完成",
+    }
+    returned_run_trays = {
+        (relation["experiment_code"], relation["tray_code"], relation["run_tray_status"])
+        for relation in normalized["mes.experiment_run_trays"]
+        if relation.get("run_tray_status") == "厂家收回"
+    }
+    assert returned_run_trays >= {
+        (f"{task_code}-A", f"{task_code}-TP-003", "厂家收回"),
+        (f"{task_code}-B", f"{task_code}-TP-004", "厂家收回"),
+    }
+    assert all(
+        relation.get("run_no")
+        for relation in normalized["mes.experiment_run_trays"]
+        if relation.get("run_tray_status") == "厂家收回"
+    )
+
+
+def test_normalize_storage_payload_marks_returned_tray_terminal_for_unfinished_future_experiments() -> None:
+    task_code = "SYLU-2026-06-021"
+    tray_code = f"{task_code}-TP-002"
+    payload = {
+        "mes.tasks": [{"code": task_code, "status": "任务进行中"}],
+        "mes.experiments": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "冲击试验",
+                "status": "实验已完成",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "experiment_name": "温度冲击试验",
+                "status": "实验进行中",
+            },
+        ],
+        "mes.schedules": [
+            {"id": "schedule-b", "task_code": task_code, "experiment_code": f"{task_code}-B", "device": "温度冲击二室", "status": "实验进行中"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_code},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": tray_code},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-005"},
+        ],
+        "mes.experiment_run_trays": [
+            {
+                "run_no": "RUN-IMPACT-002",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+            },
+            {
+                "run_no": "RUN-TEMP-005",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "tray_code": f"{task_code}-TP-005",
+                "run_tray_status": "实验进行中",
+            },
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-002",
+                "task_code": task_code,
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "location": "厂家收回",
+                "trays": [{"tray_code": tray_code, "status": "厂家收回"}],
+            }
+        ],
+        "mes.staging_events": [
+            {
+                "action": "manufacturer_return",
+                "task_code": task_code,
+                "target_lab": "厂家收回",
+                "time": "2026-06-06 12:58:34",
+                "tray_code": tray_code,
+            }
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert [schedule["id"] for schedule in normalized["mes.schedules"]] == ["schedule-b"]
+    assert {
+        (relation["experiment_code"], relation["tray_code"], relation["run_tray_status"])
+        for relation in normalized["mes.experiment_run_trays"]
+    } >= {
+        (f"{task_code}-B", tray_code, "厂家收回"),
+    }
+
+
+def test_normalize_storage_payload_infers_returned_tray_task_from_experiment_relations() -> None:
+    task_code = "SYLU-2026-06-021"
+    tray_code = f"{task_code}-TP-001"
+    payload = {
+        "mes.tasks": [{"code": task_code, "status": "任务进行中"}],
+        "mes.experiments": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "冲击试验",
+                "status": "实验已完成",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "experiment_name": "温度冲击试验",
+                "status": "实验进行中",
+            },
+        ],
+        "mes.schedules": [
+            {"id": "schedule-b", "task_code": task_code, "experiment_code": f"{task_code}-B", "device": "温度冲击二室", "status": "实验进行中"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_code},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": tray_code},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": f"{task_code}-TP-005"},
+        ],
+        "mes.experiment_run_trays": [
+            {
+                "run_no": "RUN-IMPACT-001",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+            },
+            {
+                "run_no": "STALE-TEMP-001",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "tray_code": tray_code,
+                "run_tray_status": "实验进行中",
+            },
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "location": "厂家收回",
+                "trays": [{"tray_code": tray_code, "status": "厂家收回"}],
+            }
+        ],
+        "mes.staging_events": [
+            {
+                "action": "manufacturer_return",
+                "target_lab": "厂家收回",
+                "time": "2026-06-06 13:18:16",
+                "tray_code": tray_code,
+            }
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert {
+        (relation["experiment_code"], relation["tray_code"], relation["run_tray_status"])
+        for relation in normalized["mes.experiment_run_trays"]
+    } >= {
+        (f"{task_code}-B", tray_code, "厂家收回"),
+    }
+    assert [schedule["id"] for schedule in normalized["mes.schedules"]] == ["schedule-b"]
+
+
+def test_normalize_storage_payload_closes_running_schedules_when_return_events_omit_task_code() -> None:
+    task_code = "SYLU-2026-06-021"
+    tray_codes = [f"{task_code}-TP-{index:03d}" for index in range(1, 4)]
+    payload = {
+        "mes.tasks": [{"code": task_code, "status": "任务进行中", "transfer_status": "厂家收回"}],
+        "mes.experiments": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "experiment_name": "冲击试验", "status": "实验已完成"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-B", "experiment_name": "温度冲击试验", "status": "实验进行中"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-C", "experiment_name": "振动试验", "status": "实验进行中"},
+        ],
+        "mes.schedules": [
+            {"id": "schedule-b", "task_code": task_code, "experiment_code": f"{task_code}-B", "device": "温度冲击二室", "status": "实验进行中"},
+            {"id": "schedule-c", "task_code": task_code, "experiment_code": f"{task_code}-C", "device": "振动二室", "status": "实验进行中"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}
+            for experiment_code in [f"{task_code}-A", f"{task_code}-B", f"{task_code}-C"]
+            for tray_code in tray_codes
+        ],
+        "mes.experiment_run_trays": [
+            {"run_no": "RUN-A-001", "task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_codes[0], "run_tray_status": "实验已完成"},
+            {"run_no": "RUN-A-003", "task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_codes[2], "run_tray_status": "实验已完成"},
+            {"run_no": "RETURNED-A", "task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_codes[1], "run_tray_status": "厂家收回"},
+            {"run_no": "RETURNED-B", "task_code": task_code, "experiment_code": f"{task_code}-B", "tray_code": tray_codes[1], "run_tray_status": "厂家收回"},
+            {"run_no": "RETURNED-C", "task_code": task_code, "experiment_code": f"{task_code}-C", "tray_code": tray_codes[1], "run_tray_status": "厂家收回"},
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-{index:03d}",
+                "task_code": task_code,
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "location": "厂家收回",
+                "trays": [{"tray_code": tray_code, "status": "厂家收回"}],
+            }
+            for index, tray_code in enumerate(tray_codes, start=1)
+        ],
+        "mes.staging_events": [
+            {
+                "action": "manufacturer_return",
+                "target_lab": "厂家收回",
+                "time": f"2026-06-06 13:18:{10 + index:02d}",
+                "tray_code": tray_code,
+            }
+            for index, tray_code in enumerate(tray_codes, start=1)
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.schedules"] == []
+    assert {
+        experiment["experiment_code"]: experiment["status"]
+        for experiment in normalized["mes.experiments"]
+    } == {
+        f"{task_code}-A": "实验已完成",
+        f"{task_code}-B": "实验已完成",
+        f"{task_code}-C": "实验已完成",
+    }
+    assert {
+        (relation["experiment_code"], relation["tray_code"], relation["run_tray_status"])
+        for relation in normalized["mes.experiment_run_trays"]
+    } >= {
+        (f"{task_code}-B", tray_codes[0], "厂家收回"),
+        (f"{task_code}-B", tray_codes[2], "厂家收回"),
+        (f"{task_code}-C", tray_codes[0], "厂家收回"),
+        (f"{task_code}-C", tray_codes[2], "厂家收回"),
     }
 
 

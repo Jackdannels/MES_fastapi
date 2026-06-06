@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 from types import ModuleType
 
 from app.api.routes import mq as mq_route
@@ -355,8 +356,6 @@ class FakeMqEventRepository:
         self.started = []
         self.ended = []
         self.started_contexts = []
-        self.legacy_started = []
-        self.legacy_ended = []
         self.contexts_by_lab = {
             "LAB_SALT": {
                 "task_no": "SYLU-2026-03-001",
@@ -399,12 +398,6 @@ class FakeMqEventRepository:
 
     def record_result(self, result):
         self.results.append(dict(result))
-
-    def mark_experiment_started(self, task_no, experiment_no, occurred_at):
-        self.legacy_started.append((task_no, experiment_no, occurred_at))
-
-    def mark_experiment_ended(self, task_no, experiment_no, occurred_at):
-        self.legacy_ended.append((task_no, experiment_no, occurred_at))
 
     def find_active_run_by_lab(self, lab_code):
         return self.runs_by_lab.get(lab_code)
@@ -546,7 +539,6 @@ def test_process_experiment_started_starts_ready_context_even_when_active_run_ex
 
     assert ack["status"] == "PROCESSED"
     assert repository.started == []
-    assert repository.legacy_started == []
     assert repository.started_contexts[0][0]["task_no"] == "SYLU-2026-03-001"
     assert repository.started_contexts[0][0]["experiment_no"] == "SYLU-2026-03-001-A"
 
@@ -578,7 +570,6 @@ def test_process_experiment_started_rejects_before_ready_even_when_stale_run_exi
     assert repository.messages == []
     assert repository.events == []
     assert repository.started == []
-    assert repository.legacy_started == []
     assert repository.started_contexts == []
 
 
@@ -632,7 +623,6 @@ def test_process_experiment_started_ready_context_takes_precedence_over_stale_ru
     assert repository.started_contexts[0][0]["experiment_no"] == "SYLU-2026-06-002-C"
     assert repository.messages[0]["task_no"] == "SYLU-2026-06-002"
     assert repository.messages[0]["experiment_no"] == "SYLU-2026-06-002-C"
-    assert repository.legacy_started == []
 
 
 def test_process_experiment_started_rejected_early_event_can_be_retried_after_ready():
@@ -761,70 +751,182 @@ def test_process_experiment_started_prefers_ready_context_over_payload_experimen
     assert repository.events[0]["experiment_no"] == "SYLU-2026-06-002-C"
 
 
-def test_mysql_start_run_handles_tuple_cursor_sample_rows(monkeypatch):
-    class TupleCursor:
-        description = None
-
+def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
+    class FakeStorage:
         def __init__(self):
-            self.sample_events = []
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "已入库"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验准备就绪",
+                        "flow_status": "实验准备就绪",
+                        "location": "盐雾试验室",
+                        "trays": [
+                            {
+                                "tray_code": "TRAY-001",
+                                "status": "实验准备就绪",
+                                "target_lab": "盐雾试验室",
+                                "target_experiment_code": "EXP-001",
+                            }
+                        ],
+                        "history": [],
+                    }
+                ],
+                "mes.experiments": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "experiment_name": "盐雾试验",
+                        "status": "实验准备就绪",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "id": "schedule-salt",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "device": "盐雾试验室",
+                        "status": "实验准备就绪",
+                    }
+                ],
+                "mes.experiment_runs": [],
+                "mes.experiment_run_trays": [],
+                "mes.experiment_trays": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                    }
+                ],
+            }
 
-        def __enter__(self):
-            return self
+        def read_all(self):
+            return self.payload
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
 
-        def execute(self, sql, params=None):
-            if "SELECT sm.sample_id, sm.sample_no, task.task_id" in sql:
-                self.description = (("sample_id",), ("sample_no",), ("task_id",))
-            else:
-                self.description = None
-
-        def executemany(self, sql, rows):
-            if "INSERT INTO biz_sample_event" in sql:
-                self.sample_events.extend(rows)
-
-        def fetchall(self):
-            if self.description:
-                return [(101, "SYLU-2026-03-001-SP-001", 11)]
-            return []
-
-    class TupleConnection:
-        def __init__(self):
-            self.cursor_obj = TupleCursor()
-            self.committed = False
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return self.cursor_obj
-
-        def commit(self):
-            self.committed = True
-
-    connection = TupleConnection()
-    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("MQTT started should use shared start storage adapter")),
+    )
 
     run = MySQLMqEventRepository().start_run_for_context(
         {
-            "task_no": "SYLU-2026-03-001",
-            "experiment_no": "SYLU-2026-03-001-A",
+            "task_no": "TASK-001",
+            "experiment_no": "EXP-001",
             "schedule_no": "schedule-salt",
             "device_name": "盐雾试验室",
             "planned_hours": 3.5,
-            "tray_nos": ["SYLU-2026-03-001-TP-001"],
-            "sample_nos": ["SYLU-2026-03-001-SP-001"],
+            "tray_nos": ["TRAY-001"],
+            "sample_nos": ["SAMPLE-001"],
         },
         "2026-05-16 10:00:00",
     )
 
+    written = storage.writes[-1]
+    started_tray = written["mes.samples"][0]["trays"][0]
     assert run["run_status"] == "实验进行中"
-    assert connection.committed is True
-    assert connection.cursor_obj.sample_events
+    assert run["run_no"]
+    assert written["mes.tasks"][0]["status"] == "任务进行中"
+    assert written["mes.experiments"][0]["status"] == "实验进行中"
+    assert written["mes.schedules"][0]["status"] == "实验进行中"
+    assert written["mes.samples"][0]["status"] == "实验进行中"
+    assert started_tray["status"] == "实验进行中"
+    assert "target_lab" not in started_tray
+    assert "target_experiment_code" not in started_tray
+    assert written["mes.samples"][0]["history"][0]["detail"] == "TASK-001 / 盐雾试验 / 实验进行中 / 托盘：TRAY-001"
+    assert written["mes.experiment_runs"][0]["run_no"] == run["run_no"]
+    assert written["mes.experiment_run_trays"][0]["run_no"] == run["run_no"]
+
+
+def test_mysql_start_run_for_context_rejects_returned_trays_with_mock_start_rules(monkeypatch):
+    class FakeStorage:
+        def __init__(self):
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "厂家收回",
+                        "flow_status": "厂家收回",
+                        "location": "厂家收回",
+                        "trays": [{"tray_code": "TRAY-001", "status": "厂家收回"}],
+                        "history": [],
+                    }
+                ],
+                "mes.experiments": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "experiment_name": "温度冲击试验",
+                        "status": "已排程",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "id": "schedule-temp",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "device": "温度冲击二室",
+                        "status": "已排程",
+                    }
+                ],
+                "mes.experiment_runs": [],
+                "mes.experiment_run_trays": [
+                    {
+                        "run_no": "RETURNED-EXP-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                        "run_tray_status": "厂家收回",
+                    }
+                ],
+                "mes.experiment_trays": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                    }
+                ],
+            }
+
+        def read_all(self):
+            return self.payload
+
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
+
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("MQTT started should use shared start storage adapter")),
+    )
+
+    with pytest.raises(ValueError, match="current experiment has no matching active tray samples"):
+        MySQLMqEventRepository().start_run_for_context(
+            {
+                "task_no": "TASK-001",
+                "experiment_no": "EXP-001",
+                "schedule_no": "schedule-temp",
+                "device_name": "温度冲击二室",
+                "tray_nos": ["TRAY-001"],
+                "sample_nos": ["SAMPLE-001"],
+            },
+            "2026-06-06 12:59:00",
+        )
+
+    assert storage.writes == []
 
 
 def test_mysql_find_active_run_by_lab_matches_tray_lab_code_when_device_name_differs(monkeypatch):
@@ -1201,188 +1303,294 @@ def test_mysql_find_current_context_rejects_old_lab_after_tray_moved_to_next_lab
     assert connection.cursor_obj.schedule_query_executed is False
 
 
-def test_mysql_mark_run_ended_handles_tuple_cursor_tray_rows(monkeypatch):
-    class TupleCursor:
-        description = None
+def test_mysql_mark_run_ended_keeps_mock_completion_history_idempotent(monkeypatch):
+    completion_detail = "TASK-001 / 振动实验 / 实验已完成"
 
+    class FakeStorage:
         def __init__(self):
-            self.executed_sql = []
-            self.sample_event_rows = []
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验进行中",
+                        "flow_status": "实验进行中",
+                        "location": "振动一室",
+                        "owner": "测试员",
+                        "trays": [{"tray_code": "TRAY-001", "status": "实验进行中"}],
+                        "history": [
+                            {
+                                "action": "实验完成",
+                                "detail": completion_detail,
+                                "location": "振动一室",
+                                "owner": "测试员",
+                                "status": "实验已完成",
+                                "time": "2026-05-16 12:00:00",
+                            }
+                        ],
+                    }
+                ],
+                "mes.experiments": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "experiment_name": "振动实验",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_runs": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                        "tray_codes": ["TRAY-001"],
+                    }
+                ],
+                "mes.experiment_run_trays": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                        "status": "实验进行中",
+                        "run_tray_status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_trays": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                    }
+                ],
+            }
 
-        def __enter__(self):
-            return self
+        def read_all(self):
+            return self.payload
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
 
-        def execute(self, sql, params=None):
-            self.executed_sql.append(sql)
-            normalized_sql = " ".join(str(sql).split())
-            if "SELECT task_no, experiment_no" in normalized_sql:
-                self.description = (("task_no",), ("experiment_no",))
-            elif "SELECT tray_no" in normalized_sql:
-                self.description = (("tray_no",),)
-            elif "SELECT DISTINCT sm.sample_id, sm.sample_no" in normalized_sql:
-                self.description = (("sample_id",), ("sample_no",), ("task_id",), ("experiment_name",))
-            else:
-                self.description = None
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("MQTT ended should not write completion SQL directly")),
+    )
 
-        def executemany(self, sql, rows):
-            self.executed_sql.append(sql)
-            if "INSERT INTO biz_sample_event" in sql:
-                self.sample_event_rows.extend(rows)
+    MySQLMqEventRepository().mark_run_ended("RUN-001", "2026-05-16 12:00:00")
 
-        def fetchone(self):
-            columns = [column[0] for column in (self.description or [])]
-            if columns == ["task_no", "experiment_no"]:
-                return ("SYLU-2026-03-001", "SYLU-2026-03-001-A")
-            return None
+    history = storage.writes[-1]["mes.samples"][0]["history"]
+    assert [entry["detail"] for entry in history].count(completion_detail) == 1
+    assert history[0]["location"] == "振动一室"
+    assert history[0]["owner"] == "测试员"
 
-        def fetchall(self):
-            columns = [column[0] for column in (self.description or [])]
-            if columns == ["tray_no"]:
-                return [("SYLU-2026-03-001-TP-001",)]
-            if columns == ["sample_id", "sample_no", "task_id", "experiment_name"]:
-                return [(101, "SYLU-2026-03-001-SP-001", 7, "盐雾试验")]
-            return []
 
-    class TupleConnection:
+def test_mysql_mark_run_ended_uses_mock_completion_rules(monkeypatch):
+    class FakeStorage:
         def __init__(self):
-            self.cursor_obj = TupleCursor()
-            self.committed = False
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验进行中",
+                        "flow_status": "实验进行中",
+                        "location": "振动一室",
+                        "trays": [
+                            {
+                                "tray_code": "TRAY-001",
+                                "status": "实验进行中",
+                                "target_lab": "振动一室",
+                                "target_experiment_code": "EXP-001",
+                            }
+                        ],
+                        "history": [],
+                    }
+                ],
+                "mes.experiments": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "experiment_name": "振动实验",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_runs": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                        "tray_codes": ["TRAY-001"],
+                    }
+                ],
+                "mes.experiment_run_trays": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                        "status": "实验进行中",
+                        "run_tray_status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_trays": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                    }
+                ],
+                "mes.experiment_samples": [],
+            }
 
-        def __enter__(self):
-            return self
+        def read_all(self):
+            return self.payload
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
 
-        def cursor(self):
-            return self.cursor_obj
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage, raising=False)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("MQTT ended should use shared completion storage adapter")),
+    )
 
-        def commit(self):
-            self.committed = True
+    MySQLMqEventRepository().mark_run_ended("RUN-001", "2026-05-16 12:00:00")
 
-    connection = TupleConnection()
-    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
-
-    MySQLMqEventRepository().mark_run_ended("RUN-SALT-001", "2026-05-16 12:00:00")
-
-    assert connection.committed is True
-    assert any("UPDATE biz_tray" in sql for sql in connection.cursor_obj.executed_sql)
-    assert connection.cursor_obj.sample_event_rows == [
-        {
-            "sample_id": 101,
-            "sample_no": "SYLU-2026-03-001-SP-001",
-            "task_id": 7,
-            "task_no": "SYLU-2026-03-001",
-            "action_type": "实验完成",
-            "sample_status": "实验已完成",
-            "detail": "SYLU-2026-03-001 / 盐雾试验 / 实验已完成",
-            "event_time": "2026-05-16 12:00:00",
-        }
-    ]
+    assert storage.writes
+    written = storage.writes[-1]
+    completed_tray = written["mes.samples"][0]["trays"][0]
+    assert completed_tray["status"] == "实验已完成"
+    assert "target_lab" not in completed_tray
+    assert "target_experiment_code" not in completed_tray
+    assert written["mes.experiments"][0]["status"] == "实验已完成"
+    assert written["mes.schedules"][0]["status"] == "实验已完成"
+    assert written["mes.experiment_runs"][0]["status"] == "实验已完成"
+    assert written["mes.experiment_run_trays"][0]["run_tray_status"] == "实验已完成"
 
 
 def test_mysql_mark_run_ended_keeps_experiment_open_when_bound_tray_is_not_finished(monkeypatch):
-    class TupleCursor:
-        description = None
-
+    class FakeStorage:
         def __init__(self):
-            self.experiment_updates = []
-            self.schedule_updates = []
-            self.run_updates = []
-            self.run_tray_updates = []
-            self.query_kind = ""
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验进行中",
+                        "flow_status": "实验进行中",
+                        "location": "盐雾试验室",
+                        "trays": [{"tray_code": "TRAY-001", "status": "实验进行中"}],
+                        "history": [],
+                    },
+                    {
+                        "code": "SAMPLE-002",
+                        "task_code": "TASK-001",
+                        "status": "实验准备就绪",
+                        "flow_status": "实验准备就绪",
+                        "location": "盐雾试验室",
+                        "trays": [{"tray_code": "TRAY-002", "status": "实验准备就绪"}],
+                        "history": [],
+                    },
+                ],
+                "mes.experiments": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "experiment_name": "盐雾试验",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.schedules": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_runs": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                        "tray_codes": ["TRAY-001"],
+                    }
+                ],
+                "mes.experiment_run_trays": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                        "status": "实验进行中",
+                        "run_tray_status": "实验进行中",
+                    }
+                ],
+                "mes.experiment_trays": [
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-001",
+                    },
+                    {
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "tray_code": "TRAY-002",
+                    },
+                ],
+            }
 
-        def __enter__(self):
-            return self
+        def read_all(self):
+            return self.payload
 
-        def __exit__(self, exc_type, exc, tb):
-            return False
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
 
-        def execute(self, sql, params=None):
-            normalized_sql = " ".join(str(sql).split())
-            if "SELECT task_no, experiment_no" in normalized_sql:
-                self.description = (("task_no",), ("experiment_no",))
-                self.query_kind = "run"
-            elif "FROM biz_experiment_tray" in normalized_sql:
-                self.description = (("tray_no",),)
-                self.query_kind = "bound"
-            elif "FROM biz_experiment_run_tray" in normalized_sql and "run_tray_status IN" in normalized_sql:
-                self.description = (("tray_no",),)
-                self.query_kind = "completed"
-            elif "SELECT tray_no" in normalized_sql:
-                self.description = (("tray_no",),)
-                self.query_kind = "run_trays"
-            elif "SELECT DISTINCT sm.sample_id, sm.sample_no" in normalized_sql:
-                self.description = (("sample_id",), ("sample_no",), ("task_id",), ("experiment_name",))
-                self.query_kind = "samples"
-            elif "UPDATE biz_experiment_run SET run_status = '实验已完成'" in normalized_sql:
-                self.run_updates.append((sql, params))
-                self.description = None
-            elif "UPDATE biz_experiment_run_tray SET run_tray_status = '实验已完成'" in normalized_sql:
-                self.run_tray_updates.append((sql, params))
-                self.description = None
-            elif "UPDATE biz_experiment SET" in normalized_sql:
-                self.experiment_updates.append((normalized_sql, params))
-                self.description = None
-            elif "UPDATE biz_schedule SET" in normalized_sql:
-                self.schedule_updates.append((normalized_sql, params))
-                self.description = None
-            else:
-                self.description = None
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_connection",
+        lambda: (_ for _ in ()).throw(AssertionError("MQTT ended should not write completion SQL directly")),
+    )
 
-        def executemany(self, _sql, _rows):
-            return None
+    MySQLMqEventRepository().mark_run_ended("RUN-001", "2026-05-16 12:00:00")
 
-        def fetchone(self):
-            columns = [column[0] for column in (self.description or [])]
-            if columns == ["task_no", "experiment_no"]:
-                return ("SYLU-2026-03-001", "SYLU-2026-03-001-A")
-            return None
-
-        def fetchall(self):
-            columns = [column[0] for column in (self.description or [])]
-            if columns == ["tray_no"] and self.query_kind == "run_trays":
-                return [("SYLU-2026-03-001-TP-001",)]
-            if columns == ["tray_no"] and self.query_kind == "bound":
-                return [("SYLU-2026-03-001-TP-001",), ("SYLU-2026-03-001-TP-002",)]
-            if columns == ["tray_no"] and self.query_kind == "completed":
-                return [("SYLU-2026-03-001-TP-001",)]
-            if columns == ["sample_id", "sample_no", "task_id", "experiment_name"]:
-                return [(101, "SYLU-2026-03-001-SP-001", 7, "盐雾试验")]
-            return []
-
-    class TupleConnection:
-        def __init__(self):
-            self.cursor_obj = TupleCursor()
-            self.committed = False
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return self.cursor_obj
-
-        def commit(self):
-            self.committed = True
-
-    connection = TupleConnection()
-    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
-
-    MySQLMqEventRepository().mark_run_ended("RUN-SALT-001", "2026-05-16 12:00:00")
-
-    assert connection.committed is True
-    assert connection.cursor_obj.run_updates
-    assert connection.cursor_obj.run_tray_updates
-    assert len(connection.cursor_obj.experiment_updates) == 1
-    assert len(connection.cursor_obj.schedule_updates) == 1
-    assert "实验进行中" in connection.cursor_obj.experiment_updates[0][0] or "实验进行中" in connection.cursor_obj.experiment_updates[0][1]
-    assert "实验进行中" in connection.cursor_obj.schedule_updates[0][0] or "实验进行中" in connection.cursor_obj.schedule_updates[0][1]
+    written = storage.writes[-1]
+    assert written["mes.experiments"][0]["status"] == "实验进行中"
+    assert written["mes.schedules"][0]["status"] == "实验进行中"
+    assert written["mes.samples"][0]["status"] == "实验已完成"
+    assert written["mes.samples"][0]["trays"][0]["status"] == "实验已完成"
+    assert written["mes.samples"][1]["status"] == "实验准备就绪"
+    assert written["mes.samples"][1]["trays"][0]["status"] == "实验准备就绪"
+    assert written["mes.experiment_run_trays"][0]["run_tray_status"] == "实验已完成"
 
 
 def test_mysql_find_current_context_scopes_ready_trays_to_matched_experiment(monkeypatch):
@@ -1522,7 +1730,6 @@ def test_process_experiment_ended_marks_active_run_by_lab_code():
     assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00")]
     assert repository.events[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
-    assert repository.legacy_ended == []
 
 
 def test_process_experiment_ended_prefers_active_run_over_payload_experiment_code():

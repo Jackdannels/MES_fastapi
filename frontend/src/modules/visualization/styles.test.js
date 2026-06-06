@@ -20,9 +20,12 @@ describe("visualization styles", () => {
 
     expect(source).toContain("grid-template-rows: 28px repeat(var(--visual-schedule-row-count), minmax(0, 1fr))");
     expect(source).toMatch(/\.visual-schedule-lab-name,\s*\.visual-schedule-cell\s*{[^}]*min-height:\s*0;/s);
-    expect(source).toMatch(/\.visual-schedule-slot\.is-planned,\s*\.visual-schedule-slot\.is-idle\s*{[^}]*align-content:\s*stretch;[^}]*grid-auto-rows:\s*minmax\(0,\s*1fr\);[^}]*padding:\s*0;/s);
-    expect(source).toMatch(/\.visual-schedule-slot\.is-planned \.visual-schedule-task\s*{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*justify-items:\s*center;[^}]*text-align:\s*center;[^}]*border-left:\s*0;/s);
-    expect(source).toMatch(/\.visual-schedule-slot\.is-planned \.visual-schedule-task strong\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*13px;/s);
+    expect(source).toMatch(/\.visual-schedule-slot\s*{[^}]*align-content:\s*stretch;[^}]*justify-items:\s*stretch;[^}]*grid-auto-rows:\s*minmax\(0,\s*1fr\);[^}]*padding:\s*0;[^}]*border-left:\s*0;/s);
+    expect(source).toMatch(/\.visual-schedule-task\s*{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*align-content:\s*center;[^}]*justify-items:\s*center;[^}]*text-align:\s*center;[^}]*border-left:\s*0;/s);
+    expect(source).toMatch(/\.visual-schedule-task strong\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*14px;/s);
+    expect(source).toMatch(/\.visual-schedule-task span\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*13px;[^}]*font-weight:\s*900;/s);
+    expect(source).toMatch(/\.visual-schedule-task small\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*12px;[^}]*font-weight:\s*900;/s);
+    expect(source).toMatch(/\.visual-schedule-slot\.state-running\s*{[^}]*background:\s*rgba\(20,\s*83,\s*45,\s*0\.62\);/s);
     expect(source).toMatch(/\.visual-schedule-slot\.is-idle \.visual-schedule-idle\s*{[^}]*place-items:\s*center;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*font-size:\s*13px;/s);
     expect(source).toMatch(/\.visual-schedule-day\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*justify-items:\s*center;/s);
     expect(source).toMatch(/\.visual-schedule-day small\s*{[^}]*position:\s*absolute;[^}]*right:\s*10px;/s);

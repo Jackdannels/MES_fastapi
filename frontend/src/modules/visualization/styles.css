@@ -1516,71 +1516,50 @@
 .visual-schedule-slot {
   position: relative;
   display: grid;
-  align-content: center;
-  gap: 4px;
+  align-content: stretch;
+  justify-items: stretch;
+  gap: 0;
+  grid-auto-rows: minmax(0, 1fr);
   height: 100%;
   min-width: 0;
-  padding: 6px;
-  border-left: 3px solid rgba(148, 163, 184, 0.18);
+  padding: 0;
+  border-left: 0;
   background: rgba(15, 23, 42, 0.42);
 }
 
 .visual-schedule-slot.state-busy,
 .visual-schedule-slot.state-split,
 .visual-schedule-slot.state-stacked {
-  border-left-color: var(--screen-cyan);
-  background:
-    linear-gradient(90deg, rgba(34, 211, 238, 0.18), transparent 70%),
-    rgba(8, 47, 73, 0.36);
-}
-
-.visual-schedule-slot.is-planned,
-.visual-schedule-slot.is-idle {
-  align-content: stretch;
-  gap: 0;
-  grid-auto-rows: minmax(0, 1fr);
-  padding: 0;
-  border-left-width: 0;
+  background: rgba(8, 47, 73, 0.58);
 }
 
 .visual-schedule-slot.state-running {
-  border-left-color: var(--screen-green);
-  background:
-    linear-gradient(90deg, rgba(132, 204, 22, 0.22), transparent 70%),
-    rgba(20, 83, 45, 0.32);
-  box-shadow: inset 0 0 20px rgba(132, 204, 22, 0.08);
+  background: rgba(20, 83, 45, 0.62);
 }
 
 .visual-schedule-slot.state-maintenance {
-  border-left-color: #f59e0b;
-  background:
-    linear-gradient(90deg, rgba(245, 158, 11, 0.22), transparent 70%),
-    rgba(120, 53, 15, 0.32);
+  background: rgba(120, 53, 15, 0.58);
 }
 
 .visual-schedule-slot.state-disabled {
-  border-left-color: rgba(148, 163, 184, 0.52);
-  background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.18), transparent 70%),
-    rgba(51, 65, 85, 0.34);
+  background: rgba(51, 65, 85, 0.56);
 }
 
 .visual-schedule-slot.state-conflict,
 .visual-schedule-slot.is-conflict {
-  border-left-color: var(--screen-red);
-  background:
-    linear-gradient(90deg, rgba(239, 68, 68, 0.22), transparent 70%),
-    rgba(127, 29, 29, 0.34);
+  background: rgba(127, 29, 29, 0.62);
 }
 
 .visual-schedule-slot-state {
+  position: absolute;
+  z-index: 1;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
   width: max-content;
   max-width: 100%;
-  padding: 2px 6px;
-  color: var(--screen-muted);
-  border: 1px solid rgba(238, 253, 249, 0.12);
-  border-radius: 999px;
-  background: rgba(5, 7, 10, 0.54);
+  padding: 0 4px;
+  color: rgba(238, 253, 249, 0.78);
   font-size: 10px;
   font-weight: 900;
   overflow: hidden;
@@ -1590,37 +1569,41 @@
 
 .visual-schedule-task {
   display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding-left: 6px;
-  border-left: 2px solid var(--schedule-task-color);
-}
-
-.visual-schedule-slot.is-planned .visual-schedule-task {
   width: 100%;
   height: 100%;
   align-content: center;
   justify-items: center;
-  padding: 10px 12px;
+  gap: 3px;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 10px;
   text-align: center;
+  box-sizing: border-box;
   border-left: 0;
 }
 
-.visual-schedule-slot.is-planned .visual-schedule-task strong {
+.visual-schedule-task strong {
+  max-width: 100%;
+  color: #e0f2fe;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 14px;
+  line-height: 1.18;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visual-schedule-task span {
   max-width: 100%;
   font-size: 13px;
+  font-weight: 900;
   line-height: 1.18;
 }
 
-.visual-schedule-slot.is-planned .visual-schedule-task span {
+.visual-schedule-task small {
   max-width: 100%;
   font-size: 12px;
-  line-height: 1.18;
-}
-
-.visual-schedule-slot.is-planned .visual-schedule-task small {
-  max-width: 100%;
-  font-size: 11px;
+  font-weight: 900;
   line-height: 1.18;
 }
 
@@ -1650,29 +1633,28 @@
   letter-spacing: 0;
 }
 
-.visual-schedule-task strong {
-  color: #e0f2fe;
-  font-family: Consolas, "Microsoft YaHei", monospace;
-  font-size: 11px;
+.visual-schedule-task span,
+.visual-schedule-task small {
+  color: var(--screen-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.visual-schedule-task span,
-.visual-schedule-task small,
 .visual-schedule-idle,
 .visual-schedule-overflow {
-  color: var(--screen-muted);
-  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .visual-schedule-overflow {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
   color: #fde68a;
   font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 10px;
   font-weight: 900;
 }
 
@@ -1755,9 +1737,9 @@
 }
 
 .visual-board.is-compact .visual-schedule-slot {
-  gap: 1px;
-  padding: 3px;
-  border-left-width: 2px;
+  gap: 0;
+  padding: 0;
+  border-left-width: 0;
 }
 
 .visual-board.is-compact .visual-schedule-slot-state {
@@ -1765,7 +1747,8 @@
 }
 
 .visual-board.is-compact .visual-schedule-task {
-  padding-left: 3px;
+  gap: 1px;
+  padding: 3px 4px;
 }
 
 .visual-board.is-compact .visual-schedule-task strong,

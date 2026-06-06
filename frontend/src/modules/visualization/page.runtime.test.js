@@ -391,6 +391,9 @@ describe("VisualizationPage runtime", () => {
       expect(previewText).toContain("08:00-12:00");
       expect(previewText).toContain("进行中");
       expect(previewText).not.toContain("已排程");
+      const runningSlot = wrapper.find('[data-testid="visual-single-preview"] .visual-schedule-slot.state-running');
+      expect(runningSlot.exists()).toBe(true);
+      expect(runningSlot.find(".visual-schedule-slot-state").exists()).toBe(false);
     } finally {
       vi.useRealTimers();
     }

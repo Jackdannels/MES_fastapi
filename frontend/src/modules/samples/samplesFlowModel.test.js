@@ -2521,6 +2521,234 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView ignores stale next-experiment runtime after the tray is returned by manufacturer", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "振动试验", required_device: "振动二室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06 12:57:55",
+        },
+        {
+          run_no: "run-temp-stale-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-06 12:58:20",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: trayCode, status: "厂家收回", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 12:57:55", detail: `${taskCode} / 冲击试验 / 实验已完成` },
+            { time: "2026-06-06 12:58:10", status: "已到达暂存间", action: "放置实验后暂存间" },
+            { time: "2026-06-06 12:58:34", status: "厂家收回" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室" },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
+    expect(view.steps.some((step) => step.label === "温度冲击试验进行中")).toBe(false);
+    expect(view.steps.find((step) => step.label === "厂家收回")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
+  test("buildTrayFlowView does not treat returned future-experiment runtime as in-progress history", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "振动试验", required_device: "振动二室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-001",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06 13:18:06",
+        },
+        {
+          run_no: `RETURNED-${taskCode}-B`,
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          tray_code: trayCode,
+          run_tray_status: "厂家收回",
+          ended_at: "2026-06-06 13:18:16",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: trayCode, status: "厂家收回", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 13:18:06", detail: `${taskCode} / 冲击试验 / 实验已完成` },
+            { time: "2026-06-06 13:18:13", status: "已到达暂存间", action: "放置实验后暂存间" },
+            { time: "2026-06-06 13:18:16", status: "厂家收回" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室" },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
+    expect(view.steps.some((step) => step.label === "温度冲击试验进行中")).toBe(false);
+    expect(view.steps.some((step) => step.label === "冲击试验已完成")).toBe(true);
+  });
+
+  test("buildTrayFlowView keeps a never-tested returned tray from showing the first experiment as running", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "振动试验", required_device: "振动二室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: `RETURNED-${taskCode}-A`,
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "厂家收回",
+          ended_at: "2026-06-06 13:17:08",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: trayCode, status: "厂家收回", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 13:16:51", status: "已到达暂存间" },
+            { time: "2026-06-06 13:17:08", status: "厂家收回" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室" },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
+    expect(view.steps.some((step) => step.label === "冲击试验进行中")).toBe(false);
+    expect(view.steps.some((step) => step.label === "温度冲击试验进行中")).toBe(false);
+  });
+
+  test("buildTrayFlowView derives returned status from tray history when top-level history status is stale", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "冲击二室",
+      status: "实验进行中",
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "stale-impact-run",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-06 13:17:02",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "冲击二室",
+          status: "实验进行中",
+          trays: [{ trayCode, status: "实验进行中" }],
+          history: [
+            { time: "2026-06-06 13:16:51", status: "已到达暂存间", detail: `${trayCode} 已到达暂存间` },
+            { time: "2026-06-06 13:17:08", status: "厂家收回", detail: `${trayCode} 厂家收回` },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击二室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室" },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
+    expect(view.steps.some((step) => step.label === "冲击试验进行中")).toBe(false);
+  });
+
   test("buildTrayFlowView keeps single-experiment lab and completion steps unreached when a returned tray never completed that experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",
@@ -2572,7 +2800,7 @@ describe("samplesFlowModel", () => {
       "厂家收回",
     ]);
     expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
-      expect.objectContaining({ reached: true }),
+      expect.objectContaining({ reached: true, time: "2026-04-21T09:00:00.000Z" }),
     );
     expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
       expect.objectContaining({ active: false, reached: false }),

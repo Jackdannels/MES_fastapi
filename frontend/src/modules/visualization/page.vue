@@ -709,7 +709,11 @@ const LabProcessScreen = {
                         "切换试验间",
                       )
                       : null,
-                    h("div", { class: ["visual-lab-state", lab.alert ? "is-alert" : "is-ok"] }, lab.alert ? "复核" : "正常"),
+                    h(
+                      "div",
+                      { class: ["visual-lab-state", lab.alert ? "is-alert" : "is-ok", lab.healthState ? `is-${lab.healthState}` : ""] },
+                      lab.healthLabel || (lab.alert ? "复核" : "正常"),
+                    ),
                   ]),
                 ]),
                 props.interactive && !props.compact && taskOptions.length
@@ -823,10 +827,12 @@ const renderScheduleSlot = (slot, compact) => {
   const items = Array.isArray(slot?.items) ? slot.items : [];
   const visibleItems = items.length ? items.slice(0, compact ? 1 : 2) : [];
   const stateLabel = scheduleStateLabel(slot.state);
+  const normalizedState = String(slot?.state || "").trim();
   const isPlainCell = stateLabel === "已排程" || stateLabel === "空闲";
-  const isStatusOnlyCell = visibleItems.length === 0 && ["maintenance", "disabled"].includes(String(slot?.state || "").trim());
+  const hidesStateBadge = normalizedState === "running";
+  const isStatusOnlyCell = visibleItems.length === 0 && ["maintenance", "disabled"].includes(normalizedState);
   return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : ""] }, [
-    isPlainCell || isStatusOnlyCell ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
+    isPlainCell || isStatusOnlyCell || hidesStateBadge ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
     ...(visibleItems.length
       ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
       : isStatusOnlyCell

@@ -610,6 +610,79 @@ const resolveCompletedExperimentRuntime = ({ experimentCode, experimentRuns = []
   };
 };
 
+const isReturnedStatusText = (value) => {
+  const text = normalizeText(value);
+  return text === "厂家收回" || text === "已处置" || text.includes("厂家收回");
+};
+
+const entryMarksTrayReturned = (entry, trayCode, fallbackSingleTray = false) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  const structuredTrayCode = resolveEntryTrayCode(entry);
+  const detail = normalizeText(entry?.detail);
+  const entryIsReturned =
+    isReturnedStatusText(entry?.status)
+    || isReturnedStatusText(entry?.action)
+    || isReturnedStatusText(detail);
+  if (!entryIsReturned) {
+    return false;
+  }
+  return (
+    (structuredTrayCode && structuredTrayCode === normalizedTrayCode)
+    || (normalizedTrayCode && detail.includes(normalizedTrayCode))
+    || (!detail && fallbackSingleTray)
+  );
+};
+
+const resolveEffectiveTrayLifecycleStatus = (input = {}) => {
+  const taskCode = normalizeText(input.taskCode);
+  const trayCode = normalizeText(input.trayCode);
+  const fallbackStatus = normalizeLifecycleStatus(input.location, input.status);
+  if (!taskCode || !trayCode) {
+    return fallbackStatus;
+  }
+
+  const runtimeReturned = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays)
+    .some((relation) =>
+      resolveEntryTaskCode(relation) === taskCode
+      && resolveEntryTrayCode(relation) === trayCode
+      && isReturnedStatusText(
+        relation?.run_tray_status
+        || relation?.runTrayStatus
+        || relation?.status,
+      ),
+    );
+  if (runtimeReturned) {
+    return "厂家收回";
+  }
+
+  const matchedSamples = asArray(input.samples).filter((sample) => resolveEntryTaskCode(sample) === taskCode);
+  for (const sample of matchedSamples) {
+    const trays = asArray(sample?.trays);
+    const matchingTrays = trays.filter((tray) => resolveEntryTrayCode(tray) === trayCode);
+    if (!matchingTrays.length) {
+      continue;
+    }
+    const sampleReturned =
+      isReturnedStatusText(sample?.status)
+      || isReturnedStatusText(sample?.flow_status)
+      || isReturnedStatusText(sample?.flowStatus)
+      || isReturnedStatusText(sample?.location);
+    const trayReturned = matchingTrays.some((tray) =>
+      isReturnedStatusText(tray?.status)
+      || isReturnedStatusText(tray?.tray_status)
+      || isReturnedStatusText(tray?.trayStatus),
+    );
+    const historyReturned = asArray(sample?.history).some((entry) =>
+      entryMarksTrayReturned(entry, trayCode, trays.length === 1),
+    );
+    if (sampleReturned || trayReturned || historyReturned) {
+      return "厂家收回";
+    }
+  }
+
+  return fallbackStatus;
+};
+
 const resolveSingleTrayExperiment = (input = {}) => {
   const orderedExperiments = buildOrderedTrayExperiments({
     taskCode: input.taskCode,
@@ -865,7 +938,8 @@ const buildTrayExperimentFlow = (input = {}) => {
     return [];
   }
 
-  const normalizedStatus = normalizeLifecycleStatus(input.location, input.status);
+  const normalizedStatus = resolveEffectiveTrayLifecycleStatus(input);
+  const trayIsReturned = normalizedStatus === "厂家收回";
   const dispatchTarget = resolveTrayDispatchTarget(input);
   const experimentEventMap = resolveLatestExperimentEventMap({
     taskCode,
@@ -907,7 +981,7 @@ const buildTrayExperimentFlow = (input = {}) => {
   const explicitFromTrayTarget =
     Boolean(trayTargetExperimentCode)
     && explicitExperimentCode === trayTargetExperimentCode;
-  const hasRunningRuntimeExperiment = orderedExperiments.some((experiment) =>
+  const hasRunningRuntimeExperiment = !trayIsReturned && orderedExperiments.some((experiment) =>
     RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveExperimentRunStatus({
       experimentCode: experiment.code,
       experimentRuns: input.experimentRuns || input.experiment_runs,
@@ -930,16 +1004,27 @@ const buildTrayExperimentFlow = (input = {}) => {
         trayCode,
       });
       const rawEventStatus = normalizeText(event?.status);
+      const rawEventIsUnscopedRunning =
+        RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeLifecycleStatus("", rawEventStatus))
+        && event?.trayScoped !== true;
       const eventStatus =
-        RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeLifecycleStatus("", rawEventStatus)) && event?.trayScoped !== true
+        (trayIsReturned || rawEventIsUnscopedRunning)
           ? ""
           : rawEventStatus;
+      const runtimeStatusForFlow =
+        trayIsReturned
+        && (
+          RUNNING_EXPERIMENT_RUN_STATUSES.has(runtimeStatus)
+          || runtimeStatus === "厂家收回"
+        )
+          ? ""
+          : runtimeStatus;
       const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
       const suppressInputCurrentFallback =
         hasRunningRuntimeExperiment && explicitFromInputCurrent && !explicitFromTrayTarget;
       const normalizedStatusIsRunning = RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeLifecycleStatus("", normalizedStatus));
       const hasTrayScopedRunningEvidence =
-        RUNNING_EXPERIMENT_RUN_STATUSES.has(runtimeStatus)
+        RUNNING_EXPERIMENT_RUN_STATUSES.has(runtimeStatusForFlow)
         || (
           RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeLifecycleStatus("", rawEventStatus))
           && event?.trayScoped === true
@@ -953,10 +1038,10 @@ const buildTrayExperimentFlow = (input = {}) => {
           ? normalizedStatus
           : "";
       const explicitRuntimeStatus =
-        RUNNING_EXPERIMENT_RUN_STATUSES.has(runtimeStatus)
+        RUNNING_EXPERIMENT_RUN_STATUSES.has(runtimeStatusForFlow)
         || experiment.code === explicitExperimentCode
         || !explicitExperimentCode
-          ? runtimeStatus
+          ? runtimeStatusForFlow
           : "";
       return [experiment.code, chooseExperimentStatus({
         eventStatus,
@@ -1536,12 +1621,21 @@ const buildTrayFlowTimeMap = (input = {}) => {
 };
 
 function buildTrayFlowView(input = {}) {
+  const effectiveStatus = resolveEffectiveTrayLifecycleStatus(input);
+  const effectiveInput =
+    effectiveStatus && effectiveStatus !== normalizeLifecycleStatus(input.location, input.status)
+      ? {
+          ...input,
+          location: effectiveStatus === "厂家收回" ? "厂家收回" : input.location,
+          status: effectiveStatus,
+        }
+      : input;
   const stepTimeMap = buildTrayFlowTimeMap(input);
   const stepTimeHistoryMap = stepTimeMap.timeHistoryMap instanceof Map ? stepTimeMap.timeHistoryMap : new Map();
-  const experimentFlow = Array.isArray(input.experimentFlow) && input.experimentFlow.length > 0
-    ? input.experimentFlow
-    : buildTrayExperimentFlow(input);
-  const trayCode = normalizeText(input.trayCode);
+  const experimentFlow = Array.isArray(effectiveInput.experimentFlow) && effectiveInput.experimentFlow.length > 0
+    ? effectiveInput.experimentFlow
+    : buildTrayExperimentFlow(effectiveInput);
+  const trayCode = normalizeText(effectiveInput.trayCode);
   if (experimentFlow.length > 0) {
     const currentExperimentIndex = experimentFlow.findIndex((item) => normalizeText(item?.state) === "current");
     const activeExperiment = currentExperimentIndex >= 0 ? experimentFlow[currentExperimentIndex] : null;
@@ -1646,10 +1740,10 @@ function buildTrayFlowView(input = {}) {
         : buildExperimentRouteSteps();
       const explicitRouteStatus = normalizeText(activeExperiment?.routeStatus);
       const normalizedRouteStatus = explicitRouteStatus
-        ? normalizeLifecycleStatus(input.location, explicitRouteStatus)
+        ? normalizeLifecycleStatus(effectiveInput.location, explicitRouteStatus)
         : activeExperiment?.unstarted
           ? ""
-          : normalizeLifecycleStatus(input.location, input.status);
+          : normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
       const suppressRouteDestinationLab = Boolean(activeExperiment?.suppressDestinationLab);
       const shouldUseExperimentDestinationLab =
@@ -1661,8 +1755,8 @@ function buildTrayFlowView(input = {}) {
           && (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
           )
         );
-      const inputCurrentExperimentCode = normalizeText(input.currentExperimentCode);
-      const dispatchTargetLab = normalizeText(input.dispatchTargetLab);
+      const inputCurrentExperimentCode = normalizeText(effectiveInput.currentExperimentCode);
+      const dispatchTargetLab = normalizeText(effectiveInput.dispatchTargetLab);
       const activeExperimentDestinationLab = suppressRouteDestinationLab ? "" : normalizeText(activeExperiment?.destinationLab);
       const dispatchTargetMatchesCompletedExperiment = completedExperiments.some(
         (experiment) => normalizeText(experiment?.destinationLab) === dispatchTargetLab,
@@ -1807,7 +1901,7 @@ function buildTrayFlowView(input = {}) {
         parseTimeValue(stepTimeMap.get(completedIdentityLabel)),
         parseTimeValue(stepTimeMap.get(completedCodeLabel)),
       );
-      const finalLabDestination = normalizeText(lastExperiment?.destinationLab) || normalizeText(input.dispatchTargetLab);
+      const finalLabDestination = normalizeText(lastExperiment?.destinationLab) || normalizeText(effectiveInput.dispatchTargetLab);
       routeSteps.forEach((label, index) => {
         pushStep({
           key: `route-final-${index}`,
@@ -1831,7 +1925,7 @@ function buildTrayFlowView(input = {}) {
         key: "route-final-returned",
         label: "厂家收回",
       });
-      const normalizedFinalStatus = normalizeLifecycleStatus(input.location, input.status);
+      const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
       if (normalizedFinalStatus === "放置实验后暂存间" || normalizedFinalStatus === "已到达暂存间") {
         activeIndex = postTestStagingIndex;
         steps[completedIndex].reached = true;
@@ -1870,9 +1964,9 @@ function buildTrayFlowView(input = {}) {
   const singleExperimentEvent = singleExperiment
     ? resolveExperimentEvent(
       resolveLatestExperimentEventMap({
-        taskCode: input.taskCode,
-        trayCode: input.trayCode,
-        samples: input.samples,
+        taskCode: effectiveInput.taskCode,
+        trayCode: effectiveInput.trayCode,
+        samples: effectiveInput.samples,
       }),
       singleExperiment,
     )
@@ -1882,12 +1976,12 @@ function buildTrayFlowView(input = {}) {
       experimentCode: singleExperiment.code,
       experimentRuns: input.experimentRuns || input.experiment_runs,
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
-      taskCode: input.taskCode,
-      trayCode: input.trayCode,
+      taskCode: effectiveInput.taskCode,
+      trayCode: effectiveInput.trayCode,
     })
     : "";
   const singleExperimentEventStatus = normalizeLifecycleStatus("", singleExperimentEvent?.status);
-  let status = normalizeLifecycleStatus(input.location, input.status) || SAMPLE_FLOW_STEPS[0].label;
+  let status = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status) || SAMPLE_FLOW_STEPS[0].label;
   if (
     singleExperimentEventStatus === "实验已完成"
     && experimentFlowStatusRank(singleExperimentEventStatus) >= experimentFlowStatusRank(status)
@@ -1903,7 +1997,7 @@ function buildTrayFlowView(input = {}) {
   const currentIndex = FLOW_STEP_INDEX_BY_KEY.get(currentKey) ?? 0;
   const singleExperimentName = normalizeText(singleExperiment?.displayName || singleExperiment?.name);
   const singleExperimentIdentityName = normalizeText(singleExperiment?.name);
-  const singleExperimentDestinationLab = normalizeText(input.dispatchTargetLab) || normalizeText(singleExperiment?.destinationLab);
+  const singleExperimentDestinationLab = normalizeText(effectiveInput.dispatchTargetLab) || normalizeText(singleExperiment?.destinationLab);
   const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
   const singleExperimentCompleted = singleExperimentEventStatus === "实验已完成";
   const holdUncompletedSingleExperiment =

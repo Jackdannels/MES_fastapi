@@ -123,6 +123,33 @@ const collectTrayRefs = (samples) => {
 };
 
 const isReturned = (status) => normalizeFlowLabel(status) === RETURNED_STATUS || normalizeText(status) === RETURNED_STATUS;
+const entryMatchesTrayCode = (entry, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  const structuredTrayCode = resolveTrayCode(entry);
+  if (structuredTrayCode) {
+    return structuredTrayCode === normalizedTrayCode;
+  }
+  return normalizeText(entry?.detail).includes(normalizedTrayCode);
+};
+
+const sampleHistoryMarksTrayReturned = (sample, tray) => {
+  const trayCode = resolveTrayCode(tray);
+  const sampleTrayCount = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean).length;
+  return asArray(sample?.history).some((entry) => {
+    const entryIsReturned =
+      isReturned(entry?.status)
+      || isReturned(entry?.action)
+      || isReturned(entry?.detail);
+    if (!entryIsReturned) {
+      return false;
+    }
+    return entryMatchesTrayCode(entry, trayCode) || (!normalizeText(entry?.detail) && sampleTrayCount === 1);
+  });
+};
+
 const trayRefIsReturned = ({ sample, tray }) => {
   const trayStatus = resolveStatus(tray);
   const sampleStatus = resolveStatus(sample);
@@ -133,6 +160,7 @@ const trayRefIsReturned = ({ sample, tray }) => {
     || isReturned(sampleStatus)
     || isReturned(sampleLocation)
     || isReturned(lifecycleStatus)
+    || sampleHistoryMarksTrayReturned(sample, tray)
   );
 };
 
@@ -346,7 +374,7 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const isFullyReturned = allTrayCount > 0
     ? returnedTrayCount === allTrayCount
     : hasExplicitReturnedStatus(task);
-  const trays = buildTrayRows(samples, returnedTrayCount > 0 ? returnedTrayCodes : null);
+  const trays = buildTrayRows(samples, isFullyReturned ? returnedTrayCodes : null);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
   const sampleFlowEntries = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);

@@ -279,7 +279,7 @@ describe("task history model", () => {
     expect(view.tasks[0].status).toBe("厂家收回");
   });
 
-  test("includes partially returned tasks and only exposes returned tray details", () => {
+  test("includes partially returned tasks and keeps all tray details visible", () => {
     const view = buildReturnedTaskHistoryView({
       query: "TP-RETURNED",
       tasks: [{ code: "TASK-MIXED", name: "部分收回任务", status: "任务进行中" }],
@@ -318,11 +318,11 @@ describe("task history model", () => {
       originalSampleCount: 3,
       returnedSampleCount: 1,
       remainingSampleCount: 2,
-      trayCount: 1,
+      trayCount: 3,
     }));
     expect(view.tasks[0].trayCountText).toBe("3 个托盘（收回1，剩余2）");
     expect(view.tasks[0].sampleCountText).toBe("3 个样品（收回1，剩余2）");
-    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-RETURNED"]);
+    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-ACTIVE-001", "TP-ACTIVE-002", "TP-RETURNED"]);
     expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual([
       ["待排程", false, true],
       ["已排程", false, true],
@@ -354,7 +354,7 @@ describe("task history model", () => {
     });
 
     expect(view.tasks).toHaveLength(1);
-    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-LOCATION"]);
+    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-ACTIVE", "TP-LOCATION"]);
     expect(view.tasks[0].status).toBe("任务进行中（收回1，剩余1）");
   });
 
@@ -506,5 +506,100 @@ describe("task history model", () => {
     });
 
     expect(view.tasks[0].taskFlow.map((step) => [step.label, step.active, step.reached])).toEqual(returnedTaskFlow);
+  });
+
+  test("marks trays returned from history even when sample and tray status are stale", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-HISTORY-RETURN", name: "历史回收任务", status: "任务进行中" }],
+      samples: [
+        {
+          code: "SP-HISTORY-001",
+          task_code: "TASK-HISTORY-RETURN",
+          location: "温度冲击二室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-HISTORY-001", status: "实验进行中" }],
+          history: [
+            { status: "实验进行中", detail: "TASK-HISTORY-RETURN / 温度冲击试验 / 实验进行中", time: "2026-06-06T13:17:58+08:00" },
+            { status: "厂家收回", detail: "TP-HISTORY-001 厂家收回", time: "2026-06-06T13:18:27+08:00" },
+          ],
+        },
+        {
+          code: "SP-HISTORY-002",
+          task_code: "TASK-HISTORY-RETURN",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-HISTORY-002", status: "已到达暂存间" }],
+          history: [
+            { status: "已到达暂存间", detail: "TP-HISTORY-002 已到达暂存间", time: "2026-06-06T13:16:51+08:00" },
+            { status: "厂家收回", detail: "TP-HISTORY-002 厂家收回", time: "2026-06-06T13:17:08+08:00" },
+          ],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-HISTORY-RETURN", experiment_code: "TASK-HISTORY-RETURN-A", tray_code: "TP-HISTORY-001" },
+        { task_code: "TASK-HISTORY-RETURN", experiment_code: "TASK-HISTORY-RETURN-A", tray_code: "TP-HISTORY-002" },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0].status).toBe("厂家收回");
+    expect(view.tasks[0].trays.map((tray) => [tray.trayCode, tray.status])).toEqual([
+      ["TP-HISTORY-001", "厂家收回"],
+      ["TP-HISTORY-002", "厂家收回"],
+    ]);
+    expect(view.tasks[0].trays[0].flowSteps).toContainEqual({
+      label: "厂家收回",
+      time: "2026-06-06T13:18:27+08:00",
+    });
+  });
+
+  test("keeps staged tray details visible when another tray from the same task was returned", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [
+        {
+          code: "TASK-MIXED",
+          name: "部分回收任务",
+          status: "任务进行中",
+        },
+      ],
+      samples: [
+        {
+          code: "SP-MIXED-001",
+          task_code: "TASK-MIXED",
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-MIXED-001", status: "厂家收回" }],
+          history: [
+            { status: "已到达暂存间", detail: "TP-MIXED-001 已到达暂存间", time: "2026-06-06T12:12:23+08:00" },
+            { status: "厂家收回", detail: "TP-MIXED-001 厂家收回", time: "2026-06-06T12:13:02+08:00" },
+          ],
+        },
+        {
+          code: "SP-MIXED-002",
+          task_code: "TASK-MIXED",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TP-MIXED-002", status: "已到达暂存间" }],
+          history: [
+            { status: "已到达暂存间", detail: "TP-MIXED-002 已到达暂存间", time: "2026-06-06T12:12:30+08:00" },
+          ],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-MIXED", experiment_code: "TASK-MIXED-A", tray_code: "TP-MIXED-001" },
+        { task_code: "TASK-MIXED", experiment_code: "TASK-MIXED-A", tray_code: "TP-MIXED-002" },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0]).toEqual(expect.objectContaining({
+      remainingTrayCount: 1,
+      returnedTrayCount: 1,
+    }));
+    expect(view.tasks[0].trays.map((tray) => tray.trayCode)).toEqual(["TP-MIXED-001", "TP-MIXED-002"]);
+    expect(view.tasks[0].trays.find((tray) => tray.trayCode === "TP-MIXED-002")?.flowSteps).toContainEqual({
+      label: "已到达暂存间",
+      time: "2026-06-06T12:12:30+08:00",
+    });
   });
 });

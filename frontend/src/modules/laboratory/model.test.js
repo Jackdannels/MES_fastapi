@@ -201,6 +201,165 @@ describe("laboratory model", () => {
     expect(view.currentTask).toEqual(expect.objectContaining({ taskCode: "SYLU-2026-05-006" }));
   });
 
+  test("buildLaboratoryWorkbenchView treats manufacturer-returned run trays as terminal for the current experiment", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const experimentCode = `${taskCode}-A`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: `${taskCode}-TP-002`,
+          run_tray_status: "厂家收回",
+          updated_at: "2026-06-06T12:13:02+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-002` },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "温度冲击试验" },
+      ],
+      labName: "温度冲击一室",
+      now: NOW,
+      samples: [],
+      schedules: [
+        {
+          id: "schedule-returned",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "温度冲击一室",
+          start_at: "2026-06-06T12:00:00+08:00",
+          end_at: "2026-06-06T15:00:00+08:00",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "厂家回收任务", test_type: "温度冲击试验" }],
+    });
+
+    expect(view.scheduleRows).toEqual([]);
+    expect(view.currentTask).toBeNull();
+  });
+
+  test("buildLaboratoryWorkbenchView removes manufacturer-returned trays from an unfinished laboratory experiment", () => {
+    const taskCode = "SYLU-2026-06-022";
+    const experimentCode = `${taskCode}-A`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: `${taskCode}-TP-001`,
+          run_tray_status: "厂家收回",
+          updated_at: "2026-06-06T12:13:02+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-001` },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-002` },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验" },
+      ],
+      labName: "冲击一室",
+      now: NOW,
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-001`, status: "厂家收回", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: `${taskCode}-TP-002`, status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-partial-returned",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "冲击一室",
+          start_at: "2026-06-06T12:00:00+08:00",
+          end_at: "2026-06-06T15:00:00+08:00",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "部分回收任务", test_type: "冲击试验" }],
+    });
+
+    expect(view.currentTask?.trayCodes).toEqual([`${taskCode}-TP-002`]);
+    expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toEqual([`${taskCode}-TP-002`]);
+    expect(validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scheduleRows: view.scheduleRows,
+      allScheduleRows: view.allScheduleRows,
+      scanCode: `${taskCode}-TP-001`,
+    })).toEqual(expect.objectContaining({
+      ok: false,
+      message: "未匹配到任务",
+    }));
+  });
+
+  test("buildLaboratoryWorkbenchView removes sample-only returned trays from an unfinished laboratory experiment", () => {
+    const taskCode = "SYLU-2026-06-023";
+    const experimentCode = `${taskCode}-A`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-001` },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-002` },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验" },
+      ],
+      labName: "霉菌试验室",
+      now: NOW,
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-001`, status: "厂家收回", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "霉菌试验室",
+          status: "已到达实验室",
+          trays: [{ tray_code: `${taskCode}-TP-002`, status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-sample-only-returned",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "霉菌试验室",
+          start_at: "2026-06-06T12:00:00+08:00",
+          end_at: "2026-06-06T15:00:00+08:00",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "旧快照部分回收任务", test_type: "霉菌试验" }],
+    });
+
+    expect(view.currentTask?.trayCodes).toEqual([`${taskCode}-TP-002`]);
+    expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toEqual([`${taskCode}-TP-002`]);
+    expect(validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scheduleRows: view.scheduleRows,
+      allScheduleRows: view.allScheduleRows,
+      scanCode: `${taskCode}-TP-001`,
+    })).toEqual(expect.objectContaining({
+      ok: false,
+      message: "未匹配到任务",
+    }));
+  });
+
   test("buildLaboratorySummary counts today's salt-spray schedules and overdue undone tasks", () => {
     const summary = buildLaboratorySummary([
       { endAt: "2026-04-02T08:30:00.000Z", startAt: "2026-04-02T07:00:00.000Z", taskCode: "A" },

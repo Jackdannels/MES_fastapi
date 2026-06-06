@@ -4,14 +4,12 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
+from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
 from app.services.laboratory_completion import (
-    COMPLETED_STATUS,
-    COMPLETION_ACTION,
-    RUNNING_STATUS,
-    experiment_status_for_completed_trays,
-    completion_history_detail,
+    complete_storage_laboratory_experiment,
 )
+from app.services.laboratory_start import start_storage_laboratory_experiment
 
 
 PROTOCOL_NAME = "MES_LAB_MQTT"
@@ -46,10 +44,6 @@ class MqEventRepository(Protocol):
     def record_event(self, event: dict[str, Any]) -> None: ...
 
     def record_result(self, result: dict[str, Any]) -> None: ...
-
-    def mark_experiment_started(self, task_no: str, experiment_no: str, occurred_at: str) -> None: ...
-
-    def mark_experiment_ended(self, task_no: str, experiment_no: str, occurred_at: str) -> None: ...
 
     def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
@@ -165,6 +159,35 @@ def cursor_row_as_dict(cursor: Any) -> dict[str, Any] | None:
         return dict(row)
     columns = [column[0] for column in (cursor.description or [])]
     return dict(zip(columns, row))
+
+
+def storage_completion_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    normalized = normalize_storage_payload(payload)
+    return {
+        "tasks": [dict(item) for item in normalized.get("mes.tasks", []) if isinstance(item, dict)],
+        "samples": [dict(item) for item in normalized.get("mes.samples", []) if isinstance(item, dict)],
+        "schedules": [dict(item) for item in normalized.get("mes.schedules", []) if isinstance(item, dict)],
+        "experiments": [dict(item) for item in normalized.get("mes.experiments", []) if isinstance(item, dict)],
+        "experiment_runs": [dict(item) for item in normalized.get("mes.experiment_runs", []) if isinstance(item, dict)],
+        "experiment_run_trays": [dict(item) for item in normalized.get("mes.experiment_run_trays", []) if isinstance(item, dict)],
+        "experiment_trays": [dict(item) for item in normalized.get("mes.experiment_trays", []) if isinstance(item, dict)],
+        "experiment_samples": [dict(item) for item in normalized.get("mes.experiment_samples", []) if isinstance(item, dict)],
+        "staging_events": [dict(item) for item in normalized.get("mes.staging_events", []) if isinstance(item, dict)],
+    }
+
+
+def run_context_from_snapshot(snapshot: dict[str, list[dict[str, Any]]], run_no: str) -> dict[str, Any]:
+    normalized_run_no = normalize_text(run_no)
+    if not normalized_run_no:
+        return {}
+    return next(
+        (
+            run
+            for run in snapshot.get("experiment_runs", [])
+            if normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")) == normalized_run_no
+        ),
+        {},
+    )
 
 
 def publish_realtime_update() -> None:
@@ -288,36 +311,6 @@ class MySQLMqEventRepository:
                         result.get("message_log_id") or None,
                         result.get("status") or "RECEIVED",
                     ),
-                )
-            connection.commit()
-
-    def mark_experiment_started(self, task_no: str, experiment_no: str, occurred_at: str) -> None:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment
-                    SET actual_start_time = %s,
-                        experiment_status = '实验进行中',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE task_no = %s AND experiment_no = %s
-                    """,
-                    (occurred_at, task_no, experiment_no),
-                )
-            connection.commit()
-
-    def mark_experiment_ended(self, task_no: str, experiment_no: str, occurred_at: str) -> None:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment
-                    SET actual_end_time = %s,
-                        experiment_status = '实验已完成',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE task_no = %s AND experiment_no = %s
-                    """,
-                    (occurred_at, task_no, experiment_no),
                 )
             connection.commit()
 
@@ -524,7 +517,6 @@ class MySQLMqEventRepository:
         device_name = normalize_text(context.get("device_name"))
         schedule_no = normalize_text(context.get("schedule_no"))
         tray_nos = [normalize_text(tray_no) for tray_no in context.get("tray_nos") or [] if normalize_text(tray_no)]
-        sample_nos = [normalize_text(sample_no) for sample_no in context.get("sample_nos") or [] if normalize_text(sample_no)]
         if not task_no or not experiment_no or not tray_nos:
             raise ValueError("ready experiment context is incomplete")
 
@@ -535,142 +527,30 @@ class MySQLMqEventRepository:
         if not planned_end_at and started_dt is not None and planned_hours > 0:
             planned_end_at = (started_dt + timedelta(hours=planned_hours)).strftime("%Y-%m-%d %H:%M:%S")
         run_no = f"run-{datetime.now(BEIJING_TZ).strftime('%Y%m%d%H%M%S%f')}"
-
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO biz_experiment_run (
-                      run_no, schedule_no, task_no, experiment_no, device_name,
-                      planned_hours, run_status, started_at, planned_end_at, ended_at,
-                      created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, '实验进行中', %s, %s, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ON DUPLICATE KEY UPDATE
-                      run_status = '实验进行中',
-                      started_at = COALESCE(started_at, VALUES(started_at)),
-                      planned_end_at = VALUES(planned_end_at),
-                      updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (run_no, schedule_no, task_no, experiment_no, device_name, planned_hours or None, started_at, planned_end_at or None),
-                )
-                tray_rows = [
-                    (run_no, task_no, experiment_no, tray_no, started_at)
-                    for tray_no in tray_nos
-                ]
-                cursor.executemany(
-                    """
-                    INSERT INTO biz_experiment_run_tray (
-                      run_no, task_no, experiment_no, tray_no, run_tray_status,
-                      started_at, ended_at, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, '实验进行中', %s, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    ON DUPLICATE KEY UPDATE
-                      run_tray_status = '实验进行中',
-                      started_at = COALESCE(started_at, VALUES(started_at)),
-                      updated_at = CURRENT_TIMESTAMP
-                    """,
-                    tray_rows,
-                )
-                tray_placeholders = ", ".join(["%s"] * len(tray_nos))
-                cursor.execute(
-                    f"""
-                    UPDATE biz_tray_item ti
-                    JOIN biz_tray tr ON tr.tray_id = ti.tray_id
-                    JOIN biz_sample sm ON sm.sample_id = ti.sample_id
-                    LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                    SET ti.status = '实验进行中',
-                        ti.updated_at = CURRENT_TIMESTAMP
-                    WHERE tr.tray_no IN ({tray_placeholders})
-                      AND (task.task_no = %s OR task.task_no IS NULL)
-                    """,
-                    [*tray_nos, task_no],
-                )
-                cursor.execute(
-                    f"""
-                    UPDATE biz_tray
-                    SET test_state = '实验进行中',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE tray_no IN ({tray_placeholders})
-                    """,
-                    tray_nos,
-                )
-                if sample_nos:
-                    sample_placeholders = ", ".join(["%s"] * len(sample_nos))
-                    cursor.execute(
-                        f"""
-                        UPDATE biz_sample sm
-                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                        SET sm.sample_status = '实验进行中',
-                            sm.flow_status = '实验进行中',
-                            sm.updated_at = CURRENT_TIMESTAMP
-                        WHERE sm.sample_no IN ({sample_placeholders})
-                          AND (task.task_no = %s OR task.task_no IS NULL)
-                        """,
-                        [*sample_nos, task_no],
-                    )
-                    cursor.execute(
-                        f"""
-                        SELECT sm.sample_id, sm.sample_no, task.task_id
-                        FROM biz_sample sm
-                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                        WHERE sm.sample_no IN ({sample_placeholders})
-                        """,
-                        sample_nos,
-                    )
-                    sample_rows = cursor_rows_as_dicts(cursor)
-                    event_rows = [
-                        (
-                            row.get("sample_id"),
-                            row.get("sample_no"),
-                            row.get("task_id"),
-                            task_no,
-                            "开始实验",
-                            device_name,
-                            "实验进行中",
-                            f"{task_no} / {experiment_no} / 实验进行中 / 托盘：{'、'.join(tray_nos)}",
-                            started_at,
-                        )
-                        for row in sample_rows
-                        if row.get("sample_id")
-                    ]
-                    if event_rows:
-                        cursor.executemany(
-                            """
-                            INSERT INTO biz_sample_event (
-                              sample_id, sample_no, task_id, task_no, action_type,
-                              location_desc, owner_name, sample_status, detail, event_time, created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s, CURRENT_TIMESTAMP)
-                            """,
-                            event_rows,
-                        )
-                cursor.execute(
-                    """
-                    UPDATE biz_task
-                    SET task_status = '任务进行中',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE task_no = %s
-                    """,
-                    (task_no,),
-                )
-                cursor.execute(
-                    """
-                    UPDATE biz_schedule
-                    SET schedule_status = '实验进行中',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE task_no = %s AND experiment_no = %s AND (%s = '' OR schedule_no = %s)
-                    """,
-                    (task_no, experiment_no, schedule_no, schedule_no),
-                )
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment
-                    SET actual_start_time = %s,
-                        experiment_status = '实验进行中',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE task_no = %s AND experiment_no = %s
-                    """,
-                    (started_at, task_no, experiment_no),
-                )
-            connection.commit()
+        storage = get_storage_backend()
+        snapshot = storage_completion_snapshot(storage.read_all())
+        result = start_storage_laboratory_experiment(
+            snapshot,
+            task_code=task_no,
+            experiment_code=experiment_no,
+            run_no=run_no,
+            lab_name=device_name,
+            schedule_id=schedule_no,
+            tray_codes=tray_nos,
+            started_at=started_at,
+            planned_hours=planned_hours,
+            planned_end_at=planned_end_at,
+        )
+        storage.write_many(
+            {
+                "mes.tasks": result["tasks"],
+                "mes.samples": result["samples"],
+                "mes.schedules": result["schedules"],
+                "mes.experiments": result["experiments"],
+                "mes.experiment_runs": result["experimentRuns"],
+                "mes.experiment_run_trays": result["experimentRunTrays"],
+            }
+        )
         return {
             "run_no": run_no,
             "task_no": task_no,
@@ -680,237 +560,64 @@ class MySQLMqEventRepository:
         }
 
     def mark_run_started(self, run_no: str, occurred_at: str) -> None:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment_run
-                    SET run_status = '实验进行中',
-                        started_at = COALESCE(started_at, %s),
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE run_no = %s
-                    """,
-                    (occurred_at, run_no),
-                )
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment_run_tray
-                    SET run_tray_status = '实验进行中',
-                        started_at = COALESCE(started_at, %s),
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE run_no = %s
-                    """,
-                    (occurred_at, run_no),
-                )
-            connection.commit()
+        storage = get_storage_backend()
+        snapshot = storage_completion_snapshot(storage.read_all())
+        run = run_context_from_snapshot(snapshot, run_no)
+        task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+        experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+        tray_codes = [
+            normalize_text(item.get("tray_code") or item.get("tray_no"))
+            for item in snapshot.get("experiment_run_trays", [])
+            if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
+            and normalize_text(item.get("tray_code") or item.get("tray_no"))
+        ]
+        if not tray_codes:
+            tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
+        result = start_storage_laboratory_experiment(
+            snapshot,
+            task_code=task_no,
+            experiment_code=experiment_no,
+            run_no=run_no,
+            lab_name=normalize_text(run.get("device") or run.get("device_name")),
+            schedule_id=normalize_text(run.get("schedule_id") or run.get("schedule_no")),
+            tray_codes=tray_codes,
+            started_at=occurred_at,
+            planned_hours=run.get("planned_hours"),
+            planned_end_at=normalize_text(run.get("planned_end_at")),
+        )
+        storage.write_many(
+            {
+                "mes.tasks": result["tasks"],
+                "mes.samples": result["samples"],
+                "mes.schedules": result["schedules"],
+                "mes.experiments": result["experiments"],
+                "mes.experiment_runs": result["experimentRuns"],
+                "mes.experiment_run_trays": result["experimentRunTrays"],
+            }
+        )
 
     def mark_run_ended(self, run_no: str, occurred_at: str) -> None:
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT task_no, experiment_no
-                    FROM biz_experiment_run
-                    WHERE run_no = %s
-                    LIMIT 1
-                    """,
-                    (run_no,),
-                )
-                row = cursor.fetchone() or {}
-                cursor.execute(
-                    """
-                    SELECT tray_no
-                    FROM biz_experiment_run_tray
-                    WHERE run_no = %s
-                    ORDER BY tray_no ASC
-                    """,
-                    (run_no,),
-                )
-                tray_rows = cursor_rows_as_dicts(cursor)
-                tray_nos = [normalize_text(item.get("tray_no")) for item in tray_rows if normalize_text(item.get("tray_no"))]
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment_run
-                    SET run_status = '实验已完成',
-                        ended_at = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE run_no = %s
-                    """,
-                    (occurred_at, run_no),
-                )
-                cursor.execute(
-                    """
-                    UPDATE biz_experiment_run_tray
-                    SET run_tray_status = '实验已完成',
-                        ended_at = %s,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE run_no = %s
-                    """,
-                    (occurred_at, run_no),
-                )
-                task_no = normalize_text(row.get("task_no") if isinstance(row, dict) else row[0] if row else "")
-                experiment_no = normalize_text(row.get("experiment_no") if isinstance(row, dict) else row[1] if row else "")
-                next_experiment_status = ""
-                if task_no and experiment_no:
-                    cursor.execute(
-                        """
-                        SELECT tray_no
-                        FROM biz_experiment_tray
-                        WHERE task_no = %s AND experiment_no = %s
-                        ORDER BY tray_no ASC
-                        """,
-                        (task_no, experiment_no),
-                    )
-                    scoped_rows = cursor_rows_as_dicts(cursor)
-                    scoped_tray_nos = {
-                        normalize_text(item.get("tray_no"))
-                        for item in scoped_rows
-                        if normalize_text(item.get("tray_no"))
-                    }
-                    cursor.execute(
-                        """
-                        SELECT DISTINCT tray_no
-                        FROM biz_experiment_run_tray
-                        WHERE task_no = %s
-                          AND experiment_no = %s
-                          AND run_tray_status IN ('实验已完成', '实验完成', '实验已经完成', '放置实验后暂存间', '厂家收回', '已到达暂存间')
-                        ORDER BY tray_no ASC
-                        """,
-                        (task_no, experiment_no),
-                    )
-                    completed_rows = cursor_rows_as_dicts(cursor)
-                    completed_tray_nos = {
-                        normalize_text(item.get("tray_no"))
-                        for item in completed_rows
-                        if normalize_text(item.get("tray_no"))
-                    }
-                    if scoped_tray_nos:
-                        next_experiment_status = experiment_status_for_completed_trays(scoped_tray_nos, completed_tray_nos)
-                if next_experiment_status == COMPLETED_STATUS:
-                    cursor.execute(
-                        """
-                        UPDATE biz_experiment
-                        SET actual_end_time = %s,
-                            experiment_status = '实验已完成',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE task_no = %s AND experiment_no = %s
-                        """,
-                        (occurred_at, task_no, experiment_no),
-                    )
-                    cursor.execute(
-                        """
-                        UPDATE biz_schedule
-                        SET schedule_status = '实验已完成',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE task_no = %s AND experiment_no = %s
-                        """,
-                        (task_no, experiment_no),
-                    )
-                elif next_experiment_status == RUNNING_STATUS:
-                    cursor.execute(
-                        """
-                        UPDATE biz_experiment
-                        SET experiment_status = '实验进行中',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE task_no = %s AND experiment_no = %s
-                        """,
-                        (task_no, experiment_no),
-                    )
-                    cursor.execute(
-                        """
-                        UPDATE biz_schedule
-                        SET schedule_status = '实验进行中',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE task_no = %s AND experiment_no = %s
-                        """,
-                        (task_no, experiment_no),
-                    )
-                if task_no and tray_nos:
-                    tray_placeholders = ", ".join(["%s"] * len(tray_nos))
-                    cursor.execute(
-                        f"""
-                        UPDATE biz_tray_item ti
-                        JOIN biz_tray tr ON tr.tray_id = ti.tray_id
-                        JOIN biz_sample sm ON sm.sample_id = ti.sample_id
-                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                        SET ti.status = '实验已完成',
-                            ti.updated_at = CURRENT_TIMESTAMP
-                        WHERE tr.tray_no IN ({tray_placeholders})
-                          AND (task.task_no = %s OR task.task_no IS NULL)
-                        """,
-                        [*tray_nos, task_no],
-                    )
-                    cursor.execute(
-                        f"""
-                        UPDATE biz_tray
-                        SET test_state = '实验已完成',
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE tray_no IN ({tray_placeholders})
-                        """,
-                        tray_nos,
-                    )
-                    cursor.execute(
-                        f"""
-                        UPDATE biz_sample sm
-                        JOIN biz_tray_item ti ON ti.sample_id = sm.sample_id
-                        JOIN biz_tray tr ON tr.tray_id = ti.tray_id
-                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                        SET sm.sample_status = '实验已完成',
-                            sm.flow_status = '实验已完成',
-                            sm.updated_at = CURRENT_TIMESTAMP
-                        WHERE tr.tray_no IN ({tray_placeholders})
-                          AND (task.task_no = %s OR task.task_no IS NULL)
-                        """,
-                        [*tray_nos, task_no],
-                    )
-                    cursor.execute(
-                        f"""
-                        SELECT DISTINCT
-                          sm.sample_id,
-                          sm.sample_no,
-                          task.task_id,
-                          COALESCE(exp.experiment_name, exp.experiment_no, %s) AS experiment_name
-                        FROM biz_sample sm
-                        JOIN biz_tray_item ti ON ti.sample_id = sm.sample_id
-                        JOIN biz_tray tr ON tr.tray_id = ti.tray_id
-                        LEFT JOIN biz_task task ON task.task_id = sm.task_id
-                        LEFT JOIN biz_experiment exp
-                          ON exp.task_no = %s AND exp.experiment_no = %s
-                        WHERE tr.tray_no IN ({tray_placeholders})
-                          AND (task.task_no = %s OR task.task_no IS NULL)
-                        ORDER BY sm.sample_no ASC
-                        """,
-                        [experiment_no, task_no, experiment_no, *tray_nos, task_no],
-                    )
-                    sample_rows = cursor_rows_as_dicts(cursor)
-                    event_rows = [
-                        {
-                            "sample_id": row.get("sample_id"),
-                            "sample_no": normalize_text(row.get("sample_no")),
-                            "task_id": row.get("task_id"),
-                            "task_no": task_no,
-                            "action_type": COMPLETION_ACTION,
-                            "sample_status": COMPLETED_STATUS,
-                            "detail": completion_history_detail(task_no, normalize_text(row.get("experiment_name")) or experiment_no),
-                            "event_time": occurred_at,
-                        }
-                        for row in sample_rows
-                        if row.get("sample_id") and normalize_text(row.get("sample_no"))
-                    ]
-                    if event_rows:
-                        cursor.executemany(
-                            """
-                            INSERT INTO biz_sample_event (
-                              sample_id, sample_no, task_id, task_no, action_type,
-                              location_desc, owner_name, sample_status, detail, event_time, created_at
-                            ) VALUES (
-                              %(sample_id)s, %(sample_no)s, %(task_id)s, %(task_no)s, %(action_type)s,
-                              NULL, NULL, %(sample_status)s, %(detail)s, %(event_time)s, CURRENT_TIMESTAMP
-                            )
-                            """,
-                            event_rows,
-                        )
-            connection.commit()
+        storage = get_storage_backend()
+        snapshot = storage_completion_snapshot(storage.read_all())
+        run = run_context_from_snapshot(snapshot, run_no)
+        task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+        experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+        result = complete_storage_laboratory_experiment(
+            snapshot,
+            task_code=task_no,
+            experiment_code=experiment_no,
+            run_no=run_no,
+            completed_at=occurred_at,
+        )
+        storage.write_many(
+            {
+                "mes.samples": result["samples"],
+                "mes.experiments": result["experiments"],
+                "mes.schedules": result["schedules"],
+                "mes.experiment_runs": result["experimentRuns"],
+                "mes.experiment_run_trays": result["experimentRunTrays"],
+            }
+        )
 
 
 def process_laboratory_event(
@@ -1004,8 +711,6 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_STARTED":
         if not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
-        if experiment_no and not created_run_from_context:
-            repo.mark_experiment_started(task_no, experiment_no, occurred_at)
     elif message_type == "EXPERIMENT_ENDED":
         repo.mark_run_ended(run_no, occurred_at)
     elif message_type == "EXPERIMENT_RESULT":

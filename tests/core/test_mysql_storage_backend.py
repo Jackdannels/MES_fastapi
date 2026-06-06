@@ -857,6 +857,54 @@ def test_derive_experiment_status_map_reopens_stale_completed_batch_when_run_tra
     }
 
 
+def test_derive_experiment_status_map_keeps_completed_batch_when_remaining_run_tray_is_returned() -> None:
+    experiments = [
+        {
+            "experiment_no": "SYLU-2026-06-001-A",
+            "task_no": "SYLU-2026-06-001",
+            "experiment_name": "盐雾试验",
+            "experiment_status": "实验已完成",
+        }
+    ]
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "schedule_status": "实验已完成",
+        }
+    ]
+    experiment_trays = [
+        {"task_no": "SYLU-2026-06-001", "experiment_no": "SYLU-2026-06-001-A", "tray_no": "TP-001"},
+        {"task_no": "SYLU-2026-06-001", "experiment_no": "SYLU-2026-06-001-A", "tray_no": "TP-002"},
+    ]
+    experiment_run_trays = [
+        {
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "tray_no": "TP-001",
+            "run_tray_status": "实验已完成",
+        },
+        {
+            "task_no": "SYLU-2026-06-001",
+            "experiment_no": "SYLU-2026-06-001-A",
+            "tray_no": "TP-002",
+            "run_tray_status": "厂家收回",
+        },
+    ]
+
+    assert derive_experiment_status_map(
+        experiments,
+        schedules,
+        [],
+        [],
+        experiment_trays=experiment_trays,
+        experiment_run_trays=experiment_run_trays,
+    ) == {
+        "SYLU-2026-06-001-A": "实验已完成",
+    }
+
+
 def test_derive_task_status_map_keeps_task_running_once_any_experiment_started_or_completed() -> None:
     tasks = [{"task_no": "SYLU-2026-03-002"}]
     experiments = [

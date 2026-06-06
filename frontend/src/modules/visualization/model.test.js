@@ -78,6 +78,51 @@ describe("visualization model", () => {
     });
   });
 
+  test("removes manufacturer-returned trays from laboratory process panels for that experiment", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const experimentCode = `${taskCode}-A`;
+    const panels = buildLabProcessPanels({
+      labNames: ["温度冲击一室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "温度冲击试验", required_device: "温度冲击一室" },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: `${taskCode}-TP-002`,
+          run_tray_status: "厂家收回",
+          updated_at: "2026-06-06T12:13:02+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-002` },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: experimentCode, device: "温度冲击一室" },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: `${taskCode}-TP-002`, status: "厂家收回", quantity: 1 }],
+          history: [
+            { status: "放置实验后暂存间", time: "2026-06-06T12:12:23+08:00" },
+            { status: "厂家收回", time: "2026-06-06T12:13:02+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(panels[0]).toMatchObject({
+      name: "温度冲击一室",
+      trayCount: 0,
+    });
+    expect(panels[0].trays).toEqual([]);
+  });
+
   test("uses tray target lab instead of future experiment relations for lab process ownership", () => {
     const panels = buildLabProcessPanels({
       labNames: ["冲击一室", "振动一室"],
@@ -628,7 +673,7 @@ describe("visualization model", () => {
     ]);
   });
 
-  test("keeps lab preparation steps pending when a staging tray is returned by manufacturer", () => {
+  test("removes lab preparation steps when a staging tray is returned by manufacturer", () => {
     const panels = buildLabProcessPanels({
       labNames: ["振动一室"],
       experiments: [
@@ -663,21 +708,8 @@ describe("visualization model", () => {
       ],
     });
 
-    const steps = panels[0].trays[0].steps;
-    expect(panels[0].trays[0].status).toBe("厂家收回");
-    expect(steps.find((step) => step.label === "送至振动一室")).toEqual(
-      expect.objectContaining({ active: false, reached: false }),
-    );
-    expect(steps.find((step) => step.label === "实验准备就绪")).toEqual(
-      expect.objectContaining({ active: false, reached: false }),
-    );
-    expect(steps.find((step) => step.label === "振动试验进行中")).toEqual(
-      expect.objectContaining({ active: false, reached: false }),
-    );
-    expect(steps.find((step) => step.label === "振动试验已完成")).toEqual(
-      expect.objectContaining({ active: false, reached: false }),
-    );
-    expect(steps.find((step) => step.label === "厂家收回")).toEqual(expect.objectContaining({ active: true }));
+    expect(panels[0].trays).toEqual([]);
+    expect(panels[0].trayCount).toBe(0);
   });
 
   test("builds a three-day laboratory schedule view from real schedule data", () => {
@@ -793,6 +825,51 @@ describe("visualization model", () => {
     expect(view.rows.find((row) => row.device === "冲击二室")?.slots[0]).toEqual(expect.objectContaining({
       label: "停用",
       state: "disabled",
+    }));
+  });
+
+  test("marks lab process panel as maintenance when the matched device is unavailable", () => {
+    const panels = buildLabProcessPanels({
+      devices: [{ code: "冲击一室", status: "维护/校准" }],
+      labNames: ["冲击一室"],
+      samples: [
+        {
+          code: "SAMPLE-001",
+          task_code: "TASK-001",
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TRAY-001", status: "已到达实验室" }],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "EXP-001",
+          experiment_name: "冲击实验",
+          required_device: "冲击一室",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "EXP-001",
+          tray_code: "TRAY-001",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "EXP-001",
+          device: "冲击一室",
+        },
+      ],
+    });
+
+    expect(panels[0]).toEqual(expect.objectContaining({
+      alert: "设备维护中",
+      healthLabel: "维护",
+      healthState: "maintenance",
+      state: "维护/校准",
     }));
   });
 

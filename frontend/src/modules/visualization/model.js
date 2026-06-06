@@ -37,11 +37,28 @@ const resolveTaskCode = (entry) => normalizeText(entry?.task_code || entry?.task
 const resolveExperimentCode = (entry) => normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.code);
 const resolveTrayCode = (entry) => normalizeText(entry?.tray_code || entry?.trayCode || entry?.code);
 const resolveLabDevice = (entry) => normalizeText(entry?.device || entry?.required_device || entry?.requiredDevice || entry?.lab || entry?.labName);
+const resolveDeviceName = (device) => normalizeText(device?.code) || normalizeText(device?.name);
+const deviceMatchesLab = (device, labName) =>
+  normalizeText(device?.code) === labName || normalizeText(device?.name) === labName;
+const deviceStatusText = (device) => normalizeText(device?.status);
+const resolveLabHealth = (device) => {
+  const status = deviceStatusText(device);
+  if (!status) {
+    return { alert: "", healthLabel: "正常", healthState: "ok", status: "" };
+  }
+  if (status.includes("停用") || status.includes("禁用") || status.includes("不可用")) {
+    return { alert: "设备停用", healthLabel: "停用", healthState: "disabled", status };
+  }
+  if (status.includes("维护") || status.includes("维修") || status.includes("校准") || status.includes("保养")) {
+    return { alert: "设备维护中", healthLabel: "维护", healthState: "maintenance", status };
+  }
+  return { alert: "", healthLabel: "正常", healthState: "ok", status };
+};
 
 const getVisualizationLabNames = (devices = []) => {
   const names = [];
   asArray(devices).forEach((device) => {
-    const name = normalizeText(device?.code) || normalizeText(device?.name);
+    const name = resolveDeviceName(device);
     if (name && !names.includes(name)) {
       names.push(name);
     }
@@ -109,7 +126,13 @@ const resolveTrayTargetExperimentCode = (tray) => normalizeText(tray?.target_exp
 const resolveRelationLabName = (relation) =>
   resolveLabDevice(relation?.schedule) || resolveLabDevice(relation?.experiment);
 
-const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成"]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
+const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
+  ...COMPLETED_EXPERIMENT_STATUSES,
+  "放置实验后暂存间",
+  "已到达暂存间",
+  "厂家收回",
+]);
 const resolveRelationStatus = (relation) =>
   normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
 const resolveRelationExperimentName = (experiment) =>
@@ -136,10 +159,19 @@ const relationIsCompletedByRunTray = ({ experimentRunTrays, relation }) =>
     resolveTaskCode(entry) === resolveTaskCode(relation)
     && resolveExperimentCode(entry) === resolveExperimentCode(relation)
     && resolveTrayCode(entry) === resolveTrayCode(relation)
-    && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
+    && EXPERIMENT_TRAY_TERMINAL_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
   );
+const sampleTrayIsReturned = ({ sample, relation }) => {
+  const trayCode = resolveTrayCode(relation);
+  return normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status)) === "厂家收回"
+    || asArray(sample?.trays).some((tray) =>
+      resolveTrayCode(tray) === trayCode
+      && normalizeLifecycleStatus("", normalizeText(tray?.status)) === "厂家收回",
+    );
+};
 const relationIsCompletedForSample = ({ experimentRunTrays = [], sample, relation }) => {
   return relationIsCompletedByRunTray({ experimentRunTrays, relation })
+    || sampleTrayIsReturned({ sample, relation })
     || sampleHasCompletedExperiment(sample, relation);
 };
 
@@ -263,6 +295,7 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
 
 function buildLabProcessPanels(input = {}) {
   const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
+  const devices = asArray(input.devices);
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
   const experimentRuns = asArray(input.experimentRuns || input.experiment_runs);
@@ -286,12 +319,15 @@ function buildLabProcessPanels(input = {}) {
     const taskCodes = new Set(trays.map((tray) => tray.taskCode).filter(Boolean));
     const activeTray = trays.find((tray) => tray.steps.some((step) => step.active)) || trays[0] || null;
     const status = activeTray?.status || "暂无托盘";
+    const labHealth = resolveLabHealth(devices.find((device) => deviceMatchesLab(device, labName)));
 
     return {
-      alert: status.includes("复核") ? "需复核" : "",
+      alert: labHealth.alert || (status.includes("复核") ? "需复核" : ""),
+      healthLabel: labHealth.healthLabel,
+      healthState: labHealth.healthState,
       name: labName,
       sampleCount: sampleCodes.size,
-      state: status,
+      state: labHealth.status || status,
       task: activeTray?.taskCode || "-",
       taskCount: taskCodes.size,
       trayCount: trays.length,
