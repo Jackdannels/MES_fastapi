@@ -143,15 +143,57 @@ const resolveRelationExperimentName = (experiment) =>
     || experiment?.experiment_type
     || experiment?.experimentType,
   );
+const parseExperimentHistoryDetail = (detail) => {
+  const parts = normalizeText(detail).split("/").map(normalizeText);
+  if (parts.length < 3) {
+    return null;
+  }
+  return {
+    experimentName: parts[1],
+    status: parts.slice(2).join(" / "),
+    taskCode: parts[0],
+  };
+};
+const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const entryMatchesTrayCode = (entry, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  const structuredTrayCode = resolveTrayCode(entry);
+  if (structuredTrayCode) {
+    return structuredTrayCode === normalizedTrayCode;
+  }
+  const detail = normalizeText(entry?.detail);
+  if (!detail) {
+    return false;
+  }
+  const escaped = escapeRegExp(normalizedTrayCode);
+  return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
+};
+const historyEntryAppliesToTray = (entry, sample, trayCode) => {
+  const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
+  const matchedTrayCodes = sampleTrayCodes.filter((code) => entryMatchesTrayCode(entry, code));
+  if (matchedTrayCodes.length > 0) {
+    return matchedTrayCodes.includes(normalizeText(trayCode));
+  }
+  return sampleTrayCodes.length <= 1;
+};
 const sampleHasCompletedExperiment = (sample, relation) => {
   const taskCode = resolveTaskCode(relation);
   const experimentName = resolveRelationExperimentName(relation?.experiment);
+  const trayCode = resolveTrayCode(relation);
   if (!taskCode || !experimentName) {
     return false;
   }
   return asArray(sample?.history).some((entry) => {
-    const detail = normalizeText(entry?.detail);
-    return detail.includes(taskCode) && detail.includes(experimentName) && detail.includes("实验已完成");
+    if (!historyEntryAppliesToTray(entry, sample, trayCode)) {
+      return false;
+    }
+    const parsed = parseExperimentHistoryDetail(entry?.detail);
+    return parsed?.taskCode === taskCode
+      && parsed?.experimentName === experimentName
+      && normalizeLifecycleStatus("", parsed?.status) === "实验已完成";
   });
 };
 const relationIsCompletedByRunTray = ({ experimentRunTrays, relation }) =>
@@ -163,11 +205,21 @@ const relationIsCompletedByRunTray = ({ experimentRunTrays, relation }) =>
   );
 const sampleTrayIsReturned = ({ sample, relation }) => {
   const trayCode = resolveTrayCode(relation);
-  return normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status)) === "厂家收回"
-    || asArray(sample?.trays).some((tray) =>
-      resolveTrayCode(tray) === trayCode
-      && normalizeLifecycleStatus("", normalizeText(tray?.status)) === "厂家收回",
-    );
+  const trays = asArray(sample?.trays);
+  const targetTray = trays.find((tray) => resolveTrayCode(tray) === trayCode);
+  if (targetTray && normalizeLifecycleStatus("", normalizeText(targetTray?.status)) === "厂家收回") {
+    return true;
+  }
+  if (targetTray && normalizeText(targetTray?.status)) {
+    return false;
+  }
+  if (normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status)) !== "厂家收回") {
+    return false;
+  }
+  if (trays.length <= 1) {
+    return Boolean(targetTray);
+  }
+  return trays.every((tray) => normalizeLifecycleStatus("", normalizeText(tray?.status)) === "厂家收回");
 };
 const relationIsCompletedForSample = ({ experimentRunTrays = [], sample, relation }) => {
   return relationIsCompletedByRunTray({ experimentRunTrays, relation })
@@ -240,7 +292,11 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
       if (labRelations.length > 0 && incompleteLabRelations.length === 0) {
         return;
       }
-      const lifecycleStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || normalizeText(sample?.status));
+      const trayStatus = normalizeText(tray?.status);
+      const lifecycleStatus = trayStatus
+        ? normalizeLifecycleStatus("", trayStatus)
+        : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
+      const lifecycleLocation = trayStatus ? "" : sample?.location;
       const scheduledLabMatches = incompleteLabRelations.length > 0;
       if (!scheduledLabMatches) {
         return;
@@ -253,7 +309,7 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
         experimentRunTrays,
         experimentTrays,
         experiments,
-        location: sample?.location,
+        location: lifecycleLocation,
         samples,
         schedules,
         status: lifecycleStatus,

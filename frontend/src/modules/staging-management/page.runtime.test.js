@@ -9,6 +9,13 @@ let wrapper;
 let headerActions;
 let remoteSnapshot;
 
+const settlePage = async (target) => {
+  for (let index = 0; index < 8; index += 1) {
+    await Promise.resolve();
+    await target.vm.$nextTick();
+  }
+};
+
 const createSnapshot = () => ({
   [STORAGE_KEYS.tasks]: [
     { id: "task-101", code: "SYLU-2026-04-101", test_type: "温度冲击试验", sample_type: "结构件", source: "外部委托" },
@@ -159,10 +166,7 @@ const mountPage = async () => {
   wrapper = mount(StagingManagementPage, {
     attachTo: document.body,
   });
-  await Promise.resolve();
-  await Promise.resolve();
-  await wrapper.vm.$nextTick();
-  await Promise.resolve();
+  await settlePage(wrapper);
   return wrapper;
 };
 
@@ -261,11 +265,7 @@ describe("StagingManagementPage runtime", () => {
     };
 
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    await mounted.vm.$nextTick();
-    await mounted.vm.$nextTick();
+    await settlePage(mounted);
 
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("当前在库 2");
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-101-TP-001");

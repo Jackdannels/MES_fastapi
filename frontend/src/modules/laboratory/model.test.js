@@ -360,6 +360,125 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("buildLaboratoryWorkbenchView keeps scoped trays visible when only experiment global status is completed", () => {
+    const taskCode = "TASK-GLOBAL-LAB";
+    const experimentCode = "EXP-IMPACT";
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-001" },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验", status: "实验已完成" },
+      ],
+      labName: "冲击一室",
+      now: NOW,
+      samples: [
+        {
+          task_code: taskCode,
+          status: "已到达实验室",
+          trays: [{ tray_code: "TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "冲击一室",
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "全局状态污染任务", test_type: "冲击试验" }],
+    });
+
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      experimentCode,
+      taskCode,
+      trayCodes: ["TP-001"],
+    }));
+  });
+
+  test("buildLaboratoryWorkbenchView does not remove every tray from sample-level returned status", () => {
+    const taskCode = "TASK-MULTI-RETURN";
+    const experimentCode = "EXP-MOLD";
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-001" },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-002" },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验" },
+      ],
+      labName: "霉菌试验室",
+      now: NOW,
+      samples: [
+        {
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [
+            { tray_code: "TP-001", status: "厂家收回", quantity: 1 },
+            { tray_code: "TP-002", status: "已到达实验室", quantity: 1 },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "霉菌试验室",
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "多托盘样品回收污染", test_type: "霉菌试验" }],
+    });
+
+    expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toEqual(["TP-002"]);
+  });
+
+  test("buildLaboratoryWorkbenchView does not apply unscoped completion history to every tray", () => {
+    const taskCode = "TASK-HISTORY-COMPLETE";
+    const experimentCode = "EXP-MOLD";
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-001" },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-002" },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验" },
+      ],
+      labName: "霉菌试验室",
+      now: NOW,
+      samples: [
+        {
+          task_code: taskCode,
+          location: "霉菌试验室",
+          status: "实验准备就绪",
+          trays: [
+            { tray_code: "TP-001", status: "实验已完成", quantity: 1 },
+            { tray_code: "TP-002", status: "实验准备就绪", quantity: 1 },
+          ],
+          history: [
+            { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成", time: "2026-06-06T12:13:02+08:00" },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "霉菌试验室",
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "完成历史污染", test_type: "霉菌试验" }],
+    });
+
+    expect(view.currentExperimentTrayRows.map((row) => [row.trayCode, row.trayStatus])).toContainEqual(["TP-002", "实验准备就绪"]);
+  });
+
   test("buildLaboratorySummary counts today's salt-spray schedules and overdue undone tasks", () => {
     const summary = buildLaboratorySummary([
       { endAt: "2026-04-02T08:30:00.000Z", startAt: "2026-04-02T07:00:00.000Z", taskCode: "A" },
@@ -3897,6 +4016,49 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("revertLaboratoryTaskToPreviousStableState restores to staging arrival before current lab dispatch", () => {
+    const updatedSamples = revertLaboratoryTaskToPreviousStableState({
+      currentTask: {
+        device: "振动一室",
+        experimentCode: "TASK-701-B",
+        experimentName: "振动试验",
+        taskCode: "TASK-701",
+        trayCodes: ["TP-701"],
+      },
+      now: "2026-04-02T12:00:00.000Z",
+      samples: [
+        {
+          code: "TASK-701-SP-001",
+          flow_status: "已到达实验室",
+          history: [
+            { action: "任务比对", detail: "TASK-701 / 振动试验 / 已到达实验室", location: "振动一室", status: "已到达实验室", time: "2026-04-02T11:35:00.000Z" },
+            { action: "暂存间扫码出库", detail: "TP-701 -> 振动一室", location: "振动一室", status: "送至实验室", time: "2026-04-02T11:20:00.000Z" },
+            { action: "暂存间扫码入库", detail: "TP-701 已到达暂存间", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-04-02T11:10:00.000Z" },
+            { action: "实验完成", detail: "TASK-701 / 冲击试验 / 实验已完成", location: "冲击一室", status: "实验已完成", time: "2026-04-02T10:30:00.000Z" },
+          ],
+          location: "振动一室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "TASK-701",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-701" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [expect.objectContaining({ status: "已到达暂存间", tray_code: "TP-701" })],
+    }));
+    expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "TASK-701 / 振动试验 / 撤回至已到达暂存间",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+    }));
+  });
+
   test("buildLaboratoryWorkbenchView shows the current experiment flow after a shared tray moves from impact to temperature shock", () => {
     const view = buildLaboratoryWorkbenchView({
       experimentTrays: [
@@ -4245,6 +4407,190 @@ describe("laboratory model", () => {
       message: "托盘未送达当前试验间",
       ok: false,
       trayCode,
+    }));
+  });
+
+  test("keeps mold comparison available for a dispatched tray when another tray runs salt spray", () => {
+    const taskCode = "SYLU-2026-06-022";
+    const moldTrayCode = `${taskCode}-TP-001`;
+    const saltTrayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          run_no: "run-salt-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          device: "盐雾试验室",
+          status: "实验进行中",
+          started_at: "2026-06-06 13:44:20",
+          tray_codes: [saltTrayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-four-001",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: moldTrayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          started_at: "2026-06-06 13:42:55",
+          ended_at: "2026-06-06 13:43:11",
+        },
+        {
+          run_no: "run-four-001",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: saltTrayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          started_at: "2026-06-06 13:42:55",
+          ended_at: "2026-06-06 13:43:11",
+        },
+        {
+          run_no: "run-salt-002",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          tray_code: saltTrayCode,
+          run_tray_status: "实验进行中",
+          status: "实验进行中",
+          started_at: "2026-06-06 13:44:20",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: moldTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: saltTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: moldTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: saltTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: moldTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: saltTrayCode },
+      ],
+      experiments: [
+        {
+          experiment_code: `${taskCode}-A`,
+          experiment_name: "四综合试验",
+          status: "实验已完成",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-B`,
+          experiment_name: "盐雾试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-C`,
+          experiment_name: "霉菌试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+      ],
+      labName: "霉菌试验室",
+      now: new Date("2026-06-06T13:45:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "送至实验室",
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${moldTrayCode} 送至 霉菌试验室`,
+              location: "霉菌试验室",
+              status: "送至实验室",
+              time: "2026-06-06 13:44:28",
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 四综合试验 / 实验已完成`,
+              location: "四综合实验室",
+              status: "实验已完成",
+              time: "2026-06-06 13:43:11",
+            },
+          ],
+          location: "霉菌试验室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: `${taskCode}-C`,
+              target_lab: "霉菌试验室",
+              tray_code: moldTrayCode,
+            },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          flow_status: "实验进行中",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "实验进行中",
+              target_lab: "四综合实验室",
+              tray_code: saltTrayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "霉菌试验室",
+          experiment_code: `${taskCode}-C`,
+          start_at: "2026-06-06 13:40:00",
+          task_code: taskCode,
+        },
+        {
+          device: "盐雾试验室",
+          experiment_code: `${taskCode}-B`,
+          start_at: "2026-06-06 13:40:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: moldTrayCode,
+      tasks: [{ code: taskCode, name: "演示任务001", test_type: "四综合试验 / 盐雾试验 / 霉菌试验" }],
+    });
+
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask.experimentCode).toBe(`${taskCode}-C`);
+    expect(view.currentTask.trayRows.find((row) => row.trayCode === moldTrayCode)).toEqual(
+      expect.objectContaining({
+        targetExperimentCode: `${taskCode}-C`,
+        targetLab: "霉菌试验室",
+        trayStatus: "送至实验室",
+      }),
+    );
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: true,
+      canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(buildLaboratoryProgressMessage(workflow, view.currentTask, "霉菌试验室")).toBe(
+      `当前任务 ${taskCode} 待开始任务比对`,
+    );
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: moldTrayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      trayCode: moldTrayCode,
+    }));
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: saltTrayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘正在其他实验中",
+      ok: false,
+      trayCode: saltTrayCode,
     }));
   });
 

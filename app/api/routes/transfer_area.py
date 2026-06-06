@@ -25,6 +25,18 @@ TRAY_STATUS_STORED = "到货"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
 SYSTEM_TRAY_TOTAL = 10
+WITHDRAW_BLOCKED_TRAY_STATUSES = {
+    "已到达实验室",
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+    "实验已完成",
+    "实验完成",
+    "实验已经完成",
+    "放置实验后暂存间",
+    "厂家收回",
+}
 TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.tasks",
     "mes.samples",
@@ -1226,24 +1238,12 @@ def restore_status_for_withdrawal(
 
 
 def tray_has_laboratory_progress(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
-    blocked_statuses = {
-        "已到达实验室",
-        "工装夹具安装",
-        "实验准备就绪",
-        "实验进行中",
-        "实验中",
-        "实验已完成",
-        "实验完成",
-        "实验已经完成",
-        "放置实验后暂存间",
-        "厂家收回",
-    }
     normalized_tray_code = normalize_text(tray_code)
     for sample in task_samples:
-        if normalize_text(sample.get("status")) in blocked_statuses or normalize_text(sample.get("flow_status")) in blocked_statuses:
-            return True
         for entry in as_list(sample.get("trays")):
-            if normalize_text(entry.get("tray_code")) == normalized_tray_code and normalize_text(entry.get("status")) in blocked_statuses:
+            if normalize_text(entry.get("tray_code")) != normalized_tray_code:
+                continue
+            if normalize_text(entry.get("status")) in WITHDRAW_BLOCKED_TRAY_STATUSES:
                 return True
     return False
 
@@ -1287,9 +1287,15 @@ def apply_tray_withdrawal(
         if not tray_matches:
             continue
         affected_count += 1
-        sample["location"] = target_location
-        sample["status"] = target_status
-        sample["flow_status"] = target_status
+        remaining_blocked_tray = any(
+            normalize_text(entry.get("tray_code")) != normalized_tray_code
+            and normalize_text(entry.get("status")) in WITHDRAW_BLOCKED_TRAY_STATUSES
+            for entry in next_trays
+        )
+        if not remaining_blocked_tray:
+            sample["location"] = target_location
+            sample["status"] = target_status
+            sample["flow_status"] = target_status
         sample["updated_at"] = timestamp
         sample["trays"] = next_trays
         detail = f"{normalized_tray_code} 撤回出库至{target_status}"

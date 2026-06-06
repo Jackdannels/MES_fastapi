@@ -22,7 +22,7 @@ afterEach(() => {
 describe("useStorageSnapshotRefresh", () => {
   test("refreshes when a matching snapshot key is updated", () => {
     const refresh = vi.fn();
-    useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh });
+    useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh, debounceMs: 0 });
 
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.samples"] } }));
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.devices"] } }));
@@ -30,15 +30,60 @@ describe("useStorageSnapshotRefresh", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  test("subscribes to remote storage events and storage markers", () => {
+  test("subscribes to remote storage events and storage markers", async () => {
     const refresh = vi.fn();
-    useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh });
+    useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh, debounceMs: 0 });
 
     storageSubscribers[0]({ keys: ["mes.tasks"] });
     window.dispatchEvent(new StorageEvent("storage", {
       key: SNAPSHOT_UPDATED_STORAGE_KEY,
       newValue: JSON.stringify({ keys: ["mes.tasks"] }),
     }));
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  test("coalesces rapid update events by default", () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh });
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.tasks"] } }));
+    storageSubscribers[0]({ keys: ["mes.tasks"] });
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: SNAPSHOT_UPDATED_STORAGE_KEY,
+      newValue: JSON.stringify({ keys: ["mes.tasks"] }),
+    }));
+
+    expect(refresh).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(100);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not run concurrent refreshes and replays one pending refresh", async () => {
+    let finishFirstRefresh;
+    const refresh = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        finishFirstRefresh = resolve;
+      }))
+      .mockResolvedValue(undefined);
+    useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh, debounceMs: 0 });
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.tasks"] } }));
+    storageSubscribers[0]({ keys: ["mes.tasks"] });
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.tasks"] } }));
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    finishFirstRefresh();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(refresh).toHaveBeenCalledTimes(2);
   });

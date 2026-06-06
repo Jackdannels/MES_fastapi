@@ -129,6 +129,7 @@ def complete_storage_laboratory_experiment(
     experiment_runs = [dict(item) for item in snapshot.get("experiment_runs", [])]
     experiment_run_trays = [dict(item) for item in snapshot.get("experiment_run_trays", [])]
     experiment_trays = [dict(item) for item in snapshot.get("experiment_trays", [])]
+    experiment_samples = [dict(item) for item in snapshot.get("experiment_samples", [])]
     samples = [
         {
             **sample,
@@ -154,6 +155,19 @@ def complete_storage_laboratory_experiment(
         if normalize_text(item.get("task_code")) == normalized_task_code
         and normalize_text(item.get("experiment_code")) == normalized_experiment_code
         and normalize_text(item.get("tray_code"))
+    }
+    experiment_codes_by_tray: dict[str, set[str]] = {}
+    for item in experiment_trays:
+        if normalize_text(item.get("task_code") or item.get("task_no")) != normalized_task_code:
+            continue
+        tray_code = normalize_text(item.get("tray_code") or item.get("tray_no"))
+        experiment_no = normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+        if tray_code and experiment_no:
+            experiment_codes_by_tray.setdefault(tray_code, set()).add(experiment_no)
+    ambiguous_tray_codes = {
+        tray_code
+        for tray_code, experiment_codes in experiment_codes_by_tray.items()
+        if len(experiment_codes) > 1
     }
     requested_tray_codes = {normalize_text(code) for code in (tray_codes or []) if normalize_text(code)}
     def run_matches_request(run: dict[str, Any]) -> bool:
@@ -191,13 +205,47 @@ def complete_storage_laboratory_experiment(
         affected_tray_codes = set(scoped_tray_codes)
     else:
         raise ValueError("trayCodes are required for multi-tray experiment completion")
+    if scoped_tray_codes:
+        affected_tray_codes = {tray_code for tray_code in affected_tray_codes if tray_code in scoped_tray_codes}
     if not affected_tray_codes:
-        raise ValueError("current experiment has no tray assignment")
+        raise ValueError("current experiment has no matching tray samples")
+
+    scoped_sample_codes = {
+        normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
+        for item in experiment_samples
+        if normalize_text(item.get("task_code") or item.get("task_no")) == normalized_task_code
+        and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == normalized_experiment_code
+        and normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
+    }
+
+    def sample_matches_current_experiment(sample: dict[str, Any]) -> bool:
+        if normalize_text(sample.get("task_code") or sample.get("task_no")) != normalized_task_code:
+            return False
+        if not scoped_sample_codes:
+            for tray in sample.get("trays", []):
+                tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
+                if tray_code not in affected_tray_codes:
+                    continue
+                target_experiment_code = normalize_text(
+                    tray.get("target_experiment_code")
+                    or tray.get("targetExperimentCode")
+                    or tray.get("experiment_code")
+                    or tray.get("experimentCode")
+                    or tray.get("experiment_no")
+                    or tray.get("experimentNo")
+                )
+                if target_experiment_code:
+                    return target_experiment_code == normalized_experiment_code
+                if tray_code in ambiguous_tray_codes:
+                    return False
+            return True
+        sample_code = normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sample_no") or sample.get("id"))
+        return sample_code in scoped_sample_codes
 
     detail = completion_history_detail(normalized_task_code, experiment_name)
     affected_sample_count = 0
     for sample in samples:
-        if normalize_text(sample.get("task_code")) != normalized_task_code:
+        if not sample_matches_current_experiment(sample):
             continue
         touched = False
         next_trays = []
@@ -217,8 +265,9 @@ def complete_storage_laboratory_experiment(
             next_trays.append(next_tray)
         if not touched:
             continue
-        sample["status"] = COMPLETED_STATUS
-        sample["flow_status"] = COMPLETED_STATUS
+        if next_trays and all(normalize_text(tray.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES for tray in next_trays):
+            sample["status"] = COMPLETED_STATUS
+            sample["flow_status"] = COMPLETED_STATUS
         sample["updated_at"] = completed_time
         sample["trays"] = next_trays
         history_entry = {

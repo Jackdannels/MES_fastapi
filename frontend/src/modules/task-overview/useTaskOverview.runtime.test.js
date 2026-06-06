@@ -254,6 +254,7 @@ describe("useTaskOverview runtime", () => {
     await settle(wrapper);
 
     window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.experiments"] } }));
+    vi.advanceTimersByTime(100);
     await settle(wrapper);
 
     expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);

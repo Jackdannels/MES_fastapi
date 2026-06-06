@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const visualizationStylesPath = resolve(process.cwd(), "src/modules/visualization/styles.css");
+const visualizationPagePath = resolve(process.cwd(), "src/modules/visualization/page.vue");
 
 describe("visualization styles", () => {
   test("lab-process single preview fits viewport height and avoids a duplicate outer frame", () => {
@@ -59,9 +60,10 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-line\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(4,\s*minmax\(60px,\s*1fr\)\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)\s*{[^}]*grid-column:\s*4;[^}]*grid-row:\s*2;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(8\)\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(2\)::before,[^{]+\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(12\)::before\s*{[^}]*left:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(6\)::before,[^{]+\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(8\)::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(13\)::before\s*{[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).not.toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(\d+\)::before/);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-forward::before\s*{[^}]*left:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-backward::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-turn::before\s*{[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*min-height:\s*60px;[^}]*padding:\s*4px 8px;[^}]*border:\s*0;[^}]*background:\s*transparent;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switchboard\s*{[^}]*grid-auto-rows:\s*minmax\(0,\s*1fr\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-group\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*min-height:\s*0;/s);
@@ -72,7 +74,7 @@ describe("visualization styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\s*{[^}]*height:\s*100%;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(5\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(9\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(13\)::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-turn::before\s*{[^}]*top:\s*calc\(-100% - 10px \+ 18px\);[^}]*height:\s*calc\(100% \+ 10px\);/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step strong\s*{[^}]*font-size:\s*15px;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step small\s*{[^}]*font-size:\s*13px;/s);
   });
@@ -84,7 +86,33 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(14\)\s*{[^}]*grid-column:\s*3;[^}]*grid-row:\s*4;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(15\)\s*{[^}]*grid-column:\s*2;[^}]*grid-row:\s*4;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(16\)\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*4;/s);
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(14\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(15\)::before,\s*\.visual-board\.is-layout-a \.visual-flow-step:nth-child\(16\)::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-backward::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*height:\s*2px;/s);
+  });
+
+  test("layout A uses connector direction classes so wrapped row starts do not draw stray horizontal lines", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-none::before\s*{[^}]*display:\s*none;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-forward::before\s*{[^}]*left:\s*calc\(-50% - 6px\);[^}]*width:\s*calc\(100% \+ 12px\);[^}]*height:\s*2px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-backward::before\s*{[^}]*right:\s*calc\(-50% - 6px\);[^}]*left:\s*auto;[^}]*width:\s*calc\(100% \+ 12px\);[^}]*height:\s*2px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-turn::before\s*{[^}]*left:\s*50%;[^}]*width:\s*2px;[^}]*height:\s*calc\(100% \+ 10px\);/s);
+    expect(pageSource).toContain("flowStepConnectorClass(stepIndex, flowLayoutColumns)");
+    expect(pageSource).toContain("return \"is-connector-turn\"");
+  });
+
+  test("compact lab process also uses connector direction classes instead of default wrapped horizontal lines", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-line\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(4,\s*minmax\(28px,\s*auto\)\);/s);
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-step\.is-connector-none::before\s*{[^}]*display:\s*none;/s);
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-step\.is-connector-forward::before\s*{[^}]*left:\s*calc\(-50% - 2px\);[^}]*height:\s*1px;/s);
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-step\.is-connector-backward::before\s*{[^}]*right:\s*calc\(-50% - 2px\);[^}]*height:\s*1px;/s);
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-step\.is-connector-turn::before\s*{[^}]*left:\s*50%;[^}]*width:\s*1px;[^}]*height:\s*calc\(100% \+ 4px\);/s);
+    expect(pageSource).toContain("FLOW_LAYOUT_COLUMNS");
+    expect(pageSource).toContain("props.compact ? FLOW_LAYOUT_COLUMNS.compact : FLOW_LAYOUT_COLUMNS.layoutA");
+    expect(pageSource).toContain("flowStepConnectorClass(stepIndex, flowLayoutColumns)");
   });
 
   test("layout A makes task and tray switch text easier to read", () => {

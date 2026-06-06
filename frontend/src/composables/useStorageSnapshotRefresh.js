@@ -6,6 +6,8 @@ import {
   subscribeStorageSnapshotUpdates,
 } from "@/lib/storageApi";
 
+const DEFAULT_REFRESH_DEBOUNCE_MS = 100;
+
 function normalizeKeys(value) {
   return Array.isArray(value) ? value.filter((key) => typeof key === "string" && key) : [];
 }
@@ -36,10 +38,14 @@ function useStorageSnapshotRefresh(options = {}) {
   const watchedKeys = new Set(normalizeKeys(options.keys));
   const refresh = typeof options.refresh === "function" ? options.refresh : () => {};
   const paused = options.paused;
-  const debounceMs = Math.max(0, Number(options.debounceMs || 0));
+  const debounceMs = options.debounceMs === undefined
+    ? DEFAULT_REFRESH_DEBOUNCE_MS
+    : Math.max(0, Number(options.debounceMs || 0));
   const hasPendingRefresh = ref(false);
   let stopped = false;
   let debounceTimer = null;
+  let refreshInFlight = false;
+  let refreshQueued = false;
 
   const clearDebounceTimer = () => {
     if (debounceTimer !== null) {
@@ -48,19 +54,48 @@ function useStorageSnapshotRefresh(options = {}) {
     }
   };
 
-  const runRefresh = () => {
+  const executeRefresh = () => {
     if (stopped) {
       return;
     }
-    if (debounceMs > 0) {
+    if (refreshInFlight) {
+      refreshQueued = true;
+      return;
+    }
+    refreshInFlight = true;
+    const settleRefresh = () => {
+      refreshInFlight = false;
+      if (!refreshQueued || stopped) {
+        refreshQueued = false;
+        return;
+      }
+      refreshQueued = false;
+      if (resolvePaused(paused)) {
+        hasPendingRefresh.value = true;
+        return;
+      }
+      executeRefresh();
+    };
+    try {
+      Promise.resolve(refresh()).then(settleRefresh, settleRefresh);
+    } catch {
+      settleRefresh();
+    }
+  };
+
+  const runRefresh = ({ immediate = false } = {}) => {
+    if (stopped) {
+      return;
+    }
+    if (!immediate && debounceMs > 0) {
       clearDebounceTimer();
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null;
-        refresh();
+        executeRefresh();
       }, debounceMs);
       return;
     }
-    refresh();
+    executeRefresh();
   };
 
   const requestRefresh = (payload = {}) => {
@@ -95,7 +130,7 @@ function useStorageSnapshotRefresh(options = {}) {
       return false;
     }
     hasPendingRefresh.value = false;
-    runRefresh();
+    runRefresh({ immediate: true });
     return true;
   };
 

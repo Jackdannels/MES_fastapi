@@ -694,6 +694,182 @@ def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_s
     assert normalized["mes.samples"][0]["trays"][0]["updated_at"] == "2026-04-28 11:32:34"
 
 
+def test_normalize_storage_payload_does_not_use_legacy_sample_tray_return_for_multi_experiment_task() -> None:
+    task_code = "SYLU-2026-06-099"
+    payload = {
+        "mes.tasks": [
+            {
+                "code": task_code,
+                "name": "多实验旧样品状态",
+                "status": "任务进行中",
+                "transfer_status": "已入库",
+                "experiment_codes": [f"{task_code}-A", f"{task_code}-B"],
+                "experiment_count": 2,
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "温度冲击二室",
+                "trays": [
+                    {
+                        "tray_code": f"{task_code}-TP-001",
+                        "status": "实验进行中",
+                    }
+                ],
+            }
+        ],
+        "mes.experiments": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "盐雾试验",
+                "status": "实验进行中",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-B",
+                "experiment_name": "振动试验",
+                "status": "待排程",
+            },
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": f"{task_code}-TP-001",
+                "task_code": task_code,
+                "action": "manufacturer_return",
+                "time": "2026-06-06 15:20:00",
+                "target_lab": "厂家收回",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["status"] == "任务进行中"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "到货"
+    assert normalized["mes.samples"][0]["status"] == "实验进行中"
+    assert normalized["mes.samples"][0]["flow_status"] == "实验进行中"
+    assert normalized["mes.samples"][0]["location"] == "温度冲击二室"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "实验进行中"
+
+
+def test_normalize_storage_payload_allows_legacy_sample_tray_return_for_single_experiment_single_tray() -> None:
+    task_code = "SYLU-2026-06-100"
+    tray_code = f"{task_code}-TP-001"
+    payload = {
+        "mes.tasks": [
+            {
+                "code": task_code,
+                "status": "待排程",
+                "transfer_status": "已入库",
+                "experiment_codes": [f"{task_code}-A"],
+                "experiment_count": 1,
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "已到达暂存间",
+                "flow_status": "已到达暂存间",
+                "trays": [{"tray_code": tray_code, "status": "已到达暂存间"}],
+            }
+        ],
+        "mes.experiments": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "盐雾试验",
+                "status": "待排程",
+            }
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": tray_code,
+                "task_code": task_code,
+                "action": "manufacturer_return",
+                "time": "2026-06-06 15:30:00",
+                "target_lab": "厂家收回",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["status"] == "厂家收回"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "厂家收回"
+
+
+def test_normalize_storage_payload_does_not_return_unmapped_legacy_sample_when_structured_relation_exists() -> None:
+    task_code = "SYLU-2026-06-101"
+    returned_tray_code = f"{task_code}-TP-001"
+    unmapped_tray_code = f"{task_code}-TP-002"
+    payload = {
+        "mes.tasks": [
+            {
+                "code": task_code,
+                "status": "任务进行中",
+                "transfer_status": "已入库",
+                "experiment_codes": [f"{task_code}-A"],
+                "experiment_count": 1,
+            }
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "已到达暂存间",
+                "flow_status": "已到达暂存间",
+                "trays": [{"tray_code": returned_tray_code, "status": "已到达暂存间"}],
+            },
+            {
+                "code": f"{task_code}-SP-002",
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "温度冲击二室",
+                "trays": [{"tray_code": unmapped_tray_code, "status": "实验进行中"}],
+            },
+        ],
+        "mes.experiment_trays": [
+            {
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "tray_code": returned_tray_code,
+            }
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": returned_tray_code,
+                "task_code": task_code,
+                "action": "manufacturer_return",
+                "time": "2026-06-06 15:40:00",
+                "target_lab": "厂家收回",
+            }
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+    samples = {sample["code"]: sample for sample in normalized["mes.samples"]}
+
+    assert samples[f"{task_code}-SP-001"]["status"] == "厂家收回"
+    assert samples[f"{task_code}-SP-001"]["trays"][0]["status"] == "厂家收回"
+    assert samples[f"{task_code}-SP-002"]["status"] == "实验进行中"
+    assert samples[f"{task_code}-SP-002"]["flow_status"] == "实验进行中"
+    assert samples[f"{task_code}-SP-002"]["location"] == "温度冲击二室"
+    assert samples[f"{task_code}-SP-002"]["trays"][0]["status"] == "实验进行中"
+
+
 def test_normalize_storage_payload_keeps_other_task_trays_active_when_one_tray_returned() -> None:
     payload = {
         "mes.tasks": [

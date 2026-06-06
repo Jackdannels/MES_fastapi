@@ -535,6 +535,67 @@ def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monke
     assert all(sample["history"][0]["action"] == "撤回出库" for sample in updated_samples)
 
 
+def test_transfer_area_withdraw_dispatch_ignores_other_tray_laboratory_progress_in_same_sample(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-03-102"
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": "sample-102-multi",
+                "code": "SYLU-2026-03-102-SP-001",
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "振动一室",
+                "trays": [
+                    {
+                        "tray_id": 1001,
+                        "tray_code": "SYLU-2026-03-102-TP-001",
+                        "quantity": 1,
+                        "status": "送至实验室",
+                    },
+                    {
+                        "tray_id": 1002,
+                        "tray_code": "SYLU-2026-03-102-TP-002",
+                        "quantity": 1,
+                        "status": "实验进行中",
+                    },
+                ],
+                "history": [
+                    {
+                        "action": "送至实验室",
+                        "detail": "SYLU-2026-03-102-TP-001 -> 振动一室",
+                        "location": "振动一室",
+                        "status": "送至实验室",
+                        "time": "2026-05-19T10:00:00",
+                    },
+                    {
+                        "action": "开始实验",
+                        "detail": "SYLU-2026-03-102-TP-002 / 通电试验 / 实验进行中",
+                        "location": "振动一室",
+                        "status": "实验进行中",
+                        "time": "2026-05-19T10:10:00",
+                    },
+                ],
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "点错试验间"},
+    )
+
+    assert response.status_code == 200
+    sample = storage.read("mes.samples")[0]
+    by_tray = {tray["tray_code"]: tray for tray in sample["trays"]}
+    assert by_tray["SYLU-2026-03-102-TP-001"]["status"] == "到货"
+    assert by_tray["SYLU-2026-03-102-TP-002"]["status"] == "实验进行中"
+    assert sample["status"] == "实验进行中"
+    assert sample["flow_status"] == "实验进行中"
+
+
 def test_transfer_area_withdraw_staging_dispatch_restores_tray_to_staging_arrival(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])
@@ -783,6 +844,74 @@ def test_transfer_area_workspace_backfills_experiments_from_legacy_test_type_whe
         "SYLU-2026-03-101-B",
     ]
     assert [item["experimentName"] for item in payload["experiments"]] == ["盐雾试验", "振动试验"]
+
+
+def test_transfer_area_workspace_scopes_legacy_sample_and_tray_experiment_fallbacks_by_task(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.tasks",
+        [
+            {
+                "id": "task-a",
+                "code": "TASK-A",
+                "name": "任务 A",
+                "test_type": "盐雾试验",
+                "sample_count": 1,
+                "status": "已排程",
+                "transfer_status": "已入库",
+            },
+            {
+                "id": "task-b",
+                "code": "TASK-B",
+                "name": "任务 B",
+                "test_type": "盐雾试验",
+                "sample_count": 1,
+                "status": "已排程",
+                "transfer_status": "已入库",
+            },
+        ],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": "sample-a-1",
+                "code": "SP-001",
+                "task_code": "TASK-A",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "location": "接驳区",
+                "trays": [{"tray_id": 1001, "tray_code": "TP-001", "quantity": 1, "status": "已入库"}],
+            },
+            {
+                "id": "sample-b-1",
+                "code": "SP-001",
+                "task_code": "TASK-B",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "location": "接驳区",
+                "trays": [{"tray_id": 1001, "tray_code": "TP-001", "quantity": 1, "status": "已入库"}],
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiments",
+        [
+            {"id": "exp-a", "task_code": "TASK-A", "experiment_code": "TASK-A-EXP", "experiment_name": "盐雾试验", "status": "已排程"},
+            {"id": "exp-b", "task_code": "TASK-B", "experiment_code": "TASK-B-EXP", "experiment_name": "盐雾试验", "status": "已排程"},
+        ],
+    )
+    storage.write("mes.experiment_samples", [{"task_code": "TASK-B", "experiment_code": "TASK-B-EXP", "sample_code": "SP-001"}])
+    storage.write("mes.experiment_trays", [{"task_code": "TASK-B", "experiment_code": "TASK-B-EXP", "tray_code": "TP-001"}])
+
+    response = client.get("/api/transfer-area/tasks/task-a/workspace")
+
+    assert response.status_code == 200
+    tray = response.json()["assignedTrays"][0]
+    assert tray["experimentCodes"] == []
+    assert tray["experimentLabels"] == []
+    assert tray["samples"][0]["sampleNo"] == "SP-001"
+    assert tray["samples"][0]["experimentCodes"] == []
 
 
 def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypatch):

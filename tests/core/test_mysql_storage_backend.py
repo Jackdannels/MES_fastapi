@@ -33,6 +33,7 @@ from app.core.mysql_storage_backend import (
     format_iso_storage_datetime,
     parse_storage_datetime,
     parse_experiment_event_detail,
+    resolve_experiment_sample_codes,
 )
 from app.core.demo_data_reset import reset_demo_data
 
@@ -695,6 +696,45 @@ def test_backfill_missing_unscheduled_since_skips_formal_schedule_and_started_ex
     assert repaired == {}
 
 
+def test_resolve_experiment_sample_codes_does_not_guess_all_samples_without_structured_scope() -> None:
+    experiment = {
+        "task_code": "TASK-SHARED",
+        "experiment_code": "EXP-IMPACT",
+        "experiment_name": "冲击试验",
+    }
+    samples = [
+        {
+            "code": "SP-001",
+            "task_code": "TASK-SHARED",
+            "trays": [{"tray_code": "TP-001"}],
+        },
+        {
+            "code": "SP-002",
+            "task_code": "TASK-SHARED",
+            "trays": [{"tray_code": "TP-002"}],
+        },
+    ]
+
+    assert resolve_experiment_sample_codes(experiment, [], [], samples) == []
+
+
+def test_resolve_experiment_sample_codes_keeps_unique_legacy_single_tray_fallback() -> None:
+    experiment = {
+        "task_code": "TASK-LEGACY",
+        "experiment_code": "EXP-LEGACY",
+        "experiment_name": "冲击试验",
+    }
+    samples = [
+        {
+            "code": "SP-001",
+            "task_code": "TASK-LEGACY",
+            "trays": [{"tray_code": "TP-001"}],
+        }
+    ]
+
+    assert resolve_experiment_sample_codes(experiment, [], [], samples) == ["SP-001"]
+
+
 def test_experiment_mapping_normalizes_legacy_running_status() -> None:
     storage_experiment = {
         "id": "experiment-2",
@@ -786,6 +826,56 @@ def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> No
         "SYLU-2026-03-002-A": "实验已完成",
         "SYLU-2026-03-002-B": "实验进行中",
         "SYLU-2026-03-002-C": "已排程",
+    }
+
+
+def test_derive_experiment_status_map_scopes_legacy_sample_history_by_task() -> None:
+    experiments = [
+        {"experiment_no": "TASK-A-EXP", "task_no": "TASK-A", "experiment_name": "盐雾试验"},
+        {"experiment_no": "TASK-B-EXP", "task_no": "TASK-B", "experiment_name": "盐雾试验"},
+    ]
+    schedules = [
+        {"schedule_id": 1, "task_no": "TASK-A", "experiment_no": "TASK-A-EXP", "schedule_status": "已排程"},
+        {"schedule_id": 2, "task_no": "TASK-B", "experiment_no": "TASK-B-EXP", "schedule_status": "已排程"},
+    ]
+    experiment_samples = [
+        {"experiment_no": "TASK-A-EXP", "task_no": "TASK-A", "sample_no": "SP-001"},
+        {"experiment_no": "TASK-B-EXP", "task_no": "TASK-B", "sample_no": "SP-001"},
+    ]
+    sample_events = [
+        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
+    ]
+
+    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
+        "TASK-A-EXP": "实验已完成",
+        "TASK-B-EXP": "已排程",
+    }
+
+
+def test_derive_experiment_status_map_uses_unique_legacy_history_when_experiment_task_is_missing() -> None:
+    experiments = [{"experiment_no": "LEGACY-EXP", "experiment_name": "盐雾试验"}]
+    schedules = [{"schedule_id": 1, "experiment_no": "LEGACY-EXP", "schedule_status": "已排程"}]
+    experiment_samples = [{"experiment_no": "LEGACY-EXP", "sample_no": "SP-001"}]
+    sample_events = [
+        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
+    ]
+
+    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
+        "LEGACY-EXP": "实验已完成",
+    }
+
+
+def test_derive_experiment_status_map_skips_ambiguous_legacy_history_when_experiment_task_is_missing() -> None:
+    experiments = [{"experiment_no": "LEGACY-EXP", "experiment_name": "盐雾试验"}]
+    schedules = [{"schedule_id": 1, "experiment_no": "LEGACY-EXP", "schedule_status": "已排程"}]
+    experiment_samples = [{"experiment_no": "LEGACY-EXP", "sample_no": "SP-001"}]
+    sample_events = [
+        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
+        {"sample_no": "SP-001", "task_no": "TASK-B", "detail": "TASK-B / 盐雾试验 / 实验已完成"},
+    ]
+
+    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
+        "LEGACY-EXP": "已排程",
     }
 
 

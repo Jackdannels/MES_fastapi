@@ -52,6 +52,35 @@ describe("storageApi", () => {
     expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
   });
 
+  test("coalesces concurrent snapshot reads for the same key set into one remote request", async () => {
+    let resolveResponse;
+    const fetchMock = vi.fn().mockReturnValue(new Promise((resolve) => {
+      resolveResponse = resolve;
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const firstRead = readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.samples]);
+    const secondRead = readStorageSnapshot([STORAGE_KEYS.samples, STORAGE_KEYS.tasks]);
+
+    resolveResponse({
+      ok: true,
+      json: async () => ({
+        [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+        [STORAGE_KEYS.samples]: [{ code: "S-1" }],
+      }),
+    });
+
+    await expect(firstRead).resolves.toEqual({
+      [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+      [STORAGE_KEYS.samples]: [{ code: "S-1" }],
+    });
+    await expect(secondRead).resolves.toEqual({
+      [STORAGE_KEYS.samples]: [{ code: "S-1" }],
+      [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test("rejects when remote storage is unavailable instead of falling back to local storage", async () => {
     window.localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify([{ code: "LOCAL-1" }]));
     window.localStorage.setItem(STORAGE_KEYS.schedules, JSON.stringify([{ task_code: "LOCAL-1" }]));

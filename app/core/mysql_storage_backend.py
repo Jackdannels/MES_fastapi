@@ -584,19 +584,23 @@ def derive_experiment_status_map(
         if status in EXPERIMENT_COMPLETED_STATUSES or raw_status in RUN_TRAY_COMPLETED_STATUSES:
             completed_run_tray_codes_by_experiment.setdefault(experiment_no, set()).add(tray_no)
 
-    event_statuses_by_sample_and_experiment: dict[tuple[str, str], set[str]] = {}
+    event_statuses_by_task_sample_and_experiment: dict[tuple[str, str, str], set[str]] = {}
+    event_tasks_by_sample_and_experiment: dict[tuple[str, str], set[str]] = {}
     for row in sample_events:
         sample_no = normalize_text(row.get("sample_no"))
         task_no = normalize_text(row.get("task_no"))
         parsed = parse_experiment_event_detail(row.get("detail"), task_no)
         if not sample_no or not parsed:
             continue
-        key = (sample_no, parsed["experiment_name"])
-        event_statuses_by_sample_and_experiment.setdefault(key, set()).add(parsed["status"])
+        scoped_key = (task_no, sample_no, parsed["experiment_name"])
+        fallback_key = (sample_no, parsed["experiment_name"])
+        event_statuses_by_task_sample_and_experiment.setdefault(scoped_key, set()).add(parsed["status"])
+        event_tasks_by_sample_and_experiment.setdefault(fallback_key, set()).add(task_no)
 
     status_map: dict[str, str] = {}
     for experiment in experiments:
         experiment_no = normalize_text(experiment.get("experiment_no"))
+        experiment_task_no = normalize_text(experiment.get("task_no"))
         experiment_name = normalize_text(experiment.get("experiment_name"))
         related_sample_codes = sample_codes_by_experiment.get(experiment_no, set())
         related_tray_codes = tray_codes_by_experiment.get(experiment_no, set())
@@ -605,7 +609,16 @@ def derive_experiment_status_map(
         started_or_completed_count = 0
         completed_count = 0
         for sample_no in related_sample_codes:
-            statuses = event_statuses_by_sample_and_experiment.get((sample_no, experiment_name), set())
+            statuses = event_statuses_by_task_sample_and_experiment.get((experiment_task_no, sample_no, experiment_name), set())
+            if not statuses and not experiment_task_no:
+                fallback_key = (sample_no, experiment_name)
+                fallback_task_nos = event_tasks_by_sample_and_experiment.get(fallback_key, set())
+                if len(fallback_task_nos) == 1:
+                    fallback_task_no = next(iter(fallback_task_nos))
+                    statuses = event_statuses_by_task_sample_and_experiment.get(
+                        (fallback_task_no, sample_no, experiment_name),
+                        set(),
+                    )
             if statuses & (EXPERIMENT_RUNNING_STATUSES | EXPERIMENT_COMPLETED_STATUSES):
                 started_or_completed_count += 1
             if statuses & EXPERIMENT_COMPLETED_STATUSES:
@@ -687,27 +700,39 @@ def resolve_experiment_sample_codes(
     experiment_samples: list[Dict[str, Any]],
     samples: list[Dict[str, Any]],
 ) -> list[str]:
-    task_code = normalize_text(experiment.get("task_code"))
-    experiment_code = normalize_text(experiment.get("experiment_code"))
+    task_code = normalize_text(experiment.get("task_code") or experiment.get("task_no"))
+    experiment_code = normalize_text(experiment.get("experiment_code") or experiment.get("experiment_no"))
+
+    def relation_task_code(entry: Dict[str, Any]) -> str:
+        return normalize_text(entry.get("task_code") or entry.get("task_no"))
+
+    def relation_experiment_code(entry: Dict[str, Any]) -> str:
+        return normalize_text(entry.get("experiment_code") or entry.get("experiment_no"))
+
+    def relation_sample_code(entry: Dict[str, Any]) -> str:
+        return normalize_text(entry.get("sample_code") or entry.get("sample_no"))
+
+    def relation_tray_code(entry: Dict[str, Any]) -> str:
+        return normalize_text(entry.get("tray_code") or entry.get("tray_no"))
 
     direct_sample_codes = sorted(
         {
-            normalize_text(entry.get("sample_code"))
+            relation_sample_code(entry)
             for entry in (experiment_samples or [])
-            if normalize_text(entry.get("task_code")) == task_code
-            and normalize_text(entry.get("experiment_code")) == experiment_code
-            and normalize_text(entry.get("sample_code"))
+            if (not relation_task_code(entry) or relation_task_code(entry) == task_code)
+            and relation_experiment_code(entry) == experiment_code
+            and relation_sample_code(entry)
         }
     )
     if direct_sample_codes:
         return direct_sample_codes
 
     tray_codes = {
-        normalize_text(entry.get("tray_code"))
+        relation_tray_code(entry)
         for entry in (experiment_trays or [])
-        if normalize_text(entry.get("task_code")) == task_code
-        and normalize_text(entry.get("experiment_code")) == experiment_code
-        and normalize_text(entry.get("tray_code"))
+        if (not relation_task_code(entry) or relation_task_code(entry) == task_code)
+        and relation_experiment_code(entry) == experiment_code
+        and relation_tray_code(entry)
     }
     if tray_codes:
         tray_sample_codes = sorted(
@@ -722,13 +747,24 @@ def resolve_experiment_sample_codes(
         if tray_sample_codes:
             return tray_sample_codes
 
-    return sorted(
-        {
-            normalize_text(sample.get("code"))
-            for sample in (samples or [])
-            if normalize_text(sample.get("task_code")) == task_code and normalize_text(sample.get("code"))
-        }
-    )
+    task_samples = [
+        sample
+        for sample in (samples or [])
+        if normalize_text(sample.get("task_code") or sample.get("task_no")) == task_code
+        and normalize_text(sample.get("code") or sample.get("sample_no"))
+    ]
+    if len(task_samples) != 1:
+        return []
+
+    legacy_tray_codes = {
+        normalize_text(tray.get("tray_code") or tray.get("tray_no"))
+        for tray in (task_samples[0].get("trays") or [])
+        if normalize_text(tray.get("tray_code") or tray.get("tray_no"))
+    }
+    if len(legacy_tray_codes) > 1:
+        return []
+
+    return [normalize_text(task_samples[0].get("code") or task_samples[0].get("sample_no"))]
 
 
 def resolve_sample_storage_time(sample: Dict[str, Any]) -> datetime | None:

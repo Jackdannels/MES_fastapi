@@ -83,8 +83,11 @@ const waitForInitialLaboratoryLoad = async (storageCount, masterLabCount) => {
   expect(storageGetCalls()).toHaveLength(storageCount);
   expect(masterLabsGetCalls()).toHaveLength(masterLabCount);
 };
-const waitForStorageGetCount = async (count) => {
+const waitForStorageGetCount = async (count, { advanceStorageDebounce = false } = {}) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (advanceStorageDebounce) {
+      vi.advanceTimersByTime(100);
+    }
     await flushPageUpdates();
     if (storageGetCalls().length >= count) {
       return;
@@ -472,8 +475,10 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     wrapper?.unmount();
+    vi.clearAllTimers();
+    await flushPageUpdates();
     wrapper = undefined;
     pageHeader?.remove();
     pageHeader = undefined;
@@ -1912,7 +1917,7 @@ describe("LaboratoryPage runtime", () => {
     );
     const expectedStorageGetCalls = storageGetCalls().length + 1;
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    await waitForStorageGetCount(expectedStorageGetCalls);
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
     await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
@@ -2021,7 +2026,7 @@ describe("LaboratoryPage runtime", () => {
       },
     }));
 
-    await waitForStorageGetCount(expectedStorageGetCalls);
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
     await flushPageUpdates();
 
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
@@ -2378,7 +2383,7 @@ describe("LaboratoryPage runtime", () => {
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
       detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs] },
     }));
-    await waitForStorageGetCount(2);
+    await waitForStorageGetCount(2, { advanceStorageDebounce: true });
     await flushPageUpdates();
 
     const modalText = document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "";
@@ -2629,7 +2634,8 @@ describe("LaboratoryPage runtime", () => {
     eventSources[0].listeners.message({
       data: JSON.stringify({ keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs], updatedAt: "2026-04-02T10:00:00.000Z" }),
     });
-    await waitForStorageGetCount(expectedStorageGetCalls);
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
+    await flushPageUpdates();
 
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-501");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("TP-CJ-001");
@@ -2715,7 +2721,7 @@ describe("LaboratoryPage runtime", () => {
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
       detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs], updatedAt: "2026-04-02T10:00:00.000Z" },
     }));
-    await waitForStorageGetCount(expectedStorageGetCalls);
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
     await flushPageUpdates();
 
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-501");

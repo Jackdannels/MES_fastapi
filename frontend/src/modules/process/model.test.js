@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildProcessLabCards, buildTaskOverviewPath } from "./model";
+import { buildProcessLabCards, buildTaskOverviewPath, scheduleExperimentIsCompleted } from "./model";
 
 const labs = [
   { name: "Impact Lab 1", testType: "Impact Test" },
@@ -377,6 +377,87 @@ describe("processLabModel", () => {
         taskCode: "-",
       })
     );
+  });
+
+  test("scheduleExperimentIsCompleted does not complete a tray from a substring tray-code history match", () => {
+    const taskCode = "TASK-TRAY-SUBSTRING";
+
+    expect(scheduleExperimentIsCompleted({
+      experiments: [
+        { task_code: taskCode, experiment_code: "EXP-A", experiment_name: "冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: "EXP-A", tray_code: "TP-001" },
+        { task_code: taskCode, experiment_code: "EXP-A", tray_code: "TP-0010" },
+      ],
+      samples: [
+        {
+          task_code: taskCode,
+          trays: [
+            { tray_code: "TP-001", status: "实验进行中" },
+            { tray_code: "TP-0010", status: "实验进行中" },
+          ],
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成 / TP-0010`, time: "2026-06-06 14:00:00" },
+          ],
+        },
+      ],
+      schedule: { task_code: taskCode, experiment_code: "EXP-A" },
+      taskStatusMap: new Map(),
+    })).toBe(false);
+  });
+
+  test("scheduleExperimentIsCompleted keeps staging arrival from completing the scoped experiment", () => {
+    expect(scheduleExperimentIsCompleted({
+      experiments: [
+        { task_code: "TASK-STAGING", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验" },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "TASK-STAGING",
+          experiment_code: "EXP-IMPACT",
+          tray_code: "TP-001",
+          run_tray_status: "已到达暂存间",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-STAGING", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-STAGING",
+          trays: [{ tray_code: "TP-001", status: "已到达暂存间" }],
+        },
+      ],
+      schedule: { task_code: "TASK-STAGING", experiment_code: "EXP-IMPACT" },
+      taskStatusMap: new Map(),
+    })).toBe(false);
+  });
+
+  test("scheduleExperimentIsCompleted ignores unscoped completion history for multi-tray samples", () => {
+    expect(scheduleExperimentIsCompleted({
+      experiments: [
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", tray_code: "TP-001" },
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", tray_code: "TP-002" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-HISTORY",
+          trays: [
+            { tray_code: "TP-001", status: "实验已完成" },
+            { tray_code: "TP-002", status: "已到达实验室" },
+          ],
+          history: [
+            { detail: "TASK-HISTORY / 霉菌试验 / 实验已完成", status: "实验已完成" },
+          ],
+        },
+      ],
+      schedule: { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD" },
+      taskStatusMap: new Map(),
+    })).toBe(false);
   });
 
   test("buildProcessLabCards hides returned shared-tray experiments when every scoped tray is completed or returned", () => {

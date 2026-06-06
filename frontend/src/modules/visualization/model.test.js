@@ -123,6 +123,111 @@ describe("visualization model", () => {
     expect(panels[0].trays).toEqual([]);
   });
 
+  test("does not hide active lab tray because another tray on the same sample was returned", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const returnedTrayCode = `${taskCode}-TP-001`;
+    const activeTrayCode = `${taskCode}-TP-002`;
+    const experimentCode = `${taskCode}-B`;
+    const panels = buildLabProcessPanels({
+      labNames: ["霉菌试验室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验", required_device: "霉菌试验室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: activeTrayCode },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: experimentCode, device: "霉菌试验室" },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [
+            { tray_code: returnedTrayCode, status: "厂家收回", quantity: 1 },
+            { tray_code: activeTrayCode, status: "实验准备就绪", target_lab: "霉菌试验室", target_experiment_code: experimentCode, quantity: 1 },
+          ],
+          history: [
+            { status: "厂家收回", time: "2026-06-06T12:13:02+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(panels[0].trays).toHaveLength(1);
+    expect(panels[0].trays[0]).toMatchObject({
+      trayCode: activeTrayCode,
+      status: "实验准备就绪",
+    });
+  });
+
+  test("keeps active lab tray visible when stale sample status says returned", () => {
+    const panels = buildLabProcessPanels({
+      labNames: ["盐雾试验室"],
+      experiments: [
+        { task_code: "TASK-001", experiment_code: "EXP-A", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-001", experiment_code: "EXP-A", tray_code: "TP-001" },
+      ],
+      schedules: [
+        { task_code: "TASK-001", experiment_code: "EXP-A", device: "盐雾试验室" },
+      ],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "TASK-001",
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-001", status: "实验准备就绪", target_lab: "盐雾试验室", target_experiment_code: "EXP-A", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(panels[0].trays).toHaveLength(1);
+    expect(panels[0].trays[0]).toMatchObject({
+      trayCode: "TP-001",
+      status: "实验准备就绪",
+    });
+  });
+
+  test("does not hide active lab tray because unscoped history completed the same experiment", () => {
+    const taskCode = "TASK-HISTORY";
+    const experimentCode = "EXP-MOLD";
+    const panels = buildLabProcessPanels({
+      labNames: ["霉菌试验室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验", required_device: "霉菌试验室" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-001" },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-002" },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: experimentCode, device: "霉菌试验室" },
+      ],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: taskCode,
+          location: "霉菌试验室",
+          status: "实验准备就绪",
+          trays: [
+            { tray_code: "TP-001", status: "实验已完成", quantity: 1 },
+            { tray_code: "TP-002", status: "实验准备就绪", target_lab: "霉菌试验室", target_experiment_code: experimentCode, quantity: 1 },
+          ],
+          history: [
+            { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成", time: "2026-06-06T12:13:02+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(panels[0].trays.map((tray) => tray.trayCode)).toContain("TP-002");
+  });
+
   test("uses tray target lab instead of future experiment relations for lab process ownership", () => {
     const panels = buildLabProcessPanels({
       labNames: ["冲击一室", "振动一室"],
@@ -401,6 +506,101 @@ describe("visualization model", () => {
       expect.objectContaining({ active: false, reached: false }),
     );
     expect(vibrationSteps.map((step) => step.label)).not.toContain("送至振动一室");
+  });
+
+  test("does not treat temperature shock completion as impact completion", () => {
+    const taskCode = "SYLU-2026-06-023";
+    const trayCode = `${taskCode}-TP-002`;
+    const panels = buildLabProcessPanels({
+      labNames: ["冲击一室", "温度冲击一室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "温度冲击试验", required_device: "温度冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击一室", status: "已排程" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "温度冲击一室", status: "实验已完成" },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06 14:11:30",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-007`,
+          task_code: taskCode,
+          location: "温度冲击一室",
+          status: "实验已完成",
+          trays: [{ tray_code: trayCode, status: "实验已完成", quantity: 1 }],
+          history: [
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 温度冲击试验 / 实验已完成`,
+              location: "温度冲击一室",
+              status: "实验已完成",
+              time: "2026-06-06 14:11:30",
+            },
+          ],
+        },
+      ],
+    });
+
+    const impactTray = panels.find((panel) => panel.name === "冲击一室")?.trays.find((tray) => tray.trayCode === trayCode);
+    const temperatureTray = panels.find((panel) => panel.name === "温度冲击一室")?.trays.find((tray) => tray.trayCode === trayCode);
+
+    expect(impactTray).toEqual(expect.objectContaining({
+      trayCode,
+    }));
+    expect(impactTray?.steps.map((step) => step.label)).toContain("冲击试验未完成");
+    expect(temperatureTray).toBeUndefined();
+  });
+
+  test("does not treat partial completed status text as completed experiment history", () => {
+    const taskCode = "SYLU-2026-06-024";
+    const trayCode = `${taskCode}-TP-001`;
+    const panels = buildLabProcessPanels({
+      labNames: ["冲击一室"],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击一室", status: "已排程" },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          status: "实验已完成待确认",
+          trays: [{ tray_code: trayCode, status: "实验已完成待确认", quantity: 1 }],
+          history: [
+            {
+              action: "实验完成待确认",
+              detail: `${taskCode} / 冲击试验 / 实验已完成待确认`,
+              status: "实验已完成待确认",
+              time: "2026-06-06 14:20:30",
+            },
+          ],
+        },
+      ],
+    });
+
+    const impactTray = panels.find((panel) => panel.name === "冲击一室")?.trays.find((tray) => tray.trayCode === trayCode);
+
+    expect(impactTray).toEqual(expect.objectContaining({
+      trayCode,
+    }));
   });
 
   test("uses the next unfinished experiment lab after a tray completes the previous experiment", () => {

@@ -2749,6 +2749,65 @@ describe("samplesFlowModel", () => {
     expect(view.steps.some((step) => step.label === "冲击试验进行中")).toBe(false);
   });
 
+  test("buildTrayFlowView does not mark a tray returned from a substring tray-code history match", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      status: "实验进行中",
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          status: "实验进行中",
+          trays: [{ tray_code: trayCode, status: "实验进行中", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 13:17:08", status: "厂家收回", detail: `${taskCode}-TP-0010 厂家收回` },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验进行中`);
+  });
+
+  test("buildTrayFlowView does not use a substring tray-code history match as dispatch target", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      status: "已到达暂存间",
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          status: "已到达暂存间",
+          trays: [{ tray_code: trayCode, status: "已到达暂存间", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 13:17:08", detail: `${taskCode}-TP-0010 送至温度冲击一室` },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击一室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击一室" },
+      ],
+    });
+
+    expect(view.steps.map((step) => step.label)).toContain("送至冲击一室");
+    expect(view.steps.map((step) => step.label)).not.toContain("送至温度冲击一室");
+  });
+
   test("buildTrayFlowView keeps single-experiment lab and completion steps unreached when a returned tray never completed that experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",
@@ -3353,6 +3412,73 @@ describe("samplesFlowModel", () => {
         sampleCodes: ["SYLU-2026-03-001-SP-001"],
       }),
     ]);
+  });
+
+  test("buildTrayFlowView does not apply sample-level returned status to another tray in a multi-tray sample", () => {
+    const view = buildTrayFlowView({
+      trayCode: "TP-002",
+      taskCode: "TASK-MULTI-RETURN",
+      status: "已到达实验室",
+      experiments: [
+        { task_code: "TASK-MULTI-RETURN", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-MULTI-RETURN", experiment_code: "EXP-MOLD", tray_code: "TP-001" },
+        { task_code: "TASK-MULTI-RETURN", experiment_code: "EXP-MOLD", tray_code: "TP-002" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-MULTI-RETURN",
+          status: "厂家收回",
+          location: "厂家收回",
+          trays: [
+            { tray_code: "TP-001", status: "厂家收回", quantity: 1 },
+            { tray_code: "TP-002", status: "已到达实验室", quantity: 1 },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-002 | 当前状态：已到达实验室");
+    expect(view.steps.find((step) => step.label === "厂家收回")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+  });
+
+  test("buildTrayFlowView ignores unscoped completion history for another tray in a multi-tray sample", () => {
+    const view = buildTrayFlowView({
+      currentExperimentCode: "EXP-MOLD",
+      trayCode: "TP-002",
+      taskCode: "TASK-HISTORY",
+      status: "送至实验室",
+      experiments: [
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验" },
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-IMPACT", tray_code: "TP-002" },
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", tray_code: "TP-001" },
+        { task_code: "TASK-HISTORY", experiment_code: "EXP-MOLD", tray_code: "TP-002" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-HISTORY",
+          trays: [
+            { tray_code: "TP-001", status: "实验已完成", quantity: 1 },
+            { tray_code: "TP-002", status: "送至实验室", quantity: 1, target_experiment_code: "EXP-MOLD" },
+          ],
+          history: [
+            { detail: "TASK-HISTORY / 冲击试验 / 实验已完成", status: "实验已完成" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.some((step) => step.label === "冲击试验已完成")).toBe(false);
+    expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
   });
 
   test("updateTrayStatus synchronizes tray status to all samples assigned to the tray", () => {

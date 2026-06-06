@@ -17,6 +17,15 @@ STAGING_LOCATION = "恒温恒湿间（暂存间）"
 HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+BLOCK_WITHDRAW_TRAY_STATUSES = {
+    "实验进行中",
+    "实验中",
+    "实验已完成",
+    "实验完成",
+    "实验已经完成",
+    "放置实验后暂存间",
+    "厂家收回",
+}
 LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
 LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
     "mes.samples",
@@ -124,6 +133,16 @@ def experiment_tray_codes(snapshot: dict[str, list[dict[str, Any]]], task_code: 
     return sorted(set(tray_codes))
 
 
+def experiment_sample_codes(snapshot: dict[str, list[dict[str, Any]]], task_code: str, experiment_code: str) -> set[str]:
+    return {
+        normalize_text(entry.get("sample_code"))
+        for entry in snapshot.get("experiment_samples", [])
+        if normalize_text(entry.get("task_code")) == task_code
+        and normalize_text(entry.get("experiment_code")) == experiment_code
+        and normalize_text(entry.get("sample_code"))
+    }
+
+
 def parse_experiment_history_detail(detail: Any, task_code: str) -> dict[str, str] | None:
     parts = [normalize_text(part) for part in normalize_text(detail).split("/") if normalize_text(part)]
     if len(parts) < 3 or parts[0] != task_code:
@@ -179,7 +198,7 @@ def latest_previous_completed_experiment(
     task_code: str,
     current_experiment_name: str,
     related_samples: list[dict[str, Any]] | None = None,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     candidates: list[dict[str, Any]] = []
     seen_sources: set[int] = set()
     for source_sample in [sample, *as_list(related_samples)]:
@@ -209,6 +228,7 @@ def latest_previous_completed_experiment(
         "location": latest["location"],
         "experimentName": latest["experimentName"],
         "scope": "experiment",
+        "time": latest["time"],
     }
 
 
@@ -229,7 +249,11 @@ def related_samples_for_tray(
     ]
 
 
-def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
+def latest_staging_origin_snapshot(
+    sample: dict[str, Any],
+    snapshot: dict[str, list[dict[str, Any]]],
+    tray_code: str,
+) -> dict[str, Any] | None:
     normalized_tray_code = normalize_text(tray_code)
     withdrawal_times = [
         parse_datetime_value(event.get("time")) or datetime.min
@@ -267,9 +291,49 @@ def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[d
             dispatch_entries.append({"action": action, "stagingOrigin": staging_origin, "time": entry_time})
 
     if not dispatch_entries:
-        return False
+        return None
     dispatch_entries.sort(key=lambda entry: entry["time"])
-    return bool(dispatch_entries[-1].get("stagingOrigin"))
+    latest_dispatch = dispatch_entries[-1]
+    if not latest_dispatch.get("stagingOrigin"):
+        return None
+
+    dispatch_time = latest_dispatch["time"]
+    stable_entries: list[dict[str, Any]] = []
+    for event in snapshot["staging_events"]:
+        if normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        if normalize_text(event.get("action")) != "stock_in":
+            continue
+        event_time = parse_datetime_value(event.get("time")) or datetime.min
+        if latest_withdrawal_time < event_time <= dispatch_time:
+            stable_entries.append({"time": event_time})
+
+    for entry in as_list(sample.get("history")):
+        action = normalize_text(entry.get("action"))
+        status = normalize_text(entry.get("status"))
+        location = normalize_text(entry.get("location"))
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        marks_staging_arrival = (
+            status == "已到达暂存间"
+            or action in {"暂存间扫码入库", "送至暂存间", "撤回出库", "实验任务撤回", "任务切换撤回"}
+            and (status in {"已到达暂存间", "送至暂存间"} or location == STAGING_LOCATION)
+        )
+        if marks_staging_arrival and latest_withdrawal_time < entry_time <= dispatch_time:
+            stable_entries.append({"time": entry_time})
+
+    stable_entries.sort(key=lambda entry: entry["time"])
+    stable_time = stable_entries[-1]["time"] if stable_entries else dispatch_time
+    return {
+        "status": "已到达暂存间",
+        "location": STAGING_LOCATION,
+        "scope": "staging",
+        "experimentName": "",
+        "time": stable_time,
+    }
+
+
+def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
+    return latest_staging_origin_snapshot(sample, snapshot, tray_code) is not None
 
 
 def resolve_restore_snapshot(
@@ -285,10 +349,13 @@ def resolve_restore_snapshot(
         current_experiment_name,
         related_samples_for_tray(snapshot, task_code, tray_code),
     )
+    staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
+    if staging and (not completed or staging["time"] > completed["time"]):
+        return staging
     if completed:
         return completed
-    if sample_has_staging_origin(sample, snapshot, tray_code):
-        return {"status": "已到达暂存间", "location": STAGING_LOCATION, "scope": "staging", "experimentName": ""}
+    if staging:
+        return staging
     return {"status": "到货", "location": HANDOVER_LOCATION, "scope": "handover", "experimentName": ""}
 
 
@@ -313,10 +380,13 @@ def matching_samples(
     snapshot: dict[str, list[dict[str, Any]]],
     task_code: str,
     tray_codes: set[str],
+    sample_codes: set[str] | None = None,
 ) -> list[tuple[dict[str, Any], list[str]]]:
     result: list[tuple[dict[str, Any], list[str]]] = []
     for sample in snapshot["samples"]:
         if normalize_text(sample.get("task_code")) != task_code:
+            continue
+        if sample_codes is not None and normalize_text(sample.get("code")) not in sample_codes:
             continue
         matched_codes = [
             normalize_text(tray.get("tray_code"))
@@ -341,7 +411,9 @@ def withdrawable_sample_matches(
                 continue
             sample_status = normalize_text(sample.get("status"))
             tray_status = normalize_text(tray.get("status"))
-            current_status = sample_status if sample_status in ALLOW_WITHDRAW_STATUSES else tray_status
+            if tray_status in BLOCK_WITHDRAW_TRAY_STATUSES:
+                continue
+            current_status = tray_status if tray_status in ALLOW_WITHDRAW_STATUSES else sample_status
             if current_status in ALLOW_WITHDRAW_STATUSES:
                 withdrawable_codes.append(tray_code)
         if withdrawable_codes:
@@ -391,7 +463,13 @@ def withdraw_current_experiment(
     find_task(snapshot, normalized_task_code)
     current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
     tray_codes = set(experiment_tray_codes(snapshot, normalized_task_code, normalized_experiment_code))
-    sample_matches = matching_samples(snapshot, normalized_task_code, tray_codes)
+    scoped_sample_codes = experiment_sample_codes(snapshot, normalized_task_code, normalized_experiment_code)
+    sample_matches = matching_samples(
+        snapshot,
+        normalized_task_code,
+        tray_codes,
+        scoped_sample_codes if scoped_sample_codes else None,
+    )
     if not sample_matches:
         raise HTTPException(status_code=404, detail="当前实验未找到对应托盘样品")
 
@@ -424,9 +502,15 @@ def withdraw_current_experiment(
                 normalized_tray.pop("fixtureReady", None)
             next_trays.append(normalized_tray)
         affected_tray_codes.update(matched_tray_codes)
-        sample["location"] = restore_snapshot["location"]
-        sample["status"] = restore_snapshot["status"]
-        sample["flow_status"] = restore_snapshot["status"]
+        remaining_blocked_tray = any(
+            normalize_text(tray.get("tray_code")) not in matched_tray_codes
+            and normalize_text(tray.get("status")) in BLOCK_WITHDRAW_TRAY_STATUSES
+            for tray in next_trays
+        )
+        if not remaining_blocked_tray:
+            sample["location"] = restore_snapshot["location"]
+            sample["status"] = restore_snapshot["status"]
+            sample["flow_status"] = restore_snapshot["status"]
         sample["updated_at"] = now
         sample["trays"] = next_trays
         detail_target = restore_snapshot["status"]

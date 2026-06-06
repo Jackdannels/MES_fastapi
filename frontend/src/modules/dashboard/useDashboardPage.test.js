@@ -176,6 +176,7 @@ describe("useDashboardPage", () => {
     await settle(wrapper);
 
     window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.experiments"] } }));
+    vi.advanceTimersByTime(100);
     await settle(wrapper);
 
     expect(mocks.loadSnapshot.mock.calls.length).toBeGreaterThanOrEqual(2);

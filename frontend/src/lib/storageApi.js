@@ -5,23 +5,45 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
 const SNAPSHOT_UPDATED_EVENT = "mes:snapshot-updated";
 const STORAGE_EVENTS_ENDPOINT = buildApiUrl("/api/storage/events", API_BASE_URL);
+const pendingSnapshotReads = new Map();
 
-async function readStorageSnapshot(keys) {
-  const requestedKeys = Array.isArray(keys) ? keys : [];
-  const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
+function fetchStorageSnapshot() {
+  return fetch(buildApiUrl("/api/storage", API_BASE_URL), {
     headers: { Accept: "application/json" },
     credentials: "include",
+  }).then((response) => {
+    if (!response.ok) {
+      throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
   });
-  if (!response.ok) {
-    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
+}
+
+function readStorageSnapshot(keys) {
+  const requestedKeys = Array.isArray(keys) ? keys : [];
+  const requestKey = JSON.stringify([...new Set(requestedKeys)].sort());
+  if (!pendingSnapshotReads.has(requestKey)) {
+    const pendingRead = fetchStorageSnapshot().then(
+      (payload) => {
+        pendingSnapshotReads.delete(requestKey);
+        return payload;
+      },
+      (error) => {
+        pendingSnapshotReads.delete(requestKey);
+        throw error;
+      },
+    );
+    pendingSnapshotReads.set(requestKey, pendingRead);
   }
-  const payload = await response.json();
-  return Object.fromEntries(
-    requestedKeys.map((key) => [key, Array.isArray(payload?.[key]) ? payload[key] : []]),
+  return pendingSnapshotReads.get(requestKey).then((payload) =>
+    Object.fromEntries(
+      requestedKeys.map((key) => [key, Array.isArray(payload?.[key]) ? payload[key] : []]),
+    ),
   );
 }
 
 async function writeStorageUpdates(updates) {
+  pendingSnapshotReads.clear();
   const rawPayload = updates && typeof updates === "object" ? updates : {};
   const payload = Object.fromEntries(Object.entries(rawPayload));
   const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {

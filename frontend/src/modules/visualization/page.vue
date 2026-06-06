@@ -689,6 +689,7 @@ const LabProcessScreen = {
               const selectedTray = findSelectedLabTray(selectedTask?.trays || [], selectedTrayCodes.value[lab.name]);
               const displayedTrays = props.compact ? (lab.trays || []).slice(0, 1) : selectedTray ? [selectedTray] : [];
               const displayedFlowSteps = selectedTray ? compactFlowSteps(selectedTray.steps) : [];
+              const flowLayoutColumns = props.compact ? FLOW_LAYOUT_COLUMNS.compact : FLOW_LAYOUT_COLUMNS.layoutA;
 
               return h("div", { class: "visual-lab-panel", key: lab.name }, [
                 h("div", { class: "visual-lab-panel-head" }, [
@@ -763,8 +764,8 @@ const LabProcessScreen = {
                         h(
                           "div",
                           { class: "visual-flow-line" },
-                          (props.compact ? tray.steps : tray.steps || displayedFlowSteps).map((step) =>
-                            h("div", { class: ["visual-flow-step", stepClass(step)] }, [
+                          (props.compact ? tray.steps : tray.steps || displayedFlowSteps).map((step, stepIndex) =>
+                            h("div", { class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns)] }, [
                               h("span", { class: "visual-flow-dot" }),
                               h("strong", step.label),
                               h("small", formatBeijingFlowTime(step.time)),
@@ -1896,4 +1897,22 @@ const stepClass = (step) => ({
   "is-active": Boolean(step?.active),
   "is-waiting": !step?.reached && !step?.active,
 });
+
+const FLOW_LAYOUT_COLUMNS = {
+  layoutA: 4,
+  compact: 4,
+};
+
+const flowStepConnectorClass = (index, columnCount = FLOW_LAYOUT_COLUMNS.layoutA) => {
+  if (index === 0) {
+    return "is-connector-none";
+  }
+  const safeColumnCount = Math.max(1, Number(columnCount) || FLOW_LAYOUT_COLUMNS.layoutA);
+  const row = Math.floor(index / safeColumnCount);
+  const column = index % safeColumnCount;
+  if (column === 0) {
+    return "is-connector-turn";
+  }
+  return row % 2 === 0 ? "is-connector-forward" : "is-connector-backward";
+};
 </script>

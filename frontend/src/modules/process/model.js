@@ -44,6 +44,30 @@ const resolveTaskCode = (entry) => normalizeText(entry?.task_code || entry?.task
 const resolveExperimentCode = (entry) => normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo || entry?.code);
 const resolveTrayCode = (entry) => normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo || entry?.code);
 const resolveRunStatus = (entry) => normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status || entry?.state);
+const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const entryMatchesTrayCode = (entry, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  const structuredTrayCode = resolveTrayCode(entry);
+  if (structuredTrayCode) {
+    return structuredTrayCode === normalizedTrayCode;
+  }
+  const detail = normalizeText(entry?.detail);
+  if (!detail) {
+    return false;
+  }
+  const escaped = escapeRegExp(normalizedTrayCode);
+  return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
+};
+const historyEntryAppliesToTray = (entry, sampleTrayCodes, trayCode) => {
+  const matchedTrayCodes = asArray(sampleTrayCodes).filter((code) => entryMatchesTrayCode(entry, code));
+  if (matchedTrayCodes.length > 0) {
+    return matchedTrayCodes.includes(normalizeText(trayCode));
+  }
+  return asArray(sampleTrayCodes).length <= 1;
+};
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
@@ -212,9 +236,9 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], e
           return;
         }
         const eventTime = Date.parse(String(entry?.time || "")) || 0;
-        const detailText = normalizeText(entry?.detail);
-        const matchedTrayCodes = sampleTrayCodes.filter((trayCode) => !detailText || detailText.includes(trayCode));
-        const targetTrayCodes = matchedTrayCodes.length ? matchedTrayCodes : sampleTrayCodes;
+        const targetTrayCodes = sampleTrayCodes.filter((trayCode) =>
+          historyEntryAppliesToTray(entry, sampleTrayCodes, trayCode),
+        );
         targetTrayCodes.forEach((trayCode) => {
           const existing = latestHistoryByTray.get(trayCode);
           if (!existing || eventTime >= existing.time) {

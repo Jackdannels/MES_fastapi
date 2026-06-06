@@ -83,6 +83,23 @@ const resolveEntryExperimentCode = (entry) =>
   || normalizeText(entry?.experimentNo)
   || normalizeText(entry?.experiment_id)
   || normalizeText(entry?.experimentId);
+const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const entryMatchesTrayCode = (entry, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  const structuredTrayCode = resolveEntryTrayCode(entry);
+  if (structuredTrayCode) {
+    return structuredTrayCode === normalizedTrayCode;
+  }
+  const detail = normalizeText(entry?.detail);
+  if (!detail) {
+    return false;
+  }
+  const escaped = escapeRegExp(normalizedTrayCode);
+  return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
+};
 const isLikelyLabDestination = (value) => /室$/.test(normalizeText(value));
 const extractLabDestinationName = (value) => {
   const text = normalizeText(value);
@@ -615,6 +632,11 @@ const isReturnedStatusText = (value) => {
   return text === "厂家收回" || text === "已处置" || text.includes("厂家收回");
 };
 
+const trayHasReturnedStatus = (tray) =>
+  isReturnedStatusText(tray?.status)
+  || isReturnedStatusText(tray?.tray_status)
+  || isReturnedStatusText(tray?.trayStatus);
+
 const entryMarksTrayReturned = (entry, trayCode, fallbackSingleTray = false) => {
   const normalizedTrayCode = normalizeText(trayCode);
   const structuredTrayCode = resolveEntryTrayCode(entry);
@@ -628,7 +650,7 @@ const entryMarksTrayReturned = (entry, trayCode, fallbackSingleTray = false) => 
   }
   return (
     (structuredTrayCode && structuredTrayCode === normalizedTrayCode)
-    || (normalizedTrayCode && detail.includes(normalizedTrayCode))
+    || entryMatchesTrayCode(entry, normalizedTrayCode)
     || (!detail && fallbackSingleTray)
   );
 };
@@ -668,14 +690,23 @@ const resolveEffectiveTrayLifecycleStatus = (input = {}) => {
       || isReturnedStatusText(sample?.flowStatus)
       || isReturnedStatusText(sample?.location);
     const trayReturned = matchingTrays.some((tray) =>
-      isReturnedStatusText(tray?.status)
-      || isReturnedStatusText(tray?.tray_status)
-      || isReturnedStatusText(tray?.trayStatus),
+      trayHasReturnedStatus(tray),
+    );
+    const trayHasExplicitNonReturnedStatus = matchingTrays.some((tray) =>
+      normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus)
+      && !trayHasReturnedStatus(tray),
     );
     const historyReturned = asArray(sample?.history).some((entry) =>
       entryMarksTrayReturned(entry, trayCode, trays.length === 1),
     );
-    if (sampleReturned || trayReturned || historyReturned) {
+    const sampleReturnedApplies =
+      sampleReturned
+      && !trayHasExplicitNonReturnedStatus
+      && (
+        trays.length <= 1
+        || trays.every((tray) => trayHasReturnedStatus(tray))
+      );
+    if (sampleReturnedApplies || trayReturned || historyReturned) {
       return "厂家收回";
     }
   }
@@ -722,7 +753,7 @@ const resolveTrayDispatchTarget = (input = {}) => {
     });
     asArray(sample?.history).forEach((entry) => {
       const detail = normalizeText(entry?.detail);
-      if (!detail.includes(normalizedTrayCode)) {
+      if (!entryMatchesTrayCode(entry, normalizedTrayCode)) {
         return;
       }
       const eventTargetLab = resolveLabDestinationName(
@@ -798,23 +829,6 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
   const normalizedTrayCode = normalizeText(trayCode);
   const eventMap = new Map();
 
-  const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const entryMatchesTrayCode = (entry) => {
-    if (!normalizedTrayCode) {
-      return false;
-    }
-    const structuredTrayCode = normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo);
-    if (structuredTrayCode) {
-      return structuredTrayCode === normalizedTrayCode;
-    }
-    const detail = normalizeText(entry?.detail);
-    if (!detail) {
-      return false;
-    }
-    const escaped = escapeRegExp(normalizedTrayCode);
-    return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
-  };
-
   const setExperimentEvent = (parsed, time, trayScoped = false) => {
     if (!parsed?.experimentName) {
       return;
@@ -838,6 +852,7 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
     if (!touchesTray) {
       return;
     }
+    const sampleTrayCodes = getSampleTrayList(sample).map(resolveEntryTrayCode).filter(Boolean);
 
     const historyEntries = asArray(sample?.history);
     const latestWithdrawal = latestWithdrawalHistoryEntry(historyEntries);
@@ -879,7 +894,11 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
       if (!parsed) {
         return;
       }
-      setExperimentEvent(parsed, currentTime, entryMatchesTrayCode(entry));
+      const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode);
+      if (!trayScoped && sampleTrayCodes.length > 1) {
+        return;
+      }
+      setExperimentEvent(parsed, currentTime, trayScoped);
     });
   });
 

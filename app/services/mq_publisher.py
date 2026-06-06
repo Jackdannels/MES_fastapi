@@ -67,6 +67,7 @@ def record_laboratory_command(command: str, topic: str, payload: dict[str, Any],
 def bind_laboratory_context(payload: dict[str, Any]) -> None:
     lab_code = normalize_text(payload.get("lab_code"))
     task_no = normalize_text(payload.get("task_code"))
+    experiment_no = normalize_text(payload.get("experiment_code"))
     if not lab_code or not task_no:
         return
     with get_connection() as connection:
@@ -84,22 +85,63 @@ def bind_laboratory_context(payload: dict[str, Any]) -> None:
             lab_id = row.get("lab_id") if isinstance(row, dict) else row[0] if row else None
             if not lab_id:
                 return
-            cursor.execute(
+            experiment_join = ""
+            experiment_filter = ""
+            params: tuple[Any, ...]
+            if experiment_no:
+                experiment_join = """
+                JOIN biz_experiment_tray et
+                  ON et.task_no = task.task_no
+                 AND et.tray_no = tr.tray_no
                 """
+                experiment_filter = "AND et.experiment_no = %s"
+                params = (lab_id, task_no, experiment_no)
+            else:
+                params = (lab_id, task_no)
+            cursor.execute(
+                f"""
                 UPDATE biz_tray tr
                 JOIN biz_tray_item ti ON ti.tray_id = tr.tray_id
                 JOIN biz_sample sm ON sm.sample_id = ti.sample_id
                 JOIN biz_task task ON task.task_id = sm.task_id
+                {experiment_join}
                 SET tr.current_lab_id = %s
                 WHERE task.task_no = %s
-                  AND COALESCE(ti.status, sm.sample_status, sm.flow_status, tr.test_state, '') IN (
-                    '已到达实验室',
-                    '工装夹具安装',
-                    '实验准备就绪',
-                    '实验进行中'
+                  {experiment_filter}
+                  AND (
+                    ti.status IN (
+                      '已到达实验室',
+                      '工装夹具安装',
+                      '实验准备就绪',
+                      '实验进行中'
+                    )
+                    OR tr.test_state IN (
+                      '已到达实验室',
+                      '工装夹具安装',
+                      '实验准备就绪',
+                      '实验进行中'
+                    )
+                    OR (
+                      COALESCE(ti.status, '') = ''
+                      AND COALESCE(tr.test_state, '') = ''
+                      AND (
+                        sm.sample_status IN (
+                          '已到达实验室',
+                          '工装夹具安装',
+                          '实验准备就绪',
+                          '实验进行中'
+                        )
+                        OR sm.flow_status IN (
+                          '已到达实验室',
+                          '工装夹具安装',
+                          '实验准备就绪',
+                          '实验进行中'
+                        )
+                      )
+                    )
                   )
                 """,
-                (lab_id, task_no),
+                params,
             )
         connection.commit()
 

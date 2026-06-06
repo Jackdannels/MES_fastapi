@@ -7,6 +7,13 @@ import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES } from "@/lib/hos
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
+const flushStorageRefresh = async () => {
+  vi.advanceTimersByTime(100);
+  await Promise.resolve();
+  await Promise.resolve();
+  await nextTick();
+};
+
 const masterDataMocks = vi.hoisted(() => ({
   readMasterLabs: vi.fn(async () => []),
 }));
@@ -249,17 +256,17 @@ describe("useProcessLabs", () => {
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
 
+    vi.useFakeTimers();
     window.dispatchEvent(new StorageEvent("storage", { key: "mes:snapshot-updated-at", newValue: "2026-04-01T12:00:00.000Z" }));
-    await Promise.resolve();
-    await nextTick();
+    await flushStorageRefresh();
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
 
     window.dispatchEvent(new StorageEvent("storage", { key: "unrelated", newValue: "1" }));
-    await Promise.resolve();
-    await nextTick();
+    await flushStorageRefresh();
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
     wrapper.unmount();
   });
 
@@ -355,16 +362,16 @@ describe("useProcessLabs", () => {
       readyTrayCount: 0,
     }));
 
+    vi.useFakeTimers();
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.samples"] } }));
-    await Promise.resolve();
-    await Promise.resolve();
-    await nextTick();
+    await flushStorageRefresh();
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
     expect(exposed.labCards.value[0]).toEqual(expect.objectContaining({
       canStartExperiment: true,
       readyTrayCount: 1,
     }));
+    vi.useRealTimers();
     wrapper.unmount();
   });
 
@@ -448,11 +455,11 @@ describe("useProcessLabs", () => {
       readyTrayCount: 0,
     }));
 
+    vi.useFakeTimers();
     eventSources[0].listeners.message({
       data: JSON.stringify({ keys: ["mes.samples"], updatedAt: "2026-04-02T10:00:00.000Z" }),
     });
-    await Promise.resolve();
-    await nextTick();
+    await flushStorageRefresh();
 
     expect(exposed.labCards.value.find((lab) => lab.name === "冲击一室")).toEqual(expect.objectContaining({
       canStartExperiment: true,
@@ -461,6 +468,7 @@ describe("useProcessLabs", () => {
       targetExperiment: "冲击试验",
       taskCode: "SYLU-2026-04-501",
     }));
+    vi.useRealTimers();
     wrapper.unmount();
   });
 
