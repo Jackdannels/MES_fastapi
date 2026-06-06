@@ -70,7 +70,7 @@
   </div>
 
   <div v-else class="app-shell">
-    <aside v-if="!isStagingModule && !isLaboratoryModule" class="sidebar">
+    <aside v-if="!isStorageRoomModule && !isLaboratoryModule" class="sidebar">
       <div class="brand">
         七二四新火工区信息化中控管理系统
         <span>{{ moduleLabel }}</span>
@@ -167,6 +167,8 @@ const moduleLabel = computed(() => MODULE_LABELS[currentModule.value] || MODULE_
 const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
 const isStagingModule = computed(() => currentModule.value === "staging");
+const isAppearanceModule = computed(() => currentModule.value === "appearance");
+const isStorageRoomModule = computed(() => isStagingModule.value || isAppearanceModule.value);
 const isLaboratoryModule = computed(() => currentModule.value === "laboratory");
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));

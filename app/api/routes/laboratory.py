@@ -14,6 +14,8 @@ from app.services.laboratory_completion import complete_storage_laboratory_exper
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
+APPEARANCE_LOCATION = "外观检测间"
+APPEARANCE_STOCKED_STATUS = "外观检测间存放"
 HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -24,6 +26,8 @@ BLOCK_WITHDRAW_TRAY_STATUSES = {
     "实验完成",
     "实验已经完成",
     "放置实验后暂存间",
+    "送至外观检测间",
+    "外观检测间存放",
     "厂家收回",
 }
 LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
@@ -153,11 +157,26 @@ def parse_experiment_history_detail(detail: Any, task_code: str) -> dict[str, st
     return {"experimentName": parts[1], "status": status}
 
 
-def latest_staging_event_for_tray(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> dict[str, Any] | None:
+def staging_event_room(event: dict[str, Any]) -> str:
+    return normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom"))
+
+
+def staging_event_matches_room(event: dict[str, Any], room: str) -> bool:
+    event_room = staging_event_room(event)
+    if room == "staging":
+        return event_room in {"", "staging"}
+    return event_room == room
+
+
+def latest_storage_event_for_tray(
+    snapshot: dict[str, list[dict[str, Any]]],
+    tray_code: str,
+    room: str,
+) -> dict[str, Any] | None:
     matched = [
         dict(event)
         for event in snapshot["staging_events"]
-        if normalize_text(event.get("tray_code")) == tray_code
+        if normalize_text(event.get("tray_code")) == tray_code and staging_event_matches_room(event, room)
     ]
     if not matched:
         return None
@@ -272,6 +291,8 @@ def latest_staging_origin_snapshot(
     for event in snapshot["staging_events"]:
         if normalize_text(event.get("tray_code")) != normalized_tray_code:
             continue
+        if not staging_event_matches_room(event, "staging"):
+            continue
         if normalize_text(event.get("action")) != "stock_out":
             continue
         event_time = parse_datetime_value(event.get("time")) or datetime.min
@@ -301,6 +322,8 @@ def latest_staging_origin_snapshot(
     stable_entries: list[dict[str, Any]] = []
     for event in snapshot["staging_events"]:
         if normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        if not staging_event_matches_room(event, "staging"):
             continue
         if normalize_text(event.get("action")) != "stock_in":
             continue
@@ -332,6 +355,86 @@ def latest_staging_origin_snapshot(
     }
 
 
+def latest_appearance_origin_snapshot(
+    sample: dict[str, Any],
+    snapshot: dict[str, list[dict[str, Any]]],
+    tray_code: str,
+) -> dict[str, Any] | None:
+    normalized_tray_code = normalize_text(tray_code)
+    withdrawal_times = [
+        parse_datetime_value(event.get("time")) or datetime.min
+        for event in snapshot["staging_events"]
+        if normalize_text(event.get("tray_code")) == normalized_tray_code
+        and normalize_text(event.get("action")) == "stock_out_withdraw"
+    ]
+    withdrawal_times.extend(
+        parse_datetime_value(entry.get("time")) or datetime.min
+        for entry in as_list(sample.get("history"))
+        if normalize_text(entry.get("action")) in {"撤回出库", "实验任务撤回", "任务切换撤回"}
+    )
+    latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
+
+    dispatch_entries: list[dict[str, Any]] = []
+    for event in snapshot["staging_events"]:
+        if normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        if not staging_event_matches_room(event, "appearance"):
+            continue
+        if normalize_text(event.get("action")) != "stock_out":
+            continue
+        event_time = parse_datetime_value(event.get("time")) or datetime.min
+        if event_time > latest_withdrawal_time:
+            dispatch_entries.append({"time": event_time})
+
+    for entry in as_list(sample.get("history")):
+        action = normalize_text(entry.get("action"))
+        if action != "外观检测间扫码出库":
+            continue
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        if entry_time > latest_withdrawal_time:
+            dispatch_entries.append({"time": entry_time})
+
+    if not dispatch_entries:
+        return None
+    dispatch_entries.sort(key=lambda entry: entry["time"])
+    dispatch_time = dispatch_entries[-1]["time"]
+
+    stable_entries: list[dict[str, Any]] = []
+    for event in snapshot["staging_events"]:
+        if normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        if not staging_event_matches_room(event, "appearance"):
+            continue
+        if normalize_text(event.get("action")) != "stock_in":
+            continue
+        event_time = parse_datetime_value(event.get("time")) or datetime.min
+        if latest_withdrawal_time < event_time <= dispatch_time:
+            stable_entries.append({"time": event_time})
+
+    for entry in as_list(sample.get("history")):
+        action = normalize_text(entry.get("action"))
+        status = normalize_text(entry.get("status"))
+        location = normalize_text(entry.get("location"))
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        marks_appearance_storage = (
+            status in {APPEARANCE_STOCKED_STATUS, "已到达外观检测间"}
+            or action == "外观检测间扫码入库"
+            and (status in {"", APPEARANCE_STOCKED_STATUS, "已到达外观检测间"} or location == APPEARANCE_LOCATION)
+        )
+        if marks_appearance_storage and latest_withdrawal_time < entry_time <= dispatch_time:
+            stable_entries.append({"time": entry_time})
+
+    stable_entries.sort(key=lambda entry: entry["time"])
+    stable_time = stable_entries[-1]["time"] if stable_entries else dispatch_time
+    return {
+        "status": APPEARANCE_STOCKED_STATUS,
+        "location": APPEARANCE_LOCATION,
+        "scope": "appearance",
+        "experimentName": "",
+        "time": stable_time,
+    }
+
+
 def sample_has_staging_origin(sample: dict[str, Any], snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
     return latest_staging_origin_snapshot(sample, snapshot, tray_code) is not None
 
@@ -350,12 +453,11 @@ def resolve_restore_snapshot(
         related_samples_for_tray(snapshot, task_code, tray_code),
     )
     staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
-    if staging and (not completed or staging["time"] > completed["time"]):
-        return staging
-    if completed:
-        return completed
-    if staging:
-        return staging
+    appearance = latest_appearance_origin_snapshot(sample, snapshot, tray_code)
+    candidates = [candidate for candidate in [completed, staging, appearance] if candidate]
+    if candidates:
+        candidates.sort(key=lambda item: item["time"])
+        return candidates[-1]
     return {"status": "到货", "location": HANDOVER_LOCATION, "scope": "handover", "experimentName": ""}
 
 
@@ -523,23 +625,25 @@ def withdraw_current_experiment(
         append_history(sample, "实验任务撤回", detail, now)
         affected_sample_count += 1
 
-        if restore_snapshot["scope"] == "staging":
+        if restore_snapshot["scope"] in {"staging", "appearance"}:
             for tray_code in matched_tray_codes:
                 if tray_code in compensated_tray_codes:
                     continue
-                latest_event = latest_staging_event_for_tray(snapshot, tray_code) or {}
-                snapshot["staging_events"].append(
-                    {
-                        "id": f"staging-event-{tray_code}-{len(snapshot['staging_events']) + 1}",
-                        "tray_code": tray_code,
-                        "task_code": normalized_task_code,
-                        "action": "stock_out_withdraw",
-                        "time": now,
-                        "operator": reason or "实验任务撤回",
-                        "target_lab": normalize_text(latest_event.get("target_lab")),
-                        "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")) or normalized_experiment_code,
-                    }
-                )
+                restore_scope = normalize_text(restore_snapshot.get("scope"))
+                latest_event = latest_storage_event_for_tray(snapshot, tray_code, restore_scope) or {}
+                compensation_event = {
+                    "id": f"staging-event-{tray_code}-{len(snapshot['staging_events']) + 1}",
+                    "tray_code": tray_code,
+                    "task_code": normalized_task_code,
+                    "action": "stock_out_withdraw",
+                    "time": now,
+                    "operator": reason or "实验任务撤回",
+                    "target_lab": normalize_text(latest_event.get("target_lab")),
+                    "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")) or normalized_experiment_code,
+                }
+                if restore_scope == "appearance":
+                    compensation_event["room"] = "appearance"
+                snapshot["staging_events"].append(compensation_event)
                 compensated_tray_codes.add(tray_code)
 
     write_snapshot(snapshot)

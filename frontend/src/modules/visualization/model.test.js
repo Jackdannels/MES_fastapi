@@ -1120,6 +1120,7 @@ describe("visualization model", () => {
     });
 
     expect(view.summary).toEqual({
+      appearanceTrayCount: 0,
       currentTrayCount: 1,
       moldRemaining: 99,
       moldTrayCount: 1,
@@ -1185,7 +1186,7 @@ describe("visualization model", () => {
     expect(view.tasks[0].trays[0]).toEqual(
       expect.objectContaining({
         stagingKind: "planned",
-        stagingKindLabel: "计划进入暂存间",
+        stagingKindLabel: "计划暂存",
         status: "送至暂存间",
         trayCode: "TP-HANDOVER-001",
       }),
@@ -1194,6 +1195,7 @@ describe("visualization model", () => {
     expect(view.summary.currentTrayCount).toBe(0);
     expect(view.summary.plannedTrayCount).toBe(1);
     expect(view.summary.postTestTrayCount).toBe(0);
+    expect(view.summary.appearanceTrayCount).toBe(0);
   });
 
   test("separates current staging, planned staging, and post-test staging trays", () => {
@@ -1228,13 +1230,55 @@ describe("visualization model", () => {
 
     const trays = view.tasks[0].trays;
     expect(trays.map((tray) => [tray.trayCode, tray.stagingKind, tray.stagingKindLabel])).toEqual([
-      ["TP-CURRENT", "current", "实际在暂存间"],
-      ["TP-PLANNED", "planned", "计划进入暂存间"],
+      ["TP-CURRENT", "current", "暂存间存放"],
+      ["TP-PLANNED", "planned", "计划暂存"],
       ["TP-POST", "post-test", "实验后暂存间"],
     ]);
     expect(view.summary.currentTrayCount).toBe(1);
     expect(view.summary.plannedTrayCount).toBe(1);
     expect(view.summary.postTestTrayCount).toBe(1);
+    expect(view.summary.appearanceTrayCount).toBe(0);
+  });
+
+  test("aggregates appearance inspection storage into the staging information screen", () => {
+    const view = buildStagingSamplesView({
+      tasks: [
+        { code: "TASK-APPEARANCE", name: "外观检测任务", test_type: "盐雾试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-APPEARANCE", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-APPEARANCE", experiment_code: "EXP-SALT", tray_code: "TP-APPEARANCE" },
+      ],
+      samples: [
+        {
+          code: "SP-APPEARANCE",
+          task_code: "TASK-APPEARANCE",
+          location: "外观检测间",
+          status: "外观检测间存放",
+          trays: [{ tray_code: "TP-APPEARANCE", status: "外观检测间存放", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          room: "appearance",
+          task_code: "TASK-APPEARANCE",
+          time: "2026-06-06T10:00:00+08:00",
+          tray_code: "TP-APPEARANCE",
+        },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "appearance",
+      stagingKindLabel: "外观检测间存放",
+      status: "外观检测间存放",
+      trayCode: "TP-APPEARANCE",
+    }));
+    expect(view.summary.appearanceTrayCount).toBe(1);
+    expect(view.summary.currentTrayCount).toBe(0);
   });
 
   test("calculates staging tray remaining from the project-wide used tray count", () => {

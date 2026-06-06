@@ -3,6 +3,7 @@ const MODULE_ROUTES = Object.freeze({
   handover: "/handover-system",
   visual: "/visualization",
   staging: "/staging-management",
+  appearance: "/appearance-inspection",
   laboratory: "/laboratory",
 });
 
@@ -11,6 +12,7 @@ const MODULE_LABELS = Object.freeze({
   handover: "接驳区系统",
   visual: "可视化管理",
   staging: "暂存间系统",
+  appearance: "外观检测间系统",
   laboratory: "试验室操作台",
 });
 

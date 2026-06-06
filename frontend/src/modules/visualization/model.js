@@ -509,14 +509,17 @@ function buildLabScheduleThreeDayView(input = {}) {
 }
 
 const STAGING_CURRENT_STATUSES = new Set(["已入库", "暂存间存放", "已到达暂存间"]);
+const APPEARANCE_CURRENT_STATUSES = new Set(["外观检测间存放", "已到达外观检测间"]);
 const STAGING_OUT_ACTIONS = new Set(["stock_out", "manufacturer_return"]);
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
+const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
 const PLANNED_STAGING_STATUSES = new Set(["送至暂存间"]);
 const PLANNED_STAGING_ACTIONS = new Set(["送至暂存间"]);
 const STAGING_KIND_LABELS = {
-  current: "实际在暂存间",
-  planned: "计划进入暂存间",
+  current: "暂存间存放",
+  planned: "计划暂存",
   "post-test": "实验后暂存间",
+  appearance: "外观检测间存放",
 };
 
 const resolveTaskName = (task) => normalizeText(task?.name || task?.task_name || task?.code);
@@ -576,6 +579,8 @@ const buildExperimentLabelByTray = ({ experiments, experimentTrays }) => {
 };
 
 const isCurrentStagingStatus = (status) => STAGING_CURRENT_STATUSES.has(normalizeText(status));
+const isAppearanceStatus = (status) => APPEARANCE_CURRENT_STATUSES.has(normalizeText(status));
+const isAppearanceLocation = (value) => normalizeText(value).includes(APPEARANCE_LOCATION_KEYWORD);
 const isPostTestStagingLocation = (value) => normalizeText(value).includes(POST_TEST_STAGING_KEYWORD);
 const isPostTestStagingStatus = (status) => normalizeText(status) === "放置实验后暂存间";
 const isPlannedStagingStatus = (status) => PLANNED_STAGING_STATUSES.has(normalizeText(status));
@@ -590,6 +595,13 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   const latestAction = normalizeText(latestEvent?.action);
   if (STAGING_OUT_ACTIONS.has(latestAction)) {
     return null;
+  }
+  if (
+    row.hasAppearanceLocation
+    || row.statuses.some((status) => isAppearanceStatus(status))
+    || normalizeText(latestEvent?.room || latestEvent?.storage_room || latestEvent?.storageRoom) === "appearance"
+  ) {
+    return buildStagingKind("appearance", "外观检测间存放");
   }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
     return buildStagingKind("post-test", "放置实验后暂存间");
@@ -659,6 +671,7 @@ function buildStagingSamplesView(input = {}) {
       const key = `${taskCode}::${trayCode}`;
       const current = trayMap.get(key) || {
         experimentLabels: labelsByTray.get(trayCode) || [],
+        hasAppearanceLocation: false,
         hasPostTestStagingLocation: false,
         sampleCodes: [],
         sampleTypeFallback: "",
@@ -672,6 +685,10 @@ function buildStagingSamplesView(input = {}) {
         current.hasPostTestStagingLocation
         || isPostTestStagingLocation(sample?.location)
         || isPostTestStagingLocation(sample?.current_location);
+      current.hasAppearanceLocation =
+        current.hasAppearanceLocation
+        || isAppearanceLocation(sample?.location)
+        || isAppearanceLocation(sample?.current_location);
       current.sampleTypeFallback =
         current.sampleTypeFallback || normalizeText(sample?.sample_type || task?.sample_type || task?.test_type);
       [
@@ -703,6 +720,7 @@ function buildStagingSamplesView(input = {}) {
       const task = taskByCode.get(taskCode) || {};
       trayMap.set(key, {
         experimentLabels: labelsByTray.get(trayCode) || [],
+        hasAppearanceLocation: normalizeText(event?.room || event?.storage_room || event?.storageRoom) === "appearance",
         hasPostTestStagingLocation: false,
         sampleCodes: [],
         sampleTypeFallback: "",
@@ -766,6 +784,7 @@ function buildStagingSamplesView(input = {}) {
 
   return {
     summary: {
+      appearanceTrayCount: trays.filter((tray) => tray.stagingKind === "appearance").length,
       currentTrayCount: trays.filter((tray) => tray.stagingKind === "current").length,
       moldRemaining: clampRemaining(capacity, moldTrayCount),
       moldTrayCount,

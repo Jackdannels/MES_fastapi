@@ -574,7 +574,7 @@ describe("VisualizationPage runtime", () => {
     await wrapper.vm.$nextTick();
 
     const sixthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[5];
-    expect(sixthCard.text()).toContain("暂存间样品信息屏");
+    expect(sixthCard.text()).toContain("暂存间/外观检测间样品信息屏");
     expect(sixthCard.text()).toContain("托盘剩余");
 
     await sixthCard.trigger("click");
@@ -649,8 +649,8 @@ describe("VisualizationPage runtime", () => {
     const preview = wrapper.find('[data-testid="visual-single-preview"]');
     const overview = preview.get('[data-testid="visual-staging-overview"]');
     const kindSummary = preview.get('[data-testid="visual-staging-kind-summary"]');
-    expect(overview.text()).toContain("实际进入暂存/计划暂存/实验后暂存");
-    expect(kindSummary.text()).toContain("1/1/1");
+    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存/外观检测间存放");
+    expect(kindSummary.text()).toContain("1/1/1/0");
     expect(kindSummary.find(".kind-planned").exists()).toBe(true);
     expect(kindSummary.find(".kind-post-test").exists()).toBe(true);
     expect(preview.find('[data-testid="visual-staging-legend"]').exists()).toBe(false);

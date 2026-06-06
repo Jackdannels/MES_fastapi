@@ -51,5 +51,6 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/system",
         "/visualization",
         "/staging-management",
+        "/appearance-inspection",
         "/laboratory",
     )

@@ -11,8 +11,21 @@ import {
 } from "./statusNormalization";
 import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, STATUS_WAITING } from "@/modules/schedule/model";
 
-const STARTED_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
-const COMPLETED_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
+const STARTED_STATUSES = new Set([
+  EXPERIMENT_STATUS_RUNNING,
+  EXPERIMENT_STATUS_COMPLETED,
+  "放置实验后暂存间",
+  "送至外观检测间",
+  "外观检测间存放",
+  RETURNED_STATUS,
+]);
+const COMPLETED_STATUSES = new Set([
+  EXPERIMENT_STATUS_COMPLETED,
+  "放置实验后暂存间",
+  "送至外观检测间",
+  "外观检测间存放",
+  RETURNED_STATUS,
+]);
 
 const SCHEDULE_EXCEPTION_TYPE = "schedule_missed_start";
 const SCHEDULE_EXCEPTION_REASON = "排程时段内未开始实验，系统已自动撤销排程";

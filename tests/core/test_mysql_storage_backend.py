@@ -207,7 +207,7 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     assert any("CREATE TABLE IF NOT EXISTS md_test_type" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS md_lab" in statement for statement in statements)
     assert sum(1 for statement in statements if "INSERT INTO md_test_type" in statement and "WHERE NOT EXISTS" in statement) == 7
-    assert sum(1 for statement in statements if "INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement) == 14
+    assert sum(1 for statement in statements if "INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement) == 15
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_mq_message_log" in statement for statement in statements)

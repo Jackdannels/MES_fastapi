@@ -25,6 +25,7 @@ describe("ModuleExitDialog", () => {
       { key: "handover", label: "接驳区系统" },
       { key: "visual", label: "可视化管理" },
       { key: "staging", label: "暂存间系统" },
+      { key: "appearance", label: "外观检测间系统" },
       { key: "laboratory", label: "试验室操作台" },
     ]);
     expect(wrapper.get('[data-testid="module-exit-cancel"]').text()).toContain("取消");

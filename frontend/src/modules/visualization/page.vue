@@ -285,7 +285,7 @@ const screenCards = [
   },
   {
     key: "staging-samples",
-    name: "暂存间样品信息屏",
+    name: "暂存间/外观检测间样品信息屏",
     kind: "staging-samples",
     status: "实时快照",
     metric: "暂存样品",
@@ -1069,7 +1069,7 @@ const StagingSamplesScreen = {
         h("div", { class: "visual-board-top" }, [
           h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "STAGING BUFFER"),
-            h("div", { class: "visual-board-title" }, props.screen?.name || "暂存间样品信息屏"),
+            h("div", { class: "visual-board-title" }, props.screen?.name || "暂存间/外观检测间样品信息屏"),
           ]),
           h("div", { class: "visual-board-state" }, [
             h("span", { class: ["visual-board-live", "tone-live"] }, props.compact ? "06" : "实时快照"),
@@ -1082,13 +1082,15 @@ const StagingSamplesScreen = {
             h("strong", metric.value),
           ])),
           h("div", { class: ["visual-staging-overview-item", "visual-staging-kind-summary"], "data-testid": "visual-staging-kind-summary" }, [
-            h("span", "实际进入暂存/计划暂存/实验后暂存"),
+            h("span", "暂存间存放/计划暂存/实验后暂存/外观检测间存放"),
             h("strong", [
               h("b", { class: "kind-current" }, String(summary.currentTrayCount ?? 0)),
               h("i", "/"),
               h("b", { class: "kind-planned" }, String(summary.plannedTrayCount ?? 0)),
               h("i", "/"),
               h("b", { class: "kind-post-test" }, String(summary.postTestTrayCount ?? 0)),
+              h("i", "/"),
+              h("b", { class: "kind-appearance" }, String(summary.appearanceTrayCount ?? 0)),
             ]),
           ]),
         ]),

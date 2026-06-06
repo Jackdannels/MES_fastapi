@@ -26,6 +26,7 @@ DEFAULT_LABS: tuple[dict[str, Any], ...] = (
     {"lab_code": "LAB_MOLD", "lab_name": "霉菌试验室", "lab_type": "实验室", "test_type_code": "MJ", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "AREA_STAGING_PRE", "lab_name": "恒温恒湿间（暂存间）", "lab_type": "暂存间", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "AREA_STAGING_POST", "lab_name": "恒温恒湿间（实验后暂存间）", "lab_type": "暂存间", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
+    {"lab_code": "AREA_APPEARANCE", "lab_name": "外观检测间", "lab_type": "检测间", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "AREA_UNBOX", "lab_name": "拆箱操作间", "lab_type": "操作区", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "AREA_OUTDOOR_HANDOVER", "lab_name": "室外接驳区", "lab_type": "接驳区", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
 )

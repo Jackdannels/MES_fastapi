@@ -2031,10 +2031,13 @@ describe("laboratory model", () => {
     });
 
     expect(view.currentTask.experimentCode).toBe("SYLU-2026-06-001-A");
-    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：SYLU-2026-06-001-TP-002 | 当前状态：霉菌试验已完成");
+    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：SYLU-2026-06-001-TP-002 | 当前状态：送至外观检测间");
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
-      expect.objectContaining({ active: true }),
+      expect.objectContaining({ active: false, reached: true }),
     );
+    const appearanceDispatchSteps = view.selectedTrayFlow.steps.filter((step) => step.label === "送至外观检测间");
+    expect(appearanceDispatchSteps.at(0)).toEqual(expect.objectContaining({ active: false, reached: true }));
+    expect(appearanceDispatchSteps.some((step) => step.active)).toBe(true);
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至冲击一室")).toBeUndefined();
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(
       expect.objectContaining({ active: false, reached: false }),
@@ -2104,7 +2107,13 @@ describe("laboratory model", () => {
       tasks: [{ code: "SYLU-2026-06-001", name: "复合实验任务", test_type: "冲击试验 / 霉菌试验 / 盐雾试验" }],
     });
 
-    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：SYLU-2026-06-001-TP-003 | 当前状态：霉菌试验已完成");
+    expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：SYLU-2026-06-001-TP-003 | 当前状态：送至外观检测间");
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
+      expect.objectContaining({ active: false, reached: true }),
+    );
+    const appearanceDispatchSteps = view.selectedTrayFlow.steps.filter((step) => step.label === "送至外观检测间");
+    expect(appearanceDispatchSteps.at(0)).toEqual(expect.objectContaining({ active: false, reached: true }));
+    expect(appearanceDispatchSteps.some((step) => step.active)).toBe(true);
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至冲击一室")).toBeUndefined();
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至实验室")).toEqual(
       expect.objectContaining({ active: false, reached: false }),
@@ -4056,6 +4065,49 @@ describe("laboratory model", () => {
       detail: "TASK-701 / 振动试验 / 撤回至已到达暂存间",
       location: "恒温恒湿间（暂存间）",
       status: "已到达暂存间",
+    }));
+  });
+
+  test("revertLaboratoryTaskToPreviousStableState restores to appearance inspection storage before current lab dispatch", () => {
+    const updatedSamples = revertLaboratoryTaskToPreviousStableState({
+      currentTask: {
+        device: "高低温湿热一室",
+        experimentCode: "TASK-702-D",
+        experimentName: "高低温湿热试验",
+        taskCode: "TASK-702",
+        trayCodes: ["TP-702"],
+      },
+      now: "2026-06-06T22:10:00.000Z",
+      samples: [
+        {
+          code: "TASK-702-SP-001",
+          flow_status: "已到达实验室",
+          history: [
+            { action: "任务比对", detail: "TASK-702 / 高低温湿热试验 / 已到达实验室", location: "高低温湿热一室", status: "已到达实验室", time: "2026-06-06T22:00:00.000Z" },
+            { action: "外观检测间扫码出库", detail: "TP-702 送至 高低温湿热一室", location: "高低温湿热一室", status: "送至实验室", time: "2026-06-06T21:50:00.000Z" },
+            { action: "外观检测间扫码入库", detail: "TP-702 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-06T21:40:00.000Z" },
+            { action: "实验完成", detail: "TASK-702 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-06T21:30:00.000Z" },
+          ],
+          location: "高低温湿热一室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "TASK-702",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-702" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "外观检测间存放",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      trays: [expect.objectContaining({ status: "外观检测间存放", tray_code: "TP-702" })],
+    }));
+    expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "TASK-702 / 高低温湿热试验 / 撤回至外观检测间存放",
+      location: "外观检测间",
+      status: "外观检测间存放",
     }));
   });
 

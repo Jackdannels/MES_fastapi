@@ -13,6 +13,7 @@ import systemModule from "./system";
 import taskHistoryModule from "./task-history";
 import visualizationModule from "./visualization";
 import stagingManagementModule from "./staging-management";
+import appearanceInspectionModule from "./appearance-inspection";
 import laboratoryModule from "./laboratory";
 
 // 所有模块定义集中注册在这里，供路由和导航统一消费。
@@ -32,6 +33,7 @@ export const MODULES = [
   taskHistoryModule,
   visualizationModule,
   stagingManagementModule,
+  appearanceInspectionModule,
   laboratoryModule,
 ];
 

@@ -17,6 +17,7 @@ const moduleEntryPaths = [
   resolve(process.cwd(), "src/modules/system/index.js"),
   resolve(process.cwd(), "src/modules/visualization/index.js"),
   resolve(process.cwd(), "src/modules/staging-management/index.js"),
+  resolve(process.cwd(), "src/modules/appearance-inspection/index.js"),
   resolve(process.cwd(), "src/modules/laboratory/index.js"),
 ];
 
@@ -41,6 +42,7 @@ describe("frontend module registry structure", () => {
     expect(source).toContain("system");
     expect(source).toContain("visualization");
     expect(source).toContain("staging-management");
+    expect(source).toContain("appearance-inspection");
     expect(source).toContain("laboratory");
   });
 

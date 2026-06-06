@@ -14,6 +14,8 @@ const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
   "实验已经完成",
   "放置实验后暂存间",
   "已到达暂存间",
+  "送至外观检测间",
+  "外观检测间存放",
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();

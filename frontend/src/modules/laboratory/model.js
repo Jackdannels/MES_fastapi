@@ -22,8 +22,11 @@ const LAB_RESET_STATUS = "送至实验室";
 const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
 const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
+const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
+const APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放";
 const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
 const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
+const APPEARANCE_STORAGE_STATUSES = new Set([APPEARANCE_INSPECTION_STOCKED_STATUS, "已到达外观检测间"]);
 const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
@@ -231,6 +234,33 @@ const resolvePreDispatchSnapshot = (sample) => {
   };
 };
 
+const resolveAppearanceStorageSnapshot = (sample) => {
+  const candidates = asArray(sample?.history)
+    .map((entry) => {
+      const status = normalizeText(entry?.status);
+      const location = normalizeText(entry?.location);
+      const action = normalizeText(entry?.action);
+      const marksAppearanceStorage =
+        APPEARANCE_STORAGE_STATUSES.has(status)
+        || (
+          action === "外观检测间扫码入库"
+          && (!status || APPEARANCE_STORAGE_STATUSES.has(status) || location === APPEARANCE_INSPECTION_LOCATION)
+        );
+      if (!marksAppearanceStorage) {
+        return null;
+      }
+      return {
+        experimentName: "",
+        location: APPEARANCE_INSPECTION_LOCATION,
+        status: APPEARANCE_INSPECTION_STOCKED_STATUS,
+        time: toTime(entry?.time) || -Infinity,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.time - right.time);
+  return candidates[candidates.length - 1] || null;
+};
+
 const shouldRevertLaboratoryTrayStatus = (status, { includeRunning = false } = {}) => {
   const normalized = normalizeText(status);
   const rank = resolveLaboratoryStatusRank(normalized);
@@ -261,6 +291,13 @@ const resolveUnifiedTrayFlowRank = (status) => {
   const normalized = normalizeText(status);
   if (!normalized) {
     return -1;
+  }
+  const completedIndex = UNIFIED_TRAY_FLOW_STATUS_RANK.get(EXPERIMENT_COMPLETED_STATUS) ?? 9;
+  if (normalized === "送至外观检测间") {
+    return completedIndex + 0.1;
+  }
+  if (APPEARANCE_STORAGE_STATUSES.has(normalized)) {
+    return completedIndex + 0.2;
   }
   return UNIFIED_TRAY_FLOW_STATUS_RANK.get(normalized) ?? -1;
 };
@@ -407,15 +444,16 @@ const resolvePreviousCompletedExperimentSnapshot = (sample, taskCode, currentExp
 };
 
 const resolvePreviousStableSnapshot = (sample, taskCode, currentExperimentName) => {
-  const completed = resolvePreviousCompletedExperimentSnapshot(sample, taskCode, currentExperimentName);
-  const preDispatch = {
+  const candidates = [
+    resolvePreviousCompletedExperimentSnapshot(sample, taskCode, currentExperimentName),
+    resolveAppearanceStorageSnapshot(sample),
+    {
     ...resolvePreDispatchSnapshot(sample),
     experimentName: "",
-  };
-  if (completed && completed.time >= preDispatch.time) {
-    return completed;
-  }
-  return preDispatch;
+    },
+  ].filter(Boolean);
+  candidates.sort((left, right) => left.time - right.time);
+  return candidates[candidates.length - 1];
 };
 
 const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode, trayCode = "" }) => {
@@ -462,6 +500,9 @@ const resolveCurrentExperimentTrayStatus = ({
 }) => {
   const historyStatus = resolveLatestExperimentHistoryStatus({ experimentName, sample, taskCode, trayCode });
   const normalizedStatus = normalizeText(physicalStatus);
+  if (normalizedStatus === "送至外观检测间" || APPEARANCE_STORAGE_STATUSES.has(normalizedStatus)) {
+    return normalizedStatus;
+  }
   if (historyStatus) {
     const historyRank = resolveLaboratoryStatusRank(historyStatus);
     const physicalRank = resolveLaboratoryStatusRank(normalizedStatus);
@@ -750,7 +791,13 @@ const rowHasPreDispatchLifecycleStatus = (row) => {
   const trayStatus = normalizeText(row?.trayStatus);
   return PRE_DISPATCH_STATUSES.has(lifecycleStatus)
     || PRE_DISPATCH_STATUSES.has(displayStatus)
-    || PRE_DISPATCH_STATUSES.has(trayStatus);
+    || PRE_DISPATCH_STATUSES.has(trayStatus)
+    || APPEARANCE_STORAGE_STATUSES.has(lifecycleStatus)
+    || APPEARANCE_STORAGE_STATUSES.has(displayStatus)
+    || APPEARANCE_STORAGE_STATUSES.has(trayStatus)
+    || lifecycleStatus === "送至外观检测间"
+    || displayStatus === "送至外观检测间"
+    || trayStatus === "送至外观检测间";
 };
 const currentExperimentIsNextUnfinishedForTray = (row, currentTask) => {
   const currentExperimentCode = normalizeText(currentTask?.experimentCode);

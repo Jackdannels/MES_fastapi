@@ -66,6 +66,217 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({ active: true }));
   });
 
+  test("buildTrayFlowView shows appearance inspection after salt or mold completion", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-001-TP-004",
+      taskCode: "SYLU-2026-03-001",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_type: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-004",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-004",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06T10:00:00+08:00",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-004 | 当前状态：外观检测间存放");
+    expect(view.steps.map((step) => step.label)).toContain("送至外观检测间");
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ reached: true }));
+  });
+
+  test("buildTrayFlowView activates sent-to-appearance immediately after salt completion before appearance stock-in", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-011-TP-001",
+      taskCode: "SYLU-2026-03-011",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          experiment_type: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          tray_code: "SYLU-2026-03-011-TP-001",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          tray_code: "SYLU-2026-03-011-TP-001",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06T10:00:00+08:00",
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-011-TP-001 | 当前状态：送至外观检测间");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ reached: true }));
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: false, reached: false }));
+  });
+
+  test("buildTrayFlowView inserts appearance inspection between completed salt test and the next experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-010-TP-002",
+      taskCode: "SYLU-2026-03-010",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-A",
+          experiment_type: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-B",
+          experiment_type: "振动试验",
+          required_device: "振动一室",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-A",
+          tray_code: "SYLU-2026-03-010-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-B",
+          tray_code: "SYLU-2026-03-010-TP-002",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "SYLU-2026-03-010",
+          experiment_code: "SYLU-2026-03-010-A",
+          tray_code: "SYLU-2026-03-010-TP-002",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06T10:00:00+08:00",
+        },
+      ],
+    });
+
+    const labels = view.steps.map((step) => step.label);
+    expect(labels.indexOf("盐雾试验已完成")).toBeLessThan(labels.indexOf("送至外观检测间"));
+    expect(labels.indexOf("送至外观检测间")).toBeLessThan(labels.indexOf("外观检测间存放"));
+    expect(labels.indexOf("外观检测间存放")).toBeLessThan(labels.indexOf("送至暂存间"));
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(expect.objectContaining({ active: false, reached: false }));
+  });
+
+  test("buildTrayFlowView activates sent-to-appearance after a completed salt test before the next experiment starts", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-012-TP-002",
+      taskCode: "SYLU-2026-03-012",
+      location: "盐雾试验室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          experiment_type: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-B",
+          experiment_type: "霉菌试验",
+          required_device: "霉菌试验室",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          tray_code: "SYLU-2026-03-012-TP-002",
+        },
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-B",
+          tray_code: "SYLU-2026-03-012-TP-002",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          tray_code: "SYLU-2026-03-012-TP-002",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-06T10:00:00+08:00",
+        },
+      ],
+    });
+
+    const labels = view.steps.map((step) => step.label);
+    expect(labels.indexOf("盐雾试验已完成")).toBeLessThan(labels.indexOf("送至外观检测间"));
+    expect(labels.indexOf("送至外观检测间")).toBeLessThan(labels.indexOf("外观检测间存放"));
+    expect(labels.indexOf("外观检测间存放")).toBeLessThan(labels.indexOf("送至暂存间"));
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-012-TP-002 | 当前状态：送至外观检测间");
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: false, reached: false }));
+  });
+
+  test("buildTrayFlowView does not show appearance inspection for non-salt non-mold completion", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-03-002-TP-001",
+      taskCode: "SYLU-2026-03-002",
+      location: "振动一室",
+      status: "实验已完成",
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          experiment_type: "振动试验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-001",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-001",
+          run_tray_status: "实验已完成",
+        },
+      ],
+    });
+
+    expect(view.steps.map((step) => step.label)).not.toContain("送至外观检测间");
+    expect(view.steps.map((step) => step.label)).not.toContain("外观检测间存放");
+  });
+
   test("buildTrayFlowView displays the concrete laboratory for lab dispatch steps", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-004",
@@ -394,8 +605,11 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：盐雾试验已完成`);
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至外观检测间`);
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(
+      expect.objectContaining({ active: false, reached: true }),
+    );
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(
       expect.objectContaining({ active: true }),
     );
     expect(view.steps.some((step) => step.label === "送至振动一室")).toBe(false);
@@ -1151,9 +1365,12 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-003-TP-001 | 当前状态：盐雾试验已完成");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-003-TP-001 | 当前状态：送至外观检测间");
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(
-      expect.objectContaining({ active: true, time: "2026-05-19T10:00:00+08:00" }),
+      expect.objectContaining({ active: false, reached: true, time: "2026-05-19T10:00:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(
+      expect.objectContaining({ active: true }),
     );
     expect(view.steps.find((step) => step.label === "高低温湿热试验未完成")).toEqual(
       expect.objectContaining({ active: false, reached: false, time: "" }),
@@ -1230,9 +1447,12 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-220-TP-001 | 当前状态：霉菌试验已完成");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-220-TP-001 | 当前状态：送至外观检测间");
     expect(view.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
-      expect.objectContaining({ active: true, time: "2026-05-22T14:30:00+08:00" }),
+      expect.objectContaining({ active: false, reached: true, time: "2026-05-22T14:30:00+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(
+      expect.objectContaining({ active: true }),
     );
     expect(view.steps.find((step) => step.label === "四综合试验已完成")).toBeUndefined();
     expect(view.steps.find((step) => step.label === "四综合试验未完成")).toEqual(
@@ -1354,8 +1574,11 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-004-TP-001 | 当前状态：盐雾试验已完成");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-05-004-TP-001 | 当前状态：送至外观检测间");
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(
+      expect.objectContaining({ active: false, reached: true }),
+    );
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(
       expect.objectContaining({ active: true }),
     );
     expect(view.steps.find((step) => step.label === "盐雾试验进行中")).toBeUndefined();
@@ -1705,6 +1928,8 @@ describe("samplesFlowModel", () => {
       "到货",
       "四综合试验已完成",
       "盐雾试验已完成",
+      "送至外观检测间",
+      "外观检测间存放",
       "送至暂存间",
       "已到达暂存间",
       "送至冲击一室",
@@ -1846,8 +2071,9 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-002-TP-001 | 当前状态：盐雾试验已完成");
-    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-002-TP-001 | 当前状态：送至外观检测间");
+    expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ active: false, reached: true }));
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(expect.objectContaining({ active: true }));
     expect(view.steps.find((step) => step.label === "到货")).toEqual(expect.objectContaining({ active: false }));
   });
 
@@ -2339,6 +2565,8 @@ describe("samplesFlowModel", () => {
       "样品运输中",
       "到货",
       "盐雾试验已完成",
+      "送至外观检测间",
+      "外观检测间存放",
       "送至暂存间",
       "已到达暂存间",
       "送至实验室",

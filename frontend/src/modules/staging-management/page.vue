@@ -18,7 +18,7 @@
     <section class="card section zancun-actions-card">
       <div class="zancun-actions-header">
         <div class="zancun-actions-header__main">
-          <h3>暂存间控制台</h3>
+          <h3>{{ roomCopy.consoleTitle }}</h3>
           <div class="zancun-current-view" data-testid="zancun-current-view">
             <span class="zancun-current-view__label">当前查看</span>
             <strong class="zancun-current-view__value">{{ activeMetricLabel }}</strong>
@@ -40,8 +40,8 @@
         <div class="zancun-inventory-columns">
           <section class="zancun-inventory-column" data-testid="zancun-current-staging-column">
             <div class="zancun-inventory-column__head">
-              <h4>暂存间样品</h4>
-              <span class="pill">当前在库 {{ currentStagingTotalCount }}</span>
+              <h4>{{ roomCopy.currentColumnTitle }}</h4>
+              <span class="pill">{{ roomCopy.currentPillPrefix }} {{ currentStagingTotalCount }}</span>
               <AppPagination
                 class="zancun-current-staging-pagination"
                 data-testid="zancun-current-staging-pagination"
@@ -78,7 +78,7 @@
 
           <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
             <div class="zancun-inventory-column__head">
-              <h4>计划入库</h4>
+              <h4>{{ roomCopy.plannedTitle }}</h4>
               <span class="pill">待入库 {{ plannedInboundTotalCount }}</span>
               <AppPagination
                 class="zancun-planned-inbound-pagination"
@@ -176,7 +176,7 @@
 
     <AppModal
       :open="destinationModalOpen"
-      title="选择目标实验室"
+      :title="roomCopy.destinationTitle"
       data-testid="zancun-destination-modal"
       @close="cancelDestinationAction"
     >
@@ -323,7 +323,7 @@ defineOptions({
   name: "StagingManagementPage",
 });
 
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
@@ -343,6 +343,34 @@ import {
   buildZancunScanDetail,
 } from "./model";
 
+const ROOM_PAGE_COPY = {
+  staging: {
+    activeMetricLabel: "暂存间中样品数量",
+    consoleTitle: "暂存间控制台",
+    currentColumnTitle: "暂存间样品",
+    currentEmptyMessage: "当前页暂无暂存间样品",
+    currentPillPrefix: "当前在库",
+    destinationTitle: "选择目标实验室",
+    moduleSource: "staging-management",
+    plannedEmptyMessage: "当前页暂无计划入库托盘",
+    plannedTitle: "计划入库",
+  },
+  appearance: {
+    activeMetricLabel: "外观检测间中样品数量",
+    consoleTitle: "外观检测间控制台",
+    currentColumnTitle: "外观检测间样品",
+    currentEmptyMessage: "当前页暂无外观检测间样品",
+    currentPillPrefix: "当前在库",
+    destinationTitle: "选择目标去向",
+    moduleSource: "appearance-inspection",
+    plannedEmptyMessage: "当前页暂无待检测托盘",
+    plannedTitle: "计划入库",
+  },
+};
+
+const instance = getCurrentInstance();
+const activeRoom = computed(() => String(instance?.proxy?.$route?.meta?.storageRoom || "staging").trim() || "staging");
+const roomCopy = computed(() => ROOM_PAGE_COPY[activeRoom.value] || ROOM_PAGE_COPY.staging);
 const snapshot = ref({
   [STORAGE_KEYS.tasks]: [],
   [STORAGE_KEYS.schedules]: [],
@@ -364,6 +392,7 @@ const nowValue = () => formatLocalDateTime();
 const overviewSourceRows = computed(() =>
   buildZancunRowsFromSnapshot(snapshot.value, {
     now: nowValue(),
+    room: activeRoom.value,
   }),
 );
 
@@ -386,13 +415,14 @@ const overviewView = computed(() =>
 const metrics = computed(() => {
   const summary = buildZancunMetrics({
     now: nowValue(),
+    room: activeRoom.value,
     rows: overviewSourceRows.value,
     stagingEvents: snapshot.value[STORAGE_KEYS.staging_events],
   });
   return [
     {
       caption: "",
-      label: "暂存间中样品数量",
+      label: roomCopy.value.activeMetricLabel,
       mode: "active",
       testId: "zancun-metric-active",
       value: String(summary.totalQuantity),
@@ -423,7 +453,7 @@ const activeMetricLabel = computed(() => {
 });
 
 const overviewRows = computed(() => overviewView.value.rows);
-const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value));
+const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value, { room: activeRoom.value }));
 const currentStagingAllRows = computed(() => inventorySections.value.currentStagingRows);
 const plannedInboundAllRows = computed(() => inventorySections.value.plannedInboundRows);
 const currentStagingTotalCount = computed(() => currentStagingAllRows.value.length);
@@ -452,8 +482,8 @@ const currentStagingPageCount = computed(() => resolvePageCount(currentStagingTo
 const overviewPageCount = computed(() => resolvePageCount(plannedInboundTotalCount.value));
 const currentStagingRows = computed(() => paginateRows(currentStagingAllRows.value, currentStagingCurrentPage.value));
 const plannedInboundRows = computed(() => paginateRows(plannedInboundAllRows.value, overviewCurrentPage.value));
-const currentStagingSlots = computed(() => buildInventorySlots(currentStagingRows.value, "当前页暂无暂存间样品"));
-const plannedInboundSlots = computed(() => buildInventorySlots(plannedInboundRows.value, "当前页暂无计划入库托盘"));
+const currentStagingSlots = computed(() => buildInventorySlots(currentStagingRows.value, roomCopy.value.currentEmptyMessage));
+const plannedInboundSlots = computed(() => buildInventorySlots(plannedInboundRows.value, roomCopy.value.plannedEmptyMessage));
 
 watch([overviewQuery, activeMetricMode], () => {
   overviewCurrentPage.value = 1;
@@ -601,7 +631,11 @@ const openDestinationModal = (detail) => {
   destinationModalOpen.value = true;
 };
 
-const manufacturerReturnSafe = computed(() => activeDetail.status === "放置实验后暂存间" || activeDetail.isPostExperimentInbound);
+const manufacturerReturnSafe = computed(() =>
+  activeDetail.status === "放置实验后暂存间"
+  || activeDetail.status === "外观检测间存放"
+  || activeDetail.isPostExperimentInbound,
+);
 
 const closeDetailModal = () => {
   detailModalOpen.value = false;
@@ -628,7 +662,7 @@ const persistInventoryResult = async (result) => {
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "staging-management" } }));
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
   }
   return !result.error;
 };
@@ -640,7 +674,7 @@ const resolveScannedDetail = () => {
     return null;
   }
 
-  const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value);
+  const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value, { room: activeRoom.value });
   if (!detail.found) {
     scanWarning.value = activeScanMode.value === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。";
     resetScanCodeAfterAttempt();
@@ -666,7 +700,9 @@ const submitStockInScan = async () => {
       payload: {
         code: detail.trayCode,
         mode: "stockIn",
+        room: activeRoom.value,
       },
+      room: activeRoom.value,
       snapshot: snapshot.value,
     });
     if (await persistInventoryResult(result)) {
@@ -697,8 +733,8 @@ const completeScan = async () => {
     return;
   }
 
-  if (detail.status !== "到货" && detail.status !== "放置实验后暂存间") {
-    scanWarning.value = "该托盘尚未完成暂存间扫码入库。";
+  if (!["到货", "放置实验后暂存间", "外观检测间存放"].includes(detail.status)) {
+    scanWarning.value = activeRoom.value === "appearance" ? "该托盘尚未完成外观检测间扫码入库。" : "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;
   }
@@ -746,14 +782,17 @@ const confirmDestinationAction = async (destination = null) => {
   }
   const result = applyZancunInventoryAction({
     now: nowValue(),
-    payload: {
-      code: activeDetail.trayCode,
-      mode: "stockOut",
-      targetExperimentCode: target.targetExperimentCode,
-      targetExperimentName: target.targetExperimentName,
-      targetLab: target.targetLab,
-    },
-    snapshot: snapshot.value,
+      payload: {
+        code: activeDetail.trayCode,
+        mode: "stockOut",
+        room: activeRoom.value,
+        targetExperimentCode: target.targetExperimentCode,
+        targetExperimentName: target.targetExperimentName,
+        targetLab: target.targetLab,
+        targetType: target.targetType,
+      },
+      room: activeRoom.value,
+      snapshot: snapshot.value,
   });
 
   await persistInventoryResult(result);
@@ -777,11 +816,13 @@ const submitManufacturerReturn = async () => {
 
   const result = applyZancunInventoryAction({
     now: nowValue(),
-    payload: {
-      code: activeDetail.trayCode,
-      mode: "manufacturerReturn",
-    },
-    snapshot: snapshot.value,
+      payload: {
+        code: activeDetail.trayCode,
+        mode: "manufacturerReturn",
+        room: activeRoom.value,
+      },
+      room: activeRoom.value,
+      snapshot: snapshot.value,
   });
 
   await persistInventoryResult(result);
@@ -798,7 +839,9 @@ const confirmDetailAction = async () => {
     payload: {
       code: activeDetail.trayCode,
       mode: activeDetailMode.value,
+      room: activeRoom.value,
     },
+    room: activeRoom.value,
     snapshot: snapshot.value,
   });
 
@@ -809,7 +852,7 @@ const confirmDetailAction = async () => {
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
     });
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "staging-management" } }));
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
   }
 
   closeDetailModal();
@@ -839,7 +882,7 @@ const actions = [
 ];
 
 const handleSamplesUpdated = (event) => {
-  if (event?.detail?.source === "staging-management") {
+  if (event?.detail?.source === roomCopy.value.moduleSource) {
     return;
   }
   if (isRealtimeRefreshPaused()) {

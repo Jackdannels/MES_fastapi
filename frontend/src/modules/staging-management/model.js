@@ -11,19 +11,33 @@ const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const APPEARANCE_LOCATION = "外观检测间";
 const STAGING_STOCKED_STATUS = "到货";
 const LEGACY_STAGING_STOCKED_STATUS = "已入库";
 const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
+const APPEARANCE_SENT_STATUS = "送至外观检测间";
+const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
+const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, "已到达外观检测间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
   "实验完成",
   POST_EXPERIMENT_STAGING_STATUS,
 ]);
+const APPEARANCE_STOCK_IN_CANDIDATE_STATUSES = new Set([
+  ...PRE_APPEARANCE_STATUSES,
+  APPEARANCE_STOCKED_STATUS,
+]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const resolveStorageRoomConfig = (room) =>
+  STORAGE_ROOM_CONFIGS[normalizeText(room)] || STORAGE_ROOM_CONFIGS.staging;
+const eventMatchesRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
+  const eventRoom = normalizeText(event?.room || event?.storage_room || event?.storageRoom);
+  return eventRoom ? eventRoom === config.eventRoom : config.key === "staging";
+};
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
 const COMPLETED_RUN_TRAY_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
@@ -32,6 +46,40 @@ const COMPLETED_RUN_TRAY_STATUSES = new Set([
   "厂家收回",
 ]);
 const STAGING_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘已进入试验间流程，不能暂存间入库。";
+const APPEARANCE_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘未送至外观检测间，不能外观检测间入库。";
+
+const STORAGE_ROOM_CONFIGS = {
+  staging: {
+    currentLocation: STAGING_LOCATION,
+    currentStatuses: new Set([STAGING_STOCKED_STATUS, LEGACY_STAGING_STOCKED_STATUS, "已到达暂存间", "暂存间存放", POST_EXPERIMENT_STAGING_STATUS]),
+    duplicateStockInError: "该托盘已完成暂存间扫码入库。",
+    eventRoom: "staging",
+    historyStockInAction: "暂存间扫码入库",
+    historyStockOutAction: "暂存间扫码出库",
+    key: "staging",
+    requiresStockInError: "该托盘尚未完成暂存间扫码入库。",
+    stockInBlockedError: STAGING_STOCK_IN_BLOCKED_STATUS_ERROR,
+    stockInStatus: "已到达暂存间",
+    stockedDisplayStatus: STAGING_STOCKED_STATUS,
+    stockInCandidateStatuses: STOCK_IN_CANDIDATE_STATUSES,
+    terminalRetainError: "该托盘已完成全部实验，当前应保留在暂存间。",
+  },
+  appearance: {
+    currentLocation: APPEARANCE_LOCATION,
+    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, "已到达外观检测间"]),
+    duplicateStockInError: "该托盘已完成外观检测间扫码入库。",
+    eventRoom: "appearance",
+    historyStockInAction: "外观检测间扫码入库",
+    historyStockOutAction: "外观检测间扫码出库",
+    key: "appearance",
+    requiresStockInError: "该托盘尚未完成外观检测间扫码入库。",
+    stockInBlockedError: APPEARANCE_STOCK_IN_BLOCKED_STATUS_ERROR,
+    stockInStatus: APPEARANCE_STOCKED_STATUS,
+    stockedDisplayStatus: APPEARANCE_STOCKED_STATUS,
+    stockInCandidateStatuses: APPEARANCE_STOCK_IN_CANDIDATE_STATUSES,
+    terminalRetainError: "该托盘已完成全部实验，当前应保留在外观检测间。",
+  },
+};
 
 const createId = (prefix) => {
   const stamp = Date.now();
@@ -113,7 +161,10 @@ const parseTimeValue = (value) => {
   return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
 };
 
-const isStagingDestination = (value) => normalizeText(value).includes("暂存间");
+const isStagingDestination = (value) => {
+  const text = normalizeText(value);
+  return text.includes("暂存间") || text.includes("外观检测间");
+};
 
 const resolveExperimentName = (experiment, fallback = "") =>
   normalizeText(experiment?.experiment_name)
@@ -146,9 +197,12 @@ const buildTaskMap = (tasks) => {
   return map;
 };
 
-const buildEventMap = (stagingEvents) => {
+const buildEventMap = (stagingEvents, config = STORAGE_ROOM_CONFIGS.staging) => {
   const eventMap = new Map();
   asArray(stagingEvents).forEach((event) => {
+    if (!eventMatchesRoom(event, config)) {
+      return;
+    }
     const trayCode = normalizeText(event?.tray_code);
     if (!trayCode) {
       return;
@@ -168,15 +222,16 @@ const buildEventMap = (stagingEvents) => {
   return eventMap;
 };
 
-const isCurrentStagingStatus = (status) => {
+const isCurrentStagingStatus = (status, config = STORAGE_ROOM_CONFIGS.staging) => {
   const normalized = normalizeText(status);
-  return normalized === STAGING_STOCKED_STATUS || normalized === LEGACY_STAGING_STOCKED_STATUS || normalized === POST_EXPERIMENT_STAGING_STATUS;
+  return config.currentStatuses.has(normalized);
 };
 
 const resolveTrayStatus = (statuses, events, options = {}) => {
+  const config = resolveStorageRoomConfig(options.room);
   const latestEvent = asArray(events).at(-1);
-  const hasStoredStatus = statuses.some((status) => normalizeText(status) === "已到达暂存间" || normalizeText(status) === "暂存间存放");
-  const hasStockInCandidateStatus = statuses.some((status) => STOCK_IN_CANDIDATE_STATUSES.has(normalizeText(status)));
+  const hasStoredStatus = statuses.some((status) => isCurrentStagingStatus(status, config));
+  const hasStockInCandidateStatus = statuses.some((status) => config.stockInCandidateStatuses.has(normalizeText(status)));
   const hasCompletedExperimentStatus = statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
   if (normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
     return "待入库";
@@ -188,10 +243,10 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
     return "厂家收回";
   }
   if (normalizeText(latestEvent?.action) === "stock_in") {
-    return options.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : STAGING_STOCKED_STATUS;
+    return options.isPostExperimentInbound && config.key === "staging" ? POST_EXPERIMENT_STAGING_STATUS : config.stockedDisplayStatus;
   }
   if (hasStoredStatus) {
-    return STAGING_STOCKED_STATUS;
+    return config.stockedDisplayStatus;
   }
   if (hasStockInCandidateStatus) {
     return "待入库";
@@ -291,7 +346,8 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
   });
 };
 
-const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunTrays }) => {
+const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunTrays, room = "staging" }) => {
+  const config = resolveStorageRoomConfig(room);
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
   if (!taskCode || !trayCode) {
@@ -412,17 +468,32 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       })
     .sort((left, right) => parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt));
 
+  const appearanceStagingDestination = config.key === "appearance"
+    ? [{
+        preferred: directScheduledCandidates.length === 0 && scheduledCandidates.length === 0,
+        scheduled: true,
+        targetExperimentCode: "",
+        targetExperimentName: "暂存间存放",
+        targetIsFallback: false,
+        targetLab: STAGING_LOCATION,
+        targetScheduleStartAt: "",
+        targetScheduleEndAt: "",
+        targetType: "staging",
+        targetUnavailableReason: "",
+      }]
+    : [];
+
   if (directScheduledCandidates.length) {
     const earliest = parseTimeValue(directScheduledCandidates[0]?.targetScheduleStartAt);
     const earliestCount = directScheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
     if (earliestCount === 1) {
       directScheduledCandidates[0].preferred = true;
     }
-    return directScheduledCandidates;
+    return [...directScheduledCandidates, ...appearanceStagingDestination];
   }
 
   if (scheduledCandidates.length || fallbackCandidates.length || trayExperimentCodes.size > 0) {
-    return [...scheduledCandidates, ...fallbackCandidates];
+    return [...scheduledCandidates, ...fallbackCandidates, ...appearanceStagingDestination];
   }
 
   const fallbackCandidatesByExperiment = asArray(experiments)
@@ -449,7 +520,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
     }));
   if (fallbackCandidatesByExperiment.length) {
-    return fallbackCandidatesByExperiment;
+    return [...fallbackCandidatesByExperiment, ...appearanceStagingDestination];
   }
 
   const fallbackLab = getLabsForTestType(row?.testType)[0] || "";
@@ -464,10 +535,10 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       targetScheduleStartAt: "",
       targetScheduleEndAt: "",
       targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-    }];
+    }, ...appearanceStagingDestination];
   }
 
-  return [];
+  return appearanceStagingDestination;
 };
 
 const collectTaskTrayCodes = (snapshot, taskCode) => {
@@ -563,6 +634,7 @@ const pruneTerminalExperimentSchedules = (snapshot, taskCode) => {
 };
 
 function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
+  const config = resolveStorageRoomConfig(options.room);
   const tasks = asArray(snapshot[TASKS_KEY]);
   const schedules = asArray(snapshot[SCHEDULES_KEY]);
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
@@ -571,7 +643,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
-  const eventMap = buildEventMap(stagingEvents);
+  const eventMap = buildEventMap(stagingEvents, config);
   const trayMap = new Map();
 
   samples.forEach((sample) => {
@@ -592,7 +664,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const fallbackSampleType = normalizeText(task?.test_type || task?.sample_type || sample?.sample_type) || "待确认样品类型";
       const current = trayMap.get(trayCode) || {
         id: createId("zancun-row"),
-        location: normalizeText(sample?.location) || STAGING_LOCATION,
+        location: normalizeText(sample?.location) || config.currentLocation,
         owner: normalizeText(sample?.owner) || "待确认",
         quantity: 0,
         sampleType: trayExperimentTypeText || fallbackSampleType,
@@ -605,7 +677,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
 
       current.taskCode = current.taskCode || taskCode;
       current.owner = current.owner || normalizeText(sample?.owner) || "待确认";
-      current.location = current.location || normalizeText(sample?.location) || STAGING_LOCATION;
+      current.location = current.location || normalizeText(sample?.location) || config.currentLocation;
       current.sampleType = trayExperimentTypeText || current.sampleType || fallbackSampleType;
       current.source = current.source || normalizeText(task?.source) || "待确认来源";
       current.testType = current.testType || normalizeText(task?.test_type);
@@ -620,7 +692,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const latestEvent = events.at(-1) || {};
       trayMap.set(trayCode, {
         id: createId("zancun-row"),
-        location: STAGING_LOCATION,
+        location: config.currentLocation,
         owner: normalizeText(latestEvent?.operator) || "待确认",
         quantity: 0,
         sampleType: "待确认样品类型",
@@ -658,7 +730,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
-      const status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound });
+      const status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
       const stockInToday = events.some(
         (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );
@@ -671,6 +743,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         experimentRunTrays,
         experimentTrays,
         row,
+        room: config.key,
         samples,
         schedules,
       });
@@ -682,7 +755,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
 
       return {
         id: row.id,
-        location: status === "已出库" ? "已完成出库" : normalizeText(row.location) || STAGING_LOCATION,
+        location: status === "已出库" ? "已完成出库" : normalizeText(row.location) || config.currentLocation,
         owner: normalizeText(row.owner) || "待确认",
         quantity: Number(row.quantity) || 0,
         sampleType: normalizeText(row.sampleType) || "待确认样品类型",
@@ -712,11 +785,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
     .sort((left, right) => compareValues(left.trayCode, right.trayCode, "asc"));
 }
 
-function buildZancunInventorySections(rows = []) {
+function buildZancunInventorySections(rows = [], options = {}) {
+  const config = resolveStorageRoomConfig(options.room);
   const rowList = asArray(rows);
   return {
     currentStagingRows: rowList
-      .filter((row) => isCurrentStagingStatus(row?.status))
+      .filter((row) => isCurrentStagingStatus(row?.status, config))
       .sort((left, right) => compareValues(left?.trayCode, right?.trayCode, "asc")),
     plannedInboundRows: rowList
       .filter((row) => normalizeText(row?.status) === "待入库")
@@ -726,6 +800,7 @@ function buildZancunInventorySections(rows = []) {
 
 function buildZancunMetrics(input = {}) {
   const rowList = Array.isArray(input) ? input : asArray(input.rows);
+  const config = resolveStorageRoomConfig(Array.isArray(input) ? "staging" : input.room);
   const stagingEvents = Array.isArray(input) ? [] : asArray(input.stagingEvents);
   const todayKey = toDateKey(Array.isArray(input) ? new Date() : (input.now || new Date()));
   const stockedInToday = new Set();
@@ -733,7 +808,7 @@ function buildZancunMetrics(input = {}) {
 
   stagingEvents.forEach((event) => {
     const trayCode = normalizeText(event?.tray_code);
-    if (!trayCode) {
+    if (!trayCode || !eventMatchesRoom(event, config)) {
       return;
     }
     const current = latestEventsByTray.get(trayCode);
@@ -748,6 +823,7 @@ function buildZancunMetrics(input = {}) {
     Array.from(latestEventsByTray.entries())
       .filter(([, event]) => (
         toDateKey(event?.time) === todayKey
+        && eventMatchesRoom(event, config)
         && ["stock_out", "manufacturer_return"].includes(normalizeText(event?.action))
       ))
       .map(([trayCode]) => trayCode),
@@ -757,7 +833,7 @@ function buildZancunMetrics(input = {}) {
     stockedInTodayCount: stockedInToday.size,
     stockedOutTodayCount: stockedOutToday.size,
     totalQuantity: rowList
-      .filter((row) => isCurrentStagingStatus(row?.status))
+      .filter((row) => isCurrentStagingStatus(row?.status, config))
       .reduce((sum, row) => sum + (Number(row?.quantity) || 0), 0),
   };
 }
@@ -830,7 +906,8 @@ function buildZancunOverviewView(input = {}) {
   };
 }
 
-function buildZancunScanDetail(rows, code, mode) {
+function buildZancunScanDetail(rows, code, mode, options = {}) {
+  const config = resolveStorageRoomConfig(options.room);
   const rowList = asArray(rows);
   const normalizedCode = normalizeText(code);
   const actionMode = mode === "stockOut" ? "stockOut" : "stockIn";
@@ -841,8 +918,8 @@ function buildZancunScanDetail(rows, code, mode) {
       actionLabel: actionMode === "stockIn" ? "入库" : "出库",
       actionMode,
       found: false,
-      location: actionMode === "stockIn" ? "待确认暂存库位" : "待确认当前位置",
-      nextStatus: actionMode === "stockIn" ? STAGING_STOCKED_STATUS : "已出库",
+      location: actionMode === "stockIn" ? `待确认${config.currentLocation}` : "待确认当前位置",
+      nextStatus: actionMode === "stockIn" ? config.stockedDisplayStatus : "已出库",
       owner: "待确认",
       quantity: 0,
       sampleType: "待确认样品类型",
@@ -865,7 +942,7 @@ function buildZancunScanDetail(rows, code, mode) {
     actionLabel: actionMode === "stockIn" ? "入库" : "出库",
     actionMode,
     found: true,
-    nextStatus: actionMode === "stockIn" ? STAGING_STOCKED_STATUS : "已出库",
+    nextStatus: actionMode === "stockIn" ? config.stockedDisplayStatus : "已出库",
     stockInAtDisplay: formatDateTime(matchedRow.stockInAt),
   };
 }
@@ -873,6 +950,7 @@ function buildZancunScanDetail(rows, code, mode) {
 function applyZancunInventoryAction(input = {}) {
   const snapshot = input.snapshot && typeof input.snapshot === "object" ? input.snapshot : {};
   const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
+  const config = resolveStorageRoomConfig(payload.room || input.room);
   const actionMode =
     payload.mode === "manufacturerReturn"
       ? "manufacturerReturn"
@@ -904,7 +982,7 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  const rows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime });
+  const rows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime, room: config.key });
   const matchedRow = rows.find((row) => normalizeText(row?.trayCode) === normalizedCode);
   if (!matchedRow) {
     return {
@@ -938,20 +1016,20 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  if (actionMode === "stockIn" && isCurrentStagingStatus(matchedRow.status)) {
+  if (actionMode === "stockIn" && isCurrentStagingStatus(matchedRow.status, config)) {
     return {
-      error: "该托盘已完成暂存间扫码入库。",
+      error: config.duplicateStockInError,
       row: null,
       snapshot: nextSnapshot,
     };
   }
 
   const latestMatchedEvent = nextSnapshot[STAGING_EVENTS_KEY]
-    .filter((event) => normalizeText(event?.tray_code) === normalizedCode)
+    .filter((event) => normalizeText(event?.tray_code) === normalizedCode && eventMatchesRoom(event, config))
     .at(-1);
   if (actionMode === "stockIn" && normalizeText(latestMatchedEvent?.action) === "stock_in") {
     return {
-      error: "该托盘已完成暂存间扫码入库。",
+      error: config.duplicateStockInError,
       row: null,
       snapshot: nextSnapshot,
     };
@@ -959,15 +1037,15 @@ function applyZancunInventoryAction(input = {}) {
 
   if (actionMode === "stockIn" && normalizeText(matchedRow.status) !== "待入库") {
     return {
-      error: STAGING_STOCK_IN_BLOCKED_STATUS_ERROR,
+      error: config.stockInBlockedError,
       row: null,
       snapshot: nextSnapshot,
     };
   }
 
-  if (actionMode === "manufacturerReturn" && !isCurrentStagingStatus(matchedRow.status)) {
+  if (actionMode === "manufacturerReturn" && !isCurrentStagingStatus(matchedRow.status, config)) {
     return {
-      error: "该托盘尚未完成暂存间扫码入库。",
+      error: config.requiresStockInError,
       row: null,
       snapshot: nextSnapshot,
     };
@@ -975,15 +1053,15 @@ function applyZancunInventoryAction(input = {}) {
 
   if (actionMode === "stockOut" && normalizeText(matchedRow.status) === POST_EXPERIMENT_STAGING_STATUS) {
     return {
-      error: "该托盘已完成全部实验，当前应保留在暂存间。",
+      error: config.terminalRetainError,
       row: null,
       snapshot: nextSnapshot,
     };
   }
 
-  if (actionMode === "stockOut" && !isCurrentStagingStatus(matchedRow.status)) {
+  if (actionMode === "stockOut" && !isCurrentStagingStatus(matchedRow.status, config)) {
     return {
-      error: "该托盘尚未完成暂存间扫码入库。",
+      error: config.requiresStockInError,
       row: null,
       snapshot: nextSnapshot,
     };
@@ -999,10 +1077,12 @@ function applyZancunInventoryAction(input = {}) {
 
   const selectedTargetLab = normalizeText(payload.targetLab);
   const selectedTargetExperimentCode = normalizeText(payload.targetExperimentCode);
+  const selectedTargetType = normalizeText(payload.targetType);
   const targetDestinations = asArray(matchedRow.targetDestinations);
   const selectedDestination = targetDestinations.find((destination) => (
     normalizeText(destination?.targetLab) === selectedTargetLab
     && (!selectedTargetExperimentCode || normalizeText(destination?.targetExperimentCode) === selectedTargetExperimentCode)
+    && (!selectedTargetType || normalizeText(destination?.targetType) === selectedTargetType)
   )) || null;
   if (actionMode === "stockOut" && !selectedTargetLab) {
     return {
@@ -1030,6 +1110,7 @@ function applyZancunInventoryAction(input = {}) {
     id: createId("staging-event"),
     tray_code: matchedRow.trayCode,
     task_code: matchedRow.taskCode,
+    room: config.eventRoom,
     action:
       actionMode === "stockIn"
         ? "stock_in"
@@ -1047,16 +1128,17 @@ function applyZancunInventoryAction(input = {}) {
           target_experiment_code: normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode),
           target_experiment_name: normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName),
           target_lab: selectedTargetLab,
+          target_type: normalizeText(selectedDestination?.targetType) || selectedTargetType || "lab",
         }
       : {}),
   });
 
   if (actionMode === "stockIn") {
-    const nextStockInStatus = matchedRow.isPostExperimentInbound ? POST_EXPERIMENT_STAGING_STATUS : "已到达暂存间";
+    const nextStockInStatus = matchedRow.isPostExperimentInbound && config.key === "staging" ? POST_EXPERIMENT_STAGING_STATUS : config.stockInStatus;
     const synced = synchronizeSamplesForTrayCodes({
-      historyAction: "暂存间扫码入库",
+      historyAction: config.historyStockInAction,
       historyDetail: `${matchedRow.trayCode} ${nextStockInStatus}`,
-      location: STAGING_LOCATION,
+      location: config.currentLocation,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
@@ -1067,16 +1149,20 @@ function applyZancunInventoryAction(input = {}) {
   }
 
   if (actionMode === "stockOut") {
+    const isStagingTarget =
+      normalizeText(selectedDestination?.targetType) === "staging"
+      || selectedTargetType === "staging"
+      || normalizeText(selectedTargetLab) === STAGING_LOCATION;
     const targetExperimentCode =
       normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
     const synced = synchronizeSamplesForTrayCodes({
-      historyAction: "暂存间扫码出库",
+      historyAction: config.historyStockOutAction,
       historyDetail: `${matchedRow.trayCode} 送至 ${selectedTargetLab}`,
-      location: selectedTargetLab,
+      location: isStagingTarget ? STAGING_LOCATION : selectedTargetLab,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
-      status: "送至实验室",
+      status: isStagingTarget ? "送至暂存间" : "送至实验室",
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples.map((sample) => ({
@@ -1085,8 +1171,17 @@ function applyZancunInventoryAction(input = {}) {
         normalizeText(tray?.tray_code) === normalizeText(matchedRow.trayCode)
           ? {
               ...tray,
-              target_experiment_code: targetExperimentCode,
-              target_lab: selectedTargetLab,
+              ...(isStagingTarget
+                ? {
+                    target_experiment_code: "",
+                    target_lab: STAGING_LOCATION,
+                    target_type: "staging",
+                  }
+                : {
+                    target_experiment_code: targetExperimentCode,
+                    target_lab: selectedTargetLab,
+                    target_type: "lab",
+                  }),
             }
           : tray,
       ),
@@ -1109,7 +1204,7 @@ function applyZancunInventoryAction(input = {}) {
     pruneTerminalExperimentSchedules(nextSnapshot, matchedRow.taskCode);
   }
 
-  const nextRows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime });
+  const nextRows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime, room: config.key });
   const updatedRow = nextRows.find((row) => normalizeText(row?.trayCode) === normalizedCode) || null;
 
   return {

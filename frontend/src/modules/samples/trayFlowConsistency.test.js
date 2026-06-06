@@ -487,4 +487,82 @@ describe("tray flow consistency", () => {
     expect(visualizationPanel?.trays[0]?.canonicalStatus).toBe("冲击试验进行中");
     expect(visualizationPanel?.trays[0]?.steps.find((step) => step.active)?.label).toBe("冲击试验进行中");
   });
+
+  test("keeps appearance inspection storage as the stable state after a lab reset across views", () => {
+    const taskCode = "SYLU-2026-06-022";
+    const trayCode = "SYLU-2026-06-022-TP-001";
+    const snapshot = {
+      tasks: [{ code: taskCode, test_type: "霉菌试验 / 盐雾试验 / 四综合试验 / 高低温湿热试验", status: "任务进行中" }],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "霉菌试验", required_device: "霉菌试验室", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "高低温湿热试验", required_device: "高低温湿热一室", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      samples: [
+        {
+          task_code: taskCode,
+          code: "SYLU-2026-06-022-SP-001",
+          location: "外观检测间",
+          status: "外观检测间存放",
+          flow_status: "外观检测间存放",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "外观检测间存放" }],
+          history: [
+            { action: "任务切换撤回", detail: `${taskCode} / 高低温湿热试验 / 撤回至外观检测间存放`, status: "外观检测间存放", location: "外观检测间", time: "2026-06-06 22:10:00" },
+            { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成", location: "霉菌试验室", time: "2026-06-06 21:49:03" },
+            { detail: `${trayCode} 外观检测间存放`, status: "外观检测间存放", location: "外观检测间", time: "2026-06-06 21:49:30" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "霉菌试验室", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "高低温湿热一室", status: "已排程" },
+      ],
+    };
+
+    const directFlow = buildTrayFlowView({
+      ...snapshot,
+      currentExperimentCode: `${taskCode}-B`,
+      location: "外观检测间",
+      status: "外观检测间存放",
+      taskCode,
+      trayCode,
+    });
+    const overviewRows = buildTrayOverviewRows({
+      ...snapshot,
+      totalSlots: 1,
+      unassignedExperimentLabel: "未分配",
+    });
+    const laboratoryView = buildLaboratoryWorkbenchView({
+      ...snapshot,
+      labName: "高低温湿热一室",
+      selectedTrayCode: trayCode,
+    });
+    const visualizationPanels = buildLabProcessPanels({
+      ...snapshot,
+      labNames: ["高低温湿热一室"],
+    });
+
+    expect(directFlow.status).toBe("外观检测间存放");
+    expect(activeLabel(directFlow)).toBe("外观检测间存放");
+    expect(overviewRows[0]).toEqual(expect.objectContaining({
+      canonicalStatus: "外观检测间存放",
+      currentLocation: "外观检测间",
+      currentStatus: "外观检测间存放",
+      taskCode,
+      trayCode,
+    }));
+    expect(laboratoryView.selectedTrayFlow.status).toBe("外观检测间存放");
+    expect(activeLabel(laboratoryView.selectedTrayFlow)).toBe("外观检测间存放");
+    const visualTray = visualizationPanels[0]?.trays.find((tray) => tray.trayCode === trayCode);
+    expect(visualTray).toEqual(expect.objectContaining({
+      canonicalStatus: "外观检测间存放",
+      status: "外观检测间存放",
+      taskCode,
+      trayCode,
+    }));
+    expect(activeLabel(visualTray)).toBe("外观检测间存放");
+  });
 });

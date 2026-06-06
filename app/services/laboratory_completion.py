@@ -8,6 +8,10 @@ from app.core.time_utils import format_business_datetime, now_business_text
 COMPLETED_STATUS = "实验已完成"
 COMPLETION_ACTION = "实验完成"
 RUNNING_STATUS = "实验进行中"
+APPEARANCE_INSPECTION_LOCATION = "外观检测间"
+APPEARANCE_INSPECTION_DISPATCH_STATUS = "送至外观检测间"
+APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放"
+APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 EXPERIMENT_TRAY_FINISHED_STATUSES = {
     COMPLETED_STATUS,
     "实验完成",
@@ -15,6 +19,8 @@ EXPERIMENT_TRAY_FINISHED_STATUSES = {
     "放置实验后暂存间",
     "厂家收回",
     "已到达暂存间",
+    APPEARANCE_INSPECTION_DISPATCH_STATUS,
+    APPEARANCE_INSPECTION_STOCKED_STATUS,
 }
 
 def normalize_text(value: Any) -> str:
@@ -23,6 +29,18 @@ def normalize_text(value: Any) -> str:
 
 def completion_history_detail(task_code: Any, experiment_name: Any) -> str:
     return f"{normalize_text(task_code)} / {normalize_text(experiment_name)} / {COMPLETED_STATUS}"
+
+
+def experiment_requires_appearance_inspection(experiment_name: Any, experiment: dict[str, Any] | None = None) -> bool:
+    texts = [
+        experiment_name,
+        (experiment or {}).get("experiment_name"),
+        (experiment or {}).get("experiment_type"),
+        (experiment or {}).get("test_type"),
+        (experiment or {}).get("required_device"),
+    ]
+    joined = " / ".join(normalize_text(text) for text in texts if normalize_text(text))
+    return any(keyword in joined for keyword in APPEARANCE_REQUIRED_KEYWORDS)
 
 
 def run_tray_completed_statuses_for_experiment(
@@ -149,6 +167,9 @@ def complete_storage_laboratory_experiment(
         None,
     )
     experiment_name = normalize_text((experiment or {}).get("experiment_name") or (experiment or {}).get("experiment_type")) or normalized_experiment_code
+    requires_appearance_inspection = experiment_requires_appearance_inspection(experiment_name, experiment)
+    sample_completion_status = APPEARANCE_INSPECTION_DISPATCH_STATUS if requires_appearance_inspection else COMPLETED_STATUS
+    sample_completion_location = APPEARANCE_INSPECTION_LOCATION if requires_appearance_inspection else ""
     scoped_tray_codes = {
         normalize_text(item.get("tray_code"))
         for item in experiment_trays
@@ -247,6 +268,7 @@ def complete_storage_laboratory_experiment(
     for sample in samples:
         if not sample_matches_current_experiment(sample):
             continue
+        previous_location = normalize_text(sample.get("location"))
         touched = False
         next_trays = []
         for tray in sample.get("trays", []):
@@ -254,7 +276,7 @@ def complete_storage_laboratory_experiment(
             if tray_code in affected_tray_codes:
                 next_tray = {
                     **tray,
-                    "status": COMPLETED_STATUS,
+                    "status": sample_completion_status,
                     "updated_at": completed_time,
                 }
                 for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
@@ -266,14 +288,16 @@ def complete_storage_laboratory_experiment(
         if not touched:
             continue
         if next_trays and all(normalize_text(tray.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES for tray in next_trays):
-            sample["status"] = COMPLETED_STATUS
-            sample["flow_status"] = COMPLETED_STATUS
+            sample["status"] = sample_completion_status
+            sample["flow_status"] = sample_completion_status
+            if sample_completion_location:
+                sample["location"] = sample_completion_location
         sample["updated_at"] = completed_time
         sample["trays"] = next_trays
         history_entry = {
             "action": COMPLETION_ACTION,
             "detail": detail,
-            "location": normalize_text(sample.get("location")),
+            "location": previous_location,
             "owner": normalize_text(sample.get("owner")),
             "status": COMPLETED_STATUS,
             "time": completed_time,

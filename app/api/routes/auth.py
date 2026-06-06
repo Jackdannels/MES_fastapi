@@ -13,7 +13,7 @@ from app.api.auth_session import (
 from app.core.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-VALID_AUTH_MODULES = {"central", "handover", "visual", "staging", "laboratory"}
+VALID_AUTH_MODULES = {"central", "handover", "visual", "staging", "appearance", "laboratory"}
 
 
 class LoginRequest(BaseModel):

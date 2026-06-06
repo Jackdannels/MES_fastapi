@@ -277,6 +277,7 @@ SELECT seed.lab_code, seed.lab_name, seed.lab_type, NULL, seed.capacity, seed.lo
 FROM (
   SELECT 'AREA_STAGING_PRE' AS lab_code, '恒温恒湿间（暂存间）' AS lab_name, '暂存间' AS lab_type, 0 AS capacity, '' AS location_desc, 1 AS status, 'FRONTEND_MASTER_DATA' AS remark
   UNION ALL SELECT 'AREA_STAGING_POST', '恒温恒湿间（实验后暂存间）', '暂存间', 0, '', 1, 'FRONTEND_MASTER_DATA'
+  UNION ALL SELECT 'AREA_APPEARANCE', '外观检测间', '检测间', 0, '', 1, 'FRONTEND_MASTER_DATA'
   UNION ALL SELECT 'AREA_UNBOX', '拆箱操作间', '操作区', 0, '', 1, 'FRONTEND_MASTER_DATA'
   UNION ALL SELECT 'AREA_OUTDOOR_HANDOVER', '室外接驳区', '接驳区', 0, '', 1, 'FRONTEND_MASTER_DATA'
 ) seed

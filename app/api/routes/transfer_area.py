@@ -35,6 +35,8 @@ WITHDRAW_BLOCKED_TRAY_STATUSES = {
     "实验完成",
     "实验已经完成",
     "放置实验后暂存间",
+    "送至外观检测间",
+    "外观检测间存放",
     "厂家收回",
 }
 TRANSFER_STORAGE_UPDATE_KEYS = (
@@ -75,11 +77,15 @@ TRAY_OUTBOUND_STATUSES = {
     "实验进行中",
     "实验已完成",
     "放置实验后暂存间",
+    "送至外观检测间",
+    "外观检测间存放",
     "厂家收回",
 }
 TRAY_LAB_REDISPATCH_STATUSES = {
     "已到达暂存间",
     "放置实验后暂存间",
+    "送至外观检测间",
+    "外观检测间存放",
     "实验完成",
     "实验已经完成",
     "实验已完成",
@@ -91,6 +97,8 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验完成",
     "实验已经完成",
     "放置实验后暂存间",
+    "送至外观检测间",
+    "外观检测间存放",
     "厂家收回",
 )
 RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {

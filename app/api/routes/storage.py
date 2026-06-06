@@ -17,9 +17,12 @@ LAB_DISPATCHED_STATUS = "送至实验室"
 LAB_ARRIVED_STATUS = "已到达实验室"
 LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL = "托盘尚未从接驳间出库，不能直接到达实验室"
 STAGING_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能暂存间入库。"
+APPEARANCE_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能外观检测间入库。"
 RETURNED_REARRIVAL_BLOCKED_DETAIL = "该托盘已厂家收回，不能再次到货。"
 STAGING_LOCATION_KEYWORD = "暂存间"
 STAGING_INBOUND_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
+APPEARANCE_LOCATION_KEYWORD = "外观检测间"
+APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间"}
 RETURNED_STATUS = "厂家收回"
 HANDOVER_ARRIVAL_STATUSES = {"到货", "已入库"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -215,6 +218,28 @@ def _is_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
     return bool(statuses & STAGING_INBOUND_STATUSES) or STAGING_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
 
 
+def _is_appearance_inbound(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    return bool(statuses & APPEARANCE_INBOUND_STATUSES) or APPEARANCE_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
+
+
+def _is_storage_room_inbound(sample: Any, tray: Any | None = None) -> bool:
+    return _is_staging_inbound(sample, tray) or _is_appearance_inbound(sample, tray)
+
+
+def _stock_in_blocked_detail(sample: Any, tray: Any | None = None) -> str:
+    if _is_appearance_inbound(sample, tray):
+        return APPEARANCE_STOCK_IN_BLOCKED_DETAIL
+    return STAGING_STOCK_IN_BLOCKED_DETAIL
+
+
 def _is_post_experiment_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
     if not isinstance(sample, dict):
         return False
@@ -327,7 +352,7 @@ def _validate_samples_staging_reentry_transition(
             if not isinstance(next_tray, dict):
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
-            if _tray_has_blocked_lab_status(current_sample, current_tray) and _is_staging_inbound(next_sample, next_tray):
+            if _tray_has_blocked_lab_status(current_sample, current_tray) and _is_storage_room_inbound(next_sample, next_tray):
                 if _is_post_experiment_staging_inbound(next_sample, next_tray) and _post_staging_reentry_is_completed(
                     current_sample,
                     current_tray,
@@ -335,9 +360,9 @@ def _validate_samples_staging_reentry_transition(
                     experiment_run_trays,
                 ):
                     continue
-                raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
+                raise HTTPException(status_code=400, detail=_stock_in_blocked_detail(next_sample, next_tray))
 
-        if _sample_has_blocked_lab_status(current_sample) and _is_staging_inbound(next_sample):
+        if _sample_has_blocked_lab_status(current_sample) and _is_storage_room_inbound(next_sample):
             next_trays = [tray for tray in _as_list(next_sample.get("trays")) if isinstance(tray, dict)]
             completed_post_staging_trays = [
                 tray
@@ -352,7 +377,7 @@ def _validate_samples_staging_reentry_transition(
             ]
             if next_trays and len(completed_post_staging_trays) == len(next_trays):
                 continue
-            raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
+            raise HTTPException(status_code=400, detail=_stock_in_blocked_detail(next_sample))
 
 
 def _validate_samples_returned_rearrival_transition(current_samples: Any, next_samples: Any) -> None:

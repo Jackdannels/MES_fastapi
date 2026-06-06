@@ -398,6 +398,56 @@ def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch)
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_rejects_appearance_stock_in_after_laboratory_progress(monkeypatch):
+    samples = [
+        {
+            "code": "SP-LAB-PROGRESSED-APPEARANCE",
+            "location": "盐雾试验室",
+            "status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "task_code": "SYLU-2026-05-705",
+            "trays": [{"tray_code": "TP-LAB-PROGRESSED-APPEARANCE", "status": "工装夹具安装", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "外观检测间存放"
+    attempted[0]["flow_status"] = "外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已进入试验间流程，不能外观检测间入库。"
+    assert storage.read("mes.samples") == samples
+
+
+def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatch):
+    samples = [
+        {
+            "code": "SP-APPEARANCE-DISPATCHED",
+            "location": "外观检测间",
+            "status": "送至外观检测间",
+            "flow_status": "送至外观检测间",
+            "task_code": "SYLU-2026-05-706",
+            "trays": [{"tray_code": "TP-APPEARANCE-DISPATCHED", "status": "送至外观检测间", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["status"] = "外观检测间存放"
+    attempted[0]["flow_status"] = "外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+
+
 def test_storage_allows_post_staging_stock_in_when_all_tray_experiments_completed(monkeypatch):
     samples = [
         {

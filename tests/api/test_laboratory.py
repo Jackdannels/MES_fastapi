@@ -116,9 +116,10 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
     payload = response.json()
     assert payload["affectedTrayCodes"] == ["TP-501"]
     updated_sample = storage.read("mes.samples")[0]
-    assert updated_sample["status"] == "实验已完成"
-    assert updated_sample["flow_status"] == "实验已完成"
-    assert updated_sample["trays"][0]["status"] == "实验已完成"
+    assert updated_sample["location"] == "外观检测间"
+    assert updated_sample["status"] == "送至外观检测间"
+    assert updated_sample["flow_status"] == "送至外观检测间"
+    assert updated_sample["trays"][0]["status"] == "送至外观检测间"
     assert updated_sample["history"][0] == {
         "action": "实验完成",
         "detail": "TASK-501 / 盐雾试验 / 实验已完成",
@@ -219,7 +220,7 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     )
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -263,7 +264,7 @@ def test_laboratory_complete_experiment_infers_batch_trays_from_run_when_tray_co
 
     assert response.status_code == 200
     assert response.json()["affectedTrayCodes"] == ["TP-501"]
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -355,7 +356,7 @@ def test_laboratory_complete_experiment_ignores_other_experiment_completion_when
     )
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -485,7 +486,7 @@ def test_laboratory_complete_does_not_promote_multi_tray_sample_status_from_one_
     updated_sample = storage.read("mes.samples")[0]
     assert updated_sample["status"] == "实验进行中"
     assert updated_sample["flow_status"] == "实验进行中"
-    assert updated_sample["trays"][0]["status"] == "实验已完成"
+    assert updated_sample["trays"][0]["status"] == "送至外观检测间"
     assert updated_sample["trays"][1]["status"] == "实验准备就绪"
 
 
@@ -802,6 +803,58 @@ def test_laboratory_withdraw_current_restores_newer_staging_arrival_over_previou
     staging_events = storage.read("mes.staging_events")
     assert staging_events[-1]["action"] == "stock_out_withdraw"
     assert staging_events[-1]["target_experiment_code"] == "EXP-C"
+
+
+def test_laboratory_withdraw_current_restores_appearance_storage_before_current_lab_dispatch(monkeypatch):
+    payloads = base_payloads(
+        [
+            sample_with_history(
+                "已到达实验室",
+                "高低温湿热一室",
+                [
+                    {"action": "任务比对", "detail": "TASK-501 / 高低温湿热试验 / 已到达实验室", "status": "已到达实验室", "location": "高低温湿热一室", "time": "2026-06-06T22:00:00"},
+                    {"action": "外观检测间扫码出库", "detail": "TP-501 送至 高低温湿热一室", "status": "送至实验室", "location": "高低温湿热一室", "time": "2026-06-06T21:50:00"},
+                    {"action": "外观检测间扫码入库", "detail": "TP-501 外观检测间存放", "status": "外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                    {"action": "实验完成", "detail": "TASK-501 / 霉菌试验 / 实验已完成", "status": "实验已完成", "location": "霉菌试验室", "time": "2026-06-06T21:30:00"},
+                ],
+            )
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-D", "tray_code": "TP-501"},
+        ],
+        staging_events=[
+            {"id": "appearance-in", "tray_code": "TP-501", "task_code": "TASK-501", "room": "appearance", "action": "stock_in", "time": "2026-06-06T21:40:00"},
+            {
+                "id": "appearance-out",
+                "tray_code": "TP-501",
+                "task_code": "TASK-501",
+                "room": "appearance",
+                "action": "stock_out",
+                "target_lab": "高低温湿热一室",
+                "target_experiment_code": "EXP-D",
+                "time": "2026-06-06T21:50:00",
+            },
+        ],
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-D/withdraw-current", json={})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredExperimentName"] == ""
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "外观检测间存放"
+    assert updated["flow_status"] == "外观检测间存放"
+    assert updated["location"] == "外观检测间"
+    assert updated["trays"][0]["status"] == "外观检测间存放"
+    assert "撤回至外观检测间存放" in updated["history"][0]["detail"]
+    staging_events = storage.read("mes.staging_events")
+    assert staging_events[-1]["action"] == "stock_out_withdraw"
+    assert staging_events[-1]["room"] == "appearance"
+    assert staging_events[-1]["target_experiment_code"] == "EXP-D"
 
 
 def test_laboratory_withdraw_current_restores_previous_completed_experiment(monkeypatch):
