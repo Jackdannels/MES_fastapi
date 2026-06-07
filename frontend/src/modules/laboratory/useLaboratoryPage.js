@@ -17,6 +17,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
+import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
   applyLaboratoryTaskStep,
   buildLaboratoryChecklist,
@@ -56,6 +57,7 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();
+const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 
 const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
@@ -189,6 +191,8 @@ function useLaboratoryPage(options = {}) {
   const fixtureConfirmCountdown = ref(0);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
+  const laboratoryMqError = ref(null);
+  const readyPublishRetryAvailable = ref(false);
   const resetConfirmModalOpen = ref(false);
   const resetDangerModalOpen = ref(false);
   const completePromptVisible = ref(false);
@@ -219,6 +223,7 @@ function useLaboratoryPage(options = {}) {
       samples: samples.value,
       selectedTaskCode: selectedTaskCode.value,
       selectedTrayCode: selectedTrayCode.value,
+      labCode: laboratoryConfig.value.labCode,
       labName: laboratoryConfig.value.labName,
       schedules: schedules.value,
       tasks: tasks.value,
@@ -238,14 +243,8 @@ function useLaboratoryPage(options = {}) {
     ) || null,
   );
   const laboratoryMaintenanceNotice = computed(() => {
-    const status = normalizeText(selectedLabDevice.value?.status);
-    if (
-      status.includes("维护")
-      || status.includes("维修")
-      || status.includes("停用")
-      || status.includes("禁用")
-      || status.includes("不可用")
-    ) {
+    const reason = resolveDeviceUnavailableReason(selectedLabDevice.value, tickNow.value);
+    if (reason) {
       return "设备维护中，禁止实验室操作";
     }
     return "";
@@ -263,6 +262,9 @@ function useLaboratoryPage(options = {}) {
     }
     return "";
   });
+  const runningExperiment = computed(() => view.value.runningExperiment);
+  const runningInteractionLocked = computed(() => runningExperiment.value.active);
+  const operationLock = computed(() => getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value));
   const actionState = computed(() => {
     const state = getLaboratoryActionState(workflow.value);
     if (!currentTask.value || laboratoryUnderMaintenance.value) {
@@ -272,8 +274,7 @@ function useLaboratoryPage(options = {}) {
         canMarkReady: false,
       };
     }
-    const operationLock = getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value);
-    if (operationLock.active) {
+    if (operationLock.value.active) {
       return {
         canCompare: false,
         canInstallSample: false,
@@ -282,15 +283,34 @@ function useLaboratoryPage(options = {}) {
     }
     return state;
   });
+  const canResendFixtureInstall = computed(() =>
+    isMqttHostInterfaceMode()
+    && Boolean(currentTask.value)
+    && Boolean(workflow.value.hasInstalledWaitingReady)
+    && !workflow.value.fixtureReadyDone
+    && !runningInteractionLocked.value
+    && !laboratoryUnderMaintenance.value
+    && !operationLock.value.active,
+  );
+  const canRequestFixtureInstall = computed(() => actionState.value.canInstallSample || canResendFixtureInstall.value);
+  const canResendReady = computed(() =>
+    isMqttHostInterfaceMode()
+    && Boolean(currentTask.value)
+    && (Boolean(workflow.value.experimentConfirmed) || readyPublishRetryAvailable.value)
+    && !runningInteractionLocked.value
+    && !laboratoryUnderMaintenance.value
+    && !operationLock.value.active,
+  );
+  const canRequestReady = computed(() => actionState.value.canMarkReady || canResendReady.value);
+  const installActionLabel = computed(() => (canResendFixtureInstall.value ? "重新下发安装" : "安装样品"));
+  const readyActionLabel = computed(() => (canResendReady.value ? "重新下发准备" : "确认准备就绪"));
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
-  const runningExperiment = computed(() => view.value.runningExperiment);
   const runningModalExperiment = computed(() =>
     completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value,
   );
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = ref(false);
-  const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const canResetCurrentTask = computed(() => {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
     return (
@@ -334,6 +354,8 @@ function useLaboratoryPage(options = {}) {
     installModalOpen.value = false;
     fixtureConfirmModalOpen.value = false;
     fixtureConfirmSuccessModalOpen.value = false;
+    laboratoryMqError.value = null;
+    readyPublishRetryAvailable.value = false;
     readyModalOpen.value = false;
     confirmedModalOpen.value = false;
     resetConfirmModalOpen.value = false;
@@ -678,15 +700,33 @@ function useLaboratoryPage(options = {}) {
     });
     await hostInterfaceModeSync;
   };
-  const publishLaboratoryMqSafely = async (publisher, payload) => {
+  const clearLaboratoryMqError = () => {
+    laboratoryMqError.value = null;
+  };
+  const publishLaboratoryMqSafely = async (publisher, payload, actionLabel) => {
     if (!isMqttHostInterfaceMode()) {
       return;
     }
     try {
+      clearLaboratoryMqError();
+      if (actionLabel === "准备就绪") {
+        readyPublishRetryAvailable.value = false;
+      }
       await ensureHostInterfaceModeSynced();
       await publisher(payload);
     } catch (error) {
-      console.warn(error);
+      laboratoryMqError.value = {
+        detail: formatErrorMessage(error),
+        title: `${actionLabel}下发失败`,
+      };
+      if (actionLabel === "夹具安装") {
+        clearFixtureConfirmTimer();
+        fixtureConfirmModalOpen.value = false;
+      }
+      if (actionLabel === "准备就绪") {
+        confirmedModalOpen.value = false;
+        readyPublishRetryAvailable.value = true;
+      }
     }
   };
 
@@ -697,7 +737,8 @@ function useLaboratoryPage(options = {}) {
     },
   );
   const buildFixtureInstallPayload = () => {
-    const targetTrayRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
+    const comparedRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
+    const targetTrayRows = comparedRows.length > 0 ? comparedRows : getCurrentTaskTrayRowsByStatus(LAB_INSTALL_STATUS);
     return {
       experiment_code: currentTask.value?.experimentCode || "",
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
@@ -909,7 +950,7 @@ function useLaboratoryPage(options = {}) {
     compareScanCode.value = "";
   };
   const openInstall = () => {
-    if (runningInteractionLocked.value || !actionState.value.canInstallSample) {
+    if (runningInteractionLocked.value || !canRequestFixtureInstall.value) {
       return;
     }
     installModalOpen.value = true;
@@ -919,21 +960,22 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const confirmInstall = async () => {
-    if (!actionState.value.canInstallSample) {
+    if (!canRequestFixtureInstall.value) {
       installModalOpen.value = false;
       return;
     }
     const payload = buildFixtureInstallPayload();
     const targetTaskCode = currentTask.value?.taskCode || "";
-    const targetTrayCodes = getCurrentTaskTrayCodesByStatus(LAB_COMPARE_STATUS);
-    const persistOperation = persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
+    const isResend = !actionState.value.canInstallSample && canResendFixtureInstall.value;
+    const targetTrayCodes = getCurrentTaskTrayCodesByStatus(isResend ? LAB_INSTALL_STATUS : LAB_COMPARE_STATUS);
+    const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
     startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
     void persistOperation.catch(() => {});
-    void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload);
+    void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装");
   };
   const openReady = () => {
-    if (runningInteractionLocked.value || !actionState.value.canMarkReady) {
+    if (runningInteractionLocked.value || !canRequestReady.value) {
       return;
     }
     readyModalOpen.value = true;
@@ -943,15 +985,17 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const confirmReady = async () => {
-    if (!actionState.value.canMarkReady) {
+    if (!canRequestReady.value) {
       readyModalOpen.value = false;
       return;
     }
     const payload = buildReadyPayload();
-    await persistCurrentTaskStep(LAB_READY_STATUS, "实验确认");
+    if (actionState.value.canMarkReady) {
+      await persistCurrentTaskStep(LAB_READY_STATUS, "实验确认");
+    }
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
-    void publishLaboratoryMqSafely(publishLaboratoryReady, payload);
+    void publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
   };
   const closeConfirmed = () => {
     confirmedModalOpen.value = false;
@@ -1099,6 +1143,8 @@ function useLaboratoryPage(options = {}) {
 
   return {
     actionState,
+    canRequestFixtureInstall,
+    canRequestReady,
     canTeleportScheduleAction,
     checklist,
     closeCompleteConfirm,
@@ -1129,6 +1175,8 @@ function useLaboratoryPage(options = {}) {
     confirmedModalOpen,
     hideRunningModal,
     installModalOpen,
+    installActionLabel,
+    laboratoryMqError,
     labName: computed(() => laboratoryConfig.value.labName),
     loading,
     canCompleteCompare,
@@ -1149,6 +1197,7 @@ function useLaboratoryPage(options = {}) {
     progressMessage,
     laboratoryTaskNotice,
     readyModalOpen,
+    readyActionLabel,
     recentTasks: computed(() => view.value.scheduleRows),
     resetConfirmModalOpen,
     resetDangerModalOpen,

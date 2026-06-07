@@ -9,6 +9,27 @@ const labs = [
 ];
 
 describe("processLabModel", () => {
+  test("buildProcessLabCards matches schedules by lab code before display device text", () => {
+    const cards = buildProcessLabCards(
+      [{ code: "LAB_SALT", name: "Salt Spray Lab", testType: "Salt Spray Test" }],
+      [{ code: "TASK-SALT", test_type: "Salt Spray Test" }],
+      [
+        {
+          device: "盐雾试验室",
+          lab_code: "LAB_SALT",
+          end_at: "2026-03-10T12:00:00Z",
+          start_at: "2026-03-10T09:30:00Z",
+          task_code: "TASK-SALT",
+        },
+      ],
+      Date.parse("2026-03-10T10:00:00Z")
+    );
+
+    expect(cards.find((card) => card.name === "Salt Spray Lab")).toEqual(
+      expect.objectContaining({ status: "已排程", taskCode: "TASK-SALT" }),
+    );
+  });
+
   test("buildProcessLabCards returns all formal labs and marks unscheduled labs idle", () => {
     const cards = buildProcessLabCards(
       [...labs, { name: "Thermal Impact Lab", testType: "Thermal Impact Test" }],

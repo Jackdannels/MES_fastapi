@@ -67,6 +67,8 @@ TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
 STOCK_TRAY_CODE_PATTERN = re.compile(r"^STOCK-TP-(\d+)$")
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
+APPEARANCE_LOCATION = "外观检测间"
+APPEARANCE_STORED_STATUS = "外观检测间存放"
 TRAY_OUTBOUND_STATUSES = {
     "送至暂存间",
     "已到达暂存间",
@@ -1205,11 +1207,29 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
     }
 
 
-def latest_staging_event_for_tray(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> dict[str, Any] | None:
+def staging_event_room(event: dict[str, Any]) -> str:
+    return "appearance" if normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom")) == "appearance" else "staging"
+
+
+def staging_event_matches_room(event: dict[str, Any], room: str) -> bool:
+    target_room = "appearance" if normalize_text(room) == "appearance" else "staging"
+    return staging_event_room(event) == target_room
+
+
+def latest_staging_event_for_tray(
+    snapshot: dict[str, list[dict[str, Any]]],
+    tray_code: str,
+    *,
+    action: str = "",
+    room: str = "",
+) -> dict[str, Any] | None:
+    normalized_action = normalize_text(action)
     matched_events = [
         dict(event)
         for event in as_list(snapshot.get("staging_events"))
         if normalize_text(event.get("tray_code")) == normalize_text(tray_code)
+        and (not normalized_action or normalize_text(event.get("action")) == normalized_action)
+        and (not normalize_text(room) or staging_event_matches_room(event, room))
     ]
     if not matched_events:
         return None
@@ -1237,10 +1257,12 @@ def restore_status_for_withdrawal(
     task_samples: list[dict[str, Any]],
     tray_code: str,
 ) -> tuple[str, str, str]:
-    latest_staging_event = latest_staging_event_for_tray(snapshot, tray_code)
-    if latest_staging_event and normalize_text(latest_staging_event.get("action")) == "stock_out":
+    latest_stock_out_event = latest_staging_event_for_tray(snapshot, tray_code, action="stock_out")
+    if latest_stock_out_event:
+        if staging_event_matches_room(latest_stock_out_event, "appearance"):
+            return APPEARANCE_STORED_STATUS, APPEARANCE_LOCATION, "appearance"
         return "已到达暂存间", STAGING_LOCATION, "staging"
-    if latest_staging_event is None and sample_has_staging_dispatch_history(task_samples, tray_code):
+    if sample_has_staging_dispatch_history(task_samples, tray_code):
         return "已到达暂存间", STAGING_LOCATION, "staging"
     return "到货", "接驳区", "handover"
 
@@ -1314,20 +1336,21 @@ def apply_tray_withdrawal(
     if affected_count == 0:
         raise HTTPException(status_code=404, detail="未找到托盘")
 
-    if restore_scope == "staging":
-        latest_event = latest_staging_event_for_tray(snapshot, tray_code) or {}
-        snapshot["staging_events"].append(
-            {
-                "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
-                "tray_code": normalized_tray_code,
-                "task_code": task_code(task),
-                "action": "stock_out_withdraw",
-                "time": timestamp,
-                "operator": normalize_text(reason) or "撤回出库",
-                "target_lab": normalize_text(latest_event.get("target_lab")),
-                "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")),
-            }
-        )
+    if restore_scope in {"staging", "appearance"}:
+        latest_event = latest_staging_event_for_tray(snapshot, tray_code, action="stock_out", room=restore_scope) or {}
+        staging_event = {
+            "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
+            "tray_code": normalized_tray_code,
+            "task_code": task_code(task),
+            "action": "stock_out_withdraw",
+            "time": timestamp,
+            "operator": normalize_text(reason) or "撤回出库",
+            "target_lab": normalize_text(latest_event.get("target_lab")),
+            "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")),
+        }
+        if restore_scope == "appearance":
+            staging_event["room"] = "appearance"
+        snapshot["staging_events"].append(staging_event)
 
     write_snapshot(snapshot)
     payload = serialize_tray_dispatch_payload(snapshot, task, tray_code)

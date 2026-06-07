@@ -367,7 +367,7 @@ describe("useSchedulePage", () => {
     snapshot["mes.experiments"][1].required_device = "盐雾试验";
     mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
     mocks.readMasterLabs.mockResolvedValueOnce([
-      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+      { id: 9, lab_id: 9, code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
       { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
     ]);
 
@@ -378,6 +378,73 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.manualLabOptions).toEqual(["盐雾试验室"]);
+  });
+
+  test("auto-selects the laboratory when an experiment type has exactly one available lab", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.experiments"][1].required_device = "盐雾试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { id: 9, lab_id: 9, code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+      { code: "AREA_STAGING", name: RETENTION_DEVICE, type: "暂存间", testTypeName: "盐雾试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual(["盐雾试验室"]);
+    expect(wrapper.vm.manualLabOptionItems[0]).toEqual(expect.objectContaining({ lab_code: "LAB_SALT", lab_id: 9 }));
+    expect(wrapper.vm.scheduleForm.device).toBe("盐雾试验室");
+    expect(wrapper.vm.scheduleForm.lab_code).toBe("LAB_SALT");
+    expect(wrapper.vm.scheduleForm.lab_id).toBe(9);
+  });
+
+  test("keeps laboratory blank when an experiment type has multiple available labs", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.experiments"][1].required_device = "振动试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { code: "LAB_VIB_1", name: "振动一室", type: "实验室", testTypeName: "振动试验" },
+      { code: "LAB_VIB_2", name: "振动二室", type: "实验室", testTypeName: "振动试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual(["振动一室", "振动二室"]);
+    expect(wrapper.vm.scheduleForm.device).toBe("");
+  });
+
+  test("does not auto-select the only matching lab when it is unavailable", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.devices"] = [{ code: "盐雾试验室", status: "维护/校准" }];
+    snapshot["mes.experiments"][1].required_device = "盐雾试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual([]);
+    expect(wrapper.vm.scheduleForm.device).toBe("");
+    expect(wrapper.vm.maintenanceLabNotice).toContain("盐雾试验室维护中，暂不可排程");
   });
 
   test("falls back to static lab options when master labs fail to load", async () => {

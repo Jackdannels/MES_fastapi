@@ -462,12 +462,20 @@ def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str,
 
 
 def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
-    device = normalize_text(schedule.get("device"))
+    device = normalize_text(
+        schedule.get("device")
+        or schedule.get("device_name")
+        or schedule.get("deviceName")
+        or schedule.get("target_lab")
+        or schedule.get("targetLab")
+    )
     return {
         "schedule_no": normalize_text(schedule.get("id")),
         "task_no": normalize_text(schedule.get("task_code")),
         "experiment_no": normalize_text(schedule.get("experiment_code")),
         "schedule_type": STORAGE_MARKER,
+        "lab_id": parse_int_value(schedule.get("lab_id") or schedule.get("labId")),
+        "lab_code": normalize_text(schedule.get("lab_code") or schedule.get("labCode")),
         "device_name": device,
         "schedule_start_time": parse_storage_datetime(schedule.get("start_at")),
         "schedule_end_time": parse_storage_datetime(schedule.get("end_at")),
@@ -480,10 +488,13 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
     planned_hours = row.get("planned_hours")
+    lab_id = parse_int_value(row.get("lab_id"))
     return {
         "id": normalize_text(row.get("schedule_no")),
         "task_code": normalize_text(row.get("task_no")),
         "experiment_code": normalize_text(row.get("experiment_no")),
+        "lab_id": lab_id,
+        "lab_code": normalize_text(row.get("lab_code")),
         "device": normalize_text(row.get("device_name")),
         "start_at": format_iso_storage_datetime(row.get("schedule_start_time")),
         "end_at": format_iso_storage_datetime(row.get("schedule_end_time")),
@@ -1340,6 +1351,9 @@ class MySQLMesStorageBackend(StorageBackend):
                 cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'experiment_no'")
                 if cursor.fetchone() is None:
                     cursor.execute("ALTER TABLE biz_schedule ADD COLUMN experiment_no VARCHAR(50) NULL AFTER task_no")
+                cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'lab_id'")
+                if cursor.fetchone() is None:
+                    cursor.execute("ALTER TABLE biz_schedule ADD COLUMN lab_id BIGINT NULL AFTER schedule_type")
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS biz_experiment (
@@ -1643,10 +1657,15 @@ class MySQLMesStorageBackend(StorageBackend):
                 task_nos,
             )
             task_map = {row["task_no"]: row["task_id"] for row in cursor.fetchall()}
-        device_names = sorted({row["device_name"] for row in rows if row["device_name"]})
+        lab_lookup_values = sorted({
+            value
+            for row in rows
+            for value in (row.get("device_name"), row.get("lab_code"))
+            if normalize_text(value)
+        })
         lab_map: Dict[str, int] = {}
-        if device_names:
-            placeholders = ", ".join(["%s"] * len(device_names))
+        if lab_lookup_values:
+            placeholders = ", ".join(["%s"] * len(lab_lookup_values))
             cursor.execute(
                 f"""
                 SELECT lab_id, lab_code, lab_name
@@ -1654,7 +1673,7 @@ class MySQLMesStorageBackend(StorageBackend):
                 WHERE COALESCE(status, 1) = 1
                   AND (lab_name IN ({placeholders}) OR lab_code IN ({placeholders}))
                 """,
-                [*device_names, *device_names],
+                [*lab_lookup_values, *lab_lookup_values],
             )
             for row in cursor.fetchall():
                 lab_id = row.get("lab_id")
@@ -1691,7 +1710,14 @@ class MySQLMesStorageBackend(StorageBackend):
               is_retention = VALUES(is_retention),
               remark = VALUES(remark)
             """,
-            [{**row, "task_id": task_map.get(row["task_no"]), "lab_id": lab_map.get(row["device_name"])} for row in rows],
+            [
+                {
+                    **row,
+                    "task_id": task_map.get(row["task_no"]),
+                    "lab_id": lab_map.get(row.get("lab_code")) or row.get("lab_id") or lab_map.get(row["device_name"]),
+                }
+                for row in rows
+            ],
         )
 
     def _replace_experiments(self, cursor, experiments: list[dict[str, Any]]) -> None:
@@ -2700,11 +2726,13 @@ class MySQLMesStorageBackend(StorageBackend):
     def _load_schedules(self, cursor) -> list[dict[str, Any]]:
         cursor.execute(
             """
-            SELECT schedule_no, task_no, experiment_no, device_name, schedule_start_time, schedule_end_time,
-                   planned_hours, schedule_status
-            FROM biz_schedule
-            WHERE schedule_type = %s
-            ORDER BY schedule_start_time DESC, schedule_no DESC
+            SELECT s.schedule_no, s.task_no, s.experiment_no, s.device_name, s.lab_id, l.lab_code,
+                   s.schedule_start_time, s.schedule_end_time, s.planned_hours, s.schedule_status
+            FROM biz_schedule s
+            LEFT JOIN md_lab l
+              ON l.lab_id = s.lab_id
+            WHERE s.schedule_type = %s
+            ORDER BY s.schedule_start_time DESC, s.schedule_no DESC
             """,
             (STORAGE_MARKER,),
         )

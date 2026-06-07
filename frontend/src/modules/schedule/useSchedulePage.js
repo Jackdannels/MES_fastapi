@@ -36,6 +36,7 @@ import {
   updateScheduleRecord,
 } from "./model";
 import { filterActiveTasks } from "@/lib/taskArchive";
+import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
@@ -130,6 +131,45 @@ function useSchedulePage() {
 
   const findDevice = (deviceCode) =>
     rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(deviceCode));
+  const resolveMasterLabName = (lab) =>
+    normalizeText(lab?.name || lab?.labName || lab?.lab_name || lab?.code || lab?.labCode || lab?.lab_code);
+  const resolveMasterLabCode = (lab) => normalizeText(lab?.code || lab?.labCode || lab?.lab_code);
+  const resolveMasterLabId = (lab) => lab?.lab_id ?? lab?.labId ?? lab?.id ?? "";
+  const findMasterLabByOptionValue = (value) => {
+    const normalizedValue = normalizeText(value);
+    if (!normalizedValue) {
+      return null;
+    }
+    return (
+      masterLabs.value.find((lab) => {
+        const labName = resolveMasterLabName(lab);
+        const labCode = resolveMasterLabCode(lab);
+        return labName === normalizedValue || labCode === normalizedValue;
+      }) || null
+    );
+  };
+  const buildLabIdentity = (value) => {
+    const lab = findMasterLabByOptionValue(value);
+    return {
+      lab_code: resolveMasterLabCode(lab),
+      lab_id: resolveMasterLabId(lab),
+    };
+  };
+  const syncLabIdentityToForm = (form, optionItems = []) => {
+    const selectedDevice = normalizeText(form?.device);
+    if (!form || !selectedDevice) {
+      if (form) {
+        form.lab_code = "";
+        form.lab_id = "";
+      }
+      return;
+    }
+    const option = (Array.isArray(optionItems) ? optionItems : [])
+      .find((entry) => normalizeText(entry?.value) === selectedDevice);
+    const identity = option || buildLabIdentity(selectedDevice);
+    form.lab_code = normalizeText(identity?.lab_code ?? identity?.labCode);
+    form.lab_id = identity?.lab_id ?? identity?.labId ?? "";
+  };
   const buildUnavailableLabTitle = (deviceCode, device) => {
     const name = normalizeText(deviceCode);
     if (!name || !isDeviceUnavailableForSchedule(device, now.value)) {
@@ -153,9 +193,12 @@ function useSchedulePage() {
       const device = findDevice(value);
       const disabled = normalizeText(selectedDevice) !== value && isDeviceUnavailableForSchedule(device, now.value);
       const title = disabled ? buildUnavailableLabTitle(value, device) : "";
+      const identity = buildLabIdentity(value);
       return {
         disabled,
         label: value,
+        lab_code: identity.lab_code,
+        lab_id: identity.lab_id,
         title,
         value,
       };
@@ -273,9 +316,9 @@ function useSchedulePage() {
         activeSchedules.value
           .filter(
             (schedule) =>
-              normalizeText(schedule?.device) === normalizedDevice &&
+              scheduleMatchesLab(schedule, { code: normalizedDevice, name: normalizedDevice }) &&
               normalizeText(schedule?.status) === STATUS_SCHEDULED &&
-              !isRetentionDevice(schedule?.device),
+              !isRetentionDevice(schedule),
           )
           .map((schedule) => {
             const startAt = new Date(schedule?.start_at);
@@ -503,9 +546,12 @@ function useSchedulePage() {
   };
 
   const submitSchedule = async () => {
+    syncLabIdentityToForm(scheduleForm.value, manualLabOptionItems.value);
     const candidate = {
       device: normalizeText(scheduleForm.value.device),
       experiment_code: normalizeText(scheduleForm.value.experiment_code),
+      lab_code: normalizeText(scheduleForm.value.lab_code),
+      lab_id: scheduleForm.value.lab_id,
       task_code: normalizeText(scheduleForm.value.task_code),
     };
     const resolved = resolveScheduleTimes(scheduleForm.value, now.value, activeSchedules.value);
@@ -564,6 +610,14 @@ function useSchedulePage() {
       scheduleConflictModal.close();
       return;
     }
+    syncLabIdentityToForm(draft, buildLabOptionItems({
+      options: buildLabOptions({
+        masterLabs: masterLabs.value,
+        selectedDevice: normalizeText(draft.device),
+        testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
+      }),
+      selectedDevice: normalizeText(draft.device),
+    }));
 
     const result = createScheduleRecord({
       devices: rawDevices.value,
@@ -658,6 +712,7 @@ function useSchedulePage() {
   };
 
   const saveSchedule = async () => {
+    syncLabIdentityToForm(editForm.value, buildEditLabOptionItems(editForm.value.device, editForm.value.task_code));
     const result = updateScheduleRecord({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
@@ -861,6 +916,8 @@ function useSchedulePage() {
       const firstExperimentCode = experimentOptions.value[0]?.code || "";
       scheduleForm.value.experiment_code = firstExperimentCode;
       scheduleForm.value.device = "";
+      scheduleForm.value.lab_code = "";
+      scheduleForm.value.lab_id = "";
       scheduleWarning.value = "";
     },
   );
@@ -872,13 +929,34 @@ function useSchedulePage() {
         return;
       }
       scheduleForm.value.device = "";
+      scheduleForm.value.lab_code = "";
+      scheduleForm.value.lab_id = "";
       scheduleWarning.value = "";
     },
+  );
+
+  const syncAutoSelectedScheduleDevice = () => {
+    if (scheduleFormWatchSuspended.value || normalizeText(scheduleForm.value.device)) {
+      return;
+    }
+    const availableLabs = manualLabOptionItems.value
+      .filter((option) => !option.disabled)
+      .filter((option) => normalizeText(option?.value));
+    if (availableLabs.length === 1) {
+      scheduleForm.value.device = normalizeText(availableLabs[0].value);
+      syncLabIdentityToForm(scheduleForm.value, availableLabs);
+    }
+  };
+
+  watch(
+    () => [scheduleForm.value.experiment_code, manualLabOptions.value.join("\u0001")],
+    syncAutoSelectedScheduleDevice,
   );
 
   watch(
     () => scheduleForm.value.device,
     () => {
+      syncLabIdentityToForm(scheduleForm.value, manualLabOptionItems.value);
       scheduleWarning.value = "";
     },
   );

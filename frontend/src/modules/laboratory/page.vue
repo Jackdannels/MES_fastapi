@@ -67,7 +67,7 @@
           </button>
         </article>
 
-        <article class="laboratory-action-item laboratory-action-item--install" :class="{ 'is-locked': !actionState.canInstallSample }">
+        <article class="laboratory-action-item laboratory-action-item--install" :class="{ 'is-locked': !canRequestFixtureInstall }">
           <div class="laboratory-action-copy">
             <span class="muted">步骤 2</span>
             <h4>样品安装</h4>
@@ -76,14 +76,14 @@
             class="action-btn laboratory-action-button"
             data-testid="laboratory-install"
             type="button"
-            :disabled="runningInteractionLocked || !actionState.canInstallSample"
+            :disabled="runningInteractionLocked || !canRequestFixtureInstall"
             @click="openInstall"
           >
-            安装样品
+            {{ installActionLabel }}
           </button>
         </article>
 
-        <article class="laboratory-action-item laboratory-action-item--ready" :class="{ 'is-locked': !actionState.canMarkReady }">
+        <article class="laboratory-action-item laboratory-action-item--ready" :class="{ 'is-locked': !canRequestReady }">
           <div class="laboratory-action-copy">
             <span class="muted">步骤 3</span>
             <h4>确认准备就绪</h4>
@@ -92,12 +92,16 @@
             class="action-btn laboratory-action-button"
             data-testid="laboratory-ready"
             type="button"
-            :disabled="runningInteractionLocked || !actionState.canMarkReady"
+            :disabled="runningInteractionLocked || !canRequestReady"
             @click="openReady"
           >
-            确认准备就绪
+            {{ readyActionLabel }}
           </button>
         </article>
+      </div>
+
+      <div v-if="laboratoryMqError" class="laboratory-empty-hint" data-testid="laboratory-mq-error">
+        {{ laboratoryMqError.title }}：{{ laboratoryMqError.detail }}
       </div>
 
       <div v-if="laboratoryTaskNotice" class="laboratory-empty-hint" data-testid="laboratory-task-empty-hint">
@@ -324,7 +328,7 @@
 
     <AppModal :open="installModalOpen" data-testid="laboratory-install-modal" title="样品安装" @close="closeInstall">
       <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>请安装样品，并确认{{ labName }}当前任务已准备完成。</p>
+        <p>{{ installActionLabel === "重新下发安装" ? "将重新向上位机下发夹具安装命令，请确认上位机已连接并订阅当前试验间。" : `请安装样品，并确认${labName}当前任务已准备完成。` }}</p>
       </div>
       <template #footer>
         <button class="action-btn secondary" data-testid="laboratory-install-cancel" type="button" @click="closeInstall">取消</button>
@@ -537,6 +541,8 @@ const selectedLabName = computed(() => {
 
 const {
   actionState,
+  canRequestFixtureInstall,
+  canRequestReady,
   canTeleportScheduleAction,
   canCompleteCompare,
   canResetCurrentTask,
@@ -570,6 +576,8 @@ const {
   currentTaskFlow,
   hideRunningModal,
   installModalOpen,
+  installActionLabel,
+  laboratoryMqError,
   labName,
   openCompleteConfirm,
   openCompare,
@@ -581,6 +589,7 @@ const {
   progressMessage,
   laboratoryTaskNotice,
   readyModalOpen,
+  readyActionLabel,
   recentTasks,
   resetConfirmModalOpen,
   resetDangerModalOpen,

@@ -216,6 +216,65 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     assert connection.committed is True
 
 
+def test_ensure_schema_extensions_adds_missing_schedule_lab_id(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if "SHOW COLUMNS FROM biz_schedule LIKE 'lab_id'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            self.committed = True
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert any("ALTER TABLE biz_schedule ADD COLUMN lab_id BIGINT NULL" in statement for statement in statements)
+    assert connection.committed is True
+
+
 def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -418,6 +477,8 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
         "id": "schedule-1",
         "task_code": "SYLU-2026-04-103",
         "experiment_code": "SYLU-2026-04-103-A",
+        "lab_code": "AREA_STAGING_PRE",
+        "lab_id": 27,
         "device": "恒温恒湿间（暂存间）",
         "start_at": "2026-03-17T10:00:00Z",
         "end_at": "2026-03-17T10:00:00Z",
@@ -430,6 +491,8 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
     assert insert_row["schedule_no"] == "schedule-1"
     assert insert_row["schedule_type"] == STORAGE_MARKER
     assert insert_row["experiment_no"] == "SYLU-2026-04-103-A"
+    assert insert_row["lab_code"] == "AREA_STAGING_PRE"
+    assert insert_row["lab_id"] == 27
     assert insert_row["is_retention"] == 1
 
     storage_item = build_storage_schedule_item(
@@ -441,8 +504,25 @@ def test_schedule_mapping_round_trip_preserves_retention_and_hours() -> None:
 
     assert storage_item["id"] == "schedule-1"
     assert storage_item["device"] == "恒温恒湿间（暂存间）"
+    assert storage_item["lab_code"] == "AREA_STAGING_PRE"
+    assert storage_item["lab_id"] == 27
     assert storage_item["experiment_code"] == "SYLU-2026-04-103-A"
     assert storage_item["planned_hours"] == 0
+
+
+def test_schedule_mapping_accepts_legacy_device_name_field() -> None:
+    insert_row = build_schedule_insert_row(
+        {
+            "id": "schedule-legacy-device",
+            "task_code": "TASK-001",
+            "experiment_code": "EXP-001",
+            "device_name": "盐雾试验室",
+            "lab_code": "LAB_SALT",
+        }
+    )
+
+    assert insert_row["device_name"] == "盐雾试验室"
+    assert insert_row["lab_code"] == "LAB_SALT"
 
 
 def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> None:
@@ -2153,6 +2233,152 @@ def test_replace_schedules_backfills_lab_id_from_device_name() -> None:
     assert "%(lab_id)s" in schedule_sql
     assert "lab_id = VALUES(lab_id)" in schedule_sql
     assert schedule_call[0]["lab_id"] == 9
+
+
+def test_replace_schedules_backfills_lab_id_from_lab_code_when_device_name_differs() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executed = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.executed.append((statement, params))
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 12773, "task_no": "SYLU-2026-03-002"}]
+            elif "SELECT lab_id, lab_code, lab_name FROM md_lab" in statement:
+                self._result = [{"lab_id": 9, "lab_code": "LAB_SALT", "lab_name": "盐雾试验室"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_schedules(
+        cursor,
+        [
+            {
+                "id": "schedule-1",
+                "task_code": "SYLU-2026-03-002",
+                "experiment_code": "SYLU-2026-03-002-A",
+                "device": "Salt Spray Lab",
+                "lab_code": "LAB_SALT",
+                "start_at": "2026-04-09T10:05:38Z",
+                "end_at": "2026-04-09T13:35:38Z",
+                "status": "已排程",
+            }
+        ],
+    )
+
+    lab_lookup = next(params for statement, params in cursor.executed if "FROM md_lab" in statement)
+    assert "LAB_SALT" in lab_lookup
+    schedule_call = next(
+        rows
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_schedule" in sql
+    )
+    assert schedule_call[0]["device_name"] == "Salt Spray Lab"
+    assert schedule_call[0]["lab_id"] == 9
+
+
+def test_replace_schedules_prefers_lab_code_over_stale_lab_id() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 7, "task_no": "TASK-SALT"}]
+            elif "SELECT lab_id, lab_code, lab_name FROM md_lab" in statement:
+                self._result = [{"lab_id": 9, "lab_code": "LAB_SALT", "lab_name": "盐雾试验室"}]
+            else:
+                self._result = []
+
+        def fetchall(self):
+            return self._result
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+    cursor = _CaptureCursor()
+    backend._replace_schedules(
+        cursor,
+        [
+            {
+                "id": "schedule-salt",
+                "task_code": "TASK-SALT",
+                "experiment_code": "EXP-SALT",
+                "lab_id": 99,
+                "lab_code": "LAB_SALT",
+                "device": "盐雾试验室",
+                "start_at": "2026-06-07 08:00:00",
+                "end_at": "2026-06-07 11:30:00",
+                "planned_hours": 3.5,
+                "status": "待开始",
+            }
+        ],
+    )
+
+    schedule_call = cursor.executemany_calls[-1][1]
+    assert schedule_call[0]["lab_id"] == 9
+
+
+def test_load_schedules_exposes_lab_code_and_lab_id() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.executed = []
+
+        def execute(self, sql, params=None):
+            self.executed.append((" ".join(str(sql).split()), params))
+
+        def fetchall(self):
+            return [
+                {
+                    "schedule_no": "schedule-1",
+                    "task_no": "SYLU-2026-03-002",
+                    "experiment_no": "SYLU-2026-03-002-A",
+                    "device_name": "盐雾试验室",
+                    "lab_id": 9,
+                    "lab_code": "LAB_SALT",
+                    "schedule_start_time": datetime(2026, 4, 9, 10, 5, 38),
+                    "schedule_end_time": datetime(2026, 4, 9, 13, 35, 38),
+                    "planned_hours": 3.5,
+                    "schedule_status": "已排程",
+                }
+            ]
+
+    cursor = _CaptureCursor()
+
+    schedules = backend._load_schedules(cursor)
+
+    statement = cursor.executed[0][0]
+    assert "s.lab_id" in statement
+    assert "l.lab_code" in statement
+    assert "LEFT JOIN md_lab" in statement
+    assert schedules[0]["device"] == "盐雾试验室"
+    assert schedules[0]["lab_id"] == 9
+    assert schedules[0]["lab_code"] == "LAB_SALT"
 
 
 def test_normalize_legacy_status_columns_converts_stored_status_to_arrived() -> None:

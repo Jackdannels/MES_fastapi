@@ -510,6 +510,7 @@ class FakeMqEventRepository:
         self.started = []
         self.ended = []
         self.started_contexts = []
+        self.completed_runs_by_lab = {}
         self.contexts_by_lab = {
             "LAB_SALT": {
                 "task_no": "SYLU-2026-03-001",
@@ -556,6 +557,9 @@ class FakeMqEventRepository:
     def find_active_run_by_lab(self, lab_code):
         return self.runs_by_lab.get(lab_code)
 
+    def find_recent_completed_run_by_lab(self, lab_code):
+        return self.completed_runs_by_lab.get(lab_code)
+
     def find_current_context_by_lab(self, lab_code, candidate_statuses):
         context = self.contexts_by_lab.get(lab_code)
         if not context:
@@ -577,6 +581,15 @@ class FakeMqEventRepository:
 
     def mark_run_ended(self, run_no, occurred_at):
         self.ended.append((run_no, occurred_at))
+        for lab_code, run in list(self.runs_by_lab.items()):
+            if run.get("run_no") == run_no:
+                self.completed_runs_by_lab[lab_code] = {
+                    **run,
+                    "run_status": "实验已完成",
+                    "ended_at": occurred_at,
+                }
+                del self.runs_by_lab[lab_code]
+                break
 
 
 def test_process_fixture_ready_records_event_and_returns_ack():
@@ -619,7 +632,7 @@ def test_process_fixture_ready_resolves_task_from_lab_code_without_host_task_cod
         "mes/v1/labs/LAB_SALT/events/fixture-ready",
         {
             "lab_code": "LAB_SALT",
-            "success_id": "PLC-OK-001",
+            "success_sig": "PLC-OK-001",
             "fixture_ready_at": "2026-05-16 09:31:00",
         },
         repository=repository,
@@ -630,9 +643,10 @@ def test_process_fixture_ready_resolves_task_from_lab_code_without_host_task_cod
     assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
     assert repository.events[0]["payload"] == {
         "lab_code": "LAB_SALT",
-        "success_id": "PLC-OK-001",
+        "success_sig": "PLC-OK-001",
         "fixture_ready_at": "2026-05-16 09:31:00",
     }
+    assert repository.events[0]["success_id"] == "PLC-OK-001"
 
 
 def test_process_fixture_ready_resolves_non_salt_lab_context_without_host_task_code():
@@ -1364,6 +1378,7 @@ def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch
 
         def __init__(self):
             self.schedule_query_params = None
+            self.schedule_query_sql = ""
 
         def __enter__(self):
             return self
@@ -1379,6 +1394,7 @@ def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch
             elif "FROM biz_tray tr" in sql:
                 self.description = (("tray_no",), ("sample_no",), ("location_desc",), ("current_lab_id",))
             elif "FROM biz_schedule s" in sql:
+                self.schedule_query_sql = " ".join(sql.split())
                 self.description = (
                     ("schedule_no",),
                     ("task_no",),
@@ -1408,7 +1424,11 @@ def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch
                     ("SYLU-2026-06-002-TP-002", "SYLU-2026-06-002-SP-006", "冲击一室", 4),
                 ]
             if columns == ["schedule_no", "task_no", "experiment_no", "device_name", "planned_hours", "schedule_end_time", "scoped_tray_no"]:
-                if self.schedule_query_params and "冲击一室" in self.schedule_query_params:
+                if (
+                    self.schedule_query_params
+                    and "LAB_IMPACT_1" in self.schedule_query_params
+                    and "schedule_lab.lab_code = %s" in self.schedule_query_sql
+                ):
                     return [
                         (
                             "schedule-impact",
@@ -1460,6 +1480,9 @@ def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch
 
     context = MySQLMqEventRepository().find_current_context_by_lab("LAB_IMPACT_1", ["工装夹具安装"])
 
+    assert "LEFT JOIN md_lab schedule_lab ON schedule_lab.lab_id = s.lab_id" in connection.cursor_obj.schedule_query_sql
+    assert "schedule_lab.lab_code = %s" in connection.cursor_obj.schedule_query_sql
+    assert "s.device_name IN" not in connection.cursor_obj.schedule_query_sql
     assert context == {
         "task_no": "SYLU-2026-06-002",
         "experiment_no": "SYLU-2026-06-002-C",
@@ -1472,12 +1495,13 @@ def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch
     }
 
 
-def test_mysql_find_current_context_does_not_use_moved_sample_location_as_device_candidate(monkeypatch):
+def test_mysql_find_current_context_uses_schedule_lab_code_when_master_lab_name_differs_from_schedule_device(monkeypatch):
     class TupleCursor:
         description = None
 
         def __init__(self):
             self.schedule_query_params = None
+            self.schedule_query_sql = ""
 
         def __enter__(self):
             return self
@@ -1493,6 +1517,111 @@ def test_mysql_find_current_context_does_not_use_moved_sample_location_as_device
             elif "FROM biz_tray tr" in sql:
                 self.description = (("tray_no",), ("sample_no",), ("location_desc",), ("current_lab_id",))
             elif "FROM biz_schedule s" in sql:
+                self.schedule_query_sql = " ".join(sql.split())
+                self.description = (
+                    ("schedule_no",),
+                    ("task_no",),
+                    ("experiment_no",),
+                    ("device_name",),
+                    ("planned_hours",),
+                    ("schedule_end_time",),
+                    ("scoped_tray_no",),
+                )
+                self.schedule_query_params = list(params or [])
+            else:
+                self.description = None
+
+        def fetchone(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["lab_name"]:
+                return ("Salt Spray Lab",)
+            return None
+
+        def fetchall(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["task_no", "experiment_no", "payload_json"]:
+                return [("SYLU-2026-06-001", "SYLU-2026-06-001-A", "{}")]
+            if columns == ["tray_no", "sample_no", "location_desc", "current_lab_id"]:
+                return [
+                    ("SYLU-2026-06-001-TP-001", "SYLU-2026-06-001-SP-001", "盐雾试验室", 3),
+                    ("SYLU-2026-06-001-TP-001", "SYLU-2026-06-001-SP-002", "盐雾试验室", 3),
+                ]
+            if columns == ["schedule_no", "task_no", "experiment_no", "device_name", "planned_hours", "schedule_end_time", "scoped_tray_no"]:
+                if (
+                    self.schedule_query_params
+                    and "LAB_SALT" in self.schedule_query_params
+                    and "schedule_lab.lab_code = %s" in self.schedule_query_sql
+                ):
+                    return [
+                        (
+                            "schedule-salt",
+                            "SYLU-2026-06-001",
+                            "SYLU-2026-06-001-A",
+                            "盐雾试验室",
+                            3.5,
+                            "2026-06-07 11:30:00",
+                            "SYLU-2026-06-001-TP-001",
+                        )
+                    ]
+                return []
+            return []
+
+    class TupleConnection:
+        def __init__(self):
+            self.cursor_obj = TupleCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+    connection = TupleConnection()
+    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+
+    context = MySQLMqEventRepository().find_current_context_by_lab("LAB_SALT", ["工装夹具安装"])
+
+    assert "LEFT JOIN md_lab schedule_lab ON schedule_lab.lab_id = s.lab_id" in connection.cursor_obj.schedule_query_sql
+    assert "schedule_lab.lab_code = %s" in connection.cursor_obj.schedule_query_sql
+    assert "s.device_name IN" not in connection.cursor_obj.schedule_query_sql
+    assert context == {
+        "task_no": "SYLU-2026-06-001",
+        "experiment_no": "SYLU-2026-06-001-A",
+        "schedule_no": "schedule-salt",
+        "device_name": "盐雾试验室",
+        "planned_hours": 3.5,
+        "schedule_end_time": "2026-06-07 11:30:00",
+        "tray_nos": ["SYLU-2026-06-001-TP-001"],
+        "sample_nos": ["SYLU-2026-06-001-SP-001", "SYLU-2026-06-001-SP-002"],
+    }
+
+
+def test_mysql_find_current_context_does_not_use_moved_sample_location_as_device_candidate(monkeypatch):
+    class TupleCursor:
+        description = None
+
+        def __init__(self):
+            self.schedule_query_params = None
+            self.schedule_query_sql = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            if "FROM md_lab" in sql:
+                self.description = (("lab_name",),)
+            elif "FROM biz_mq_message_log" in sql:
+                self.description = (("task_no",), ("experiment_no",), ("payload_json",))
+            elif "FROM biz_tray tr" in sql:
+                self.description = (("tray_no",), ("sample_no",), ("location_desc",), ("current_lab_id",))
+            elif "FROM biz_schedule s" in sql:
+                self.schedule_query_sql = " ".join(sql.split())
                 self.description = (
                     ("schedule_no",),
                     ("task_no",),
@@ -1553,6 +1682,8 @@ def test_mysql_find_current_context_does_not_use_moved_sample_location_as_device
     context = MySQLMqEventRepository().find_current_context_by_lab("LAB_IMPACT_1", ["实验准备就绪"])
 
     assert context is None
+    assert "schedule_lab.lab_code = %s" in connection.cursor_obj.schedule_query_sql
+    assert "s.device_name IN" not in connection.cursor_obj.schedule_query_sql
     assert "温度冲击一室" not in connection.cursor_obj.schedule_query_params
 
 
@@ -2265,6 +2396,40 @@ def test_process_experiment_result_records_result_package():
     assert ack["status"] == "PROCESSED"
     assert repository.results[0]["conclusion"] == "PASS"
     assert repository.results[0]["summary"] == "合格"
+
+
+def test_process_experiment_result_uses_recent_completed_run_after_ended_event():
+    repository = FakeMqEventRepository()
+
+    process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2026-05-16 17:30:00",
+        },
+        repository=repository,
+    )
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-result",
+        {
+            "lab_code": "LAB_SALT",
+            "result_at": "2026-05-16 17:31:00",
+            "result_package": {
+                "result_id": "R-ENDED-001",
+                "conclusion": "PASS",
+                "summary": "结束后结果包",
+                "items": [],
+                "attachments": [],
+            },
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.results[0]["task_no"] == "SYLU-2026-03-001"
+    assert repository.results[0]["experiment_no"] == "SYLU-2026-03-001-A"
+    assert repository.results[0]["summary"] == "结束后结果包"
 
 
 def test_process_experiment_result_prefers_active_run_over_payload_experiment_code():

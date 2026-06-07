@@ -469,7 +469,7 @@ describe("LaboratoryPage runtime", () => {
         return { ok: true, status: 200, json: async () => snapshot };
       }
       if (url.includes("/api/mq/laboratory")) {
-        return { ok: true, status: 200, json: async () => ({ ok: true, published: false }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
       }
       throw new Error(`Unhandled fetch: ${url}`);
     }));
@@ -504,6 +504,32 @@ describe("LaboratoryPage runtime", () => {
           status: "送至实验室",
           task_code: "SYLU-2026-04-101",
           trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("设备维护中，禁止实验室操作");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+  });
+
+  test("locks laboratory actions during the selected lab maintenance window", async () => {
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.devices]: [
+        {
+          code: "盐雾试验室",
+          name: "盐雾试验室",
+          maintenance_end_at: "2026-04-02T10:30:00.000Z",
+          maintenance_start_at: "2026-04-02T09:30:00.000Z",
+          maintenance_type: "计划保养",
+          status: "可用",
         },
       ],
     };
@@ -1033,7 +1059,7 @@ describe("LaboratoryPage runtime", () => {
         return { ok: true, status: 200, json: async () => snapshotState };
       }
       if (url.includes("/api/mq/laboratory")) {
-        return { ok: true, status: 200, json: async () => ({ ok: true, published: false }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
       }
       throw new Error(`Unhandled fetch: ${url}`);
     });
@@ -1891,11 +1917,14 @@ describe("LaboratoryPage runtime", () => {
     }));
     expect(mounted.text()).toContain("当前任务已完成夹具安装，等待上位机确认夹具安装完成");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await nextTick();
-    expect(mounted.find('[data-testid="laboratory-install-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-install-modal"].is-open').exists()).toBe(true);
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
     vi.advanceTimersByTime(3000);
@@ -1957,6 +1986,178 @@ describe("LaboratoryPage runtime", () => {
 
     mounted = await mountPage();
     expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
+  });
+
+  test("mqtt mode can resend fixture install when upper computer missed the first command", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        flow_status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
+    await flushPageUpdates();
+
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "工装夹具安装",
+      status: "工装夹具安装",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
+    }));
+    expect(mounted.text()).toContain("等待上位机确认夹具安装完成");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
+
+    const firstFixtureInstallCalls = fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory/fixture-install")).length;
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory/fixture-install"))).toHaveLength(firstFixtureInstallCalls + 1);
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "工装夹具安装",
+      status: "工装夹具安装",
+      trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
+    }));
+
+    snapshotState[STORAGE_KEYS.samples] = snapshotState[STORAGE_KEYS.samples].map((sample) =>
+      sample.task_code === "SYLU-2026-04-101"
+        ? {
+            ...sample,
+            trays: sample.trays.map((tray) =>
+              tray.tray_code === "TP-001" ? { ...tray, fixtureReady: true, fixture_ready: true } : tray,
+            ),
+          }
+        : sample,
+    );
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
+    await flushPageUpdates();
+
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("shows a retryable error when mqtt fixture install publish fails", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "送至实验室",
+        flow_status: "送至实验室",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+      },
+    ];
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/mq/laboratory/fixture-install")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: false, reason: "broker offline" }) };
+      }
+      if (url.includes("/api/mq/laboratory")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
+      }
+      if (url.includes("/api/mq/interface-mode")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, mode: HOST_INTERFACE_MODES.mqtt, subscriber_running: true }) };
+      }
+      if (url.includes("/api/master/labs")) {
+        return { ok: true, status: 200, json: async () => masterLabsState };
+      }
+      if (url.includes("/api/storage")) {
+        if ((options.method || "GET") === "PUT") {
+          const body = JSON.parse(String(options.body || "{}"));
+          snapshotState = { ...snapshotState, ...body };
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
+        }
+        return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
+    await flushPageUpdates();
+
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("夹具安装下发失败");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("broker offline");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
+  });
+
+  test("shows a retryable error when mqtt ready publish fails", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "工装夹具安装",
+        flow_status: "工装夹具安装",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "工装夹具安装", tray_code: "TP-001" }],
+      },
+    ];
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/mq/laboratory/ready")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: false, reason: "broker offline" }) };
+      }
+      if (url.includes("/api/mq/laboratory")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
+      }
+      if (url.includes("/api/mq/interface-mode")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, mode: HOST_INTERFACE_MODES.mqtt, subscriber_running: true }) };
+      }
+      if (url.includes("/api/master/labs")) {
+        return { ok: true, status: 200, json: async () => masterLabsState };
+      }
+      if (url.includes("/api/storage")) {
+        if ((options.method || "GET") === "PUT") {
+          const body = JSON.parse(String(options.body || "{}"));
+          snapshotState = { ...snapshotState, ...body };
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
+        }
+        return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    await flushPageUpdates();
+
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("准备就绪下发失败");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("broker offline");
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
   });
 
   test("refreshes into running state when MQTT experiment start arrives while ready success modal is open", async () => {
@@ -2073,7 +2274,7 @@ describe("LaboratoryPage runtime", () => {
         return { ok: true, status: 200, json: async () => snapshotState };
       }
       if (url.includes("/api/mq/laboratory")) {
-        return { ok: true, status: 200, json: async () => ({ ok: true, published: false }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
       }
       throw new Error(`Unhandled fetch: ${url}`);
     });

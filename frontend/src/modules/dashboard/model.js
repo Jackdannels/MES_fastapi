@@ -1,5 +1,6 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
 import { isScheduleExperimentRunning } from "@/modules/devices/model";
+import { labIdentityMatches, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -23,7 +24,6 @@ const DEVICE_STATUS_CARE = "保养";
 const RUNNING_EXPERIMENT_RUN_STATUSES = new Set([EXPERIMENT_STATUS_RUNNING, LEGACY_STATUS_RUNNING]);
 const LEGACY_STATUS_COMPLETED = "实验完成";
 const LEGACY_STATUS_COMPLETED_ALT = "实验已经完成";
-const RETENTION_LOCATION = "暂存间";
 const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
   TRANSFER_STATUS_ARRIVED,
   "送至实验室",
@@ -39,12 +39,10 @@ const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
 
 // 总览页各类输入在进入统计逻辑前统一转成稳定字符串。
 const normalizeText = (value) => String(value ?? "").trim();
-const buildDeviceMatchLabels = (device) =>
-  Array.from(new Set([normalizeText(device?.code), normalizeText(device?.name)].filter(Boolean)));
 const compareTaskCodes = (left, right) =>
   normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 // 带“暂存间”标识的设备会被视为留样暂存位置，而非正式实验室。
-const isRetentionDevice = (value) => normalizeText(value).includes(RETENTION_LOCATION);
+const isRetentionSchedule = (schedule) => scheduleTargetsStorageArea(schedule);
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const isRunningStatus = (value) => {
   const normalized = normalizeText(value);
@@ -81,13 +79,13 @@ const isReturnedTaskRecord = (task, schedules) => {
     return false;
   }
   return !(Array.isArray(schedules) ? schedules : []).some(
-    (entry) => normalizeText(entry?.task_code) === taskCode && isRetentionDevice(entry?.device),
+    (entry) => normalizeText(entry?.task_code) === taskCode && isRetentionSchedule(entry),
   );
 };
 const hasFormalScheduleForExperiment = (schedules, taskCode, experimentCode) =>
   (Array.isArray(schedules) ? schedules : []).some(
     (entry) =>
-      !isRetentionDevice(entry?.device) &&
+      !isRetentionSchedule(entry) &&
       normalizeText(entry?.task_code) === normalizeText(taskCode) &&
       normalizeText(entry?.experiment_code) === normalizeText(experimentCode),
   );
@@ -161,20 +159,20 @@ function resolveTaskStatus(task, schedules, experiments) {
 
   // 先判断正式排程关联的实验是否已经真实开始，避免只因时间窗命中而误判为运行中。
   const runningSchedule = matchedSchedules.find(
-    (entry) => !isRetentionDevice(entry?.device) && hasRunningExperimentForSchedule(entry, experiments),
+    (entry) => !isRetentionSchedule(entry) && hasRunningExperimentForSchedule(entry, experiments),
   );
   if (runningSchedule) {
     return STATUS_RUNNING;
   }
 
   // 其次判断是否已经进入正式排程，但还没到执行时间。
-  const scheduledEntry = matchedSchedules.find((entry) => !isRetentionDevice(entry?.device));
+  const scheduledEntry = matchedSchedules.find((entry) => !isRetentionSchedule(entry));
   if (scheduledEntry) {
     return STATUS_SCHEDULED;
   }
 
   // 再判断是否只存在暂存间记录。
-  const retentionEntry = matchedSchedules.find((entry) => isRetentionDevice(entry?.device));
+  const retentionEntry = matchedSchedules.find((entry) => isRetentionSchedule(entry));
   if (retentionEntry) {
     return STATUS_WAITING;
   }
@@ -204,15 +202,13 @@ function runTrayIsRunning(relation) {
 }
 
 function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, experimentRunTrays = [], returnedTaskCodes = new Set()) {
-  const deviceCode = normalizeText(device?.code);
-  const deviceLabels = buildDeviceMatchLabels(device);
   const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
   const experimentRunTrayList = Array.isArray(experimentRunTrays) ? experimentRunTrays : [];
   const runByNo = buildRunByNo(experimentRunList);
   const runningRunTray = experimentRunTrayList.find((relation) => {
     const run = runByNo.get(normalizeText(relation?.run_no) || normalizeText(relation?.runNo));
     return run
-      && deviceLabels.includes(normalizeText(run?.device))
+      && labIdentityMatches(run, device)
       && runTrayIsRunning(relation)
       && !returnedTaskCodes.has(normalizeText(relation?.task_code || run?.task_code));
   });
@@ -221,7 +217,7 @@ function computeDeviceStatus(device, schedules, samples, experimentTrays, experi
   }
   const runningRun = experimentRunList.find(
     (run) =>
-      deviceLabels.includes(normalizeText(run?.device))
+      labIdentityMatches(run, device)
       && RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
       && !returnedTaskCodes.has(normalizeText(run?.task_code)),
   );
@@ -232,13 +228,13 @@ function computeDeviceStatus(device, schedules, samples, experimentTrays, experi
     return normalizeDeviceStatus(device?.status);
   }
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
-    (entry) => normalizeText(entry?.device) === deviceCode
+    (entry) => scheduleMatchesLab(entry, device)
   );
   // 设备状态必须落到真实运行托盘，不能只按排程或实验主状态推导。
   const runningSchedule = matchedSchedules.find(
     (entry) =>
       !returnedTaskCodes.has(normalizeText(entry?.task_code)) &&
-      isScheduleExperimentRunning(entry, deviceCode, samples, experimentTrays),
+      isScheduleExperimentRunning(entry, device, samples, experimentTrays),
   );
   if (runningSchedule) {
     return DEVICE_STATUS_WORKING;
@@ -325,7 +321,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   const internalCount = normalizedTasks.filter((task) => normalizeText(task?.source) === SOURCE_INTERNAL).length;
   const formalScheduledTaskCodes = new Set(
     scheduleList
-      .filter((entry) => !isRetentionDevice(entry?.device))
+      .filter((entry) => !isRetentionSchedule(entry))
       .map((entry) => normalizeText(entry?.task_code))
       .filter(Boolean),
   );

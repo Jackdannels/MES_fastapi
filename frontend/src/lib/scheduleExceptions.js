@@ -243,7 +243,7 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   });
 
   const expiredUnstartedSchedules = schedules.filter((schedule) => {
-    if (isRetentionDevice(schedule?.device)) {
+    if (isRetentionDevice(schedule)) {
       return false;
     }
     const endAt = parseDate(schedule?.end_at);

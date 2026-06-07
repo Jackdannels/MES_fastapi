@@ -79,7 +79,7 @@
           <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
             <div class="zancun-inventory-column__head">
               <h4>{{ roomCopy.plannedTitle }}</h4>
-              <span class="pill">待入库 {{ plannedInboundTotalCount }}</span>
+              <span class="pill">{{ roomCopy.plannedPillPrefix }} {{ plannedInboundTotalCount }}</span>
               <AppPagination
                 class="zancun-planned-inbound-pagination"
                 data-testid="zancun-planned-inbound-pagination"
@@ -191,7 +191,7 @@
 
         <article
           v-for="(destination, index) in activeDetail.targetDestinations"
-          :key="`${destination.targetExperimentCode || index}-${destination.targetLab}`"
+          :key="`${destination.targetExperimentCode || index}-${destination.targetLabCode || destination.targetLabId || destination.targetLab}`"
           class="zancun-destination-card"
           :class="{ 'is-disabled': !destination.scheduled, 'is-recommended': destination.preferred }"
           :data-testid="`zancun-destination-card-${index}`"
@@ -352,8 +352,9 @@ const ROOM_PAGE_COPY = {
     currentPillPrefix: "当前在库",
     destinationTitle: "选择目标实验室",
     moduleSource: "staging-management",
-    plannedEmptyMessage: "当前页暂无计划入库托盘",
-    plannedTitle: "计划入库",
+    plannedEmptyMessage: "当前页暂无允许暂存托盘",
+    plannedPillPrefix: "允许暂存",
+    plannedTitle: "允许暂存",
   },
   appearance: {
     activeMetricLabel: "外观检测间中样品数量",
@@ -364,6 +365,7 @@ const ROOM_PAGE_COPY = {
     destinationTitle: "选择目标去向",
     moduleSource: "appearance-inspection",
     plannedEmptyMessage: "当前页暂无待检测托盘",
+    plannedPillPrefix: "待入库",
     plannedTitle: "计划入库",
   },
 };
@@ -554,6 +556,8 @@ const activeDetail = reactive({
   targetDestinations: [],
   targetIsFallback: false,
   targetLab: "",
+  targetLabCode: "",
+  targetLabId: "",
   targetUnavailableReason: "",
   trayCode: "",
 });
@@ -587,6 +591,8 @@ const resetDetail = () => {
   activeDetail.targetDestinations = [];
   activeDetail.targetIsFallback = false;
   activeDetail.targetLab = "";
+  activeDetail.targetLabCode = "";
+  activeDetail.targetLabId = "";
   activeDetail.targetUnavailableReason = "";
   activeDetail.trayCode = "";
 };
@@ -626,6 +632,7 @@ const cancelScan = () => {
 };
 
 const openDestinationModal = (detail) => {
+  resetDetail();
   Object.assign(activeDetail, detail);
   activeDetailMode.value = "stockOut";
   destinationModalOpen.value = true;
@@ -789,6 +796,8 @@ const confirmDestinationAction = async (destination = null) => {
         targetExperimentCode: target.targetExperimentCode,
         targetExperimentName: target.targetExperimentName,
         targetLab: target.targetLab,
+        targetLabCode: target.targetLabCode,
+        targetLabId: target.targetLabId,
         targetType: target.targetType,
       },
       room: activeRoom.value,

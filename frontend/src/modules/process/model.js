@@ -1,5 +1,6 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
+import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   EXPERIMENT_STATUS_COMPLETED,
   EXPERIMENT_STATUS_RUNNING as STATUS_RUNNING,
@@ -399,7 +400,7 @@ const buildProcessLabCards = (
     .map((lab) => {
       // 每个实验室只关注绑定到该实验室的排程，并优先看最近开始的记录。
       const labSchedules = scheduleList
-        .filter((entry) => String(entry?.device || "").trim() === lab.name)
+        .filter((entry) => scheduleMatchesLab(entry, lab))
         .filter(
           (entry) =>
             !scheduleExperimentIsCompleted({

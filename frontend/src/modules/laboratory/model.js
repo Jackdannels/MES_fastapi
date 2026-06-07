@@ -5,6 +5,7 @@ import {
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   STATUS_COMPLETED,
   STATUS_RETENTION,
@@ -1455,6 +1456,7 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     || normalizeText(task?.name)
     || "-";
   const device = normalizeText(schedule?.device) || SALT_SPRAY_LAB;
+  const labCode = normalizeText(schedule?.lab_code || schedule?.labCode);
   const trayRows = collectTrayRows({
     device,
     experimentName,
@@ -1559,6 +1561,7 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     experimentKey,
     experimentName,
     id: normalizeText(schedule?.id) || `${taskCode}-${experimentCode}-${startAt}`,
+    labCode,
     owner,
     sampleCount: visibleTrayRows.reduce((count, row) => count + Math.max(1, row.sampleCodes.length || 0), 0) || visibleTrayRows.length,
     runNo:
@@ -1593,6 +1596,7 @@ function buildLaboratoryWorkbenchView({
   selectedTaskCode = "",
   selectedTrayCode = "",
   labName = SALT_SPRAY_LAB,
+  labCode = "",
 }) {
   const taskMap = buildTaskMap(tasks);
   const experimentMap = buildExperimentMap(experiments);
@@ -1608,7 +1612,8 @@ function buildLaboratoryWorkbenchView({
     .map((schedule) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule }))
     .sort((left, right) => (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0));
 
-  const scheduleRows = allScheduleRows.filter((row) => row.device === labName);
+  const labRef = { code: labCode, name: labName };
+  const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
   const operationTask = scheduleRows.find((row) => laboratoryRowHasStartedOperation(row));
   const defaultTask = operationTask || scheduleRows[0] || null;
 

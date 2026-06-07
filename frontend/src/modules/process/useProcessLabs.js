@@ -5,6 +5,7 @@ import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } fro
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
@@ -86,12 +87,14 @@ const normalizeMasterProcessLabs = (rows) =>
   asArray(rows)
     .filter((lab) => Number(lab?.status ?? 1) !== 0)
     .map((lab) => ({
+      code: normalizeText(lab?.code || lab?.labCode || lab?.lab_code),
       name: normalizeText(lab?.name || lab?.lab_name),
       testType: normalizeText(lab?.testTypeName || lab?.test_type_name || lab?.testType || lab?.test_type),
       type: normalizeText(lab?.type || lab?.lab_type),
     }))
     .filter((lab) => lab.name && lab.testType && lab.type === "实验室")
     .map((lab) => ({
+      code: lab.code,
       name: lab.name,
       testType: lab.testType,
     }));
@@ -250,9 +253,11 @@ function useProcessLabs(options = {}) {
 
   const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
   const currentTimeValue = () => (Number.isFinite(now) ? now : Date.now());
+  const findProcessLabByName = (labName) =>
+    processLabs.value.find((lab) => normalizeText(lab?.name) === normalizeText(labName)) || { name: labName };
   const getLabSchedules = (labName) =>
     schedules.value
-      .filter((entry) => normalizeText(entry?.device) === normalizeText(labName))
+      .filter((entry) => scheduleMatchesLab(entry, findProcessLabByName(labName)))
       .sort((left, right) => parseScheduleTime(left?.start_at) - parseScheduleTime(right?.start_at));
   const isCompletedSchedule = (schedule) =>
     scheduleExperimentIsCompleted({
@@ -771,7 +776,7 @@ function useProcessLabs(options = {}) {
     const relatedSchedules = schedules.value
       .filter(
         (entry) =>
-          normalizeText(entry?.device) === normalizedLabName
+          scheduleMatchesLab(entry, lab)
           && normalizeText(entry?.task_code) === normalizedTaskCode
           && (!normalizedExperimentCode || normalizeText(entry?.experiment_code) === normalizedExperimentCode),
       )
@@ -800,7 +805,7 @@ function useProcessLabs(options = {}) {
       null;
     const activeExperimentCodeFromLab = normalizeText(lab?.experimentCode);
     const relatedSchedules = schedules.value
-      .filter((entry) => normalizeText(entry?.device) === normalizeText(lab?.name))
+      .filter((entry) => scheduleMatchesLab(entry, lab))
       .filter((entry) => !isCompletedSchedule(entry))
       .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
     const schedule =
@@ -889,7 +894,7 @@ function useProcessLabs(options = {}) {
       const sourceSchedules = taskCode
         ? schedules.value.filter(
             (entry) =>
-              normalizeText(entry?.device) === normalizedLabName
+              scheduleMatchesLab(entry, lab)
               && normalizeText(entry?.task_code) === taskCode
               && (!experimentCode || normalizeText(entry?.experiment_code) === experimentCode),
           )
@@ -1222,7 +1227,7 @@ function useProcessLabs(options = {}) {
         || (
           normalizeText(schedule?.task_code) === taskCode
           && normalizeText(schedule?.experiment_code) === activeExperimentCode
-          && normalizeText(schedule?.device) === normalizeText(activeLab?.name)
+          && scheduleMatchesLab(schedule, activeLab)
         )
       )
         ? {

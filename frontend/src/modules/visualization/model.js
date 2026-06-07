@@ -1,11 +1,11 @@
 import {
   buildConflictRows,
   buildGanttRows,
-  isRetentionDevice,
   toLocalDateValue,
 } from "@/modules/schedule/model";
 import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
+import { resolveLabRef, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const firstNonEmptyArray = (...values) => {
@@ -119,8 +119,8 @@ const buildRelationIndexes = ({ experimentTrays, experiments, schedules }) => {
   return { relationsByTaskAndTrayCode };
 };
 
-const relationMatchesLab = (relation, labName) =>
-  resolveLabDevice(relation?.schedule) === labName || resolveLabDevice(relation?.experiment) === labName;
+const relationMatchesLab = (relation, lab) =>
+  scheduleMatchesLab(relation?.schedule, lab) || scheduleMatchesLab(relation?.experiment, lab);
 const resolveTrayTargetLab = (tray) => normalizeText(tray?.target_lab || tray?.targetLab);
 const resolveTrayTargetExperimentCode = (tray) => normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
 const resolveRelationLabName = (relation) =>
@@ -249,7 +249,7 @@ const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
   return map;
 };
 
-const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules, stagingEvents }) => {
+const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules, stagingEvents }) => {
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
   const trayMap = new Map();
@@ -285,7 +285,7 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
         && targetLabRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
           ? targetLab
           : "";
-      const labRelations = relations.filter((relation) => relationMatchesLab(relation, labName));
+      const labRelations = relations.filter((relation) => relationMatchesLab(relation, lab || labName));
       const incompleteLabRelations = labRelations.filter((relation) =>
         !relationIsCompletedForSample({ experimentRunTrays, sample, relation }),
       );
@@ -350,7 +350,13 @@ const buildTrayRowsForLab = ({ labName, samples, experiments, experimentRuns, ex
 };
 
 function buildLabProcessPanels(input = {}) {
-  const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
+  const labRefs = asArray(input.labNames)
+    .map((lab) => {
+      const ref = resolveLabRef(lab);
+      return { ...ref, name: ref.name || ref.code };
+    })
+    .filter((lab) => lab.name || lab.code);
+  const labNames = labRefs.map((lab) => lab.name || lab.code).filter(Boolean);
   const devices = asArray(input.devices);
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
@@ -359,8 +365,10 @@ function buildLabProcessPanels(input = {}) {
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const schedules = asArray(input.schedules);
 
-  return labNames.map((labName) => {
+  return labRefs.map((lab) => {
+    const labName = lab.name || lab.code;
     const trays = buildTrayRowsForLab({
+      lab,
       labName,
       labNames,
       samples,
@@ -443,7 +451,7 @@ function buildLabScheduleThreeDayView(input = {}) {
   const labNames = asArray(input.labNames).map(normalizeText).filter(Boolean);
 
   const visibleSchedules = schedules.filter(
-    (schedule) => !isRetentionDevice(schedule?.device) && scheduleOverlapsWindow(schedule, windowStart, windowEnd),
+    (schedule) => !scheduleTargetsStorageArea(schedule) && scheduleOverlapsWindow(schedule, windowStart, windowEnd),
   );
   const visibleScheduleIds = new Set(visibleSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
   const rawGanttView = buildGanttRows({
@@ -510,7 +518,6 @@ function buildLabScheduleThreeDayView(input = {}) {
 
 const STAGING_CURRENT_STATUSES = new Set(["已入库", "暂存间存放", "已到达暂存间"]);
 const APPEARANCE_CURRENT_STATUSES = new Set(["外观检测间存放", "已到达外观检测间"]);
-const STAGING_OUT_ACTIONS = new Set(["stock_out", "manufacturer_return"]);
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
 const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
 const PLANNED_STAGING_STATUSES = new Set(["送至暂存间"]);
@@ -584,6 +591,16 @@ const isAppearanceLocation = (value) => normalizeText(value).includes(APPEARANCE
 const isPostTestStagingLocation = (value) => normalizeText(value).includes(POST_TEST_STAGING_KEYWORD);
 const isPostTestStagingStatus = (status) => normalizeText(status) === "放置实验后暂存间";
 const isPlannedStagingStatus = (status) => PLANNED_STAGING_STATUSES.has(normalizeText(status));
+const isStagingDestination = (value) => {
+  const text = normalizeText(value);
+  return text === "staging" || text.includes("暂存间");
+};
+const isStockOutToStaging = (event) =>
+  normalizeText(event?.action) === "stock_out"
+  && (
+    isStagingDestination(event?.target_type || event?.targetType)
+    || isStagingDestination(event?.target_lab || event?.targetLab || event?.target_name || event?.targetName)
+  );
 
 const buildStagingKind = (kind, status = "") => ({
   kind,
@@ -593,8 +610,18 @@ const buildStagingKind = (kind, status = "") => ({
 
 const resolveStagingTrayKind = (row, latestEvent) => {
   const latestAction = normalizeText(latestEvent?.action);
-  if (STAGING_OUT_ACTIONS.has(latestAction)) {
+  const plannedStatus = row.statuses.find((status) => isPlannedStagingStatus(status));
+  if (latestAction === "manufacturer_return") {
     return null;
+  }
+  if (latestAction === "stock_out" && !isStockOutToStaging(latestEvent) && !plannedStatus) {
+    return null;
+  }
+  if (plannedStatus) {
+    return buildStagingKind("planned", plannedStatus);
+  }
+  if (isStockOutToStaging(latestEvent)) {
+    return buildStagingKind("planned", "送至暂存间");
   }
   if (
     row.hasAppearanceLocation
@@ -612,10 +639,6 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   }
   if (latestAction === "stock_in") {
     return buildStagingKind("current", "已入库");
-  }
-  const plannedStatus = row.statuses.find((status) => isPlannedStagingStatus(status));
-  if (plannedStatus) {
-    return buildStagingKind("planned", plannedStatus);
   }
   if (PLANNED_STAGING_ACTIONS.has(latestAction)) {
     return buildStagingKind("planned", latestAction);
@@ -708,7 +731,8 @@ function buildStagingSamplesView(input = {}) {
   });
 
   latestEventByTray.forEach((event, trayCode) => {
-    if (STAGING_OUT_ACTIONS.has(normalizeText(event?.action))) {
+    const latestAction = normalizeText(event?.action);
+    if (latestAction === "manufacturer_return" || (latestAction === "stock_out" && !isStockOutToStaging(event))) {
       return;
     }
     const taskCode = resolveTaskCode(event);

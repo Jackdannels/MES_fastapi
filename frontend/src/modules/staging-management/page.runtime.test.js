@@ -276,7 +276,7 @@ describe("StagingManagementPage runtime", () => {
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
     const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
 
-    expect(plannedColumn.text()).toContain("计划入库");
+    expect(plannedColumn.text()).toContain("允许暂存");
     expect(currentColumn.text()).toContain("暂存间样品");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-102-TP-001");
@@ -295,7 +295,7 @@ describe("StagingManagementPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.get('[data-testid="zancun-current-staging-column"] .pill').text()).toBe("当前在库 3");
-    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] .pill').text()).toBe("待入库 6");
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] .pill').text()).toBe("允许暂存 6");
   });
 
   test("inventory columns render four fixed slots with empty placeholders on short pages", async () => {
@@ -369,7 +369,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-metric-stocked-out"]').trigger("click");
 
     expect(mounted.text()).toContain("当前页暂无暂存间样品");
-    expect(mounted.text()).toContain("当前页暂无计划入库托盘");
+    expect(mounted.text()).toContain("当前页暂无允许暂存托盘");
     expect(mounted.text()).not.toContain("SYLU-2026-04-101-TP-001");
     expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
     expect(summaryBar.text()).toContain("今日已出库");

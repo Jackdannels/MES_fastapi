@@ -91,6 +91,42 @@ describe("dashboard model", () => {
     );
   });
 
+  test("classifies schedules by lab code before stale retention display text", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        { code: "TASK-FORMAL", source: "外部委托", status: "待排程" },
+        { code: "TASK-STORAGE", source: "外部委托", status: "待排程" },
+      ],
+      schedules: [
+        {
+          id: "formal-with-stale-name",
+          task_code: "TASK-FORMAL",
+          experiment_code: "TASK-FORMAL-A",
+          device: "恒温恒湿间（暂存间）",
+          lab_code: "LAB_SALT",
+          status: "已排程",
+        },
+        {
+          id: "storage-with-stale-name",
+          task_code: "TASK-STORAGE",
+          device: "冲击一室",
+          lab_code: "AREA_STAGING_PRE",
+          status: "已排程",
+        },
+      ],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.summaryCards.scheduledCount).toBe(1);
+    expect(viewModel.summaryCards.unscheduledCount).toBe(1);
+    expect(viewModel.taskRows).toEqual([
+      expect.objectContaining({ code: "TASK-FORMAL", status: "已排程" }),
+      expect.objectContaining({ code: "TASK-STORAGE", status: "待排程" }),
+    ]);
+  });
+
   test("hides manufacturer-returned tasks from the central dashboard", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

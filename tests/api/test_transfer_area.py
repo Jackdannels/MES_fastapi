@@ -664,6 +664,128 @@ def test_transfer_area_withdraw_staging_dispatch_restores_tray_to_staging_arriva
     assert staging_events[-1]["action"] == "stock_out_withdraw"
 
 
+def test_transfer_area_withdraw_appearance_dispatch_restores_tray_to_appearance_storage(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "高低温湿热一室"
+        sample["status"] = "送至实验室"
+        sample["flow_status"] = "送至实验室"
+        sample["trays"] = [{**sample["trays"][0], "status": "送至实验室"}]
+        sample["history"] = [
+            {
+                "action": "外观检测间扫码出库",
+                "detail": "SYLU-2026-03-102-TP-001 送至 高低温湿热一室",
+                "location": "高低温湿热一室",
+                "status": "送至实验室",
+                "time": "2026-05-19T10:00:00",
+            },
+            {
+                "action": "外观检测间扫码入库",
+                "detail": "SYLU-2026-03-102-TP-001 外观检测间存放",
+                "location": "外观检测间",
+                "status": "外观检测间存放",
+                "time": "2026-05-19T09:50:00",
+            },
+        ]
+    storage.write("mes.samples", samples)
+    storage.write(
+        "mes.staging_events",
+        [
+            {
+                "id": "appearance-event-in",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "room": "appearance",
+                "action": "stock_in",
+                "time": "2026-05-19T09:50:00",
+            },
+            {
+                "id": "appearance-event-out",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "room": "appearance",
+                "action": "stock_out",
+                "target_lab": "高低温湿热一室",
+                "time": "2026-05-19T10:00:00",
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "点错试验间"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredLocation"] == "外观检测间"
+    assert payload["tray"]["trayStatus"] == "外观检测间存放"
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "外观检测间存放" for sample in updated_samples)
+    assert all(sample["flow_status"] == "外观检测间存放" for sample in updated_samples)
+    assert all(sample["location"] == "外观检测间" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "外观检测间存放" for sample in updated_samples)
+    staging_events = storage.read("mes.staging_events")
+    assert staging_events[-1]["action"] == "stock_out_withdraw"
+    assert staging_events[-1]["room"] == "appearance"
+
+
+def test_transfer_area_withdraw_appearance_dispatch_ignores_staging_room_events(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "高低温湿热一室"
+        sample["status"] = "送至实验室"
+        sample["flow_status"] = "送至实验室"
+        sample["trays"] = [{**sample["trays"][0], "status": "送至实验室"}]
+    storage.write("mes.samples", samples)
+    storage.write(
+        "mes.staging_events",
+        [
+            {
+                "id": "appearance-event-out",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "room": "appearance",
+                "action": "stock_out",
+                "target_lab": "高低温湿热一室",
+                "target_experiment_code": "EXP-HUMID-1",
+                "time": "2026-05-19T10:00:00",
+            },
+            {
+                "id": "staging-event-old",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "action": "stock_in",
+                "time": "2026-05-19T10:05:00",
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "外观出库撤回"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredLocation"] == "外观检测间"
+    staging_events = storage.read("mes.staging_events")
+    assert staging_events[-1]["action"] == "stock_out_withdraw"
+    assert staging_events[-1]["room"] == "appearance"
+    assert staging_events[-1]["target_lab"] == "高低温湿热一室"
+    assert staging_events[-1]["target_experiment_code"] == "EXP-HUMID-1"
+
+
 def test_transfer_area_withdraw_staging_dispatch_uses_history_when_event_is_missing(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])

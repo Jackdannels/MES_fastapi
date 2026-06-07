@@ -130,6 +130,34 @@ describe("devices model", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ status: "工作中", statusClass: "status running" }));
   });
 
+  test("matches active experiment runs by lab code before stale display names", () => {
+    const rows = buildDeviceRows(
+      [
+        { code: "LAB_IMPACT_1", name: "冲击一室", status: "可用" },
+        { code: "LAB_OLD", name: "旧冲击间", status: "可用" },
+      ],
+      [],
+      new Date("2026-04-24T10:00:00"),
+      [],
+      [],
+      [
+        {
+          device: "旧冲击间",
+          lab_code: "LAB_IMPACT_1",
+          run_no: "RUN-IMPACT-001",
+          status: "实验进行中",
+          task_code: "TASK-IMPACT",
+          experiment_code: "TASK-IMPACT-A",
+        },
+      ],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({ code: "LAB_IMPACT_1", status: "工作中" }),
+      expect.objectContaining({ code: "LAB_OLD", status: "空闲" }),
+    ]);
+  });
+
   test("ignores stale running tray statuses once experiment runs are available", () => {
     const rows = buildDeviceRows(
       [{ code: "盐雾试验室", name: "盐雾试验室", status: "可用" }],
@@ -250,6 +278,34 @@ describe("devices model", () => {
     });
 
     expect(impact.conflictingSchedules).toEqual([expect.objectContaining({ id: "schedule-1" })]);
+  });
+
+  test("finds maintenance schedule conflicts by lab code before display names", () => {
+    const impact = resolveMaintenanceScheduleImpact({
+      deviceCode: "LAB_IMPACT_1",
+      endAt: "2099-03-20T11:00",
+      schedules: [
+        {
+          id: "schedule-lab-code",
+          device: "旧冲击间",
+          lab_code: "LAB_IMPACT_1",
+          end_at: "2099-03-20T10:00",
+          start_at: "2099-03-20T08:00",
+          task_code: "TASK-001",
+        },
+        {
+          id: "schedule-stale-name",
+          device: "LAB_IMPACT_1",
+          lab_code: "LAB_IMPACT_2",
+          end_at: "2099-03-20T10:00",
+          start_at: "2099-03-20T08:00",
+          task_code: "TASK-002",
+        },
+      ],
+      startAt: "2099-03-20T09:00",
+    });
+
+    expect(impact.conflictingSchedules).toEqual([expect.objectContaining({ id: "schedule-lab-code" })]);
   });
 
   test("builds maintenance plan form from stored device fields", () => {

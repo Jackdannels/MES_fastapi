@@ -623,6 +623,53 @@ describe("taskOverviewModel", () => {
     });
   });
 
+  test("buildTaskRows classifies formal and retention schedules by lab code before stale display text", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        { code: "TASK-FORMAL", test_type: "盐雾试验", status: "待排程" },
+        { code: "TASK-STORAGE", test_type: "冲击试验", status: "待排程" },
+      ],
+      experiments: [
+        { task_code: "TASK-FORMAL", experiment_code: "TASK-FORMAL-A", experiment_name: "盐雾试验", status: "待排程" },
+        { task_code: "TASK-STORAGE", experiment_code: "TASK-STORAGE-A", experiment_name: "冲击试验", status: "待排程" },
+      ],
+      samples: [],
+      schedules: [
+        {
+          task_code: "TASK-FORMAL",
+          experiment_code: "TASK-FORMAL-A",
+          device: "恒温恒湿间（暂存间）",
+          lab_code: "LAB_SALT",
+          status: "已排程",
+        },
+        {
+          task_code: "TASK-STORAGE",
+          experiment_code: "TASK-STORAGE-A",
+          device: "冲击一室",
+          lab_code: "AREA_STAGING_PRE",
+          status: "已排程",
+        },
+      ],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        taskCode: "TASK-FORMAL",
+        scheduleCount: 1,
+        retentionCount: 0,
+        currentStatus: "已排程",
+      }),
+      expect.objectContaining({
+        taskCode: "TASK-STORAGE",
+        scheduleCount: 0,
+        retentionCount: 1,
+        currentStatus: "待排程",
+      }),
+    ]);
+  });
+
   test("buildTaskRows ignores orphan sample-only legacy task codes when no task record exists", () => {
     const rows = buildTaskRows({
       tasks: [

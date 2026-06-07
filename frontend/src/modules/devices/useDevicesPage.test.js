@@ -199,6 +199,56 @@ describe("useDevicesPage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test("uses lab code when checking unavailable device schedule conflicts", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [
+        { code: "LAB_IMPACT_1", name: "冲击一室", status: "可用" },
+      ],
+      "mes.experiment_trays": [],
+      "mes.experiment_runs": [],
+      "mes.samples": [],
+      "mes.schedules": [
+        {
+          device: "旧冲击间",
+          end_at: "2099-03-20T10:00",
+          experiment_code: "TASK-001-A",
+          id: "schedule-code-match",
+          lab_code: "LAB_IMPACT_1",
+          start_at: "2099-03-20T08:00",
+          status: "已排程",
+          task_code: "TASK-001",
+        },
+        {
+          device: "LAB_IMPACT_1",
+          end_at: "2099-03-20T10:00",
+          experiment_code: "TASK-002-A",
+          id: "schedule-stale-name",
+          lab_code: "LAB_IMPACT_2",
+          start_at: "2099-03-20T08:00",
+          status: "已排程",
+          task_code: "TASK-002",
+        },
+      ],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openEditDevice(wrapper.vm.deviceRows[0]);
+    wrapper.vm.deviceForm.status = "停用";
+
+    await wrapper.vm.saveEditedDevice();
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenanceConflictOpen).toBe(true);
+    expect(wrapper.vm.maintenanceConflictDetail.conflictingSchedules).toEqual([
+      expect.objectContaining({ id: "schedule-code-match" }),
+    ]);
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
   test("refreshes planned maintenance status while the device page stays open", async () => {
     mocks.loadSnapshot.mockResolvedValueOnce({
       "mes.devices": [

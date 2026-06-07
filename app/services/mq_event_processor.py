@@ -47,6 +47,8 @@ class MqEventRepository(Protocol):
 
     def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
+    def find_recent_completed_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
+
     def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None: ...
 
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str) -> dict[str, Any]: ...
@@ -335,26 +337,6 @@ def publish_realtime_update() -> None:
 
 
 class MySQLMqEventRepository:
-    def lab_candidates(self, cursor: Any, lab_code: str) -> list[str]:
-        normalized_lab_code = normalize_text(lab_code)
-        if not normalized_lab_code:
-            return []
-        cursor.execute(
-            """
-            SELECT lab_name
-            FROM md_lab
-            WHERE lab_code = %s
-            LIMIT 1
-            """,
-            (normalized_lab_code,),
-        )
-        lab_row = cursor.fetchone() or {}
-        lab_name = normalize_text(lab_row.get("lab_name") if isinstance(lab_row, dict) else lab_row[0] if lab_row else "")
-        candidates = [normalized_lab_code]
-        if lab_name and lab_name not in candidates:
-            candidates.append(lab_name)
-        return candidates
-
     def message_exists(self, message_id: str) -> bool:
         with get_connection() as connection:
             with connection.cursor() as cursor:
@@ -479,15 +461,49 @@ class MySQLMqEventRepository:
                 row = cursor_row_as_dict(cursor)
         return row
 
-    def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None:
-        statuses = [normalize_text(status) for status in candidate_statuses if normalize_text(status)]
-        if not statuses:
+    def find_recent_completed_run_by_lab(self, lab_code: str) -> dict[str, Any] | None:
+        normalized_lab_code = normalize_text(lab_code)
+        if not normalized_lab_code:
             return None
         with get_connection() as connection:
             with connection.cursor() as cursor:
-                lab_candidates = self.lab_candidates(cursor, lab_code)
-                if not lab_candidates:
-                    return None
+                cursor.execute(
+                    """
+                    SELECT
+                      er.run_no,
+                      er.task_no,
+                      er.experiment_no,
+                      er.device_name,
+                      er.run_status
+                    FROM biz_experiment_run er
+                    JOIN biz_experiment_run_tray ert
+                      ON ert.run_no = er.run_no
+                    JOIN biz_tray tr
+                      ON tr.tray_no = ert.tray_no
+                    JOIN md_lab lab
+                      ON lab.lab_id = tr.current_lab_id
+                    WHERE lab.lab_code = %s
+                      AND er.run_status IN ('实验已完成', '实验完成', '实验已经完成')
+                    ORDER BY
+                      er.ended_at DESC,
+                      er.updated_at DESC,
+                      er.started_at DESC,
+                      er.created_at DESC,
+                      er.run_no DESC
+                    LIMIT 1
+                    """,
+                    (normalized_lab_code,),
+                )
+                row = cursor_row_as_dict(cursor)
+        return row
+
+    def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None:
+        normalized_lab_code = normalize_text(lab_code)
+        statuses = [normalize_text(status) for status in candidate_statuses if normalize_text(status)]
+        if not normalized_lab_code or not statuses:
+            return None
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     SELECT task_no, experiment_no, payload_json
@@ -498,7 +514,7 @@ class MySQLMqEventRepository:
                     ORDER BY created_at DESC, message_log_id DESC
                     LIMIT 1
                     """,
-                    (normalize_text(lab_code),),
+                    (normalized_lab_code,),
                 )
                 command_rows = cursor_rows_as_dicts(cursor)
                 command_row = command_rows[0] if command_rows else {}
@@ -554,7 +570,7 @@ class MySQLMqEventRepository:
                         *statuses,
                         *statuses,
                         *statuses,
-                        normalize_text(lab_code),
+                        normalized_lab_code,
                     ],
                 )
                 tray_sample_rows = cursor_rows_as_dicts(cursor)
@@ -580,14 +596,8 @@ class MySQLMqEventRepository:
                 if command_experiment_no:
                     schedule_filters.append("s.experiment_no = %s")
                     schedule_params.append(command_experiment_no)
-                device_names = []
-                for candidate in lab_candidates:
-                    if candidate and candidate not in device_names:
-                        device_names.append(candidate)
-                if device_names:
-                    device_placeholders = ", ".join(["%s"] * len(device_names))
-                    schedule_filters.append(f"s.device_name IN ({device_placeholders})")
-                    schedule_params.extend(device_names)
+                schedule_filters.append("schedule_lab.lab_code = %s")
+                schedule_params.append(normalized_lab_code)
                 tray_placeholders = ", ".join(["%s"] * len(tray_nos))
                 cursor.execute(
                     f"""
@@ -600,6 +610,8 @@ class MySQLMqEventRepository:
                       s.schedule_end_time,
                       et.tray_no AS scoped_tray_no
                     FROM biz_schedule s
+                    LEFT JOIN md_lab schedule_lab
+                      ON schedule_lab.lab_id = s.lab_id
                     JOIN biz_experiment_tray et
                       ON et.task_no = s.task_no AND et.experiment_no = s.experiment_no
                     WHERE {" AND ".join(schedule_filters)}
@@ -805,6 +817,8 @@ def process_laboratory_event(
 
     context = None
     run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
+    if message_type == "EXPERIMENT_RESULT" and not run:
+        run = repo.find_recent_completed_run_by_lab(lab_code)
     created_run_from_context = False
     if message_type == "FIXTURE_READY" and not first_text(payload, "task_code"):
         context = repo.find_current_context_by_lab(lab_code, ["工装夹具安装"])
@@ -822,8 +836,10 @@ def process_laboratory_event(
                 "READY_CONTEXT_REQUIRED",
                 f"ready experiment context is required for lab_code: {lab_code}",
             )
-    if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} and not run:
+    if message_type == "EXPERIMENT_ENDED" and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
+    if message_type == "EXPERIMENT_RESULT" and not run:
+        raise ValueError(f"experiment run is required for lab_code: {lab_code}")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
     authoritative_context = created_run_from_context or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
     if authoritative_context:
@@ -865,7 +881,7 @@ def process_laboratory_event(
                 "task_no": task_no,
                 "experiment_no": experiment_no,
                 "lab_code": lab_code,
-                "success_id": first_text(payload, "success_id"),
+                "success_id": first_text(payload, "success_id", "success_sig", "successSig"),
                 "event_time": occurred_at,
                 "message_id": message_id,
                 "message_log_id": message_log_id,

@@ -73,6 +73,37 @@ describe("scheduleExceptions", () => {
     ]);
   });
 
+  test("keeps expired staging schedules when their lab code is a storage area", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [],
+        [STORAGE_KEYS.experiment_trays]: [],
+        [STORAGE_KEYS.samples]: [],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: "schedule-staging",
+            task_code: "TASK-STAGING",
+            device: "冲击一室",
+            lab_code: "AREA_STAGING_PRE",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "暂存间存放",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [{ code: "TASK-STAGING", status: "待排程" }],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: "schedule-staging" }),
+    ]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
+  });
+
   test("keeps an expired schedule when the experiment has actually started and avoids duplicate exceptions", () => {
     const now = new Date("2099-03-20T12:00:00.000Z");
     const result = reconcileScheduleExceptions(

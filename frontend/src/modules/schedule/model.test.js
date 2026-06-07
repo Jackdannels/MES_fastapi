@@ -183,6 +183,40 @@ describe("schedulePageModel", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "冲击一室" }));
   });
 
+  test("buildConflictRows groups schedules by lab code before display device text", () => {
+    const rows = buildConflictRows({
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          device: "Salt Spray Lab",
+          lab_code: "LAB_SALT",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+        {
+          id: "schedule-2",
+          task_code: "TASK-002",
+          device: "盐雾试验室",
+          lab_code: "LAB_SALT",
+          start_at: "2099-03-20T09:00:00.000Z",
+          end_at: "2099-03-20T11:00:00.000Z",
+        },
+        {
+          id: "schedule-3",
+          task_code: "TASK-003",
+          device: "盐雾试验室",
+          lab_code: "LAB_MOLD",
+          start_at: "2099-03-20T09:00:00.000Z",
+          end_at: "2099-03-20T11:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual(expect.objectContaining({ id: "schedule-2", device: "盐雾试验室" }));
+  });
+
   test("buildLabOptions uses master lab rows for the selected test type", () => {
     const result = buildLabOptions({
       masterLabs: [
@@ -745,6 +779,8 @@ describe("schedulePageModel", () => {
       custom_start: "08:00",
       device: "振动一室",
       experiment_code: "SYLU-2026-03-008-B",
+      lab_code: "",
+      lab_id: "",
       planned_duration_unit: "hours",
       planned_hours: 3.5,
       schedule_date: "2026-03-31",
@@ -766,6 +802,8 @@ describe("schedulePageModel", () => {
       custom_start: "09:15",
       device: "冲击一室",
       experiment_code: "SYLU-2026-03-008-C",
+      lab_code: "",
+      lab_id: "",
       planned_duration_unit: "hours",
       planned_hours: 2.5,
       schedule_date: "2026-03-31",
@@ -1050,6 +1088,69 @@ describe("schedulePageModel", () => {
     expect(result.tasks[0].status).toBe("已排程");
   });
 
+  test("createScheduleRecord stores laboratory identity fields with the display device name", () => {
+    const result = createScheduleRecord({
+      form: {
+        device: "盐雾试验室",
+        experiment_code: "SYLU-2026-03-001-A",
+        lab_code: "LAB_SALT",
+        lab_id: 9,
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-03-001",
+        time_slot: "morning",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: "待排程", test_type: "盐雾试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules[0]).toEqual(
+      expect.objectContaining({
+        device: "盐雾试验室",
+        lab_code: "LAB_SALT",
+        lab_id: 9,
+      }),
+    );
+  });
+
+  test("createScheduleRecord carries laboratory identity when rewriting retention into a lab schedule", () => {
+    const result = createScheduleRecord({
+      form: {
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-03-001-B",
+        lab_code: "LAB_IMPACT_1",
+        lab_id: 4,
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-03-001",
+        time_slot: "morning",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      schedules: [
+        {
+          id: "schedule-retention-1",
+          task_code: "SYLU-2026-03-001",
+          device: RETENTION_DEVICE,
+          start_at: "2099-03-19T08:00:00.000Z",
+          end_at: "2099-03-19T08:00:00.000Z",
+          status: "暂存间存放",
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: "暂存间存放", test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules[0]).toEqual(
+      expect.objectContaining({
+        device: "冲击一室",
+        lab_code: "LAB_IMPACT_1",
+        lab_id: 4,
+      }),
+    );
+  });
+
   test("createScheduleRecord keeps experiment_code when rewriting a retention entry into a lab schedule", () => {
     const result = createScheduleRecord({
       form: {
@@ -1080,6 +1181,45 @@ describe("schedulePageModel", () => {
       expect.objectContaining({
         experiment_code: "SYLU-2026-03-001-B",
         id: "schedule-retention-1",
+      }),
+    );
+  });
+
+  test("updateScheduleRecord updates laboratory identity fields with the selected lab", () => {
+    const result = updateScheduleRecord({
+      form: {
+        device: "冲击二室",
+        experiment_code: "SYLU-2026-03-001-A",
+        id: "schedule-1",
+        lab_code: "LAB_IMPACT_2",
+        lab_id: 5,
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-03-001",
+        time_slot: "afternoon",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "冲击一室",
+          lab_code: "LAB_IMPACT_1",
+          lab_id: 4,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: "已排程", test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules[0]).toEqual(
+      expect.objectContaining({
+        device: "冲击二室",
+        lab_code: "LAB_IMPACT_2",
+        lab_id: 5,
       }),
     );
   });
@@ -1194,6 +1334,28 @@ describe("schedulePageModel", () => {
     });
 
     expect(gantt.rows.map((row) => row.device)).toEqual(["盐雾试验室"]);
+  });
+
+  test("buildGanttRows places schedules on the master lab row by lab code", () => {
+    const gantt = buildGanttRows({
+      masterLabs: [{ code: "LAB_SALT", name: "Salt Spray Lab", type: "实验室", testTypeName: "盐雾试验" }],
+      schedules: [
+        {
+          id: "schedule-salt",
+          task_code: "TASK-SALT",
+          device: "盐雾试验室",
+          lab_code: "LAB_SALT",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      tasks: [{ code: "TASK-SALT", status: "已排程", test_type: "盐雾试验" }],
+    });
+
+    const saltRow = gantt.rows.find((row) => row.device === "Salt Spray Lab");
+    expect(saltRow).toBeTruthy();
+    expect(saltRow.slots.some((slot) => slot.scheduleId === "schedule-salt" && slot.label === "TASK-SALT")).toBe(true);
   });
 
   test("buildGanttRows does not add unrelated master resources to base rows", () => {

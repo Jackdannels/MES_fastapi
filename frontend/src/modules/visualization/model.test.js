@@ -78,6 +78,34 @@ describe("visualization model", () => {
     });
   });
 
+  test("buildLabProcessPanels matches tray relations by schedule lab code before display device text", () => {
+    const panels = buildLabProcessPanels({
+      labNames: [{ code: "LAB_SALT", name: "Salt Spray Lab" }],
+      tasks: [{ code: "TASK-SALT", name: "盐雾任务" }],
+      experiments: [
+        { task_code: "TASK-SALT", experiment_code: "EXP-SALT", experiment_name: "盐雾试验", required_device: "Salt Spray Lab" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-SALT", experiment_code: "EXP-SALT", tray_code: "TRAY-SALT-001" },
+      ],
+      schedules: [
+        { task_code: "TASK-SALT", experiment_code: "EXP-SALT", device: "盐雾试验室", lab_code: "LAB_SALT" },
+      ],
+      samples: [
+        {
+          code: "SAMPLE-SALT-001",
+          task_code: "TASK-SALT",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [{ tray_code: "TRAY-SALT-001", status: "送至实验室", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(panels[0]).toEqual(expect.objectContaining({ name: "Salt Spray Lab", trayCount: 1 }));
+    expect(panels[0].trays[0]).toEqual(expect.objectContaining({ taskCode: "TASK-SALT", trayCode: "TRAY-SALT-001" }));
+  });
+
   test("removes manufacturer-returned trays from laboratory process panels for that experiment", () => {
     const taskCode = "SYLU-2026-06-021";
     const experimentCode = `${taskCode}-A`;
@@ -1196,6 +1224,86 @@ describe("visualization model", () => {
     expect(view.summary.plannedTrayCount).toBe(1);
     expect(view.summary.postTestTrayCount).toBe(0);
     expect(view.summary.appearanceTrayCount).toBe(0);
+  });
+
+  test("keeps stock-out trays visible when the destination is staging", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-STOCK-OUT-STAGING", name: "转暂存任务", test_type: "盐雾试验" }],
+      samples: [
+        {
+          code: "SP-STOCK-OUT-STAGING",
+          task_code: "TASK-STOCK-OUT-STAGING",
+          location: "室外接驳区",
+          status: "送至暂存间",
+          trays: [{ tray_code: "TP-STOCK-OUT-STAGING", status: "送至暂存间", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          task_code: "TASK-STOCK-OUT-STAGING",
+          time: "2026-06-06T09:00:00+08:00",
+          tray_code: "TP-STOCK-OUT-STAGING",
+        },
+        {
+          action: "stock_out",
+          target_lab: "恒温恒湿间（暂存间）",
+          target_type: "staging",
+          task_code: "TASK-STOCK-OUT-STAGING",
+          time: "2026-06-06T10:00:00+08:00",
+          tray_code: "TP-STOCK-OUT-STAGING",
+        },
+      ],
+    });
+
+    expect(view.tasks).toHaveLength(1);
+    expect(view.tasks[0].trays[0]).toEqual(
+      expect.objectContaining({
+        stagingKind: "planned",
+        stagingKindLabel: "计划暂存",
+        status: "送至暂存间",
+        trayCode: "TP-STOCK-OUT-STAGING",
+        updatedAt: "2026-06-06T10:00:00+08:00",
+      }),
+    );
+    expect(view.summary.plannedTrayCount).toBe(1);
+  });
+
+  test("classifies appearance stock-out to staging as planned staging", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-APPEARANCE-TO-STAGING", name: "外观转暂存", test_type: "霉菌试验" }],
+      samples: [
+        {
+          code: "SP-APPEARANCE-TO-STAGING",
+          location: "外观检测间",
+          status: "送至暂存间",
+          task_code: "TASK-APPEARANCE-TO-STAGING",
+          trays: [{ quantity: 1, status: "送至暂存间", tray_code: "TP-APPEARANCE-TO-STAGING" }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_out",
+          room: "appearance",
+          target_lab: "恒温恒湿间（暂存间）",
+          target_type: "staging",
+          task_code: "TASK-APPEARANCE-TO-STAGING",
+          time: "2026-06-06T10:30:00+08:00",
+          tray_code: "TP-APPEARANCE-TO-STAGING",
+        },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(
+      expect.objectContaining({
+        stagingKind: "planned",
+        stagingKindLabel: "计划暂存",
+        status: "送至暂存间",
+        trayCode: "TP-APPEARANCE-TO-STAGING",
+      }),
+    );
+    expect(view.summary.appearanceTrayCount).toBe(0);
+    expect(view.summary.plannedTrayCount).toBe(1);
   });
 
   test("separates current staging, planned staging, and post-test staging trays", () => {

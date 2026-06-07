@@ -15,7 +15,11 @@ async function postLaboratoryMqCommand(path, payload) {
   if (!response.ok) {
     throw new Error(`Failed to publish laboratory MQ command: ${response.status} ${response.statusText}`);
   }
-  return response.json();
+  const result = await response.json();
+  if (result?.published === false) {
+    throw new Error(`Failed to publish laboratory MQ command: ${result.reason || "not_published"}`);
+  }
+  return result;
 }
 
 const publishLaboratoryFixtureInstall = (payload) =>

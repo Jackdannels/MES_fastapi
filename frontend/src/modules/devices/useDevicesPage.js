@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 import { revertLaboratoryTaskToPreviousStableState } from "@/modules/laboratory/model";
@@ -311,11 +312,15 @@ function useDevicesPage() {
       .filter(Boolean);
   };
 
-  const scheduleHasRunningTray = (schedule, deviceCode) => {
+  const resolveDeviceRef = (deviceCode) =>
+    rawDevices.value.find((device) => normalizeText(device?.code) === normalizeText(deviceCode))
+    || { code: normalizeText(deviceCode), name: normalizeText(deviceCode) };
+
+  const scheduleHasRunningTray = (schedule, deviceRef) => {
     const taskCode = normalizeText(schedule?.task_code);
     const trayCodes = new Set(resolveScheduleTrayCodes(schedule));
     return rawSamples.value.some((sample) => {
-      if (normalizeText(sample?.task_code) !== taskCode || normalizeText(sample?.location) !== normalizeText(deviceCode)) {
+      if (normalizeText(sample?.task_code) !== taskCode || !labIdentityMatches(sample, deviceRef)) {
         return false;
       }
       return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) => {
@@ -328,14 +333,15 @@ function useDevicesPage() {
     });
   };
 
-  const findRunningSchedulesForDevice = (deviceCode) =>
-    rawExperimentRuns.value.length > 0
+  const findRunningSchedulesForDevice = (deviceCode) => {
+    const deviceRef = resolveDeviceRef(deviceCode);
+    return rawExperimentRuns.value.length > 0
       ? rawExperimentRuns.value
-          .filter((run) => normalizeText(run?.device) === normalizeText(deviceCode) && isRunningExperimentStatus(run?.status))
+          .filter((run) => labIdentityMatches(run, deviceRef) && isRunningExperimentStatus(run?.status))
           .map((run) => {
             const matchedSchedule = rawSchedules.value.find(
               (schedule) =>
-                normalizeText(schedule?.device) === normalizeText(deviceCode)
+                scheduleMatchesLab(schedule, deviceRef)
                 && normalizeText(schedule?.task_code) === normalizeText(run?.task_code)
                 && normalizeText(schedule?.experiment_code) === normalizeText(run?.experiment_code),
             );
@@ -350,8 +356,9 @@ function useDevicesPage() {
             };
           })
       : rawSchedules.value.filter(
-          (schedule) => normalizeText(schedule?.device) === normalizeText(deviceCode) && scheduleHasRunningTray(schedule, deviceCode),
+          (schedule) => scheduleMatchesLab(schedule, deviceRef) && scheduleHasRunningTray(schedule, deviceRef),
         );
+  };
 
   const buildLaboratoryTaskFromSchedule = (schedule) => {
     const experiment = findExperimentBySchedule(schedule);
@@ -608,7 +615,8 @@ function useDevicesPage() {
     const changedToUnavailable =
       isUnavailableDeviceStatus(deviceForm.value?.status) && normalizeText(previousDevice?.status) !== normalizeText(deviceForm.value?.status);
     if (changedToUnavailable) {
-      const conflictingSchedules = rawSchedules.value.filter((schedule) => normalizeText(schedule?.device) === normalizeText(deviceForm.value?.code));
+      const deviceRef = resolveDeviceRef(deviceForm.value?.code);
+      const conflictingSchedules = rawSchedules.value.filter((schedule) => scheduleMatchesLab(schedule, deviceRef));
       if (conflictingSchedules.length > 0) {
         maintenanceConflictDetail.value = {
           conflictingSchedules,

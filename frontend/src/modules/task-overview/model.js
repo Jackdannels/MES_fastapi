@@ -1,5 +1,6 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
+import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
 import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
 import {
   EXPERIMENT_STATUS_COMPLETED as EXPERIMENT_COMPLETED_STATUS,
@@ -16,7 +17,6 @@ import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/s
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_SCHEDULED = "已排程";
-const RETENTION_KEYWORD = "暂存间";
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const SCHEDULED_EXPERIMENT_STATUSES = new Set([
   "已排程",
@@ -57,10 +57,8 @@ function normalizeText(value) {
 const normalizeTaskStatus = normalizeTaskStatusLabel;
 const normalizeExperimentStatus = normalizeExperimentStatusLabel;
 
-// 判断排程设备是否属于暂存间，用于区分正式实验和留样暂存。
-function isRetentionDevice(value) {
-  return normalizeText(value).includes(RETENTION_KEYWORD);
-}
+// 判断排程是否属于存放区，用于区分正式实验和留样暂存。
+const isRetentionSchedule = (schedule) => scheduleTargetsStorageArea(schedule);
 
 // 托盘数量默认至少记 1，避免空值导致统计为 0。
 function normalizeQuantity(value) {
@@ -413,7 +411,7 @@ function buildTaskRows({
   });
 
   scheduleList.forEach((entry) => {
-    if (isRetentionDevice(entry?.device)) {
+    if (isRetentionSchedule(entry)) {
       return;
     }
     const schedule = {
@@ -496,7 +494,7 @@ function buildTaskRows({
     }
     const row = taskMap.get(taskCode);
     // 暂存间排程单独累计，正式实验排程累计到 scheduleCount。
-    if (isRetentionDevice(entry?.device)) {
+    if (isRetentionSchedule(entry)) {
       row.retentionCount += 1;
     } else {
       row.scheduleCount = 1;

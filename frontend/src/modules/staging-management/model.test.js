@@ -336,6 +336,32 @@ describe("staging-management model", () => {
     expect(detail.targetLab).toBe("盐雾试验室");
   });
 
+  test("stock-out detail keeps scheduled target lab identity fields for exact matching", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => (
+      schedule.id === "schedule-102-next-lab"
+        ? { ...schedule, lab_code: "LAB_SALT", lab_id: 9 }
+        : schedule.id === "schedule-102-lab"
+        ? { ...schedule, lab_code: "LAB_VIBRATION_1", lab_id: 11 }
+        : schedule
+    ));
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
+
+    expect(detail.targetDestinations).toContainEqual(expect.objectContaining({
+      targetExperimentCode: "SYLU-2026-04-102-B",
+      targetLab: "盐雾试验室",
+      targetLabCode: "LAB_SALT",
+      targetLabId: 9,
+    }));
+    expect(detail).toEqual(expect.objectContaining({
+      targetLab: "振动一室",
+      targetLabCode: "LAB_VIBRATION_1",
+      targetLabId: 11,
+    }));
+  });
+
   test("marks unscheduled fallback destinations as unavailable stock-out targets", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].filter(
@@ -771,6 +797,44 @@ describe("staging-management model", () => {
       target_lab: "振动一室",
     });
     expect(metrics.stockedOutTodayCount).toBe(2);
+  });
+
+  test("stock-out selects a destination by lab code when display names differ", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => (
+      schedule.id === "schedule-102-lab"
+        ? { ...schedule, device: "振动试验一室", lab_code: "LAB_VIBRATION_1", lab_id: 11 }
+        : schedule
+    ));
+
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "stockOut",
+        targetLab: "振动一室",
+        targetLabCode: "LAB_VIBRATION_1",
+      },
+      snapshot,
+    });
+    const stockOutSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001");
+
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      target_lab: "振动试验一室",
+      target_lab_code: "LAB_VIBRATION_1",
+      target_lab_id: 11,
+    });
+    expect(stockOutSample).toMatchObject({
+      location: "振动试验一室",
+      status: "送至实验室",
+    });
+    expect(stockOutSample?.trays[0]).toMatchObject({
+      target_lab: "振动试验一室",
+      target_lab_code: "LAB_VIBRATION_1",
+      target_lab_id: 11,
+    });
   });
 
   test("requires a selected target lab before stock-out writes an event", () => {

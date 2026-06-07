@@ -86,6 +86,42 @@ describe("laboratory model", () => {
     expect(buildLaboratoryProgressMessage(createLaboratoryWorkflow(), null, "冲击一室")).toBe("当前冲击一室暂无排程");
   });
 
+  test("buildLaboratoryWorkbenchView matches schedules by lab code before display device text", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experiments: [
+        { task_code: "TASK-SALT", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+      ],
+      labCode: "LAB_SALT",
+      labName: "盐雾试验室",
+      now: NOW,
+      samples: [
+        {
+          code: "SP-SALT-001",
+          location: "盐雾试验室",
+          owner: "周工",
+          status: "送至实验室",
+          task_code: "TASK-SALT",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-SALT-001" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-salt",
+          task_code: "TASK-SALT",
+          experiment_code: "EXP-SALT",
+          device: "Salt Spray Lab",
+          lab_code: "LAB_SALT",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "TASK-SALT", name: "盐雾连接器", test_type: "盐雾试验" }],
+    });
+
+    expect(view.scheduleRows.map((row) => row.taskCode)).toEqual(["TASK-SALT"]);
+    expect(view.currentTask).toEqual(expect.objectContaining({ taskCode: "TASK-SALT" }));
+  });
+
   test("buildSaltSprayLaboratoryView keeps only 盐雾试验室 schedules and prioritizes the active one", () => {
     const view = buildSaltSprayLaboratoryView({
       experiments: [

@@ -1,5 +1,6 @@
 // 提供设备页所需的行数据、表单和点位管理工厂与映射函数。
 import { LAB_LOCATIONS, LAB_TEST_MAP, TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
 import { isExperimentRunningStatus } from "@/lib/statusNormalization";
 
 const DEFAULT_DEVICE_STATUS = "可用";
@@ -85,20 +86,13 @@ const isRunningTrayStatus = (status) => isExperimentRunningStatus(status);
 
 const isRunningExperimentRunStatus = (status) => isExperimentRunningStatus(status);
 
-const buildDeviceMatchLabels = (device) => {
-  if (typeof device === "string") {
-    return [normalizeText(device)].filter(Boolean);
-  }
-  return Array.from(new Set([normalizeText(device?.code), normalizeText(device?.name)].filter(Boolean)));
-};
-
 const experimentRunIsActiveForDevice = (run, device) =>
-  buildDeviceMatchLabels(device).includes(normalizeText(run?.device)) && isRunningExperimentRunStatus(run?.status);
+  labIdentityMatches(run, device) && isRunningExperimentRunStatus(run?.status);
 
-const isScheduleExperimentRunning = (schedule, deviceCode, samples = [], experimentTrays = []) => {
+const isScheduleExperimentRunning = (schedule, device, samples = [], experimentTrays = []) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
-  if (!taskCode || normalizeText(schedule?.device) !== deviceCode) {
+  if (!taskCode || !scheduleMatchesLab(schedule, device)) {
     return false;
   }
 
@@ -121,7 +115,7 @@ const isScheduleExperimentRunning = (schedule, deviceCode, samples = [], experim
       return false;
     }
     const sampleLocation = normalizeText(sample?.location);
-    if (sampleLocation && sampleLocation !== deviceCode) {
+    if (sampleLocation && !labIdentityMatches(sample, device)) {
       return false;
     }
 
@@ -156,7 +150,7 @@ function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = 
     return runList.some((run) => experimentRunIsActiveForDevice(run, device)) ? ACTIVE_DEVICE_STATUS : IDLE_DEVICE_STATUS;
   }
   const runningSchedule = asArray(schedules).find((schedule) =>
-    isScheduleExperimentRunning(schedule, deviceCode, samples, experimentTrays),
+    isScheduleExperimentRunning(schedule, device, samples, experimentTrays),
   );
   return runningSchedule ? ACTIVE_DEVICE_STATUS : IDLE_DEVICE_STATUS;
 }
@@ -307,7 +301,7 @@ function resolveMaintenanceScheduleImpact({ deviceCode, endAt, schedules = [], s
 
   return {
     conflictingSchedules: asArray(schedules).filter((schedule) => {
-      if (normalizeText(schedule?.device) !== normalizedDevice) {
+      if (!scheduleMatchesLab(schedule, { code: normalizedDevice, name: normalizedDevice })) {
         return false;
       }
       const scheduleStart = parseDate(schedule?.start_at);

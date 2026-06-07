@@ -1,6 +1,7 @@
 import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
+import { resolveScheduleLabCode } from "@/lib/labIdentity";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
@@ -32,6 +33,7 @@ const APPEARANCE_STOCK_IN_CANDIDATE_STATUSES = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const resolveScheduleLabId = (schedule) => schedule?.lab_id ?? schedule?.labId ?? "";
 const resolveStorageRoomConfig = (room) =>
   STORAGE_ROOM_CONFIGS[normalizeText(room)] || STORAGE_ROOM_CONFIGS.staging;
 const eventMatchesRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
@@ -402,6 +404,8 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
         targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
         targetIsFallback: false,
         targetLab: normalizeText(scheduled?.device),
+        targetLabCode: resolveScheduleLabCode(scheduled),
+        targetLabId: resolveScheduleLabId(scheduled),
         targetScheduleStartAt: normalizeText(scheduled?.start_at),
         targetScheduleEndAt: normalizeText(scheduled?.end_at),
         targetUnavailableReason: "",
@@ -461,6 +465,8 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           targetExperimentName: resolveExperimentName(experiment, schedule?.experiment_name),
           targetIsFallback: false,
           targetLab: normalizeText(schedule?.device),
+          targetLabCode: resolveScheduleLabCode(schedule),
+          targetLabId: resolveScheduleLabId(schedule),
           targetScheduleStartAt: normalizeText(schedule?.start_at),
           targetScheduleEndAt: normalizeText(schedule?.end_at),
           targetUnavailableReason: "",
@@ -772,6 +778,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         targetExperimentName: targetDestination?.targetExperimentName || "",
         targetIsFallback: Boolean(targetDestination?.targetIsFallback),
         targetLab: targetDestination?.targetLab || "",
+        targetLabCode: targetDestination?.targetLabCode || "",
+        targetLabId: targetDestination?.targetLabId || "",
         targetDestinations,
         targetScheduleEndAt: targetDestination?.targetScheduleEndAt || "",
         targetScheduleStartAt: targetDestination?.targetScheduleStartAt || "",
@@ -1076,15 +1084,27 @@ function applyZancunInventoryAction(input = {}) {
   }
 
   const selectedTargetLab = normalizeText(payload.targetLab);
+  const selectedTargetLabCode = normalizeText(payload.targetLabCode || payload.target_lab_code);
+  const selectedTargetLabId = payload.targetLabId ?? payload.target_lab_id ?? "";
   const selectedTargetExperimentCode = normalizeText(payload.targetExperimentCode);
   const selectedTargetType = normalizeText(payload.targetType);
   const targetDestinations = asArray(matchedRow.targetDestinations);
+  const destinationMatchesSelectedLab = (destination) => {
+    const destinationCode = normalizeText(destination?.targetLabCode || destination?.target_lab_code);
+    if (selectedTargetLabCode && destinationCode) {
+      return selectedTargetLabCode === destinationCode;
+    }
+    return normalizeText(destination?.targetLab) === selectedTargetLab;
+  };
   const selectedDestination = targetDestinations.find((destination) => (
-    normalizeText(destination?.targetLab) === selectedTargetLab
+    destinationMatchesSelectedLab(destination)
     && (!selectedTargetExperimentCode || normalizeText(destination?.targetExperimentCode) === selectedTargetExperimentCode)
     && (!selectedTargetType || normalizeText(destination?.targetType) === selectedTargetType)
   )) || null;
-  if (actionMode === "stockOut" && !selectedTargetLab) {
+  const resolvedTargetLab = normalizeText(selectedDestination?.targetLab) || selectedTargetLab;
+  const resolvedTargetLabCode = normalizeText(selectedDestination?.targetLabCode || selectedDestination?.target_lab_code) || selectedTargetLabCode;
+  const resolvedTargetLabId = selectedDestination?.targetLabId ?? selectedDestination?.target_lab_id ?? selectedTargetLabId;
+  if (actionMode === "stockOut" && !selectedTargetLab && !selectedTargetLabCode) {
     return {
       error: "请选择目标实验室后再出库。",
       row: null,
@@ -1127,7 +1147,9 @@ function applyZancunInventoryAction(input = {}) {
       ? {
           target_experiment_code: normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode),
           target_experiment_name: normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName),
-          target_lab: selectedTargetLab,
+          target_lab: resolvedTargetLab,
+          target_lab_code: resolvedTargetLabCode,
+          target_lab_id: resolvedTargetLabId,
           target_type: normalizeText(selectedDestination?.targetType) || selectedTargetType || "lab",
         }
       : {}),
@@ -1152,13 +1174,13 @@ function applyZancunInventoryAction(input = {}) {
     const isStagingTarget =
       normalizeText(selectedDestination?.targetType) === "staging"
       || selectedTargetType === "staging"
-      || normalizeText(selectedTargetLab) === STAGING_LOCATION;
+      || normalizeText(resolvedTargetLab) === STAGING_LOCATION;
     const targetExperimentCode =
       normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockOutAction,
-      historyDetail: `${matchedRow.trayCode} 送至 ${selectedTargetLab}`,
-      location: isStagingTarget ? STAGING_LOCATION : selectedTargetLab,
+      historyDetail: `${matchedRow.trayCode} 送至 ${resolvedTargetLab}`,
+      location: isStagingTarget ? STAGING_LOCATION : resolvedTargetLab,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
@@ -1179,7 +1201,9 @@ function applyZancunInventoryAction(input = {}) {
                   }
                 : {
                     target_experiment_code: targetExperimentCode,
-                    target_lab: selectedTargetLab,
+                    target_lab: resolvedTargetLab,
+                    target_lab_code: resolvedTargetLabCode,
+                    target_lab_id: resolvedTargetLabId,
                     target_type: "lab",
                   }),
             }
