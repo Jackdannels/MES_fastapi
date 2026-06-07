@@ -596,7 +596,9 @@ class MySQLMqEventRepository:
                 if command_experiment_no:
                     schedule_filters.append("s.experiment_no = %s")
                     schedule_params.append(command_experiment_no)
-                schedule_filters.append("schedule_lab.lab_code = %s")
+                    schedule_filters.append("(schedule_lab.lab_code = %s OR schedule_lab.lab_code IS NULL)")
+                else:
+                    schedule_filters.append("schedule_lab.lab_code = %s")
                 schedule_params.append(normalized_lab_code)
                 tray_placeholders = ", ".join(["%s"] * len(tray_nos))
                 cursor.execute(

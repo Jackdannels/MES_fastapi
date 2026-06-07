@@ -156,6 +156,60 @@ def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch
     assert ("disconnect",) in calls
 
 
+def test_publish_laboratory_command_records_context_before_mqtt_publish(monkeypatch):
+    calls = []
+
+    def fake_record(command, topic, payload, publish_result):
+        calls.append(("record", command, topic, dict(payload), publish_result.get("process_status")))
+        return 91
+
+    def fake_publish(topic, payload, app_settings):
+        calls.append(("publish", topic, dict(payload)))
+        return {"published": True, "reason": "", "topic": topic}
+
+    def fake_update(message_log_id, publish_result):
+        calls.append(("update", message_log_id, dict(publish_result)))
+
+    monkeypatch.setattr(mq_publisher, "record_laboratory_command", fake_record)
+    monkeypatch.setattr(mq_publisher, "publish_mqtt_json", fake_publish)
+    monkeypatch.setattr(mq_publisher, "update_laboratory_command_publish_result", fake_update)
+
+    result = mq_publisher.publish_laboratory_command(
+        "INSTALL_FIXTURE",
+        {
+            "task_code": "SYLU-2026-06-021",
+            "lab_code": "LAB_IMPACT_1",
+            "experiment_code": "SYLU-2026-06-021-A",
+        },
+        Settings(MQTT_ENABLED=True),
+    )
+
+    assert result == {"published": True, "reason": "", "topic": "mes/v1/labs/LAB_IMPACT_1/commands/fixture-install"}
+    assert calls == [
+        (
+            "record",
+            "INSTALL_FIXTURE",
+            "mes/v1/labs/LAB_IMPACT_1/commands/fixture-install",
+            {
+                "task_code": "SYLU-2026-06-021",
+                "lab_code": "LAB_IMPACT_1",
+                "experiment_code": "SYLU-2026-06-021-A",
+            },
+            "SENDING",
+        ),
+        (
+            "publish",
+            "mes/v1/labs/LAB_IMPACT_1/commands/fixture-install",
+            {
+                "task_code": "SYLU-2026-06-021",
+                "lab_code": "LAB_IMPACT_1",
+                "experiment_code": "SYLU-2026-06-021-A",
+            },
+        ),
+        ("update", 91, {"published": True, "reason": "", "topic": "mes/v1/labs/LAB_IMPACT_1/commands/fixture-install"}),
+    ]
+
+
 def test_bind_laboratory_context_guards_sample_status_fallback(monkeypatch):
     class TupleCursor:
         description = None
@@ -364,6 +418,79 @@ def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):
     ]
     assert ("loop_stop",) in calls
     assert ("disconnect",) in calls
+
+
+def test_mqtt_subscriber_keeps_consuming_after_one_bad_lab_event(monkeypatch):
+    calls = []
+
+    class BadMessage:
+        topic = "mes/v1/labs/LAB_IMPACT_1/events/fixture-ready"
+        payload = b'{"lab_code":"LAB_IMPACT_1","fixture_ready_at":"2026-06-03 09:31:00"}'
+
+    class GoodMessage:
+        topic = "mes/v1/labs/LAB_SALT/events/fixture-ready"
+        payload = b'{"lab_code":"LAB_SALT","fixture_ready_at":"2026-06-03 09:31:01"}'
+
+    class FakeClient:
+        def __init__(self):
+            self.on_connect = None
+            self.on_message = None
+            calls.append(("client",))
+
+        def username_pw_set(self, username, password):
+            calls.append(("auth", username, password))
+
+        def connect(self, host, port, keepalive=60):
+            calls.append(("connect", host, port, keepalive))
+            self.on_connect(self, None, None, 0)
+
+        def subscribe(self, topic, qos=0):
+            calls.append(("subscribe", topic, qos))
+
+        def loop_start(self):
+            calls.append(("loop_start",))
+            self.on_message(self, None, BadMessage())
+            self.on_message(self, None, GoodMessage())
+
+        def loop_stop(self):
+            calls.append(("loop_stop",))
+
+        def disconnect(self):
+            calls.append(("disconnect",))
+
+    fake_paho = ModuleType("paho")
+    fake_mqtt_package = ModuleType("paho.mqtt")
+    fake_mqtt_client = ModuleType("paho.mqtt.client")
+    fake_mqtt_client.Client = FakeClient
+    fake_mqtt_package.client = fake_mqtt_client
+    fake_paho.mqtt = fake_mqtt_package
+    modules = __import__("sys").modules
+    monkeypatch.setitem(modules, "paho", fake_paho)
+    monkeypatch.setitem(modules, "paho.mqtt", fake_mqtt_package)
+    monkeypatch.setitem(modules, "paho.mqtt.client", fake_mqtt_client)
+
+    processed = []
+
+    def fake_process(topic, payload):
+        processed.append((topic, payload))
+        if payload["lab_code"] == "LAB_IMPACT_1":
+            raise ValueError("fixture install context is required for lab_code: LAB_IMPACT_1")
+
+    monkeypatch.setattr(mq_subscriber, "process_laboratory_event", fake_process)
+
+    handle = mq_subscriber.start_mqtt_subscriber(Settings(MQTT_ENABLED=True, MQTT_USERNAME="guest", MQTT_PASSWORD="guest"))
+    handle.stop()
+
+    assert processed == [
+        (
+            "mes/v1/labs/LAB_IMPACT_1/events/fixture-ready",
+            {"lab_code": "LAB_IMPACT_1", "fixture_ready_at": "2026-06-03 09:31:00"},
+        ),
+        (
+            "mes/v1/labs/LAB_SALT/events/fixture-ready",
+            {"lab_code": "LAB_SALT", "fixture_ready_at": "2026-06-03 09:31:01"},
+        ),
+    ]
 
 
 def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
@@ -2309,6 +2436,86 @@ def test_mysql_find_current_context_scopes_ready_trays_to_matched_experiment(mon
         "device_name": "冲击一室",
         "planned_hours": 3.5,
         "schedule_end_time": "2026-06-04 16:00:00",
+        "tray_nos": ["TP-001"],
+        "sample_nos": ["SP-001"],
+    }
+
+
+def test_mysql_find_current_context_allows_legacy_schedule_without_lab_id_when_command_has_experiment(monkeypatch):
+    class TupleCursor:
+        description = None
+        schedule_sql = ""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            if "FROM biz_mq_message_log" in sql:
+                self.description = (("task_no",), ("experiment_no",), ("payload_json",))
+            elif "FROM biz_tray tr" in sql:
+                self.description = (("tray_no",), ("sample_no",), ("location_desc",), ("current_lab_id",))
+            elif "FROM biz_schedule s" in sql:
+                self.description = (
+                    ("schedule_no",),
+                    ("task_no",),
+                    ("experiment_no",),
+                    ("device_name",),
+                    ("planned_hours",),
+                    ("schedule_end_time",),
+                    ("scoped_tray_no",),
+                )
+                self.schedule_sql = sql
+            else:
+                self.description = None
+
+        def fetchall(self):
+            columns = [column[0] for column in (self.description or [])]
+            if columns == ["task_no", "experiment_no", "payload_json"]:
+                return [("TASK-LEGACY", "EXP-SALT", "{}")]
+            if columns == ["tray_no", "sample_no", "location_desc", "current_lab_id"]:
+                return [("TP-001", "SP-001", "盐雾试验室", 3)]
+            if columns == [
+                "schedule_no",
+                "task_no",
+                "experiment_no",
+                "device_name",
+                "planned_hours",
+                "schedule_end_time",
+                "scoped_tray_no",
+            ]:
+                if "schedule_lab.lab_code = %s OR schedule_lab.lab_code IS NULL" not in self.schedule_sql:
+                    return []
+                return [("schedule-salt", "TASK-LEGACY", "EXP-SALT", "盐雾试验室", 2.0, "2026-06-07 18:00:00", "TP-001")]
+            return []
+
+    class TupleConnection:
+        def __init__(self):
+            self.cursor_obj = TupleCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+    connection = TupleConnection()
+    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+
+    context = MySQLMqEventRepository().find_current_context_by_lab("LAB_SALT", ["工装夹具安装"])
+
+    assert context == {
+        "task_no": "TASK-LEGACY",
+        "experiment_no": "EXP-SALT",
+        "schedule_no": "schedule-salt",
+        "device_name": "盐雾试验室",
+        "planned_hours": 2.0,
+        "schedule_end_time": "2026-06-07 18:00:00",
         "tray_nos": ["TP-001"],
         "sample_nos": ["SP-001"],
     }

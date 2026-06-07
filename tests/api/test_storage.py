@@ -433,6 +433,14 @@ def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatc
             "flow_status": "送至外观检测间",
             "task_code": "SYLU-2026-05-706",
             "trays": [{"tray_code": "TP-APPEARANCE-DISPATCHED", "status": "送至外观检测间", "quantity": 1}],
+            "history": [
+                {
+                    "detail": "SYLU-2026-05-706 / 盐雾试验 / 实验已完成",
+                    "location": "盐雾试验室",
+                    "status": "实验已完成",
+                    "time": "2026-06-07T10:00:00",
+                }
+            ],
         }
     ]
     client, storage = build_client(monkeypatch, {"mes.samples": samples})
@@ -446,6 +454,39 @@ def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatc
 
     assert response.status_code == 200
     assert storage.read("mes.samples") == attempted
+
+
+def test_storage_rejects_appearance_stock_in_after_non_salt_mold_experiment(monkeypatch):
+    samples = [
+        {
+            "code": "SP-APPEARANCE-NON-SALT",
+            "location": "外观检测间",
+            "status": "送至外观检测间",
+            "flow_status": "送至外观检测间",
+            "task_code": "SYLU-2026-05-707",
+            "trays": [{"tray_code": "TP-APPEARANCE-NON-SALT", "status": "送至外观检测间", "quantity": 1}],
+            "history": [
+                {
+                    "detail": "SYLU-2026-05-707 / 冲击试验 / 实验已完成",
+                    "location": "冲击一室",
+                    "status": "实验已完成",
+                    "time": "2026-06-07T10:00:00",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["status"] = "外观检测间存放"
+    attempted[0]["flow_status"] = "外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_allows_post_staging_stock_in_when_all_tray_experiments_completed(monkeypatch):

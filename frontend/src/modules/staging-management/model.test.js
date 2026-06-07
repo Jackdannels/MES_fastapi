@@ -164,6 +164,31 @@ describe("staging-management model", () => {
     });
   });
 
+  test("does not treat handover arrivals as current staging inventory", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-handover",
+      code: "SYLU-2026-06-021",
+      test_type: "冲击试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-handover",
+      code: "SYLU-2026-06-021-SP-002",
+      task_code: "SYLU-2026-06-021",
+      owner: "周工",
+      location: "接驳区",
+      status: "到货",
+      flow_status: "到货",
+      trays: [{ tray_code: "SYLU-2026-06-021-TP-002", status: "到货", quantity: 1 }],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-002");
+  });
+
   test("shows tray-mapped experiment types instead of every task experiment on staging rows", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.tasks].push({
@@ -452,6 +477,9 @@ describe("staging-management model", () => {
         location: "外观检测间",
         status: "送至外观检测间",
         trays: [{ tray_code: "SYLU-2026-04-120-TP-001", status: "送至外观检测间", quantity: 1 }],
+        history: [
+          { detail: "SYLU-2026-04-120 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+        ],
       },
       {
         id: "sample-vibration",
@@ -489,6 +517,55 @@ describe("staging-management model", () => {
     });
   });
 
+  test("appearance inspection room excludes trays sent there after non-salt-mold experiments", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-impact",
+      code: "SYLU-2026-06-021",
+      test_type: "冲击试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-impact",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      experiment_name: "冲击试验",
+      required_device: "冲击一室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-impact",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      tray_code: "SYLU-2026-06-021-TP-001",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [];
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      run_no: "run-impact",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      tray_code: "SYLU-2026-06-021-TP-001",
+      run_tray_status: "实验已完成",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-impact-appearance",
+      code: "SYLU-2026-06-021-SP-001",
+      task_code: "SYLU-2026-06-021",
+      owner: "周工",
+      location: "外观检测间",
+      status: "送至外观检测间",
+      flow_status: "送至外观检测间",
+      trays: [{ tray_code: "SYLU-2026-06-021-TP-001", status: "送至外观检测间", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-06-021 / 冲击试验 / 实验已完成", time: "2026-06-07T14:20:00" },
+      ],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
+  });
+
   test("appearance inspection room can stock out to staging after inspection storage", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.samples].push({
@@ -499,6 +576,9 @@ describe("staging-management model", () => {
       location: "外观检测间",
       status: "外观检测间存放",
       trays: [{ tray_code: "SYLU-2026-04-122-TP-001", status: "外观检测间存放", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-04-122 / 霉菌试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+      ],
     });
     snapshot[STORAGE_KEYS.staging_events].push({
       id: "evt-appearance-122-in",
@@ -554,6 +634,9 @@ describe("staging-management model", () => {
         location: "外观检测间",
         status: "外观检测间存放",
         trays: [{ tray_code: "SYLU-2026-04-123-TP-001", status: "外观检测间存放", quantity: 1 }],
+        history: [
+          { detail: "SYLU-2026-04-123 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+        ],
       },
       {
         id: "sample-appearance-sent",
@@ -563,6 +646,9 @@ describe("staging-management model", () => {
         location: "外观检测间",
         status: "送至外观检测间",
         trays: [{ tray_code: "SYLU-2026-04-124-TP-001", status: "送至外观检测间", quantity: 1 }],
+        history: [
+          { detail: "SYLU-2026-04-124 / 霉菌试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+        ],
       },
     );
 

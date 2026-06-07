@@ -18,6 +18,7 @@ const LEGACY_STAGING_STOCKED_STATUS = "已入库";
 const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
+const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, "已到达外观检测间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
@@ -166,6 +167,11 @@ const parseTimeValue = (value) => {
 const isStagingDestination = (value) => {
   const text = normalizeText(value);
   return text.includes("暂存间") || text.includes("外观检测间");
+};
+
+const isHandoverLocation = (value) => {
+  const text = normalizeText(value);
+  return text === "接驳区" || text === "室外接驳区";
 };
 
 const resolveExperimentName = (experiment, fallback = "") =>
@@ -329,6 +335,40 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
     });
   });
   return names;
+};
+
+const appearanceExperimentIsAllowed = (experimentName) =>
+  APPEARANCE_REQUIRED_KEYWORDS.some((keyword) => normalizeText(experimentName).includes(keyword));
+
+const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
+  const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
+  if (completedExperimentNames.size > 0) {
+    return Array.from(completedExperimentNames).some(appearanceExperimentIsAllowed);
+  }
+
+  const experimentMap = buildExperimentMap(experiments);
+  const completedRunExperimentNames = new Set();
+  asArray(experimentRunTrays).forEach((entry) => {
+    if (
+      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
+      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
+      || !COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+    ) {
+      return;
+    }
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
+    const experiment = experimentMap.get(experimentCode);
+    const experimentName = resolveExperimentName(experiment, experimentCode);
+    if (experimentName) {
+      completedRunExperimentNames.add(experimentName);
+    }
+  });
+
+  if (completedRunExperimentNames.size > 0) {
+    return Array.from(completedRunExperimentNames).some(appearanceExperimentIsAllowed);
+  }
+
+  return false;
 };
 
 const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunTrays }) => {
@@ -736,7 +776,29 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
-      const status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
+      let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
+      const rowLocation = normalizeText(row.location);
+      if (
+        config.key === "staging"
+        && status === STAGING_STOCKED_STATUS
+        && isHandoverLocation(rowLocation)
+        && normalizeText(lastEvent?.action) !== "stock_in"
+      ) {
+        status = "";
+      }
+      if (
+        config.key === "appearance"
+        && status
+        && !trayHasAllowedAppearanceSource({
+          experiments,
+          experimentRunTrays,
+          samples,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+        })
+      ) {
+        status = "";
+      }
       const stockInToday = events.some(
         (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
       );

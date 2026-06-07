@@ -29,19 +29,32 @@ def build_laboratory_topic(command: str, lab_code: str, app_settings: Settings =
 
 def publish_laboratory_command(command: str, payload: dict[str, Any], app_settings: Settings = settings) -> dict[str, Any]:
     topic = build_laboratory_topic(command, str(payload.get("lab_code") or ""), app_settings)
-    result = publish_mqtt_json(topic, payload, app_settings)
-    record_laboratory_command(command, topic, payload, result)
+    message_log_id = record_laboratory_command(
+        command,
+        topic,
+        payload,
+        {"published": False, "reason": "", "process_status": "SENDING"},
+    )
+    try:
+        result = publish_mqtt_json(topic, payload, app_settings)
+    except Exception as exc:
+        update_laboratory_command_publish_result(
+            message_log_id,
+            {"published": False, "reason": str(exc), "process_status": "FAILED"},
+        )
+        raise
+    update_laboratory_command_publish_result(message_log_id, result)
     return result
 
 
-def record_laboratory_command(command: str, topic: str, payload: dict[str, Any], publish_result: dict[str, Any]) -> None:
+def record_laboratory_command(command: str, topic: str, payload: dict[str, Any], publish_result: dict[str, Any]) -> int:
     lab_code = normalize_text(payload.get("lab_code"))
     task_no = normalize_text(payload.get("task_code"))
     if not lab_code:
-        return
+        return 0
     message_id = f"MES-{command}-{lab_code}-{task_no or 'NO_TASK'}-{now_message_text()}"
     try:
-        MySQLMqEventRepository().record_message(
+        message_log_id = MySQLMqEventRepository().record_message(
             {
                 "message_id": message_id,
                 "direction": "MES_TO_HOST",
@@ -54,12 +67,39 @@ def record_laboratory_command(command: str, topic: str, payload: dict[str, Any],
                 "qos": None,
                 "retain_flag": False,
                 "payload": payload,
-                "process_status": "PROCESSED" if publish_result.get("published") else "SKIPPED",
+                "process_status": normalize_text(publish_result.get("process_status"))
+                or ("PROCESSED" if publish_result.get("published") else "SKIPPED"),
                 "error_code": "",
                 "error_message": normalize_text(publish_result.get("reason")),
             }
         )
         bind_laboratory_context(payload)
+        return message_log_id
+    except Exception:
+        return 0
+
+
+def update_laboratory_command_publish_result(message_log_id: int, publish_result: dict[str, Any]) -> None:
+    if not message_log_id:
+        return
+    process_status = normalize_text(publish_result.get("process_status")) or (
+        "PROCESSED" if publish_result.get("published") else "SKIPPED"
+    )
+    error_message = normalize_text(publish_result.get("reason"))
+    try:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE biz_mq_message_log
+                    SET process_status = %s,
+                        error_message = %s,
+                        processed_at = NOW()
+                    WHERE message_log_id = %s
+                    """,
+                    (process_status, error_message, message_log_id),
+                )
+            connection.commit()
     except Exception:
         return
 

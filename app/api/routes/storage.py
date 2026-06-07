@@ -23,6 +23,8 @@ STAGING_LOCATION_KEYWORD = "暂存间"
 STAGING_INBOUND_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
 APPEARANCE_LOCATION_KEYWORD = "外观检测间"
 APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间"}
+APPEARANCE_SOURCE_REQUIRED_DETAIL = "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 RETURNED_STATUS = "厂家收回"
 HANDOVER_ARRIVAL_STATUSES = {"到货", "已入库"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -70,6 +72,110 @@ def _status(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
     return _normalize_text(value.get("status")) or _normalize_text(value.get("flow_status"))
+
+
+def _appearance_experiment_name_is_allowed(value: Any) -> bool:
+    text = _normalize_text(value)
+    return any(keyword in text for keyword in APPEARANCE_REQUIRED_KEYWORDS)
+
+
+def _history_has_allowed_appearance_source(sample: Any) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    for entry in _as_list(sample.get("history")):
+        if not isinstance(entry, dict):
+            continue
+        detail = _normalize_text(entry.get("detail"))
+        status = _normalize_text(entry.get("status"))
+        segments = [_normalize_text(segment) for segment in detail.split(" / ") if _normalize_text(segment)]
+        experiment_name = segments[1] if len(segments) >= 3 else detail
+        completion_status = segments[2] if len(segments) >= 3 else status
+        if _appearance_experiment_name_is_allowed(experiment_name) and (
+            completion_status in COMPLETED_EXPERIMENT_STATUSES
+            or status in COMPLETED_EXPERIMENT_STATUSES
+        ):
+            return True
+    return False
+
+
+def _experiment_name_by_code(experiments: Any) -> dict[str, str]:
+    names: dict[str, str] = {}
+    for experiment in _as_list(experiments):
+        if not isinstance(experiment, dict):
+            continue
+        code = _normalize_text(experiment.get("experiment_code") or experiment.get("experiment_no"))
+        if not code:
+            continue
+        names[code] = (
+            _normalize_text(experiment.get("experiment_name"))
+            or _normalize_text(experiment.get("experiment_type"))
+            or _normalize_text(experiment.get("test_type"))
+            or _normalize_text(experiment.get("required_device"))
+        )
+    return names
+
+
+def _run_trays_have_allowed_appearance_source(
+    sample: Any,
+    tray: Any,
+    experiments: Any,
+    experiment_run_trays: Any,
+) -> bool:
+    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no")) if isinstance(sample, dict) else ""
+    tray_code = _tray_code(tray)
+    if not task_code or not tray_code:
+        return False
+    experiment_names = _experiment_name_by_code(experiments)
+    for entry in _as_list(experiment_run_trays):
+        if not isinstance(entry, dict):
+            continue
+        if (
+            _normalize_text(entry.get("task_code") or entry.get("task_no")) != task_code
+            or _normalize_text(entry.get("tray_code") or entry.get("tray_no")) != tray_code
+            or _normalize_text(entry.get("status") or entry.get("run_tray_status")) not in COMPLETED_EXPERIMENT_STATUSES
+        ):
+            continue
+        experiment_code = _normalize_text(entry.get("experiment_code") or entry.get("experiment_no"))
+        experiment_name = (
+            experiment_names.get(experiment_code, "")
+            or _normalize_text(entry.get("experiment_name"))
+            or experiment_code
+        )
+        if _appearance_experiment_name_is_allowed(experiment_name):
+            return True
+    return False
+
+
+def _tray_has_allowed_appearance_source(
+    current_sample: Any,
+    next_sample: Any,
+    current_tray: Any,
+    next_tray: Any,
+    experiments: Any,
+    experiment_run_trays: Any,
+) -> bool:
+    return (
+        _history_has_allowed_appearance_source(current_sample)
+        or _history_has_allowed_appearance_source(next_sample)
+        or _run_trays_have_allowed_appearance_source(current_sample, current_tray, experiments, experiment_run_trays)
+        or _run_trays_have_allowed_appearance_source(next_sample, next_tray, experiments, experiment_run_trays)
+    )
+
+
+def _appearance_inbound_state_changed(current_sample: Any, next_sample: Any, current_tray: Any, next_tray: Any) -> bool:
+    current_values = {
+        _normalize_text(current_sample.get("location")) if isinstance(current_sample, dict) else "",
+        _normalize_text(current_sample.get("status")) if isinstance(current_sample, dict) else "",
+        _normalize_text(current_sample.get("flow_status")) if isinstance(current_sample, dict) else "",
+        _status(current_tray),
+    }
+    next_values = {
+        _normalize_text(next_sample.get("location")) if isinstance(next_sample, dict) else "",
+        _normalize_text(next_sample.get("status")) if isinstance(next_sample, dict) else "",
+        _normalize_text(next_sample.get("flow_status")) if isinstance(next_sample, dict) else "",
+        _status(next_tray),
+    }
+    return current_values != next_values
 
 
 def _device_name(device: Any) -> str:
@@ -380,6 +486,59 @@ def _validate_samples_staging_reentry_transition(
             raise HTTPException(status_code=400, detail=_stock_in_blocked_detail(next_sample))
 
 
+def _validate_samples_appearance_source_transition(
+    current_samples: Any,
+    next_samples: Any,
+    experiments: Any,
+    experiment_run_trays: Any,
+) -> None:
+    if not isinstance(next_samples, list):
+        return
+
+    current_by_code = _index_samples(current_samples)
+    if not current_by_code:
+        return
+
+    for next_sample in next_samples:
+        if not isinstance(next_sample, dict):
+            continue
+        current_sample = current_by_code.get(_sample_code(next_sample))
+        if not current_sample:
+            continue
+
+        current_trays = _index_trays(current_sample)
+        for next_tray in _as_list(next_sample.get("trays")):
+            if not isinstance(next_tray, dict) or not _is_appearance_inbound(next_sample, next_tray):
+                continue
+            current_tray = current_trays.get(_tray_code(next_tray))
+            if not _appearance_inbound_state_changed(current_sample, next_sample, current_tray, next_tray):
+                continue
+            if not _tray_has_allowed_appearance_source(
+                current_sample,
+                next_sample,
+                current_tray,
+                next_tray,
+                experiments,
+                experiment_run_trays,
+            ):
+                raise HTTPException(status_code=400, detail=APPEARANCE_SOURCE_REQUIRED_DETAIL)
+
+        if not _is_appearance_inbound(next_sample) or not _appearance_inbound_state_changed(current_sample, next_sample, None, None):
+            continue
+        next_trays = [tray for tray in _as_list(next_sample.get("trays")) if isinstance(tray, dict)]
+        if next_trays:
+            continue
+        if not _tray_has_allowed_appearance_source(
+            current_sample,
+            next_sample,
+            None,
+            None,
+            experiments,
+            experiment_run_trays,
+        ):
+            raise HTTPException(status_code=400, detail=APPEARANCE_SOURCE_REQUIRED_DETAIL)
+
+
 def _validate_samples_returned_rearrival_transition(current_samples: Any, next_samples: Any) -> None:
     if not isinstance(next_samples, list):
         return
@@ -447,6 +606,12 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         current_samples,
         updates["mes.samples"],
         storage.read("mes.experiment_trays"),
+        storage.read("mes.experiment_run_trays"),
+    )
+    _validate_samples_appearance_source_transition(
+        current_samples,
+        updates["mes.samples"],
+        storage.read("mes.experiments"),
         storage.read("mes.experiment_run_trays"),
     )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])

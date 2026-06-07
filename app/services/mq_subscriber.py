@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from app.core.config import Settings, settings
 from app.services.mq_event_processor import process_laboratory_event
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -48,10 +52,14 @@ def start_mqtt_subscriber(app_settings: Settings = settings) -> MqttSubscriberHa
             mqtt_client.subscribe(events_topic, qos=int(app_settings.MQTT_QOS))
 
     def on_message(_mqtt_client: Any, _userdata: Any, message: Any) -> None:
-        payload = json.loads(message.payload.decode("utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError("MQTT event payload must be a JSON object")
-        process_laboratory_event(str(message.topic), payload)
+        topic = str(getattr(message, "topic", ""))
+        try:
+            payload = json.loads(message.payload.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("MQTT event payload must be a JSON object")
+            process_laboratory_event(topic, payload)
+        except Exception:
+            logger.exception("Failed to process MQTT laboratory event from topic %s", topic)
 
     client.on_connect = on_connect
     client.on_message = on_message

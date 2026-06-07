@@ -1913,10 +1913,13 @@ function buildTrayFlowView(input = {}) {
         label: currentExperimentLabel,
         time: stepTimeMap.get(currentExperimentLabel) || stepTimeMap.get(currentExperimentIdentityLabel) || stepTimeMap.get(currentExperimentCodeLabel) || "",
       });
+      const activeExperimentCanOwnCompletedRoute =
+        !activeExperiment?.unstarted || inputCurrentExperimentCode === normalizeText(activeExperiment?.code);
       const shouldShowActiveAppearance =
         isAppearanceInspectionStatus(normalizedRouteStatus)
         || (
           experimentRequiresAppearanceInspection(activeExperiment)
+          && activeExperimentCanOwnCompletedRoute
           && (
             normalizedRouteStatus === "实验已完成"
             || normalizedRouteStatus === "实验完成"
@@ -1943,6 +1946,8 @@ function buildTrayFlowView(input = {}) {
       });
       const latestCompletedAppearanceIndexes = completedAppearanceIndexes.at(-1) || null;
       const latestCompletedAppearancePosition = completedAppearanceIndexes.length - 1;
+      const latestCompletedExperimentBeforeCurrent = experimentsBeforeCurrent.at(-1) || null;
+      const latestCompletedExperimentRequiresAppearance = experimentRequiresAppearanceInspection(latestCompletedExperimentBeforeCurrent);
       const markCompletedAppearanceReached = (untilPosition = completedAppearanceIndexes.length) => {
         completedAppearanceIndexes.slice(0, Math.max(0, untilPosition)).forEach((indexes) => {
           steps[indexes.sent].reached = true;
@@ -1965,7 +1970,11 @@ function buildTrayFlowView(input = {}) {
         });
         markCompletedAppearanceReached(latestCompletedAppearancePosition);
         steps[latestCompletedAppearanceIndexes.sent].reached = true;
-      } else if ((normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成") && latestCompletedAppearanceIndexes) {
+      } else if (
+        (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
+        && latestCompletedAppearanceIndexes
+        && latestCompletedExperimentRequiresAppearance
+      ) {
         currentStatus = APPEARANCE_SENT_STATUS;
         activeIndex = latestCompletedAppearanceIndexes.sent;
         completedStepIndexes.forEach((stepIndex) => {
@@ -1975,7 +1984,7 @@ function buildTrayFlowView(input = {}) {
       } else if (
         (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
         && activeAppearanceIndexes
-        && (!activeExperiment?.unstarted || inputCurrentExperimentCode === normalizeText(activeExperiment?.code))
+        && activeExperimentCanOwnCompletedRoute
       ) {
         const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
         const completedIdentityLabel = `${experimentIdentityNameText}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
@@ -2015,6 +2024,7 @@ function buildTrayFlowView(input = {}) {
         });
       } else if (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成") {
         const latestCompletedIndex = completedStepIndexes.at(-1);
+        markCompletedAppearanceReached();
         if (latestCompletedIndex !== undefined) {
           currentStatus = steps[latestCompletedIndex].label;
           activeIndex = latestCompletedIndex;
