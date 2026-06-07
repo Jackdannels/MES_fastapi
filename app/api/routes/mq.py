@@ -1,10 +1,10 @@
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from app.core.config import settings
-from app.services.mq_event_processor import process_laboratory_event
+from app.services.mq_event_processor import generated_run_no, process_laboratory_event
 from app.services.mq_publisher import publish_laboratory_command
 from app.services.mq_runtime import default_mq_runtime
 
@@ -29,8 +29,9 @@ class ReadyRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
     experiment_code: str = ""
+    run_no: str = Field(default="", validation_alias=AliasChoices("run_no", "runNo"))
 
-    @field_validator("task_code", "lab_code", "experiment_code", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", "run_no", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -86,6 +87,7 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
         "task_code": request.task_code,
         "lab_code": request.lab_code,
         "experiment_code": request.experiment_code,
+        "run_no": request.run_no or generated_run_no(),
     }
     try:
         result = publish_laboratory_command("READY", payload)

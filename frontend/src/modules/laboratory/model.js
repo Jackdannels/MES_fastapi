@@ -49,7 +49,6 @@ const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const isReturnedStatusText = (value) => normalizeText(value) === "厂家收回";
 const resolveTrayCode = (entry) => normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo || entry?.code);
 const entryMatchesTrayCode = (entry, trayCode) => {
   const normalizedTrayCode = normalizeText(trayCode);
@@ -74,48 +73,36 @@ const historyEntryAppliesToTray = (entry, sampleTrayCodes, trayCode) => {
   }
   return asArray(sampleTrayCodes).length <= 1;
 };
-const trayHasReturnedStatus = (tray) =>
-  isReturnedStatusText(tray?.status)
-  || isReturnedStatusText(tray?.tray_status)
-  || isReturnedStatusText(tray?.trayStatus);
-const sampleReturnedAppliesToTray = (sample, trayCode) => {
-  const trays = asArray(sample?.trays);
-  const normalizedTrayCode = normalizeText(trayCode);
-  const matchingTrays = trays.filter((tray) => resolveTrayCode(tray) === normalizedTrayCode);
-  if (matchingTrays.some((tray) => trayHasReturnedStatus(tray))) {
-    return true;
-  }
-  if (matchingTrays.some((tray) =>
-    normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus)
-    && !trayHasReturnedStatus(tray),
-  )) {
-    return false;
-  }
-  const sampleReturned =
-    isReturnedStatusText(sample?.status)
-    || isReturnedStatusText(sample?.flow_status)
-    || isReturnedStatusText(sample?.flowStatus)
-    || isReturnedStatusText(sample?.location);
-  if (!sampleReturned) {
-    return false;
-  }
-  return trays.length <= 1 || trays.every((tray) => trayHasReturnedStatus(tray));
-};
-const sampleStatusForTray = (sample, tray) => {
-  const sampleStatus = normalizeText(sample?.flow_status) || normalizeText(sample?.flowStatus) || normalizeText(sample?.status);
-  const trayCode = resolveTrayCode(tray);
-  if (
-    (isReturnedStatusText(sampleStatus) || isReturnedStatusText(sample?.location))
-    && !sampleReturnedAppliesToTray(sample, trayCode)
-  ) {
-    return "";
-  }
-  return sampleStatus || (isReturnedStatusText(sample?.location) ? "厂家收回" : "");
-};
 
 const toTime = (value) => {
   const time = Date.parse(String(value || ""));
   return Number.isFinite(time) ? time : null;
+};
+
+const toPositiveNumber = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+};
+
+const resolvePlannedDurationMs = (schedule, activeRun) => {
+  const plannedHours =
+    toPositiveNumber(activeRun?.planned_hours ?? activeRun?.plannedHours)
+    ?? toPositiveNumber(schedule?.planned_hours ?? schedule?.plannedHours);
+  if (plannedHours) {
+    return plannedHours * 60 * 60 * 1000;
+  }
+  const scheduleStartTime = toTime(schedule?.start_at || schedule?.startAt);
+  const scheduleEndTime = toTime(schedule?.end_at || schedule?.endAt);
+  return Number.isFinite(scheduleStartTime) && Number.isFinite(scheduleEndTime) && scheduleEndTime > scheduleStartTime
+    ? scheduleEndTime - scheduleStartTime
+    : null;
+};
+
+const addDurationToDateTime = (dateTime, durationMs) => {
+  const startTime = toTime(dateTime);
+  return Number.isFinite(startTime) && Number.isFinite(durationMs) && durationMs > 0
+    ? new Date(startTime + durationMs).toISOString()
+    : "";
 };
 
 const formatTime = (value) => {
@@ -308,7 +295,7 @@ const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray }) => {
   const trayStatus = normalizeText(tray?.status);
   const status = normalizeLifecycleStatus(
     normalizedLocation,
-    trayStatus || sampleStatusForTray(sample, tray),
+    trayStatus,
   );
   return {
     location: normalizedLocation,
@@ -1408,7 +1395,7 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
         device,
         experimentCodes: row?.experimentCodes,
         experimentName,
-        physicalStatus: physicalTrayStatus || sampleStatusForTray(sample, tray),
+        physicalStatus: physicalTrayStatus,
         sample,
         targetExperimentCode,
         targetLab,
@@ -1486,7 +1473,8 @@ const buildLaboratoryScheduleRow = ({ experimentMap, experimentRecordMap, experi
     ? uniqueValues(activeRunTrayRelations.map(resolveRelationTrayCode))
     : uniqueValues(asArray(activeRun?.tray_codes).map((trayCode) => normalizeText(trayCode)));
   const displayStartAt = normalizeText(activeRunTrayRelations[0]?.started_at || activeRunTrayRelations[0]?.startedAt) || normalizeText(activeRun?.started_at) || startAt;
-  const displayEndAt = normalizeText(activeRun?.planned_end_at) || normalizeText(activeRun?.ended_at) || endAt;
+  const estimatedEndAt = addDurationToDateTime(displayStartAt, resolvePlannedDurationMs(schedule, activeRun));
+  const displayEndAt = estimatedEndAt || normalizeText(activeRun?.planned_end_at) || normalizeText(activeRun?.ended_at) || endAt;
   const activeRunStatus = activeRunTrayRelations.length > 0 || RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(activeRun?.status)) ? "实验进行中" : "";
   if (activeRunStatus) {
     trayRows.forEach((row) => {

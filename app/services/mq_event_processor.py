@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
+from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.db.session import get_connection
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
@@ -45,13 +46,15 @@ class MqEventRepository(Protocol):
 
     def record_result(self, result: dict[str, Any]) -> None: ...
 
+    def find_run_by_no(self, run_no: str) -> dict[str, Any] | None: ...
+
     def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
     def find_recent_completed_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
     def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None: ...
 
-    def start_run_for_context(self, context: dict[str, Any], occurred_at: str) -> dict[str, Any]: ...
+    def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]: ...
 
     def mark_run_started(self, run_no: str, occurred_at: str) -> None: ...
 
@@ -107,6 +110,10 @@ def event_time(payload: dict[str, Any], message_type: str) -> str:
 
 def generated_message_id(message_type: str, lab_code: str, occurred_at: str) -> str:
     return f"HOST-{message_type}-{lab_code}-{occurred_at}"
+
+
+def generated_run_no() -> str:
+    return f"run-{datetime.now(BEIJING_TZ).strftime('%Y%m%d%H%M%S%f')}"
 
 
 def parse_beijing_datetime(value: Any) -> datetime | None:
@@ -287,6 +294,11 @@ def scope_snapshot_samples_for_experiment(
                 continue
             if assigned_experiments and assigned_experiments != {normalized_experiment_code}:
                 continue
+            if fallback_sample_codes:
+                record_legacy_fallback_hit(
+                    "backend.mq.scope_sample.legacy_tray_target_fallback",
+                    reason="missing_experiment_sample_relation",
+                )
             eligible_sample_codes.update(code for code in fallback_sample_codes if code)
 
     scoped_samples = [
@@ -457,6 +469,29 @@ class MySQLMqEventRepository:
                     LIMIT 1
                     """,
                     (normalized_lab_code,),
+                )
+                row = cursor_row_as_dict(cursor)
+        return row
+
+    def find_run_by_no(self, run_no: str) -> dict[str, Any] | None:
+        normalized_run_no = normalize_text(run_no)
+        if not normalized_run_no:
+            return None
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                      er.run_no,
+                      er.task_no,
+                      er.experiment_no,
+                      er.device_name,
+                      er.run_status
+                    FROM biz_experiment_run er
+                    WHERE er.run_no = %s
+                    LIMIT 1
+                    """,
+                    (normalized_run_no,),
                 )
                 row = cursor_row_as_dict(cursor)
         return row
@@ -661,7 +696,7 @@ class MySQLMqEventRepository:
             raise ValueError(f"multiple experiment contexts found for lab_code: {lab_code}")
         return next(iter(contexts.values()))
 
-    def start_run_for_context(self, context: dict[str, Any], occurred_at: str) -> dict[str, Any]:
+    def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]:
         task_no = normalize_text(context.get("task_no"))
         experiment_no = normalize_text(context.get("experiment_no"))
         device_name = normalize_text(context.get("device_name"))
@@ -673,10 +708,12 @@ class MySQLMqEventRepository:
         started_at = mysql_datetime_text(occurred_at)
         started_dt = parse_beijing_datetime(started_at)
         planned_hours = parse_float(context.get("planned_hours"))
-        planned_end_at = mysql_datetime_text(context.get("schedule_end_time"))
-        if not planned_end_at and started_dt is not None and planned_hours > 0:
+        planned_end_at = ""
+        if started_dt is not None and planned_hours > 0:
             planned_end_at = (started_dt + timedelta(hours=planned_hours)).strftime("%Y-%m-%d %H:%M:%S")
-        run_no = f"run-{datetime.now(BEIJING_TZ).strftime('%Y%m%d%H%M%S%f')}"
+        if not planned_end_at:
+            planned_end_at = mysql_datetime_text(context.get("schedule_end_time"))
+        run_no = normalize_text(run_no) or generated_run_no()
         storage = get_storage_backend()
         snapshot = storage_completion_snapshot(storage.read_all())
         scoped_snapshot = scope_snapshot_samples_for_experiment(
@@ -818,9 +855,14 @@ def process_laboratory_event(
         return build_ack(message_id, "DUPLICATE")
 
     context = None
+    payload_run_no = first_text(payload, "run_no", "runNo")
     run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
-    if message_type == "EXPERIMENT_RESULT" and not run:
+    if message_type == "EXPERIMENT_RESULT" and payload_run_no:
+        run = repo.find_run_by_no(payload_run_no)
+    if message_type == "EXPERIMENT_RESULT" and not run and not payload_run_no:
         run = repo.find_recent_completed_run_by_lab(lab_code)
+        if run:
+            record_legacy_fallback_hit("backend.mq.experiment_result.recent_completed_run_fallback", reason="missing_active_run")
     created_run_from_context = False
     if message_type == "FIXTURE_READY" and not first_text(payload, "task_code"):
         context = repo.find_current_context_by_lab(lab_code, ["工装夹具安装"])
@@ -829,7 +871,7 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_STARTED":
         context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"])
         if context:
-            run = repo.start_run_for_context(context, occurred_at)
+            run = repo.start_run_for_context(context, occurred_at, payload_run_no)
             created_run_from_context = True
         else:
             return build_ack(
@@ -877,19 +919,20 @@ def process_laboratory_event(
     )
 
     if message_type in {"FIXTURE_READY", "EXPERIMENT_STARTED", "EXPERIMENT_ENDED"}:
-        repo.record_event(
-            {
-                "event_type": message_type,
-                "task_no": task_no,
-                "experiment_no": experiment_no,
-                "lab_code": lab_code,
-                "success_id": first_text(payload, "success_id", "success_sig", "successSig"),
-                "event_time": occurred_at,
-                "message_id": message_id,
-                "message_log_id": message_log_id,
-                "payload": payload,
-            }
-        )
+        event_record = {
+            "event_type": message_type,
+            "task_no": task_no,
+            "experiment_no": experiment_no,
+            "lab_code": lab_code,
+            "success_id": first_text(payload, "success_id", "success_sig", "successSig"),
+            "event_time": occurred_at,
+            "message_id": message_id,
+            "message_log_id": message_log_id,
+            "payload": payload,
+        }
+        if run_no:
+            event_record["run_no"] = run_no
+        repo.record_event(event_record)
 
     if message_type == "EXPERIMENT_STARTED":
         if not created_run_from_context:

@@ -259,7 +259,7 @@ describe("tray flow consistency", () => {
     });
 
     expect(view.status).not.toBe("盐雾试验进行中");
-    expect(activeLabel(view)).toBe("已到达实验室");
+    expect(activeLabel(view)).toBe("实验准备就绪");
   });
 
   test("does not treat a tray code prefix as tray scoped running history", () => {
@@ -329,7 +329,7 @@ describe("tray flow consistency", () => {
             },
           ],
           history: [
-            { detail: `${taskCode} / 四综合试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 00:34:38" },
+            { detail: `${taskCode} / 四综合试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 00:34:38", tray_code: trayCode },
             { detail: `${trayCode} -> 盐雾试验室`, status: "送至实验室", location: "盐雾试验室", time: "2026-06-05 00:43:40" },
             { detail: `${taskCode} / 盐雾试验 / 已到达实验室`, status: "已到达实验室", location: "盐雾试验室", time: "2026-06-05 00:43:50" },
           ],

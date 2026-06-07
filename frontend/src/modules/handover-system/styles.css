@@ -734,10 +734,6 @@
   margin-bottom: 4px;
 }
 
-.transfer-tray-actions--legacy {
-  display: none;
-}
-
 .transfer-selected-sample-hint {
   padding: 10px 14px;
   border-radius: 14px;

@@ -664,7 +664,12 @@ describe("visualization model", () => {
             },
           ],
           history: [
-            { detail: "SYLU-2026-06-002 / 振动试验 / 实验已完成", status: "实验已完成", time: "2026-06-04T01:04:34+08:00" },
+            {
+              detail: "SYLU-2026-06-002 / 振动试验 / 实验已完成",
+              status: "实验已完成",
+              time: "2026-06-04T01:04:34+08:00",
+              tray_code: "SYLU-2026-06-002-TP-001",
+            },
           ],
         },
       ],

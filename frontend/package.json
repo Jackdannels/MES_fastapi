@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.vue",
+    "legacy:fallback-report": "node scripts/legacy-fallback-snapshot-report.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },

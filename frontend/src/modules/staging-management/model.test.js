@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 
 import {
   applyZancunInventoryAction,
@@ -9,6 +9,7 @@ import {
   buildZancunScanDetail,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFallback";
 
 const TODAY = "2026-04-01T12:00:00";
 
@@ -143,6 +144,10 @@ const createSnapshot = () => ({
 });
 
 describe("staging-management model", () => {
+  afterEach(() => {
+    resetLegacyFallbackHits();
+  });
+
   test("builds staging rows from the real snapshot and keeps the latest SYLU task codes", () => {
     const rows = buildZancunRowsFromSnapshot(createSnapshot(), { now: TODAY });
     const waitingRow = rows.find((row) => row.trayCode === "SYLU-2026-04-101-TP-001");
@@ -388,6 +393,7 @@ describe("staging-management model", () => {
   });
 
   test("marks unscheduled fallback destinations as unavailable stock-out targets", () => {
+    resetLegacyFallbackHits();
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].filter(
       (schedule) => schedule.device.includes("暂存间"),
@@ -413,6 +419,31 @@ describe("staging-management model", () => {
       }),
     );
     expect(result.error).toBe("当前实验未排程，仅作为托底目标，暂不可出库。");
+    expect(getLegacyFallbackHits()).toContainEqual(
+      expect.objectContaining({
+        id: "staging.stock_out.required_device_unscheduled_fallback",
+        lastDetail: { reason: "missing_schedule", targetIsFallback: "true" },
+      }),
+    );
+  });
+
+  test("logs test type lab fallback when stock-out detail has no experiment destination", () => {
+    resetLegacyFallbackHits();
+    const snapshot = createSnapshot();
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-101-TP-001", "stockOut");
+
+    expect(detail).toEqual(expect.objectContaining({
+      targetIsFallback: true,
+      targetLab: "温度冲击一室",
+    }));
+    expect(getLegacyFallbackHits()).toContainEqual(
+      expect.objectContaining({
+        id: "staging.stock_out.test_type_lab_fallback",
+        lastDetail: { reason: "missing_experiment_destination", targetIsFallback: "true" },
+      }),
+    );
   });
 
   test("stock-out detail keeps scheduled targets selectable when another target is unscheduled", () => {

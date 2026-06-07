@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     MQTT_QOS: int = 1
     MQTT_TOPIC_PREFIX: str = "mes/v1"
 
+    UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: bool = False
+    UPPER_COMPUTER_SIMULATOR_AUTO_START: bool = True
+    UPPER_COMPUTER_SIMULATOR_DIR: str = str(Path.home() / "Desktop" / "MES_upper_computer_simulator")
+    UPPER_COMPUTER_SIMULATOR_HOST: str = "127.0.0.1"
+    UPPER_COMPUTER_SIMULATOR_PORT: int = 8899
+    UPPER_COMPUTER_SIMULATOR_URL: str = "http://127.0.0.1:8899"
+    UPPER_COMPUTER_SIMULATOR_DEFAULT_LAB_CODE: str = "LAB_SALT"
+    UPPER_COMPUTER_SIMULATOR_START_TIMEOUT_SECONDS: float = 8.0
+
     DM_DSN: Optional[str] = None
     DM_HOST: str = "127.0.0.1"
     DM_PORT: int = 5236

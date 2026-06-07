@@ -14,7 +14,16 @@ from app.services.mq_event_processor import (
     merge_scoped_samples,
     process_laboratory_event,
     publish_realtime_update,
+    scope_snapshot_samples_for_experiment,
 )
+from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fallback_hits
+
+
+@pytest.fixture(autouse=True)
+def _reset_legacy_fallback_hits():
+    reset_legacy_fallback_hits()
+    yield
+    reset_legacy_fallback_hits()
 
 
 def build_client(monkeypatch):
@@ -71,17 +80,38 @@ def test_ready_endpoint_publishes_minimal_payload(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json()["ok"] is True
+    body = response.json()
+    assert body["ok"] is True
+    assert body["payload"]["run_no"].startswith("run-")
     assert published == [
         {
             "command": "READY",
-                "payload": {
-                    "task_code": "SYLU-2026-03-001",
-                    "lab_code": "LAB_SALT",
-                    "experiment_code": "",
-                },
-            }
-        ]
+            "payload": {
+                "task_code": "SYLU-2026-03-001",
+                "lab_code": "LAB_SALT",
+                "experiment_code": "",
+                "run_no": body["payload"]["run_no"],
+            },
+        }
+    ]
+
+
+def test_ready_endpoint_preserves_payload_run_no(monkeypatch):
+    client, published = build_client(monkeypatch)
+
+    response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "SYLU-2026-03-001",
+            "lab_code": "LAB_SALT",
+            "experiment_code": "SYLU-2026-03-001-A",
+            "runNo": "RUN-FROM-CLIENT",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["payload"]["run_no"] == "RUN-FROM-CLIENT"
+    assert published[0]["payload"]["run_no"] == "RUN-FROM-CLIENT"
 
 
 def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
@@ -359,6 +389,47 @@ def test_merge_scoped_samples_uses_task_and_sample_code_identity():
     assert merged[1]["trays"][0]["status"] == "实验进行中"
 
 
+def test_scope_snapshot_samples_for_experiment_logs_legacy_tray_sample_fallback_without_changing_scope():
+    reset_legacy_fallback_hits()
+    snapshot = {
+        "experiment_samples": [],
+        "experiment_trays": [
+            {"task_code": "TASK-001", "experiment_code": "EXP-001", "tray_code": "TP-001"},
+        ],
+        "samples": [
+            {
+                "code": "SP-001",
+                "task_code": "TASK-001",
+                "trays": [{"tray_code": "TP-001", "status": "实验准备就绪"}],
+            },
+            {
+                "code": "SP-002",
+                "task_code": "TASK-001",
+                "trays": [{"tray_code": "TP-002", "status": "实验准备就绪"}],
+            },
+        ],
+    }
+
+    scoped = scope_snapshot_samples_for_experiment(
+        snapshot,
+        task_code="TASK-001",
+        experiment_code="EXP-001",
+        tray_codes=["TP-001"],
+    )
+
+    assert [sample["code"] for sample in scoped["samples"]] == ["SP-001"]
+    assert [sample["code"] for sample in snapshot["samples"]] == ["SP-001", "SP-002"]
+    assert get_legacy_fallback_hits() == [
+        {
+            "count": 1,
+            "id": "backend.mq.scope_sample.legacy_tray_target_fallback",
+            "last_detail": {
+                "reason": "missing_experiment_sample_relation",
+            },
+        }
+    ]
+
+
 def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):
     calls = []
 
@@ -498,13 +569,19 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
 
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "shutdown", lambda self: calls.append(("shutdown", self.mode)))
 
-    app = app_main.create_app(Settings(MQTT_ENABLED=True))
+    app = app_main.create_app(Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False))
     with TestClient(app) as client:
         assert client.get("/api/mq/interface-mode").json() == {
             "ok": True,
             "mode": "mock",
             "mqtt_enabled": True,
             "subscriber_running": False,
+            "upper_computer": {
+                "enabled": False,
+                "connected": False,
+                "auto_mode": False,
+                "reason": "paused",
+            },
             "reason": "paused",
         }
 
@@ -523,7 +600,10 @@ def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_mode
         return FakeHandle()
 
     app = FastAPI()
-    app.state.mq_runtime = mq_runtime.MqttRuntimeController(Settings(MQTT_ENABLED=True), starter=fake_start)
+    app.state.mq_runtime = mq_runtime.MqttRuntimeController(
+        Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False),
+        starter=fake_start,
+    )
     app.include_router(mq_route.router)
     client = TestClient(app)
 
@@ -534,6 +614,12 @@ def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_mode
         "mode": "mqtt",
         "mqtt_enabled": True,
         "subscriber_running": True,
+        "upper_computer": {
+            "enabled": False,
+            "started": False,
+            "connected": False,
+            "reason": "disabled",
+        },
         "reason": "",
     }
 
@@ -544,9 +630,93 @@ def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_mode
         "mode": "mock",
         "mqtt_enabled": True,
         "subscriber_running": False,
+        "upper_computer": {
+            "enabled": False,
+            "connected": False,
+            "auto_mode": False,
+            "reason": "paused",
+        },
         "reason": "paused",
     }
     assert calls == [("start", True), "stop"]
+
+
+def test_interface_mode_endpoint_auto_connects_upper_computer_simulator_when_enabled():
+    calls = []
+
+    class FakeHandle:
+        def stop(self):
+            calls.append("stop")
+
+    def fake_start(app_settings):
+        calls.append(("start", app_settings.MQTT_ENABLED))
+        return FakeHandle()
+
+    def fake_connect(app_settings):
+        calls.append(("upper", app_settings.MQTT_TOPIC_PREFIX))
+        return {
+            "enabled": True,
+            "started": True,
+            "connected": True,
+            "auto_mode": True,
+            "subscription": "mes/v1/labs/+/commands/#",
+            "url": "http://127.0.0.1:8899",
+        }
+
+    app = FastAPI()
+    app.state.mq_runtime = mq_runtime.MqttRuntimeController(
+        Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True),
+        starter=fake_start,
+        upper_computer_connector=fake_connect,
+    )
+    app.include_router(mq_route.router)
+    client = TestClient(app)
+
+    response = client.post("/api/mq/interface-mode", json={"mode": "mqtt"})
+
+    assert response.status_code == 200
+    assert response.json()["upper_computer"] == {
+        "enabled": True,
+        "started": True,
+        "connected": True,
+        "auto_mode": True,
+        "subscription": "mes/v1/labs/+/commands/#",
+        "url": "http://127.0.0.1:8899",
+    }
+    assert calls == [("start", True), ("upper", "mes/v1")]
+
+
+def test_upper_computer_auto_connect_opens_visible_auto_mode_page(monkeypatch):
+    from app.services import upper_computer_simulator
+
+    opened_urls = []
+
+    monkeypatch.setattr(upper_computer_simulator, "_can_read_state", lambda _settings: True)
+    monkeypatch.setattr(
+        upper_computer_simulator,
+        "_json_request",
+        lambda *_args, **_kwargs: {
+            "connected": True,
+            "config": {"auto_mode": True},
+        },
+    )
+    monkeypatch.setattr(
+        upper_computer_simulator,
+        "open_simulator_page",
+        lambda url: opened_urls.append(url),
+        raising=False,
+    )
+
+    status = upper_computer_simulator.ensure_upper_computer_simulator_auto_mode(
+        Settings(
+            MQTT_ENABLED=True,
+            UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True,
+            UPPER_COMPUTER_SIMULATOR_URL="http://127.0.0.1:8899",
+        ),
+    )
+
+    assert opened_urls == ["http://127.0.0.1:8899/?auto=1"]
+    assert status["page_url"] == "http://127.0.0.1:8899/?auto=1"
 
 
 def test_interface_mode_endpoint_restarts_stale_mqtt_subscriber_when_switching_to_mqtt_again():
@@ -569,7 +739,10 @@ def test_interface_mode_endpoint_restarts_stale_mqtt_subscriber_when_switching_t
         return FakeHandle(running=True)
 
     app = FastAPI()
-    app.state.mq_runtime = mq_runtime.MqttRuntimeController(Settings(MQTT_ENABLED=True), starter=fake_start)
+    app.state.mq_runtime = mq_runtime.MqttRuntimeController(
+        Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False),
+        starter=fake_start,
+    )
     app.include_router(mq_route.router)
     client = TestClient(app)
 
@@ -587,7 +760,7 @@ def test_interface_mode_endpoint_does_not_start_subscriber_when_env_disabled():
     calls = []
     app = FastAPI()
     app.state.mq_runtime = mq_runtime.MqttRuntimeController(
-        Settings(MQTT_ENABLED=False),
+        Settings(MQTT_ENABLED=False, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False),
         starter=lambda app_settings: calls.append(("start", app_settings.MQTT_ENABLED)),
     )
     app.include_router(mq_route.router)
@@ -601,6 +774,12 @@ def test_interface_mode_endpoint_does_not_start_subscriber_when_env_disabled():
         "mode": "mqtt",
         "mqtt_enabled": False,
         "subscriber_running": False,
+        "upper_computer": {
+            "enabled": False,
+            "connected": False,
+            "auto_mode": False,
+            "reason": "mqtt_disabled",
+        },
         "reason": "disabled",
     }
     assert calls == []
@@ -609,7 +788,7 @@ def test_interface_mode_endpoint_does_not_start_subscriber_when_env_disabled():
 def test_interface_mode_endpoint_reports_startup_failure_and_keeps_previous_mode():
     app = FastAPI()
     app.state.mq_runtime = mq_runtime.MqttRuntimeController(
-        Settings(MQTT_ENABLED=True),
+        Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False),
         starter=lambda _app_settings: (_ for _ in ()).throw(ConnectionRefusedError("broker unavailable")),
     )
     app.include_router(mq_route.router)
@@ -624,6 +803,12 @@ def test_interface_mode_endpoint_reports_startup_failure_and_keeps_previous_mode
         "mode": "mock",
         "mqtt_enabled": True,
         "subscriber_running": False,
+        "upper_computer": {
+            "enabled": False,
+            "connected": False,
+            "auto_mode": False,
+            "reason": "paused",
+        },
         "reason": "paused",
     }
 
@@ -684,6 +869,15 @@ class FakeMqEventRepository:
     def find_active_run_by_lab(self, lab_code):
         return self.runs_by_lab.get(lab_code)
 
+    def find_run_by_no(self, run_no):
+        for run in self.runs_by_lab.values():
+            if run.get("run_no") == run_no:
+                return dict(run)
+        for run in self.completed_runs_by_lab.values():
+            if run.get("run_no") == run_no:
+                return dict(run)
+        return None
+
     def find_recent_completed_run_by_lab(self, lab_code):
         return self.completed_runs_by_lab.get(lab_code)
 
@@ -693,10 +887,10 @@ class FakeMqEventRepository:
             return None
         return {**context, "candidate_statuses": list(candidate_statuses)}
 
-    def start_run_for_context(self, context, occurred_at):
+    def start_run_for_context(self, context, occurred_at, run_no=""):
         self.started_contexts.append((dict(context), occurred_at))
         return {
-            "run_no": "RUN-CREATED-FROM-LAB",
+            "run_no": run_no or "RUN-CREATED-FROM-LAB",
             "task_no": context["task_no"],
             "experiment_no": context["experiment_no"],
             "device_name": context["device_name"],
@@ -986,6 +1180,26 @@ def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_a
     assert repository.events[0]["event_type"] == "EXPERIMENT_STARTED"
 
 
+def test_process_experiment_started_uses_payload_run_no_for_created_run():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab = {}
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-started",
+        {
+            "lab_code": "LAB_SALT",
+            "run_no": "RUN-READY-001",
+            "started_at": "2026-05-16 10:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.events[0]["run_no"] == "RUN-READY-001"
+    assert repository.messages[0]["task_no"] == "SYLU-2026-03-001"
+    assert repository.messages[0]["experiment_no"] == "SYLU-2026-03-001-A"
+
+
 def test_process_experiment_started_creates_run_from_non_salt_ready_context():
     repository = FakeMqEventRepository()
     repository.runs_by_lab = {}
@@ -1119,6 +1333,7 @@ def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
             "schedule_no": "schedule-salt",
             "device_name": "盐雾试验室",
             "planned_hours": 3.5,
+            "schedule_end_time": "2026-05-16 11:00:00",
             "tray_nos": ["TRAY-001"],
             "sample_nos": ["SAMPLE-001"],
         },
@@ -1138,6 +1353,7 @@ def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
     assert "target_experiment_code" not in started_tray
     assert written["mes.samples"][0]["history"][0]["detail"] == "TASK-001 / 盐雾试验 / 实验进行中 / 托盘：TRAY-001"
     assert written["mes.experiment_runs"][0]["run_no"] == run["run_no"]
+    assert written["mes.experiment_runs"][0]["planned_end_at"] == "2026-05-16 13:30:00"
     assert written["mes.experiment_run_trays"][0]["run_no"] == run["run_no"]
 
 
@@ -1497,6 +1713,70 @@ def test_mysql_find_active_run_by_lab_prioritizes_running_runs_in_query(monkeypa
 
     assert "CASE WHEN er.run_status = '实验进行中' THEN 0 ELSE 1 END" in connection.cursor_obj.active_run_sql
     assert connection.cursor_obj.active_run_sql.index("CASE WHEN er.run_status") < connection.cursor_obj.active_run_sql.index("er.started_at DESC")
+
+
+def test_mysql_find_run_by_no_uses_exact_run_no(monkeypatch):
+    class TupleCursor:
+        description = None
+
+        def __init__(self):
+            self.query_sql = ""
+            self.query_params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params=None):
+            self.query_sql = " ".join(sql.split())
+            self.query_params = tuple(params or ())
+            self.description = (
+                ("run_no",),
+                ("task_no",),
+                ("experiment_no",),
+                ("device_name",),
+                ("run_status",),
+            )
+
+        def fetchone(self):
+            return (
+                "RUN-001",
+                "SYLU-2026-06-022",
+                "SYLU-2026-06-022-A",
+                "冲击一室",
+                "实验已完成",
+            )
+
+    class TupleConnection:
+        def __init__(self):
+            self.cursor_obj = TupleCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return self.cursor_obj
+
+    connection = TupleConnection()
+    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
+
+    run = MySQLMqEventRepository().find_run_by_no("RUN-001")
+
+    assert "FROM biz_experiment_run er" in connection.cursor_obj.query_sql
+    assert "WHERE er.run_no = %s" in connection.cursor_obj.query_sql
+    assert connection.cursor_obj.query_params == ("RUN-001",)
+    assert run == {
+        "run_no": "RUN-001",
+        "task_no": "SYLU-2026-06-022",
+        "experiment_no": "SYLU-2026-06-022-A",
+        "device_name": "冲击一室",
+        "run_status": "实验已完成",
+    }
 
 
 def test_mysql_find_current_context_filters_schedules_to_current_lab(monkeypatch):
@@ -2637,6 +2917,78 @@ def test_process_experiment_result_uses_recent_completed_run_after_ended_event()
     assert repository.results[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.results[0]["experiment_no"] == "SYLU-2026-03-001-A"
     assert repository.results[0]["summary"] == "结束后结果包"
+
+
+def test_process_experiment_result_uses_payload_run_no_without_recent_completed_fallback():
+    repository = FakeMqEventRepository()
+
+    process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2026-05-16 17:30:00",
+        },
+        repository=repository,
+    )
+    reset_legacy_fallback_hits()
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-result",
+        {
+            "lab_code": "LAB_SALT",
+            "run_no": "RUN-SALT-001",
+            "result_at": "2026-05-16 17:31:00",
+            "result_package": {
+                "result_id": "R-RUN-001",
+                "conclusion": "PASS",
+                "summary": "按run_no精确绑定",
+                "items": [],
+                "attachments": [],
+            },
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.results[0]["task_no"] == "SYLU-2026-03-001"
+    assert repository.results[0]["experiment_no"] == "SYLU-2026-03-001-A"
+    assert repository.results[0]["summary"] == "按run_no精确绑定"
+    assert get_legacy_fallback_hits() == []
+
+
+def test_process_experiment_result_rejects_unknown_payload_run_no_without_recent_completed_fallback():
+    repository = FakeMqEventRepository()
+
+    process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2026-05-16 17:30:00",
+        },
+        repository=repository,
+    )
+    reset_legacy_fallback_hits()
+
+    with pytest.raises(ValueError, match="experiment run is required"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_SALT/events/experiment-result",
+            {
+                "lab_code": "LAB_SALT",
+                "run_no": "RUN-UNKNOWN",
+                "result_at": "2026-05-16 17:31:00",
+                "result_package": {
+                    "result_id": "R-RUN-UNKNOWN",
+                    "conclusion": "PASS",
+                    "summary": "不应绑定最近完成run",
+                    "items": [],
+                    "attachments": [],
+                },
+            },
+            repository=repository,
+        )
+
+    assert repository.results == []
+    assert get_legacy_fallback_hits() == []
 
 
 def test_process_experiment_result_prefers_active_run_over_payload_experiment_code():

@@ -1,7 +1,15 @@
 import pytest
 
+from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fallback_hits
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_start import start_storage_laboratory_experiment
+
+
+@pytest.fixture(autouse=True)
+def _reset_legacy_fallback_hits():
+    reset_legacy_fallback_hits()
+    yield
+    reset_legacy_fallback_hits()
 
 
 def _sample(code, task_code, tray_code, status, location=""):
@@ -126,6 +134,44 @@ def test_start_scopes_requested_trays_to_current_experiment_assignment():
     assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-A"]
 
 
+def test_start_logs_legacy_tray_sample_fallback_without_changing_scope():
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "盐雾试验室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [],
+        "samples": [
+            _sample("SP-A", "TASK-1", "TP-A", "实验准备就绪", "盐雾试验室"),
+            _sample("SP-B", "TASK-1", "TP-B", "实验准备就绪", "霉菌试验室"),
+        ],
+    }
+
+    result = start_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        lab_name="盐雾试验室",
+        schedule_id="SCH-A",
+        tray_codes=["TP-A"],
+        started_at="2026-06-06 09:00:00",
+    )
+
+    assert result["affectedTrayCodes"] == ["TP-A"]
+    assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
+    assert result["samples"][1]["trays"][0]["status"] == "实验准备就绪"
+    assert get_legacy_fallback_hits() == [
+        {
+            "count": 1,
+            "id": "backend.laboratory_start.sample_scope_legacy_tray_fallback",
+            "last_detail": {"reason": "missing_experiment_sample_relation"},
+        }
+    ]
+
+
 def test_start_rejects_ambiguous_legacy_sample_without_experiment_sample_relation():
     snapshot = {
         "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
@@ -203,6 +249,57 @@ def test_complete_scopes_requested_trays_to_current_experiment_assignment():
     assert result["experimentRunTrays"][0]["tray_code"] == "TP-A"
 
 
+def test_complete_logs_legacy_tray_sample_fallback_without_changing_scope():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "振动试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "振动一室"}],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-A"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_code": "TP-A",
+                "run_tray_status": "实验进行中",
+            }
+        ],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [],
+        "samples": [
+            _sample("SP-A", "TASK-1", "TP-A", "实验进行中", "振动一室"),
+            _sample("SP-B", "TASK-1", "TP-B", "实验进行中", "霉菌试验室"),
+        ],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        tray_codes=["TP-A"],
+        completed_at="2026-06-06 10:00:00",
+    )
+
+    assert result["affectedTrayCodes"] == ["TP-A"]
+    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
+    assert result["samples"][1]["trays"][0]["status"] == "实验进行中"
+    assert get_legacy_fallback_hits() == [
+        {
+            "count": 1,
+            "id": "backend.laboratory_completion.sample_scope_legacy_tray_fallback",
+            "last_detail": {"reason": "missing_experiment_sample_relation"},
+        }
+    ]
+
+
 def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():
     for experiment_name, lab_name in (("盐雾试验", "盐雾试验室"), ("霉菌试验", "霉菌试验室")):
         snapshot = {
@@ -236,6 +333,28 @@ def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():
         assert result["samples"][0]["flow_status"] == "送至外观检测间"
         assert result["samples"][0]["trays"][0]["status"] == "送至外观检测间"
         assert result["experimentRunTrays"][-1]["run_tray_status"] == "实验已完成"
+
+
+def test_complete_writes_tray_code_to_experiment_history_entry():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-HISTORY", "experiment_code": "EXP-A", "experiment_name": "冲击试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-HISTORY", "experiment_code": "EXP-A", "device": "冲击一室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-HISTORY", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-HISTORY", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
+        "samples": [_sample("SP-A", "TASK-HISTORY", "TP-A", "实验进行中", "冲击一室")],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-HISTORY",
+        experiment_code="EXP-A",
+        tray_codes=["TP-A"],
+        completed_at="2026-06-06 10:00:00",
+    )
+
+    assert result["samples"][0]["history"][0]["tray_code"] == "TP-A"
 
 
 def test_complete_does_not_route_other_experiments_to_appearance_inspection_room():

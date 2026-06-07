@@ -833,6 +833,96 @@ def _normalize_value(key: str, value: Any) -> Any:
     return value
 
 
+def _entry_tray_code(entry: dict[str, Any]) -> str:
+    return str(
+        entry.get("tray_code")
+        or entry.get("trayCode")
+        or entry.get("tray_no")
+        or entry.get("trayNo")
+        or ""
+    ).strip()
+
+
+def _history_entry_matches_task_experiment_detail(entry: dict[str, Any], task_code: str) -> bool:
+    normalized_task_code = str(task_code or "").strip()
+    detail = str(entry.get("detail") or "").strip()
+    if not normalized_task_code or not detail:
+        return False
+    segments = [segment.strip() for segment in detail.split(" / ") if segment.strip()]
+    return len(segments) >= 3 and segments[0] == normalized_task_code and bool(segments[1]) and bool(segments[2])
+
+
+def _detail_mentions_code(detail: Any, code: str) -> bool:
+    normalized_code = str(code or "").strip()
+    normalized_detail = str(detail or "").strip()
+    if not normalized_code or not normalized_detail:
+        return False
+    pattern = rf"(^|[^A-Za-z0-9_-]){re.escape(normalized_code)}($|[^A-Za-z0-9_-])"
+    return re.search(pattern, normalized_detail) is not None
+
+
+def _scope_single_tray_experiment_history_entries(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    samples = payload.get("mes.samples")
+    if not isinstance(samples, list):
+        return payload, False
+
+    known_tray_codes = {
+        str(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo") or "").strip()
+        for sample in samples
+        if isinstance(sample, dict)
+        for tray in (sample.get("trays") if isinstance(sample.get("trays"), list) else [])
+        if isinstance(tray, dict)
+    }
+    known_tray_codes.discard("")
+
+    changed = False
+    next_samples: list[Any] = []
+    for sample in samples:
+        if not isinstance(sample, dict):
+            next_samples.append(sample)
+            continue
+        history = sample.get("history")
+        trays = sample.get("trays")
+        if not isinstance(history, list) or not isinstance(trays, list):
+            next_samples.append(sample)
+            continue
+        sample_tray_codes = [
+            str(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo") or "").strip()
+            for tray in trays
+            if isinstance(tray, dict)
+        ]
+        sample_tray_codes = [code for code in sample_tray_codes if code]
+        if len(set(sample_tray_codes)) != 1:
+            next_samples.append(sample)
+            continue
+        tray_code = sample_tray_codes[0]
+        task_code = str(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo") or "").strip()
+        next_history: list[Any] = []
+        sample_changed = False
+        for entry in history:
+            if not isinstance(entry, dict):
+                next_history.append(entry)
+                continue
+            if _entry_tray_code(entry) or not _history_entry_matches_task_experiment_detail(entry, task_code):
+                next_history.append(entry)
+                continue
+            detail = entry.get("detail")
+            if any(_detail_mentions_code(detail, known_code) for known_code in known_tray_codes if known_code != tray_code):
+                next_history.append(entry)
+                continue
+            next_history.append({**entry, "tray_code": tray_code})
+            sample_changed = True
+        if sample_changed:
+            next_samples.append({**sample, "history": next_history})
+            changed = True
+        else:
+            next_samples.append(sample)
+
+    if not changed:
+        return payload, False
+    return {**payload, "mes.samples": next_samples}, True
+
+
 def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     normalized = dict(payload)
     changed = False
@@ -858,6 +948,9 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         changed = True
     normalized, experiment_changed = _ensure_task_experiment_rows(normalized)
     if experiment_changed:
+        changed = True
+    normalized, history_scope_changed = _scope_single_tray_experiment_history_entries(normalized)
+    if history_scope_changed:
         changed = True
     normalized, returned_changed = _apply_staging_returned_tasks(normalized)
     if returned_changed:

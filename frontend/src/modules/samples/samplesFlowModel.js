@@ -81,6 +81,11 @@ const resolveEntryTrayCode = (entry) =>
   || normalizeText(entry?.trayCode)
   || normalizeText(entry?.tray_no)
   || normalizeText(entry?.trayNo);
+const resolveEntryTrayCodes = (entry) => {
+  const primary = resolveEntryTrayCode(entry);
+  const scopedCodes = uniqueNormalizedTexts(entry?.tray_codes || entry?.trayCodes);
+  return primary ? [primary, ...scopedCodes.filter((code) => code !== primary)] : scopedCodes;
+};
 const resolveEntryExperimentCode = (entry) =>
   normalizeText(entry?.experiment_code)
   || normalizeText(entry?.experimentCode)
@@ -94,9 +99,9 @@ const entryMatchesTrayCode = (entry, trayCode) => {
   if (!normalizedTrayCode) {
     return false;
   }
-  const structuredTrayCode = resolveEntryTrayCode(entry);
-  if (structuredTrayCode) {
-    return structuredTrayCode === normalizedTrayCode;
+  const structuredTrayCodes = resolveEntryTrayCodes(entry);
+  if (structuredTrayCodes.length > 0) {
+    return structuredTrayCodes.includes(normalizedTrayCode);
   }
   const detail = normalizeText(entry?.detail);
   if (!detail) {
@@ -680,7 +685,7 @@ const trayHasReturnedStatus = (tray) =>
   || isReturnedStatusText(tray?.tray_status)
   || isReturnedStatusText(tray?.trayStatus);
 
-const entryMarksTrayReturned = (entry, trayCode, fallbackSingleTray = false) => {
+const entryMarksTrayReturned = (entry, trayCode) => {
   const normalizedTrayCode = normalizeText(trayCode);
   const structuredTrayCode = resolveEntryTrayCode(entry);
   const detail = normalizeText(entry?.detail);
@@ -691,11 +696,13 @@ const entryMarksTrayReturned = (entry, trayCode, fallbackSingleTray = false) => 
   if (!entryIsReturned) {
     return false;
   }
-  return (
-    (structuredTrayCode && structuredTrayCode === normalizedTrayCode)
-    || entryMatchesTrayCode(entry, normalizedTrayCode)
-    || (!detail && fallbackSingleTray)
-  );
+  if (structuredTrayCode && structuredTrayCode === normalizedTrayCode) {
+    return true;
+  }
+  if (entryMatchesTrayCode(entry, normalizedTrayCode)) {
+    return true;
+  }
+  return false;
 };
 
 const resolveEffectiveTrayLifecycleStatus = (input = {}) => {
@@ -740,7 +747,7 @@ const resolveEffectiveTrayLifecycleStatus = (input = {}) => {
       && !trayHasReturnedStatus(tray),
     );
     const historyReturned = asArray(sample?.history).some((entry) =>
-      entryMarksTrayReturned(entry, trayCode, trays.length === 1),
+      entryMarksTrayReturned(entry, trayCode),
     );
     const sampleReturnedApplies =
       sampleReturned
@@ -938,7 +945,7 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
         return;
       }
       const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode);
-      if (!trayScoped && sampleTrayCodes.length > 1) {
+      if (!trayScoped) {
         return;
       }
       setExperimentEvent(parsed, currentTime, trayScoped);
@@ -1983,14 +1990,34 @@ function buildTrayFlowView(input = {}) {
         });
       };
 
-      if (normalizedRouteStatus === APPEARANCE_SENT_STATUS && latestCompletedAppearanceIndexes) {
+      if (
+        isAppearanceInspectionStatus(normalizedRouteStatus)
+        && completedStepIndexes.at(-1) !== undefined
+        && !latestCompletedExperimentRequiresAppearance
+      ) {
+        const latestCompletedIndex = completedStepIndexes.at(-1);
+        currentStatus = steps[latestCompletedIndex].label;
+        activeIndex = latestCompletedIndex;
+        completedStepIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        markCompletedAppearanceReached();
+      } else if (
+        normalizedRouteStatus === APPEARANCE_SENT_STATUS
+        && latestCompletedAppearanceIndexes
+        && latestCompletedExperimentRequiresAppearance
+      ) {
         currentStatus = normalizedRouteStatus;
         activeIndex = latestCompletedAppearanceIndexes.sent;
         completedStepIndexes.forEach((stepIndex) => {
           steps[stepIndex].reached = true;
         });
         markCompletedAppearanceReached(latestCompletedAppearancePosition);
-      } else if (normalizedRouteStatus === APPEARANCE_STOCKED_STATUS && latestCompletedAppearanceIndexes) {
+      } else if (
+        normalizedRouteStatus === APPEARANCE_STOCKED_STATUS
+        && latestCompletedAppearanceIndexes
+        && latestCompletedExperimentRequiresAppearance
+      ) {
         currentStatus = normalizedRouteStatus;
         activeIndex = latestCompletedAppearanceIndexes.stocked;
         completedStepIndexes.forEach((stepIndex) => {

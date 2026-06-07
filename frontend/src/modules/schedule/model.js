@@ -3,7 +3,7 @@ import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
-import { resolveLabRef, resolveScheduleLabCode, resolveScheduleLabName, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
 const STATUS_WAITING = "待排程";

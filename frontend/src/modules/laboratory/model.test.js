@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 
 import {
   applyLaboratoryTaskStep,
@@ -18,6 +18,7 @@ import {
   resetLaboratoryExperimentTrays,
   validateLaboratoryTrayScan,
 } from "./model";
+import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFallback";
 
 const NOW = new Date("2026-04-02T10:00:00.000Z");
 const toDisplayedTime = (value) => {
@@ -30,6 +31,10 @@ const toDisplayedDateTime = (value) => {
 };
 
 describe("laboratory model", () => {
+  afterEach(() => {
+    resetLegacyFallbackHits();
+  });
+
   test("buildLaboratoryWorkbenchView filters non-salt laboratories by schedule device", () => {
     const view = buildLaboratoryWorkbenchView({
       experiments: [
@@ -471,6 +476,49 @@ describe("laboratory model", () => {
     });
 
     expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toEqual(["TP-002"]);
+  });
+
+  test("buildLaboratoryWorkbenchView does not derive tray row status from sample status when tray status is missing", () => {
+    resetLegacyFallbackHits();
+    const taskCode = "TASK-SAMPLE-STATUS-FALLBACK";
+    const experimentCode = "EXP-MOLD-FALLBACK";
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-001" },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验" },
+      ],
+      labName: "霉菌试验室",
+      now: NOW,
+      samples: [
+        {
+          task_code: taskCode,
+          location: "霉菌试验室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TP-001", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "霉菌试验室",
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "样品状态旧兜底记录", test_type: "霉菌试验" }],
+    });
+
+    expect(view.currentExperimentTrayRows).toEqual([
+      expect.objectContaining({
+        displayStatus: "",
+        trayCode: "TP-001",
+        trayStatus: "",
+      }),
+    ]);
+    expect(getLegacyFallbackHits()).toEqual([]);
   });
 
   test("buildLaboratoryWorkbenchView does not apply unscoped completion history to every tray", () => {
@@ -960,6 +1008,7 @@ describe("laboratory model", () => {
             {
               time: "2026-04-02T10:30:00.000Z",
               detail: "SYLU-2026-04-501 / A实验 / 实验已完成",
+              tray_code: "TP-501",
             },
           ],
         },
@@ -1419,6 +1468,7 @@ describe("laboratory model", () => {
           tray_codes: ["TP-602"],
           status: "实验进行中",
           started_at: "2026-04-02T10:30:00.000Z",
+          planned_hours: 2,
           planned_end_at: "2026-04-02T12:30:00.000Z",
         },
       ],
@@ -1455,7 +1505,8 @@ describe("laboratory model", () => {
           experiment_code: "SYLU-2026-04-601-A",
           device: "盐雾试验室",
           start_at: "2026-04-02T09:30:00.000Z",
-          end_at: "2026-04-02T11:00:00.000Z",
+          end_at: "2026-04-02T11:30:00.000Z",
+          planned_hours: 2,
         },
       ],
       tasks: [{ code: "SYLU-2026-04-601", name: "盐雾运行任务", test_type: "盐雾试验" }],
@@ -1471,6 +1522,59 @@ describe("laboratory model", () => {
         endDateTimeLabel: toDisplayedDateTime("2026-04-02T12:30:00.000Z"),
       }),
     );
+  });
+
+  test("buildSaltSprayLaboratoryView counts down from the scheduled estimate after the actual run start", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentRuns: [
+        {
+          run_no: "run-delayed-start",
+          schedule_id: "schedule-delayed",
+          task_code: "SYLU-2026-04-602",
+          experiment_code: "SYLU-2026-04-602-A",
+          device: "盐雾试验室",
+          tray_codes: ["TP-602"],
+          status: "实验进行中",
+          started_at: "2026-04-02T10:30:00.000Z",
+          planned_end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-04-602", experiment_code: "SYLU-2026-04-602-A", tray_code: "TP-602" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-04-602", experiment_code: "SYLU-2026-04-602-A", experiment_name: "盐雾试验" },
+      ],
+      now: new Date("2026-04-02T11:00:00.000Z"),
+      samples: [
+        {
+          code: "SP-602",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "实验进行中",
+          task_code: "SYLU-2026-04-602",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-602" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-delayed",
+          task_code: "SYLU-2026-04-602",
+          experiment_code: "SYLU-2026-04-602-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-04-602", name: "延迟开始任务", test_type: "盐雾试验" }],
+    });
+
+    expect(view.runningExperiment).toEqual(expect.objectContaining({
+      countdownLabel: "01:30:00",
+      endDateTimeLabel: toDisplayedDateTime("2026-04-02T12:30:00.000Z"),
+      remainingSeconds: 5400,
+      startDateTimeLabel: toDisplayedDateTime("2026-04-02T10:30:00.000Z"),
+    }));
   });
 
   test("validateLaboratoryTrayScan rejects trays from another scheduled task and returns guidance", () => {

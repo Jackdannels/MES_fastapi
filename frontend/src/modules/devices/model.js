@@ -131,7 +131,6 @@ const isScheduleExperimentRunning = (schedule, device, samples = [], experimentT
 
 // 根据实际实验运行状态和维护标记推导设备当前状态。
 function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = [], now = new Date(), experimentRuns = []) {
-  const deviceCode = normalizeText(device?.code);
   const storedStatus = normalizeText(device?.status);
   if (isDeviceInMaintenanceWindow(device, now)) {
     return maintenanceTypeToSafetyStatus(device?.maintenance_type ?? device?.maintenanceType);

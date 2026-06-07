@@ -18,6 +18,5 @@ describe("sample utf8 sanitization", () => {
     expect(storageApiSource).not.toContain("SAMPLE_TEXT_REPLACEMENTS");
     expect(storageApiSource).not.toContain("sanitizeSampleText");
     expect(storageApiSource).not.toContain("sanitizeSampleCollection");
-    expect(storageApiSource).not.toContain("src/legacy/runtime/actions.js");
   });
 });

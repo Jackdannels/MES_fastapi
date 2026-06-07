@@ -1,7 +1,7 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 
 import {
-  buildTrayFlowView,
+  buildTrayFlowView as buildTrayFlowViewRaw,
   buildSamplesTrayOverviewView,
   buildSamplesFlowView,
   buildSamplesStagingView,
@@ -12,8 +12,64 @@ import {
   updateTrayStatus,
   updateSampleDetail,
 } from "./samplesFlowModel";
+import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFallback";
+
+const normalizeText = (value) => String(value ?? "").trim();
+const asArray = (value) => (Array.isArray(value) ? value : []);
+
+const historyEntryMatchesTaskExperimentDetail = (entry, taskCode) => {
+  const segments = normalizeText(entry?.detail)
+    .split(" / ")
+    .map(normalizeText)
+    .filter(Boolean);
+  return segments.length >= 3 && segments[0] === normalizeText(taskCode);
+};
+
+const scopeSingleTrayHistoryEntries = (samples = []) => {
+  const knownTrayCodes = new Set(
+    asArray(samples)
+      .flatMap((sample) => asArray(sample?.trays))
+      .map((tray) => normalizeText(tray?.tray_code || tray?.trayCode || tray?.tray_no || tray?.trayNo))
+      .filter(Boolean),
+  );
+  return asArray(samples).map((sample) => {
+    const trayCodes = asArray(sample?.trays)
+      .map((tray) => normalizeText(tray?.tray_code || tray?.trayCode || tray?.tray_no || tray?.trayNo))
+      .filter(Boolean);
+    const uniqueTrayCodes = Array.from(new Set(trayCodes));
+    if (uniqueTrayCodes.length !== 1) {
+      return sample;
+    }
+    const [trayCode] = uniqueTrayCodes;
+    const taskCode = normalizeText(sample?.task_code || sample?.taskCode || sample?.task_no || sample?.taskNo);
+    return {
+      ...sample,
+      history: asArray(sample?.history).map((entry) => {
+        if (
+          normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo)
+          || asArray(entry?.tray_codes || entry?.trayCodes).length > 0
+          || !historyEntryMatchesTaskExperimentDetail(entry, taskCode)
+        ) {
+          return entry;
+        }
+        const detail = normalizeText(entry?.detail);
+        const mentionsOtherTray = Array.from(knownTrayCodes).some((knownTrayCode) => knownTrayCode !== trayCode && detail.includes(knownTrayCode));
+        return mentionsOtherTray ? entry : { ...entry, tray_code: trayCode };
+      }),
+    };
+  });
+};
+
+const buildTrayFlowView = (input = {}) => buildTrayFlowViewRaw({
+  ...input,
+  samples: scopeSingleTrayHistoryEntries(input.samples),
+});
 
 describe("samplesFlowModel", () => {
+  afterEach(() => {
+    resetLegacyFallbackHits();
+  });
+
   test("buildTrayFlowView highlights the current tray status in the canonical tray flow", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-001",
@@ -2038,6 +2094,79 @@ describe("samplesFlowModel", () => {
     }));
   });
 
+  test("buildTrayFlowView keeps appearance storage historical after a later vibration completion", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-022-TP-001",
+      taskCode: "SYLU-2026-06-022",
+      currentExperimentCode: "SYLU-2026-06-022-D",
+      dispatchTargetLab: "盐雾试验室",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-A",
+          experiment_name: "冲击试验",
+        },
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-B",
+          experiment_name: "霉菌试验",
+        },
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-C",
+          experiment_name: "振动试验",
+        },
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-D",
+          experiment_name: "盐雾试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", tray_code: "SYLU-2026-06-022-TP-001" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-B", tray_code: "SYLU-2026-06-022-TP-001" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-C", tray_code: "SYLU-2026-06-022-TP-001" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-D", tray_code: "SYLU-2026-06-022-TP-001" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-022-SP-001",
+          task_code: "SYLU-2026-06-022",
+          location: "外观检测间",
+          status: "外观检测间存放",
+          flow_status: "外观检测间存放",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-022-TP-001",
+              status: "外观检测间存放",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "实验完成", detail: "SYLU-2026-06-022 / 振动试验 / 实验已完成", location: "振动一室", status: "实验已完成", time: "2026-06-07 16:55:03" },
+            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-07 16:54:55" },
+            { action: "实验完成", detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-07 16:54:03" },
+            { action: "实验完成", detail: "SYLU-2026-06-022 / 冲击试验 / 实验已完成", location: "冲击一室", status: "实验已完成", time: "2026-06-07 16:53:07" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-06-022-TP-001 | 当前状态：振动试验已完成");
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({
+      active: false,
+      reached: true,
+      time: "2026-06-07 16:54:55",
+    }));
+    expect(view.steps.find((step) => step.label === "振动试验已完成")).toEqual(expect.objectContaining({
+      active: true,
+      reached: true,
+      time: "2026-06-07 16:55:03",
+    }));
+  });
+
   test("buildTrayFlowView does not append appearance inspection after the next non-appearance experiment", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-06-022-TP-001",
@@ -3866,6 +3995,84 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "送至实验室")).toEqual(
       expect.objectContaining({ active: true }),
     );
+  });
+
+  test("buildTrayFlowView ignores unscoped single-tray returned history after fallback removal", () => {
+    const view = buildTrayFlowView({
+      trayCode: "TP-001",
+      taskCode: "TASK-RETURNED-HISTORY",
+      status: "已到达暂存间",
+      samples: [
+        {
+          task_code: "TASK-RETURNED-HISTORY",
+          status: "已到达暂存间",
+          location: "恒温恒湿间（暂存间）",
+          trays: [{ tray_code: "TP-001", status: "已到达暂存间", quantity: 1 }],
+          history: [{ status: "厂家收回" }],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-001 | 当前状态：已到达暂存间");
+    expect(getLegacyFallbackHits()).toEqual([]);
+  });
+
+  test("buildTrayFlowView ignores single-tray unscoped experiment history after scoped history normalization", () => {
+    const view = buildTrayFlowViewRaw({
+      currentExperimentCode: "EXP-IMPACT",
+      trayCode: "TP-001",
+      taskCode: "TASK-SINGLE-HISTORY",
+      status: "送至实验室",
+      experiments: [
+        { task_code: "TASK-SINGLE-HISTORY", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-SINGLE-HISTORY", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-SINGLE-HISTORY",
+          trays: [{ tray_code: "TP-001", status: "实验已完成", quantity: 1 }],
+          history: [
+            { detail: "TASK-SINGLE-HISTORY / 冲击试验 / 实验已完成", status: "实验已完成" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-001 | 当前状态：送至实验室");
+    expect(getLegacyFallbackHits()).toEqual([]);
+  });
+
+  test("buildTrayFlowView uses structured tray codes without legacy experiment history fallback", () => {
+    const view = buildTrayFlowView({
+      currentExperimentCode: "EXP-IMPACT",
+      trayCode: "TP-001",
+      taskCode: "TASK-SCOPED-HISTORY",
+      status: "实验已完成",
+      experiments: [
+        { task_code: "TASK-SCOPED-HISTORY", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-SCOPED-HISTORY", experiment_code: "EXP-IMPACT", tray_code: "TP-001" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-SCOPED-HISTORY",
+          trays: [{ tray_code: "TP-001", status: "实验已完成", quantity: 1 }],
+          history: [
+            {
+              detail: "TASK-SCOPED-HISTORY / 冲击试验 / 实验已完成",
+              status: "实验已完成",
+              tray_codes: ["TP-001"],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-001 | 当前状态：冲击试验已完成");
+    expect(getLegacyFallbackHits()).toEqual([]);
   });
 
   test("updateTrayStatus synchronizes tray status to all samples assigned to the tray", () => {

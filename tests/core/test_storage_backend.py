@@ -14,6 +14,57 @@ from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data,
 from app.core.storage_backend import normalize_storage_payload
 
 
+def test_normalize_storage_payload_scopes_single_tray_experiment_history_entries() -> None:
+    payload = {
+        "mes.tasks": [],
+        "mes.samples": [
+            {
+                "code": "SP-001",
+                "task_code": "TASK-SINGLE",
+                "trays": [{"tray_code": "TP-001", "status": "实验已完成"}],
+                "history": [
+                    {
+                        "action": "实验完成",
+                        "detail": "TASK-SINGLE / 冲击试验 / 实验已完成",
+                        "status": "实验已完成",
+                    }
+                ],
+            }
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.samples"][0]["history"][0]["tray_code"] == "TP-001"
+
+
+def test_normalize_storage_payload_does_not_scope_ambiguous_multi_tray_experiment_history_entries() -> None:
+    payload = {
+        "mes.tasks": [],
+        "mes.samples": [
+            {
+                "code": "SP-001",
+                "task_code": "TASK-MULTI",
+                "trays": [
+                    {"tray_code": "TP-001", "status": "实验已完成"},
+                    {"tray_code": "TP-002", "status": "实验进行中"},
+                ],
+                "history": [
+                    {
+                        "action": "实验完成",
+                        "detail": "TASK-MULTI / 冲击试验 / 实验已完成",
+                        "status": "实验已完成",
+                    }
+                ],
+            }
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert "tray_code" not in normalized["mes.samples"][0]["history"][0]
+
+
 def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() -> None:
     current_time = datetime(2026, 5, 13, 9, 30, 0)
     snapshot = build_demo_reset_snapshot(now=current_time)

@@ -79,6 +79,8 @@ lab_id 可能因数据库重建、导入、迁移而变化；lab_code 应保持�
 | 业务含义 | 接口字段 | MES 主项目字段 |
 | --- | --- | --- |
 | 任务号 | task_code | mes.tasks.code / biz_task.task_no |
+| 实验编号 | experiment_code | mes.experiments.experiment_code / biz_experiment.experiment_no |
+| 实验批次号 | run_no | mes.experiment_runs.run_no / biz_experiment_run.run_no |
 | 试验间编号 | lab_code | md_lab.lab_code |
 | 样品类型 | sample_type | mes.tasks.sample_type |
 | 样品数量 | sample_count | mes.tasks.sample_count |
@@ -89,14 +91,15 @@ lab_id 可能因数据库重建、导入、迁移而变化；lab_code 应保持�
 | 结果时间 | result_at | biz_experiment_result.result_time |
 | 结果包 | result_package | biz_experiment_result.result_payload_json |
 
-以下字段由 MES 内部根据 `lab_code` 反绑定，不要求上位机回传：
+以下字段由 MES 内部根据 `lab_code` 和排程上下文反绑定，不要求上位机自行推导：
 
 | MES 内部字段 | 说明 |
 | --- | --- |
-| run_no | 实验批次号，对应 biz_experiment_run.run_no |
 | task_code | 当前试验间正在执行的任务号 |
 | experiment_code | 当前试验间正在执行的实验编号 |
 | tray_codes | 当前实验批次对应托盘列表 |
+
+`run_no` 由 MES 在下发 `experiment-ready` 时生成并发送给上位机。上位机不需要生成或修改 `run_no`，但必须缓存并在后续 `experiment-started`、`experiment-ended`、`experiment-result` 中原样带回。
 
 ## 4. MES 发送给上位机
 
@@ -114,6 +117,7 @@ Payload：
 {
   "task_code": "SYLU-2026-06-001",
   "lab_code": "LAB_IMPACT_1",
+  "experiment_code": "SYLU-2026-06-001-A",
   "sample_type": "金属样品",
   "sample_count": 8
 }
@@ -125,6 +129,7 @@ Payload：
 | --- | --- | --- | --- |
 | task_code | string | 是 | 任务号 |
 | lab_code | string | 是 | 试验间编号 |
+| experiment_code | string | 是 | 当前试验编号 |
 | sample_type | string | 是 | 样品类型 |
 | sample_count | number | 是 | 样品数量 |
 
@@ -141,7 +146,9 @@ Payload：
 ```json
 {
   "task_code": "SYLU-2026-06-001",
-  "lab_code": "LAB_IMPACT_1"
+  "lab_code": "LAB_IMPACT_1",
+  "experiment_code": "SYLU-2026-06-001-A",
+  "run_no": "run-20260607193000123456"
 }
 ```
 
@@ -151,6 +158,8 @@ Payload：
 | --- | --- | --- | --- |
 | task_code | string | 是 | 任务号 |
 | lab_code | string | 是 | 试验间编号 |
+| experiment_code | string | 是 | 当前试验编号 |
+| run_no | string | 是 | MES 预生成的实验批次号，上位机后续事件必须原样带回 |
 
 ## 5. 上位机发送给 MES
 
@@ -193,6 +202,7 @@ Payload：
 ```json
 {
   "lab_code": "LAB_IMPACT_1",
+  "run_no": "run-20260607193000123456",
   "started_at": "2026-06-01 09:30:00"
 }
 ```
@@ -202,6 +212,7 @@ Payload：
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | lab_code | string | 是 | 试验间编号 |
+| run_no | string | 是 | 来自 `experiment-ready` 的实验批次号 |
 | started_at | string | 是 | 实验开始时间，北京时间 |
 
 ### 5.3 实验结束时间
@@ -217,6 +228,7 @@ Payload：
 ```json
 {
   "lab_code": "LAB_IMPACT_1",
+  "run_no": "run-20260607193000123456",
   "ended_at": "2026-06-01 11:30:00"
 }
 ```
@@ -226,6 +238,7 @@ Payload：
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | lab_code | string | 是 | 试验间编号 |
+| run_no | string | 是 | 来自 `experiment-ready` 的实验批次号 |
 | ended_at | string | 是 | 实验结束时间，北京时间 |
 
 ### 5.4 实验结果接收
@@ -241,6 +254,7 @@ Payload：
 ```json
 {
   "lab_code": "LAB_IMPACT_1",
+  "run_no": "run-20260607193000123456",
   "result_at": "2026-06-01 11:31:00",
   "result_package": {
     "conclusion": "PASS",
@@ -255,6 +269,7 @@ Payload：
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | lab_code | string | 是 | 试验间编号 |
+| run_no | string | 是 | 来自 `experiment-ready` 的实验批次号 |
 | result_at | string | 是 | 结果生成或发送时间，北京时间 |
 | result_package | object | 是 | 结果包 |
 
@@ -262,7 +277,7 @@ Payload：
 
 ## 6. MES 内部反绑定规则
 
-上位机只需要告诉 MES 哪个试验间发生了什么事件。MES 根据 `lab_code` 反查当前试验间对应的任务、实验、托盘和实验批次。
+上位机只需要告诉 MES 哪个试验间发生了什么事件，并在实验开始后的事件中原样带回 MES 下发的 `run_no`。MES 根据 `run_no` 精确绑定实验批次，根据 `lab_code` 反查当前试验间对应的任务、实验和托盘上下文。
 
 匹配规则：
 
@@ -271,13 +286,13 @@ fixture-ready:
 根据 lab_code 找到当前试验间处于工装夹具安装状态的唯一任务/实验上下文，记录 fixture_ready_at。
 
 experiment-started:
-根据 lab_code 找到当前试验间待开始 / 已准备就绪的唯一实验批次，写入 started_at。
+优先使用 payload.run_no 创建并启动对应实验批次；同时根据 lab_code 找到当前试验间待开始 / 已准备就绪的唯一任务/实验上下文，写入 started_at。
 
 experiment-ended:
-根据 lab_code 找到当前试验间正在运行的唯一实验批次，写入 ended_at，并将该批次置为实验已完成。
+根据 payload.run_no 精确找到实验批次，写入 ended_at，并将该批次置为实验已完成；如未携带 run_no，则仅兼容旧协议按 lab_code 找正在运行批次。
 
 experiment-result:
-根据 lab_code 找到当前试验间最近完成且尚未绑定结果的唯一实验批次，绑定 result_package。
+根据 payload.run_no 精确找到实验批次并绑定 result_package。未携带 run_no 的旧结果包只作为历史兼容处理，可能触发旧兜底风险日志。
 ```
 
 约束：
@@ -288,7 +303,7 @@ experiment-result:
 如果找不到可匹配批次，MES 不更新状态，并记录异常。
 ```
 
-MES 内部仍会维护 `run_no`，但 `run_no` 不要求上位机传递。
+MES 内部维护 `run_no`，并通过 `experiment-ready` 下发给上位机。上位机必须缓存该值并在开始、结束、结果事件中原样回传，避免同一试验间多批次或延迟结果包被错误绑定。
 
 ## 7. 涉及数据库表
 

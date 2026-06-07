@@ -2,6 +2,7 @@ import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowMod
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
+import { recordLegacyFallbackHit } from "@/lib/legacyFallback";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
@@ -503,6 +504,10 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
 
     const requiredDevice = normalizeText(experiment?.required_device);
     if (requiredDevice && !isStagingDestination(requiredDevice)) {
+      recordLegacyFallbackHit("staging.stock_out.required_device_unscheduled_fallback", {
+        reason: "missing_schedule",
+        targetIsFallback: true,
+      });
       fallbackCandidates.push({
         preferred: false,
         scheduled: false,
@@ -619,6 +624,10 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
 
   const fallbackLab = getLabsForTestType(row?.testType)[0] || "";
   if (fallbackLab && !isStagingDestination(fallbackLab)) {
+    recordLegacyFallbackHit("staging.stock_out.test_type_lab_fallback", {
+      reason: "missing_experiment_destination",
+      targetIsFallback: true,
+    });
     return [{
       preferred: false,
       scheduled: false,

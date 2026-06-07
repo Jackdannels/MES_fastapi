@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.core.time_utils import format_business_datetime, now_business_text
 
 
@@ -97,11 +98,14 @@ def start_storage_laboratory_experiment(
         and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == normalized_experiment_code
         and normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
     }
+    recorded_legacy_scope_sample_codes: set[str] = set()
 
     def sample_matches_current_experiment(sample: dict[str, Any]) -> bool:
         if normalize_text(sample.get("task_code") or sample.get("task_no")) != normalized_task_code:
             return False
+        sample_code = normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sample_no") or sample.get("id"))
         if not scoped_sample_codes:
+            matched_by_legacy_tray_scope = False
             for tray in sample.get("trays", []):
                 tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
                 if tray_code not in affected_tray_code_scope:
@@ -118,8 +122,15 @@ def start_storage_laboratory_experiment(
                     return target_experiment_code == normalized_experiment_code
                 if tray_code in ambiguous_tray_codes:
                     return False
+                matched_by_legacy_tray_scope = True
+            legacy_scope_key = sample_code or str(id(sample))
+            if matched_by_legacy_tray_scope and legacy_scope_key not in recorded_legacy_scope_sample_codes:
+                recorded_legacy_scope_sample_codes.add(legacy_scope_key)
+                record_legacy_fallback_hit(
+                    "backend.laboratory_start.sample_scope_legacy_tray_fallback",
+                    reason="missing_experiment_sample_relation",
+                )
             return True
-        sample_code = normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sample_no") or sample.get("id"))
         return sample_code in scoped_sample_codes
 
     def sample_tray_is_returned(sample: dict[str, Any], tray_code: str) -> bool:

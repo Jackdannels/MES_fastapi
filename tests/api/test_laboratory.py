@@ -127,6 +127,7 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
         "owner": "",
         "status": "实验已完成",
         "time": "2026-05-19 10:00:00",
+        "tray_code": "TP-501",
     }
     assert storage.read("mes.experiments")[0]["status"] == "实验已完成"
     assert storage.read("mes.schedules")[0]["status"] == "实验已完成"

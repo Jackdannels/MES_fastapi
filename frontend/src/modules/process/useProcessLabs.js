@@ -771,7 +771,6 @@ function useProcessLabs(options = {}) {
 
   const resolveScheduledRecordForLab = (lab, taskCode, currentTime, experimentCode = "") => {
     const normalizedTaskCode = normalizeText(taskCode);
-    const normalizedLabName = normalizeText(lab?.name);
     const normalizedExperimentCode = normalizeText(experimentCode);
     const relatedSchedules = schedules.value
       .filter(
