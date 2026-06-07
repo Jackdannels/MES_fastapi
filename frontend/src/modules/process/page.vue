@@ -496,6 +496,9 @@ const formatFlowTime = (value) => {
 <style scoped>
 .process-task-modal-content {
   width: min(1260px, 97vw);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  overscroll-behavior: contain;
   padding: 24px;
 }
 
@@ -1022,6 +1025,29 @@ const formatFlowTime = (value) => {
   white-space: nowrap;
 }
 
+.process-task-switch-button {
+  appearance: none;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.process-task-switch-button.is-active {
+  border-color: rgba(var(--industrial-accent-rgb), 0.58);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
 @media (max-width: 720px) {
   .process-task-hero,
   .process-task-detail-row,
@@ -1040,6 +1066,151 @@ const formatFlowTime = (value) => {
 
   .process-task-tray-meta {
     text-align: left;
+  }
+}
+
+/* Industrial blackbox skin: process task drawers and tray flow cards. */
+.process-task-modal-content,
+.process-task-full-modal-content,
+.process-task-hero,
+.process-task-keyfact,
+.process-task-summary-card,
+.process-task-stat,
+.process-task-inline-field,
+.process-task-sample-code-row,
+.process-task-tray-row,
+.process-task-full-row,
+.process-task-full-summary span,
+.process-task-flow-list li {
+  border-color: var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.process-task-keyfact,
+.process-task-summary-card,
+.process-task-stat,
+.process-task-inline-field,
+.process-task-sample-code-row,
+.process-task-tray-row,
+.process-task-full-row,
+.process-task-flow-list li {
+  background: var(--bg-panel-strong);
+  box-shadow: none;
+}
+
+.process-task-hero {
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96));
+}
+
+.process-task-summary-title,
+.process-task-keyfact strong,
+.process-task-stat strong,
+.process-task-inline-field strong,
+.process-task-detail-row strong,
+.process-task-tray-row strong,
+.process-task-full-row strong,
+.process-task-flow-label {
+  color: var(--text);
+}
+
+.process-task-keyfact span,
+.process-task-stat span,
+.process-task-inline-field span,
+.process-task-detail-row span,
+.process-task-tray-row span,
+.process-task-full-row span,
+.process-task-full-summary span,
+.process-task-flow-time,
+.process-task-tray-meta,
+.process-task-flow-status {
+  color: var(--muted);
+}
+
+.process-task-tray-chip,
+.process-task-more-count,
+.process-task-more-button,
+.process-task-full-samples span {
+  border-color: rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.process-task-tray-chip:hover,
+.process-task-tray-chip.is-selected,
+.process-task-tray-row.is-selected,
+.process-task-full-row.is-selected,
+.process-task-flow-list li.current,
+.process-task-flow-list li.reached {
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
+}
+
+.process-control-feedback {
+  border-color: rgba(var(--industrial-accent-rgb), 0.45);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
+}
+
+.process-task-drawer-layout,
+.process-task-drawer-main,
+.process-task-drawer-side {
+  min-height: 0;
+}
+
+.process-task-flow-card {
+  max-height: min(760px, calc(100dvh - 220px));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-height: 900px) {
+  .process-task-modal-content {
+    padding: 18px;
+  }
+
+  .process-task-modal-header {
+    margin-bottom: 12px;
+  }
+
+  .process-task-hero,
+  .process-task-keyfact,
+  .process-task-summary-card,
+  .process-task-stat,
+  .process-task-inline-field,
+  .process-task-tray-row {
+    padding: 10px 12px;
+  }
+
+  .process-task-code-headline {
+    font-size: clamp(26px, 3.4vw, 34px);
+  }
+
+  .process-task-keyfacts,
+  .process-task-summary-grid,
+  .process-task-batch-grid,
+  .process-task-drawer-layout,
+  .process-task-drawer-main,
+  .process-task-drawer-side {
+    gap: 10px;
+  }
+
+  .process-task-flow-list {
+    gap: 7px;
+  }
+
+  .process-task-flow-list li {
+    padding: 9px 10px 9px 32px;
+    font-size: 13px;
+  }
+
+  .process-task-tray-chip {
+    min-height: 42px;
+    padding: 8px 12px;
+    font-size: 14px;
   }
 }
 </style>

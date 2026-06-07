@@ -4612,3 +4612,43 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Industrial blackbox skin: visualization management controls outside the big screens. */
+.visualization-page {
+  --visual-ink: var(--text);
+  --visual-muted: var(--muted);
+  --visual-panel: var(--bg-card-raised);
+  --visual-line: var(--border);
+}
+
+.visualization-toolbar,
+.visual-summary-item,
+.visual-preview-shell,
+.visual-combined-shell,
+.visual-lab-switch select {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.visualization-toolbar {
+  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.92));
+}
+
+.visualization-eyebrow,
+.visualization-live-chip {
+  color: var(--accent);
+}
+
+.visualization-live-chip {
+  border-color: rgba(var(--industrial-accent-rgb), 0.38);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+}
+
+.visual-lab-switch select {
+  border-radius: var(--radius-control);
+  box-shadow: none;
+}

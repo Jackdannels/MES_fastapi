@@ -869,3 +869,136 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Industrial blackbox skin: handover and pre-allocation cards, preserving table grids. */
+.transfer-area-screen {
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), 0.14), transparent 34%),
+    var(--bg-deep);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+.transfer-system-title,
+.transfer-overview-page-title,
+.transfer-table__main,
+.transfer-table__count,
+.transfer-task-header__summary strong,
+.transfer-table__empty strong,
+.transfer-tray-preview__samples {
+  color: var(--text);
+}
+
+.transfer-overview-shell,
+.transfer-detail-shell,
+.transfer-table,
+.transfer-task-header,
+.transfer-tray-panel,
+.transfer-task-header__summary,
+.sample-tray-card,
+.transfer-tray-preview,
+.transfer-modal__panel,
+.transfer-modal__item,
+.transfer-modal__barcode {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.transfer-overview-kpi,
+.transfer-overview-kpi--filter.is-active,
+.transfer-overview-select,
+.transfer-task-experiment-pill,
+.transfer-tray-limit-stepper input,
+.transfer-tray-card__count,
+.transfer-tray-select-toggle,
+.transfer-selected-sample-hint {
+  border-color: var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.transfer-overview-kpi--filter:hover,
+.transfer-overview-kpi--filter.is-active,
+.transfer-task-experiment-pill.active,
+.transfer-tray-select-toggle.is-selected {
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.15);
+  color: var(--accent);
+}
+
+.transfer-table__head {
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.transfer-table__row {
+  border-top-color: var(--border);
+  background: rgba(13, 18, 24, 0.86);
+}
+
+.transfer-table__row:nth-child(even) {
+  background: rgba(19, 26, 34, 0.78);
+}
+
+.transfer-table__row:hover {
+  background: rgba(var(--industrial-accent-rgb), 0.1);
+}
+
+.transfer-sample-code-chip,
+.sample-tray-sample-tag,
+.transfer-count-chip,
+.transfer-tray-experiment-tag,
+.transfer-tray-preview__code {
+  border-color: rgba(var(--industrial-accent-rgb), 0.42);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.sample-tray-sample-tag.is-selected {
+  border-color: rgba(var(--industrial-accent-rgb), 0.68);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
+}
+
+.sample-tray-remove {
+  border-color: rgba(255, 107, 90, 0.5);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
+}
+
+.transfer-task-summary-card__label,
+.transfer-task-header__summary small,
+.transfer-tray-card__subhead,
+.transfer-tray-card__count,
+.sample-tray-empty,
+.sample-tray-chip__status,
+.transfer-helper,
+.transfer-table__empty,
+.transfer-table__name small,
+.transfer-tray-preview__row,
+.transfer-tray-preview__meta,
+.transfer-tray-preview__separator {
+  color: var(--muted);
+}
+
+.transfer-area-screen :is(h1, h2, h3, h4, strong) {
+  color: var(--text);
+}
+
+.transfer-area-screen :is(small, .muted, p) {
+  color: var(--muted);
+}
+
+.transfer-table__sort::after {
+  color: var(--muted);
+}
+
+.transfer-table__sort[data-sort-dir="asc"]::after,
+.transfer-table__sort[data-sort-dir="desc"]::after {
+  color: var(--accent);
+}

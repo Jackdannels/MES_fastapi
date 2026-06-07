@@ -784,3 +784,138 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Industrial blackbox skin: schedule cards and gantt cells, preserving table mechanics. */
+.board-slot,
+.form-field .retention-now,
+.schedule-duration-toggle,
+.schedule-task-overlays,
+.schedule-exception-card,
+.schedule-task-overlay-card,
+.schedule-conflict-row,
+.gantt-wrap,
+.gantt-conflict-select {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.board-slot.fill,
+.form-field .retention-now,
+.schedule-task-overlays {
+  border-color: rgba(var(--industrial-accent-rgb), 0.46);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+}
+
+.schedule-duration-toggle__button {
+  background: var(--bg-panel-strong);
+  color: var(--muted);
+}
+
+.schedule-duration-toggle__button.is-active {
+  background: rgba(231, 183, 95, 0.18);
+  color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px rgba(231, 183, 95, 0.2);
+}
+
+.schedule-duration-toggle__button:not(.is-active):hover,
+.schedule-duration-toggle__button:not(.is-active):focus-visible {
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.schedule-task-overlays__title,
+.schedule-header-action-button--exception,
+.schedule-task-overlay-chip,
+.schedule-conflict-chip,
+.gantt-window-nav,
+.gantt-lab-nav {
+  border-color: rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
+}
+
+.schedule-header-action-button--exception.is-alert,
+.schedule-exception-card__reason,
+.schedule-conflict-panel.is-full .schedule-conflict-panel__summary strong,
+.schedule-conflict-panel.is-full .schedule-conflict-panel__label,
+.schedule-conflict-panel.is-full .schedule-conflict-chip {
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
+}
+
+.schedule-conflict-panel.is-partial .schedule-conflict-panel__summary strong,
+.schedule-conflict-panel.is-partial .schedule-conflict-panel__label,
+.schedule-conflict-panel.is-partial .schedule-conflict-chip,
+.retention-age.level-1,
+.retention-age.level-2 {
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
+}
+
+.schedule-exception-card__detail,
+.schedule-exception-card__meta,
+.schedule-task-overlay-card__meta,
+.schedule-conflict-row__meta,
+.schedule-task-overlay-chip.is-muted,
+.schedule-conflict-chip.is-related {
+  color: var(--muted);
+}
+
+.gantt th,
+.gantt td {
+  border-bottom-color: var(--border);
+  border-right-color: var(--border);
+}
+
+.gantt thead th,
+.gantt-sticky,
+.gantt tbody tr:nth-child(even) td {
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.gantt tbody tr:hover td {
+  background: rgba(var(--industrial-accent-rgb), 0.08);
+}
+
+.gantt-slot,
+.gantt-slot.idle,
+.gantt tbody tr:hover td .gantt-slot.idle {
+  border-color: var(--border);
+  background: rgba(19, 26, 34, 0.9);
+  color: var(--muted);
+}
+
+.gantt-slot.maintenance,
+.gantt tbody tr:hover td .gantt-slot.maintenance {
+  border-color: rgba(231, 183, 95, 0.46);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
+}
+
+.gantt-slot.disabled,
+.gantt tbody tr:hover td .gantt-slot.disabled,
+.gantt-slot.busy.completed,
+.gantt tbody tr:hover td .gantt-slot.busy.completed {
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
+}
+
+.gantt-slot.busy.running,
+.gantt tbody tr:hover td .gantt-slot.busy.running {
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
+}
+
+.gantt-slot.conflict {
+  border-color: rgba(255, 107, 90, 0.5);
+  background: rgba(255, 107, 90, 0.16);
+  color: var(--danger);
+}

@@ -227,3 +227,58 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Industrial blackbox skin: process control cards. */
+.process-control-summary-item,
+.process-lab-card {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.process-control-summary-item:hover,
+.process-control-summary-item.is-active {
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+}
+
+.process-control-summary-item:focus-visible {
+  outline-color: rgba(var(--industrial-accent-rgb), 0.55);
+}
+
+.process-lab-row {
+  border-bottom-color: var(--border);
+}
+
+.process-lab-status {
+  border-color: var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.process-lab-card.is-running .process-lab-status {
+  border-color: rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+.process-lab-card.is-scheduled .process-lab-status {
+  border-color: rgba(34, 211, 238, 0.42);
+  background: rgba(34, 211, 238, 0.14);
+  color: #67e8f9;
+}
+
+.process-lab-card.is-idle .process-lab-status {
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
+}
+
+.process-lab-card.is-maintenance .process-lab-status {
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
+}

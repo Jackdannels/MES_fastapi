@@ -152,3 +152,17 @@
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   line-height: 1.5;
 }
+
+/* Industrial blackbox skin: task sample preview panels. */
+.tasks-sample-preview__list {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.tasks-sample-codes-editor__textarea {
+  border-color: var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}

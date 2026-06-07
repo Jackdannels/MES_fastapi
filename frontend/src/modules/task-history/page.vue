@@ -746,4 +746,67 @@ onMounted(async () => {
     display: none;
   }
 }
+
+/* Industrial blackbox skin: returned task history cards and flow nodes. */
+.history-task-row,
+.history-flow-strip-item,
+.history-flow-item,
+.history-tray-tab,
+.history-tray-unified-flow,
+.history-tray-flow-step,
+.history-tray-sample-code {
+  border-color: var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.history-task-row.active,
+.history-tray-tab.active,
+.history-flow-strip-item.reached,
+.history-flow-strip-item.current,
+.history-tray-flow-step.reached,
+.history-tray-flow-step.current {
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+.history-flow-strip-item::after,
+.history-tray-flow-step::after {
+  background: var(--border-strong);
+}
+
+.history-flow-strip-item.reached::after,
+.history-flow-strip-item.current::after,
+.history-tray-flow-step.reached::after,
+.history-tray-flow-step.current::after {
+  background: rgba(var(--industrial-accent-rgb), 0.58);
+}
+
+.history-flow-strip-item .history-flow-dot,
+.history-tray-flow-step .history-flow-dot {
+  background: var(--muted);
+}
+
+.history-flow-strip-item.reached .history-flow-dot,
+.history-flow-strip-item.current .history-flow-dot,
+.history-tray-flow-step.reached .history-flow-dot,
+.history-tray-flow-step.current .history-flow-dot {
+  background: var(--accent);
+}
+
+.history-flow-strip-item.current .history-flow-label,
+.history-tray-flow-step.current .history-flow-label,
+.history-tray-flow-current,
+.history-task-row__code,
+.history-task-row__name {
+  color: var(--text);
+}
+
+.history-task-row__meta,
+.history-flow-time,
+.history-tray-flow-step .history-flow-time,
+.history-tray-samples-summary {
+  color: var(--muted);
+}
 </style>

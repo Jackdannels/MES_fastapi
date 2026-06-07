@@ -1,16 +1,26 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;600&display=swap");
 
 :root {
-  --bg-deep: #f7f8fb;
-  --bg-panel: #ffffff;
-  --bg-card: rgba(255, 255, 255, 0.92);
-  --border: rgba(15, 23, 42, 0.12);
-  --text: #0f172a;
-  --muted: #64748b;
-  --accent: #38bdf8;
-  --accent-2: #f59e0b;
-  --accent-3: #f43f5e;
-  --shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+  --bg-deep: #06090d;
+  --bg-panel: #0d1218;
+  --bg-panel-strong: #131a22;
+  --bg-card: rgba(13, 18, 24, 0.94);
+  --bg-card-raised: rgba(19, 26, 34, 0.96);
+  --border: rgba(113, 232, 209, 0.18);
+  --border-strong: rgba(113, 232, 209, 0.42);
+  --text: #edfdf9;
+  --muted: #8ba9a4;
+  --accent: #63e6be;
+  --industrial-accent-rgb: 99, 230, 190;
+  --accent-2: #e7b75f;
+  --accent-3: #ff6b5a;
+  --danger: #ff6b5a;
+  --success: #63e6be;
+  --grid-line: rgba(99, 230, 190, 0.08);
+  --radius-panel: 8px;
+  --radius-control: 4px;
+  --shadow: 0 20px 52px rgba(0, 0, 0, 0.46);
+  --font-code: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
 }
 
 * {
@@ -19,11 +29,14 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   font-family: "IBM Plex Sans", "Segoe UI", "Tahoma", sans-serif;
   color: var(--text);
-  background: radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 45%),
-    radial-gradient(circle at 30% 20%, rgba(245, 158, 11, 0.12), transparent 40%),
-    radial-gradient(circle at 80% 30%, rgba(244, 63, 94, 0.1), transparent 35%),
-    linear-gradient(135deg, #f8fafc, #eef2f7 60%, #e2e8f0);
+  font-variant-numeric: tabular-nums;
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), 0.16), transparent 34%),
+    linear-gradient(135deg, #06090d, var(--bg-deep));
+  background-size: 28px 28px, 28px 28px, auto, auto;
 }

@@ -721,3 +721,117 @@
   }
 
 }
+
+/* Industrial blackbox skin: task overview cards and chips. */
+.task-overview-module-card,
+.task-overview-schedule-card,
+.task-overview-counter,
+.task-overview-actions,
+.task-overview-card,
+.task-overview-readonly-meta,
+.task-overview-summary-card,
+.task-overview-editor,
+.task-overview-editor-panel,
+.task-overview-returned-card,
+.task-overview-tray-flow-card {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.task-overview-module-card.active,
+.task-overview-schedule-card.is-blue-tint,
+.task-overview-card.is-selected {
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
+}
+
+.task-overview-schedule-card.is-scheduled {
+  border-color: rgba(var(--industrial-accent-rgb), 0.62);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.26), rgba(19, 26, 34, 0.96));
+  color: var(--text);
+}
+
+.task-overview-schedule-card.is-unscheduled,
+.task-overview-summary-line-chip.is-warning,
+.task-overview-schedule-chip.is-unscheduled {
+  border-color: rgba(231, 183, 95, 0.5);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
+}
+
+.task-overview-schedule-card.is-alert,
+.task-overview-counter.is-alert,
+.task-overview-summary-line-chip.is-alert {
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
+}
+
+.task-overview-counter-value,
+.task-overview-summary-table td strong,
+.task-overview-card-title,
+.task-overview-index {
+  color: var(--text);
+}
+
+.task-overview-module-card small,
+.task-overview-schedule-card span,
+.task-overview-schedule-card small,
+.task-overview-label,
+.task-overview-card small,
+.task-overview-summary-card small {
+  color: var(--muted);
+}
+
+.task-overview-status-chip,
+.task-overview-schedule-chip,
+.task-overview-summary-line-chip,
+.task-overview-chip {
+  border-color: rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.task-overview-schedule-chip.is-scheduled,
+.task-overview-summary-line-chip.is-success {
+  border-color: rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+.task-overview-summary-table thead th,
+.task-overview-summary-table tbody tr,
+.task-overview-table tbody tr {
+  border-color: var(--border);
+  background: rgba(13, 18, 24, 0.84);
+  color: var(--text);
+}
+
+.task-overview-header :is(h3, h4, strong),
+.task-overview-card :is(h3, h4, strong),
+.task-overview-readonly-meta strong,
+.task-overview-summary-card :is(h3, h4, strong),
+.task-overview-editor :is(h3, h4, strong) {
+  color: var(--text);
+}
+
+.task-overview-header :is(small, p, .muted),
+.task-overview-card :is(small, p, .muted),
+.task-overview-readonly-meta span,
+.task-overview-summary-card :is(small, p, .muted),
+.task-overview-editor :is(small, p, .muted) {
+  color: var(--muted);
+}
+
+.task-overview-card-hint,
+.task-overview-success {
+  color: var(--accent);
+}
+
+.task-overview-delete-text {
+  color: var(--danger);
+}

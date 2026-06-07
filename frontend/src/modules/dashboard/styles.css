@@ -43,6 +43,12 @@
   color: #dc2626;
 }
 
+/* Industrial blackbox skin: dashboard alert text. */
+.dashboard-unscheduled-title.is-overdue,
+.dashboard-unscheduled-timer.is-overdue {
+  color: var(--danger);
+}
+
 @media (max-width: 1100px) {
   .grid.cols-3.dashboard-main-grid {
     grid-template-columns: 1fr;

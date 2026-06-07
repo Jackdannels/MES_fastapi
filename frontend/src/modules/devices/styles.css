@@ -125,3 +125,25 @@
   margin: 0;
   padding-left: 20px;
 }
+
+/* Industrial blackbox skin: device status readability. */
+.device-status-display.status,
+.device-status-display.status.running {
+  color: var(--accent);
+}
+
+.device-status-display.status.alert,
+.devices-maintenance-conflict {
+  color: var(--danger);
+}
+
+.device-status-display.status.warn,
+.devices-action-link--maintenance,
+.devices-action-link--maintenance:hover {
+  color: var(--accent-2);
+}
+
+.devices-maintenance-conflict {
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+}

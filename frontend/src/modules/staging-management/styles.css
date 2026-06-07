@@ -542,3 +542,144 @@ body:has(.staging-management-page) .page-header h1 {
     width: 100%;
   }
 }
+
+/* Industrial blackbox skin: color-only overrides, preserving staging layout mechanics. */
+.zancun-metric-card.is-active {
+  border-color: rgba(var(--industrial-accent-rgb), 0.45);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34);
+}
+
+.zancun-metric-card,
+.zancun-metric-card .kpi,
+.zancun-metric-card strong {
+  color: var(--text);
+}
+
+.zancun-metric-card .muted,
+.zancun-metric-card small,
+.zancun-metric-card span {
+  color: var(--muted);
+}
+
+.zancun-current-view,
+.zancun-inventory-column,
+.zancun-console-slot,
+.zancun-action-item,
+.zancun-search-match-panel,
+.zancun-destination-card {
+  border-color: var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  box-shadow: var(--shadow);
+}
+
+.zancun-current-view {
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.94));
+}
+
+.zancun-current-view__label,
+.zancun-search-match-code,
+.zancun-search-match-tag {
+  border-radius: var(--radius-control);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.36);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
+}
+
+.zancun-current-view__value,
+.zancun-inventory-column__head h4,
+.zancun-console-slot__main strong,
+.zancun-search-match-panel h4,
+.zancun-destination-card h4 {
+  color: var(--text);
+}
+
+.zancun-console-slot--placeholder,
+.zancun-console-slot.is-placeholder,
+.zancun-console-placeholder {
+  border-color: var(--border);
+  background: rgba(19, 26, 34, 0.46);
+  color: var(--muted);
+}
+
+.zancun-action-item::before {
+  opacity: 0.22;
+}
+
+.zancun-action-item--stock-in {
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96));
+}
+
+.zancun-action-item--stock-out,
+.zancun-return-danger-panel {
+  background: linear-gradient(135deg, rgba(255, 107, 90, 0.14), rgba(19, 26, 34, 0.96));
+}
+
+.zancun-action-button--stock-in {
+  background: linear-gradient(180deg, rgba(var(--industrial-accent-rgb), 0.24), rgba(var(--industrial-accent-rgb), 0.1));
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  color: var(--text);
+}
+
+.zancun-action-button--stock-out,
+.zancun-return-danger-panel strong,
+.zancun-return-danger-panel p {
+  color: var(--danger);
+}
+
+.zancun-action-button--stock-out {
+  background: rgba(255, 107, 90, 0.16);
+  border-color: rgba(255, 107, 90, 0.52);
+}
+
+.zancun-search-match-row,
+.zancun-destination-summary {
+  border-color: var(--border);
+  background: var(--bg-panel-strong);
+}
+
+.zancun-search-match-row.is-success {
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+.zancun-search-match-row.is-error {
+  background: rgba(255, 107, 90, 0.16);
+  color: var(--danger);
+}
+
+.zancun-detail-grid input[readonly],
+.zancun-destination-card.is-disabled,
+.zancun-destination-card--return,
+.zancun-destination-card--return.is-safe,
+.zancun-destination-summary {
+  border-color: var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+}
+
+.zancun-destination-card.is-disabled {
+  color: var(--muted);
+}
+
+.zancun-destination-card--return.is-danger {
+  border-color: rgba(255, 107, 90, 0.5);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
+}
+
+.zancun-destination-warning {
+  color: var(--muted);
+}
+
+.zancun-destination-card--return.is-safe h4,
+.zancun-destination-card--return.is-safe .muted,
+.zancun-manufacturer-return.is-safe {
+  color: var(--accent);
+}
+
+.zancun-destination-card--return.is-danger h4,
+.zancun-destination-card--return.is-danger .muted,
+.zancun-manufacturer-return.is-danger {
+  color: var(--danger);
+}
