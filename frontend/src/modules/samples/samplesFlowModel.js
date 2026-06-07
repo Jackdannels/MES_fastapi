@@ -1479,6 +1479,9 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
   if (isPostRetentionLocation(location) && (isAmbiguousStagingStatus(text) || text.includes("已到达暂存间"))) {
     return "放置实验后暂存间";
   }
+  if (isAppearanceInspectionStatus(text)) {
+    return text === "已到达外观检测间" ? APPEARANCE_STOCKED_STATUS : text;
+  }
   if (FLOW_STEP_KEY_BY_LABEL.has(text)) {
     return text;
   }
@@ -1678,6 +1681,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
         }
         if (experimentStatus === "实验已完成" || experimentStatus === "实验完成") {
           recordLatestFlowTime(`${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time);
+          if (experimentRequiresAppearanceInspection({ name: experimentEvent.experimentName })) {
+            recordLatestFlowTime(APPEARANCE_SENT_STATUS, time);
+          }
         }
       }
     });

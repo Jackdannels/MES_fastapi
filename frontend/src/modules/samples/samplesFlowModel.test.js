@@ -2025,10 +2025,12 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(expect.objectContaining({
       active: false,
       reached: true,
+      time: "2026-06-07 15:21:43",
     }));
     expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({
       active: false,
       reached: true,
+      time: "2026-06-07 15:22:27",
     }));
     expect(view.steps.find((step) => step.label === "冲击试验已完成")).toEqual(expect.objectContaining({
       active: true,
