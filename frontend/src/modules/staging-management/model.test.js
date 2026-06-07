@@ -566,6 +566,203 @@ describe("staging-management model", () => {
     expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
   });
 
+  test("appearance inspection room shows second inbound after another salt or mold completion", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-repeat-appearance",
+      code: "SYLU-2026-06-022",
+      test_type: "霉菌试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-repeat-mold",
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-A",
+        experiment_name: "霉菌试验",
+        required_device: "霉菌试验室",
+      },
+      {
+        id: "exp-repeat-salt",
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-B",
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      {
+        id: "rel-repeat-mold",
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-A",
+        tray_code: "SYLU-2026-06-022-TP-003",
+      },
+      {
+        id: "rel-repeat-salt",
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-B",
+        tray_code: "SYLU-2026-06-022-TP-003",
+      },
+    );
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-repeat-appearance",
+      code: "SYLU-2026-06-022-SP-002",
+      task_code: "SYLU-2026-06-022",
+      owner: "周工",
+      location: "外观检测间",
+      status: "送至外观检测间",
+      flow_status: "送至外观检测间",
+      trays: [
+        {
+          tray_code: "SYLU-2026-06-022-TP-003",
+          status: "送至外观检测间",
+          quantity: 1,
+          target_experiment_code: "SYLU-2026-06-022-B",
+          target_lab: "盐雾试验室",
+        },
+      ],
+      history: [
+        { detail: "SYLU-2026-06-022 / 盐雾试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T16:06:28" },
+        { detail: "SYLU-2026-06-022-TP-003 送至 盐雾试验室", status: "送至实验室", time: "2026-06-07T16:05:58" },
+        { detail: "SYLU-2026-06-022-TP-003 外观检测间存放", status: "外观检测间存放", time: "2026-06-07T16:05:51" },
+        { detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T15:48:09" },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-repeat-appearance-in",
+        tray_code: "SYLU-2026-06-022-TP-003",
+        task_code: "SYLU-2026-06-022",
+        room: "appearance",
+        action: "stock_in",
+        time: "2026-06-07T16:05:51",
+      },
+      {
+        id: "evt-repeat-appearance-out",
+        tray_code: "SYLU-2026-06-022-TP-003",
+        task_code: "SYLU-2026-06-022",
+        room: "appearance",
+        action: "stock_out",
+        time: "2026-06-07T16:05:58",
+        target_lab: "盐雾试验室",
+        target_experiment_code: "SYLU-2026-06-022-B",
+      },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const sections = buildZancunInventorySections(rows, { room: "appearance" });
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-06-022-TP-003");
+
+    expect(row?.status).toBe("待入库");
+    expect(sections.plannedInboundRows.map((item) => item.trayCode)).toContain("SYLU-2026-06-022-TP-003");
+  });
+
+  test("appearance inspection room ignores earlier salt or mold completion after a later non-appearance experiment", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-appearance-latest",
+      code: "SYLU-2026-06-031",
+      test_type: "盐雾试验 / 冲击试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-appearance-latest-salt",
+        task_code: "SYLU-2026-06-031",
+        experiment_code: "SYLU-2026-06-031-A",
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+      },
+      {
+        id: "exp-appearance-latest-impact",
+        task_code: "SYLU-2026-06-031",
+        experiment_code: "SYLU-2026-06-031-B",
+        experiment_name: "冲击试验",
+        required_device: "冲击一室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      {
+        id: "rel-appearance-latest-salt",
+        task_code: "SYLU-2026-06-031",
+        experiment_code: "SYLU-2026-06-031-A",
+        tray_code: "SYLU-2026-06-031-TP-001",
+      },
+      {
+        id: "rel-appearance-latest-impact",
+        task_code: "SYLU-2026-06-031",
+        experiment_code: "SYLU-2026-06-031-B",
+        tray_code: "SYLU-2026-06-031-TP-001",
+      },
+    );
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-latest",
+      code: "SYLU-2026-06-031-SP-001",
+      task_code: "SYLU-2026-06-031",
+      owner: "周工",
+      location: "外观检测间",
+      status: "送至外观检测间",
+      flow_status: "送至外观检测间",
+      trays: [{ tray_code: "SYLU-2026-06-031-TP-001", status: "送至外观检测间", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-06-031 / 盐雾试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T10:00:00" },
+        { detail: "SYLU-2026-06-031 / 冲击试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T11:00:00" },
+      ],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-031-TP-001");
+  });
+
+  test("fully completed trays waiting for post-experiment staging are marked as planned staging", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-06-032";
+    const trayCode = `${taskCode}-TP-001`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-post-plan",
+      code: taskCode,
+      test_type: "振动试验 / 冲击试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      { id: "exp-post-plan-a", task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "振动试验", required_device: "振动一室" },
+      { id: "exp-post-plan-b", task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "冲击试验", required_device: "冲击一室" },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-post-plan-a", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+      { id: "rel-post-plan-b", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      ...(snapshot[STORAGE_KEYS.experiment_run_trays] || []),
+      { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode, run_tray_status: "实验已完成" },
+      { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode, run_tray_status: "实验已完成" },
+    ];
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-post-plan",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "周工",
+      location: "冲击一室",
+      status: "实验已完成",
+      flow_status: "实验已完成",
+      trays: [{ tray_code: trayCode, status: "实验已完成", quantity: 1 }],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "staging" });
+    const row = rows.find((item) => item.trayCode === trayCode);
+
+    expect(row).toEqual(expect.objectContaining({
+      inboundKind: "post-experiment",
+      inboundKindLabel: "计划暂存",
+      isPostExperimentInbound: true,
+      status: "待入库",
+    }));
+  });
+
   test("appearance inspection room can stock out to staging after inspection storage", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.samples].push({
@@ -960,6 +1157,42 @@ describe("staging-management model", () => {
       status: "厂家收回",
       flow_status: "厂家收回",
     });
+  });
+
+  test("appearance inspection room rejects manufacturer return", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-return",
+      code: "SYLU-2026-04-130-SP-001",
+      task_code: "SYLU-2026-04-130",
+      owner: "周工",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      flow_status: "外观检测间存放",
+      trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "外观检测间存放", quantity: 1 }],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-appearance-return-in",
+      tray_code: "SYLU-2026-04-130-TP-001",
+      task_code: "SYLU-2026-04-130",
+      room: "appearance",
+      action: "stock_in",
+      time: "2026-04-01T11:00:00",
+    });
+
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-130-TP-001",
+        mode: "manufacturerReturn",
+        room: "appearance",
+      },
+      room: "appearance",
+      snapshot,
+    });
+
+    expect(result.error).toBe("外观检测间不允许厂家收回，请先出库至下一去向。");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].some((event) => event.action === "manufacturer_return")).toBe(false);
   });
 
   test("manufacturer return marks the task archived when every assigned tray is returned", () => {

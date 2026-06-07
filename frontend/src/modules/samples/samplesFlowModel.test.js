@@ -2038,6 +2038,74 @@ describe("samplesFlowModel", () => {
     }));
   });
 
+  test("buildTrayFlowView does not append appearance inspection after the next non-appearance experiment", () => {
+    const view = buildTrayFlowView({
+      trayCode: "SYLU-2026-06-022-TP-001",
+      taskCode: "SYLU-2026-06-022",
+      location: "外观检测间",
+      status: "送至外观检测间",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-A",
+          experiment_name: "霉菌试验",
+        },
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-B",
+          experiment_name: "盐雾试验",
+        },
+        {
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-C",
+          experiment_name: "温度冲击试验",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", tray_code: "SYLU-2026-06-022-TP-001" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-B", tray_code: "SYLU-2026-06-022-TP-001" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-C", tray_code: "SYLU-2026-06-022-TP-001" },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-022-SP-001",
+          task_code: "SYLU-2026-06-022",
+          location: "外观检测间",
+          status: "送至外观检测间",
+          trays: [
+            {
+              tray_code: "SYLU-2026-06-022-TP-001",
+              status: "送至外观检测间",
+              target_lab: "盐雾试验室",
+              target_experiment_code: "SYLU-2026-06-022-B",
+              quantity: 1,
+            },
+          ],
+          history: [
+            { action: "实验完成", detail: "SYLU-2026-06-022 / 盐雾试验 / 实验已完成", location: "盐雾试验室", status: "实验已完成", time: "2026-06-07 15:38:17" },
+            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-07 15:35:57" },
+            { action: "实验完成", detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-07 15:33:27" },
+          ],
+        },
+      ],
+    });
+
+    const labels = view.steps.map((step) => step.label);
+    const appearanceSentIndexes = labels
+      .map((label, index) => (label === "送至外观检测间" ? index : -1))
+      .filter((index) => index >= 0);
+    const appearanceStockedIndexes = labels
+      .map((label, index) => (label === "外观检测间存放" ? index : -1))
+      .filter((index) => index >= 0);
+    const temperatureIndex = labels.indexOf("温度冲击试验未完成");
+
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-06-022-TP-001 | 当前状态：送至外观检测间");
+    expect(appearanceSentIndexes).toHaveLength(2);
+    expect(appearanceStockedIndexes).toHaveLength(2);
+    expect(appearanceSentIndexes.every((index) => index < temperatureIndex)).toBe(true);
+    expect(appearanceStockedIndexes.every((index) => index < temperatureIndex)).toBe(true);
+  });
+
   test("buildTrayFlowView does not reuse a completed experiment target lab for the next unfinished route", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-06-002-TP-001",

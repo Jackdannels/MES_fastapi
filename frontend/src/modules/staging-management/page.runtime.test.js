@@ -154,7 +154,8 @@ const withExtraTrayFixtures = (snapshot, fixtures) => {
   };
 };
 
-const mountPage = async () => {
+const mountPage = async (options = {}) => {
+  window.history.pushState({}, "", options.room === "appearance" ? "/appearance-inspection" : "/staging-management");
   headerActions = document.createElement("div");
   headerActions.className = "header-actions";
   headerActions.innerHTML = `
@@ -165,6 +166,15 @@ const mountPage = async () => {
 
   wrapper = mount(StagingManagementPage, {
     attachTo: document.body,
+    global: {
+      mocks: {
+        $route: {
+          meta: {
+            storageRoom: options.room || "staging",
+          },
+        },
+      },
+    },
   });
   await settlePage(wrapper);
   return wrapper;
@@ -654,6 +664,129 @@ describe("StagingManagementPage runtime", () => {
       target_lab: "厂家收回",
       tray_code: "SYLU-2026-03-001-TP-002",
     });
+  });
+
+  test("stock-out scan treats all completed multi-experiment post-staging trays as safe manufacturer return", async () => {
+    const taskCode = "SYLU-2026-06-022";
+    const trayCode = `${taskCode}-TP-002`;
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        ...createSnapshot()[STORAGE_KEYS.tasks],
+        {
+          id: "task-022",
+          code: taskCode,
+          test_type: "霉菌试验 / 盐雾试验 / 温度冲击试验",
+          sample_type: "组件",
+          source: "内部新增",
+        },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        { id: "exp-022-a", task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "霉菌试验", required_device: "霉菌试验室" },
+        { id: "exp-022-b", task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { id: "exp-022-c", task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "温度冲击试验", required_device: "温度冲击一室" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        { id: "rel-022-a", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { id: "rel-022-b", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { id: "rel-022-c", task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode, run_tray_status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode, run_tray_status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode, run_tray_status: "实验已完成" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: "sample-022-007",
+          code: `${taskCode}-SP-007`,
+          task_code: taskCode,
+          owner: "周工",
+          location: "恒温恒湿间（暂存间）",
+          status: "放置实验后暂存间",
+          flow_status: "放置实验后暂存间",
+          trays: [{ tray_code: trayCode, status: "放置实验后暂存间", quantity: 1 }],
+        },
+        {
+          id: "sample-022-008",
+          code: `${taskCode}-SP-008`,
+          task_code: taskCode,
+          owner: "周工",
+          location: "恒温恒湿间（暂存间）",
+          status: "放置实验后暂存间",
+          flow_status: "放置实验后暂存间",
+          trays: [{ tray_code: trayCode, status: "放置实验后暂存间", quantity: 1 }],
+        },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        ...createSnapshot()[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-022-in",
+          tray_code: trayCode,
+          task_code: taskCode,
+          action: "stock_in",
+          time: "2026-04-01T11:00:00",
+          operator: "暂存员A",
+        },
+      ],
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    expect(mounted.get('[data-testid="zancun-manufacturer-return-card"]').classes()).toContain("is-safe");
+    await mounted.get('[data-testid="zancun-manufacturer-return"]').trigger("click");
+
+    expect(mounted.find('[data-testid="zancun-return-danger-modal"].is-open').exists()).toBe(false);
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "manufacturer_return",
+      tray_code: trayCode,
+    });
+  });
+
+  test("appearance inspection room does not show manufacturer return action", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: "sample-appearance-current",
+          code: "SYLU-2026-04-130-SP-001",
+          task_code: "SYLU-2026-04-130",
+          owner: "周工",
+          location: "外观检测间",
+          status: "外观检测间存放",
+          flow_status: "外观检测间存放",
+          trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "外观检测间存放", quantity: 1 }],
+          history: [{ detail: "SYLU-2026-04-130 / 盐雾试验 / 实验已完成", time: "2026-04-01T10:00:00" }],
+        },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        ...createSnapshot()[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-appearance-current-in",
+          tray_code: "SYLU-2026-04-130-TP-001",
+          task_code: "SYLU-2026-04-130",
+          room: "appearance",
+          action: "stock_in",
+          time: "2026-04-01T11:00:00",
+          operator: "外观员A",
+        },
+      ],
+    };
+    const mounted = await mountPage({ room: "appearance" });
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-130-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    expect(mounted.get('[data-testid="zancun-destination-modal"]').classes()).toContain("is-open");
+    expect(mounted.find('[data-testid="zancun-manufacturer-return-card"]').exists()).toBe(false);
   });
 
   test("allows stock-in for fully completed trays and shows post-experiment staging", async () => {

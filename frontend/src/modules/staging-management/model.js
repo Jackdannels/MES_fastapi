@@ -50,6 +50,7 @@ const COMPLETED_RUN_TRAY_STATUSES = new Set([
 ]);
 const STAGING_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘已进入试验间流程，不能暂存间入库。";
 const APPEARANCE_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘未送至外观检测间，不能外观检测间入库。";
+const APPEARANCE_MANUFACTURER_RETURN_ERROR = "外观检测间不允许厂家收回，请先出库至下一去向。";
 
 const STORAGE_ROOM_CONFIGS = {
   staging: {
@@ -164,6 +165,11 @@ const parseTimeValue = (value) => {
   return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
 };
 
+const parseCompletedEventTimeValue = (value) => {
+  const timestamp = Date.parse(normalizeText(value));
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
 const isStagingDestination = (value) => {
   const text = normalizeText(value);
   return text.includes("暂存间") || text.includes("外观检测间");
@@ -240,7 +246,11 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
   const latestEvent = asArray(events).at(-1);
   const hasStoredStatus = statuses.some((status) => isCurrentStagingStatus(status, config));
   const hasStockInCandidateStatus = statuses.some((status) => config.stockInCandidateStatuses.has(normalizeText(status)));
+  const hasPreAppearanceInboundStatus = statuses.some((status) => PRE_APPEARANCE_STATUSES.has(normalizeText(status)));
   const hasCompletedExperimentStatus = statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
+  if (config.key === "appearance" && normalizeText(latestEvent?.action) === "stock_out" && hasPreAppearanceInboundStatus) {
+    return "待入库";
+  }
   if (normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
     return "待入库";
   }
@@ -317,8 +327,9 @@ const resolveTrayExperimentTypeText = ({ taskCode, trayCode, experiments, experi
   return names.join(" / ");
 };
 
-const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
-  const names = new Set();
+const collectCompletedExperimentEvents = ({ samples, taskCode, trayCode }) => {
+  const events = [];
+  let sequence = 0;
   asArray(samples).forEach((sample) => {
     if (normalizeText(sample?.task_code) !== taskCode) {
       return;
@@ -330,9 +341,24 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
     asArray(sample?.history).forEach((entry) => {
       const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
       if (parsed && COMPLETED_EXPERIMENT_STATUSES.has(parsed.status)) {
-        names.add(parsed.experimentName);
+        events.push({
+          experimentName: parsed.experimentName,
+          sequence,
+          time: parseCompletedEventTimeValue(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp),
+        });
       }
+      sequence += 1;
     });
+  });
+  return events;
+};
+
+const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
+  const names = new Set();
+  collectCompletedExperimentEvents({ samples, taskCode, trayCode }).forEach((event) => {
+    if (event.experimentName) {
+      names.add(event.experimentName);
+    }
   });
   return names;
 };
@@ -340,14 +366,10 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
 const appearanceExperimentIsAllowed = (experimentName) =>
   APPEARANCE_REQUIRED_KEYWORDS.some((keyword) => normalizeText(experimentName).includes(keyword));
 
-const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
-  const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
-  if (completedExperimentNames.size > 0) {
-    return Array.from(completedExperimentNames).some(appearanceExperimentIsAllowed);
-  }
-
+const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
+  const completedEvents = collectCompletedExperimentEvents({ samples, taskCode, trayCode });
   const experimentMap = buildExperimentMap(experiments);
-  const completedRunExperimentNames = new Set();
+  let sequence = completedEvents.length;
   asArray(experimentRunTrays).forEach((entry) => {
     if (
       normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
@@ -359,16 +381,42 @@ const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experimen
     const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
     const experiment = experimentMap.get(experimentCode);
     const experimentName = resolveExperimentName(experiment, experimentCode);
-    if (experimentName) {
-      completedRunExperimentNames.add(experimentName);
+    if (!experimentName) {
+      return;
     }
+    completedEvents.push({
+      experimentName,
+      sequence,
+      time: parseCompletedEventTimeValue(entry?.completed_at || entry?.completedAt || entry?.ended_at || entry?.endedAt || entry?.updated_at || entry?.updatedAt || entry?.time || entry?.timestamp),
+    });
+    sequence += 1;
   });
 
-  if (completedRunExperimentNames.size > 0) {
-    return Array.from(completedRunExperimentNames).some(appearanceExperimentIsAllowed);
-  }
+  return completedEvents
+    .filter((event) => normalizeText(event.experimentName))
+    .sort((left, right) => (
+      (Number(left.time) || 0) - (Number(right.time) || 0)
+      || Number(left.sequence) - Number(right.sequence)
+    ))
+    .at(-1) || null;
+};
 
-  return false;
+const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
+  const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunTrays, samples, taskCode, trayCode });
+  return appearanceExperimentIsAllowed(latestCompleted?.experimentName);
+};
+
+const resolveInboundKind = ({ config, isPostExperimentInbound, status }) => {
+  if (normalizeText(status) !== "待入库") {
+    return { inboundKind: "", inboundKindLabel: "" };
+  }
+  if (config.key === "staging" && isPostExperimentInbound) {
+    return { inboundKind: "post-experiment", inboundKindLabel: "计划暂存" };
+  }
+  if (config.key === "appearance") {
+    return { inboundKind: "appearance", inboundKindLabel: "计划入库" };
+  }
+  return { inboundKind: "planned", inboundKindLabel: "允许暂存" };
 };
 
 const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunTrays }) => {
@@ -820,9 +868,11 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         || targetDestinations.find((destination) => destination.scheduled)
         || targetDestinations[0]
         || null;
+      const inboundKind = resolveInboundKind({ config, isPostExperimentInbound, status });
 
       return {
         id: row.id,
+        ...inboundKind,
         location: status === "已出库" ? "已完成出库" : normalizeText(row.location) || config.currentLocation,
         owner: normalizeText(row.owner) || "待确认",
         quantity: Number(row.quantity) || 0,
@@ -1047,6 +1097,14 @@ function applyZancunInventoryAction(input = {}) {
   if (!normalizedCode) {
     return {
       error: "未提供托盘编号。",
+      row: null,
+      snapshot: nextSnapshot,
+    };
+  }
+
+  if (actionMode === "manufacturerReturn" && config.key === "appearance") {
+    return {
+      error: APPEARANCE_MANUFACTURER_RETURN_ERROR,
       row: null,
       snapshot: nextSnapshot,
     };

@@ -104,6 +104,7 @@
                     <span>{{ slot.row.sampleType }}</span>
                     <span>数量 {{ slot.row.quantity }}</span>
                     <span>{{ slot.row.location }}</span>
+                    <span>{{ slot.row.inboundKindLabel }}</span>
                     <span :class="slot.row.statusClass">{{ slot.row.status }}</span>
                   </div>
                 </template>
@@ -218,6 +219,7 @@
         </article>
 
         <article
+          v-if="activeRoom === 'staging'"
           class="zancun-destination-card zancun-destination-card--return"
           :class="manufacturerReturnSafe ? 'is-safe' : 'is-danger'"
           data-testid="zancun-manufacturer-return-card"
@@ -371,13 +373,24 @@ const ROOM_PAGE_COPY = {
 };
 
 const instance = getCurrentInstance();
-const activeRoom = computed(() => String(instance?.proxy?.$route?.meta?.storageRoom || "staging").trim() || "staging");
+const resolveActiveRoom = () => {
+  const route = instance?.proxy?.$route || {};
+  const routeRoom = String(route?.meta?.storageRoom || "").trim();
+  if (routeRoom) {
+    return routeRoom;
+  }
+
+  const routePath = String(route?.path || window.location?.pathname || "").trim();
+  return routePath.includes("appearance-inspection") ? "appearance" : "staging";
+};
+const activeRoom = computed(resolveActiveRoom);
 const roomCopy = computed(() => ROOM_PAGE_COPY[activeRoom.value] || ROOM_PAGE_COPY.staging);
 const snapshot = ref({
   [STORAGE_KEYS.tasks]: [],
   [STORAGE_KEYS.schedules]: [],
   [STORAGE_KEYS.experiments]: [],
   [STORAGE_KEYS.experiment_trays]: [],
+  [STORAGE_KEYS.experiment_run_trays]: [],
   [STORAGE_KEYS.samples]: [],
   [STORAGE_KEYS.staging_events]: [],
 });
@@ -603,6 +616,7 @@ const loadSnapshot = async () => {
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.staging_events,
   ]);
@@ -611,6 +625,7 @@ const loadSnapshot = async () => {
     [STORAGE_KEYS.schedules]: nextSnapshot[STORAGE_KEYS.schedules] || [],
     [STORAGE_KEYS.experiments]: nextSnapshot[STORAGE_KEYS.experiments] || [],
     [STORAGE_KEYS.experiment_trays]: nextSnapshot[STORAGE_KEYS.experiment_trays] || [],
+    [STORAGE_KEYS.experiment_run_trays]: nextSnapshot[STORAGE_KEYS.experiment_run_trays] || [],
     [STORAGE_KEYS.samples]: nextSnapshot[STORAGE_KEYS.samples] || [],
     [STORAGE_KEYS.staging_events]: nextSnapshot[STORAGE_KEYS.staging_events] || [],
   };
@@ -639,9 +654,11 @@ const openDestinationModal = (detail) => {
 };
 
 const manufacturerReturnSafe = computed(() =>
-  activeDetail.status === "放置实验后暂存间"
-  || activeDetail.status === "外观检测间存放"
-  || activeDetail.isPostExperimentInbound,
+  activeRoom.value === "staging"
+  && (
+    activeDetail.status === "放置实验后暂存间"
+    || activeDetail.isPostExperimentInbound
+  ),
 );
 
 const closeDetailModal = () => {
@@ -812,6 +829,10 @@ const confirmDestinationAction = async (destination = null) => {
 };
 
 const confirmManufacturerReturn = async () => {
+  if (activeRoom.value !== "staging") {
+    return;
+  }
+
   if (!manufacturerReturnSafe.value) {
     returnDangerModalOpen.value = true;
     return;
@@ -821,6 +842,10 @@ const confirmManufacturerReturn = async () => {
 };
 
 const submitManufacturerReturn = async () => {
+  if (activeRoom.value !== "staging") {
+    return;
+  }
+
   returnDangerModalOpen.value = false;
 
   const result = applyZancunInventoryAction({

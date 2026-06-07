@@ -808,6 +808,20 @@
   background: var(--screen-green);
 }
 
+.visual-flow-step.is-inferred {
+  color: #fde68a;
+}
+
+.visual-flow-step.is-inferred::before {
+  background: rgba(234, 179, 8, 0.58);
+}
+
+.visual-flow-step.is-inferred .visual-flow-dot {
+  border-color: rgba(234, 179, 8, 0.76);
+  background: #eab308;
+  box-shadow: 0 0 14px rgba(234, 179, 8, 0.24);
+}
+
 .visual-flow-step.is-active {
   color: #cffafe;
 }

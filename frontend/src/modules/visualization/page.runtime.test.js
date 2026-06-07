@@ -239,9 +239,17 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).toContain("样品运输中");
     expect(previewText).toContain("振动试验进行中");
     expect(previewText).toContain("到货");
-    expect(previewText).toContain("05-22 10:00:00");
+    expect(previewText).not.toContain("05-22 10:00:00");
     expect(previewText).not.toContain("+08:00");
     expect(previewText).not.toContain("任务下发");
+
+    const flowSteps = wrapper.findAll('[data-testid="visual-single-preview"] .visual-flow-step');
+    const runningStep = flowSteps.find((step) => step.get("strong").text() === "振动试验进行中");
+    const stagingStep = flowSteps.find((step) => step.get("strong").text() === "送至暂存间");
+    expect(runningStep?.classes()).toContain("is-active");
+    expect(runningStep?.attributes("title")).toBe("05-22 10:00:00");
+    expect(stagingStep?.classes()).toContain("is-inferred");
+    expect(stagingStep?.attributes("title")).toBe("推导节点，暂无实际时间记录");
   });
 
   test("switches tasks and trays inside the enlarged first screen", async () => {

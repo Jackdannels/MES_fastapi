@@ -43,7 +43,7 @@ const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 const SALT_SPRAY_LAB_CODE = "LAB_SALT";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
-const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 3;
+const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 5;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
 const LABORATORY_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.tasks,
@@ -899,6 +899,8 @@ function useLaboratoryPage(options = {}) {
       }
       clearFixtureConfirmTimer();
       if (isMqttHostInterfaceMode()) {
+        fixtureConfirmModalOpen.value = false;
+        flushPendingRealtimeRefresh();
         return;
       }
       openFixtureConfirmSuccess();
@@ -971,8 +973,16 @@ function useLaboratoryPage(options = {}) {
     const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
     startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
-    void persistOperation.catch(() => {});
-    void publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装");
+    void persistOperation
+      .then(() => publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装"))
+      .catch((error) => {
+        laboratoryMqError.value = {
+          detail: formatErrorMessage(error),
+          title: "夹具安装下发失败",
+        };
+        clearFixtureConfirmTimer();
+        fixtureConfirmModalOpen.value = false;
+      });
   };
   const openReady = () => {
     if (runningInteractionLocked.value || !canRequestReady.value) {

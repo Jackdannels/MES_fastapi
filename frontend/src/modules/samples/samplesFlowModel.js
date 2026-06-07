@@ -1245,8 +1245,16 @@ const buildTrayExperimentFlow = (input = {}) => {
   const currentExperimentHasRunningEvent = RUNNING_EXPERIMENT_RUN_STATUSES.has(
     normalizeLifecycleStatus("", normalizeText(currentExperimentEvent?.status)),
   );
+  const normalizedStatusIsAppearanceInspection = isAppearanceInspectionStatus(
+    normalizeLifecycleStatus("", normalizedStatus),
+  );
   const currentExperimentUnstarted =
-    (Boolean(explicitUnstartedReturnedExperiment) || normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
+    (
+      Boolean(explicitUnstartedReturnedExperiment)
+      || normalizedStatus === "厂家收回"
+      || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成"
+      || normalizedStatusIsAppearanceInspection
+    )
     && startedUnfinishedExperiments.length === 0
     && !explicitExperiment
     || (
@@ -1921,23 +1929,37 @@ function buildTrayFlowView(input = {}) {
       });
       const activeExperimentCanOwnCompletedRoute =
         !activeExperiment?.unstarted || inputCurrentExperimentCode === normalizeText(activeExperiment?.code);
+      const activeExperimentRequiresAppearance = experimentRequiresAppearanceInspection(activeExperiment);
       const shouldShowActiveAppearance =
-        isAppearanceInspectionStatus(normalizedRouteStatus)
+        (
+          isAppearanceInspectionStatus(normalizedRouteStatus)
+          && activeExperimentRequiresAppearance
+          && activeExperimentCanOwnCompletedRoute
+        )
         || (
-          experimentRequiresAppearanceInspection(activeExperiment)
+          activeExperimentRequiresAppearance
           && activeExperimentCanOwnCompletedRoute
           && (
             normalizedRouteStatus === "实验已完成"
             || normalizedRouteStatus === "实验完成"
           )
         );
-      const activeAppearanceBelongsToCurrentExperiment = experimentRequiresAppearanceInspection(activeExperiment);
+      const activeAppearanceBelongsToCurrentExperiment = activeExperimentRequiresAppearance;
       const activeAppearanceIndexes = shouldShowActiveAppearance
         ? {
             sent: pushStep({ key: `route-appearance-sent-${currentExperimentIndex}`, label: APPEARANCE_SENT_STATUS }),
             stocked: pushStep({ key: `route-appearance-stocked-${currentExperimentIndex}`, label: APPEARANCE_STOCKED_STATUS }),
           }
         : null;
+      const stableAppearanceIndexes =
+        isAppearanceInspectionStatus(normalizedRouteStatus)
+        && !completedAppearanceIndexes.at(-1)
+        && !activeAppearanceIndexes
+          ? {
+              sent: pushStep({ key: `route-stable-appearance-sent-${currentExperimentIndex}`, label: APPEARANCE_SENT_STATUS }),
+              stocked: pushStep({ key: `route-stable-appearance-stocked-${currentExperimentIndex}`, label: APPEARANCE_STOCKED_STATUS }),
+            }
+          : null;
 
       experimentsAfterCurrent.forEach((experiment, index) => {
         pushExperimentStep(experiment, index + experimentsBeforeCurrent.length + 1);
@@ -1976,6 +1998,21 @@ function buildTrayFlowView(input = {}) {
         });
         markCompletedAppearanceReached(latestCompletedAppearancePosition);
         steps[latestCompletedAppearanceIndexes.sent].reached = true;
+      } else if (normalizedRouteStatus === APPEARANCE_SENT_STATUS && stableAppearanceIndexes) {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = stableAppearanceIndexes.sent;
+        completedStepIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        markCompletedAppearanceReached();
+      } else if (normalizedRouteStatus === APPEARANCE_STOCKED_STATUS && stableAppearanceIndexes) {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = stableAppearanceIndexes.stocked;
+        completedStepIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        markCompletedAppearanceReached();
+        steps[stableAppearanceIndexes.sent].reached = true;
       } else if (
         (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
         && latestCompletedAppearanceIndexes

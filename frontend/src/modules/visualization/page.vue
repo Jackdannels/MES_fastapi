@@ -228,6 +228,7 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
+import { resolveVisualFlowStepTitle, visualFlowStepClass } from "./flowStepState";
 import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
 
 const screenCards = [
@@ -765,10 +766,13 @@ const LabProcessScreen = {
                           "div",
                           { class: "visual-flow-line" },
                           (props.compact ? tray.steps : tray.steps || displayedFlowSteps).map((step, stepIndex) =>
-                            h("div", { class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns)] }, [
+                            h("div", {
+                              class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns)],
+                              title: resolveVisualFlowStepTitle(step, formatBeijingFlowTime),
+                            }, [
                               h("span", { class: "visual-flow-dot" }),
                               h("strong", step.label),
-                              h("small", formatBeijingFlowTime(step.time)),
+                              h("small", { "aria-hidden": "true" }, ""),
                             ]),
                           ),
                         ),
@@ -1894,11 +1898,7 @@ const PlaceholderScreen = {
   },
 };
 
-const stepClass = (step) => ({
-  "is-done": Boolean(step?.reached),
-  "is-active": Boolean(step?.active),
-  "is-waiting": !step?.reached && !step?.active,
-});
+const stepClass = (step) => visualFlowStepClass(step);
 
 const FLOW_LAYOUT_COLUMNS = {
   layoutA: 4,
