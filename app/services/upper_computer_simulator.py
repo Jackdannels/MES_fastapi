@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path
@@ -11,6 +12,10 @@ from urllib import parse
 from urllib import error, request
 
 from app.core.config import Settings
+
+
+_opened_simulator_page_lock = threading.RLock()
+_opened_simulator_page_urls: set[str] = set()
 
 
 def _json_request(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: float = 2.0) -> dict[str, Any]:
@@ -44,6 +49,15 @@ def _auto_mode_page_url(app_settings: Settings) -> str:
 
 def open_simulator_page(url: str) -> None:
     webbrowser.open(url, new=1, autoraise=True)
+
+
+def open_simulator_page_once(url: str, *, force: bool = False) -> bool:
+    with _opened_simulator_page_lock:
+        if not force and url in _opened_simulator_page_urls:
+            return False
+        _opened_simulator_page_urls.add(url)
+    open_simulator_page(url)
+    return True
 
 
 def _simulator_dir(app_settings: Settings) -> Path:
@@ -134,7 +148,7 @@ def ensure_upper_computer_simulator_auto_mode(app_settings: Settings) -> dict[st
         raise RuntimeError("模拟上位机已启动但 MQTT 未连接")
     config = state.get("config") if isinstance(state.get("config"), dict) else {}
     page_url = _auto_mode_page_url(app_settings)
-    open_simulator_page(page_url)
+    open_simulator_page_once(page_url, force=started)
     return {
         "enabled": True,
         "started": started,

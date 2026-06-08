@@ -328,6 +328,86 @@ describe("staging-management model", () => {
     expect(sections.currentStagingRows.map((row) => row.trayCode)).not.toContain("SYLU-2026-04-101-TP-001");
   });
 
+  test("uses appearance room as source when appearance stock-out targets staging", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-appearance-to-staging",
+      code: "TASK-APPEARANCE-TO-STAGING",
+      test_type: "盐雾试验",
+      source: "外部委托",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-to-staging",
+      code: "SP-APPEARANCE-TO-STAGING",
+      task_code: "TASK-APPEARANCE-TO-STAGING",
+      owner: "赵工",
+      location: "恒温恒湿间（暂存间）",
+      status: "送至暂存间",
+      trays: [{ tray_code: "TP-APPEARANCE-TO-STAGING", status: "送至暂存间", quantity: 1 }],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      action: "stock_out",
+      room: "appearance",
+      target_lab: "恒温恒湿间（暂存间）",
+      target_type: "staging",
+      task_code: "TASK-APPEARANCE-TO-STAGING",
+      time: "2026-04-01T11:10:00",
+      tray_code: "TP-APPEARANCE-TO-STAGING",
+    });
+
+    const row = buildZancunRowsFromSnapshot(snapshot, { now: TODAY })
+      .find((item) => item.trayCode === "TP-APPEARANCE-TO-STAGING");
+
+    expect(row).toEqual(expect.objectContaining({
+      source: "外观检测间",
+      status: "待入库",
+    }));
+  });
+
+  test("does not treat manufacturer-returned unfinished appearance experiments as appearance planned inbound", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-returned-before-mold",
+      code: "TASK-RETURNED-BEFORE-MOLD",
+      test_type: "霉菌试验",
+      source: "外部委托",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-returned-before-mold",
+      task_code: "TASK-RETURNED-BEFORE-MOLD",
+      experiment_code: "EXP-MOLD-UNFINISHED",
+      experiment_name: "霉菌试验",
+      required_device: "霉菌试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-returned-before-mold",
+      task_code: "TASK-RETURNED-BEFORE-MOLD",
+      experiment_code: "EXP-MOLD-UNFINISHED",
+      tray_code: "TP-RETURNED-BEFORE-MOLD",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: "TASK-RETURNED-BEFORE-MOLD",
+      experiment_code: "EXP-MOLD-UNFINISHED",
+      tray_code: "TP-RETURNED-BEFORE-MOLD",
+      status: "厂家收回",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-returned-before-mold",
+      code: "SP-RETURNED-BEFORE-MOLD",
+      task_code: "TASK-RETURNED-BEFORE-MOLD",
+      owner: "赵工",
+      location: "厂家收回",
+      status: "厂家收回",
+      flow_status: "送至外观检测间",
+      trays: [{ tray_code: "TP-RETURNED-BEFORE-MOLD", status: "送至外观检测间", quantity: 1 }],
+    });
+
+    const appearanceRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+
+    expect(appearanceRows.map((row) => row.trayCode)).not.toContain("TP-RETURNED-BEFORE-MOLD");
+  });
+
   test("stock-out detail resolves the next formal lab and excludes staging destinations", () => {
     const rows = buildZancunRowsFromSnapshot(createSnapshot(), { now: TODAY });
     const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
@@ -849,6 +929,149 @@ describe("staging-management model", () => {
       status: "送至暂存间",
       flow_status: "送至暂存间",
     });
+  });
+
+  test("staging room lists trays dispatched back from appearance inspection even after earlier staging stock-in", () => {
+    const snapshot = createSnapshot();
+    const trayCode = "SYLU-2026-04-124-TP-001";
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-back-after-stock-in",
+      code: "SYLU-2026-04-124-SP-001",
+      task_code: "SYLU-2026-04-124",
+      owner: "周工",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      trays: [{ tray_code: trayCode, status: "外观检测间存放", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-04-124 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-124-staging-in",
+        action: "stock_in",
+        room: "staging",
+        task_code: "SYLU-2026-04-124",
+        time: "2026-04-01T08:30:00",
+        tray_code: trayCode,
+      },
+      {
+        id: "evt-124-appearance-in",
+        action: "stock_in",
+        room: "appearance",
+        task_code: "SYLU-2026-04-124",
+        time: "2026-04-01T09:30:00",
+        tray_code: trayCode,
+      },
+    );
+
+    const appearanceOut = applyZancunInventoryAction({
+      now: "2026-04-01T10:00:00",
+      payload: {
+        code: trayCode,
+        mode: "stockOut",
+        targetLab: "恒温恒湿间（暂存间）",
+        targetType: "staging",
+      },
+      room: "appearance",
+      snapshot,
+    });
+    const stagingRows = buildZancunRowsFromSnapshot(appearanceOut.snapshot, { now: TODAY, room: "staging" });
+    const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
+    const stagingStockIn = applyZancunInventoryAction({
+      now: "2026-04-01T10:05:00",
+      payload: {
+        code: trayCode,
+        mode: "stockIn",
+      },
+      room: "staging",
+      snapshot: appearanceOut.snapshot,
+    });
+    const rowsAfterStockIn = buildZancunRowsFromSnapshot(stagingStockIn.snapshot, { now: TODAY, room: "staging" });
+    const sectionsAfterStockIn = buildZancunInventorySections(rowsAfterStockIn, { room: "staging" });
+
+    expect(appearanceOut.error).toBe("");
+    expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
+    expect(stagingSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      status: "待入库",
+      trayCode,
+    }));
+    expect(stagingStockIn.error).toBe("");
+    expect(stagingStockIn.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-appearance-back-after-stock-in")).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      flow_status: "已到达暂存间",
+    });
+    expect(sectionsAfterStockIn.currentStagingRows).toContainEqual(expect.objectContaining({
+      status: "到货",
+      trayCode,
+    }));
+    expect(sectionsAfterStockIn.plannedInboundRows.map((row) => row.trayCode)).not.toContain(trayCode);
+  });
+
+  test("staging room lists trays dispatched back from appearance inspection after an earlier staging stock-out", () => {
+    const snapshot = createSnapshot();
+    const trayCode = "SYLU-2026-04-125-TP-001";
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-back-after-stock-out",
+      code: "SYLU-2026-04-125-SP-001",
+      task_code: "SYLU-2026-04-125",
+      owner: "周工",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      trays: [{ tray_code: trayCode, status: "外观检测间存放", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-04-125 / 霉菌试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-125-staging-in",
+        action: "stock_in",
+        room: "staging",
+        task_code: "SYLU-2026-04-125",
+        time: "2026-04-01T07:30:00",
+        tray_code: trayCode,
+      },
+      {
+        id: "evt-125-staging-out",
+        action: "stock_out",
+        room: "staging",
+        target_lab: "盐雾试验室",
+        task_code: "SYLU-2026-04-125",
+        time: "2026-04-01T08:00:00",
+        tray_code: trayCode,
+      },
+      {
+        id: "evt-125-appearance-in",
+        action: "stock_in",
+        room: "appearance",
+        task_code: "SYLU-2026-04-125",
+        time: "2026-04-01T09:30:00",
+        tray_code: trayCode,
+      },
+    );
+
+    const appearanceOut = applyZancunInventoryAction({
+      now: "2026-04-01T10:00:00",
+      payload: {
+        code: trayCode,
+        mode: "stockOut",
+        targetLab: "恒温恒湿间（暂存间）",
+        targetType: "staging",
+      },
+      room: "appearance",
+      snapshot,
+    });
+    const stagingRows = buildZancunRowsFromSnapshot(appearanceOut.snapshot, { now: TODAY, room: "staging" });
+    const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
+
+    expect(appearanceOut.error).toBe("");
+    expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
+    expect(stagingSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      status: "待入库",
+      trayCode,
+    }));
   });
 
   test("appearance inspection room uses appearance wording for duplicate stock-in and premature stock-out", () => {

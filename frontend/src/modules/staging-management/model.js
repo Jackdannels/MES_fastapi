@@ -43,6 +43,10 @@ const eventMatchesRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
   return eventRoom ? eventRoom === config.eventRoom : config.key === "staging";
 };
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
+const STRICT_COMPLETED_RUN_TRAY_STATUSES = new Set([
+  ...COMPLETED_EXPERIMENT_STATUSES,
+  "实验已经完成",
+]);
 const COMPLETED_RUN_TRAY_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
   "实验已经完成",
@@ -237,6 +241,36 @@ const buildEventMap = (stagingEvents, config = STORAGE_ROOM_CONFIGS.staging) => 
   return eventMap;
 };
 
+const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
+  if (!event || config.key !== "staging") {
+    return false;
+  }
+  const targetType = normalizeText(event?.target_type || event?.targetType);
+  const targetLab = normalizeText(event?.target_lab || event?.targetLab);
+  return (
+    normalizeText(event?.action) === "stock_out"
+    && !eventMatchesRoom(event, config)
+    && (targetType === "staging" || targetLab === STAGING_LOCATION || targetLab.includes("暂存间"))
+  );
+};
+
+const resolveStorageEventSourceLabel = (event) => {
+  const room = normalizeText(event?.room || event?.storage_room || event?.storageRoom);
+  if (room === STORAGE_ROOM_CONFIGS.appearance.eventRoom) {
+    return APPEARANCE_LOCATION;
+  }
+  if (room === STORAGE_ROOM_CONFIGS.staging.eventRoom) {
+    return STAGING_LOCATION;
+  }
+  return "";
+};
+
+const collectTrayStorageEvents = (stagingEvents, trayCode) =>
+  asArray(stagingEvents)
+    .filter((event) => normalizeText(event?.tray_code) === normalizeText(trayCode))
+    .map((event) => ({ ...event }))
+    .sort((left, right) => compareDateTimes(left?.time, right?.time, "asc"));
+
 const isCurrentStagingStatus = (status, config = STORAGE_ROOM_CONFIGS.staging) => {
   const normalized = normalizeText(status);
   return config.currentStatuses.has(normalized);
@@ -375,7 +409,7 @@ const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experimen
     if (
       normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
       || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
-      || !COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+      || !STRICT_COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
     ) {
       return;
     }
@@ -785,7 +819,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       current.source = current.source || normalizeText(task?.source) || "待确认来源";
       current.testType = current.testType || normalizeText(task?.test_type);
       current.quantity += Number(tray?.quantity) || 1;
-      current.statuses.push(normalizeText(tray?.status) || normalizeText(sample?.status) || `${taskCode}-tray-${trayIndex + 1}`);
+      const rowStatuses = [
+        normalizeText(tray?.status),
+        normalizeText(sample?.status),
+        normalizeText(sample?.flow_status),
+      ].filter(Boolean);
+      current.statuses.push(...(rowStatuses.length > 0 ? rowStatuses : [`${taskCode}-tray-${trayIndex + 1}`]));
       trayMap.set(trayCode, current);
     });
   });
@@ -812,6 +851,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
     .map((row) => {
       const events = eventMap.get(row.trayCode) || [];
       const lastEvent = events.at(-1) || null;
+      const latestStorageEvent = collectTrayStorageEvents(stagingEvents, row.trayCode).at(-1) || null;
+      const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config);
+      const latestAction = normalizeText(latestStorageEvent?.action);
       const lastStockInEvent = events
         .slice()
         .reverse()
@@ -834,6 +876,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           trayCode: normalizeText(row.trayCode),
         });
       let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
+      if (latestEventDispatchesToCurrentRoom) {
+        status = "待入库";
+      }
+      if (latestAction === "manufacturer_return" || row.statuses.some((item) => normalizeText(item) === "厂家收回")) {
+        status = "";
+      }
       const rowLocation = normalizeText(row.location);
       if (
         config.key === "staging"
@@ -886,7 +934,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         owner: normalizeText(row.owner) || "待确认",
         quantity: Number(row.quantity) || 0,
         sampleType: normalizeText(row.sampleType) || "待确认样品类型",
-        source: normalizeText(row.source) || "待确认来源",
+        source: latestEventDispatchesToCurrentRoom
+          ? resolveStorageEventSourceLabel(latestStorageEvent) || normalizeText(row.source) || "待确认来源"
+          : normalizeText(row.source) || "待确认来源",
         status,
         statusClass: resolveStatusClass(status),
         stockInAt: normalizeText(lastStockInEvent?.time),
@@ -1121,7 +1171,28 @@ function applyZancunInventoryAction(input = {}) {
 
   const rows = buildZancunRowsFromSnapshot(nextSnapshot, { now: actionTime, room: config.key });
   const matchedRow = rows.find((row) => normalizeText(row?.trayCode) === normalizedCode);
+  const trayHasReturnedMarkerInSnapshot =
+    nextSnapshot[STAGING_EVENTS_KEY].some(
+      (event) => normalizeText(event?.tray_code) === normalizedCode && normalizeText(event?.action) === "manufacturer_return",
+    ) ||
+    nextSnapshot[SAMPLES_KEY].some(
+      (sample) =>
+        asArray(sample?.trays).some(
+          (tray) => normalizeText(tray?.tray_code) === normalizedCode && normalizeText(tray?.status) === "厂家收回",
+        )
+        || (
+          normalizeText(sample?.status) === "厂家收回"
+          && asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === normalizedCode)
+        ),
+    );
   if (!matchedRow) {
+    if (actionMode === "stockIn" && trayHasReturnedMarkerInSnapshot) {
+      return {
+        error: "该托盘已厂家收回，不能再次入库。",
+        row: null,
+        snapshot: nextSnapshot,
+      };
+    }
     return {
       error: actionMode === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。",
       row: null,
@@ -1131,9 +1202,7 @@ function applyZancunInventoryAction(input = {}) {
 
   const hasReturnedMarker =
     normalizeText(matchedRow.status) === "厂家收回" ||
-    nextSnapshot[STAGING_EVENTS_KEY].some(
-      (event) => normalizeText(event?.tray_code) === normalizedCode && normalizeText(event?.action) === "manufacturer_return",
-    ) ||
+    trayHasReturnedMarkerInSnapshot ||
     nextSnapshot[SAMPLES_KEY].some(
       (sample) =>
         normalizeText(sample?.task_code) === normalizeText(matchedRow.taskCode) &&
@@ -1161,10 +1230,15 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  const latestMatchedEvent = nextSnapshot[STAGING_EVENTS_KEY]
-    .filter((event) => normalizeText(event?.tray_code) === normalizedCode && eventMatchesRoom(event, config))
+  const latestStorageEvent = collectTrayStorageEvents(nextSnapshot[STAGING_EVENTS_KEY], normalizedCode).at(-1) || null;
+  const latestMatchedEvent = collectTrayStorageEvents(nextSnapshot[STAGING_EVENTS_KEY], normalizedCode)
+    .filter((event) => eventMatchesRoom(event, config))
     .at(-1);
-  if (actionMode === "stockIn" && normalizeText(latestMatchedEvent?.action) === "stock_in") {
+  if (
+    actionMode === "stockIn"
+    && normalizeText(latestMatchedEvent?.action) === "stock_in"
+    && !eventTargetsStorageRoom(latestStorageEvent, config)
+  ) {
     return {
       error: config.duplicateStockInError,
       row: null,

@@ -1153,6 +1153,7 @@ describe("visualization model", () => {
     });
 
     expect(view.summary).toEqual({
+      appearancePlannedTrayCount: 0,
       appearanceTrayCount: 0,
       currentTrayCount: 1,
       moldRemaining: 99,
@@ -1392,6 +1393,105 @@ describe("visualization model", () => {
     }));
     expect(view.summary.appearanceTrayCount).toBe(1);
     expect(view.summary.currentTrayCount).toBe(0);
+  });
+
+  test("keeps sent-to-appearance trays planned until appearance stock-in occurs", () => {
+    const view = buildStagingSamplesView({
+      tasks: [
+        { code: "TASK-SENT-APPEARANCE", name: "霉菌完成待外观", test_type: "霉菌试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-SENT-APPEARANCE", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-SENT-APPEARANCE", experiment_code: "EXP-MOLD", tray_code: "TP-SENT-APPEARANCE" },
+      ],
+      samples: [
+        {
+          code: "SP-SENT-APPEARANCE",
+          task_code: "TASK-SENT-APPEARANCE",
+          location: "外观检测间",
+          status: "送至外观检测间",
+          flow_status: "送至外观检测间",
+          trays: [{ tray_code: "TP-SENT-APPEARANCE", status: "送至外观检测间", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "appearance-planned",
+      stagingKindLabel: "计划入库",
+      status: "送至外观检测间",
+      trayCode: "TP-SENT-APPEARANCE",
+    }));
+    expect(view.summary.appearanceTrayCount).toBe(0);
+    expect(view.summary.appearancePlannedTrayCount).toBe(1);
+  });
+
+  test("does not show manufacturer-returned sent-to-appearance trays as planned appearance inbound", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-RETURNED-APPEARANCE", name: "已回收外观任务", test_type: "盐雾试验" }],
+      samples: [
+        {
+          code: "SP-RETURNED-APPEARANCE",
+          task_code: "TASK-RETURNED-APPEARANCE",
+          location: "厂家收回",
+          status: "厂家收回",
+          flow_status: "送至外观检测间",
+          trays: [{ tray_code: "TP-RETURNED-APPEARANCE", status: "送至外观检测间", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "manufacturer_return",
+          room: "staging",
+          task_code: "TASK-RETURNED-APPEARANCE",
+          time: "2026-06-07T11:00:00+08:00",
+          tray_code: "TP-RETURNED-APPEARANCE",
+        },
+      ],
+    });
+
+    expect(JSON.stringify(view)).not.toContain("TP-RETURNED-APPEARANCE");
+    expect(view.summary.appearancePlannedTrayCount).toBe(0);
+  });
+
+  test("shows fully completed trays as planned post-test staging inbound", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-FINISHED-STAGING", name: "全部完成任务", test_type: "冲击试验 / 振动试验" }],
+      experiments: [
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-SHOCK", experiment_name: "冲击试验" },
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-VIB", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-SHOCK", tray_code: "TP-FINISHED-STAGING" },
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-VIB", tray_code: "TP-FINISHED-STAGING" },
+      ],
+      experimentRunTrays: [
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-SHOCK", tray_code: "TP-FINISHED-STAGING", status: "实验已完成" },
+        { task_code: "TASK-FINISHED-STAGING", experiment_code: "EXP-VIB", tray_code: "TP-FINISHED-STAGING", status: "实验已完成" },
+      ],
+      samples: [
+        {
+          code: "SP-FINISHED-STAGING",
+          task_code: "TASK-FINISHED-STAGING",
+          location: "振动一室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: "TP-FINISHED-STAGING", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "planned",
+      stagingKindLabel: "计划暂存",
+      status: "送至暂存间",
+      trayCode: "TP-FINISHED-STAGING",
+    }));
+    expect(view.summary.plannedTrayCount).toBe(1);
   });
 
   test("calculates staging tray remaining from the project-wide used tray count", () => {

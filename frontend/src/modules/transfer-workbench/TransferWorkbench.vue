@@ -577,12 +577,12 @@ const MODE_CONFIGS = {
   },
 };
 const EXPERIMENT_TAG_TONES = [
-  { bg: "rgba(14, 165, 233, 0.14)", border: "rgba(14, 165, 233, 0.45)", color: "#075985" },
-  { bg: "rgba(16, 185, 129, 0.14)", border: "rgba(16, 185, 129, 0.4)", color: "#047857" },
-  { bg: "rgba(245, 158, 11, 0.16)", border: "rgba(245, 158, 11, 0.44)", color: "#b45309" },
-  { bg: "rgba(244, 114, 182, 0.15)", border: "rgba(236, 72, 153, 0.42)", color: "#be185d" },
-  { bg: "rgba(168, 85, 247, 0.16)", border: "rgba(147, 51, 234, 0.44)", color: "#7e22ce" },
-  { bg: "rgba(239, 68, 68, 0.13)", border: "rgba(239, 68, 68, 0.38)", color: "#b91c1c" },
+  { bg: "rgba(14, 165, 233, 0.14)", border: "rgba(14, 165, 233, 0.45)", color: "#7dd3fc" },
+  { bg: "rgba(16, 185, 129, 0.14)", border: "rgba(16, 185, 129, 0.4)", color: "#86efac" },
+  { bg: "rgba(245, 158, 11, 0.16)", border: "rgba(245, 158, 11, 0.44)", color: "#facc15" },
+  { bg: "rgba(244, 114, 182, 0.15)", border: "rgba(236, 72, 153, 0.42)", color: "#f9a8d4" },
+  { bg: "rgba(168, 85, 247, 0.16)", border: "rgba(147, 51, 234, 0.44)", color: "#c4b5fd" },
+  { bg: "rgba(239, 68, 68, 0.13)", border: "rgba(239, 68, 68, 0.38)", color: "#fca5a5" },
 ];
 const XML_ESCAPE_MAP = {
   "&": "&amp;",
@@ -1662,7 +1662,7 @@ const buildPrintDocument = () => {
         <style>
           body { font-family: "IBM Plex Sans", "Microsoft YaHei", sans-serif; padding: 24px; color: #10233f; }
           h1 { margin: 0 0 8px; font-size: 24px; }
-          p { margin: 0 0 18px; color: #475569; }
+          p { margin: 0 0 18px; color: #64748b; }
           .print-grid { display: grid; gap: 16px; }
           .print-card { border: 1px solid #cbd5e1; border-radius: 16px; padding: 16px; break-inside: avoid; }
           .print-card header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -1680,7 +1680,7 @@ const buildPrintDocument = () => {
             font-weight: 700;
             background: var(--tray-experiment-bg, rgba(14, 165, 233, 0.14));
             border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
-            color: var(--tray-experiment-color, #075985);
+            color: var(--tray-experiment-color, #7dd3fc);
           }
 ${buildExperimentTagPrintCss()}
         </style>

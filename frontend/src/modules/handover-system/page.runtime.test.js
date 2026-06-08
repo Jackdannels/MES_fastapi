@@ -629,7 +629,7 @@ describe("TransferAreaPage runtime", () => {
 
     const printedHtml = printFrameDocumentWriteMock.mock.calls.at(-1)?.[0] || "";
     expect(printedHtml).toContain("温度冲击试验");
-    expect(printedHtml).toContain("--tray-experiment-color: #b91c1c;");
+    expect(printedHtml).toContain("--tray-experiment-color: #fca5a5;");
   });
 
   test("changing tray limit rebalances samples into the minimum tray count in sequence", async () => {

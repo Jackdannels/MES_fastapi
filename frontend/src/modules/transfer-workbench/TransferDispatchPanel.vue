@@ -309,8 +309,8 @@ const resolveDestinationHint = (destination) => {
 
 .transfer-dispatch-summary-card__count {
   border-color: rgba(59, 130, 246, 0.24);
-  background: rgba(219, 234, 254, 0.45);
-  color: #1d4ed8;
+  background: rgba(29, 78, 216, 0.2);
+  color: #bfdbfe;
 }
 
 .transfer-dispatch-summary-card__body,
@@ -372,26 +372,26 @@ const resolveDestinationHint = (destination) => {
 
 .transfer-dispatch-destination-card.is-running .transfer-dispatch-destination-card__status {
   border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(187, 247, 208, 0.55);
-  color: #166534;
+  background: rgba(22, 101, 52, 0.24);
+  color: #bbf7d0;
 }
 
 .transfer-dispatch-destination-card.is-scheduled .transfer-dispatch-destination-card__status {
   border-color: rgba(59, 130, 246, 0.4);
-  background: rgba(191, 219, 254, 0.5);
-  color: #1d4ed8;
+  background: rgba(29, 78, 216, 0.2);
+  color: #bfdbfe;
 }
 
 .transfer-dispatch-destination-card.is-staging .transfer-dispatch-destination-card__status {
   border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(254, 243, 199, 0.72);
-  color: #b45309;
+  background: rgba(180, 83, 9, 0.2);
+  color: #fde68a;
 }
 
 .transfer-dispatch-destination-card.is-idle .transfer-dispatch-destination-card__status {
   border-color: rgba(148, 163, 184, 0.4);
-  background: rgba(226, 232, 240, 0.7);
-  color: #475569;
+  background: rgba(148, 163, 184, 0.14);
+  color: rgba(226, 232, 240, 0.86);
 }
 
 .transfer-dispatch-destination-card__name {

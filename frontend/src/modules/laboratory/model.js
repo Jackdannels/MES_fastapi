@@ -548,13 +548,26 @@ const resolveCurrentExperimentTrayStatus = ({
   return normalizedStatus;
 };
 
-const buildNotDispatchedComparisonResult = (trayCode, tray = null) => {
-  const normalizedTrayCode = normalizeText(trayCode);
+const resolveNotDispatchedSourceGuidance = (tray = null) => {
   const location = normalizeText(tray?.currentLocation || tray?.location);
   const status = normalizeText(tray?.trayStatus || tray?.displayStatus);
+  if (status === "送至外观检测间") {
+    return "当前托盘需先进入外观检测间并完成入库，再由外观检测间出库送至实验室。";
+  }
+  if (
+    location.includes(APPEARANCE_INSPECTION_LOCATION)
+    || status.includes(APPEARANCE_INSPECTION_LOCATION)
+  ) {
+    return "请先在外观检测间完成出库并送至实验室。";
+  }
   const sourceLabel = location.includes("暂存间") || status.includes("暂存间") ? "暂存间" : "接驳间";
+  return `请先在${sourceLabel}完成出库并送至实验室。`;
+};
+
+const buildNotDispatchedComparisonResult = (trayCode, tray = null) => {
+  const normalizedTrayCode = normalizeText(trayCode);
   return {
-    guidance: `请先在${sourceLabel}完成出库并送至实验室。`,
+    guidance: resolveNotDispatchedSourceGuidance(tray),
     message: "托盘尚未出库",
     ok: false,
     tone: "error",

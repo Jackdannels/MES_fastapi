@@ -40,6 +40,16 @@ describe("visualization flow step state", () => {
     expect(resolveVisualFlowStepTitle(step)).toBe("实验已完成");
   });
 
+  test("keeps confirmed arrival green even when legacy data has no time", () => {
+    const step = { label: "到货", reached: true, time: "" };
+
+    expect(visualFlowStepClass(step)).toMatchObject({
+      "is-done": true,
+      "is-inferred": false,
+    });
+    expect(resolveVisualFlowStepTitle(step)).toBe("到货已确认，暂无时间记录");
+  });
+
   test("keeps active and waiting states distinct from inferred steps", () => {
     expect(visualFlowStepClass({ label: "冲击试验进行中", active: true })).toMatchObject({
       "is-active": true,

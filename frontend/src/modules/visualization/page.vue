@@ -397,6 +397,7 @@ const stagingSamplesView = computed(() => {
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
     stagingEvents: snapshot[STORAGE_KEYS.staging_events],

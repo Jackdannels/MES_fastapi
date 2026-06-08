@@ -520,9 +520,11 @@ const STAGING_CURRENT_STATUSES = new Set(["已入库", "暂存间存放", "已�
 const APPEARANCE_CURRENT_STATUSES = new Set(["外观检测间存放", "已到达外观检测间"]);
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
 const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
+const PLANNED_APPEARANCE_STATUSES = new Set(["送至外观检测间"]);
 const PLANNED_STAGING_STATUSES = new Set(["送至暂存间"]);
 const PLANNED_STAGING_ACTIONS = new Set(["送至暂存间"]);
 const STAGING_KIND_LABELS = {
+  "appearance-planned": "计划入库",
   current: "暂存间存放",
   planned: "计划暂存",
   "post-test": "实验后暂存间",
@@ -587,14 +589,20 @@ const buildExperimentLabelByTray = ({ experiments, experimentTrays }) => {
 
 const isCurrentStagingStatus = (status) => STAGING_CURRENT_STATUSES.has(normalizeText(status));
 const isAppearanceStatus = (status) => APPEARANCE_CURRENT_STATUSES.has(normalizeText(status));
+const isPlannedAppearanceStatus = (status) => PLANNED_APPEARANCE_STATUSES.has(normalizeText(status));
 const isAppearanceLocation = (value) => normalizeText(value).includes(APPEARANCE_LOCATION_KEYWORD);
 const isPostTestStagingLocation = (value) => normalizeText(value).includes(POST_TEST_STAGING_KEYWORD);
 const isPostTestStagingStatus = (status) => normalizeText(status) === "放置实验后暂存间";
 const isPlannedStagingStatus = (status) => PLANNED_STAGING_STATUSES.has(normalizeText(status));
+const isReturnedStatus = (status) => normalizeLifecycleStatus("", status) === "厂家收回";
 const isStagingDestination = (value) => {
   const text = normalizeText(value);
   return text === "staging" || text.includes("暂存间");
 };
+const isAppearanceEventRoom = (event) =>
+  normalizeText(event?.room || event?.storage_room || event?.storageRoom) === "appearance";
+const isAppearanceStockInEvent = (event) =>
+  normalizeText(event?.action) === "stock_in" && isAppearanceEventRoom(event);
 const isStockOutToStaging = (event) =>
   normalizeText(event?.action) === "stock_out"
   && (
@@ -608,10 +616,42 @@ const buildStagingKind = (kind, status = "") => ({
   status: normalizeText(status) || STAGING_KIND_LABELS[kind],
 });
 
+const collectTrayExperimentCodes = ({ experimentTrays, taskCode, trayCode }) => {
+  const codes = new Set();
+  asArray(experimentTrays).forEach((entry) => {
+    if (resolveTaskCode(entry) !== taskCode || resolveTrayCode(entry) !== trayCode) {
+      return;
+    }
+    const experimentCode = resolveExperimentCode(entry);
+    if (experimentCode) {
+      codes.add(experimentCode);
+    }
+  });
+  return codes;
+};
+
+const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays, taskCode, trayCode }) =>
+  asArray(experimentRunTrays).some((entry) =>
+    resolveTaskCode(entry) === taskCode
+    && resolveExperimentCode(entry) === experimentCode
+    && resolveTrayCode(entry) === trayCode
+    && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
+  );
+
+const trayAssignedExperimentsAreCompleted = ({ experimentRunTrays, experimentTrays, taskCode, trayCode }) => {
+  const experimentCodes = collectTrayExperimentCodes({ experimentTrays, taskCode, trayCode });
+  if (experimentCodes.size === 0) {
+    return false;
+  }
+  return Array.from(experimentCodes).every((experimentCode) =>
+    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode }),
+  );
+};
+
 const resolveStagingTrayKind = (row, latestEvent) => {
   const latestAction = normalizeText(latestEvent?.action);
   const plannedStatus = row.statuses.find((status) => isPlannedStagingStatus(status));
-  if (latestAction === "manufacturer_return") {
+  if (latestAction === "manufacturer_return" || row.statuses.some((status) => isReturnedStatus(status))) {
     return null;
   }
   if (latestAction === "stock_out" && !isStockOutToStaging(latestEvent) && !plannedStatus) {
@@ -623,12 +663,18 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   if (isStockOutToStaging(latestEvent)) {
     return buildStagingKind("planned", "送至暂存间");
   }
+  const plannedAppearanceStatus = row.statuses.find((status) => isPlannedAppearanceStatus(status));
+  if (plannedAppearanceStatus) {
+    return buildStagingKind("appearance-planned", plannedAppearanceStatus);
+  }
   if (
-    row.hasAppearanceLocation
-    || row.statuses.some((status) => isAppearanceStatus(status))
-    || normalizeText(latestEvent?.room || latestEvent?.storage_room || latestEvent?.storageRoom) === "appearance"
+    row.statuses.some((status) => isAppearanceStatus(status))
+    || isAppearanceStockInEvent(latestEvent)
   ) {
     return buildStagingKind("appearance", "外观检测间存放");
+  }
+  if (row.allAssignedExperimentsCompleted) {
+    return buildStagingKind("planned", "送至暂存间");
   }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
     return buildStagingKind("post-test", "放置实验后暂存间");
@@ -673,10 +719,12 @@ function buildStagingSamplesView(input = {}) {
   const capacity = Number.isFinite(Number(input.capacity)) ? Number(input.capacity) : 100;
   const trayCapacity = Number.isFinite(Number(input.trayCapacity)) ? Number(input.trayCapacity) : SYSTEM_TRAY_TOTAL;
   const samples = asArray(input.samples);
+  const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
+  const experimentTrays = input.experimentTrays || input.experiment_trays;
   const taskByCode = buildTaskByCode(input.tasks);
   const labelsByTray = buildExperimentLabelByTray({
     experiments: input.experiments,
-    experimentTrays: input.experimentTrays || input.experiment_trays,
+    experimentTrays,
   });
   const latestEventByTray = buildLatestStagingEventByTray(input.stagingEvents || input.staging_events);
   const usedSystemTrayCount = countUsedSystemTrays({ latestEventByTray, samples });
@@ -693,6 +741,12 @@ function buildStagingSamplesView(input = {}) {
       }
       const key = `${taskCode}::${trayCode}`;
       const current = trayMap.get(key) || {
+        allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
+          experimentRunTrays,
+          experimentTrays,
+          taskCode,
+          trayCode,
+        }),
         experimentLabels: labelsByTray.get(trayCode) || [],
         hasAppearanceLocation: false,
         hasPostTestStagingLocation: false,
@@ -708,6 +762,14 @@ function buildStagingSamplesView(input = {}) {
         current.hasPostTestStagingLocation
         || isPostTestStagingLocation(sample?.location)
         || isPostTestStagingLocation(sample?.current_location);
+      current.allAssignedExperimentsCompleted =
+        current.allAssignedExperimentsCompleted
+        || trayAssignedExperimentsAreCompleted({
+          experimentRunTrays,
+          experimentTrays,
+          taskCode,
+          trayCode,
+        });
       current.hasAppearanceLocation =
         current.hasAppearanceLocation
         || isAppearanceLocation(sample?.location)
@@ -743,6 +805,12 @@ function buildStagingSamplesView(input = {}) {
     if (!trayMap.has(key)) {
       const task = taskByCode.get(taskCode) || {};
       trayMap.set(key, {
+        allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
+          experimentRunTrays,
+          experimentTrays,
+          taskCode,
+          trayCode,
+        }),
         experimentLabels: labelsByTray.get(trayCode) || [],
         hasAppearanceLocation: normalizeText(event?.room || event?.storage_room || event?.storageRoom) === "appearance",
         hasPostTestStagingLocation: false,
@@ -808,6 +876,7 @@ function buildStagingSamplesView(input = {}) {
 
   return {
     summary: {
+      appearancePlannedTrayCount: trays.filter((tray) => tray.stagingKind === "appearance-planned").length,
       appearanceTrayCount: trays.filter((tray) => tray.stagingKind === "appearance").length,
       currentTrayCount: trays.filter((tray) => tray.stagingKind === "current").length,
       moldRemaining: clampRemaining(capacity, moldTrayCount),

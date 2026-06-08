@@ -3559,6 +3559,102 @@ describe("laboratory model", () => {
     expect(result.guidance).not.toContain("接驳间");
   });
 
+  test("validateLaboratoryTrayScan points to appearance inspection when the current tray is stocked there", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-704", experiment_code: "SYLU-2026-05-704-A", tray_code: "TP-APPEARANCE" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-704", experiment_code: "SYLU-2026-05-704-A", experiment_name: "盐雾试验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-APPEARANCE",
+          location: "外观检测间",
+          owner: "王工",
+          status: "外观检测间存放",
+          task_code: "SYLU-2026-05-704",
+          trays: [{ tray_code: "TP-APPEARANCE", quantity: 1, status: "外观检测间存放" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-appearance",
+          task_code: "SYLU-2026-05-704",
+          experiment_code: "SYLU-2026-05-704-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-13T09:00:00.000Z",
+          end_at: "2026-05-13T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-05-704", name: "外观检测间未出库任务", test_type: "盐雾试验" }],
+    });
+
+    const result = validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-APPEARANCE",
+      scheduleRows: view.scheduleRows,
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      guidance: "请先在外观检测间完成出库并送至实验室。",
+      message: "托盘尚未出库",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-APPEARANCE",
+    }));
+    expect(result.guidance).not.toContain("接驳间");
+  });
+
+  test("validateLaboratoryTrayScan blocks trays that must enter appearance inspection before another lab", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: "SYLU-2026-05-705", experiment_code: "SYLU-2026-05-705-A", tray_code: "TP-TO-APPEARANCE" },
+      ],
+      experiments: [
+        { task_code: "SYLU-2026-05-705", experiment_code: "SYLU-2026-05-705-A", experiment_name: "盐雾试验" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: "SP-TO-APPEARANCE",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "送至外观检测间",
+          task_code: "SYLU-2026-05-705",
+          trays: [{ tray_code: "TP-TO-APPEARANCE", quantity: 1, status: "送至外观检测间" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-to-appearance",
+          task_code: "SYLU-2026-05-705",
+          experiment_code: "SYLU-2026-05-705-A",
+          device: "盐雾试验室",
+          start_at: "2026-05-13T09:00:00.000Z",
+          end_at: "2026-05-13T11:00:00.000Z",
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-05-705", name: "待外观检测任务", test_type: "盐雾试验" }],
+    });
+
+    const result = validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: "TP-TO-APPEARANCE",
+      scheduleRows: view.scheduleRows,
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      guidance: "当前托盘需先进入外观检测间并完成入库，再由外观检测间出库送至实验室。",
+      message: "托盘尚未出库",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-TO-APPEARANCE",
+    }));
+    expect(result.guidance).not.toContain("接驳间");
+  });
+
   test("validateLaboratoryTrayScan rejects a reset tray whose unified lifecycle is back in staging", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [

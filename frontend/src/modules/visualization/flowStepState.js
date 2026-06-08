@@ -8,6 +8,8 @@ const isCompletedExperimentStep = (step) => {
   return label.includes("试验") || label.includes("实验");
 };
 
+const isActualArrivalStep = (step) => normalizeText(step?.label) === "到货";
+
 const resolveVisualFlowStepTone = (step) => {
   if (step?.active) {
     return "active";
@@ -15,7 +17,7 @@ const resolveVisualFlowStepTone = (step) => {
   if (!step?.reached) {
     return "waiting";
   }
-  if (normalizeText(step?.time) || isCompletedExperimentStep(step)) {
+  if (normalizeText(step?.time) || isCompletedExperimentStep(step) || isActualArrivalStep(step)) {
     return "done";
   }
   return "inferred";
@@ -42,6 +44,9 @@ const resolveVisualFlowStepTitle = (step, formatTime = (value) => normalizeText(
   }
   if (tone === "done" && isCompletedExperimentStep(step)) {
     return "实验已完成";
+  }
+  if (tone === "done" && isActualArrivalStep(step)) {
+    return "到货已确认，暂无时间记录";
   }
   return "";
 };

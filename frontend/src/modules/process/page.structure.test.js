@@ -49,6 +49,16 @@ describe("ProcessPage structure", () => {
     expect(flowList).toContain("padding: 0 4px 12px 0");
   });
 
+  test("keeps tray batch lists locally scrollable inside the fitted task detail modal", () => {
+    const source = readProcessPage();
+    const trayList = cssBlock(source, ".process-task-tray-list--scrollable");
+
+    expect(source).toContain("process-task-tray-list process-task-tray-list--scrollable");
+    expect(trayList).toContain("max-height: min(260px, 28vh)");
+    expect(trayList).toContain("overflow: auto");
+    expect(trayList).toContain("scrollbar-gutter: stable");
+  });
+
   test("keeps process task selector controls on industrial dark tokens", () => {
     const source = readProcessPage();
     const button = cssBlocksContaining(source, ".process-task-select-button");

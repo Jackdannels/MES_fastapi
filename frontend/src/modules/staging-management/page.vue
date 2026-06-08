@@ -712,17 +712,20 @@ const submitStockInScan = async () => {
   if (scanSubmitting.value) {
     return;
   }
-  const detail = resolveScannedDetail();
-  if (!detail) {
+  const scannedCode = String(scanForm.code ?? "").trim();
+  if (!scannedCode) {
+    scanWarning.value = "请先完成扫码或输入托盘编号。";
+    resetScanCodeAfterAttempt();
     return;
   }
+  const detail = buildZancunScanDetail(overviewSourceRows.value, scannedCode, activeScanMode.value, { room: activeRoom.value });
 
   scanSubmitting.value = true;
   try {
     const result = applyZancunInventoryAction({
       now: nowValue(),
       payload: {
-        code: detail.trayCode,
+        code: detail.found ? detail.trayCode : scannedCode,
         mode: "stockIn",
         room: activeRoom.value,
       },

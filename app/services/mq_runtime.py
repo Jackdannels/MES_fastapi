@@ -67,6 +67,13 @@ class MqttRuntimeController:
             if self._subscriber is not None and not self._subscriber_is_running_locked():
                 self._stop_locked()
 
+            if (
+                normalized_mode == self.mode
+                and self._subscriber_is_running_locked()
+                and self._upper_computer_is_ready_locked()
+            ):
+                return self._status_locked()
+
             if self._subscriber is None:
                 subscriber = self._starter(self.app_settings)
                 self._subscriber = subscriber
@@ -106,6 +113,11 @@ class MqttRuntimeController:
             return bool(is_running())
         except Exception:
             return True
+
+    def _upper_computer_is_ready_locked(self) -> bool:
+        if not self.app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
+            return True
+        return bool(self._upper_computer_status.get("connected")) and bool(self._upper_computer_status.get("auto_mode"))
 
     def _status_locked(self) -> dict[str, object]:
         subscriber_running = self._subscriber_is_running_locked()

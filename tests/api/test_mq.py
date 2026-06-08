@@ -686,11 +686,52 @@ def test_interface_mode_endpoint_auto_connects_upper_computer_simulator_when_ena
     assert calls == [("start", True), ("upper", "mes/v1")]
 
 
+def test_interface_mode_endpoint_does_not_reconnect_upper_computer_when_mqtt_mode_is_already_ready():
+    calls = []
+
+    class FakeHandle:
+        def is_running(self):
+            return True
+
+        def stop(self):
+            calls.append("stop")
+
+    def fake_start(app_settings):
+        calls.append(("start", app_settings.MQTT_ENABLED))
+        return FakeHandle()
+
+    def fake_connect(app_settings):
+        calls.append(("upper", app_settings.MQTT_TOPIC_PREFIX))
+        return {
+            "enabled": True,
+            "started": False,
+            "connected": True,
+            "auto_mode": True,
+            "subscription": "mes/v1/labs/+/commands/#",
+            "url": "http://127.0.0.1:8899",
+        }
+
+    app = FastAPI()
+    app.state.mq_runtime = mq_runtime.MqttRuntimeController(
+        Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True),
+        starter=fake_start,
+        upper_computer_connector=fake_connect,
+    )
+    app.include_router(mq_route.router)
+    client = TestClient(app)
+
+    assert client.post("/api/mq/interface-mode", json={"mode": "mqtt"}).status_code == 200
+    assert client.post("/api/mq/interface-mode", json={"mode": "mqtt"}).status_code == 200
+
+    assert calls == [("start", True), ("upper", "mes/v1")]
+
+
 def test_upper_computer_auto_connect_opens_visible_auto_mode_page(monkeypatch):
     from app.services import upper_computer_simulator
 
     opened_urls = []
 
+    upper_computer_simulator._opened_simulator_page_urls.clear()
     monkeypatch.setattr(upper_computer_simulator, "_can_read_state", lambda _settings: True)
     monkeypatch.setattr(
         upper_computer_simulator,
@@ -717,6 +758,40 @@ def test_upper_computer_auto_connect_opens_visible_auto_mode_page(monkeypatch):
 
     assert opened_urls == ["http://127.0.0.1:8899/?auto=1"]
     assert status["page_url"] == "http://127.0.0.1:8899/?auto=1"
+
+
+def test_upper_computer_auto_connect_opens_auto_mode_page_only_once(monkeypatch):
+    from app.services import upper_computer_simulator
+
+    opened_urls = []
+
+    upper_computer_simulator._opened_simulator_page_urls.clear()
+    monkeypatch.setattr(upper_computer_simulator, "_can_read_state", lambda _settings: True)
+    monkeypatch.setattr(
+        upper_computer_simulator,
+        "_json_request",
+        lambda *_args, **_kwargs: {
+            "connected": True,
+            "config": {"auto_mode": True},
+        },
+    )
+    monkeypatch.setattr(
+        upper_computer_simulator,
+        "open_simulator_page",
+        lambda url: opened_urls.append(url),
+        raising=False,
+    )
+
+    settings = Settings(
+        MQTT_ENABLED=True,
+        UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True,
+        UPPER_COMPUTER_SIMULATOR_URL="http://127.0.0.1:8899",
+    )
+
+    upper_computer_simulator.ensure_upper_computer_simulator_auto_mode(settings)
+    upper_computer_simulator.ensure_upper_computer_simulator_auto_mode(settings)
+
+    assert opened_urls == ["http://127.0.0.1:8899/?auto=1"]
 
 
 def test_interface_mode_endpoint_restarts_stale_mqtt_subscriber_when_switching_to_mqtt_again():

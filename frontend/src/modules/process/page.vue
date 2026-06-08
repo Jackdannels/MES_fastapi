@@ -201,7 +201,7 @@
           <div class="process-task-batch-grid">
             <section class="process-task-summary-card">
               <div class="process-task-summary-title">当前实验托盘</div>
-              <div v-if="selectedTaskDetail?.runningTrayRows?.length" class="process-task-tray-list">
+              <div v-if="selectedTaskDetail?.runningTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
                 <div
                   v-for="tray in previewRunningTrayRows"
                   :key="tray.trayCode"
@@ -233,7 +233,7 @@
 
             <section class="process-task-summary-card">
               <div class="process-task-summary-title">待下一轮托盘</div>
-              <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list">
+              <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
                 <div
                   v-for="tray in previewRemainingTrayRows"
                   :key="tray.trayCode"
@@ -853,6 +853,14 @@ const formatFlowTime = (value) => {
   gap: 10px;
 }
 
+.process-task-tray-list--scrollable {
+  max-height: min(260px, 28vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
 .process-task-tray-row {
   width: 100%;
   text-align: left;
@@ -1065,9 +1073,9 @@ const formatFlowTime = (value) => {
   position: relative;
   padding: 12px 14px 12px 38px;
   border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-panel-strong);
-  color: var(--text);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.34);
+  color: var(--muted);
   font-size: 14px;
 }
 
@@ -1080,25 +1088,32 @@ const formatFlowTime = (value) => {
   height: 10px;
   margin-top: -5px;
   border-radius: 50%;
-  background: rgba(56, 189, 248, 0.9);
+  background: rgba(148, 163, 184, 0.58);
 }
 
-.process-task-flow-list li.current,
 .process-task-flow-list li.reached {
-  border-color: rgba(var(--industrial-accent-rgb), 0.55);
-  background: rgba(var(--industrial-accent-rgb), 0.16);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
+  border-color: rgba(34, 197, 94, 0.58);
+  background: rgba(22, 101, 52, 0.2);
+  color: #bbf7d0;
 }
 
 .process-task-flow-list li.current {
+  border-color: rgba(34, 211, 238, 0.86);
+  background: rgba(8, 145, 178, 0.22);
+  color: #cffafe;
   border-width: 2px;
   font-weight: 700;
+  box-shadow:
+    inset 0 0 0 1px rgba(34, 211, 238, 0.16),
+    0 0 0 1px rgba(34, 211, 238, 0.1);
 }
 
-.process-task-flow-list li.current::before,
 .process-task-flow-list li.reached::before {
   background: rgba(34, 197, 94, 0.9);
+}
+
+.process-task-flow-list li.current::before {
+  background: rgba(34, 211, 238, 0.96);
 }
 
 .process-task-flow-list--timed li {
