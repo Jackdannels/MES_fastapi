@@ -39,6 +39,9 @@ def test_build_local_run_env_drops_inherited_app_settings_when_env_file_omits_th
         "SESSION_COOKIE_SECURE": "true",
         "SERVE_WEB_APP": "true",
         "FRONTEND_ORIGINS": "http://machine.example",
+        "MYSQL_HOST": "machine-mysql.example",
+        "MQTT_HOST": "machine-mqtt.example",
+        "UPPER_COMPUTER_SIMULATOR_DIR": "C:\\machine\\upper",
         "PATH": "C:\\Windows\\System32",
     }
     dotenv_values = {
@@ -52,6 +55,9 @@ def test_build_local_run_env_drops_inherited_app_settings_when_env_file_omits_th
     assert "SESSION_COOKIE_SECURE" not in merged_env
     assert "SERVE_WEB_APP" not in merged_env
     assert "FRONTEND_ORIGINS" not in merged_env
+    assert "MYSQL_HOST" not in merged_env
+    assert "MQTT_HOST" not in merged_env
+    assert "UPPER_COMPUTER_SIMULATOR_DIR" not in merged_env
     assert merged_env["PATH"] == "C:\\Windows\\System32"
 
 

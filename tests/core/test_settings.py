@@ -43,3 +43,21 @@ def test_settings_disable_auth_session_timeouts_by_default(monkeypatch):
 
     assert settings.SESSION_IDLE_TIMEOUT_MINUTES == 0
     assert settings.SESSION_MAX_AGE_HOURS == 0
+
+
+def test_settings_default_upper_computer_simulator_dir_uses_current_user_desktop(monkeypatch):
+    monkeypatch.delenv("UPPER_COMPUTER_SIMULATOR_DIR", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.UPPER_COMPUTER_SIMULATOR_DIR.endswith("MES_upper_computer_simulator")
+    assert "Desktop" in settings.UPPER_COMPUTER_SIMULATOR_DIR
+
+
+def test_settings_blank_upper_computer_simulator_dir_falls_back_to_default(monkeypatch):
+    monkeypatch.delenv("UPPER_COMPUTER_SIMULATOR_DIR", raising=False)
+
+    settings = Settings(_env_file=None, UPPER_COMPUTER_SIMULATOR_DIR="  ")
+
+    assert settings.UPPER_COMPUTER_SIMULATOR_DIR.endswith("MES_upper_computer_simulator")
+    assert "Desktop" in settings.UPPER_COMPUTER_SIMULATOR_DIR

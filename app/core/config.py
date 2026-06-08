@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
+DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR = Path.home() / "Desktop" / "MES_upper_computer_simulator"
 
 
 class Settings(BaseSettings):
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
 
     UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: bool = False
     UPPER_COMPUTER_SIMULATOR_AUTO_START: bool = True
-    UPPER_COMPUTER_SIMULATOR_DIR: str = str(Path.home() / "Desktop" / "MES_upper_computer_simulator")
+    UPPER_COMPUTER_SIMULATOR_DIR: str = str(DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR)
     UPPER_COMPUTER_SIMULATOR_HOST: str = "127.0.0.1"
     UPPER_COMPUTER_SIMULATOR_PORT: int = 8899
     UPPER_COMPUTER_SIMULATOR_URL: str = "http://127.0.0.1:8899"
@@ -85,6 +86,12 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_storage_backend(cls, value: object) -> str:
         return str(value or "mysql").strip().lower() or "mysql"
+
+    @field_validator("UPPER_COMPUTER_SIMULATOR_DIR", mode="before")
+    @classmethod
+    def normalize_upper_computer_simulator_dir(cls, value: object) -> str:
+        normalized = str(value or "").strip()
+        return normalized or str(DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR)
 
 
 settings = Settings()

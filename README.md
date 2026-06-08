@@ -10,83 +10,111 @@
 - 后端健康检查地址：`http://127.0.0.1:8000/health`
 - 运行期不再支持 `STORAGE_BACKEND=json`
 
-## 最简测试流程
+## 本地开发启动
 
-### 1. 准备后端环境文件
+### 1. 准备环境文件
 
-在项目根目录创建或修改 `.env`，至少写入：
+复制样例配置：
 
-```env
-DEBUG=true
-SERVE_WEB_APP=false
-DEMO_USER=admin
-DEMO_PASSWORD=123
-SESSION_SECRET_KEY=local-dev-session-secret
-FRONTEND_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
-STORAGE_BACKEND=mysql
-MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=
-MYSQL_DATABASE=mes_single_branch
-MYSQL_AUTO_INIT_SCHEMA=false
-MYSQL_AUTO_SEED_DEMO=false
-MQTT_ENABLED=false
-MQTT_HOST=127.0.0.1
-MQTT_PORT=1883
-MQTT_USERNAME=guest
-MQTT_PASSWORD=guest
-MQTT_QOS=1
-MQTT_TOPIC_PREFIX=mes/v1
+```powershell
+Copy-Item .env.example .env
+Copy-Item frontend\.env.example frontend\.env
 ```
 
-### 2. 准备前端环境文件
+然后按当前电脑修改 `.env` 中的机器相关配置：
 
-在 `frontend/.env` 中写入：
+- `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` / `MYSQL_PASSWORD`
+- `MQTT_ENABLED` / `MQTT_HOST` / `MQTT_PORT`
+- `UPPER_COMPUTER_SIMULATOR_*`
+- `FRONTEND_ORIGINS`
 
-```env
-VITE_API_BASE_URL=http://127.0.0.1:8000
+上位机模拟器路径通常不需要写死。未设置 `UPPER_COMPUTER_SIMULATOR_DIR` 时，后端默认查找：
+
+```text
+<当前用户桌面>\MES_upper_computer_simulator
 ```
 
-### 3. 启动后端
+### 2. 一键开发启动
 
-打开第一个终端：
+Windows 下可直接双击：
+
+```text
+start-dev.bat
+```
+
+或执行：
+
+```powershell
+.\start-dev.ps1
+```
+
+该脚本会启动：
+
+- 后端：`http://127.0.0.1:8000`
+- 前端 Vite 开发服务：`http://127.0.0.1:5173`
+
+脚本会等待后端可用后再启动前端，并自动打开当前电脑的局域网访问地址。
+
+### 3. 手动启动后端
 
 ```powershell
 conda activate fastapi
-cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\run_local.py --reload --host 0.0.0.0 --port 8000
 ```
 
-然后打开：
+健康检查：
 
-- `http://127.0.0.1:8000/health`
+```text
+http://127.0.0.1:8000/health
+```
 
 看到 `{"status":"ok"}` 即正常。
 
 说明：
 
-- 当前默认是 API-only
-- 当前默认业务数据源是 MySQL
-- MQTT 默认关闭；如需向上位机真实发送消息，需先启动 RabbitMQ 并把 `MQTT_ENABLED=true`
-- 运行期只支持 MySQL 作为业务存储后端
-- 所以 `http://127.0.0.1:8000/` 返回 `404` 是正常现象
+- 后端默认是 API-only
+- 业务数据源只支持 MySQL
+- `http://127.0.0.1:8000/` 返回 `404` 是正常现象
 
-### 4. 启动前端
-
-打开第二个终端：
+### 4. 手动启动前端开发服务
 
 ```powershell
-cd c:\Users\12051\Desktop\MES_fastapi\frontend
+cd frontend
 npm install
-npm run dev -- --host 0.0.0.0
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-然后打开：
+本机访问：
 
-- `http://127.0.0.1:5173/`
+```text
+http://127.0.0.1:5173/
+```
 
-### 5. 登录测试
+局域网访问时，其他电脑访问：
+
+```text
+http://<MES电脑局域网IP>:5173/
+```
+
+## 公网穿透访问
+
+公网穿透不要直接暴露 Vite 开发服务。请使用构建后的公网前端服务：
+
+```powershell
+cd frontend
+npm run build
+npm run serve:public -- --host 0.0.0.0 --port 5173
+```
+
+该服务会：
+
+- 提供 `frontend/dist` 中的静态页面
+- 将 `/api` 和 `/auth` 代理到 `http://127.0.0.1:8000`
+- 避免公网访问 Vite dev 的 `@vite/client` 和本机绝对路径模块
+
+花生壳等内网穿透软件只需要映射前端端口 `5173`。后端仍保持本机 `127.0.0.1:8000`。
+
+## 登录测试
 
 登录账号：
 
@@ -100,13 +128,12 @@ npm run dev -- --host 0.0.0.0
 - 试验过程管控里“查看任务”是否正常弹出任务信息
 - 退出登录后是否回到登录页
 
-### 6. 跑一次后端冒烟测试
+## 后端冒烟测试
 
-打开第三个终端执行：
+打开终端执行：
 
 ```powershell
 conda activate fastapi
-cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\trial_run.py --port 8021
 ```
 
@@ -120,7 +147,7 @@ python scripts\trial_run.py --port 8021
 - `logout_status_code` 为 `204`
 - `post_logout_session_status_code` 为 `401`
 
-## RabbitMQ / MQTT 配置
+## RabbitMQ / MQTT / 上位机配置
 
 本项目通过 RabbitMQ 的 MQTT 插件向上位机/工控机发送实验室指令。RabbitMQ 作为消息中枢，MQTT 端口面向上位机，后续 LIMS 可继续通过 AMQP 或独立同步服务接入。
 
@@ -157,6 +184,38 @@ MQTT_TOPIC_PREFIX=mes/v1
 - `MQTT_QOS=1`：至少一次投递；上位机侧需能接受重复消息或按任务状态幂等处理
 - `MQTT_TOPIC_PREFIX=mes/v1`：MQTT topic 前缀，后续接口升级时可通过版本号区分
 
+模拟上位机自动联动配置：
+
+```env
+UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=false
+UPPER_COMPUTER_SIMULATOR_AUTO_START=true
+# UPPER_COMPUTER_SIMULATOR_DIR=C:\Users\<your-user>\Desktop\MES_upper_computer_simulator
+UPPER_COMPUTER_SIMULATOR_HOST=127.0.0.1
+UPPER_COMPUTER_SIMULATOR_PORT=8899
+UPPER_COMPUTER_SIMULATOR_URL=http://127.0.0.1:8899
+UPPER_COMPUTER_SIMULATOR_DEFAULT_LAB_CODE=LAB_SALT
+UPPER_COMPUTER_SIMULATOR_START_TIMEOUT_SECONDS=8
+```
+
+配置说明：
+
+- `UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=false`：默认不自动启动模拟上位机
+- `UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=true`：切换到 MQTT 模式时自动启动模拟上位机并切到自动模式
+- `UPPER_COMPUTER_SIMULATOR_DIR`：可不写；不写时默认使用当前用户桌面下的 `MES_upper_computer_simulator`
+- `UPPER_COMPUTER_SIMULATOR_URL`：MES 调用模拟器 HTTP 接口的地址，默认 `http://127.0.0.1:8899`
+
+当 `MQTT_ENABLED=true` 且 `UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=true` 时，MES 登录页切换到 MQTT 模式后会自动：
+
+- 启动模拟上位机服务
+- 打开模拟上位机页面
+- 调用模拟器 `/api/connect`
+- 设置自动模式
+- 订阅所有试验间指令：
+
+```text
+mes/v1/labs/+/commands/#
+```
+
 ### RabbitMQ 服务检查
 
 打开终端执行：
@@ -184,102 +243,29 @@ Restart-Service RabbitMQ
 
 ### 实验室 MQTT 接口协议
 
-接口 JSON 见 `docs/mqtt-interface-definition.json`。该文件由桌面原始接口文件 `MQ接口定义.txt` 整理而来，只保留双方当前商议的发送、接收消息和对应 topic。
-
-本次夹具安装流程的关键约束：
-
-- 实验室界面点击 `安装夹具` 后，MES 发送 `INSTALL_FIXTURE`
-- PLC/上位机检测夹具安装完成后，正式流程向 MES 回传 `FIXTURE_READY`
-- 当前未直接连接上位机时，MES 前端在安装夹具后弹出 3 秒等待确认倒计时，倒计时结束后兼容解锁 `确认准备就绪` 按钮
-- `READY` 仍作为兼容指令保留，但不再作为夹具安装完成的判断依据
-
-### MES 发送给上位机的消息
-
-盐雾试验室操作台当前保留两类 MES 到上位机的 MQTT 消息。
-
-安装夹具：
-
-- 页面触发点：盐雾操作台完成托盘比对后，点击 `样品安装` 弹窗中的 `安装完成`
-- 后端接口：`POST /api/mq/laboratory/fixture-install`
-- MQTT topic：`mes/v1/labs/salt-spray-lab-01/commands/fixture-install`
-- payload 示例：
-
-```json
-{
-  "cmd": "INSTALL_FIXTURE",
-  "taskId": "SYLU-2026-03-001",
-  "labId": "salt-spray-lab-01",
-  "sampleType": "",
-  "sampleCount": 8
-}
-```
-
-准备就绪（兼容指令）：
-
-- 页面触发点：盐雾操作台点击 `确认准备就绪` 弹窗中的 `确认准备就绪`
-- 后端接口：`POST /api/mq/laboratory/ready`
-- MQTT topic：`mes/v1/labs/salt-spray-lab-01/commands/experiment-ready`
-- 说明：该指令只表示 MES 已确认当前任务准备就绪；按钮能否点击取决于上位机先前回传的 `FIXTURE_READY`
-- payload 示例：
-
-```json
-{
-  "cmd": "READY",
-  "taskId": "SYLU-2026-03-001",
-  "labId": "salt-spray-lab-01"
-}
-```
-
-当前规则：
-
-- `labId` 固定为 `salt-spray-lab-01`
-- `sampleType` 暂时发送空字符串
-- `sampleCount` 为本次已比对托盘关联样品数之和
-- MQTT 发送失败不会阻塞盐雾操作台的本地业务状态更新，失败信息会输出到前端控制台
-
-### 上位机发送给 MES 的消息
-
-上位机需要向 MES 回传以下事件：
-
-- 夹具安装完成：`mes/v1/labs/{labId}/events/fixture-ready`，`messageType=FIXTURE_READY`
-- 实验开始：`mes/v1/labs/{labId}/events/experiment-started`，`messageType=EXPERIMENT_STARTED`
-- 实验结束：`mes/v1/labs/{labId}/events/experiment-ended`，`messageType=EXPERIMENT_ENDED`
-- 实验结果：`mes/v1/labs/{labId}/events/experiment-result`，`messageType=EXPERIMENT_RESULT`
-
-调试接口：
+当前 MQTT 精确匹配以 `lab_code` 和 `run_no` 为核心。完整接口定义见：
 
 ```text
-POST /api/mq/laboratory/events/{event_name}
+MES与上位机MQTT接口定义V2.0.md
 ```
 
-其中 `FIXTURE_READY` 示例 payload：
-
-```json
-{
-  "protocol": "MES_LAB_MQTT",
-  "version": "1.0",
-  "messageId": "HOST-READY-20260516-0001",
-  "correlationId": "MES-INSTALL-20260516-0001",
-  "messageType": "FIXTURE_READY",
-  "taskId": "SYLU-2026-03-001",
-  "labId": "salt-spray-lab-01",
-  "successId": "PLC-OK-001",
-  "sentAt": "2026-05-16T09:31:01+08:00",
-  "occurredAt": "2026-05-16T09:31:00+08:00"
-}
-```
-
-MES 会记录 `biz_mq_message_log` 和 `biz_experiment_event`，并在实验室页面读取样品托盘时合并 `fixture_ready=true`，从而解锁准备就绪按钮。
-
-### 上位机订阅建议
-
-上位机可以订阅具体实验室指令：
+MES 发送给上位机：
 
 ```text
-mes/v1/labs/salt-spray-lab-01/commands/#
+mes/v1/labs/{lab_code}/commands/fixture-install
+mes/v1/labs/{lab_code}/commands/experiment-ready
 ```
 
-也可以订阅所有 MES 下发指令：
+上位机发送给 MES：
+
+```text
+mes/v1/labs/{lab_code}/events/fixture-ready
+mes/v1/labs/{lab_code}/events/experiment-started
+mes/v1/labs/{lab_code}/events/experiment-ended
+mes/v1/labs/{lab_code}/events/experiment-result
+```
+
+上位机可订阅所有试验间指令：
 
 ```text
 mes/v1/labs/+/commands/#
@@ -295,14 +281,12 @@ mes/v1/labs/+/commands/#
 显式初始化 MySQL 时，使用脚本而不是依赖运行期 JSON：
 
 ```powershell
-cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\init_mysql_storage.py
 ```
 
 如需初始化后直接重建演示基线：
 
 ```powershell
-cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\init_mysql_storage.py --seed-demo
 ```
 
@@ -318,7 +302,6 @@ python scripts\init_mysql_storage.py --seed-demo
 如需清空当前业务演示数据并重新生成一套干净基线，可执行：
 
 ```powershell
-cd c:\Users\12051\Desktop\MES_fastapi
 python scripts\reset_demo_data.py
 ```
 
