@@ -1,0 +1,125 @@
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const frontendRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const distRoot = join(frontendRoot, "dist");
+const backendTarget = new URL(process.env.BACKEND_TARGET || "http://127.0.0.1:8000");
+const proxyPrefixes = ["/api", "/auth"];
+
+function readArg(name, fallback) {
+  const index = process.argv.indexOf(`--${name}`);
+  return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
+}
+
+const host = readArg("host", process.env.HOST || "0.0.0.0");
+const port = Number(readArg("port", process.env.PORT || "5173"));
+
+const contentTypes = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+function sendText(response, statusCode, text) {
+  response.writeHead(statusCode, {
+    "content-type": "text/plain; charset=utf-8",
+    "content-length": Buffer.byteLength(text),
+    connection: "close",
+  });
+  response.end(text);
+}
+
+function publicResponseHeaders(headers) {
+  const nextHeaders = { ...headers };
+  delete nextHeaders.connection;
+  delete nextHeaders["keep-alive"];
+  delete nextHeaders["proxy-authenticate"];
+  delete nextHeaders["proxy-authorization"];
+  delete nextHeaders.te;
+  delete nextHeaders.trailer;
+  delete nextHeaders.upgrade;
+  nextHeaders.connection = "close";
+  return nextHeaders;
+}
+
+function resolveStaticPath(requestUrl) {
+  const pathname = decodeURIComponent(new URL(requestUrl, "http://localhost").pathname);
+  const candidate = pathname === "/" ? "/index.html" : pathname;
+  const absolutePath = normalize(join(distRoot, candidate));
+  if (absolutePath !== distRoot && !absolutePath.startsWith(`${distRoot}${sep}`)) {
+    return null;
+  }
+  if (existsSync(absolutePath) && statSync(absolutePath).isFile()) {
+    return absolutePath;
+  }
+  return join(distRoot, "index.html");
+}
+
+function proxyRequest(clientRequest, clientResponse) {
+  const target = new URL(clientRequest.url || "/", backendTarget);
+  const transport = target.protocol === "https:" ? httpsRequest : httpRequest;
+  const proxy = transport(
+    target,
+    {
+      method: clientRequest.method,
+      headers: {
+        ...clientRequest.headers,
+        host: target.host,
+      },
+    },
+    (proxyResponse) => {
+      clientResponse.writeHead(proxyResponse.statusCode || 502, publicResponseHeaders(proxyResponse.headers));
+      proxyResponse.pipe(clientResponse);
+    },
+  );
+
+  proxy.on("error", (error) => {
+    sendText(clientResponse, 502, `Backend proxy failed: ${error.message}`);
+  });
+
+  clientRequest.pipe(proxy);
+}
+
+const server = createServer((request, response) => {
+  const requestPath = new URL(request.url || "/", "http://localhost").pathname;
+  if (proxyPrefixes.some((prefix) => requestPath === prefix || requestPath.startsWith(`${prefix}/`))) {
+    proxyRequest(request, response);
+    return;
+  }
+
+  if (!existsSync(distRoot)) {
+    sendText(response, 500, "Missing frontend/dist. Run `npm run build` first.");
+    return;
+  }
+
+  const staticPath = resolveStaticPath(request.url || "/");
+  if (!staticPath) {
+    sendText(response, 403, "Forbidden");
+    return;
+  }
+
+  const fileSize = statSync(staticPath).size;
+  response.writeHead(200, {
+    "content-type": contentTypes[extname(staticPath)] || "application/octet-stream",
+    "content-length": fileSize,
+    "cache-control": staticPath.endsWith("index.html") ? "no-store" : "public, max-age=31536000, immutable",
+    connection: "close",
+  });
+  createReadStream(staticPath).pipe(response);
+});
+
+server.listen(port, host, () => {
+  console.log(`MES public frontend: http://${host}:${port}`);
+  console.log(`Proxying /api and /auth to ${backendTarget.origin}`);
+});

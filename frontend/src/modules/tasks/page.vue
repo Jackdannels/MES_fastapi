@@ -491,11 +491,11 @@ const {
   justify-content: flex-start;
   min-height: 44px;
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
   padding: 10px 12px;
-  background: rgba(248, 250, 252, 0.95);
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  color: #0f172a;
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--border);
+  color: var(--text);
   font-size: 13px;
   font-weight: 600;
   text-align: left;
@@ -507,11 +507,11 @@ const {
 }
 
 .tasks-intake-picker-modal__summary {
-  border-radius: 10px;
+  border-radius: var(--radius-panel);
   padding: 12px;
-  background: rgba(248, 250, 252, 0.95);
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  color: #0f172a;
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--border);
+  color: var(--text);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.45;
@@ -531,22 +531,22 @@ const {
   min-height: 64px;
   width: 100%;
   padding: 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  background: rgba(248, 250, 252, 0.95);
-  color: #0f172a;
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
   text-align: left;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .tasks-intake-test-types__card:hover {
-  border-color: rgba(56, 189, 248, 0.35);
-  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.06);
+  border-color: rgba(var(--industrial-accent-rgb), 0.42);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.24);
 }
 
 .tasks-intake-test-types__card.is-selected {
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
   box-shadow: none;
 }
 
@@ -569,8 +569,8 @@ const {
   width: 22px;
   height: 22px;
   border-radius: 999px;
-  border: 1px solid rgba(15, 23, 42, 0.24);
-  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
   color: transparent;
   font-size: 13px;
   font-weight: 700;
@@ -578,19 +578,19 @@ const {
 }
 
 .tasks-intake-test-types__check.is-selected {
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(56, 189, 248, 0.18);
-  color: #0f172a;
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
 }
 
 .tasks-danger-confirmation {
   display: grid;
   gap: 8px;
-  border: 1px solid rgba(244, 63, 94, 0.35);
-  border-radius: 10px;
+  border: 1px solid rgba(255, 107, 90, 0.46);
+  border-radius: var(--radius-panel);
   padding: 14px;
-  background: rgba(255, 241, 242, 0.96);
-  color: #b91c1c;
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .tasks-danger-confirmation strong,

@@ -393,7 +393,7 @@ describe("ProcessPage runtime", () => {
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-006");
   });
 
-  test("opens the start experiment modal and supports switching the current lab task from the task drawer", async () => {
+  test("opens the start experiment modal and supports selecting the current lab task from a selector modal", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);
 
@@ -409,8 +409,13 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.text()).toContain("TRAY-003");
     expect(wrapper.text()).toContain("SP-003");
 
-    await wrapper.get("[data-testid='process-switch-task-SYLU-2026-03-002']").trigger("click");
+    await wrapper.get("[data-testid='process-open-task-selector']").trigger("click");
+
+    expect(wrapper.find('[data-testid="process-task-selection-modal"].is-open').exists()).toBe(true);
+
+    await wrapper.get("[data-testid='process-select-task-SYLU-2026-03-002']").trigger("click");
 
     expect(mocks.setSelectedTaskForLab).toHaveBeenCalledWith("冲击一室", "SYLU-2026-03-002");
+    expect(wrapper.find('[data-testid="process-task-selection-modal"].is-open').exists()).toBe(false);
   });
 });

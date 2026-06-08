@@ -1,9 +1,9 @@
 /* 可视化管理页：八块独立大屏的编排、放大和拼接预览。 */
 .visualization-page {
-  --visual-ink: #101828;
-  --visual-muted: #667085;
-  --visual-panel: #ffffff;
-  --visual-line: rgba(16, 24, 40, 0.12);
+  --visual-ink: var(--text);
+  --visual-muted: var(--muted);
+  --visual-panel: var(--bg-card-raised);
+  --visual-line: var(--border);
   --screen-bg: #05070a;
   --screen-panel: rgba(9, 18, 18, 0.9);
   --screen-panel-soft: rgba(15, 29, 28, 0.78);
@@ -29,10 +29,9 @@
   min-width: 0;
   padding: 18px;
   border: 1px solid var(--visual-line);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(246, 248, 249, 0.96)),
-    #fff;
+  border-radius: var(--radius-panel);
+  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.92));
+  box-shadow: var(--shadow);
 }
 
 .visualization-heading {
@@ -50,7 +49,7 @@
 }
 
 .visualization-eyebrow {
-  color: #0f766e;
+  color: var(--accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0;
@@ -86,9 +85,10 @@
 .visualization-live-chip {
   gap: 8px;
   padding: 0 12px;
-  color: #0f766e;
-  border: 1px solid rgba(15, 118, 110, 0.22);
-  background: rgba(20, 184, 166, 0.1);
+  color: var(--accent);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
   font-size: 13px;
 }
 
@@ -116,8 +116,10 @@
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--visual-line);
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   background: var(--visual-panel);
+  color: var(--visual-ink);
+  box-shadow: var(--shadow);
 }
 
 .visual-summary-item span {
@@ -4190,9 +4192,10 @@
   max-height: 94vh;
   padding: 18px;
   overflow: auto;
-  border-radius: 8px;
-  background: #f8fafc;
-  box-shadow: 0 30px 80px rgba(5, 7, 10, 0.45);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--visual-ink);
+  box-shadow: var(--shadow);
 }
 
 .visual-preview-shell.is-screen-only {
@@ -4236,9 +4239,10 @@
   height: 40px;
   padding: 0 12px;
   border: 1px solid var(--visual-line);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   color: var(--visual-ink);
-  background: #fff;
+  background: var(--bg-card-raised);
+  box-shadow: none;
 }
 
 .visual-lab-switch select:focus-visible {
@@ -4419,7 +4423,7 @@
 
 .visual-combined-shell {
   width: min(1800px, 98vw);
-  background: var(--screen-bg);
+  background: var(--bg-card-raised);
 }
 
 .visual-combined-overlay {
@@ -4611,44 +4615,4 @@
   .visual-lab-picker-grid {
     grid-template-columns: 1fr;
   }
-}
-
-/* Industrial blackbox skin: visualization management controls outside the big screens. */
-.visualization-page {
-  --visual-ink: var(--text);
-  --visual-muted: var(--muted);
-  --visual-panel: var(--bg-card-raised);
-  --visual-line: var(--border);
-}
-
-.visualization-toolbar,
-.visual-summary-item,
-.visual-preview-shell,
-.visual-combined-shell,
-.visual-lab-switch select {
-  border-color: var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg-card-raised);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-
-.visualization-toolbar {
-  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.92));
-}
-
-.visualization-eyebrow,
-.visualization-live-chip {
-  color: var(--accent);
-}
-
-.visualization-live-chip {
-  border-color: rgba(var(--industrial-accent-rgb), 0.38);
-  border-radius: var(--radius-control);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-}
-
-.visual-lab-switch select {
-  border-radius: var(--radius-control);
-  box-shadow: none;
 }

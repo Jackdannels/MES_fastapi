@@ -758,6 +758,49 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find(".transfer-overview-pagination [data-testid='pagination-jump-input']").exists()).toBe(true);
   });
 
+  test("pre-allocation overview pads the last page to keep pagination fixed", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = Array.from({ length: 5 }, (_, index) => ({
+      ...bootstrapPayload.taskOverview[0],
+      taskId: 200 + index,
+      seq: index + 1,
+      taskNo: `SYLU-2026-03-${String(index + 1).padStart(3, "0")}`,
+      taskStatus: "未入库",
+      taskProgress: "样品已送达，待打印条形码",
+    }));
+    bootstrapPayload.pendingTaskCount = 5;
+    bootstrapPayload.storedTaskCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-table__body > .transfer-table__row")).toHaveLength(3);
+
+    await wrapper.get('.transfer-overview-pagination [data-page="next"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll(".transfer-table__body > .transfer-table__row")).toHaveLength(3);
+    expect(wrapper.findAll("[data-testid^='transfer-task-row-']")).toHaveLength(2);
+    const placeholder = wrapper.get("[data-testid='transfer-task-placeholder-1']");
+    expect(placeholder.classes()).toContain("transfer-table__row--placeholder");
+    expect(placeholder.attributes("role")).toBe("presentation");
+    expect(placeholder.attributes("tabindex")).toBe("-1");
+  });
+
   test("assigns every experiment to the only tray after increasing tray limit to one-tray layout", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();

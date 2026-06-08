@@ -9,7 +9,8 @@ describe("industrial blackbox module theme coverage", () => {
   test("darkens sample pre-allocation and handover workbench cards", () => {
     const source = readModuleStyle("src/modules/handover-system/styles.css");
 
-    expect(source).toContain("Industrial blackbox skin: handover and pre-allocation cards");
+    expect(source).not.toContain("Industrial blackbox");
+    expect(source).not.toContain("blackbox skin");
     expect(source).toContain(".transfer-table");
     expect(source).toContain(".transfer-table__row");
     expect(source).toContain(".transfer-sample-code-chip");
@@ -62,7 +63,8 @@ describe("industrial blackbox module theme coverage", () => {
     expect(historyPage).toContain(".history-task-row");
     expect(historyPage).toContain(".history-tray-unified-flow");
     expect(historyPage).toContain(".history-tray-flow-step");
-    expect(staging).toContain(".zancun-metric-card .kpi");
+    expect(staging).toContain(".zancun-metric-card");
+    expect(staging).toContain(".zancun-metric-card.is-active");
     expect(`${processPage}\n${historyPage}\n${staging}`).toContain("var(--bg-panel-strong)");
   });
 });

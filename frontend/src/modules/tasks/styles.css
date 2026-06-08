@@ -130,9 +130,9 @@
   gap: 6px;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  border-radius: 10px;
-  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel-strong);
   color: var(--text);
   font-size: 13px;
   line-height: 1.35;
@@ -149,20 +149,9 @@
 
 .tasks-sample-codes-editor__textarea {
   min-height: 220px;
+  border-color: var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   line-height: 1.5;
-}
-
-/* Industrial blackbox skin: task sample preview panels. */
-.tasks-sample-preview__list {
-  border-color: var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg-panel-strong);
-  color: var(--text);
-}
-
-.tasks-sample-codes-editor__textarea {
-  border-color: var(--border);
-  background: var(--bg-panel-strong);
-  color: var(--text);
 }

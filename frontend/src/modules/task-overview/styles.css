@@ -20,10 +20,11 @@
 .task-overview-module-card {
   min-height: 78px;
   padding: 15px 16px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
   color: var(--text);
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -48,14 +49,13 @@
 }
 
 .task-overview-module-card.active {
-  border-color: rgba(14, 165, 233, 0.58);
-  background: linear-gradient(135deg, rgba(224, 245, 255, 0.98), rgba(255, 255, 255, 0.96));
-  color: #075985;
-  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.18);
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
 }
 
 .task-overview-module-card.active small {
-  color: #36758f;
+  color: var(--muted);
 }
 
 .task-overview-schedule-strip {
@@ -67,10 +67,11 @@
 .task-overview-schedule-card {
   min-height: 94px;
   padding: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
   color: var(--text);
+  box-shadow: var(--shadow);
   text-align: center;
 }
 
@@ -85,7 +86,7 @@
 }
 
 .task-overview-schedule-card span {
-  color: #52718e;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -104,37 +105,37 @@
 }
 
 .task-overview-schedule-card.is-blue-tint {
-  border-color: rgba(14, 165, 233, 0.22);
-  background: linear-gradient(180deg, rgba(240, 249, 255, 0.96), rgba(224, 245, 255, 0.82));
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
 }
 
 .task-overview-schedule-card.is-scheduled {
-  border-color: rgba(14, 165, 233, 0.55);
-  background: linear-gradient(135deg, #0ea5e9, #0369a1);
-  color: #fff;
-  box-shadow: 0 14px 28px rgba(14, 165, 233, 0.2);
+  border-color: rgba(var(--industrial-accent-rgb), 0.62);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.26), rgba(19, 26, 34, 0.96));
+  color: var(--text);
 }
 
 .task-overview-schedule-card.is-scheduled span,
 .task-overview-schedule-card.is-scheduled small {
-  color: rgba(255, 255, 255, 0.84);
+  color: var(--muted);
 }
 
 .task-overview-schedule-card.is-unscheduled {
-  border-color: rgba(245, 158, 11, 0.6);
-  background: linear-gradient(135deg, #fbbf24, #fff7ed);
-  color: #78350f;
-  box-shadow: 0 14px 28px rgba(245, 158, 11, 0.18);
+  border-color: rgba(231, 183, 95, 0.5);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .task-overview-schedule-card.is-unscheduled span,
 .task-overview-schedule-card.is-unscheduled small {
-  color: rgba(120, 53, 15, 0.78);
+  color: var(--muted);
 }
 
 .task-overview-schedule-card.is-alert {
-  border-color: rgba(239, 68, 68, 0.42);
-  background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), rgba(254, 226, 226, 0.82));
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .task-overview-heading-metrics {
@@ -147,16 +148,18 @@
 .task-overview-counter {
   min-width: 160px;
   padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: linear-gradient(180deg, rgba(239, 246, 255, 0.92), rgba(224, 242, 254, 0.72));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 /* 告警统计块通过红色系强调异常数量。 */
 .task-overview-counter.is-alert {
-  border-color: rgba(239, 68, 68, 0.42);
-  background: linear-gradient(180deg, rgba(254, 242, 242, 0.96), rgba(254, 226, 226, 0.82));
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .task-overview-counter-label {
@@ -169,11 +172,11 @@
   margin-top: 4px;
   font-size: 24px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .task-overview-counter.is-alert .task-overview-counter-value {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .task-overview-actions {
@@ -182,9 +185,11 @@
   gap: 10px;
   min-width: 0;
   padding: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  border-radius: 12px;
-  background: rgba(248, 250, 252, 0.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .task-overview-search-input {
@@ -287,9 +292,11 @@
 
 /* 单条任务卡片由序号栏和主信息区组成。 */
 .task-overview-card {
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
   padding: 14px;
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
@@ -300,37 +307,37 @@
 }
 
 .task-overview-card:hover {
-  border-color: rgba(56, 189, 248, 0.35);
+  border-color: rgba(var(--industrial-accent-rgb), 0.42);
 }
 
 .task-overview-card.is-selected {
-  border-color: rgba(59, 130, 246, 0.55);
-  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.12);
-  background: rgba(239, 246, 255, 0.8);
+  border-color: rgba(var(--industrial-accent-rgb), 0.56);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
 }
 
 .task-overview-card.is-highlighted {
-  border-color: rgba(239, 68, 68, 0.7);
-  box-shadow: 0 0 0 3px rgba(254, 202, 202, 0.85);
+  border-color: rgba(255, 107, 90, 0.7);
+  box-shadow: 0 0 0 3px rgba(255, 107, 90, 0.2);
   animation: task-overview-highlight-flash 0.55s ease 3;
 }
 
 @keyframes task-overview-highlight-flash {
   0%,
   100% {
-    border-color: rgba(239, 68, 68, 0.22);
-    box-shadow: 0 0 0 0 rgba(252, 165, 165, 0);
+    border-color: rgba(255, 107, 90, 0.22);
+    box-shadow: 0 0 0 0 rgba(255, 107, 90, 0);
   }
 
   50% {
-    border-color: rgba(239, 68, 68, 0.78);
-    box-shadow: 0 0 0 4px rgba(254, 202, 202, 0.92);
+    border-color: rgba(255, 107, 90, 0.78);
+    box-shadow: 0 0 0 4px rgba(255, 107, 90, 0.22);
   }
 }
 
 /* 左侧索引列突出排序和选中信息。 */
 .task-overview-index-col {
-  border-right: 1px dashed rgba(15, 23, 42, 0.16);
+  border-right: 1px dashed var(--border);
   padding-right: 12px;
   display: grid;
   gap: 6px;
@@ -348,8 +355,8 @@
   width: 36px;
   height: 36px;
   border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.5);
-  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -381,7 +388,7 @@
 
 .task-overview-card-hint {
   font-size: 13px;
-  color: #1d4ed8;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -391,9 +398,11 @@
   gap: 10px;
   margin: 10px 0 12px;
   padding: 8px 12px;
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  border-radius: 8px;
-  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
   font-size: 13px;
 }
 
@@ -413,9 +422,11 @@
 
 /* 汇总表以固定列宽承载每个任务的样品与托盘统计。 */
 .task-overview-summary-card {
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(236, 253, 245, 0.45), rgba(255, 255, 255, 0.96));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
   padding: 4px 8px;
   width: 100%;
   overflow-x: auto;
@@ -430,13 +441,15 @@
 }
 
 .task-overview-summary-table thead th {
-  background: rgba(226, 232, 240, 0.55);
+  background: rgba(13, 18, 24, 0.84);
   color: var(--text);
   font-weight: 600;
   text-align: center;
 }
 
 .task-overview-summary-table tbody td {
+  background: rgba(13, 18, 24, 0.84);
+  color: var(--text);
   text-align: center;
   vertical-align: middle;
   word-break: break-word;
@@ -479,7 +492,7 @@
 
 .task-overview-summary-table td strong {
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text);
 }
 
 .task-overview-summary-lines {
@@ -508,6 +521,9 @@
 .task-overview-summary-line-chip {
   padding: 4px 10px;
   border-radius: 999px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -518,9 +534,9 @@
   align-items: center;
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  background: rgba(191, 219, 254, 0.3);
-  color: #1d4ed8;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 14px;
   font-weight: 700;
 }
@@ -530,59 +546,64 @@
   align-items: center;
   padding: 4px 12px;
   border-radius: 999px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 15px;
   font-weight: 700;
 }
 
 .task-overview-schedule-chip.is-scheduled {
-  border: 1px solid rgba(34, 197, 94, 0.45);
-  background: rgba(187, 247, 208, 0.32);
-  color: #166534;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
 }
 
 .task-overview-schedule-chip.is-unscheduled {
-  border: 1px solid rgba(251, 191, 36, 0.5);
-  background: rgba(254, 243, 199, 0.6);
-  color: #92400e;
+  border: 1px solid rgba(231, 183, 95, 0.5);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .task-overview-summary-line-chip.is-scheduled {
-  border: 1px solid rgba(34, 197, 94, 0.45);
-  background: rgba(187, 247, 208, 0.32);
-  color: #166534;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
 }
 
 .task-overview-summary-line-chip.is-unscheduled {
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  background: rgba(255, 247, 237, 0.88);
-  color: #b45309;
+  border: 1px solid rgba(231, 183, 95, 0.5);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .task-overview-summary-line-chip.is-unscheduled.is-overdue-highlight {
-  border-color: rgba(220, 38, 38, 0.72);
-  background: linear-gradient(180deg, rgba(254, 226, 226, 0.98), rgba(254, 202, 202, 0.9));
-  color: #b91c1c;
+  border-color: rgba(255, 107, 90, 0.62);
+  background: rgba(255, 107, 90, 0.16);
+  color: var(--danger);
   font-weight: 800;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 0 0 3px rgba(254, 202, 202, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(255, 107, 90, 0.18), 0 0 0 3px rgba(255, 107, 90, 0.14);
 }
 
 .task-overview-summary-line-chip.is-completed {
-  border: 1px solid rgba(14, 165, 233, 0.42);
-  background: rgba(224, 242, 254, 0.6);
-  color: #0f766e;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
 }
 
 .task-overview-summary-line-chip.is-running {
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  background: rgba(191, 219, 254, 0.35);
-  color: #1d4ed8;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
 }
 
 /* 编辑器区域包含字段网格、删除确认和保存反馈。 */
 .task-overview-editor {
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  border-radius: 12px;
-  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
   padding: 12px;
   display: grid;
   gap: 10px;
@@ -622,16 +643,16 @@
 .task-overview-delete-confirm {
   margin-top: 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-radius: 10px;
-  background: rgba(254, 226, 226, 0.55);
+  border: 1px solid rgba(255, 107, 90, 0.46);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 107, 90, 0.14);
   display: grid;
   gap: 10px;
 }
 
 .task-overview-delete-text {
   font-size: 13px;
-  color: #7f1d1d;
+  color: var(--danger);
   line-height: 1.45;
 }
 
@@ -641,11 +662,11 @@
 
 .task-overview-success {
   padding: 10px 12px;
-  border: 1px solid rgba(34, 197, 94, 0.45);
-  border-radius: 10px;
-  background: rgba(34, 197, 94, 0.14);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.48);
+  border-radius: var(--radius-panel);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
   font-size: 12px;
-  color: #166534;
+  color: var(--accent);
 }
 
 /* 下方信息块展示样品编码与明细表。 */
@@ -670,8 +691,9 @@
   align-items: center;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.45);
-  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 12px;
 }
 
@@ -711,7 +733,7 @@
 
   .task-overview-index-col {
     border-right: 0;
-    border-bottom: 1px dashed rgba(15, 23, 42, 0.16);
+    border-bottom: 1px dashed var(--border);
     padding-right: 0;
     padding-bottom: 10px;
     justify-items: start;
@@ -720,118 +742,4 @@
     gap: 10px;
   }
 
-}
-
-/* Industrial blackbox skin: task overview cards and chips. */
-.task-overview-module-card,
-.task-overview-schedule-card,
-.task-overview-counter,
-.task-overview-actions,
-.task-overview-card,
-.task-overview-readonly-meta,
-.task-overview-summary-card,
-.task-overview-editor,
-.task-overview-editor-panel,
-.task-overview-returned-card,
-.task-overview-tray-flow-card {
-  border-color: var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg-card-raised);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-
-.task-overview-module-card.active,
-.task-overview-schedule-card.is-blue-tint,
-.task-overview-card.is-selected {
-  border-color: rgba(var(--industrial-accent-rgb), 0.56);
-  background: rgba(var(--industrial-accent-rgb), 0.14);
-  color: var(--accent);
-}
-
-.task-overview-schedule-card.is-scheduled {
-  border-color: rgba(var(--industrial-accent-rgb), 0.62);
-  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.26), rgba(19, 26, 34, 0.96));
-  color: var(--text);
-}
-
-.task-overview-schedule-card.is-unscheduled,
-.task-overview-summary-line-chip.is-warning,
-.task-overview-schedule-chip.is-unscheduled {
-  border-color: rgba(231, 183, 95, 0.5);
-  background: rgba(231, 183, 95, 0.16);
-  color: var(--accent-2);
-}
-
-.task-overview-schedule-card.is-alert,
-.task-overview-counter.is-alert,
-.task-overview-summary-line-chip.is-alert {
-  border-color: rgba(255, 107, 90, 0.48);
-  background: rgba(255, 107, 90, 0.14);
-  color: var(--danger);
-}
-
-.task-overview-counter-value,
-.task-overview-summary-table td strong,
-.task-overview-card-title,
-.task-overview-index {
-  color: var(--text);
-}
-
-.task-overview-module-card small,
-.task-overview-schedule-card span,
-.task-overview-schedule-card small,
-.task-overview-label,
-.task-overview-card small,
-.task-overview-summary-card small {
-  color: var(--muted);
-}
-
-.task-overview-status-chip,
-.task-overview-schedule-chip,
-.task-overview-summary-line-chip,
-.task-overview-chip {
-  border-color: rgba(var(--industrial-accent-rgb), 0.38);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-  color: var(--text);
-}
-
-.task-overview-schedule-chip.is-scheduled,
-.task-overview-summary-line-chip.is-success {
-  border-color: rgba(var(--industrial-accent-rgb), 0.48);
-  background: rgba(var(--industrial-accent-rgb), 0.16);
-  color: var(--accent);
-}
-
-.task-overview-summary-table thead th,
-.task-overview-summary-table tbody tr,
-.task-overview-table tbody tr {
-  border-color: var(--border);
-  background: rgba(13, 18, 24, 0.84);
-  color: var(--text);
-}
-
-.task-overview-header :is(h3, h4, strong),
-.task-overview-card :is(h3, h4, strong),
-.task-overview-readonly-meta strong,
-.task-overview-summary-card :is(h3, h4, strong),
-.task-overview-editor :is(h3, h4, strong) {
-  color: var(--text);
-}
-
-.task-overview-header :is(small, p, .muted),
-.task-overview-card :is(small, p, .muted),
-.task-overview-readonly-meta span,
-.task-overview-summary-card :is(small, p, .muted),
-.task-overview-editor :is(small, p, .muted) {
-  color: var(--muted);
-}
-
-.task-overview-card-hint,
-.task-overview-success {
-  color: var(--accent);
-}
-
-.task-overview-delete-text {
-  color: var(--danger);
 }

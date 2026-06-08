@@ -31,7 +31,7 @@
 }
 
 .dashboard-unscheduled-title.is-overdue {
-  color: #dc2626;
+  color: var(--danger);
 }
 
 .dashboard-unscheduled-timer {
@@ -39,12 +39,6 @@
   color: var(--text);
 }
 
-.dashboard-unscheduled-timer.is-overdue {
-  color: #dc2626;
-}
-
-/* Industrial blackbox skin: dashboard alert text. */
-.dashboard-unscheduled-title.is-overdue,
 .dashboard-unscheduled-timer.is-overdue {
   color: var(--danger);
 }

@@ -18,6 +18,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    allowedHosts: ["820rbhs27834.vicp.fun"],
     proxy: devServerProxy,
   },
 });

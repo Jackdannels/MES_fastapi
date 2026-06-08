@@ -20,28 +20,32 @@
 
 .board-slot {
   height: 32px;
-  border-radius: 10px;
-  background: rgba(248, 250, 252, 0.9);
-  border: 1px dashed rgba(15, 23, 42, 0.12);
+  border-radius: var(--radius-panel);
+  border: 1px dashed var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .board-slot.fill {
-  background: rgba(56, 189, 248, 0.3);
   border-style: solid;
+  border-color: rgba(var(--industrial-accent-rgb), 0.46);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
 }
 
 /* 留样信息在表单区内使用醒目的只读展示。 */
 .form-field .retention-now {
   width: 100%;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(56, 189, 248, 0.5);
-  background: rgba(56, 189, 248, 0.22);
+  border-radius: var(--radius-panel);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.46);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
   color: var(--text);
   font-size: 13px;
   display: flex;
   align-items: center;
   min-height: 38px;
+  box-shadow: var(--shadow);
 }
 
 .schedule-duration-control {
@@ -61,19 +65,21 @@
   display: inline-flex;
   align-items: stretch;
   height: 100%;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  border: 1px solid var(--border);
   border-left: none;
-  border-radius: 0 12px 12px 0;
+  border-radius: var(--radius-panel);
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.6);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .schedule-duration-toggle__button {
   min-width: 64px;
   padding: 0 14px;
   border: 0;
-  background: rgba(226, 232, 240, 0.05);
-  color: #94a3b8;
+  background: var(--bg-panel-strong);
+  color: var(--muted);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -85,15 +91,15 @@
 }
 
 .schedule-duration-toggle__button.is-active {
-  background: linear-gradient(180deg, rgba(255, 213, 128, 0.96), rgba(255, 184, 77, 0.92));
-  color: #9a3412;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  background: rgba(231, 183, 95, 0.18);
+  color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px rgba(231, 183, 95, 0.2);
 }
 
 .schedule-duration-toggle__button:not(.is-active):hover,
 .schedule-duration-toggle__button:not(.is-active):focus-visible {
-  background: rgba(241, 245, 249, 0.95);
-  color: #64748b;
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   outline: none;
 }
 
@@ -113,40 +119,42 @@
 .schedule-task-overlays {
   margin-bottom: 16px;
   padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(59, 130, 246, 0.18);
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(248, 250, 252, 0.95));
+  border-radius: var(--radius-panel);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.46);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .schedule-task-overlays__title {
   font-size: 14px;
   font-weight: 700;
-  color: #1e3a8a;
+  color: var(--accent);
   margin-bottom: 10px;
 }
 
 .schedule-header-action-button--exception {
-  border-color: rgba(37, 99, 235, 0.3);
-  background: rgba(219, 234, 254, 0.92);
-  color: #1d4ed8;
+  border-color: rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
 }
 
 .schedule-header-action-button--exception:hover,
 .schedule-header-action-button--exception:focus-visible {
-  border-color: rgba(37, 99, 235, 0.45);
-  background: rgba(191, 219, 254, 0.98);
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
 }
 
 .schedule-header-action-button--exception.is-alert {
-  border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(254, 226, 226, 0.92);
-  color: #b91c1c;
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .schedule-header-action-button--exception.is-alert:hover,
 .schedule-header-action-button--exception.is-alert:focus-visible {
-  border-color: rgba(220, 38, 38, 0.4);
-  background: rgba(254, 202, 202, 0.98);
+  border-color: rgba(255, 107, 90, 0.58);
+  background: rgba(255, 107, 90, 0.2);
 }
 
 .schedule-exception-panel {
@@ -161,9 +169,11 @@
 
 .schedule-exception-card {
   padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px solid rgba(239, 68, 68, 0.18);
-  background: linear-gradient(135deg, rgba(254, 242, 242, 0.98), rgba(255, 255, 255, 0.96));
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .schedule-exception-card__head {
@@ -176,7 +186,9 @@
 }
 
 .schedule-exception-card__reason {
-  color: #b91c1c;
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
   font-weight: 700;
 }
 
@@ -184,7 +196,7 @@
 .schedule-exception-card__meta {
   margin-top: 8px;
   font-size: 13px;
-  color: #475569;
+  color: var(--muted);
 }
 
 .schedule-exception-card__actions {
@@ -207,9 +219,11 @@
 
 .schedule-task-overlay-card {
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px dashed rgba(59, 130, 246, 0.35);
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: var(--radius-panel);
+  border: 1px dashed var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .schedule-task-overlay-card__head,
@@ -226,7 +240,7 @@
 .schedule-conflict-row__meta {
   margin-top: 6px;
   font-size: 12px;
-  color: #475569;
+  color: var(--muted);
 }
 
 .schedule-task-overlay-card__chips,
@@ -244,17 +258,17 @@
   min-height: 30px;
   padding: 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.28);
-  background: rgba(219, 234, 254, 0.72);
-  color: #1d4ed8;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
 }
 
 .schedule-task-overlay-chip.is-muted {
   border-color: rgba(148, 163, 184, 0.3);
-  background: rgba(241, 245, 249, 0.9);
-  color: #64748b;
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
 }
 
 .schedule-conflict-panel {
@@ -284,37 +298,41 @@
 
 .schedule-conflict-row {
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .schedule-conflict-chip.is-related {
-  border-color: rgba(148, 163, 184, 0.28);
-  background: rgba(241, 245, 249, 0.92);
-  color: #334155;
+  color: var(--muted);
 }
 
 .schedule-conflict-panel.is-partial .schedule-conflict-panel__summary strong,
 .schedule-conflict-panel.is-partial .schedule-conflict-panel__label {
-  color: #b45309;
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .schedule-conflict-panel.is-partial .schedule-conflict-chip {
-  border-color: rgba(245, 158, 11, 0.35);
-  background: rgba(254, 243, 199, 0.88);
-  color: #b45309;
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .schedule-conflict-panel.is-full .schedule-conflict-panel__summary strong,
 .schedule-conflict-panel.is-full .schedule-conflict-panel__label {
-  color: #b91c1c;
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .schedule-conflict-panel.is-full .schedule-conflict-chip {
-  border-color: rgba(239, 68, 68, 0.35);
-  background: rgba(254, 226, 226, 0.88);
-  color: #b91c1c;
+  border-color: rgba(255, 107, 90, 0.48);
+  background: rgba(255, 107, 90, 0.14);
+  color: var(--danger);
 }
 
 .retention-age {
@@ -334,13 +352,15 @@
 }
 
 .retention-age.level-1 {
-  background: rgba(245, 158, 11, 0.22);
-  border-color: rgba(245, 158, 11, 0.5);
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .retention-age.level-2 {
-  background: rgba(249, 115, 22, 0.22);
-  border-color: rgba(249, 115, 22, 0.5);
+  border-color: rgba(231, 183, 95, 0.48);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .retention-age.level-3 {
@@ -351,9 +371,11 @@
 /* 甘特图外层负责横向滚动和圆角容器裁切。 */
 .gantt-wrap {
   overflow-x: auto;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .gantt {
@@ -367,14 +389,14 @@
 .gantt th,
 .gantt td {
   padding: 14px 12px;
-  border-bottom: 2px solid rgba(56, 189, 248, 0.18);
-  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  border-bottom: 2px solid var(--border);
+  border-right: 1px solid var(--border);
   text-align: center;
   vertical-align: middle;
 }
 
 .gantt thead th {
-  background: rgba(241, 245, 249, 0.95);
+  background: var(--bg-panel-strong);
   color: var(--text);
   font-weight: 900;
   font-size: 16px;
@@ -393,10 +415,10 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #1d4ed8;
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
   cursor: pointer;
   font-size: 22px;
   font-weight: 900;
@@ -444,7 +466,7 @@
 .gantt-sticky {
   position: sticky;
   left: 0;
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--bg-panel-strong);
   z-index: 2;
   text-align: left;
   font-size: 16px;
@@ -497,10 +519,10 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border: 1px solid rgba(37, 99, 235, 0.22);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
   border-radius: 999px;
-  background: rgba(239, 246, 255, 0.92);
-  color: #1d4ed8;
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--accent);
   cursor: pointer;
   font-size: 18px;
   font-weight: 900;
@@ -547,9 +569,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   text-align: center;
-  border: 1px dashed rgba(15, 23, 42, 0.16);
-  background: rgba(241, 245, 249, 0.96);
-  color: #64748b;
+  border: 1px dashed var(--border);
+  background: rgba(19, 26, 34, 0.9);
+  color: var(--muted);
   font-size: 14px;
   font-weight: 500;
   line-height: 1.2;
@@ -564,25 +586,25 @@
 .gantt-slot.idle {
   font-size: 16px;
   font-weight: 600;
-  border-color: rgba(148, 163, 184, 0.35);
-  background: rgba(241, 245, 249, 0.98);
-  color: #64748b;
+  border-color: var(--border);
+  background: rgba(19, 26, 34, 0.9);
+  color: var(--muted);
 }
 
 .gantt-slot.maintenance {
   font-size: 16px;
   font-weight: 600;
-  border-color: rgba(245, 158, 11, 0.4);
-  background: rgba(254, 243, 199, 0.9);
-  color: #92400e;
+  border-color: rgba(231, 183, 95, 0.46);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .gantt-slot.disabled {
   font-size: 16px;
   font-weight: 600;
-  border-color: rgba(100, 116, 139, 0.36);
-  background: rgba(226, 232, 240, 0.96);
-  color: #475569;
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
 }
 
 .gantt-slot.busy {
@@ -599,22 +621,22 @@
 }
 
 .gantt-slot.busy.running {
-  background: rgba(187, 247, 208, 0.8);
-  border-color: rgba(34, 197, 94, 0.58);
-  color: #166534;
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
 }
 
 .gantt-slot.busy.completed {
-  background: rgba(226, 232, 240, 0.9);
-  border-color: rgba(100, 116, 139, 0.45);
-  color: #334155;
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
 }
 
 .gantt-slot.conflict {
   border-style: solid;
-  background: rgba(254, 205, 211, 0.84);
-  border-color: rgba(244, 63, 94, 0.48);
-  color: #9f1239;
+  border-color: rgba(255, 107, 90, 0.5);
+  background: rgba(255, 107, 90, 0.16);
+  color: var(--danger);
   flex-direction: column;
   align-items: stretch;
 }
@@ -627,11 +649,12 @@
 .gantt-conflict-select {
   width: 100%;
   padding: 4px 6px;
-  border-radius: 8px;
-  border: 1px solid rgba(15, 23, 42, 0.18);
-  background: rgba(248, 250, 252, 0.98);
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
   color: var(--text);
   font-size: 11px;
+  box-shadow: var(--shadow);
 }
 
 .gantt-slot--stacked {
@@ -721,11 +744,11 @@
 }
 
 .gantt tbody tr:nth-child(even) td {
-  background: rgba(248, 250, 252, 0.85);
+  background: var(--bg-panel-strong);
 }
 
 .gantt tbody tr:hover td {
-  background: rgba(56, 189, 248, 0.12);
+  background: rgba(var(--industrial-accent-rgb), 0.08);
 }
 
 .gantt tbody tr:hover td .gantt-slot {
@@ -733,18 +756,21 @@
 }
 
 .gantt tbody tr:hover td .gantt-slot.idle {
-  background: rgba(241, 245, 249, 0.98);
-  border-color: rgba(148, 163, 184, 0.38);
+  border-color: var(--border);
+  background: rgba(19, 26, 34, 0.9);
+  color: var(--muted);
 }
 
 .gantt tbody tr:hover td .gantt-slot.maintenance {
-  background: rgba(254, 243, 199, 0.92);
-  border-color: rgba(245, 158, 11, 0.46);
+  border-color: rgba(231, 183, 95, 0.46);
+  background: rgba(231, 183, 95, 0.16);
+  color: var(--accent-2);
 }
 
 .gantt tbody tr:hover td .gantt-slot.disabled {
-  background: rgba(226, 232, 240, 0.98);
-  border-color: rgba(100, 116, 139, 0.42);
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy {
@@ -758,15 +784,15 @@
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy.running {
-  background: rgba(187, 247, 208, 0.8);
-  border-color: rgba(34, 197, 94, 0.58);
-  color: #166534;
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy.completed {
-  background: rgba(226, 232, 240, 0.9);
-  border-color: rgba(100, 116, 139, 0.45);
-  color: #334155;
+  border-color: rgba(139, 169, 164, 0.38);
+  background: rgba(139, 169, 164, 0.12);
+  color: var(--muted);
 }
 
 /* 小屏下先压缩头部，再让行结构改成单列。 */
@@ -783,139 +809,4 @@
   .board-row {
     grid-template-columns: 1fr;
   }
-}
-
-/* Industrial blackbox skin: schedule cards and gantt cells, preserving table mechanics. */
-.board-slot,
-.form-field .retention-now,
-.schedule-duration-toggle,
-.schedule-task-overlays,
-.schedule-exception-card,
-.schedule-task-overlay-card,
-.schedule-conflict-row,
-.gantt-wrap,
-.gantt-conflict-select {
-  border-color: var(--border);
-  border-radius: var(--radius-panel);
-  background: var(--bg-card-raised);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-
-.board-slot.fill,
-.form-field .retention-now,
-.schedule-task-overlays {
-  border-color: rgba(var(--industrial-accent-rgb), 0.46);
-  background: rgba(var(--industrial-accent-rgb), 0.14);
-}
-
-.schedule-duration-toggle__button {
-  background: var(--bg-panel-strong);
-  color: var(--muted);
-}
-
-.schedule-duration-toggle__button.is-active {
-  background: rgba(231, 183, 95, 0.18);
-  color: var(--accent-2);
-  box-shadow: inset 0 0 0 1px rgba(231, 183, 95, 0.2);
-}
-
-.schedule-duration-toggle__button:not(.is-active):hover,
-.schedule-duration-toggle__button:not(.is-active):focus-visible {
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-  color: var(--text);
-}
-
-.schedule-task-overlays__title,
-.schedule-header-action-button--exception,
-.schedule-task-overlay-chip,
-.schedule-conflict-chip,
-.gantt-window-nav,
-.gantt-lab-nav {
-  border-color: rgba(var(--industrial-accent-rgb), 0.38);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-  color: var(--accent);
-}
-
-.schedule-header-action-button--exception.is-alert,
-.schedule-exception-card__reason,
-.schedule-conflict-panel.is-full .schedule-conflict-panel__summary strong,
-.schedule-conflict-panel.is-full .schedule-conflict-panel__label,
-.schedule-conflict-panel.is-full .schedule-conflict-chip {
-  border-color: rgba(255, 107, 90, 0.48);
-  background: rgba(255, 107, 90, 0.14);
-  color: var(--danger);
-}
-
-.schedule-conflict-panel.is-partial .schedule-conflict-panel__summary strong,
-.schedule-conflict-panel.is-partial .schedule-conflict-panel__label,
-.schedule-conflict-panel.is-partial .schedule-conflict-chip,
-.retention-age.level-1,
-.retention-age.level-2 {
-  border-color: rgba(231, 183, 95, 0.48);
-  background: rgba(231, 183, 95, 0.16);
-  color: var(--accent-2);
-}
-
-.schedule-exception-card__detail,
-.schedule-exception-card__meta,
-.schedule-task-overlay-card__meta,
-.schedule-conflict-row__meta,
-.schedule-task-overlay-chip.is-muted,
-.schedule-conflict-chip.is-related {
-  color: var(--muted);
-}
-
-.gantt th,
-.gantt td {
-  border-bottom-color: var(--border);
-  border-right-color: var(--border);
-}
-
-.gantt thead th,
-.gantt-sticky,
-.gantt tbody tr:nth-child(even) td {
-  background: var(--bg-panel-strong);
-  color: var(--text);
-}
-
-.gantt tbody tr:hover td {
-  background: rgba(var(--industrial-accent-rgb), 0.08);
-}
-
-.gantt-slot,
-.gantt-slot.idle,
-.gantt tbody tr:hover td .gantt-slot.idle {
-  border-color: var(--border);
-  background: rgba(19, 26, 34, 0.9);
-  color: var(--muted);
-}
-
-.gantt-slot.maintenance,
-.gantt tbody tr:hover td .gantt-slot.maintenance {
-  border-color: rgba(231, 183, 95, 0.46);
-  background: rgba(231, 183, 95, 0.16);
-  color: var(--accent-2);
-}
-
-.gantt-slot.disabled,
-.gantt tbody tr:hover td .gantt-slot.disabled,
-.gantt-slot.busy.completed,
-.gantt tbody tr:hover td .gantt-slot.busy.completed {
-  border-color: rgba(139, 169, 164, 0.38);
-  background: rgba(139, 169, 164, 0.12);
-  color: var(--muted);
-}
-
-.gantt-slot.busy.running,
-.gantt tbody tr:hover td .gantt-slot.busy.running {
-  border-color: rgba(var(--industrial-accent-rgb), 0.5);
-  background: rgba(var(--industrial-accent-rgb), 0.18);
-  color: var(--accent);
-}
-
-.gantt-slot.conflict {
-  border-color: rgba(255, 107, 90, 0.5);
-  background: rgba(255, 107, 90, 0.16);
-  color: var(--danger);
 }

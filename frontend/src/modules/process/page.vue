@@ -81,7 +81,7 @@
 
   <div class="modal process-task-modal" :class="{ 'is-open': taskDrawerOpen }" id="process-task-modal">
     <div class="modal-backdrop" data-testid="process-task-backdrop" @click="closeTaskDrawer"></div>
-    <div class="modal-content process-task-modal-content">
+    <div class="modal-content process-task-modal-content process-task-detail-modal-content">
       <div class="modal-header process-task-modal-header">
         <div>
           <div class="muted process-task-modal-eyebrow">任务摘要</div>
@@ -117,26 +117,15 @@
 
           <div class="process-task-summary-grid">
             <section class="process-task-summary-card">
-              <div v-if="selectedTaskDetail?.availableTasks?.length > 1" class="process-task-switch-list">
+              <div v-if="selectedTaskDetail?.availableTasks?.length > 1" class="process-task-select-entry">
                 <button
-                  v-for="taskOption in selectedTaskDetail.availableTasks"
-                  :key="taskOption.selectionKey || taskOption.taskCode"
-                  class="process-task-switch-button"
-                  :class="{
-                    'is-active':
-                      selectedTaskDetail?.code === taskOption.taskCode
-                      && (!taskOption.experimentCode || selectedTaskDetail?.activeExperimentCode === taskOption.experimentCode),
-                  }"
+                  class="process-task-select-button"
                   type="button"
-                  :data-testid="`process-switch-task-${taskOption.taskCode}`"
-                  @click="
-                    taskOption.experimentCode
-                      ? setSelectedTaskForLab(selectedTaskDetail?.labName, taskOption.taskCode, taskOption.experimentCode)
-                      : setSelectedTaskForLab(selectedTaskDetail?.labName, taskOption.taskCode)
-                  "
+                  data-testid="process-open-task-selector"
+                  @click="openTaskSelection"
                 >
-                  <strong>{{ taskOption.taskCode }}</strong>
-                  <span>{{ taskOption.experimentName || "-" }}</span>
+                  <span>任务选择</span>
+                  <strong>{{ selectedTaskDetail.availableTasks.length }} 个任务</strong>
                 </button>
               </div>
               <div class="process-task-summary-title">执行摘要</div>
@@ -338,6 +327,34 @@
     </div>
   </div>
 
+  <div class="modal process-task-selection-modal" :class="{ 'is-open': taskSelectionOpen }" data-testid="process-task-selection-modal">
+    <div class="modal-backdrop" @click="closeTaskSelection"></div>
+    <div class="modal-content process-task-selection-modal-content">
+      <div class="modal-header process-task-modal-header">
+        <div>
+          <div class="muted process-task-modal-eyebrow">任务选择</div>
+          <strong>{{ selectedTaskDetail?.labName || "试验间" }}</strong>
+        </div>
+        <button class="modal-close" type="button" @click="closeTaskSelection">关闭</button>
+      </div>
+      <div class="process-task-selection-list">
+        <button
+          v-for="taskOption in selectedTaskDetail?.availableTasks || []"
+          :key="taskOption.selectionKey || taskOption.taskCode"
+          class="process-task-selection-option"
+          :class="{ 'is-active': isSelectedTaskOption(taskOption) }"
+          type="button"
+          :data-testid="`process-select-task-${taskOption.taskCode}`"
+          @click="selectTaskOption(taskOption)"
+        >
+          <strong>{{ taskOption.taskCode }}</strong>
+          <span>{{ taskOption.experimentName || "-" }}</span>
+          <span>{{ taskOption.scheduleTime || "-" }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal process-task-modal" :class="{ 'is-open': startExperimentModalOpen }" id="process-start-modal">
     <div class="modal-backdrop" data-testid="process-start-backdrop" @click="closeStartExperimentModal"></div>
     <div class="modal-content process-task-modal-content">
@@ -372,7 +389,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { PROCESS_FILTERS, useProcessLabs } from "./useProcessLabs";
@@ -417,6 +434,7 @@ const TASK_ROW_PREVIEW_LIMIT = 3;
 const TASK_SAMPLE_PREVIEW_LIMIT = 5;
 const TASK_ROW_SAMPLE_PREVIEW_LIMIT = 1;
 const taskFullListOpen = ref(false);
+const taskSelectionOpen = ref(false);
 
 const takePreview = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
 const hiddenCount = (items, limit) => Math.max(0, (Array.isArray(items) ? items.length : 0) - limit);
@@ -481,6 +499,39 @@ const closeTaskFullList = () => {
   taskFullListOpen.value = false;
 };
 
+const openTaskSelection = () => {
+  taskSelectionOpen.value = true;
+};
+
+const closeTaskSelection = () => {
+  taskSelectionOpen.value = false;
+};
+
+watch(taskDrawerOpen, (isOpen) => {
+  if (!isOpen) {
+    closeTaskSelection();
+  }
+});
+
+const isSelectedTaskOption = (taskOption) => (
+  selectedTaskDetail.value?.code === taskOption?.taskCode
+  && (!taskOption?.experimentCode || selectedTaskDetail.value?.activeExperimentCode === taskOption.experimentCode)
+);
+
+const selectTaskOption = (taskOption) => {
+  const labName = selectedTaskDetail.value?.labName;
+  const taskCode = String(taskOption?.taskCode || "").trim();
+  if (!labName || !taskCode) {
+    return;
+  }
+  if (taskOption?.experimentCode) {
+    setSelectedTaskForLab(labName, taskCode, taskOption.experimentCode);
+  } else {
+    setSelectedTaskForLab(labName, taskCode);
+  }
+  closeTaskSelection();
+};
+
 const formatFlowTime = (value) => {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -502,6 +553,15 @@ const formatFlowTime = (value) => {
   padding: 24px;
 }
 
+.process-task-detail-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: min(900px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
 .process-task-modal-header {
   margin-bottom: 18px;
 }
@@ -518,9 +578,9 @@ const formatFlowTime = (value) => {
   justify-content: space-between;
   gap: 16px;
   padding: 18px;
-  border: 1px solid rgba(56, 189, 248, 0.28);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(245, 158, 11, 0.1));
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96));
 }
 
 .process-task-code-headline {
@@ -551,9 +611,10 @@ const formatFlowTime = (value) => {
 
 .process-task-keyfact,
 .process-task-summary-card {
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(248, 250, 252, 0.9);
+  background: var(--bg-panel-strong);
+  color: var(--text);
   min-width: 0;
   overflow: hidden;
   padding: 14px 16px;
@@ -604,16 +665,18 @@ const formatFlowTime = (value) => {
 
 .process-task-stat {
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--bg-panel-strong);
   padding: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--border);
+  color: var(--text);
 }
 
 .process-task-inline-field {
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--bg-panel-strong);
   padding: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--border);
+  color: var(--text);
 }
 
 .process-task-tray-chip-list {
@@ -642,8 +705,8 @@ const formatFlowTime = (value) => {
   min-height: 52px;
   padding: 12px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: linear-gradient(135deg, rgba(226, 232, 240, 0.92), rgba(241, 245, 249, 0.98));
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
   color: var(--text);
   font-size: 17px;
   font-weight: 800;
@@ -657,12 +720,13 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-tray-chip:hover {
-  border-color: rgba(14, 116, 144, 0.38);
-  background: linear-gradient(135deg, rgba(186, 230, 253, 0.78), rgba(224, 242, 254, 0.92));
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
 }
 
 .process-task-tray-chip-emphasis {
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.12);
 }
 
 .process-task-tray-chip-list.is-dense .process-task-tray-chip {
@@ -672,12 +736,10 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-tray-chip.is-selected {
-  border-color: rgba(14, 116, 144, 0.9);
-  background: linear-gradient(135deg, rgba(14, 116, 144, 0.94), rgba(3, 105, 161, 0.86));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 8px 18px rgba(14, 116, 144, 0.18);
-  color: #f8fafc;
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
   transform: translateY(-1px);
 }
 
@@ -694,8 +756,8 @@ const formatFlowTime = (value) => {
 .process-task-sample-code-row {
   padding: 10px 12px;
   border-radius: 10px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #ffffff;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
@@ -717,8 +779,9 @@ const formatFlowTime = (value) => {
   min-height: 30px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(14, 116, 144, 0.08);
-  color: #0f766e;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -728,10 +791,10 @@ const formatFlowTime = (value) => {
   cursor: pointer;
   min-height: 32px;
   padding: 5px 12px;
-  border: 1px solid rgba(14, 116, 144, 0.28);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
   border-radius: 999px;
-  background: #ffffff;
-  color: #0f766e;
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
   font-size: 13px;
   font-weight: 700;
 }
@@ -764,9 +827,9 @@ const formatFlowTime = (value) => {
 .process-control-feedback {
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(34, 197, 94, 0.28);
-  background: rgba(34, 197, 94, 0.1);
-  color: #166534;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.45);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
   font-size: 14px;
   font-weight: 600;
 }
@@ -797,8 +860,8 @@ const formatFlowTime = (value) => {
   gap: 4px;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
   color: var(--text);
 }
 
@@ -825,8 +888,9 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-tray-row.is-selected {
-  border-color: rgba(14, 116, 144, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(14, 116, 144, 0.12);
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
 }
 
 .process-task-tray-row strong {
@@ -852,6 +916,13 @@ const formatFlowTime = (value) => {
   padding: 22px;
 }
 
+.process-task-selection-modal-content {
+  width: min(640px, 94vw);
+  max-height: min(720px, 86vh);
+  overflow: hidden;
+  padding: 22px;
+}
+
 .process-task-full-summary {
   display: flex;
   flex-wrap: wrap;
@@ -861,7 +932,8 @@ const formatFlowTime = (value) => {
 
 .process-task-full-summary span {
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
   padding: 6px 12px;
   color: var(--muted);
   font-size: 13px;
@@ -881,15 +953,17 @@ const formatFlowTime = (value) => {
   gap: 14px;
   width: 100%;
   padding: 12px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--bg-panel-strong);
+  color: var(--text);
   text-align: left;
 }
 
 .process-task-full-row.is-selected {
-  border-color: rgba(14, 116, 144, 0.65);
-  box-shadow: 0 0 0 2px rgba(14, 116, 144, 0.12);
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
 }
 
 .process-task-full-row strong,
@@ -916,7 +990,8 @@ const formatFlowTime = (value) => {
 
 .process-task-full-samples span {
   border-radius: 999px;
-  background: rgba(226, 232, 240, 0.9);
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
   padding: 5px 9px;
   color: var(--text);
   font-weight: 600;
@@ -925,13 +1000,19 @@ const formatFlowTime = (value) => {
 
 .process-task-flow-card {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .process-task-drawer-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.8fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
   margin-top: 16px;
 }
 
@@ -939,6 +1020,11 @@ const formatFlowTime = (value) => {
 .process-task-drawer-side {
   display: grid;
   gap: 16px;
+  min-height: 0;
+}
+
+.process-task-drawer-side {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .process-task-flow-head {
@@ -964,17 +1050,24 @@ const formatFlowTime = (value) => {
 .process-task-flow-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 4px 12px 0;
   display: grid;
+  align-content: start;
   gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .process-task-flow-list li {
   position: relative;
   padding: 12px 14px 12px 38px;
   border-radius: 10px;
-  border: 1px solid rgba(56, 189, 248, 0.28);
-  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
   font-size: 14px;
 }
 
@@ -992,8 +1085,10 @@ const formatFlowTime = (value) => {
 
 .process-task-flow-list li.current,
 .process-task-flow-list li.reached {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
 }
 
 .process-task-flow-list li.current {
@@ -1025,11 +1120,16 @@ const formatFlowTime = (value) => {
   white-space: nowrap;
 }
 
-.process-task-switch-button {
+.process-task-select-entry {
+  margin-bottom: 12px;
+}
+
+.process-task-select-button,
+.process-task-selection-option {
   appearance: none;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--bg-panel-strong);
@@ -1042,7 +1142,38 @@ const formatFlowTime = (value) => {
   overflow-wrap: anywhere;
 }
 
-.process-task-switch-button.is-active {
+.process-task-select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.process-task-select-button strong {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.process-task-selection-list {
+  display: grid;
+  gap: 10px;
+  max-height: calc(86vh - 110px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.process-task-selection-option {
+  display: grid;
+  gap: 5px;
+}
+
+.process-task-selection-option span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-task-selection-option.is-active {
   border-color: rgba(var(--industrial-accent-rgb), 0.58);
   background: rgba(var(--industrial-accent-rgb), 0.16);
   color: var(--accent);
@@ -1067,104 +1198,6 @@ const formatFlowTime = (value) => {
   .process-task-tray-meta {
     text-align: left;
   }
-}
-
-/* Industrial blackbox skin: process task drawers and tray flow cards. */
-.process-task-modal-content,
-.process-task-full-modal-content,
-.process-task-hero,
-.process-task-keyfact,
-.process-task-summary-card,
-.process-task-stat,
-.process-task-inline-field,
-.process-task-sample-code-row,
-.process-task-tray-row,
-.process-task-full-row,
-.process-task-full-summary span,
-.process-task-flow-list li {
-  border-color: var(--border);
-  background: var(--bg-card-raised);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-
-.process-task-keyfact,
-.process-task-summary-card,
-.process-task-stat,
-.process-task-inline-field,
-.process-task-sample-code-row,
-.process-task-tray-row,
-.process-task-full-row,
-.process-task-flow-list li {
-  background: var(--bg-panel-strong);
-  box-shadow: none;
-}
-
-.process-task-hero {
-  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96));
-}
-
-.process-task-summary-title,
-.process-task-keyfact strong,
-.process-task-stat strong,
-.process-task-inline-field strong,
-.process-task-detail-row strong,
-.process-task-tray-row strong,
-.process-task-full-row strong,
-.process-task-flow-label {
-  color: var(--text);
-}
-
-.process-task-keyfact span,
-.process-task-stat span,
-.process-task-inline-field span,
-.process-task-detail-row span,
-.process-task-tray-row span,
-.process-task-full-row span,
-.process-task-full-summary span,
-.process-task-flow-time,
-.process-task-tray-meta,
-.process-task-flow-status {
-  color: var(--muted);
-}
-
-.process-task-tray-chip,
-.process-task-more-count,
-.process-task-more-button,
-.process-task-full-samples span {
-  border-color: rgba(var(--industrial-accent-rgb), 0.38);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-  color: var(--text);
-}
-
-.process-task-tray-chip:hover,
-.process-task-tray-chip.is-selected,
-.process-task-tray-row.is-selected,
-.process-task-full-row.is-selected,
-.process-task-flow-list li.current,
-.process-task-flow-list li.reached {
-  border-color: rgba(var(--industrial-accent-rgb), 0.55);
-  background: rgba(var(--industrial-accent-rgb), 0.16);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
-}
-
-.process-control-feedback {
-  border-color: rgba(var(--industrial-accent-rgb), 0.45);
-  background: rgba(var(--industrial-accent-rgb), 0.14);
-  color: var(--accent);
-}
-
-.process-task-drawer-layout,
-.process-task-drawer-main,
-.process-task-drawer-side {
-  min-height: 0;
-}
-
-.process-task-flow-card {
-  max-height: min(760px, calc(100dvh - 220px));
-  overflow: auto;
-  overscroll-behavior: contain;
 }
 
 @media (max-height: 900px) {

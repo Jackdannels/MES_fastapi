@@ -43,11 +43,11 @@
 }
 
 .devices-action-link--maintenance {
-  color: #d97706;
+  color: var(--accent-2);
 }
 
 .devices-action-link--maintenance:hover {
-  color: #b45309;
+  color: var(--accent-2);
 }
 
 .device-status-field {
@@ -63,7 +63,7 @@
 
 .device-status-display {
   align-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-panel);
   display: flex;
   min-height: 40px;
   padding: 0 12px;
@@ -71,19 +71,19 @@
 }
 
 .device-status-display.status {
-  color: #0369a1;
+  color: var(--accent);
 }
 
 .device-status-display.status.running {
-  color: #047857;
+  color: var(--accent);
 }
 
 .device-status-display.status.alert {
-  color: #be123c;
+  color: var(--danger);
 }
 
 .device-status-display.status.warn {
-  color: #b45309;
+  color: var(--accent-2);
 }
 
 /* 设备台账和连接配置区块采用独立卡片排布。 */
@@ -108,10 +108,10 @@
 }
 
 .devices-maintenance-conflict {
-  background: #fff1f2;
-  border: 1px solid #f43f5e;
-  border-radius: 8px;
-  color: #881337;
+  background: rgba(255, 107, 90, 0.14);
+  border: 1px solid rgba(255, 107, 90, 0.48);
+  border-radius: var(--radius-panel);
+  color: var(--danger);
   display: grid;
   gap: 10px;
   padding: 14px;
@@ -124,26 +124,4 @@
 .devices-maintenance-conflict ul {
   margin: 0;
   padding-left: 20px;
-}
-
-/* Industrial blackbox skin: device status readability. */
-.device-status-display.status,
-.device-status-display.status.running {
-  color: var(--accent);
-}
-
-.device-status-display.status.alert,
-.devices-maintenance-conflict {
-  color: var(--danger);
-}
-
-.device-status-display.status.warn,
-.devices-action-link--maintenance,
-.devices-action-link--maintenance:hover {
-  color: var(--accent-2);
-}
-
-.devices-maintenance-conflict {
-  border-color: rgba(255, 107, 90, 0.48);
-  background: rgba(255, 107, 90, 0.14);
 }

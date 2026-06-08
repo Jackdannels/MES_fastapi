@@ -146,26 +146,32 @@
                 </div>
               </div>
 
-              <template v-else-if="pagedTaskOverview.length">
-                <button
-                  v-for="task in pagedTaskOverview"
-                  :key="task.taskId"
+              <template v-else-if="pagedTaskOverviewRows.length">
+                <div
+                  v-for="task in pagedTaskOverviewRows"
+                  :key="task.rowKey"
                   class="transfer-table__row transfer-table__row--compact"
-                  :data-testid="`transfer-task-row-${task.taskId}`"
-                  type="button"
-                  @click="openTask(task)"
+                  :class="{ 'transfer-table__row--placeholder': task.isPlaceholder }"
+                  :data-testid="task.isPlaceholder ? `transfer-task-placeholder-${task.placeholderIndex}` : `transfer-task-row-${task.taskId}`"
+                  :role="task.isPlaceholder ? 'presentation' : 'button'"
+                  :tabindex="task.isPlaceholder ? -1 : 0"
+                  @click="task.isPlaceholder ? undefined : openTask(task)"
+                  @keydown.enter.prevent="task.isPlaceholder ? undefined : openTask(task)"
+                  @keydown.space.prevent="task.isPlaceholder ? undefined : openTask(task)"
                 >
-                  <div>{{ task.seq }}</div>
-                  <div class="transfer-table__main">{{ task.taskNo }}</div>
-                  <div class="transfer-table__name">
-                    <strong>{{ task.experimentTypeText || task.taskType || "-" }}</strong>
-                    <span class="muted">{{ task.taskProgress || task.taskStatus || "-" }}</span>
-                  </div>
-                  <div class="transfer-table__codes">
-                    <span v-for="sampleCode in task.sampleCodes || []" :key="sampleCode" class="transfer-sample-code-chip">{{ sampleCode }}</span>
-                  </div>
-                  <div class="transfer-table__count">{{ task.sampleCount || 0 }}</div>
-                </button>
+                  <template v-if="!task.isPlaceholder">
+                    <div>{{ task.seq }}</div>
+                    <div class="transfer-table__main">{{ task.taskNo }}</div>
+                    <div class="transfer-table__name">
+                      <strong>{{ task.experimentTypeText || task.taskType || "-" }}</strong>
+                      <span class="muted">{{ task.taskProgress || task.taskStatus || "-" }}</span>
+                    </div>
+                    <div class="transfer-table__codes">
+                      <span v-for="sampleCode in task.sampleCodes || []" :key="sampleCode" class="transfer-sample-code-chip">{{ sampleCode }}</span>
+                    </div>
+                    <div class="transfer-table__count">{{ task.sampleCount || 0 }}</div>
+                  </template>
+                </div>
               </template>
 
               <div v-else class="transfer-table__empty" data-testid="transfer-empty-state">
@@ -783,6 +789,21 @@ const sortedTaskOverview = computed(() => {
 const taskPageCount = computed(() => Math.max(1, Math.ceil(sortedTaskOverview.value.length / overviewPageSize.value)));
 const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
 const pagedTaskOverview = computed(() => sortedTaskOverview.value.slice((currentTaskPage.value - 1) * overviewPageSize.value, currentTaskPage.value * overviewPageSize.value));
+const pagedTaskOverviewRows = computed(() => {
+  const rows = pagedTaskOverview.value.map((task) => ({ ...task, rowKey: `task-${task.taskId}` }));
+  if (!rows.length) {
+    return rows;
+  }
+  const placeholderCount = Math.max(0, overviewPageSize.value - rows.length);
+  return [
+    ...rows,
+    ...Array.from({ length: placeholderCount }, (_, index) => ({
+      isPlaceholder: true,
+      placeholderIndex: index + 1,
+      rowKey: `placeholder-${currentTaskPage.value}-${index}`,
+    })),
+  ];
+});
 const rawAvailableInventoryCount = computed(() => availableInventory.value.length);
 const totalAssignedSampleCount = computed(() => assignedTrays.value.reduce((sum, tray) => sum + tray.samples.length, 0));
 const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
