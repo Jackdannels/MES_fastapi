@@ -7,7 +7,9 @@ import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterface
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
+import { isExperimentCompletedStatus } from "@/lib/statusNormalization";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { trayExperimentRunIsCompleted } from "@/modules/experiment-progress/model";
 import {
   buildTrayFlowView,
   normalizeLifecycleStatus,
@@ -31,7 +33,6 @@ const TRAY_STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
 const RUNNING_TRAY_STATUSES = new Set([TRAY_STATUS_RUNNING, "实验中"]);
 const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成", "放置实验后暂存间", "厂家收回"]);
-const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成"]);
 const PROCESS_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.devices,
   STORAGE_KEYS.tasks,
@@ -432,9 +433,14 @@ function useProcessLabs(options = {}) {
         if (!trayCode) {
           return;
         }
-        const status = normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status);
+        const status = normalizeLifecycleStatus("", normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status));
         const isRunning = RUNNING_TRAY_STATUSES.has(status);
-        const isCompleted = COMPLETED_EXPERIMENT_RUN_STATUSES.has(status);
+        const isCompleted = trayExperimentRunIsCompleted({
+          experimentCode: normalizedExperimentCode,
+          experimentRunTrays: [relation],
+          taskCode: normalizedTaskCode,
+          trayCode,
+        });
         if (!isRunning && !isCompleted) {
           return;
         }
@@ -454,9 +460,9 @@ function useProcessLabs(options = {}) {
       ) {
         return;
       }
-      const status = normalizeText(run?.status);
+      const status = normalizeLifecycleStatus("", normalizeText(run?.status));
       const isRunning = RUNNING_TRAY_STATUSES.has(status);
-      const isCompleted = COMPLETED_EXPERIMENT_RUN_STATUSES.has(status);
+      const isCompleted = isExperimentCompletedStatus(status);
       if (!isRunning && !isCompleted) {
         return;
       }

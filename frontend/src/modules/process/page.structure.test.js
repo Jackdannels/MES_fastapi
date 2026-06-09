@@ -51,10 +51,23 @@ describe("ProcessPage structure", () => {
 
   test("keeps tray batch lists locally scrollable inside the fitted task detail modal", () => {
     const source = readProcessPage();
+    const drawerMain = cssBlock(source, ".process-task-drawer-main");
+    const batchGrid = cssBlock(source, ".process-task-batch-grid");
+    const batchCard = cssBlock(source, ".process-task-batch-grid > .process-task-summary-card");
     const trayList = cssBlock(source, ".process-task-tray-list--scrollable");
 
     expect(source).toContain("process-task-tray-list process-task-tray-list--scrollable");
-    expect(trayList).toContain("max-height: min(260px, 28vh)");
+    expect(drawerMain).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
+    expect(drawerMain).toContain("overflow: hidden");
+    expect(batchGrid).toContain("min-height: 0");
+    expect(batchGrid).toContain("grid-auto-rows: minmax(0, 1fr)");
+    expect(batchGrid).toContain("overflow: hidden");
+    expect(batchCard).toContain("display: flex");
+    expect(batchCard).toContain("flex-direction: column");
+    expect(batchCard).toContain("min-height: 0");
+    expect(trayList).toContain("flex: 1 1 auto");
+    expect(trayList).toContain("min-height: 0");
+    expect(trayList).toContain("max-height: none");
     expect(trayList).toContain("overflow: auto");
     expect(trayList).toContain("scrollbar-gutter: stable");
   });

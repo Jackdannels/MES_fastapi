@@ -290,7 +290,34 @@ const resolveUnifiedTrayFlowRank = (status) => {
   return UNIFIED_TRAY_FLOW_STATUS_RANK.get(normalized) ?? -1;
 };
 
-const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray }) => {
+const resolveUnifiedTrayLifecycleTime = ({ sample, status, tray, trayCode }) => {
+  const normalizedStatus = normalizeText(status);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const candidateTimes = [
+    toTime(tray?.updated_at || tray?.updatedAt),
+    toTime(sample?.updated_at || sample?.updatedAt),
+  ].filter(Number.isFinite);
+  asArray(sample?.history).forEach((entry) => {
+    if (normalizedTrayCode && !entryMatchesTrayCode(entry, normalizedTrayCode)) {
+      return;
+    }
+    const entryStatus = normalizeLifecycleStatus(entry?.location, entry?.status);
+    const entryMentionsStatus =
+      entryStatus === normalizedStatus
+      || normalizeText(entry?.action).includes(normalizedStatus)
+      || normalizeText(entry?.detail).includes(normalizedStatus);
+    if (!entryMentionsStatus) {
+      return;
+    }
+    const entryTime = toTime(entry?.time || entry?.created_at || entry?.createdAt || entry?.updated_at || entry?.updatedAt);
+    if (Number.isFinite(entryTime)) {
+      candidateTimes.push(entryTime);
+    }
+  });
+  return candidateTimes.length > 0 ? Math.max(...candidateTimes) : 0;
+};
+
+const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray, trayCode }) => {
   const normalizedLocation = normalizeText(location);
   const trayStatus = normalizeText(tray?.status);
   const status = normalizeLifecycleStatus(
@@ -301,7 +328,23 @@ const resolveUnifiedTrayLifecycleCandidate = ({ location, sample, tray }) => {
     location: normalizedLocation,
     rank: resolveUnifiedTrayFlowRank(status),
     status,
+    time: resolveUnifiedTrayLifecycleTime({ sample, status, tray, trayCode }),
   };
+};
+
+const shouldReplaceUnifiedTrayLifecycle = (row, candidate) => {
+  if (!candidate?.status) {
+    return false;
+  }
+  const currentTime = Number(row?.lifecycleTime) || 0;
+  const candidateTime = Number(candidate?.time) || 0;
+  if (candidateTime || currentTime) {
+    if (candidateTime !== currentTime) {
+      return candidateTime > currentTime;
+    }
+    return candidate.rank > resolveUnifiedTrayFlowRank(row?.lifecycleStatus);
+  }
+  return !row?.lifecycleStatus || candidate.rank > resolveUnifiedTrayFlowRank(row.lifecycleStatus);
 };
 
 const isFixtureReady = (value) => {
@@ -1316,6 +1359,7 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
       experimentCodes: experimentCodesByTrayCode.get(normalizedTrayCode) || [],
       lifecycleLocation: normalizeText(location),
       lifecycleStatus: "",
+      lifecycleTime: 0,
       hasCurrentExperimentHistory: false,
       owner: normalizeText(owner),
       quantity: quantity || "",
@@ -1427,13 +1471,16 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
         row.displayStatus = displayStatusCandidate;
       }
       const lifecycleLocation = physicalTrayStatus === LAB_RESET_STATUS && targetLab ? targetLab : location;
-      const lifecycleCandidate = resolveUnifiedTrayLifecycleCandidate({ location: lifecycleLocation, sample, tray });
-      if (
-        lifecycleCandidate.status
-        && (!row.lifecycleStatus || lifecycleCandidate.rank > resolveUnifiedTrayFlowRank(row.lifecycleStatus))
-      ) {
+      const lifecycleCandidate = resolveUnifiedTrayLifecycleCandidate({
+        location: lifecycleLocation,
+        sample,
+        tray,
+        trayCode: row.trayCode,
+      });
+      if (shouldReplaceUnifiedTrayLifecycle(row, lifecycleCandidate)) {
         row.lifecycleLocation = lifecycleCandidate.location || row.currentLocation;
         row.lifecycleStatus = lifecycleCandidate.status;
+        row.lifecycleTime = lifecycleCandidate.time || 0;
       }
     });
   });

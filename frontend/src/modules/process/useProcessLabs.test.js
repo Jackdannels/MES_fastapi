@@ -1399,6 +1399,130 @@ describe("useProcessLabs", () => {
     });
   });
 
+  test("excludes manufacturer-returned completed trays from remaining count while another tray is ready", async () => {
+    const taskCode = "SYLU-2026-06-021";
+    const experimentCode = `${taskCode}-A`;
+    const trayCodes = [
+      `${taskCode}-TP-001`,
+      `${taskCode}-TP-002`,
+      `${taskCode}-TP-003`,
+      `${taskCode}-TP-004`,
+    ];
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          device: "冲击一室",
+          end_at: "2026-06-06T12:00:00+08:00",
+          experiment_code: experimentCode,
+          start_at: "2026-06-06T08:00:00+08:00",
+          task_code: taskCode,
+        },
+      ],
+      "mes.tasks": [{ code: taskCode, status: "任务进行中", test_type: "冲击试验" }],
+      "mes.experiments": [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验", status: "实验准备就绪" },
+      ],
+      "mes.experiment_trays": trayCodes.map((trayCode) => ({
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        tray_code: trayCode,
+      })),
+      "mes.experiment_run_trays": [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          run_no: "RUN-IMPACT-001",
+          run_tray_status: "厂家收回",
+          tray_code: trayCodes[0],
+        },
+      ],
+      "mes.samples": [
+        {
+          code: `${taskCode}-SP-001`,
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-06T09:20:00+08:00" },
+            { action: "厂家收回", status: "厂家收回", time: "2026-06-06T09:30:00+08:00" },
+          ],
+          location: "冲击一室",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [{ tray_code: trayCodes[0], status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          history: [
+            {
+              action: "实验确认",
+              detail: `${taskCode} / 冲击试验 / 实验准备就绪`,
+              location: "冲击一室",
+              status: "实验准备就绪",
+              time: "2026-06-06T09:40:00+08:00",
+            },
+          ],
+          location: "冲击一室",
+          status: "实验准备就绪",
+          task_code: taskCode,
+          trays: [{ tray_code: trayCodes[1], status: "实验准备就绪", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-003`,
+          location: "冲击一室",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [{ tray_code: trayCodes[2], status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-004`,
+          location: "冲击一室",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [{ tray_code: trayCodes[3], status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+    }));
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "冲击一室", testType: "冲击试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-06-06T09:45:00+08:00"),
+    });
+
+    await loadLabStatus();
+    await openTaskOverview(labCards.value[0]);
+
+    expect(labCards.value[0]).toMatchObject({
+      readyTrayCount: 1,
+      remainingTrayCount: 2,
+    });
+    expect(selectedTaskDetail.value.readyTrayRows.map((row) => row.trayCode)).toEqual([trayCodes[1]]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual([trayCodes[2], trayCodes[3]]);
+    expect(selectedTaskDetail.value.completedTrayRows.map((row) => row.trayCode)).toEqual([trayCodes[0]]);
+
+    window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? HOST_INTERFACE_MODES.mqtt : null));
+    const {
+      labCards: mqttLabCards,
+      loadLabStatus: loadMqttLabStatus,
+      openTaskOverview: openMqttTaskOverview,
+      selectedTaskDetail: mqttSelectedTaskDetail,
+    } = useProcessLabs({
+      autoLoad: false,
+      labs: [{ name: "冲击一室", testType: "冲击试验" }],
+      loadSnapshot,
+      now: Date.parse("2026-06-06T09:45:00+08:00"),
+    });
+
+    await loadMqttLabStatus();
+    await openMqttTaskOverview(mqttLabCards.value[0]);
+
+    expect(mqttLabCards.value[0]).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 1,
+      remainingTrayCount: 2,
+      startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
+    });
+    expect(mqttSelectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual([trayCodes[2], trayCodes[3]]);
+  });
+
   test("keeps a lab card running when a tray is in in-progress status", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [

@@ -974,6 +974,14 @@ describe("staging-management model", () => {
       status: "送至暂存间",
       flow_status: "送至暂存间",
     });
+
+    const appearanceRowsAfterStockOut = buildZancunRowsFromSnapshot(result.snapshot, { now: TODAY, room: "appearance" });
+    const appearanceSectionsAfterStockOut = buildZancunInventorySections(appearanceRowsAfterStockOut, { room: "appearance" });
+    const appearanceRowAfterStockOut = appearanceRowsAfterStockOut.find((row) => row.trayCode === "SYLU-2026-04-122-TP-001");
+
+    expect(appearanceSectionsAfterStockOut.plannedInboundRows.map((row) => row.trayCode)).not.toContain("SYLU-2026-04-122-TP-001");
+    expect(appearanceSectionsAfterStockOut.currentStagingRows.map((row) => row.trayCode)).not.toContain("SYLU-2026-04-122-TP-001");
+    expect(appearanceRowAfterStockOut?.status).not.toBe("待入库");
   });
 
   test("staging room lists trays dispatched back from appearance inspection even after earlier staging stock-in", () => {
@@ -1038,6 +1046,7 @@ describe("staging-management model", () => {
     expect(appearanceOut.error).toBe("");
     expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
     expect(stagingSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      source: "外观检测间",
       status: "待入库",
       trayCode,
     }));
@@ -1048,6 +1057,7 @@ describe("staging-management model", () => {
       flow_status: "已到达暂存间",
     });
     expect(sectionsAfterStockIn.currentStagingRows).toContainEqual(expect.objectContaining({
+      source: "外观检测间",
       status: "到货",
       trayCode,
     }));
@@ -1114,7 +1124,79 @@ describe("staging-management model", () => {
     expect(appearanceOut.error).toBe("");
     expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
     expect(stagingSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      source: "外观检测间",
       status: "待入库",
+      trayCode,
+    }));
+  });
+
+  test("staging room infers appearance source when appearance dispatch event omits target metadata", () => {
+    const snapshot = createSnapshot();
+    const trayCode = "SYLU-2026-04-126-TP-001";
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-back-minimal-event",
+      code: "SYLU-2026-04-126-SP-001",
+      task_code: "SYLU-2026-04-126",
+      owner: "周工",
+      location: "恒温恒湿间（暂存间）",
+      status: "送至暂存间",
+      flow_status: "送至暂存间",
+      trays: [{ tray_code: trayCode, status: "送至暂存间", quantity: 1 }],
+      history: [
+        { detail: "SYLU-2026-04-126 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-126-staging-in",
+        action: "stock_in",
+        room: "staging",
+        task_code: "SYLU-2026-04-126",
+        time: "2026-04-01T08:30:00",
+        tray_code: trayCode,
+      },
+      {
+        id: "evt-126-appearance-in",
+        action: "stock_in",
+        room: "appearance",
+        task_code: "SYLU-2026-04-126",
+        time: "2026-04-01T09:30:00",
+        tray_code: trayCode,
+      },
+      {
+        id: "evt-126-appearance-out",
+        action: "stock_out",
+        room: "appearance",
+        task_code: "SYLU-2026-04-126",
+        time: "2026-04-01T10:00:00",
+        tray_code: trayCode,
+      },
+    );
+
+    const stagingRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "staging" });
+    const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
+    const stagingStockIn = applyZancunInventoryAction({
+      now: "2026-04-01T10:05:00",
+      payload: {
+        code: trayCode,
+        mode: "stockIn",
+      },
+      room: "staging",
+      snapshot,
+    });
+    const rowsAfterStockIn = buildZancunRowsFromSnapshot(stagingStockIn.snapshot, { now: TODAY, room: "staging" });
+    const sectionsAfterStockIn = buildZancunInventorySections(rowsAfterStockIn, { room: "staging" });
+
+    expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
+    expect(stagingSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      source: "外观检测间",
+      status: "待入库",
+      trayCode,
+    }));
+    expect(stagingStockIn.error).toBe("");
+    expect(sectionsAfterStockIn.currentStagingRows).toContainEqual(expect.objectContaining({
+      source: "外观检测间",
+      status: "到货",
       trayCode,
     }));
   });
@@ -1302,7 +1384,7 @@ describe("staging-management model", () => {
     const sections = buildZancunInventorySections(rows);
     const row = rows.find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
 
-    expect(row?.status).toBe("到货");
+    expect(row?.status).toBe("已到达暂存间");
     expect(row?.location).toBe("恒温恒湿间（暂存间）");
     expect(sections.currentStagingRows.map((item) => item.trayCode)).toContain("SYLU-2026-04-102-TP-001");
   });

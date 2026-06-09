@@ -845,7 +845,16 @@ const formatFlowTime = (value) => {
 .process-task-batch-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.process-task-batch-grid > .process-task-summary-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .process-task-tray-list {
@@ -854,7 +863,9 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-tray-list--scrollable {
-  max-height: min(260px, 28vh);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
   overscroll-behavior: contain;
   padding-right: 4px;
@@ -1029,6 +1040,11 @@ const formatFlowTime = (value) => {
   display: grid;
   gap: 16px;
   min-height: 0;
+}
+
+.process-task-drawer-main {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .process-task-drawer-side {

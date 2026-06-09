@@ -425,6 +425,27 @@
   cursor: pointer;
 }
 
+.transfer-dispatch-result {
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 14px;
+}
+
+.transfer-dispatch-summary-card,
+.transfer-dispatch-destination-card {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
 .transfer-task-summary-card__label {
   font-size: 12px;
   color: var(--muted);

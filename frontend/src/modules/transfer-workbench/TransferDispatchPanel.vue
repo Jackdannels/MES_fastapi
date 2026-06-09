@@ -41,7 +41,7 @@
       />
     </div>
 
-    <section v-if="dispatchState.state.tray" class="card section" data-testid="transfer-dispatch-result">
+    <section v-if="dispatchState.state.tray" class="transfer-dispatch-result" data-testid="transfer-dispatch-result">
       <article class="transfer-dispatch-summary-card" data-testid="transfer-dispatch-tray-summary">
         <div class="transfer-dispatch-summary-card__top">
           <div>

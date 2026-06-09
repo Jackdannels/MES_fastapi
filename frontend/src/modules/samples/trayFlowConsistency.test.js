@@ -1,8 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import { buildLaboratoryWorkbenchView } from "@/modules/laboratory/model";
+import {
+  buildZancunInventorySections,
+  buildZancunRowsFromSnapshot,
+} from "@/modules/staging-management/model";
 import { buildTrayOverviewRows } from "@/modules/task-overview/model";
 import { buildLabProcessPanels } from "@/modules/visualization/model";
+import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { buildTrayFlowView } from "./samplesFlowModel";
 
 describe("tray flow consistency", () => {
@@ -564,5 +569,119 @@ describe("tray flow consistency", () => {
       trayCode,
     }));
     expect(activeLabel(visualTray)).toBe("外观检测间存放");
+  });
+
+  test("uses central tray state after appearance to staging restore instead of stale sibling sample status", () => {
+    const taskCode = "SYLU-2026-06-099";
+    const trayCode = "SYLU-2026-06-099-TP-001";
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, test_type: "盐雾试验 / 振动试验", status: "任务进行中" }],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "盐雾试验", required_device: "盐雾试验室", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "振动试验", required_device: "振动一室", status: "已排程" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_no: "RUN-SALT-001",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-08 10:00:00",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          task_code: taskCode,
+          code: "SYLU-2026-06-099-SP-001",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          flow_status: "已到达暂存间",
+          updated_at: "2026-06-08 10:45:00",
+          trays: [
+            {
+              tray_code: trayCode,
+              quantity: 1,
+              status: "已到达暂存间",
+              updated_at: "2026-06-08 10:45:00",
+            },
+          ],
+          history: [
+            { action: "实验任务撤回", detail: `${taskCode} / 振动试验 / 撤回至已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-08 10:45:00", tray_code: trayCode },
+            { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-08 10:20:00", tray_code: trayCode },
+            { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-06-08 10:15:00", tray_code: trayCode },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-08 10:10:00", tray_code: trayCode },
+            { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-06-08 10:00:00", tray_code: trayCode },
+          ],
+        },
+        {
+          task_code: taskCode,
+          code: "SYLU-2026-06-099-SP-002",
+          location: "外观检测间",
+          status: "送至外观检测间",
+          flow_status: "送至外观检测间",
+          updated_at: "2026-06-08 10:05:00",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "送至外观检测间", updated_at: "2026-06-08 10:05:00" }],
+          history: [
+            { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-06-08 10:00:00", tray_code: trayCode },
+            { action: "送检", detail: `${trayCode} 送至外观检测间`, location: "外观检测间", status: "送至外观检测间", time: "2026-06-08 10:05:00", tray_code: trayCode },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "盐雾试验室", status: "实验已完成", start_at: "2026-06-08 09:00:00" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "振动一室", status: "已排程", start_at: "2026-06-08 11:00:00" },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        { action: "stock_out", room: "appearance", task_code: taskCode, tray_code: trayCode, target_lab: "恒温恒湿间（暂存间）", time: "2026-06-08 10:15:00" },
+        { action: "stock_in", room: "staging", task_code: taskCode, tray_code: trayCode, time: "2026-06-08 10:20:00" },
+        { action: "stock_out", room: "staging", task_code: taskCode, tray_code: trayCode, target_lab: "振动一室", time: "2026-06-08 10:40:00" },
+        { action: "stock_out_withdraw", room: "staging", task_code: taskCode, tray_code: trayCode, target_lab: "振动一室", time: "2026-06-08 10:45:00" },
+      ],
+    };
+    const input = {
+      tasks: snapshot[STORAGE_KEYS.tasks],
+      experiments: snapshot[STORAGE_KEYS.experiments],
+      experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+      experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+      samples: snapshot[STORAGE_KEYS.samples],
+      schedules: snapshot[STORAGE_KEYS.schedules],
+    };
+
+    const centralFlow = buildTrayFlowView({
+      ...input,
+      currentExperimentCode: `${taskCode}-B`,
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      taskCode,
+      trayCode,
+    });
+    const laboratoryView = buildLaboratoryWorkbenchView({
+      ...input,
+      labName: "振动一室",
+      selectedTrayCode: trayCode,
+    });
+    const stagingRows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-08 10:50:00", room: "staging" });
+    const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
+    const stagingRow = stagingSections.currentStagingRows.find((row) => row.trayCode === trayCode);
+
+    expect(centralFlow.status).toBe("已到达暂存间");
+    expect(activeLabel(centralFlow)).toBe("已到达暂存间");
+    expect(laboratoryView.selectedTrayFlow.status).toBe(centralFlow.status);
+    expect(activeLabel(laboratoryView.selectedTrayFlow)).toBe(activeLabel(centralFlow));
+    expect(laboratoryView.selectedTrayRow).toEqual(expect.objectContaining({
+      lifecycleLocation: "恒温恒湿间（暂存间）",
+      lifecycleStatus: "已到达暂存间",
+      trayCode,
+    }));
+    expect(stagingRow).toEqual(expect.objectContaining({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trayCode,
+    }));
   });
 });

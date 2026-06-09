@@ -67,4 +67,19 @@ describe("handover system styles", () => {
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/i);
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*grid-auto-rows:\s*40px/i);
   });
+
+  test("dispatch result cards use globally loaded dark handover surfaces", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferDispatchPanel.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(componentSource).toMatch(/class="[^"]*\btransfer-dispatch-result\b[^"]*"/);
+    expect(styleSource).toMatch(/\.transfer-dispatch-result\s*\{[^}]*background:\s*var\(--bg-card\)/i);
+    expect(styleSource).toMatch(/\.transfer-dispatch-result\s*\{[^}]*color:\s*var\(--text\)/i);
+    expect(styleSource).toMatch(
+      /\.transfer-dispatch-summary-card,\s*\.transfer-dispatch-destination-card\s*\{[^}]*background:\s*var\(--bg-card-raised\)/i,
+    );
+    expect(styleSource).not.toMatch(/background:\s*(?:#fff|#ffffff|white)\b/i);
+  });
 });

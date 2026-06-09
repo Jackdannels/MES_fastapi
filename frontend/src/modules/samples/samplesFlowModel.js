@@ -1,70 +1,38 @@
 // 构建样品流转列表、暂存视图和更新辅助逻辑。
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
-const DEFAULT_LABELS = {
-  intakeLocation: "\u63A5\u9A73\u533A",
-  unpackingLocation: "\u62C6\u7BB1\u64CD\u4F5C\u95F4",
-  preRetentionLocation: "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u6682\u5B58\u95F4\uFF09",
-  retentionLocation: "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u6682\u5B58\u95F4\uFF09",
-  postRetentionLocation: "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4\uFF09",
-  sampleReceived: "\u5DF2\u63A5\u6536",
-  sampleTesting: "\u8BD5\u9A8C\u4E2D",
-  sampleStored: "\u5230\u8D27",
-};
-
-const TEST_LABS = new Set([
-  "\u51B2\u51FB\u4E00\u5BA4",
-  "\u51B2\u51FB\u4E8C\u5BA4",
-  "\u632F\u52A8\u4E00\u5BA4",
-  "\u632F\u52A8\u4E8C\u5BA4",
-  "\u56DB\u7EFC\u5408\u5B9E\u9A8C\u5BA4",
-  "\u6E29\u5EA6\u51B2\u51FB\u4E00\u5BA4",
-  "\u6E29\u5EA6\u51B2\u51FB\u4E8C\u5BA4",
-  "\u9AD8\u4F4E\u6E29\u6E7F\u70ED\u4E00\u5BA4",
-  "\u76D0\u96FE\u8BD5\u9A8C\u5BA4",
-  "\u9709\u83CC\u8BD5\u9A8C\u5BA4",
-]);
-
-const TEST_LAB_OPTIONS = Array.from(TEST_LABS).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
-
-const SAMPLE_FLOW_STEPS = [
-  { key: "in_transit", label: "\u6837\u54C1\u8FD0\u8F93\u4E2D" },
-  { key: "arrived", label: "\u5230\u8D27" },
-  { key: "sent_to_staging", label: "\u9001\u81F3\u6682\u5B58\u95F4" },
-  { key: "arrived_staging", label: "\u5DF2\u5230\u8FBE\u6682\u5B58\u95F4" },
-  { key: "sent_to_lab", label: "\u9001\u81F3\u5B9E\u9A8C\u5BA4" },
-  { key: "arrived_lab", label: "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4" },
-  { key: "fixture_install", label: "\u5DE5\u88C5\u5939\u5177\u5B89\u88C5" },
-  { key: "ready", label: "\u5B9E\u9A8C\u51C6\u5907\u5C31\u7EEA" },
-  { key: "running", label: "\u5B9E\u9A8C\u8FDB\u884C\u4E2D" },
-  { key: "completed", label: "\u5B9E\u9A8C\u5DF2\u5B8C\u6210" },
-  { key: "post_test_staging", label: "\u653E\u7F6E\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4" },
-  { key: "returned", label: "\u5382\u5BB6\u6536\u56DE" },
-];
-
-const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
-const APPEARANCE_SENT_STATUS = "送至外观检测间";
-const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
-const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
-
-const FLOW_STEP_KEY_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step) => [step.label, step.key]));
-const FLOW_STEP_INDEX_BY_KEY = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.key, index]));
-const EXPERIMENT_STARTED_FLOW_INDEX = FLOW_STEP_INDEX_BY_KEY.get("sent_to_lab") ?? 4;
-const EXPERIMENT_FLOW_STATUS_LABELS = {
-  pending: "未完成",
-  running: "进行中",
-  completed: "已完成",
-};
-const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"];
-const WITHDRAWAL_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
-const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
-
-const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
-const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
-const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
+import {
+  APPEARANCE_REQUIRED_KEYWORDS,
+  APPEARANCE_SENT_STATUS,
+  APPEARANCE_STOCKED_STATUS,
+  DEFAULT_LABELS,
+  DETAIL_STATUS_OPTIONS,
+  EXPERIMENT_FLOW_STATUS_LABELS,
+  EXPERIMENT_STARTED_FLOW_INDEX,
+  FLOW_STEP_INDEX_BY_KEY,
+  FLOW_STEP_KEY_BY_LABEL,
+  MULTI_EXPERIMENT_ROUTE_STEPS,
+  RUNNING_EXPERIMENT_RUN_STATUSES,
+  SAMPLE_FLOW_STEPS,
+  TEST_LAB_OPTIONS,
+  TEST_LABS,
+  TRAY_STATUS_OPTIONS,
+  WITHDRAWAL_ACTIONS,
+} from "./sampleFlow.constants";
+import { normalizeText } from "./sampleFlow.shared";
+import {
+  isAmbiguousStagingStatus,
+  isAppearanceInspectionStatus,
+  isPostRetentionLocation,
+  normalizeLabels,
+  normalizeLifecycleStatus,
+  normalizeSampleRecord,
+  normalizeSamplesSnapshot,
+  resolveFlowStatusByLocation,
+  syncTrayStatusToSampleStatus,
+} from "./sampleFlow.status";
 
 // 样品流转涉及大量字符串比较，统一先做基础规范化。
-const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const firstNonEmptyArray = (...values) => {
   const arrays = values.filter(Array.isArray);
@@ -111,10 +79,6 @@ const entryMatchesTrayCode = (entry, trayCode) => {
   return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
 };
 const isLikelyLabDestination = (value) => /室$/.test(normalizeText(value));
-const isAppearanceInspectionStatus = (value) => {
-  const text = normalizeText(value);
-  return text === APPEARANCE_SENT_STATUS || text === APPEARANCE_STOCKED_STATUS || text === "已到达外观检测间";
-};
 const experimentRequiresAppearanceInspection = (experiment) =>
   uniqueNormalizedTexts([
     experiment?.displayName,
@@ -196,110 +160,6 @@ const resolveExperimentAliases = (experiment, fallback = "") =>
     normalizeText(experiment?.requiredDevice),
     fallback,
   ]);
-
-// 允许通过覆盖 labels 复用同一套状态推导逻辑。
-const normalizeLabels = (labels = {}) => ({
-  ...DEFAULT_LABELS,
-  ...(labels && typeof labels === "object" ? labels : {}),
-});
-
-const isPostRetentionLocation = (location, labels = DEFAULT_LABELS) => {
-  const normalizedLabels = normalizeLabels(labels);
-  return normalizeText(location) === normalizeText(normalizedLabels.postRetentionLocation);
-};
-
-const isAmbiguousStagingStatus = (value) => {
-  const text = normalizeText(value);
-  return text === "已到达暂存间" || text === "到达暂存间" || text === "放置暂存间" || text === "入库" || text === "已入库";
-};
-
-const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS) => {
-  const normalizedLabels = normalizeLabels(labels);
-  const normalizedLocation = normalizeText(location);
-  const currentStatus = normalizeText(status);
-  const preRetentionLocation = normalizeText(
-    normalizedLabels.preRetentionLocation || normalizedLabels.retentionLocation,
-  );
-  const postRetentionLocation = normalizeText(normalizedLabels.postRetentionLocation);
-  const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
-  const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
-
-  if (FLOW_STATUS_LABELS.has(currentStatus)) {
-    return currentStatus === "运输中" ? "样品运输中" : currentStatus;
-  }
-  if (currentStatus === "运输中") {
-    return "样品运输中";
-  }
-  if (currentStatus === "厂家收回" || currentStatus === "已处置") {
-    return "厂家收回";
-  }
-  if (currentStatus === "已到达外观检测间") {
-    return APPEARANCE_STOCKED_STATUS;
-  }
-  if (isAppearanceInspectionStatus(currentStatus)) {
-    return currentStatus;
-  }
-  if (currentStatus === "放置暂存间") {
-    return "放置实验后暂存间";
-  }
-  if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === normalizedLabels.sampleStored) {
-    return isPostRetention ? "放置实验后暂存间" : isPreRetention ? "已到达暂存间" : "到货";
-  }
-  if (currentStatus === "实验完成" || currentStatus === "实验已完成") {
-    return "实验已完成";
-  }
-  if (currentStatus === "实验进行中" || currentStatus === "实验中") {
-    return "实验进行中";
-  }
-  if (currentStatus === "实验准备就绪" || currentStatus === normalizedLabels.sampleTesting) {
-    return "实验准备就绪";
-  }
-  if (isPostRetention) {
-    return "放置实验后暂存间";
-  }
-  if (normalizedLocation.includes(APPEARANCE_INSPECTION_LOCATION)) {
-    return currentStatus || APPEARANCE_STOCKED_STATUS;
-  }
-  if (isPreRetention) {
-    return "已到达暂存间";
-  }
-  if (TEST_LABS.has(normalizedLocation)) {
-    return "已到达实验室";
-  }
-  if (
-    normalizedLocation &&
-    (normalizedLocation === normalizeText(normalizedLabels.unpackingLocation) ||
-      normalizedLocation === normalizeText(normalizedLabels.intakeLocation))
-  ) {
-    return "到货";
-  }
-  return SAMPLE_FLOW_STEPS[0].label;
-};
-
-const normalizeSampleRecord = (sample, labels = DEFAULT_LABELS) => {
-  const record = sample && typeof sample === "object" ? { ...sample } : {};
-  const normalizedStatus = normalizeLifecycleStatus(record.location, record.status, labels);
-  const trays = Array.isArray(record.trays)
-    ? record.trays.map((tray) => ({
-        ...tray,
-        status: normalizeLifecycleStatus(record.location, normalizeText(tray?.status) || normalizedStatus, labels),
-      }))
-    : [];
-
-  return {
-    ...record,
-    flow_status: normalizedStatus,
-    status: normalizedStatus,
-    trays,
-  };
-};
-
-const normalizeSamplesSnapshot = (samples, labels = DEFAULT_LABELS) =>
-  (Array.isArray(samples) ? samples : []).map((sample) => normalizeSampleRecord(sample, labels));
-
-// 托盘状态与样品状态保持同一套规范流程标签。
-const syncTrayStatusToSampleStatus = (status, location = "", labels = DEFAULT_LABELS) =>
-  normalizeLifecycleStatus(location, status, labels);
 
 // 批量创建样品和历史记录时使用轻量级随机 ID。
 const generateId = (prefix) => {
@@ -2408,9 +2268,6 @@ const resolveSampleStatus = (location, labels = DEFAULT_LABELS) => {
   }
   return "\u8FD0\u8F93\u4E2D";
 };
-
-const resolveFlowStatusByLocation = (location, status = "", labels = DEFAULT_LABELS) =>
-  normalizeLifecycleStatus(location, status, labels);
 
 const appendSampleHistory = (sample, action, detail = "", now = formatLocalDateTime()) => {
   const history = Array.isArray(sample.history) ? sample.history.slice() : [];

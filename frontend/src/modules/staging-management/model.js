@@ -185,6 +185,15 @@ const isHandoverLocation = (value) => {
   return text === "接驳区" || text === "室外接驳区";
 };
 
+const contextIndicatesStorageRoomInbound = (context = {}, config = STORAGE_ROOM_CONFIGS.staging) => {
+  const statuses = asArray(context.statuses).map((status) => normalizeText(status));
+  const location = normalizeText(context.location);
+  if (config.key === "appearance") {
+    return location === APPEARANCE_LOCATION || statuses.some((status) => PRE_APPEARANCE_STATUSES.has(status));
+  }
+  return location === STAGING_LOCATION || statuses.some((status) => PRE_STAGING_STATUSES.has(status));
+};
+
 const resolveExperimentName = (experiment, fallback = "") =>
   normalizeText(experiment?.experiment_name)
   || normalizeText(experiment?.name)
@@ -241,7 +250,7 @@ const buildEventMap = (stagingEvents, config = STORAGE_ROOM_CONFIGS.staging) => 
   return eventMap;
 };
 
-const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
+const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging, context = {}) => {
   if (!event) {
     return false;
   }
@@ -257,10 +266,22 @@ const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) =
     targetType === "appearance"
     || targetText === APPEARANCE_LOCATION
     || targetText.includes("外观检测间");
+  const isCrossRoomStockOut = normalizeText(event?.action) === "stock_out" && !eventMatchesRoom(event, config);
+  if (!isCrossRoomStockOut) {
+    return false;
+  }
+  if (config.key === "appearance") {
+    return isAppearanceTarget;
+  }
+  if (isStagingTarget) {
+    return true;
+  }
+
+  const hasExplicitTarget = Boolean(targetType || targetLab || targetName);
   return (
-    normalizeText(event?.action) === "stock_out"
-    && !eventMatchesRoom(event, config)
-    && (config.key === "appearance" ? isAppearanceTarget : isStagingTarget)
+    !hasExplicitTarget
+    && resolveStorageEventSourceLabel(event) === APPEARANCE_LOCATION
+    && contextIndicatesStorageRoomInbound(context, config)
   );
 };
 
@@ -275,7 +296,7 @@ const resolveStorageEventSourceLabel = (event) => {
   return room;
 };
 
-const resolveStorageInboundSourceLabel = (events, config = STORAGE_ROOM_CONFIGS.staging) => {
+const resolveStorageInboundSourceLabel = (events, config = STORAGE_ROOM_CONFIGS.staging, context = {}) => {
   const orderedEvents = asArray(events).slice().sort((left, right) => compareDateTimes(left?.time, right?.time, "asc"));
   let latestStockInIndex = -1;
   orderedEvents.forEach((event, index) => {
@@ -287,16 +308,22 @@ const resolveStorageInboundSourceLabel = (events, config = STORAGE_ROOM_CONFIGS.
   const findLatestSourceEvent = (startIndex = orderedEvents.length - 1) => {
     for (let index = startIndex; index >= 0; index -= 1) {
       const event = orderedEvents[index];
-      if (eventTargetsStorageRoom(event, config)) {
+      if (eventTargetsStorageRoom(event, config, context)) {
         return event;
       }
     }
     return null;
   };
 
-  const sourceEvent = latestStockInIndex >= 0
-    ? findLatestSourceEvent(latestStockInIndex - 1)
-    : findLatestSourceEvent();
+  const latestSourceEvent = findLatestSourceEvent();
+  const latestStockInEvent = latestStockInIndex >= 0 ? orderedEvents[latestStockInIndex] : null;
+  const sourceEvent = latestStockInEvent && latestSourceEvent
+    ? (
+        compareDateTimes(latestSourceEvent?.time, latestStockInEvent?.time, "asc") > 0
+          ? latestSourceEvent
+          : findLatestSourceEvent(latestStockInIndex - 1)
+      )
+    : latestSourceEvent;
   return resolveStorageEventSourceLabel(sourceEvent);
 };
 
@@ -321,11 +348,22 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
   if (config.key === "appearance" && normalizeText(latestEvent?.action) === "stock_out" && hasPreAppearanceInboundStatus) {
     return "待入库";
   }
-  if (normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
+  if (config.key === "staging" && normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
     return "待入库";
   }
   if (normalizeText(latestEvent?.action) === "stock_out") {
     return "已出库";
+  }
+  if (normalizeText(latestEvent?.action) === "stock_out_withdraw") {
+    const restoredStatus = statuses
+      .map((status) => normalizeText(status))
+      .find((status) => status === config.stockInStatus)
+      || statuses
+        .map((status) => normalizeText(status))
+        .find((status) => isCurrentStagingStatus(status, config));
+    if (restoredStatus) {
+      return restoredStatus;
+    }
   }
   if (normalizeText(latestEvent?.action) === "manufacturer_return") {
     return "厂家收回";
@@ -887,8 +925,13 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const events = eventMap.get(row.trayCode) || [];
       const lastEvent = events.at(-1) || null;
       const latestStorageEvent = collectTrayStorageEvents(stagingEvents, row.trayCode).at(-1) || null;
-      const inboundSourceLabel = resolveStorageInboundSourceLabel(collectTrayStorageEvents(stagingEvents, row.trayCode), config);
-      const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config);
+      const storageEventContext = {
+        location: row.location,
+        statuses: row.statuses,
+      };
+      const trayStorageEvents = collectTrayStorageEvents(stagingEvents, row.trayCode);
+      const inboundSourceLabel = resolveStorageInboundSourceLabel(trayStorageEvents, config, storageEventContext);
+      const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config, storageEventContext);
       const latestAction = normalizeText(latestStorageEvent?.action);
       const lastStockInEvent = events
         .slice()
@@ -1271,7 +1314,10 @@ function applyZancunInventoryAction(input = {}) {
   if (
     actionMode === "stockIn"
     && normalizeText(latestMatchedEvent?.action) === "stock_in"
-    && !eventTargetsStorageRoom(latestStorageEvent, config)
+    && !eventTargetsStorageRoom(latestStorageEvent, config, {
+      location: matchedRow.location,
+      statuses: [matchedRow.status],
+    })
   ) {
     return {
       error: config.duplicateStockInError,
