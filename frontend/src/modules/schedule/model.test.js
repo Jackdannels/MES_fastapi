@@ -134,6 +134,40 @@ describe("schedulePageModel", () => {
     expect(formatDateTime(result.endAt)).toContain("2099-03-20 21:30");
   });
 
+  test("resolveScheduleTimes clamps day durations to 99 days", () => {
+    const result = resolveScheduleTimes(
+      {
+        custom_start: "09:30",
+        device: "Lab-A",
+        planned_duration_unit: "days",
+        planned_hours: "999999999",
+        schedule_date: "2099-03-20",
+        time_slot: "custom",
+      },
+      new Date("2099-03-20T09:30:00"),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.plannedHours).toBe(99 * 24);
+  });
+
+  test("resolveScheduleTimes clamps hour durations to 9999 hours", () => {
+    const result = resolveScheduleTimes(
+      {
+        custom_start: "09:30",
+        device: "Lab-A",
+        planned_duration_unit: "hours",
+        planned_hours: "9999999999",
+        schedule_date: "2099-03-20",
+        time_slot: "custom",
+      },
+      new Date("2099-03-20T09:30:00"),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.plannedHours).toBe(9999);
+  });
+
   test("buildManualTimeSlotOptions shows the earliest start time inside the active slot window", () => {
     const options = buildManualTimeSlotOptions({
       now: new Date("2099-03-20T17:07:00"),

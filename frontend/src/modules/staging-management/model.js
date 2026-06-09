@@ -242,15 +242,25 @@ const buildEventMap = (stagingEvents, config = STORAGE_ROOM_CONFIGS.staging) => 
 };
 
 const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
-  if (!event || config.key !== "staging") {
+  if (!event) {
     return false;
   }
   const targetType = normalizeText(event?.target_type || event?.targetType);
   const targetLab = normalizeText(event?.target_lab || event?.targetLab);
+  const targetName = normalizeText(event?.target_name || event?.targetName);
+  const targetText = [targetLab, targetName].filter(Boolean).join(" ");
+  const isStagingTarget =
+    targetType === "staging"
+    || targetText === STAGING_LOCATION
+    || targetText.includes("暂存间");
+  const isAppearanceTarget =
+    targetType === "appearance"
+    || targetText === APPEARANCE_LOCATION
+    || targetText.includes("外观检测间");
   return (
     normalizeText(event?.action) === "stock_out"
     && !eventMatchesRoom(event, config)
-    && (targetType === "staging" || targetLab === STAGING_LOCATION || targetLab.includes("暂存间"))
+    && (config.key === "appearance" ? isAppearanceTarget : isStagingTarget)
   );
 };
 
@@ -262,7 +272,32 @@ const resolveStorageEventSourceLabel = (event) => {
   if (room === STORAGE_ROOM_CONFIGS.staging.eventRoom) {
     return STAGING_LOCATION;
   }
-  return "";
+  return room;
+};
+
+const resolveStorageInboundSourceLabel = (events, config = STORAGE_ROOM_CONFIGS.staging) => {
+  const orderedEvents = asArray(events).slice().sort((left, right) => compareDateTimes(left?.time, right?.time, "asc"));
+  let latestStockInIndex = -1;
+  orderedEvents.forEach((event, index) => {
+    if (normalizeText(event?.action) === "stock_in" && eventMatchesRoom(event, config)) {
+      latestStockInIndex = index;
+    }
+  });
+
+  const findLatestSourceEvent = (startIndex = orderedEvents.length - 1) => {
+    for (let index = startIndex; index >= 0; index -= 1) {
+      const event = orderedEvents[index];
+      if (eventTargetsStorageRoom(event, config)) {
+        return event;
+      }
+    }
+    return null;
+  };
+
+  const sourceEvent = latestStockInIndex >= 0
+    ? findLatestSourceEvent(latestStockInIndex - 1)
+    : findLatestSourceEvent();
+  return resolveStorageEventSourceLabel(sourceEvent);
 };
 
 const collectTrayStorageEvents = (stagingEvents, trayCode) =>
@@ -852,6 +887,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const events = eventMap.get(row.trayCode) || [];
       const lastEvent = events.at(-1) || null;
       const latestStorageEvent = collectTrayStorageEvents(stagingEvents, row.trayCode).at(-1) || null;
+      const inboundSourceLabel = resolveStorageInboundSourceLabel(collectTrayStorageEvents(stagingEvents, row.trayCode), config);
       const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config);
       const latestAction = normalizeText(latestStorageEvent?.action);
       const lastStockInEvent = events
@@ -934,9 +970,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         owner: normalizeText(row.owner) || "待确认",
         quantity: Number(row.quantity) || 0,
         sampleType: normalizeText(row.sampleType) || "待确认样品类型",
-        source: latestEventDispatchesToCurrentRoom
-          ? resolveStorageEventSourceLabel(latestStorageEvent) || normalizeText(row.source) || "待确认来源"
-          : normalizeText(row.source) || "待确认来源",
+        source: inboundSourceLabel || normalizeText(row.source) || "待确认来源",
         status,
         statusClass: resolveStatusClass(status),
         stockInAt: normalizeText(lastStockInEvent?.time),

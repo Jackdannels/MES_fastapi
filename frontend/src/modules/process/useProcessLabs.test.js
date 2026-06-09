@@ -792,17 +792,13 @@ describe("useProcessLabs", () => {
       canStartExperiment: true,
       readyTrayCount: 2,
       runningTrayCount: 0,
-      remainingTrayCount: 3,
+      remainingTrayCount: 1,
     });
 
     openTaskOverview(labCards.value[0]);
 
     expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
-    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual([
-      "TRAY-READY-1",
-      "TRAY-READY-2",
-      "TRAY-WAIT",
-    ]);
+    expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
 
     await startExperiment(labCards.value[0]);
 
@@ -966,7 +962,7 @@ describe("useProcessLabs", () => {
     expect(labCards.value[0]).toMatchObject({
       canStartExperiment: true,
       experimentCode: "TASK-SALT-A",
-      remainingTrayCount: 1,
+      remainingTrayCount: 0,
       readyTrayCount: 1,
       statusClass: "is-scheduled",
       taskCode: "TASK-SALT",
@@ -1339,7 +1335,7 @@ describe("useProcessLabs", () => {
     expect(labCards.value[0]).toMatchObject({
       canStartExperiment: true,
       readyTrayCount: 1,
-      remainingTrayCount: 2,
+      remainingTrayCount: 1,
       startDisabledReason: "",
     });
 
@@ -1867,7 +1863,7 @@ describe("useProcessLabs", () => {
     expect(labCards.value[0]).toMatchObject({
       taskCode: "SYLU-2026-03-005",
       readyTrayCount: 1,
-      remainingTrayCount: 1,
+      remainingTrayCount: 0,
     });
 
     await openTaskOverview(labCards.value[0]);
@@ -1876,13 +1872,13 @@ describe("useProcessLabs", () => {
     expect(labCards.value[0]).toMatchObject({
       taskCode: "SYLU-2026-03-006",
       readyTrayCount: 1,
-      remainingTrayCount: 1,
+      remainingTrayCount: 0,
       targetExperiment: "盐雾试验",
     });
     expect(selectedTaskDetail.value).toMatchObject({
       code: "SYLU-2026-03-006",
       trayCodes: ["SYLU-2026-03-006-TP-001"],
-      remainingTrayCount: 1,
+      remainingTrayCount: 0,
       readyTrayCount: 1,
     });
     expect(selectedTaskDetail.value.trayCodes).not.toContain("SYLU-2026-03-006-TP-002");

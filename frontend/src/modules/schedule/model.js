@@ -342,6 +342,8 @@ const createId = (prefix) => {
 
 const SLOT_SEQUENCE = ["am", "pm"];
 const HALF_DAY_HOURS = 12;
+const PLANNED_DURATION_MAX_DAYS = 99;
+const PLANNED_DURATION_MAX_HOURS = 9999;
 
 // 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
 const parsePlannedHours = (value) => {
@@ -350,7 +352,7 @@ const parsePlannedHours = (value) => {
     return null;
   }
   const normalized = Math.round(rawValue * 2) / 2;
-  return normalized >= 0.5 ? normalized : null;
+  return normalized >= 0.5 ? Math.min(normalized, PLANNED_DURATION_MAX_HOURS) : null;
 };
 
 const parsePlannedDays = (value) => {
@@ -359,7 +361,7 @@ const parsePlannedDays = (value) => {
     return null;
   }
   const normalized = Math.round(rawValue * 2) / 2;
-  return normalized >= 0.5 ? normalized : null;
+  return normalized >= 0.5 ? Math.min(normalized, PLANNED_DURATION_MAX_DAYS) : null;
 };
 
 const resolvePlannedHours = (form) => {
@@ -2173,6 +2175,8 @@ function deleteScheduleRecord({ experimentTrays = [], experiments, samples = [],
 
 export {
   RETENTION_DEVICE,
+  PLANNED_DURATION_MAX_DAYS,
+  PLANNED_DURATION_MAX_HOURS,
   STATUS_COMPLETED,
   STATUS_RETENTION,
   STATUS_RUNNING,

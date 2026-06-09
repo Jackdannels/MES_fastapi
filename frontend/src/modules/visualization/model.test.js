@@ -1487,9 +1487,45 @@ describe("visualization model", () => {
 
     expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
       stagingKind: "planned",
-      stagingKindLabel: "计划暂存",
+      stagingKindLabel: "计划入库",
       status: "送至暂存间",
       trayCode: "TP-FINISHED-STAGING",
+    }));
+    expect(view.summary.plannedTrayCount).toBe(1);
+  });
+
+  test("keeps a fully completed tray planned for staging even when run-tray rows are missing", () => {
+    const taskCode = "TASK-FINISHED-FALLBACK";
+    const trayCode = "TP-FINISHED-FALLBACK";
+    const view = buildStagingSamplesView({
+      tasks: [{ code: taskCode, name: "缺少运行行的完成托盘", test_type: "盐雾试验" }],
+      experiments: [
+        { task_code: taskCode, experiment_code: "EXP-SALT-A", experiment_name: "盐雾试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: "EXP-SALT-A", tray_code: trayCode },
+      ],
+      samples: [
+        {
+          code: "SP-FINISHED-FALLBACK",
+          task_code: taskCode,
+          location: "振动一室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: trayCode, status: "实验已完成", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成", time: "2026-06-07T09:00:00+08:00" },
+          ],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "planned",
+      stagingKindLabel: "计划入库",
+      status: "送至暂存间",
+      trayCode,
     }));
     expect(view.summary.plannedTrayCount).toBe(1);
   });

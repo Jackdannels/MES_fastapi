@@ -115,6 +115,14 @@ describe("visualization styles", () => {
     expect(pageSource).toContain("flowStepConnectorClass(stepIndex, flowLayoutColumns)");
   });
 
+  test("uses a yellow inferred-node tone instead of orange for reset and compatibility states", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-flow-step\.is-inferred\s*{[^}]*color:\s*#fef08a;/s);
+    expect(source).toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#facc15;/s);
+    expect(source).not.toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#eab308;/s);
+  });
+
   test("layout A makes task and tray switch text easier to read", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 

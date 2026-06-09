@@ -364,6 +364,51 @@ describe("staging-management model", () => {
     }));
   });
 
+  test("keeps appearance room as the source after the tray is stocked into staging", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-appearance-stocked-staging",
+      code: "TASK-APPEARANCE-STOCKED-STAGING",
+      test_type: "盐雾试验",
+      source: "外部委托",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-stocked-staging",
+      code: "SP-APPEARANCE-STOCKED-STAGING",
+      task_code: "TASK-APPEARANCE-STOCKED-STAGING",
+      owner: "赵工",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      trays: [{ tray_code: "TP-APPEARANCE-STOCKED-STAGING", status: "已到达暂存间", quantity: 1 }],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        action: "stock_out",
+        room: "appearance",
+        target_lab: "恒温恒湿间（暂存间）",
+        target_type: "staging",
+        task_code: "TASK-APPEARANCE-STOCKED-STAGING",
+        time: "2026-04-01T11:10:00",
+        tray_code: "TP-APPEARANCE-STOCKED-STAGING",
+      },
+      {
+        action: "stock_in",
+        room: "staging",
+        task_code: "TASK-APPEARANCE-STOCKED-STAGING",
+        time: "2026-04-01T11:15:00",
+        tray_code: "TP-APPEARANCE-STOCKED-STAGING",
+      },
+    );
+
+    const row = buildZancunRowsFromSnapshot(snapshot, { now: TODAY })
+      .find((item) => item.trayCode === "TP-APPEARANCE-STOCKED-STAGING");
+
+    expect(row).toEqual(expect.objectContaining({
+      source: "外观检测间",
+      status: "到货",
+    }));
+  });
+
   test("does not treat manufacturer-returned unfinished appearance experiments as appearance planned inbound", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];

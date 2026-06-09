@@ -28,6 +28,8 @@ import {
   normalizeText,
   resolveDeviceUnavailableReason,
   isManualScheduleSelectionLegal,
+  PLANNED_DURATION_MAX_DAYS,
+  PLANNED_DURATION_MAX_HOURS,
   resolveLegalManualScheduleState,
   resolveScheduleTimes,
   STATUS_SCHEDULED,
@@ -475,13 +477,30 @@ function useSchedulePage() {
     scheduleFormWatchSuspended.value = false;
   };
 
-  const normalizeDurationValue = (value, fallback) => {
+  const normalizeDurationValue = (value, fallback, unit = "hours") => {
     const parsed = Number.parseFloat(String(value ?? "").trim());
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    const max = unit === "days" ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS;
+    return Math.min(parsed, max);
   };
 
   const normalizeDayDurationValue = (value) => {
-    return Math.max(0.5, Math.round(value * 2) / 2);
+    return Math.min(PLANNED_DURATION_MAX_DAYS, Math.max(0.5, Math.round(value * 2) / 2));
+  };
+
+  const normalizeHourDurationValue = (value) => {
+    return Math.min(PLANNED_DURATION_MAX_HOURS, Math.max(0.5, Math.round(value * 2) / 2));
+  };
+
+  const clampFormDurationValue = (form) => {
+    const unit = normalizeText(form?.planned_duration_unit) || "hours";
+    const max = unit === "days" ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS;
+    const parsed = Number.parseFloat(String(form?.planned_hours ?? "").trim());
+    if (Number.isFinite(parsed) && parsed > max) {
+      form.planned_hours = max;
+    }
   };
 
   const setDurationUnit = (formRef, nextUnit) => {
@@ -490,13 +509,13 @@ function useSchedulePage() {
     if (currentUnit === nextUnit) {
       return;
     }
-    const currentValue = normalizeDurationValue(form?.planned_hours, currentUnit === "days" ? 0.5 : 3.5);
+    const currentValue = normalizeDurationValue(form?.planned_hours, currentUnit === "days" ? 0.5 : 3.5, currentUnit);
     form.planned_duration_unit = nextUnit;
     if (nextUnit === "days") {
       form.planned_hours = normalizeDayDurationValue(Math.ceil(currentValue / 12) / 2);
       return;
     }
-    form.planned_hours = Math.max(0.5, currentValue * 24);
+    form.planned_hours = normalizeHourDurationValue(currentValue * 24);
   };
 
   const setScheduleDurationUnit = (unit) => {
@@ -973,10 +992,15 @@ function useSchedulePage() {
 
   watch(
     () => scheduleForm.value.planned_duration_unit,
-    (unit) => {
-      if (unit === "days") {
-        scheduleForm.value.planned_hours = normalizeDayDurationValue(Number(scheduleForm.value.planned_hours) || 0.5);
-      }
+    () => {
+      clampFormDurationValue(scheduleForm.value);
+    },
+  );
+
+  watch(
+    () => scheduleForm.value.planned_hours,
+    () => {
+      clampFormDurationValue(scheduleForm.value);
     },
   );
 
@@ -992,10 +1016,15 @@ function useSchedulePage() {
 
   watch(
     () => editForm.value.planned_duration_unit,
-    (unit) => {
-      if (unit === "days") {
-        editForm.value.planned_hours = normalizeDayDurationValue(Number(editForm.value.planned_hours) || 0.5);
-      }
+    () => {
+      clampFormDurationValue(editForm.value);
+    },
+  );
+
+  watch(
+    () => editForm.value.planned_hours,
+    () => {
+      clampFormDurationValue(editForm.value);
     },
   );
 
@@ -1065,6 +1094,8 @@ function useSchedulePage() {
     openScheduleDrawer,
     pendingExceptionCount,
     pendingExceptionRows,
+    PLANNED_DURATION_MAX_DAYS,
+    PLANNED_DURATION_MAX_HOURS,
     removeSchedule,
     removeTaskDetailSchedule,
     rescheduleFromTaskDetail,

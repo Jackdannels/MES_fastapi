@@ -1103,6 +1103,41 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(12);
   });
 
+  test("limits duration input by selected unit to avoid oversized schedules", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "SYLU-2026-01-001", name: "Bounded Duration Task", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["SYLU-2026-01-001-TP-001"] },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const durationInput = wrapper.get('input[name="planned_hours"]');
+    expect(durationInput.attributes("max")).toBe("9999");
+
+    await wrapper.get('[data-testid="schedule-duration-unit-days"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('input[name="planned_hours"]').attributes("max")).toBe("99");
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("custom");
+    await wrapper.get('input[name="custom_start"]').setValue("09:30");
+    await wrapper.get('input[name="planned_hours"]').setValue("999999999");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+    expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(99 * 24);
+  });
+
   test("renders a cross-day gantt segment only inside the fixed three-day window", async () => {
     const future = buildDateParts(2);
 

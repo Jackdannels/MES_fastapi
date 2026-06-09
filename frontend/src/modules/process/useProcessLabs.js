@@ -730,13 +730,14 @@ function useProcessLabs(options = {}) {
     const blockedReadyTrayCodes = new Set(blockedReadyRows.map((entry) => normalizeText(entry.row?.trayCode)).filter(Boolean));
     const readyTrayRows = readyTrayCandidates.filter((row) => !blockedReadyTrayCodes.has(normalizeText(row?.trayCode)));
     const runningTrayRows = rows.filter((row) => row.isRunning && matchesLab(row));
-    const remainingTrayRows = rows.filter((row) => !row.isRunning && !row.isCompleted);
+    const remainingTrayRows = rows.filter((row) => !row.isReady && !row.isRunning && !row.isCompleted);
 
     return {
       canStartExperiment: readyTrayRows.length > 0 && runningTrayRows.length === 0,
       readyTrayRows,
       readyTrayCodes: readyTrayRows.map((row) => row.trayCode),
       readyTrayCount: readyTrayRows.length,
+      remainingTrayRows,
       remainingTrayCount: remainingTrayRows.length,
       runningTrayRows,
       runningTrayCount: runningTrayRows.length,
@@ -823,7 +824,7 @@ function useProcessLabs(options = {}) {
     const trayRows = buildTrayRows(taskCode, task, activeExperimentCode);
     const actionState = buildStartExperimentState(trayRows, { experimentCode: activeExperimentCode, labName, taskCode });
     const runningTrayRows = actionState.runningTrayRows;
-    const remainingTrayRows = trayRows.filter((row) => !row.isRunning && !row.isCompleted);
+    const remainingTrayRows = actionState.remainingTrayRows;
     const completedTrayRows = trayRows.filter((row) => row.isCompleted);
     const activeTray =
       trayRows.find((row) => row.trayCode === selectedTrayCode.value) ||

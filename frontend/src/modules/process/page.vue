@@ -430,7 +430,7 @@ const summaryItems = computed(() => [
 ]);
 
 const TASK_TRAY_PREVIEW_LIMIT = 5;
-const TASK_ROW_PREVIEW_LIMIT = 3;
+const TASK_ROW_PREVIEW_LIMIT = Number.POSITIVE_INFINITY;
 const TASK_SAMPLE_PREVIEW_LIMIT = 5;
 const TASK_ROW_SAMPLE_PREVIEW_LIMIT = 1;
 const taskFullListOpen = ref(false);

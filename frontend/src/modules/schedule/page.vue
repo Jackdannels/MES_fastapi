@@ -71,6 +71,7 @@
               type="number"
               name="planned_hours"
               :min="0.5"
+              :max="scheduleForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
               :step="0.5"
             />
             <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
@@ -496,6 +497,7 @@
             type="number"
             name="edit_planned_hours"
             :min="0.5"
+            :max="editForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
             :step="0.5"
           />
           <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
@@ -661,6 +663,8 @@ const {
   scheduleSearch,
   scheduleWarning,
   maintenanceLabNotice,
+  PLANNED_DURATION_MAX_DAYS,
+  PLANNED_DURATION_MAX_HOURS,
   submitSchedule,
   summaryCards,
   taskOptions,

@@ -610,9 +610,9 @@ const isStockOutToStaging = (event) =>
     || isStagingDestination(event?.target_lab || event?.targetLab || event?.target_name || event?.targetName)
   );
 
-const buildStagingKind = (kind, status = "") => ({
+const buildStagingKind = (kind, status = "", label = "") => ({
   kind,
-  label: STAGING_KIND_LABELS[kind],
+  label: normalizeText(label) || STAGING_KIND_LABELS[kind],
   status: normalizeText(status) || STAGING_KIND_LABELS[kind],
 });
 
@@ -638,13 +638,27 @@ const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays, task
     && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
   );
 
-const trayAssignedExperimentsAreCompleted = ({ experimentRunTrays, experimentTrays, taskCode, trayCode }) => {
+const trayExperimentHistoryIsCompleted = ({ experimentByKey, experimentCode, samples, taskCode, trayCode }) => {
+  const relation = {
+    experiment: experimentByKey.get(`${taskCode}::${experimentCode}`) || null,
+    experiment_code: experimentCode,
+    task_code: taskCode,
+    tray_code: trayCode,
+  };
+  return asArray(samples).some((sample) =>
+    resolveTaskCode(sample) === taskCode && sampleHasCompletedExperiment(sample, relation),
+  );
+};
+
+const trayAssignedExperimentsAreCompleted = ({ experimentRunTrays, experimentTrays, experiments, samples, taskCode, trayCode }) => {
   const experimentCodes = collectTrayExperimentCodes({ experimentTrays, taskCode, trayCode });
   if (experimentCodes.size === 0) {
     return false;
   }
+  const experimentByKey = buildExperimentByTaskAndCode(experiments);
   return Array.from(experimentCodes).every((experimentCode) =>
-    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode }),
+    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode })
+    || trayExperimentHistoryIsCompleted({ experimentByKey, experimentCode, samples, taskCode, trayCode }),
   );
 };
 
@@ -673,15 +687,15 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   ) {
     return buildStagingKind("appearance", "外观检测间存放");
   }
-  if (row.allAssignedExperimentsCompleted) {
-    return buildStagingKind("planned", "送至暂存间");
-  }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
     return buildStagingKind("post-test", "放置实验后暂存间");
   }
   const currentStatus = row.statuses.find((status) => isCurrentStagingStatus(status));
   if (currentStatus) {
     return buildStagingKind("current", currentStatus);
+  }
+  if (row.allAssignedExperimentsCompleted) {
+    return buildStagingKind("planned", "送至暂存间", "计划入库");
   }
   if (latestAction === "stock_in") {
     return buildStagingKind("current", "已入库");
@@ -742,8 +756,10 @@ function buildStagingSamplesView(input = {}) {
       const key = `${taskCode}::${trayCode}`;
       const current = trayMap.get(key) || {
         allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
+          experiments: input.experiments,
           experimentRunTrays,
           experimentTrays,
+          samples,
           taskCode,
           trayCode,
         }),
@@ -765,8 +781,10 @@ function buildStagingSamplesView(input = {}) {
       current.allAssignedExperimentsCompleted =
         current.allAssignedExperimentsCompleted
         || trayAssignedExperimentsAreCompleted({
+          experiments: input.experiments,
           experimentRunTrays,
           experimentTrays,
+          samples,
           taskCode,
           trayCode,
         });
@@ -806,8 +824,10 @@ function buildStagingSamplesView(input = {}) {
       const task = taskByCode.get(taskCode) || {};
       trayMap.set(key, {
         allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
+          experiments: input.experiments,
           experimentRunTrays,
           experimentTrays,
+          samples,
           taskCode,
           trayCode,
         }),

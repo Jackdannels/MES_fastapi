@@ -305,6 +305,7 @@
               data-testid="laboratory-compare-scan-input"
               type="text"
               placeholder="请扫描或输入托盘编号"
+              @keyup.enter="submitCompareScan"
             />
           </label>
           <button class="action-btn" data-testid="laboratory-compare-scan-submit" type="button" @click="submitCompareScan">扫码确认</button>

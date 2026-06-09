@@ -1031,6 +1031,27 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
   });
 
+  test("submits tray comparison when the scanner sends Enter", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples][0] = {
+      ...snapshotState[STORAGE_KEYS.samples][0],
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: snapshotState[STORAGE_KEYS.samples][0].trays.map((tray) => ({
+        ...tray,
+        status: "送至实验室",
+      })),
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').trigger("keyup.enter");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+  });
+
   test("closes the compare modal after each completed tray during consecutive tray comparisons", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples][0] = {

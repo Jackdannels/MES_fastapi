@@ -244,8 +244,10 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-summary-card,
 .transfer-dispatch-destination-card {
   border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92));
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 .transfer-dispatch-summary-card {
@@ -267,7 +269,7 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-summary-card__top h3 {
   margin: 0;
   font-size: 22px;
-  color: #10233f;
+  color: var(--text);
 }
 
 .transfer-dispatch-summary-card__task-no {
@@ -281,11 +283,11 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-summary-card__task-no span {
-  color: #64748b;
+  color: var(--muted);
 }
 
 .transfer-dispatch-summary-card__task-no strong {
-  color: #10233f;
+  color: var(--text);
 }
 
 .transfer-dispatch-summary-card__meta {
@@ -302,15 +304,15 @@ const resolveDestinationHint = (destination) => {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: rgba(241, 245, 249, 0.95);
-  color: #334155;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-strong);
+  color: var(--text);
 }
 
 .transfer-dispatch-summary-card__count {
-  border-color: rgba(59, 130, 246, 0.24);
-  background: rgba(29, 78, 216, 0.2);
-  color: #bfdbfe;
+  border-color: rgba(var(--industrial-accent-rgb), 0.34);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
 }
 
 .transfer-dispatch-summary-card__body,
@@ -323,7 +325,7 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-destination-card__row span,
 .transfer-dispatch-destination-card__type,
 .transfer-dispatch-destination-card__hint {
-  color: #64748b;
+  color: var(--muted);
 }
 
 .transfer-dispatch-summary-row {
@@ -334,7 +336,7 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-summary-row strong,
 .transfer-dispatch-destination-card__row strong,
 .transfer-dispatch-destination-card__name {
-  color: #10233f;
+  color: var(--text);
 }
 
 .transfer-dispatch-destination-grid {
@@ -357,12 +359,12 @@ const resolveDestinationHint = (destination) => {
 
 .transfer-dispatch-destination-card.is-scheduled,
 .transfer-dispatch-destination-card.is-staging {
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.1);
+  border-color: rgba(var(--industrial-accent-rgb), 0.3);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.1);
 }
 
 .transfer-dispatch-destination-card.is-staging {
-  border-color: rgba(245, 158, 11, 0.42);
+  border-color: rgba(245, 158, 11, 0.38);
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.12);
 }
 
@@ -377,20 +379,20 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-destination-card.is-scheduled .transfer-dispatch-destination-card__status {
-  border-color: rgba(59, 130, 246, 0.4);
-  background: rgba(29, 78, 216, 0.2);
-  color: #bfdbfe;
+  border-color: rgba(var(--industrial-accent-rgb), 0.4);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
 }
 
 .transfer-dispatch-destination-card.is-staging .transfer-dispatch-destination-card__status {
   border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(180, 83, 9, 0.2);
+  background: rgba(180, 83, 9, 0.22);
   color: #fde68a;
 }
 
 .transfer-dispatch-destination-card.is-idle .transfer-dispatch-destination-card__status {
   border-color: rgba(148, 163, 184, 0.4);
-  background: rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.16);
   color: rgba(226, 232, 240, 0.86);
 }
 
@@ -408,7 +410,7 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-destination-card__row {
   align-items: baseline;
   padding-bottom: 8px;
-  border-bottom: 1px dashed rgba(203, 213, 225, 0.85);
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.3);
 }
 
 .transfer-dispatch-destination-card__row:last-child {
