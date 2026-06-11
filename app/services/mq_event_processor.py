@@ -10,6 +10,7 @@ from app.db.session import get_connection
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
 )
+from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
 
@@ -715,35 +716,36 @@ class MySQLMqEventRepository:
             planned_end_at = mysql_datetime_text(context.get("schedule_end_time"))
         run_no = normalize_text(run_no) or generated_run_no()
         storage = get_storage_backend()
-        snapshot = storage_completion_snapshot(storage.read_all())
-        scoped_snapshot = scope_snapshot_samples_for_experiment(
-            snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            tray_codes=tray_nos,
-        )
-        result = start_storage_laboratory_experiment(
-            scoped_snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            run_no=run_no,
-            lab_name=device_name,
-            schedule_id=schedule_no,
-            tray_codes=tray_nos,
-            started_at=started_at,
-            planned_hours=planned_hours,
-            planned_end_at=planned_end_at,
-        )
-        storage.write_many(
-            {
-                "mes.tasks": result["tasks"],
-                "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
-                "mes.schedules": result["schedules"],
-                "mes.experiments": result["experiments"],
-                "mes.experiment_runs": result["experimentRuns"],
-                "mes.experiment_run_trays": result["experimentRunTrays"],
-            }
-        )
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            scoped_snapshot = scope_snapshot_samples_for_experiment(
+                snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                tray_codes=tray_nos,
+            )
+            result = start_storage_laboratory_experiment(
+                scoped_snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                lab_name=device_name,
+                schedule_id=schedule_no,
+                tray_codes=tray_nos,
+                started_at=started_at,
+                planned_hours=planned_hours,
+                planned_end_at=planned_end_at,
+            )
+            storage.write_many(
+                {
+                    "mes.tasks": result["tasks"],
+                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
+                    "mes.schedules": result["schedules"],
+                    "mes.experiments": result["experiments"],
+                    "mes.experiment_runs": result["experimentRuns"],
+                    "mes.experiment_run_trays": result["experimentRunTrays"],
+                }
+            )
         return {
             "run_no": run_no,
             "task_no": task_no,
@@ -754,86 +756,88 @@ class MySQLMqEventRepository:
 
     def mark_run_started(self, run_no: str, occurred_at: str) -> None:
         storage = get_storage_backend()
-        snapshot = storage_completion_snapshot(storage.read_all())
-        run = run_context_from_snapshot(snapshot, run_no)
-        task_no = normalize_text(run.get("task_code") or run.get("task_no"))
-        experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
-        tray_codes = [
-            normalize_text(item.get("tray_code") or item.get("tray_no"))
-            for item in snapshot.get("experiment_run_trays", [])
-            if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
-            and normalize_text(item.get("tray_code") or item.get("tray_no"))
-        ]
-        if not tray_codes:
-            tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
-        scoped_snapshot = scope_snapshot_samples_for_experiment(
-            snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            tray_codes=tray_codes,
-        )
-        result = start_storage_laboratory_experiment(
-            scoped_snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            run_no=run_no,
-            lab_name=normalize_text(run.get("device") or run.get("device_name")),
-            schedule_id=normalize_text(run.get("schedule_id") or run.get("schedule_no")),
-            tray_codes=tray_codes,
-            started_at=occurred_at,
-            planned_hours=run.get("planned_hours"),
-            planned_end_at=normalize_text(run.get("planned_end_at")),
-        )
-        storage.write_many(
-            {
-                "mes.tasks": result["tasks"],
-                "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
-                "mes.schedules": result["schedules"],
-                "mes.experiments": result["experiments"],
-                "mes.experiment_runs": result["experimentRuns"],
-                "mes.experiment_run_trays": result["experimentRunTrays"],
-            }
-        )
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            run = run_context_from_snapshot(snapshot, run_no)
+            task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+            experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            tray_codes = [
+                normalize_text(item.get("tray_code") or item.get("tray_no"))
+                for item in snapshot.get("experiment_run_trays", [])
+                if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
+                and normalize_text(item.get("tray_code") or item.get("tray_no"))
+            ]
+            if not tray_codes:
+                tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
+            scoped_snapshot = scope_snapshot_samples_for_experiment(
+                snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                tray_codes=tray_codes,
+            )
+            result = start_storage_laboratory_experiment(
+                scoped_snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                lab_name=normalize_text(run.get("device") or run.get("device_name")),
+                schedule_id=normalize_text(run.get("schedule_id") or run.get("schedule_no")),
+                tray_codes=tray_codes,
+                started_at=occurred_at,
+                planned_hours=run.get("planned_hours"),
+                planned_end_at=normalize_text(run.get("planned_end_at")),
+            )
+            storage.write_many(
+                {
+                    "mes.tasks": result["tasks"],
+                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
+                    "mes.schedules": result["schedules"],
+                    "mes.experiments": result["experiments"],
+                    "mes.experiment_runs": result["experimentRuns"],
+                    "mes.experiment_run_trays": result["experimentRunTrays"],
+                }
+            )
 
     def mark_run_ended(self, run_no: str, occurred_at: str) -> None:
         storage = get_storage_backend()
-        snapshot = storage_completion_snapshot(storage.read_all())
-        run = run_context_from_snapshot(snapshot, run_no)
-        task_no = normalize_text(run.get("task_code") or run.get("task_no"))
-        experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
-        tray_codes = [
-            normalize_text(item.get("tray_code") or item.get("tray_no"))
-            for item in snapshot.get("experiment_run_trays", [])
-            if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
-            and normalize_text(item.get("task_code") or item.get("task_no")) == task_no
-            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == experiment_no
-            and normalize_text(item.get("tray_code") or item.get("tray_no"))
-        ]
-        if not tray_codes:
-            tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
-        scoped_snapshot = scope_snapshot_samples_for_experiment(
-            snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            tray_codes=tray_codes,
-        )
-        result = complete_storage_laboratory_experiment(
-            scoped_snapshot,
-            task_code=task_no,
-            experiment_code=experiment_no,
-            run_no=run_no,
-            tray_codes=tray_codes,
-            completed_at=occurred_at,
-        )
-        storage.write_many(
-            {
-                "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
-                "mes.experiments": result["experiments"],
-                "mes.schedules": result["schedules"],
-                "mes.experiment_runs": result["experimentRuns"],
-                "mes.experiment_run_trays": result["experimentRunTrays"],
-            }
-        )
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            run = run_context_from_snapshot(snapshot, run_no)
+            task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+            experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            tray_codes = [
+                normalize_text(item.get("tray_code") or item.get("tray_no"))
+                for item in snapshot.get("experiment_run_trays", [])
+                if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
+                and normalize_text(item.get("task_code") or item.get("task_no")) == task_no
+                and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == experiment_no
+                and normalize_text(item.get("tray_code") or item.get("tray_no"))
+            ]
+            if not tray_codes:
+                tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
+            scoped_snapshot = scope_snapshot_samples_for_experiment(
+                snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                tray_codes=tray_codes,
+            )
+            result = complete_storage_laboratory_experiment(
+                scoped_snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                tray_codes=tray_codes,
+                completed_at=occurred_at,
+            )
+            storage.write_many(
+                {
+                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
+                    "mes.experiments": result["experiments"],
+                    "mes.schedules": result["schedules"],
+                    "mes.experiment_runs": result["experimentRuns"],
+                    "mes.experiment_run_trays": result["experimentRunTrays"],
+                }
+            )
 
 
 def process_laboratory_event(

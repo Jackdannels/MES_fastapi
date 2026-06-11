@@ -396,6 +396,49 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
     assert all("SYLU-2026-03-102-TP-001 -> 振动一室" in sample["history"][0]["detail"] for sample in updated_samples)
 
 
+def test_transfer_area_dispatch_to_lab_clears_stale_fixture_ready(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+        ],
+    )
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "恒温恒湿间（暂存间）"
+        sample["status"] = "已到达暂存间"
+        sample["flow_status"] = "已到达暂存间"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "已到达暂存间",
+                "fixture_ready": True,
+                "fixtureReady": True,
+            }
+        ]
+    storage.write("mes.samples", samples)
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+    )
+
+    assert response.status_code == 200
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all("fixture_ready" not in sample["trays"][0] for sample in updated_samples)
+    assert all("fixtureReady" not in sample["trays"][0] for sample in updated_samples)
+
+
 def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(
@@ -821,6 +864,52 @@ def test_transfer_area_withdraw_staging_dispatch_uses_history_when_event_is_miss
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
     assert all(sample["status"] == "已到达暂存间" for sample in updated_samples)
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_out_withdraw"
+
+
+def test_transfer_area_withdraw_dispatch_clears_stale_fixture_ready(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "振动一室"
+        sample["status"] = "送至实验室"
+        sample["flow_status"] = "送至实验室"
+        sample["trays"] = [
+            {
+                **sample["trays"][0],
+                "status": "送至实验室",
+                "fixture_ready": True,
+                "fixtureReady": True,
+            }
+        ]
+    storage.write("mes.samples", samples)
+    storage.write(
+        "mes.staging_events",
+        [
+            {
+                "id": "staging-event-out",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "action": "stock_out",
+                "target_lab": "振动一室",
+                "target_experiment_code": "SYLU-2026-03-102-B",
+                "time": "2026-05-19T10:00:00",
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "点错试验间"},
+    )
+
+    assert response.status_code == 200
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["trays"][0]["status"] == "已到达暂存间" for sample in updated_samples)
+    assert all("fixture_ready" not in sample["trays"][0] for sample in updated_samples)
+    assert all("fixtureReady" not in sample["trays"][0] for sample in updated_samples)
 
 
 def test_transfer_area_withdraw_dispatch_rejects_after_laboratory_compare(monkeypatch):

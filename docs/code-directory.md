@@ -29,10 +29,18 @@
 - `app/core/`：后端核心业务和基础设施。
 - `app/core/config.py`：运行配置、环境变量和应用设置。
 - `app/core/storage_backend.py`：统一存储后端抽象、快照归一化、mock/MySQL 后端选择。
-- `app/core/mysql_storage_backend.py`：MySQL 存储后端兼容入口和数据库读写编排。
+- `app/core/mysql_storage_backend.py`：MySQL 存储后端兼容入口和数据库读写编排，并重导出拆分后的 codec、mapper、schema、master reader、snapshot、loader、replacer、sample write/load、status、status SQL helper 以保持旧导入路径可用。
 - `app/core/mysql_storage_codecs.py`：MySQL 存储层纯 codec/helper，负责文本、时间、数字、布尔、meta 编解码。
 - `app/core/mysql_storage_mappers.py`：MySQL 存储层纯 row mapper，负责任务、实验、实验运行、排班、设备、数据流、样品入库行、样品重建和派发目标恢复等前端数据与数据库行之间的转换。
+- `app/core/mysql_storage_master_readers.py`：MySQL 存储层主数据只读 helper，负责实验类型和实验室列表查询。
+- `app/core/mysql_storage_schema.py`：MySQL 存储层 schema 扩展 helper，负责兼容字段补齐、主数据表/索引初始化、默认实验类型和实验室 seed，以及 MQTT 实验事件相关表初始化。
+- `app/core/mysql_storage_snapshot.py`：MySQL 存储层快照辅助函数，负责 snapshot JSON payload 编解码和按托管 key 删除缺失关系行的通用 SQL helper。
+- `app/core/mysql_storage_loaders.py`：MySQL 存储层只读 loader helper，负责任务、排班、实验、实验关联、设备和数据流等简单查询的 SQL 与 row mapper 组装。
+- `app/core/mysql_storage_replacers.py`：MySQL 存储层简单写入 replacer helper，负责任务、排班、实验、实验-托盘/样品关联、实验运行及运行托盘、设备和数据流的托管行替换与 upsert。
+- `app/core/mysql_storage_sample_load.py`：MySQL 存储层样品读取 helper，负责样品、托盘、样品事件读取，以及 fixture ready 事件按托盘作用域恢复。
+- `app/core/mysql_storage_sample_write.py`：MySQL 存储层样品写入 helper，负责样品写入编排、托管样品行准备、旧样品/托盘绑定清理、缺失托管样品/托盘删除、托盘写入状态构建、fixture ready 兼容事件和样品 history 事件写入。
 - `app/core/mysql_storage_status.py`：MySQL 存储层状态派生和回填规则，负责实验/任务状态汇总、样品作用域解析和未排程时间回填。
+- `app/core/mysql_storage_status_sql.py`：MySQL 存储层状态 SQL helper，负责 legacy 状态字段归一化、排班 task_id 回填、实验/任务进度状态同步 SQL 和未排程时间持久化回填。
 - `app/core/master_data.py`：默认实验室、试验类型等主数据定义。
 - `app/core/demo_data_reset.py`：演示数据重置逻辑。
 - `app/core/legacy_fallback.py`：旧数据兜底命中记录。
@@ -90,8 +98,17 @@
 - `frontend/src/modules/process/useProcessLabs.js`：过程控制实验室卡片、开始实验、详情抽屉和实时刷新逻辑。
 - `frontend/src/modules/sample-pre-allocation/`：样品预分配页面，复用转运工作台。
 - `frontend/src/modules/samples/`：样品流转和托盘管理模块。
-- `frontend/src/modules/samples/samplesFlowModel.js`：样品流转兼容入口，聚合并导出流转视图、托盘视图、暂存和命令函数。
+- `frontend/src/modules/samples/samplesFlowModel.js`：样品流转兼容入口，聚合并导出流转视图、托盘视图、暂存和命令函数，并委托 tray scope、experiment helper、status 和 constants 子模块承载基础逻辑。
 - `frontend/src/modules/samples/sampleFlow.constants.js`：样品流转常量，包含流程步骤、实验室集合、外观检测状态和状态选项。
+- `frontend/src/modules/samples/sampleFlow.trayScope.js`：样品流转托盘作用域 helper，负责数组/时间/文本基础归一化、task/tray/experiment entry 字段解析、托盘号匹配、托盘条目合并排序和 `getSampleTrayList`。
+- `frontend/src/modules/samples/sampleFlow.experimentHelpers.js`：样品流转实验 helper，负责实验身份/展示名/实验室目的地解析、实验历史解析、撤回恢复目标解析、实验运行时间和多实验路线判断。
+- `frontend/src/modules/samples/sampleFlow.experimentOrder.js`：样品流转实验顺序 helper，负责按任务/托盘/排班筛选实验、排序实验、解析实验展示字段和目标实验室。
+- `frontend/src/modules/samples/sampleFlow.experimentRuns.js`：样品流转实验运行 helper，负责实验运行记录与运行-托盘关系合并、按任务/托盘/实验解析运行状态，以及实验完成运行时间提取。
+- `frontend/src/modules/samples/sampleFlow.experimentEvents.js`：样品流转实验事件 helper，负责实验历史事件映射、实验别名事件匹配、实验状态优先级和单实验状态展示标签。
+- `frontend/src/modules/samples/sampleFlow.sampleTableHelpers.js`：样品流转列表 helper，负责列表状态 class、排序比较和按活跃任务过滤样品。
+- `frontend/src/modules/samples/sampleFlow.sampleCollection.js`：样品集合命令 helper，负责按位置反推样品状态、追加样品历史、克隆样品集合，以及按托盘号批量同步样品/托盘状态。
+- `frontend/src/modules/samples/sampleFlow.flowTimeHelpers.js`：样品流转时间线 helper，负责历史状态标签归一化、时间历史去重、步骤最新时间选择和未到达步骤时间隐藏。
+- `frontend/src/modules/samples/sampleFlow.trayLifecycle.js`：样品流转托盘生命周期 helper，负责厂家收回/已处置状态识别、托盘/历史记录收回判定，以及按任务和托盘解析有效生命周期状态。
 - `frontend/src/modules/samples/sampleFlow.shared.js`：样品流转共享底层 helper。
 - `frontend/src/modules/samples/sampleFlow.status.js`：样品生命周期状态归一化、样品记录归一化和状态反推。
 - `frontend/src/modules/samples/useSamplesFlow.js`：样品页面组合式状态。
@@ -129,7 +146,7 @@
 - `tests/api/test_transfer_area.py`：交接区/托盘派发 API 测试。
 - `tests/api/test_storage.py`：存储 API 测试。
 - `tests/core/`：后端核心逻辑测试。
-- `tests/core/test_mysql_storage_backend.py`：MySQL 存储后端映射、mapper re-export、状态和兼容入口测试。
+- `tests/core/test_mysql_storage_backend.py`：MySQL 存储后端映射、codec/mapper/schema/master reader/snapshot/loader/replacer/sample write/load/status/status SQL re-export、schema 扩展、状态和兼容入口测试。
 - `tests/core/test_storage_backend.py`：统一存储后端测试。
 - `tests/web/`：Web/SPA 路由测试。
 

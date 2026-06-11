@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, test } from "vitest";
 
+import * as samplesFlowModelPublicApi from "./samplesFlowModel";
+import {
+  DETAIL_STATUS_OPTIONS as DETAIL_STATUS_OPTIONS_FROM_CONSTANTS,
+  SAMPLE_FLOW_STEPS as SAMPLE_FLOW_STEPS_FROM_CONSTANTS,
+  TRAY_STATUS_OPTIONS as TRAY_STATUS_OPTIONS_FROM_CONSTANTS,
+} from "./sampleFlow.constants";
+import {
+  normalizeLifecycleStatus as normalizeLifecycleStatusFromStatus,
+  normalizeSamplesSnapshot as normalizeSamplesSnapshotFromStatus,
+  resolveFlowStatusByLocation as resolveFlowStatusByLocationFromStatus,
+  syncTrayStatusToSampleStatus as syncTrayStatusToSampleStatusFromStatus,
+} from "./sampleFlow.status";
+import { getSampleTrayList as getSampleTrayListFromTrayScope } from "./sampleFlow.trayScope";
 import {
   buildTrayFlowView as buildTrayFlowViewRaw,
   buildSamplesTrayOverviewView,
@@ -3722,6 +3735,36 @@ describe("samplesFlowModel", () => {
       "放置实验后暂存间",
       "厂家收回",
     ]);
+  });
+
+  test("keeps the samples flow model public compatibility exports stable", () => {
+    expect(Object.keys(samplesFlowModelPublicApi).sort()).toEqual([
+      "DETAIL_STATUS_OPTIONS",
+      "SAMPLE_FLOW_STEPS",
+      "TRAY_STATUS_OPTIONS",
+      "buildSamplesFlowView",
+      "buildSamplesStagingView",
+      "buildSamplesTrayOverviewView",
+      "buildTrayFlowView",
+      "dispatchStagingSamples",
+      "getSampleTrayList",
+      "normalizeLifecycleStatus",
+      "normalizeSamplesSnapshot",
+      "resolveFlowStatusByLocation",
+      "submitSamplesBatchIntake",
+      "syncTrayStatusToSampleStatus",
+      "synchronizeSamplesForTrayCodes",
+      "updateSampleDetail",
+      "updateTrayStatus",
+    ].sort());
+    expect(samplesFlowModelPublicApi.SAMPLE_FLOW_STEPS).toBe(SAMPLE_FLOW_STEPS_FROM_CONSTANTS);
+    expect(samplesFlowModelPublicApi.DETAIL_STATUS_OPTIONS).toBe(DETAIL_STATUS_OPTIONS_FROM_CONSTANTS);
+    expect(samplesFlowModelPublicApi.TRAY_STATUS_OPTIONS).toBe(TRAY_STATUS_OPTIONS_FROM_CONSTANTS);
+    expect(samplesFlowModelPublicApi.getSampleTrayList).toBe(getSampleTrayListFromTrayScope);
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus).toBe(normalizeLifecycleStatusFromStatus);
+    expect(samplesFlowModelPublicApi.normalizeSamplesSnapshot).toBe(normalizeSamplesSnapshotFromStatus);
+    expect(samplesFlowModelPublicApi.resolveFlowStatusByLocation).toBe(resolveFlowStatusByLocationFromStatus);
+    expect(samplesFlowModelPublicApi.syncTrayStatusToSampleStatus).toBe(syncTrayStatusToSampleStatusFromStatus);
   });
 
   test("syncTrayStatusToSampleStatus maps tray status directly to the same sample status label", () => {

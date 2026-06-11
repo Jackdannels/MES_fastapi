@@ -3,8 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.core import mysql_storage_backend as mysql_storage_backend_module
+from app.core import mysql_storage_codecs as mysql_storage_codecs_module
+from app.core import mysql_storage_loaders as mysql_storage_loaders_module
+from app.core import mysql_storage_master_readers as mysql_storage_master_readers_module
 from app.core import mysql_storage_mappers as mysql_storage_mappers_module
+from app.core import mysql_storage_replacers as mysql_storage_replacers_module
+from app.core import mysql_storage_sample_load as mysql_storage_sample_load_module
+from app.core import mysql_storage_sample_write as mysql_storage_sample_write_module
+from app.core import mysql_storage_schema as mysql_storage_schema_module
+from app.core import mysql_storage_snapshot as mysql_storage_snapshot_module
 from app.core import mysql_storage_status as mysql_storage_status_module
+from app.core import mysql_storage_status_sql as mysql_storage_status_sql_module
 from app.core.mysql_storage_backend import (
     STORAGE_MARKER,
     MySQLConnectionSettings,
@@ -41,6 +50,27 @@ from app.core.mysql_storage_backend import (
 from app.core.demo_data_reset import reset_demo_data
 
 
+def test_mysql_storage_backend_reexports_extracted_codecs() -> None:
+    codec_names = [
+        "FIXTURE_READY_COMPAT_MESSAGE_PREFIX",
+        "RETENTION_KEYWORD",
+        "SAMPLE_META_PREFIX",
+        "STORAGE_MARKER",
+        "TRAY_META_PREFIX",
+        "current_beijing_datetime",
+        "format_iso_storage_datetime",
+        "normalize_storage_payload",
+        "normalize_text",
+        "parse_fixture_ready_flag",
+        "parse_int_value",
+        "parse_storage_datetime",
+        "parse_varchar_length",
+    ]
+
+    for name in codec_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_codecs_module, name)
+
+
 def test_mysql_storage_backend_reexports_extracted_mappers() -> None:
     mapper_names = [
         "build_task_insert_row",
@@ -69,6 +99,7 @@ def test_mysql_storage_backend_reexports_extracted_mappers() -> None:
         "build_staging_dispatch_target_map",
         "build_scheduled_dispatch_target_map",
         "build_storage_sample_item",
+        "normalize_experiment_status",
     ]
 
     for name in mapper_names:
@@ -90,6 +121,120 @@ def test_mysql_storage_backend_reexports_extracted_status_rules() -> None:
 
     for name in status_rule_names:
         assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_status_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_status_sql_helpers() -> None:
+    status_sql_names = [
+        "backfill_unscheduled_since_for_reads",
+        "backfill_schedule_task_ids",
+        "normalize_legacy_status_columns",
+        "sync_progress_statuses",
+        "update_experiment_unscheduled_since",
+    ]
+
+    for name in status_sql_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_status_sql_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_schema_helpers() -> None:
+    schema_helper_names = [
+        "ensure_schema_extensions",
+    ]
+
+    for name in schema_helper_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_schema_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_snapshot_helpers() -> None:
+    snapshot_helper_names = [
+        "delete_missing_rows",
+        "deserialize_snapshot_payloads",
+        "serialize_snapshot_updates",
+    ]
+
+    for name in snapshot_helper_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_snapshot_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_loaders() -> None:
+    loader_names = [
+        "load_tasks",
+        "load_schedules",
+        "load_experiments",
+        "load_experiment_trays",
+        "load_experiment_samples",
+        "load_experiment_runs",
+        "load_experiment_run_trays",
+        "load_devices",
+        "load_streams",
+    ]
+
+    for name in loader_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_loaders_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_master_readers() -> None:
+    master_reader_names = [
+        ("list_master_test_types", "list_test_types"),
+        ("list_master_labs", "list_labs"),
+    ]
+
+    for backend_name, reader_name in master_reader_names:
+        assert getattr(mysql_storage_backend_module, backend_name) is getattr(mysql_storage_master_readers_module, reader_name)
+
+
+def test_mysql_storage_backend_reexports_extracted_replacers() -> None:
+    replacer_names = [
+        "replace_experiment_trays",
+        "replace_experiment_samples",
+        "replace_experiment_run_trays",
+        "replace_experiment_runs",
+        "replace_experiments",
+        "replace_devices",
+        "replace_streams",
+        "replace_tasks",
+        "replace_schedules",
+    ]
+
+    for name in replacer_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_replacers_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> None:
+    sample_write_names = [
+        "build_fixture_ready_events",
+        "build_managed_sample_write_rows",
+        "build_sample_history_event_rows",
+        "build_sample_tray_write_state",
+        "build_tray_item_rows",
+        "clear_existing_sample_links",
+        "delete_managed_fixture_ready_events",
+        "delete_missing_managed_samples",
+        "delete_missing_managed_trays",
+        "insert_fixture_ready_events",
+        "insert_sample_history_event_rows",
+        "insert_tray_item_rows",
+        "load_sample_identity_maps",
+        "load_existing_managed_sample_ids",
+        "load_existing_managed_tray_ids",
+        "load_tray_id_map",
+        "replace_samples",
+        "update_sample_primary_tray_ids",
+        "upsert_tray_rows",
+        "upsert_sample_rows",
+    ]
+
+    for name in sample_write_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_sample_write_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_sample_load_helpers() -> None:
+    sample_load_names = [
+        "load_samples",
+    ]
+
+    for name in sample_load_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_sample_load_module, name)
 
 
 def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
@@ -1930,6 +2075,106 @@ def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
     assert samples[0]["trays"][0]["fixtureReady"] is True
 
 
+def test_load_samples_scopes_frontend_fixture_ready_event_to_payload_tray() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self._result = []
+
+        def execute(self, statement, params=None):
+            normalized = " ".join(str(statement).split())
+            if "FROM biz_sample s" in normalized:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "sample_no": "SYLU-2026-03-003-SP-001",
+                        "task_no": "SYLU-2026-03-003",
+                        "sample_type": "",
+                        "batch_no": "",
+                        "arrival_time": None,
+                        "quantity": 1,
+                        "storage_condition": "",
+                        "barcode_no": "",
+                        "location_desc": "盐雾试验室",
+                        "sample_status": "工装夹具安装",
+                        "flow_status": "工装夹具安装",
+                        "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    },
+                    {
+                        "sample_id": 103,
+                        "sample_no": "SYLU-2026-03-003-SP-002",
+                        "task_no": "SYLU-2026-03-003",
+                        "sample_type": "",
+                        "batch_no": "",
+                        "arrival_time": None,
+                        "quantity": 1,
+                        "storage_condition": "",
+                        "barcode_no": "",
+                        "location_desc": "盐雾试验室",
+                        "sample_status": "工装夹具安装",
+                        "flow_status": "工装夹具安装",
+                        "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    },
+                ]
+            elif "FROM biz_tray_item" in normalized:
+                self._result = [
+                    {
+                        "sample_id": 102,
+                        "task_no": "SYLU-2026-03-003",
+                        "tray_code": "SYLU-2026-03-003-TP-001",
+                        "sample_code": "SYLU-2026-03-003-SP-001",
+                        "quantity": 1,
+                        "status": "工装夹具安装",
+                        "test_state": "",
+                        "tray_status": "",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    },
+                    {
+                        "sample_id": 103,
+                        "task_no": "SYLU-2026-03-003",
+                        "tray_code": "SYLU-2026-03-003-TP-002",
+                        "sample_code": "SYLU-2026-03-003-SP-002",
+                        "quantity": 1,
+                        "status": "工装夹具安装",
+                        "test_state": "",
+                        "tray_status": "",
+                        "created_at": "2026-03-17 09:00:00",
+                        "updated_at": "2026-03-17 09:00:00",
+                    },
+                ]
+            elif "FROM biz_experiment_event" in normalized:
+                self._result = [
+                    {
+                        "task_no": "SYLU-2026-03-003",
+                        "experiment_no": "EXP-A",
+                        "event_time": "2026-03-17 09:05:00",
+                        "payload_json": '{"trayCode":"SYLU-2026-03-003-TP-001"}',
+                    }
+                ]
+            elif "FROM biz_sample_event" in normalized:
+                self._result = []
+            else:
+                self._result = []
+
+        def fetchall(self):
+            return self._result
+
+    samples = backend._load_samples(_Cursor())
+
+    trays_by_sample = {sample["code"]: sample["trays"][0] for sample in samples}
+    assert trays_by_sample["SYLU-2026-03-003-SP-001"]["fixture_ready"] is True
+    assert trays_by_sample["SYLU-2026-03-003-SP-002"]["fixture_ready"] is False
+
+
 def test_load_samples_ignores_stale_fixture_ready_before_latest_install() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -2182,8 +2427,9 @@ def test_replace_samples_persists_fixture_ready_as_compat_experiment_event() -> 
         if "INSERT INTO biz_experiment_event" in sql
     )
     assert fixture_event_rows[0]["task_no"] == "SYLU-2026-03-003"
-    assert fixture_event_rows[0]["message_id"] == "FRONTEND_STORAGE:FIXTURE_READY:SYLU-2026-03-003"
+    assert fixture_event_rows[0]["message_id"] == "FRONTEND_STORAGE:FIXTURE_READY:SYLU-2026-03-003:SYLU-2026-03-003-TP-001"
     assert "frontend_fixture_countdown" in fixture_event_rows[0]["payload_json"]
+    assert "SYLU-2026-03-003-TP-001" in fixture_event_rows[0]["payload_json"]
 
 
 def test_replace_schedules_backfills_task_id_from_task_no() -> None:

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.laboratory_operations import clear_fixture_ready_marker
 
 
 COMPLETED_STATUS = "实验已完成"
@@ -293,6 +294,7 @@ def complete_storage_laboratory_experiment(
                 }
                 for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
                     next_tray.pop(target_key, None)
+                clear_fixture_ready_marker(next_tray)
                 touched = True
                 touched_tray_codes.append(tray_code)
             else:

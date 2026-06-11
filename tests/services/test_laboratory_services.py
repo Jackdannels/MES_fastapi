@@ -2,6 +2,7 @@ import pytest
 
 from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fallback_hits
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
+from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
 
@@ -134,6 +135,68 @@ def test_start_scopes_requested_trays_to_current_experiment_assignment():
     assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-A"]
 
 
+def test_start_clears_stale_fixture_ready_marker():
+    sample = _sample("SP-A", "TASK-1", "TP-A", "实验准备就绪", "盐雾试验室")
+    sample["trays"][0]["fixture_ready"] = True
+    sample["trays"][0]["fixtureReady"] = True
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "盐雾试验室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "samples": [sample],
+    }
+
+    result = start_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        lab_name="盐雾试验室",
+        schedule_id="SCH-A",
+        tray_codes=["TP-A"],
+        started_at="2026-06-06 09:00:00",
+    )
+
+    tray = result["samples"][0]["trays"][0]
+    assert tray["status"] == "实验进行中"
+    assert "fixture_ready" not in tray
+    assert "fixtureReady" not in tray
+
+
+def test_ready_clears_fixture_ready_marker_after_countdown():
+    sample = _sample("SP-A", "TASK-1", "TP-A", "工装夹具安装", "盐雾试验室")
+    sample["trays"][0]["fixture_ready"] = True
+    sample["trays"][0]["fixtureReady"] = True
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "盐雾试验室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [],
+        "samples": [sample],
+    }
+
+    result = apply_laboratory_task_operation(
+        snapshot,
+        operation_type="ready",
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        lab_name="盐雾试验室",
+        tray_codes=["TP-A"],
+        occurred_at="2026-06-06 09:00:00",
+    )
+
+    tray = result["samples"][0]["trays"][0]
+    assert tray["status"] == "实验准备就绪"
+    assert "fixture_ready" not in tray
+    assert "fixtureReady" not in tray
+
+
 def test_start_logs_legacy_tray_sample_fallback_without_changing_scope():
     snapshot = {
         "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
@@ -247,6 +310,42 @@ def test_complete_scopes_requested_trays_to_current_experiment_assignment():
     assert result["samples"][0]["trays"][0]["status"] == "送至外观检测间"
     assert result["samples"][1]["trays"][0]["status"] == "实验进行中"
     assert result["experimentRunTrays"][0]["tray_code"] == "TP-A"
+
+
+def test_complete_clears_stale_fixture_ready_marker():
+    sample = _sample("SP-A", "TASK-1", "TP-A", "实验进行中", "盐雾试验室")
+    sample["trays"][0]["fixture_ready"] = True
+    sample["trays"][0]["fixtureReady"] = True
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "盐雾试验室"}],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-A"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "samples": [sample],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        tray_codes=["TP-A"],
+        completed_at="2026-06-06 10:00:00",
+    )
+
+    tray = result["samples"][0]["trays"][0]
+    assert tray["status"] == "送至外观检测间"
+    assert "fixture_ready" not in tray
+    assert "fixtureReady" not in tray
 
 
 def test_complete_logs_legacy_tray_sample_fallback_without_changing_scope():

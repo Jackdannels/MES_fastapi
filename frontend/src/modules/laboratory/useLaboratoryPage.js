@@ -8,7 +8,7 @@ import {
   readHostInterfaceMode,
 } from "@/lib/hostInterfaceMode";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
-import { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
+import { applyLaboratoryOperation, completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
@@ -19,7 +19,6 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
-  applyLaboratoryTaskStep,
   buildLaboratoryChecklist,
   buildLaboratoryProgressMessage,
   buildLaboratorySummary,
@@ -30,7 +29,6 @@ import {
   LAB_READY_STATUS,
   getLaboratoryActionState,
   getLaboratoryOperationLock,
-  revertLaboratoryTaskToPreviousStableState,
   SALT_SPRAY_LAB,
   validateLaboratoryTrayScan,
 } from "./model";
@@ -58,89 +56,6 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
-const sampleMergeKey = (sample) => normalizeText(sample?.code) || normalizeText(sample?.id);
-const trayMergeKey = (tray) => normalizeText(tray?.tray_code);
-const valuesEqual = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
-const mergeHistoryEntries = (baseHistory = [], nextHistory = [], latestHistory = []) => {
-  const baseKeys = new Set((Array.isArray(baseHistory) ? baseHistory : []).map((entry) => JSON.stringify(entry ?? null)));
-  const latestKeys = new Set((Array.isArray(latestHistory) ? latestHistory : []).map((entry) => JSON.stringify(entry ?? null)));
-  const changedEntries = (Array.isArray(nextHistory) ? nextHistory : [])
-    .filter((entry) => !baseKeys.has(JSON.stringify(entry ?? null)));
-  const merged = [];
-  changedEntries.forEach((entry) => {
-    const key = JSON.stringify(entry ?? null);
-    if (!latestKeys.has(key)) {
-      merged.push(entry);
-      latestKeys.add(key);
-    }
-  });
-  return [...merged, ...(Array.isArray(latestHistory) ? latestHistory : [])];
-};
-const mergeChangedSample = (baseSample = null, nextSample = null, latestSample = null) => {
-  if (!nextSample) {
-    return latestSample;
-  }
-  if (!baseSample || !latestSample) {
-    return nextSample;
-  }
-  if (valuesEqual(baseSample, nextSample)) {
-    return latestSample;
-  }
-
-  const baseTraysByCode = new Map((Array.isArray(baseSample.trays) ? baseSample.trays : []).map((tray) => [trayMergeKey(tray), tray]));
-  const changedTraysByCode = new Map();
-  (Array.isArray(nextSample.trays) ? nextSample.trays : []).forEach((tray) => {
-    const trayCode = trayMergeKey(tray);
-    if (!trayCode || valuesEqual(baseTraysByCode.get(trayCode), tray)) {
-      return;
-    }
-    changedTraysByCode.set(trayCode, tray);
-  });
-  const mergedSample = {
-    ...latestSample,
-    ...Object.fromEntries(
-      Object.entries(nextSample).filter(([key, value]) =>
-        key !== "trays"
-        && key !== "history"
-        && !valuesEqual(baseSample?.[key], value),
-      ),
-    ),
-  };
-  if (Array.isArray(latestSample.trays) || changedTraysByCode.size > 0) {
-    const seenTrayCodes = new Set();
-    mergedSample.trays = (Array.isArray(latestSample.trays) ? latestSample.trays : []).map((tray) => {
-      const trayCode = trayMergeKey(tray);
-      seenTrayCodes.add(trayCode);
-      return changedTraysByCode.get(trayCode) || tray;
-    });
-    changedTraysByCode.forEach((tray, trayCode) => {
-      if (!seenTrayCodes.has(trayCode)) {
-        mergedSample.trays.push(tray);
-      }
-    });
-  }
-  if (!valuesEqual(baseSample.history, nextSample.history)) {
-    mergedSample.history = mergeHistoryEntries(baseSample.history, nextSample.history, latestSample.history);
-  }
-  return mergedSample;
-};
-const mergeSamplesWithLatestSnapshot = ({ baseSamples = [], latestSamples = [], nextSamples = [] } = {}) => {
-  const baseByKey = new Map((Array.isArray(baseSamples) ? baseSamples : []).map((sample) => [sampleMergeKey(sample), sample]));
-  const nextByKey = new Map((Array.isArray(nextSamples) ? nextSamples : []).map((sample) => [sampleMergeKey(sample), sample]));
-  const mergedKeys = new Set();
-  const mergedSamples = (Array.isArray(latestSamples) ? latestSamples : []).map((latestSample) => {
-    const key = sampleMergeKey(latestSample);
-    const nextSample = nextByKey.get(key);
-    mergedKeys.add(key);
-    return nextSample ? mergeChangedSample(baseByKey.get(key), nextSample, latestSample) : latestSample;
-  });
-  nextByKey.forEach((nextSample, key) => {
-    if (!mergedKeys.has(key)) {
-      mergedSamples.push(nextSample);
-    }
-  });
-  return mergedSamples;
-};
 
 const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
@@ -244,7 +159,6 @@ function useLaboratoryPage(options = {}) {
       STORAGE_KEYS.devices,
     ]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
-  const persistSnapshot = options.persistSnapshot || storage.persistSnapshot || (async () => {});
 
   const loading = ref(false);
   const laboratoryConfig = ref(createDefaultLaboratoryConfig());
@@ -840,19 +754,15 @@ function useLaboratoryPage(options = {}) {
     lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
     task_code: currentTask.value?.taskCode || "",
   });
-  const persistSamples = (nextSamples, { baseSamples = samples.value } = {}) => {
-    const writeSamples = async () => {
-      const latestSnapshot = await loadSnapshot();
-      const latestSamples = Array.isArray(latestSnapshot?.[STORAGE_KEYS.samples]) ? latestSnapshot[STORAGE_KEYS.samples] : baseSamples;
-      const mergedSamples = mergeSamplesWithLatestSnapshot({ baseSamples, latestSamples, nextSamples });
-      samples.value = mergedSamples;
-      return persistSnapshot({
-        [STORAGE_KEYS.samples]: mergedSamples,
-      });
-    };
+  const applyOperationResponse = (payload = {}) => {
+    if (Array.isArray(payload?.samples)) {
+      samples.value = payload.samples;
+    }
+  };
+  const queueLaboratoryOperation = (operation) => {
     const persistOperation = samplesPersistQueue
-      ? samplesPersistQueue.catch(() => {}).then(writeSamples)
-      : writeSamples();
+      ? samplesPersistQueue.catch(() => {}).then(operation)
+      : operation();
     const trackedOperation = persistOperation.finally(() => {
       if (samplesPersistQueue === trackedOperation) {
         samplesPersistQueue = null;
@@ -874,7 +784,20 @@ function useLaboratoryPage(options = {}) {
     samplesPersistQueue = trackedOperation;
     return persistOperation;
   };
-  const persistCurrentTaskStep = async (nextStatus, historyAction, options = {}) => {
+  const operationTypeForStatus = (nextStatus) => {
+    const normalizedStatus = normalizeText(nextStatus);
+    if (normalizedStatus === LAB_COMPARE_STATUS) {
+      return "compare";
+    }
+    if (normalizedStatus === LAB_INSTALL_STATUS) {
+      return "install";
+    }
+    if (normalizedStatus === LAB_READY_STATUS) {
+      return "ready";
+    }
+    return "";
+  };
+  const persistCurrentTaskStep = async (nextStatus) => {
     const actionTime = formatLocalDateTime();
     const targetTrayCodes =
       nextStatus === LAB_COMPARE_STATUS
@@ -884,31 +807,22 @@ function useLaboratoryPage(options = {}) {
           : nextStatus === LAB_READY_STATUS
             ? getCurrentTaskTrayCodesByStatus(LAB_INSTALL_STATUS)
             : currentTask.value?.trayCodes;
-    const baseSamples =
-      options.revertTask && nextStatus === LAB_COMPARE_STATUS
-        ? revertLaboratoryTaskToPreviousStableState({
-            currentTask: options.revertTask,
-            now: actionTime,
-            samples: samples.value,
-          })
-        : samples.value;
-    let nextSamples = applyLaboratoryTaskStep({
-      currentTask: currentTask.value,
-      historyAction,
-      nextStatus,
-      now: actionTime,
-      samples: baseSamples,
-      targetTrayCodes,
-    });
-    if (nextStatus === LAB_INSTALL_STATUS) {
-      nextSamples = clearFixtureReadyForTask({
-        nextSamples,
+    const operationType = operationTypeForStatus(nextStatus);
+    if (!operationType || !currentTask.value) {
+      return;
+    }
+    const payload = await queueLaboratoryOperation(() =>
+      applyLaboratoryOperation({
+        experimentCode: currentTask.value?.experimentCode,
+        labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+        labName: laboratoryConfig.value.labName,
+        occurredAt: actionTime,
+        operationType,
         taskCode: currentTask.value?.taskCode,
         trayCodes: targetTrayCodes,
-      });
-    }
-    samples.value = nextSamples;
-    await persistSamples(nextSamples, { baseSamples });
+      }),
+    );
+    applyOperationResponse(payload);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
@@ -919,49 +833,20 @@ function useLaboratoryPage(options = {}) {
     if (!targetTaskCode || targetTrayCodes.size === 0) {
       return;
     }
-    const baseSamples = samples.value;
-    const nextSamples = baseSamples.map((sample) => {
-      if (String(sample?.task_code || "").trim() !== targetTaskCode || !Array.isArray(sample?.trays)) {
-        return sample;
-      }
-      return {
-        ...sample,
-        trays: sample.trays.map((tray) =>
-          targetTrayCodes.has(String(tray?.tray_code || "").trim()) && String(tray?.status || "").trim() === LAB_INSTALL_STATUS
-            ? { ...tray, fixtureReady: true, fixture_ready: true }
-            : tray,
-        ),
-      };
-    });
-    samples.value = nextSamples;
-    await persistSamples(nextSamples, { baseSamples });
+    const payload = await queueLaboratoryOperation(() =>
+      applyLaboratoryOperation({
+        experimentCode: currentTask.value?.experimentCode,
+        labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+        labName: laboratoryConfig.value.labName,
+        operationType: "fixtureReady",
+        taskCode: targetTaskCode,
+        trayCodes: Array.from(targetTrayCodes),
+      }),
+    );
+    applyOperationResponse(payload);
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
-  };
-  const clearFixtureReadyForTask = ({ nextSamples, taskCode, trayCodes }) => {
-    const targetTaskCode = String(taskCode || "").trim();
-    const targetTrayCodes = new Set((Array.isArray(trayCodes) ? trayCodes : []).map((code) => String(code || "").trim()).filter(Boolean));
-    if (!targetTaskCode || targetTrayCodes.size === 0) {
-      return nextSamples;
-    }
-    return nextSamples.map((sample) => {
-      if (String(sample?.task_code || "").trim() !== targetTaskCode || !Array.isArray(sample?.trays)) {
-        return sample;
-      }
-      return {
-        ...sample,
-        trays: sample.trays.map((tray) => {
-          if (!targetTrayCodes.has(String(tray?.tray_code || "").trim())) {
-            return tray;
-          }
-          const nextTray = { ...tray };
-          delete nextTray.fixtureReady;
-          delete nextTray.fixture_ready;
-          return nextTray;
-        }),
-      };
-    });
   };
   const openFixtureConfirmSuccess = () => {
     clearFixtureConfirmTimer();

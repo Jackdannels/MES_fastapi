@@ -786,6 +786,46 @@ describe("laboratory model", () => {
     expect(getLaboratoryOperationLock([saltStarted, vibrationDifferentTray], vibrationDifferentTray, { name: "振动一室" })).toEqual({ active: false });
   });
 
+  test("operation lock ignores an old shared-tray experiment after the tray is dispatched to the current laboratory", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-004`;
+    const impactGhost = {
+      device: "冲击一室",
+      experimentCode: `${taskCode}-A`,
+      experimentKey: `${taskCode}::${taskCode}-A`,
+      experimentName: "冲击试验",
+      taskCode,
+      trayRows: [
+        {
+          completedForOtherExperiment: true,
+          targetExperimentCode: `${taskCode}-D`,
+          targetLab: "振动一室",
+          trayCode,
+          trayStatus: "已到达实验室",
+        },
+      ],
+    };
+    const vibrationCurrent = {
+      device: "振动一室",
+      experimentCode: `${taskCode}-D`,
+      experimentKey: `${taskCode}::${taskCode}-D`,
+      experimentName: "振动试验",
+      taskCode,
+      trayRows: [
+        {
+          completedForOtherExperiment: true,
+          targetExperimentCode: `${taskCode}-D`,
+          targetLab: "振动一室",
+          trayCode,
+          trayStatus: "已到达实验室",
+        },
+      ],
+    };
+
+    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(vibrationCurrent)).canInstallSample).toBe(true);
+    expect(getLaboratoryOperationLock([impactGhost, vibrationCurrent], vibrationCurrent, { name: "振动一室" })).toEqual({ active: false });
+  });
+
   test("defaults to the prepared task, otherwise the earliest scheduled task", () => {
     const baseInput = {
       experimentTrays: [

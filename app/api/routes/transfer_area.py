@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
+from app.services.laboratory_operations import clear_fixture_ready_marker
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -1313,6 +1314,7 @@ def apply_tray_withdrawal(
                 tray_matches = True
                 normalized["status"] = target_status
                 normalized["updated_at"] = timestamp
+                clear_fixture_ready_marker(normalized)
             next_trays.append(normalized)
         if not tray_matches:
             continue
@@ -1519,6 +1521,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
             if normalize_text(normalized.get("tray_code")) == normalize_text(tray_code):
                 normalized["status"] = next_status
                 normalized["updated_at"] = timestamp
+                clear_fixture_ready_marker(normalized)
                 if target_type == "lab":
                     normalized["target_lab"] = next_location
                     normalized["target_experiment_code"] = normalize_text(request.experiment_code)

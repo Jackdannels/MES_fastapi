@@ -34,6 +34,44 @@ const withdrawCurrentLaboratoryExperiment = async ({ taskCode, experimentCode, r
   return response.json();
 };
 
+const applyLaboratoryOperation = async ({
+  experimentCode,
+  labCode = "",
+  labName = "",
+  occurredAt = "",
+  operationType,
+  taskCode,
+  trayCodes = [],
+}) => {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  const normalizedExperimentCode = String(experimentCode || "").trim();
+  const normalizedOperationType = String(operationType || "").trim();
+  if (!normalizedTaskCode || !normalizedExperimentCode || !normalizedOperationType) {
+    throw new Error("缺少当前任务、实验或操作类型。");
+  }
+  const response = await fetch(buildApiUrl("/api/laboratory/operations", API_BASE_URL), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({
+      experimentCode: normalizedExperimentCode,
+      labCode: String(labCode || "").trim(),
+      labName: String(labName || "").trim(),
+      occurredAt: String(occurredAt || "").trim(),
+      operationType: normalizedOperationType,
+      taskCode: normalizedTaskCode,
+      trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
 const completeLaboratoryExperiment = async ({
   completedAt = "",
   experimentCode,
@@ -71,4 +109,4 @@ const completeLaboratoryExperiment = async ({
   return response.json();
 };
 
-export { completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };
+export { applyLaboratoryOperation, completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };

@@ -42,6 +42,8 @@ const flushPageUpdates = async (cycles = 4) => {
 };
 const storageGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+const storagePutCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "PUT");
 const masterLabsGetCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/master/labs") && (options.method || "GET") === "GET");
 const laboratoryMqCalls = () =>
@@ -50,6 +52,93 @@ const interfaceModeCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/interface-mode") && (options.method || "GET") === "POST");
 const laboratoryCompleteCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/complete") && (options.method || "GET") === "POST");
+const laboratoryOperationCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/operations") && (options.method || "GET") === "POST");
+const handleLaboratoryOperationFetch = (url, options = {}) => {
+  if (!String(url).includes("/api/laboratory/operations")) {
+    return null;
+  }
+  const body = JSON.parse(String(options.body || "{}"));
+  const taskCode = String(body.taskCode || "").trim();
+  const experimentCode = String(body.experimentCode || "").trim();
+  const operationType = String(body.operationType || "").trim();
+  const trayCodes = new Set((Array.isArray(body.trayCodes) ? body.trayCodes : []).map(String));
+  const operationStatuses = {
+    compare: "已到达实验室",
+    install: "工装夹具安装",
+    ready: "实验准备就绪",
+    fixtureReady: "工装夹具安装",
+  };
+  const operationActions = {
+    compare: "任务比对",
+    install: "样品安装",
+    ready: "实验确认",
+  };
+  const nextStatus = operationStatuses[operationType];
+  const experiment = (snapshotState[STORAGE_KEYS.experiments] || []).find(
+    (entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode,
+  );
+  const experimentName = experiment?.experiment_name || experimentCode;
+  const occurredAt = body.occurredAt || new Date().toISOString();
+  const touchedTrayCodes = new Set();
+  snapshotState = {
+    ...snapshotState,
+    [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
+      if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
+        return sample;
+      }
+      const touchesCurrentSample = sample.trays.some((tray) => trayCodes.has(String(tray.tray_code || "")));
+      if (!touchesCurrentSample) {
+        return sample;
+      }
+      const nextTrays = sample.trays.map((tray) => {
+        const trayCode = String(tray.tray_code || "");
+        if (!trayCodes.has(trayCode)) {
+          return tray;
+        }
+        touchedTrayCodes.add(trayCode);
+        if (operationType === "fixtureReady") {
+          return { ...tray, fixtureReady: true, fixture_ready: true };
+        }
+        const nextTray = { ...tray, status: nextStatus, updated_at: occurredAt };
+        if (operationType === "install") {
+          delete nextTray.fixtureReady;
+          delete nextTray.fixture_ready;
+        }
+        return nextTray;
+      });
+      const historyEntry = operationActions[operationType]
+        ? {
+            action: operationActions[operationType],
+            detail: `${taskCode} / ${experimentName} / ${nextStatus}`,
+            location: body.labName || sample.location || "",
+            owner: sample.owner || "",
+            status: nextStatus,
+            time: occurredAt,
+          }
+        : null;
+      return {
+        ...sample,
+        flow_status: nextStatus,
+        history: historyEntry ? [historyEntry, ...(Array.isArray(sample.history) ? sample.history : [])] : sample.history,
+        location: body.labName || sample.location,
+        status: nextStatus,
+        trays: nextTrays,
+        updated_at: occurredAt,
+      };
+    }),
+  };
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      affectedTrayCodes: Array.from(touchedTrayCodes).sort(),
+      ok: true,
+      operationType,
+      samples: snapshotState[STORAGE_KEYS.samples],
+    }),
+  };
+};
 const waitForLaboratoryMqCall = async (endpoint) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -479,6 +568,10 @@ describe("LaboratoryPage runtime", () => {
       }
       if (url.includes("/api/mq/laboratory")) {
         return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
+      }
+      const operationResponse = handleLaboratoryOperationFetch(url, options);
+      if (operationResponse) {
+        return operationResponse;
       }
       throw new Error(`Unhandled fetch: ${url}`);
     }));
@@ -1285,9 +1378,14 @@ describe("LaboratoryPage runtime", () => {
         status: "送至实验室",
       })),
     };
-    const storageWrites = [];
+    const operationWrites = [];
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      if (url.includes("/api/laboratory/operations")) {
+        return new Promise((resolve) => {
+          operationWrites.push(() => resolve(handleLaboratoryOperationFetch(url, options)));
+        });
+      }
       if (url.includes("/api/storage")) {
         if ((options.method || "GET") === "PUT") {
           const payload = JSON.parse(String(options.body || "{}"));
@@ -1295,9 +1393,7 @@ describe("LaboratoryPage runtime", () => {
             ...snapshotState,
             ...payload,
           };
-          return new Promise((resolve) => {
-            storageWrites.push(() => resolve({ ok: true, status: 200, json: async () => ({ ok: true }) }));
-          });
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
         }
         return { ok: true, status: 200, json: async () => snapshotState };
       }
@@ -1315,10 +1411,9 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
-    await waitForQueueLength(storageWrites, 1);
-    storageWrites.shift()();
-    await nextTick();
-    await nextTick();
+    await waitForQueueLength(operationWrites, 1);
+    operationWrites.shift()();
+    await flushPageUpdates();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-002");
@@ -1327,10 +1422,9 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
-    await waitForQueueLength(storageWrites, 1);
-    storageWrites.shift()();
-    await nextTick();
-    await nextTick();
+    await waitForQueueLength(operationWrites, 1);
+    operationWrites.shift()();
+    await flushPageUpdates();
   });
 
   test("keeps the prepared task in place and blocks next-task operations after switching", async () => {
@@ -2220,6 +2314,12 @@ describe("LaboratoryPage runtime", () => {
     }));
     expect(mounted.text()).toContain("当前任务已确认实验准备就绪");
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(4);
+    expect(laboratoryOperationCalls().map(([input]) => String(input))).toEqual([
+      "/api/laboratory/operations",
+      "/api/laboratory/operations",
+      "/api/laboratory/operations",
+    ]);
+    expect(storagePutCalls()).toHaveLength(0);
 
     mounted.unmount();
     wrapper = undefined;
@@ -2373,6 +2473,10 @@ describe("LaboratoryPage runtime", () => {
         }
         return { ok: true, status: 200, json: async () => snapshotState };
       }
+      const operationResponse = handleLaboratoryOperationFetch(url, options);
+      if (operationResponse) {
+        return operationResponse;
+      }
       throw new Error(`Unhandled fetch: ${url}`);
     });
     const mounted = await mountPage();
@@ -2428,6 +2532,10 @@ describe("LaboratoryPage runtime", () => {
           return { ok: true, status: 200, json: async () => ({ ok: true }) };
         }
         return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      const operationResponse = handleLaboratoryOperationFetch(url, options);
+      if (operationResponse) {
+        return operationResponse;
       }
       throw new Error(`Unhandled fetch: ${url}`);
     });
@@ -2542,9 +2650,14 @@ describe("LaboratoryPage runtime", () => {
         trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-002" }],
       },
     ];
-    let releaseStorageWrite = () => {};
+    let releaseLaboratoryOperation = () => {};
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      if (url.includes("/api/laboratory/operations")) {
+        return new Promise((resolve) => {
+          releaseLaboratoryOperation = () => resolve(handleLaboratoryOperationFetch(url, options));
+        });
+      }
       if (url.includes("/api/storage")) {
         if ((options.method || "GET") === "PUT") {
           const payload = JSON.parse(String(options.body || "{}"));
@@ -2552,9 +2665,7 @@ describe("LaboratoryPage runtime", () => {
             ...snapshotState,
             ...payload,
           };
-          return new Promise((resolve) => {
-            releaseStorageWrite = () => resolve({ ok: true, status: 200, json: async () => ({ ok: true }) });
-          });
+          return { ok: true, status: 200, json: async () => ({ ok: true }) };
         }
         return { ok: true, status: 200, json: async () => snapshotState };
       }
@@ -2578,7 +2689,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
     expect(laboratoryMqCalls()).toHaveLength(0);
 
-    releaseStorageWrite();
+    releaseLaboratoryOperation();
     await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     await flushPageUpdates();
     expect(laboratoryMqCalls()).toHaveLength(1);

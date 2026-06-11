@@ -823,7 +823,10 @@ const laboratoryOperationKey = (task) =>
     : normalizeText(task?.id));
 const laboratoryRowHasStartedOperation = (row) =>
   asArray(row?.trayRows).some((tray) => {
-    const rank = resolveLaboratoryStatusRank(tray?.trayStatus);
+    if (!trayBelongsToCurrentLaboratoryWorkflow(tray, row)) {
+      return false;
+    }
+    const rank = resolveCurrentWorkflowTrayRank(tray, row);
     return rank >= 1 && rank < 5;
   });
 const laboratoryOperationTrayCodeSet = (row) =>
@@ -876,9 +879,6 @@ const currentExperimentIsNextUnfinishedForTray = (row, currentTask) => {
 };
 const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   const trayStatus = normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus);
-  if (trayStatus !== LAB_RESET_STATUS) {
-    return true;
-  }
   const targetExperimentCode = normalizeText(row?.targetExperimentCode || row?.target_experiment_code);
   const currentExperimentCode = normalizeText(currentTask?.experimentCode);
   if (
@@ -894,6 +894,9 @@ const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   }
   if (targetExperimentCode && currentExperimentCode && targetExperimentCode !== currentExperimentCode) {
     return false;
+  }
+  if (trayStatus !== LAB_RESET_STATUS) {
+    return true;
   }
   if (
     !targetExperimentCode

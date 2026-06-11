@@ -130,31 +130,31 @@ onBeforeUnmount(clearTimer);
 
 .app-feedback__close {
   border: 0;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--app-feedback-close-bg, rgba(255, 255, 255, 0.55));
   color: inherit;
 }
 
 .app-feedback--success {
-  border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(236, 253, 245, 0.92);
-  color: #166534;
+  border-color: var(--app-feedback-success-border, rgba(34, 197, 94, 0.42));
+  background: var(--app-feedback-success-bg, rgba(236, 253, 245, 0.92));
+  color: var(--app-feedback-success-color, #166534);
 }
 
 .app-feedback--error {
-  border-color: rgba(244, 63, 94, 0.35);
-  background: rgba(255, 241, 242, 0.94);
-  color: #b91c1c;
+  border-color: var(--app-feedback-error-border, rgba(244, 63, 94, 0.35));
+  background: var(--app-feedback-error-bg, rgba(255, 241, 242, 0.94));
+  color: var(--app-feedback-error-color, #b91c1c);
 }
 
 .app-feedback--warning {
-  border-color: rgba(245, 158, 11, 0.38);
-  background: rgba(255, 251, 235, 0.95);
-  color: #92400e;
+  border-color: var(--app-feedback-warning-border, rgba(245, 158, 11, 0.38));
+  background: var(--app-feedback-warning-bg, rgba(255, 251, 235, 0.95));
+  color: var(--app-feedback-warning-color, #92400e);
 }
 
 .app-feedback--info {
-  border-color: rgba(59, 130, 246, 0.32);
-  background: rgba(239, 246, 255, 0.95);
-  color: #1d4ed8;
+  border-color: var(--app-feedback-info-border, rgba(59, 130, 246, 0.32));
+  background: var(--app-feedback-info-bg, rgba(239, 246, 255, 0.95));
+  color: var(--app-feedback-info-color, #1d4ed8);
 }
 </style>

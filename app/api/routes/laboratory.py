@@ -10,6 +10,14 @@ from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
+from app.services.laboratory_operations import (
+    acquire_laboratory_operation_locks,
+    acquire_laboratory_storage_commit_lock,
+    apply_laboratory_task_operation,
+    operation_resource_keys,
+    resolve_lab_name,
+    run_atomic_laboratory_operation,
+)
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 
@@ -51,6 +59,19 @@ class LaboratoryCompleteRequest(BaseModel):
     completed_at: str = Field(default="", alias="completedAt")
     run_no: str = Field(default="", alias="runNo")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LaboratoryOperationRequest(BaseModel):
+    operation_type: str = Field(default="", alias="operationType")
+    task_code: str = Field(default="", alias="taskCode")
+    experiment_code: str = Field(default="", alias="experimentCode")
+    lab_code: str = Field(default="", alias="labCode")
+    lab_name: str = Field(default="", alias="labName")
+    tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+    occurred_at: str = Field(default="", alias="occurredAt")
+    operation_id: str = Field(default="", alias="operationId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -112,6 +133,46 @@ def find_task(snapshot: dict[str, list[dict[str, Any]]], task_code: str) -> dict
         if normalize_text(task.get("code")) == normalized_code or normalize_text(task.get("id")) == normalized_code:
             return task
     raise HTTPException(status_code=404, detail="未找到任务")
+
+
+@router.post("/operations")
+def apply_laboratory_operation(
+    request: LaboratoryOperationRequest = Body(default_factory=LaboratoryOperationRequest),
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    resource_keys = operation_resource_keys(
+        lab_code=request.lab_code,
+        lab_name=request.lab_name,
+        tray_codes=request.tray_codes,
+    )
+
+    def run_operation(snapshot: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+        find_task(snapshot, request.task_code)
+        try:
+            return apply_laboratory_task_operation(
+                snapshot,
+                operation_type=request.operation_type,
+                task_code=request.task_code,
+                experiment_code=request.experiment_code,
+                lab_name=request.lab_name,
+                tray_codes=request.tray_codes,
+                occurred_at=request.occurred_at,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = run_atomic_laboratory_operation(
+        operation=run_operation,
+        publish_storage_update=publish_storage_update,
+        resource_keys=resource_keys,
+        storage=storage,
+    )
+    return {
+        "ok": True,
+        "operationId": request.operation_id,
+        "operationType": request.operation_type,
+        **result,
+    }
 
 
 def experiment_name(snapshot: dict[str, list[dict[str, Any]]], task_code: str, experiment_code: str) -> str:
@@ -531,26 +592,35 @@ def complete_current_experiment(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
-    snapshot = read_snapshot()
-    find_task(snapshot, normalized_task_code)
-    current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
-    try:
-        result = complete_storage_laboratory_experiment(
-            snapshot,
-            task_code=normalized_task_code,
-            experiment_code=normalized_experiment_code,
-            run_no=request.run_no,
-            tray_codes=request.tray_codes,
-            completed_at=request.completed_at,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    write_completion_snapshot(result)
-    return {
-        "ok": True,
-        "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
-        **result,
-    }
+    initial_snapshot = read_snapshot()
+    initial_tray_codes = request.tray_codes or experiment_tray_codes(initial_snapshot, normalized_task_code, normalized_experiment_code)
+    resource_keys = operation_resource_keys(
+        lab_name=resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code),
+        tray_codes=initial_tray_codes,
+    )
+    resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
+    with acquire_laboratory_operation_locks(resource_keys):
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = read_snapshot()
+            find_task(snapshot, normalized_task_code)
+            current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
+            try:
+                result = complete_storage_laboratory_experiment(
+                    snapshot,
+                    task_code=normalized_task_code,
+                    experiment_code=normalized_experiment_code,
+                    run_no=request.run_no,
+                    tray_codes=request.tray_codes,
+                    completed_at=request.completed_at,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            write_completion_snapshot(result)
+            return {
+                "ok": True,
+                "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
+                **result,
+            }
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/withdraw-current")
@@ -561,101 +631,110 @@ def withdraw_current_experiment(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
-    snapshot = read_snapshot()
-    find_task(snapshot, normalized_task_code)
-    current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
-    tray_codes = set(experiment_tray_codes(snapshot, normalized_task_code, normalized_experiment_code))
-    scoped_sample_codes = experiment_sample_codes(snapshot, normalized_task_code, normalized_experiment_code)
-    sample_matches = matching_samples(
-        snapshot,
-        normalized_task_code,
-        tray_codes,
-        scoped_sample_codes if scoped_sample_codes else None,
+    initial_snapshot = read_snapshot()
+    initial_tray_codes = experiment_tray_codes(initial_snapshot, normalized_task_code, normalized_experiment_code)
+    resource_keys = operation_resource_keys(
+        lab_name=resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code),
+        tray_codes=initial_tray_codes,
     )
-    if not sample_matches:
-        raise HTTPException(status_code=404, detail="当前实验未找到对应托盘样品")
+    resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
+    with acquire_laboratory_operation_locks(resource_keys):
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = read_snapshot()
+            find_task(snapshot, normalized_task_code)
+            current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
+            tray_codes = set(experiment_tray_codes(snapshot, normalized_task_code, normalized_experiment_code))
+            scoped_sample_codes = experiment_sample_codes(snapshot, normalized_task_code, normalized_experiment_code)
+            sample_matches = matching_samples(
+                snapshot,
+                normalized_task_code,
+                tray_codes,
+                scoped_sample_codes if scoped_sample_codes else None,
+            )
+            if not sample_matches:
+                raise HTTPException(status_code=404, detail="当前实验未找到对应托盘样品")
 
-    withdrawable_matches = withdrawable_sample_matches(sample_matches)
-    if not withdrawable_matches:
-        raise HTTPException(status_code=400, detail="当前实验没有可撤回的已比对、已安装或已准备就绪托盘")
+            withdrawable_matches = withdrawable_sample_matches(sample_matches)
+            if not withdrawable_matches:
+                raise HTTPException(status_code=400, detail="当前实验没有可撤回的已比对、已安装或已准备就绪托盘")
 
-    now = now_business_text()
-    affected_sample_count = 0
-    affected_tray_codes: set[str] = set()
-    restored_targets: list[dict[str, str]] = []
-    compensated_tray_codes: set[str] = set()
-    for sample, matched_tray_codes in withdrawable_matches:
-        restore_snapshot = resolve_restore_snapshot(
-            sample,
-            snapshot,
-            normalized_task_code,
-            current_experiment_name,
-            matched_tray_codes[0],
-        )
-        restored_targets.append(restore_snapshot)
-        next_trays = []
-        for tray in as_list(sample.get("trays")):
-            normalized_tray = dict(tray)
-            tray_code = normalize_text(normalized_tray.get("tray_code"))
-            if tray_code in matched_tray_codes:
-                normalized_tray["status"] = restore_snapshot["status"]
-                normalized_tray["updated_at"] = now
-                normalized_tray.pop("fixture_ready", None)
-                normalized_tray.pop("fixtureReady", None)
-            next_trays.append(normalized_tray)
-        affected_tray_codes.update(matched_tray_codes)
-        remaining_blocked_tray = any(
-            normalize_text(tray.get("tray_code")) not in matched_tray_codes
-            and normalize_text(tray.get("status")) in BLOCK_WITHDRAW_TRAY_STATUSES
-            for tray in next_trays
-        )
-        if not remaining_blocked_tray:
-            sample["location"] = restore_snapshot["location"]
-            sample["status"] = restore_snapshot["status"]
-            sample["flow_status"] = restore_snapshot["status"]
-        sample["updated_at"] = now
-        sample["trays"] = next_trays
-        detail_target = restore_snapshot["status"]
-        if restore_snapshot.get("experimentName"):
-            detail_target = f"{restore_snapshot['experimentName']}已完成"
-        detail = f"{normalized_task_code} / {current_experiment_name} / 撤回至{detail_target}"
-        reason = normalize_text(request.reason)
-        if reason:
-            detail = f"{detail}（{reason}）"
-        append_history(sample, "实验任务撤回", detail, now)
-        affected_sample_count += 1
+            now = now_business_text()
+            affected_sample_count = 0
+            affected_tray_codes: set[str] = set()
+            restored_targets: list[dict[str, str]] = []
+            compensated_tray_codes: set[str] = set()
+            for sample, matched_tray_codes in withdrawable_matches:
+                restore_snapshot = resolve_restore_snapshot(
+                    sample,
+                    snapshot,
+                    normalized_task_code,
+                    current_experiment_name,
+                    matched_tray_codes[0],
+                )
+                restored_targets.append(restore_snapshot)
+                next_trays = []
+                for tray in as_list(sample.get("trays")):
+                    normalized_tray = dict(tray)
+                    tray_code = normalize_text(normalized_tray.get("tray_code"))
+                    if tray_code in matched_tray_codes:
+                        normalized_tray["status"] = restore_snapshot["status"]
+                        normalized_tray["updated_at"] = now
+                        normalized_tray.pop("fixture_ready", None)
+                        normalized_tray.pop("fixtureReady", None)
+                    next_trays.append(normalized_tray)
+                affected_tray_codes.update(matched_tray_codes)
+                remaining_blocked_tray = any(
+                    normalize_text(tray.get("tray_code")) not in matched_tray_codes
+                    and normalize_text(tray.get("status")) in BLOCK_WITHDRAW_TRAY_STATUSES
+                    for tray in next_trays
+                )
+                if not remaining_blocked_tray:
+                    sample["location"] = restore_snapshot["location"]
+                    sample["status"] = restore_snapshot["status"]
+                    sample["flow_status"] = restore_snapshot["status"]
+                sample["updated_at"] = now
+                sample["trays"] = next_trays
+                detail_target = restore_snapshot["status"]
+                if restore_snapshot.get("experimentName"):
+                    detail_target = f"{restore_snapshot['experimentName']}已完成"
+                detail = f"{normalized_task_code} / {current_experiment_name} / 撤回至{detail_target}"
+                reason = normalize_text(request.reason)
+                if reason:
+                    detail = f"{detail}（{reason}）"
+                append_history(sample, "实验任务撤回", detail, now)
+                affected_sample_count += 1
 
-        if restore_snapshot["scope"] in {"staging", "appearance"}:
-            for tray_code in matched_tray_codes:
-                if tray_code in compensated_tray_codes:
-                    continue
-                restore_scope = normalize_text(restore_snapshot.get("scope"))
-                latest_event = latest_storage_event_for_tray(snapshot, tray_code, restore_scope) or {}
-                compensation_event = {
-                    "id": f"staging-event-{tray_code}-{len(snapshot['staging_events']) + 1}",
-                    "tray_code": tray_code,
-                    "task_code": normalized_task_code,
-                    "action": "stock_out_withdraw",
-                    "time": now,
-                    "operator": reason or "实验任务撤回",
-                    "target_lab": normalize_text(latest_event.get("target_lab")),
-                    "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")) or normalized_experiment_code,
-                }
-                if restore_scope == "appearance":
-                    compensation_event["room"] = "appearance"
-                snapshot["staging_events"].append(compensation_event)
-                compensated_tray_codes.add(tray_code)
+                if restore_snapshot["scope"] in {"staging", "appearance"}:
+                    for tray_code in matched_tray_codes:
+                        if tray_code in compensated_tray_codes:
+                            continue
+                        restore_scope = normalize_text(restore_snapshot.get("scope"))
+                        latest_event = latest_storage_event_for_tray(snapshot, tray_code, restore_scope) or {}
+                        compensation_event = {
+                            "id": f"staging-event-{tray_code}-{len(snapshot['staging_events']) + 1}",
+                            "tray_code": tray_code,
+                            "task_code": normalized_task_code,
+                            "action": "stock_out_withdraw",
+                            "time": now,
+                            "operator": reason or "实验任务撤回",
+                            "target_lab": normalize_text(latest_event.get("target_lab")),
+                            "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")) or normalized_experiment_code,
+                        }
+                        if restore_scope == "appearance":
+                            compensation_event["room"] = "appearance"
+                        snapshot["staging_events"].append(compensation_event)
+                        compensated_tray_codes.add(tray_code)
 
-    write_snapshot(snapshot)
-    first_target = restored_targets[0]
-    return {
-        "ok": True,
-        "message": f"{normalized_task_code} / {current_experiment_name} 已撤回当前实验任务",
-        "affectedSampleCount": affected_sample_count,
-        "affectedTrayCodes": sorted(affected_tray_codes),
-        "restoredStatus": first_target["status"],
-        "restoredLocation": first_target["location"],
-        "restoredExperimentName": first_target.get("experimentName") or "",
-        "samples": snapshot["samples"],
-        "stagingEvents": snapshot["staging_events"],
-    }
+            write_snapshot(snapshot)
+            first_target = restored_targets[0]
+            return {
+                "ok": True,
+                "message": f"{normalized_task_code} / {current_experiment_name} 已撤回当前实验任务",
+                "affectedSampleCount": affected_sample_count,
+                "affectedTrayCodes": sorted(affected_tray_codes),
+                "restoredStatus": first_target["status"],
+                "restoredLocation": first_target["location"],
+                "restoredExperimentName": first_target.get("experimentName") or "",
+                "samples": snapshot["samples"],
+                "stagingEvents": snapshot["staging_events"],
+            }

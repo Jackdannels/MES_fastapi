@@ -1,9 +1,12 @@
 from copy import deepcopy
+import threading
+import time
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from app.services.laboratory_operations import apply_laboratory_task_operation, run_atomic_laboratory_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
 
@@ -599,6 +602,238 @@ def test_laboratory_withdraw_current_publishes_storage_updates(monkeypatch):
 
     assert response.status_code == 200
     assert published_updates == [["mes.samples", "mes.staging_events"]]
+
+
+def test_laboratory_operation_preserves_other_lab_tray_state(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    published_updates = []
+    monkeypatch.setattr(laboratory_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"id": "task-parallel", "code": "TASK-PARALLEL", "name": "并行实验任务"}],
+            "mes.experiments": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
+            ],
+            "mes.schedules": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室"},
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "tray_code": "TP-B"},
+            ],
+            "mes.samples": [
+                {
+                    "id": "sample-a",
+                    "code": "SP-A",
+                    "task_code": "TASK-PARALLEL",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "location": "冲击一室",
+                    "trays": [{"tray_code": "TP-A", "quantity": 1, "status": "已到达实验室"}],
+                    "history": [{"action": "任务比对", "status": "已到达实验室", "location": "冲击一室", "time": "2026-06-11 10:00:00"}],
+                },
+                {
+                    "id": "sample-b",
+                    "code": "SP-B",
+                    "task_code": "TASK-PARALLEL",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "location": "霉菌试验室",
+                    "trays": [{"tray_code": "TP-B", "quantity": 1, "status": "已到达实验室"}],
+                    "history": [{"action": "任务比对", "status": "已到达实验室", "location": "霉菌试验室", "time": "2026-06-11 10:01:00"}],
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "install",
+            "taskCode": "TASK-PARALLEL",
+            "experimentCode": "EXP-B",
+            "labName": "霉菌试验室",
+            "trayCodes": ["TP-B"],
+            "occurredAt": "2026-06-11 10:02:00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["affectedTrayCodes"] == ["TP-B"]
+    samples = {sample["code"]: sample for sample in storage.read("mes.samples")}
+    assert samples["SP-A"]["status"] == "已到达实验室"
+    assert samples["SP-A"]["location"] == "冲击一室"
+    assert samples["SP-A"]["trays"][0]["status"] == "已到达实验室"
+    assert samples["SP-A"]["history"] == [{"action": "任务比对", "status": "已到达实验室", "location": "冲击一室", "time": "2026-06-11 10:00:00"}]
+    assert samples["SP-B"]["status"] == "工装夹具安装"
+    assert samples["SP-B"]["location"] == "霉菌试验室"
+    assert samples["SP-B"]["trays"][0]["status"] == "工装夹具安装"
+    assert samples["SP-B"]["history"][0]["action"] == "样品安装"
+    assert samples["SP-B"]["history"][0]["detail"] == "TASK-PARALLEL / 霉菌试验 / 工装夹具安装"
+    assert published_updates == [["mes.samples"]]
+
+
+def test_laboratory_compare_operation_clears_stale_fixture_ready(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"id": "task-fixture", "code": "TASK-FIXTURE", "name": "夹具标记清理任务"}],
+            "mes.experiments": [
+                {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "experiment_name": "振动试验"},
+            ],
+            "mes.schedules": [
+                {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "device": "振动一室"},
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "tray_code": "TP-FIXTURE"},
+            ],
+            "mes.samples": [
+                {
+                    "id": "sample-fixture",
+                    "code": "SP-FIXTURE",
+                    "task_code": "TASK-FIXTURE",
+                    "status": "送至实验室",
+                    "flow_status": "送至实验室",
+                    "location": "振动一室",
+                    "trays": [
+                        {
+                            "fixtureReady": True,
+                            "fixture_ready": True,
+                            "quantity": 1,
+                            "status": "送至实验室",
+                            "target_experiment_code": "EXP-VIB",
+                            "target_lab": "振动一室",
+                            "tray_code": "TP-FIXTURE",
+                        }
+                    ],
+                    "history": [],
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "compare",
+            "taskCode": "TASK-FIXTURE",
+            "experimentCode": "EXP-VIB",
+            "labName": "振动一室",
+            "trayCodes": ["TP-FIXTURE"],
+            "occurredAt": "2026-06-11 10:02:00",
+        },
+    )
+
+    assert response.status_code == 200
+    tray = storage.read("mes.samples")[0]["trays"][0]
+    assert tray["status"] == "已到达实验室"
+    assert "fixtureReady" not in tray
+    assert "fixture_ready" not in tray
+
+
+def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_commit():
+    class DelayedFirstWriteStorage(FakeLaboratoryStorage):
+        def __init__(self, payloads):
+            super().__init__(payloads)
+            self.first_write_waiting = threading.Event()
+            self.release_first_write = threading.Event()
+            self._lock = threading.Lock()
+            self._write_count = 0
+
+        def read_all(self):
+            with self._lock:
+                return deepcopy(self.payloads)
+
+        def write_many(self, updates):
+            with self._lock:
+                self._write_count += 1
+                write_count = self._write_count
+            if write_count == 1:
+                self.first_write_waiting.set()
+                assert self.release_first_write.wait(2)
+            with self._lock:
+                for key, value in dict(updates).items():
+                    self.payloads[key] = deepcopy(value)
+
+    storage = DelayedFirstWriteStorage(
+        {
+            "mes.tasks": [{"id": "task-parallel", "code": "TASK-PARALLEL", "name": "并行实验任务"}],
+            "mes.experiments": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
+            ],
+            "mes.schedules": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室"},
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "tray_code": "TP-B"},
+            ],
+            "mes.samples": [
+                {
+                    "id": "sample-a",
+                    "code": "SP-A",
+                    "task_code": "TASK-PARALLEL",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "location": "冲击一室",
+                    "trays": [{"tray_code": "TP-A", "quantity": 1, "status": "已到达实验室"}],
+                    "history": [],
+                },
+                {
+                    "id": "sample-b",
+                    "code": "SP-B",
+                    "task_code": "TASK-PARALLEL",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "location": "霉菌试验室",
+                    "trays": [{"tray_code": "TP-B", "quantity": 1, "status": "已到达实验室"}],
+                    "history": [],
+                },
+            ],
+        }
+    )
+    errors = []
+
+    def run_operation(experiment_code, lab_name, tray_code):
+        try:
+            run_atomic_laboratory_operation(
+                operation=lambda snapshot: apply_laboratory_task_operation(
+                    snapshot,
+                    operation_type="install",
+                    task_code="TASK-PARALLEL",
+                    experiment_code=experiment_code,
+                    lab_name=lab_name,
+                    tray_codes=[tray_code],
+                    occurred_at="2026-06-11 10:02:00",
+                ),
+                publish_storage_update=None,
+                resource_keys=[f"lab:{lab_name}", f"tray:{tray_code}"],
+                storage=storage,
+            )
+        except Exception as exc:  # pragma: no cover - surfaced below for thread failures
+            errors.append(exc)
+
+    first_thread = threading.Thread(target=run_operation, args=("EXP-A", "冲击一室", "TP-A"))
+    first_thread.start()
+    assert storage.first_write_waiting.wait(2)
+
+    second_thread = threading.Thread(target=run_operation, args=("EXP-B", "霉菌试验室", "TP-B"))
+    second_thread.start()
+    time.sleep(0.05)
+    storage.release_first_write.set()
+    first_thread.join(2)
+    second_thread.join(2)
+
+    assert errors == []
+    samples = {sample["code"]: sample for sample in storage.read("mes.samples")}
+    assert samples["SP-A"]["trays"][0]["status"] == "工装夹具安装"
+    assert samples["SP-B"]["trays"][0]["status"] == "工装夹具安装"
 
 
 def test_laboratory_withdraw_current_ignores_stale_staging_history_after_prior_withdraw(monkeypatch):
