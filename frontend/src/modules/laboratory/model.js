@@ -342,6 +342,15 @@ const shouldReplaceUnifiedTrayLifecycle = (row, candidate) => {
     if (candidateTime !== currentTime) {
       return candidateTime > currentTime;
     }
+    const currentStatus = normalizeLifecycleStatus(row?.lifecycleLocation, row?.lifecycleStatus);
+    const candidateStatus = normalizeLifecycleStatus(candidate?.location, candidate?.status);
+    if (
+      PRE_DISPATCH_STATUSES.has(currentStatus)
+      && !PRE_DISPATCH_STATUSES.has(candidateStatus)
+      && candidate.rank >= (UNIFIED_TRAY_FLOW_STATUS_RANK.get(EXPERIMENT_COMPLETED_STATUS) ?? 9)
+    ) {
+      return false;
+    }
     return candidate.rank > resolveUnifiedTrayFlowRank(row?.lifecycleStatus);
   }
   return !row?.lifecycleStatus || candidate.rank > resolveUnifiedTrayFlowRank(row.lifecycleStatus);

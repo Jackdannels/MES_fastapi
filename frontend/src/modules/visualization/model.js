@@ -3,7 +3,7 @@ import {
   buildGanttRows,
   toLocalDateValue,
 } from "@/modules/schedule/model";
-import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
+import { buildTrayFlowView, normalizeLifecycleStatus, SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { resolveLabRef, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 
@@ -21,6 +21,10 @@ const normalizeQuantity = (value) => {
 const parseDate = (value) => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+const parseTimeValue = (value) => {
+  const time = Date.parse(String(value || ""));
+  return Number.isFinite(time) ? time : 0;
 };
 const addDays = (date, days) => {
   const next = new Date(date.getTime());
@@ -249,6 +253,78 @@ const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
   return map;
 };
 
+const FLOW_STEP_RANK_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
+const visualizationFlowStatusRank = (status) => {
+  const normalized = normalizeLifecycleStatus("", status);
+  const completedIndex = FLOW_STEP_RANK_BY_LABEL.get("实验已完成") ?? 9;
+  if (normalized === "送至外观检测间") {
+    return completedIndex + 0.1;
+  }
+  if (normalized === "外观检测间存放" || normalized === "已到达外观检测间") {
+    return completedIndex + 0.2;
+  }
+  return FLOW_STEP_RANK_BY_LABEL.get(normalized) ?? -1;
+};
+
+const resolveVisualizationFlowTime = ({ sample, status, tray, trayCode }) => {
+  const normalizedStatus = normalizeLifecycleStatus("", status);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const matchedHistoryTimes = [];
+
+  asArray(sample?.history).forEach((entry) => {
+    if (normalizedTrayCode && !entryMatchesTrayCode(entry, normalizedTrayCode)) {
+      return;
+    }
+    const entryStatus = normalizeLifecycleStatus(entry?.location, entry?.status);
+    const entryMentionsStatus =
+      entryStatus === normalizedStatus
+      || normalizeText(entry?.action).includes(normalizedStatus)
+      || normalizeText(entry?.detail).includes(normalizedStatus);
+    if (!entryMentionsStatus) {
+      return;
+    }
+    const entryTime = parseTimeValue(entry?.time || entry?.created_at || entry?.createdAt || entry?.updated_at || entry?.updatedAt);
+    if (entryTime > 0) {
+      matchedHistoryTimes.push(entryTime);
+    }
+  });
+
+  if (matchedHistoryTimes.length > 0) {
+    return Math.max(...matchedHistoryTimes);
+  }
+
+  const candidateTimes = [
+    parseTimeValue(tray?.updated_at || tray?.updatedAt),
+    parseTimeValue(sample?.updated_at || sample?.updatedAt),
+  ].filter((time) => time > 0);
+  return candidateTimes.length > 0 ? Math.max(...candidateTimes) : 0;
+};
+
+const shouldReplaceVisualizationTrayFlow = (current, candidate) => {
+  if (!candidate?.hasActiveFlow) {
+    return false;
+  }
+  if (!current?._hasActiveFlow) {
+    return true;
+  }
+  const candidateTime = Number(candidate.flowTime) || 0;
+  const currentTime = Number(current?._flowTime) || 0;
+  if (candidateTime || currentTime) {
+    if (candidateTime !== currentTime) {
+      return candidateTime > currentTime;
+    }
+    if (
+      ["到货", "已接收", "送至暂存间", "已到达暂存间"].includes(normalizeLifecycleStatus("", current?.canonicalStatus))
+      && !["到货", "已接收", "送至暂存间", "已到达暂存间"].includes(normalizeLifecycleStatus("", candidate?.flowStatus))
+      && candidate.flowRank >= (FLOW_STEP_RANK_BY_LABEL.get("实验已完成") ?? 9)
+    ) {
+      return false;
+    }
+    return candidate.flowRank > (Number(current?._flowRank) || -1);
+  }
+  return candidate.flowRank > (Number(current?._flowRank) || -1);
+};
+
 const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules, stagingEvents }) => {
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
@@ -316,10 +392,26 @@ const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRun
         taskCode,
         trayCode,
       });
+      const flowStatus = flow.canonicalStatus || flow.status || lifecycleStatus;
+      const flowCandidate = {
+        flow,
+        flowRank: visualizationFlowStatusRank(flowStatus),
+        flowStatus,
+        flowTime: resolveVisualizationFlowTime({
+          sample,
+          status: flowStatus,
+          tray,
+          trayCode,
+        }),
+        hasActiveFlow: (flow.steps || []).some((step) => step.active),
+      };
 
       if (!trayMap.has(trayMapKey)) {
         trayMap.set(trayMapKey, {
           canonicalStatus: flow.canonicalStatus || flow.status || "-",
+          _flowRank: flowCandidate.flowRank,
+          _flowTime: flowCandidate.flowTime,
+          _hasActiveFlow: flowCandidate.hasActiveFlow,
           quantity: 0,
           sampleCodes: [],
           status: flow.status || "-",
@@ -333,8 +425,11 @@ const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRun
       if (sampleCode && !current.sampleCodes.includes(sampleCode)) {
         current.sampleCodes.push(sampleCode);
       }
-      if ((flow.steps || []).some((step) => step.active)) {
+      if (shouldReplaceVisualizationTrayFlow(current, flowCandidate)) {
         current.canonicalStatus = flow.canonicalStatus || current.canonicalStatus;
+        current._flowRank = flowCandidate.flowRank;
+        current._flowTime = flowCandidate.flowTime;
+        current._hasActiveFlow = flowCandidate.hasActiveFlow;
         current.status = flow.status || current.status;
         current.steps = asArray(flow.steps);
       }
@@ -343,8 +438,13 @@ const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRun
 
   return Array.from(trayMap.values())
     .map((tray) => ({
-      ...tray,
+      canonicalStatus: tray.canonicalStatus,
+      quantity: tray.quantity,
       sampleCodes: tray.sampleCodes.slice().sort(compareText),
+      status: tray.status,
+      steps: tray.steps,
+      taskCode: tray.taskCode,
+      trayCode: tray.trayCode,
     }))
     .sort((left, right) => compareText(left.trayCode, right.trayCode));
 };
@@ -668,7 +768,7 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   if (latestAction === "manufacturer_return" || row.statuses.some((status) => isReturnedStatus(status))) {
     return null;
   }
-  if (latestAction === "stock_out" && !isStockOutToStaging(latestEvent) && !plannedStatus) {
+  if (latestAction === "stock_out" && !isStockOutToStaging(latestEvent) && !plannedStatus && !row.allAssignedExperimentsCompleted) {
     return null;
   }
   if (plannedStatus) {
@@ -695,7 +795,7 @@ const resolveStagingTrayKind = (row, latestEvent) => {
     return buildStagingKind("current", currentStatus);
   }
   if (row.allAssignedExperimentsCompleted) {
-    return buildStagingKind("planned", "送至暂存间", "计划入库");
+    return buildStagingKind("planned", "送至暂存间");
   }
   if (latestAction === "stock_in") {
     return buildStagingKind("current", "已入库");

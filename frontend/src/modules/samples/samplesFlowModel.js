@@ -1518,15 +1518,21 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
       const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].includes("放置实验后暂存间");
+      const actualAppearanceStorage =
+        statusLabel === APPEARANCE_STOCKED_STATUS
+        && normalizeText(entry?.location).includes("外观检测间");
       [statusLabel, actionLabel, detailLabel].forEach((label) => {
         if (hasPostTestStagingLabel && label === "已到达暂存间") {
           return;
         }
-        if (!label || shouldIgnoreHistoryTime(entry, label, entry?.location)) {
+        if (!label || (!actualAppearanceStorage && shouldIgnoreHistoryTime(entry, label, entry?.location))) {
           return;
         }
         recordLatestFlowTime(label, time);
       });
+      if (actualAppearanceStorage && !timeMap.get(APPEARANCE_SENT_STATUS)) {
+        recordLatestFlowTime(APPEARANCE_SENT_STATUS, time);
+      }
 
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
       if (experimentEvent) {
@@ -1626,6 +1632,14 @@ function buildTrayFlowView(input = {}) {
     : buildTrayExperimentFlow(effectiveInput);
   const trayCode = normalizeText(effectiveInput.trayCode);
   if (experimentFlow.length > 0) {
+    const latestWithdrawalRestoreTarget = resolveLatestWithdrawalRestoreTarget({
+      taskCode: effectiveInput.taskCode,
+      trayCode,
+      samples: effectiveInput.samples,
+    });
+    const suppressInferredAppearanceReached =
+      latestWithdrawalRestoreTarget
+      && normalizeLifecycleStatus("", latestWithdrawalRestoreTarget.status) !== "实验已完成";
     const currentExperimentIndex = experimentFlow.findIndex((item) => normalizeText(item?.state) === "current");
     const activeExperiment = currentExperimentIndex >= 0 ? experimentFlow[currentExperimentIndex] : null;
     const completedExperiments = experimentFlow.filter((item) => normalizeText(item?.state) === "completed");
@@ -1845,8 +1859,11 @@ function buildTrayFlowView(input = {}) {
       const latestCompletedExperimentRequiresAppearance = experimentRequiresAppearanceInspection(latestCompletedExperimentBeforeCurrent);
       const markCompletedAppearanceReached = (untilPosition = completedAppearanceIndexes.length) => {
         completedAppearanceIndexes.slice(0, Math.max(0, untilPosition)).forEach((indexes) => {
-          steps[indexes.sent].reached = true;
-          steps[indexes.stocked].reached = true;
+          [indexes.sent, indexes.stocked].forEach((index) => {
+            if (!suppressInferredAppearanceReached || normalizeText(steps[index]?.time)) {
+              steps[index].reached = true;
+            }
+          });
         });
       };
 

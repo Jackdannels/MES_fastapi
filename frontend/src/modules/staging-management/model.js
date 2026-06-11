@@ -17,6 +17,7 @@ const APPEARANCE_LOCATION = "外观检测间";
 const STAGING_STOCKED_STATUS = "到货";
 const LEGACY_STAGING_STOCKED_STATUS = "已入库";
 const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
+const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
@@ -285,6 +286,14 @@ const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging, c
   );
 };
 
+const eventTargetsPostExperimentStaging = (event) => {
+  const targetType = normalizeText(event?.target_type || event?.targetType);
+  const targetLab = normalizeText(event?.target_lab || event?.targetLab);
+  const targetName = normalizeText(event?.target_name || event?.targetName);
+  const targetText = [targetLab, targetName].filter(Boolean).join(" ");
+  return targetType === "staging" || targetText === STAGING_LOCATION || targetText.includes("暂存间");
+};
+
 const resolveStorageEventSourceLabel = (event) => {
   const room = normalizeText(event?.room || event?.storage_room || event?.storageRoom);
   if (room === STORAGE_ROOM_CONFIGS.appearance.eventRoom) {
@@ -369,9 +378,12 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
     return "厂家收回";
   }
   if (normalizeText(latestEvent?.action) === "stock_in") {
-    return options.isPostExperimentInbound && config.key === "staging" ? POST_EXPERIMENT_STAGING_STATUS : config.stockedDisplayStatus;
+    return options.isPostExperimentInbound && config.key === "staging" ? config.stockInStatus : config.stockedDisplayStatus;
   }
   if (hasStoredStatus) {
+    if (options.isPostExperimentInbound && config.key === "staging") {
+      return config.stockInStatus;
+    }
     return config.stockedDisplayStatus;
   }
   if (hasStockInCandidateStatus) {
@@ -525,6 +537,25 @@ const resolveInboundKind = ({ config, isPostExperimentInbound, status }) => {
     return { inboundKind: "appearance", inboundKindLabel: "计划入库" };
   }
   return { inboundKind: "planned", inboundKindLabel: "允许暂存" };
+};
+
+const resolveTrayStatusLabel = ({ config, experiments, experimentRunTrays, isPostExperimentInbound, samples, status, taskCode, trayCode }) => {
+  const normalizedStatus = normalizeText(status);
+  if (config.key !== "staging" || !isCurrentStagingStatus(normalizedStatus, config)) {
+    return normalizedStatus;
+  }
+  if (isPostExperimentInbound) {
+    return POST_EXPERIMENT_STAGING_LABEL;
+  }
+  const latestCompleted = latestCompletedExperimentEvent({
+    experiments,
+    experimentRunTrays,
+    samples,
+    taskCode: normalizeText(taskCode),
+    trayCode: normalizeText(trayCode),
+  });
+  const experimentName = normalizeText(latestCompleted?.experimentName);
+  return experimentName ? `${experimentName}已完成` : normalizedStatus;
 };
 
 const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunTrays }) => {
@@ -933,6 +964,10 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const inboundSourceLabel = resolveStorageInboundSourceLabel(trayStorageEvents, config, storageEventContext);
       const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config, storageEventContext);
       const latestAction = normalizeText(latestStorageEvent?.action);
+      const latestEventDispatchesToPostExperimentStaging =
+        config.key === "appearance"
+        && latestAction === "stock_out"
+        && eventTargetsPostExperimentStaging(latestStorageEvent);
       const lastStockInEvent = events
         .slice()
         .reverse()
@@ -957,6 +992,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
       if (latestEventDispatchesToCurrentRoom) {
         status = "待入库";
+      }
+      if (config.key === "appearance" && (isPostExperimentInbound || latestEventDispatchesToPostExperimentStaging)) {
+        status = "";
       }
       if (latestAction === "manufacturer_return" || row.statuses.some((item) => normalizeText(item) === "厂家收回")) {
         status = "";
@@ -1005,6 +1043,16 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         || targetDestinations[0]
         || null;
       const inboundKind = resolveInboundKind({ config, isPostExperimentInbound, status });
+      const statusLabel = resolveTrayStatusLabel({
+        config,
+        experiments,
+        experimentRunTrays,
+        isPostExperimentInbound,
+        samples,
+        status,
+        taskCode: row.taskCode,
+        trayCode: row.trayCode,
+      });
 
       return {
         id: row.id,
@@ -1016,6 +1064,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: inboundSourceLabel || normalizeText(row.source) || "待确认来源",
         status,
         statusClass: resolveStatusClass(status),
+        statusLabel,
         stockInAt: normalizeText(lastStockInEvent?.time),
         stockInAtDisplay: formatDateTime(lastStockInEvent?.time),
         stockInToday,
@@ -1342,7 +1391,13 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  if (actionMode === "stockOut" && normalizeText(matchedRow.status) === POST_EXPERIMENT_STAGING_STATUS) {
+  if (
+    actionMode === "stockOut"
+    && (
+      normalizeText(matchedRow.status) === POST_EXPERIMENT_STAGING_STATUS
+      || (config.key === "staging" && matchedRow.isPostExperimentInbound)
+    )
+  ) {
     return {
       error: config.terminalRetainError,
       row: null,

@@ -464,8 +464,9 @@ onMounted(async () => {
   background: var(--accent);
 }
 
-.history-flow-strip-item.current .history-flow-label {
-  color: var(--text);
+.history-flow-strip-item.current .history-flow-label,
+.history-flow-strip-item.current .history-flow-time {
+  color: var(--success);
 }
 
 .history-flow-strip .history-flow-time {
@@ -672,8 +673,9 @@ onMounted(async () => {
   background: var(--accent);
 }
 
-.history-tray-flow-step.current .history-flow-label {
-  color: var(--text);
+.history-tray-flow-step.current .history-flow-label,
+.history-tray-flow-step.current .history-flow-time {
+  color: var(--success);
 }
 
 .history-tray-flow-step .history-flow-time {

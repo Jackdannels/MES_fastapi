@@ -621,12 +621,13 @@ describe("tray flow consistency", () => {
         {
           task_code: taskCode,
           code: "SYLU-2026-06-099-SP-002",
-          location: "外观检测间",
-          status: "送至外观检测间",
-          flow_status: "送至外观检测间",
-          updated_at: "2026-06-08 10:05:00",
-          trays: [{ tray_code: trayCode, quantity: 1, status: "送至外观检测间", updated_at: "2026-06-08 10:05:00" }],
+          location: "盐雾试验室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          updated_at: "2026-06-08 10:45:00",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "实验已完成", updated_at: "2026-06-08 10:45:00" }],
           history: [
+            { action: "实验任务撤回", detail: `${taskCode} / 振动试验 / 撤回至盐雾试验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-06-08 10:45:00", tray_code: trayCode },
             { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-06-08 10:00:00", tray_code: trayCode },
             { action: "送检", detail: `${trayCode} 送至外观检测间`, location: "外观检测间", status: "送至外观检测间", time: "2026-06-08 10:05:00", tray_code: trayCode },
           ],
@@ -665,6 +666,12 @@ describe("tray flow consistency", () => {
       labName: "振动一室",
       selectedTrayCode: trayCode,
     });
+    const visualizationPanels = buildLabProcessPanels({
+      ...input,
+      labNames: ["振动一室"],
+      stagingEvents: snapshot[STORAGE_KEYS.staging_events],
+    });
+    const visualTray = visualizationPanels[0]?.trays.find((tray) => tray.trayCode === trayCode);
     const stagingRows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-08 10:50:00", room: "staging" });
     const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
     const stagingRow = stagingSections.currentStagingRows.find((row) => row.trayCode === trayCode);
@@ -678,6 +685,13 @@ describe("tray flow consistency", () => {
       lifecycleStatus: "已到达暂存间",
       trayCode,
     }));
+    expect(visualTray).toEqual(expect.objectContaining({
+      canonicalStatus: centralFlow.canonicalStatus,
+      status: centralFlow.status,
+      taskCode,
+      trayCode,
+    }));
+    expect(activeLabel(visualTray)).toBe(activeLabel(centralFlow));
     expect(stagingRow).toEqual(expect.objectContaining({
       location: "恒温恒湿间（暂存间）",
       status: "已到达暂存间",

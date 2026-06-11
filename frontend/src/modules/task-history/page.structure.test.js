@@ -71,4 +71,15 @@ describe("TaskHistoryPage structure", () => {
     expect(source).toContain("STORAGE_KEYS.samples");
     expect(source).toContain("STORAGE_KEYS.staging_events");
   });
+
+  test("uses completed-state color for the current returned flow step", () => {
+    const source = readFileSync(pagePath, "utf8");
+
+    expect(source).toContain(".history-flow-strip-item.current .history-flow-label,");
+    expect(source).toContain(".history-flow-strip-item.current .history-flow-time");
+    expect(source).toContain(".history-tray-flow-step.current .history-flow-label,");
+    expect(source).toContain(".history-tray-flow-step.current .history-flow-time");
+    expect(source).toContain("color: var(--success);");
+    expect(source).not.toContain("color: #fff;");
+  });
 });

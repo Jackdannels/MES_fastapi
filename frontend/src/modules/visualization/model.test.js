@@ -1487,9 +1487,66 @@ describe("visualization model", () => {
 
     expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
       stagingKind: "planned",
-      stagingKindLabel: "计划入库",
+      stagingKindLabel: "计划暂存",
       status: "送至暂存间",
       trayCode: "TP-FINISHED-STAGING",
+    }));
+    expect(view.summary.plannedTrayCount).toBe(1);
+  });
+
+  test("keeps a fully completed tray visible in staging even when the latest event sent it to a lab", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "SYLU-2026-06-022", name: "06-022任务", test_type: "冲击试验 / 霉菌试验 / 盐雾试验 / 振动试验" }],
+      experiments: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", experiment_name: "冲击试验" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-B", experiment_name: "霉菌试验" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-C", experiment_name: "盐雾试验" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-D", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", tray_code: "SYLU-2026-06-022-TP-002" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-B", tray_code: "SYLU-2026-06-022-TP-002" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-C", tray_code: "SYLU-2026-06-022-TP-002" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-D", tray_code: "SYLU-2026-06-022-TP-002" },
+      ],
+      experimentRunTrays: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", tray_code: "SYLU-2026-06-022-TP-002", status: "实验已完成" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-B", tray_code: "SYLU-2026-06-022-TP-002", status: "实验已完成" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-C", tray_code: "SYLU-2026-06-022-TP-002", status: "实验已完成" },
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-D", tray_code: "SYLU-2026-06-022-TP-002", status: "实验已完成" },
+      ],
+      samples: [
+        {
+          code: "SP-007",
+          task_code: "SYLU-2026-06-022",
+          location: "振动一室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: "SYLU-2026-06-022-TP-002", status: "实验已完成", quantity: 2 }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_out",
+          room: "appearance",
+          target_lab: "振动一室",
+          target_type: "lab",
+          task_code: "SYLU-2026-06-022",
+          time: "2026-06-11T15:11:42+08:00",
+          tray_code: "SYLU-2026-06-022-TP-002",
+        },
+      ],
+    });
+
+    const tray = view.tasks
+      .flatMap((task) => task.trays)
+      .find((item) => item.trayCode === "SYLU-2026-06-022-TP-002");
+
+    expect(tray).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-06-022-TP-002",
+      stagingKind: "planned",
+      stagingKindLabel: "计划暂存",
+      status: "送至暂存间",
     }));
     expect(view.summary.plannedTrayCount).toBe(1);
   });
@@ -1523,7 +1580,7 @@ describe("visualization model", () => {
 
     expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
       stagingKind: "planned",
-      stagingKindLabel: "计划入库",
+      stagingKindLabel: "计划暂存",
       status: "送至暂存间",
       trayCode,
     }));

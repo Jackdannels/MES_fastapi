@@ -299,6 +299,125 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
+  test("buildTrayFlowView keeps actual appearance milestones after a withdrawal back to staging", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          experiment_type: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          experiment_type: "四综合试验",
+          required_device: "四综合实验室",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          experiment_type: "高低温湿热试验",
+          required_device: "高低温湿热一室",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          experiment_type: "霉菌试验",
+          required_device: "霉菌试验室",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-11T14:57:39+08:00",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-11T15:13:57+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          task_code: taskCode,
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          flow_status: "已到达暂存间",
+          trays: [
+            {
+              tray_code: trayCode,
+              status: "已到达暂存间",
+              target_lab: "四综合实验室",
+              target_experiment_code: `${taskCode}-B`,
+              quantity: 1,
+            },
+          ],
+          history: [
+            {
+              action: "实验任务撤回",
+              detail: `${taskCode} / 四综合试验 / 撤回至已到达暂存间（试验间内撤回当前实验任务）`,
+              status: "已到达暂存间",
+              time: "2026-06-11T15:18:26+08:00",
+            },
+            {
+              action: "外观检测间扫码出库",
+              detail: `${trayCode} 送至 恒温恒湿间（暂存间）`,
+              location: "恒温恒湿间（暂存间）",
+              status: "送至暂存间",
+              time: "2026-06-11T15:15:04+08:00",
+            },
+            {
+              action: "外观检测间扫码入库",
+              detail: `${trayCode} 外观检测间存放`,
+              location: "外观检测间",
+              status: "外观检测间存放",
+              time: "2026-06-11T15:14:54+08:00",
+            },
+            {
+              detail: `${taskCode} / 霉菌试验 / 实验已完成`,
+              status: "实验已完成",
+              time: "2026-06-11T15:13:57+08:00",
+              tray_code: trayCode,
+            },
+            {
+              detail: `${taskCode} / 盐雾试验 / 实验已完成`,
+              status: "实验已完成",
+              time: "2026-06-11T14:57:39+08:00",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：已到达暂存间`);
+    expect(view.steps.find((step) => step.label === "送至外观检测间")).toEqual(
+      expect.objectContaining({ active: false, reached: true, time: "2026-06-11T15:14:54+08:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(
+      expect.objectContaining({ active: false, reached: true, time: "2026-06-11T15:14:54+08:00" }),
+    );
+  });
+
   test("buildTrayFlowView does not show appearance inspection for non-salt non-mold completion", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-002-TP-001",

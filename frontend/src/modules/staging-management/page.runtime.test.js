@@ -294,6 +294,78 @@ describe("StagingManagementPage runtime", () => {
     expect(currentColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
   });
 
+  test("renders latest completed experiment as the current staging tray label", async () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        ...createSnapshot()[STORAGE_KEYS.tasks],
+        {
+          id: "task-staged-after-salt",
+          code: taskCode,
+          test_type: "霉菌试验 / 四综合试验 / 高低温湿热试验 / 盐雾试验",
+          sample_type: "组件",
+          source: "内部新增",
+        },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        {
+          id: "exp-staged-after-salt",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        {
+          id: "rel-staged-after-salt",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          tray_code: trayCode,
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: "sample-staged-after-salt",
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          owner: "周工",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          flow_status: "已到达暂存间",
+          trays: [{ tray_code: trayCode, status: "已到达暂存间", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成", time: "2026-06-10T09:30:00+08:00" },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        ...createSnapshot()[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-staged-after-salt-in",
+          tray_code: trayCode,
+          task_code: taskCode,
+          action: "stock_in",
+          time: "2026-06-10T10:00:00+08:00",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
+    const targetRow = currentColumn.findAll('[data-testid="zancun-current-staging-row"]')
+      .find((row) => row.text().includes(trayCode));
+
+    expect(targetRow?.text()).toContain(trayCode);
+    expect(targetRow?.text()).toContain("盐雾试验已完成");
+    expect(targetRow?.text()).not.toContain("到货");
+  });
+
   test("inventory column totals are counted from all filtered rows instead of the visible page", async () => {
     remoteSnapshot = withExtraTrayFixtures(createSnapshot(), [
       { sequence: 107, status: "送至暂存间" },
@@ -829,7 +901,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-console-search"]').setValue("SYLU-2026-04-107-TP-001");
 
     expect(mounted.text()).toContain("SYLU-2026-04-107-TP-001");
-    expect(mounted.text()).toContain("放置实验后暂存间");
+    expect(mounted.text()).toContain("实验后暂存");
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
   });
 });

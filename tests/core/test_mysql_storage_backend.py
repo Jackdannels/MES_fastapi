@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from app.core import mysql_storage_backend as mysql_storage_backend_module
+from app.core import mysql_storage_mappers as mysql_storage_mappers_module
+from app.core import mysql_storage_status as mysql_storage_status_module
 from app.core.mysql_storage_backend import (
     STORAGE_MARKER,
     MySQLConnectionSettings,
@@ -36,6 +39,57 @@ from app.core.mysql_storage_backend import (
     resolve_experiment_sample_codes,
 )
 from app.core.demo_data_reset import reset_demo_data
+
+
+def test_mysql_storage_backend_reexports_extracted_mappers() -> None:
+    mapper_names = [
+        "build_task_insert_row",
+        "build_storage_task_tray_codes",
+        "build_storage_task_item",
+        "build_experiment_insert_row",
+        "build_storage_experiment_item",
+        "build_experiment_tray_insert_row",
+        "build_storage_experiment_tray_item",
+        "build_experiment_sample_insert_row",
+        "build_storage_experiment_sample_item",
+        "build_experiment_run_insert_row",
+        "build_storage_experiment_run_item",
+        "build_storage_experiment_run_tray_item",
+        "build_experiment_run_tray_insert_row",
+        "build_experiment_run_tray_insert_rows",
+        "build_schedule_insert_row",
+        "build_storage_schedule_item",
+        "build_device_insert_row",
+        "build_storage_device_item",
+        "build_stream_insert_row",
+        "build_storage_stream_item",
+        "build_sample_insert_row",
+        "extract_dispatch_target_lab",
+        "build_tray_dispatch_target_map",
+        "build_staging_dispatch_target_map",
+        "build_scheduled_dispatch_target_map",
+        "build_storage_sample_item",
+    ]
+
+    for name in mapper_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_mappers_module, name)
+
+
+def test_mysql_storage_backend_reexports_extracted_status_rules() -> None:
+    status_rule_names = [
+        "is_task_stored_status",
+        "parse_experiment_event_detail",
+        "derive_experiment_status_map",
+        "derive_task_status_map",
+        "has_formal_schedule",
+        "is_unscheduled_since_backfill_eligible",
+        "resolve_experiment_sample_codes",
+        "resolve_sample_storage_time",
+        "backfill_missing_unscheduled_since",
+    ]
+
+    for name in status_rule_names:
+        assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_status_module, name)
 
 
 def test_task_mapping_round_trip_preserves_frontend_fields() -> None:

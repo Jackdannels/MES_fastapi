@@ -66,7 +66,7 @@
                     <span>{{ slot.row.sampleType }}</span>
                     <span>数量 {{ slot.row.quantity }}</span>
                     <span>{{ slot.row.location }}</span>
-                    <span :class="slot.row.statusClass">{{ slot.row.status }}</span>
+                    <span :class="slot.row.statusClass">{{ slot.row.statusLabel || slot.row.status }}</span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
@@ -105,7 +105,7 @@
                     <span>数量 {{ slot.row.quantity }}</span>
                     <span>{{ slot.row.location }}</span>
                     <span>{{ slot.row.inboundKindLabel }}</span>
-                    <span :class="slot.row.statusClass">{{ slot.row.status }}</span>
+                    <span :class="slot.row.statusClass">{{ slot.row.statusLabel || slot.row.status }}</span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
@@ -760,7 +760,7 @@ const completeScan = async () => {
     return;
   }
 
-  if (!["到货", "放置实验后暂存间", "外观检测间存放"].includes(detail.status)) {
+  if (!["到货", "已到达暂存间", "放置实验后暂存间", "外观检测间存放"].includes(detail.status)) {
     scanWarning.value = activeRoom.value === "appearance" ? "该托盘尚未完成外观检测间扫码入库。" : "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;
