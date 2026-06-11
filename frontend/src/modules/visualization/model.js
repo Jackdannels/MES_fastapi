@@ -300,6 +300,11 @@ const resolveVisualizationFlowTime = ({ sample, status, tray, trayCode }) => {
   return candidateTimes.length > 0 ? Math.max(...candidateTimes) : 0;
 };
 
+const resolveActiveFlowStepTime = (flow) => {
+  const activeStep = asArray(flow?.steps).find((step) => step?.active);
+  return parseTimeValue(activeStep?.time);
+};
+
 const shouldReplaceVisualizationTrayFlow = (current, candidate) => {
   if (!candidate?.hasActiveFlow) {
     return false;
@@ -397,12 +402,13 @@ const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRun
         flow,
         flowRank: visualizationFlowStatusRank(flowStatus),
         flowStatus,
-        flowTime: resolveVisualizationFlowTime({
-          sample,
-          status: flowStatus,
-          tray,
-          trayCode,
-        }),
+        flowTime: resolveActiveFlowStepTime(flow)
+          || resolveVisualizationFlowTime({
+            sample,
+            status: flowStatus,
+            tray,
+            trayCode,
+          }),
         hasActiveFlow: (flow.steps || []).some((step) => step.active),
       };
 

@@ -607,6 +607,8 @@ describe("tray flow consistency", () => {
               tray_code: trayCode,
               quantity: 1,
               status: "已到达暂存间",
+              target_lab: "振动一室",
+              target_experiment_code: `${taskCode}-B`,
               updated_at: "2026-06-08 10:45:00",
             },
           ],
@@ -697,5 +699,119 @@ describe("tray flow consistency", () => {
       status: "已到达暂存间",
       trayCode,
     }));
+  });
+
+  test("keeps visualization on the withdrawn staging state when sibling completed sample still points to appearance", () => {
+    const taskCode = "SYLU-2026-06-028";
+    const trayCode = "SYLU-2026-06-028-TP-001";
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, test_type: "霉菌试验 / 盐雾试验" }],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "霉菌试验", required_device: "霉菌试验室", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "盐雾试验", required_device: "盐雾试验室", status: "已排程" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-11 16:30:35",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          task_code: taskCode,
+          code: `${taskCode}-SP-002`,
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          flow_status: "已到达暂存间",
+          updated_at: "2026-06-11 16:50:08",
+          trays: [{
+            tray_code: trayCode,
+            quantity: 1,
+            status: "已到达暂存间",
+            target_lab: "盐雾试验室",
+            target_experiment_code: `${taskCode}-B`,
+            updated_at: "2026-06-11 16:45:53",
+          }],
+          history: [
+            { action: "实验任务撤回", detail: `${taskCode} / 盐雾试验 / 撤回至已到达暂存间（试验间内撤回当前实验任务）`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-11 16:45:53", tray_code: trayCode },
+            { action: "样品安装", detail: `${taskCode} / 盐雾试验 / 工装夹具安装`, location: "盐雾试验室", status: "工装夹具安装", time: "2026-06-11 16:45:47", tray_code: trayCode },
+            { action: "任务比对", detail: `${taskCode} / 盐雾试验 / 已到达实验室`, location: "盐雾试验室", status: "已到达实验室", time: "2026-06-11 16:45:45", tray_code: trayCode },
+            { action: "暂存间扫码出库", detail: `${trayCode} 送至 盐雾试验室`, location: "盐雾试验室", status: "送至实验室", time: "2026-06-11 16:45:34" },
+            { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-11 16:45:30" },
+            { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-06-11 16:45:24" },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-11 16:44:48" },
+            { action: "实验完成", detail: `${taskCode} / 霉菌试验 / 实验已完成`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:30:35", tray_code: trayCode },
+          ],
+        },
+        {
+          task_code: taskCode,
+          code: `${taskCode}-SP-001`,
+          location: "霉菌试验室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          updated_at: "2026-06-11 16:50:08",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "实验已完成", updated_at: "2026-06-11 16:45:53" }],
+          history: [
+            { action: "实验任务撤回", detail: `${taskCode} / 盐雾试验 / 撤回至霉菌试验已完成（试验间内撤回当前实验任务）`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:45:53", tray_code: trayCode },
+            { action: "暂存间扫码出库", detail: `${trayCode} 送至 盐雾试验室`, location: "盐雾试验室", status: "送至实验室", time: "2026-06-11 16:45:34" },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-11 16:44:48" },
+            { action: "实验完成", detail: `${taskCode} / 霉菌试验 / 实验已完成`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:30:35", tray_code: trayCode },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "霉菌试验室", status: "实验已完成", start_at: "2026-06-11 16:00:00" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "盐雾试验室", status: "已排程", start_at: "2026-06-27 12:00:00" },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        { action: "stock_in", room: "appearance", task_code: taskCode, tray_code: trayCode, time: "2026-06-11 16:44:48" },
+        { action: "stock_out", room: "appearance", task_code: taskCode, tray_code: trayCode, target_lab: "恒温恒湿间（暂存间）", target_type: "staging", time: "2026-06-11 16:45:24" },
+        { action: "stock_in", room: "staging", task_code: taskCode, tray_code: trayCode, time: "2026-06-11 16:45:30" },
+        { action: "stock_out", room: "staging", task_code: taskCode, tray_code: trayCode, target_lab: "盐雾试验室", target_experiment_code: `${taskCode}-B`, target_type: "lab", time: "2026-06-11 16:45:34" },
+        { action: "stock_out_withdraw", room: "staging", task_code: taskCode, tray_code: trayCode, target_lab: "盐雾试验室", target_experiment_code: `${taskCode}-B`, time: "2026-06-11 16:45:53" },
+      ],
+    };
+
+    const centralFlow = buildTrayFlowView({
+      tasks: snapshot[STORAGE_KEYS.tasks],
+      experiments: snapshot[STORAGE_KEYS.experiments],
+      experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+      experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+      samples: snapshot[STORAGE_KEYS.samples],
+      schedules: snapshot[STORAGE_KEYS.schedules],
+      currentExperimentCode: `${taskCode}-B`,
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      taskCode,
+      trayCode,
+    });
+    const visualizationPanels = buildLabProcessPanels({
+      tasks: snapshot[STORAGE_KEYS.tasks],
+      experiments: snapshot[STORAGE_KEYS.experiments],
+      experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+      experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+      labNames: ["盐雾试验室"],
+      samples: snapshot[STORAGE_KEYS.samples],
+      schedules: snapshot[STORAGE_KEYS.schedules],
+      stagingEvents: snapshot[STORAGE_KEYS.staging_events],
+    });
+    const visualTray = visualizationPanels[0]?.trays.find((tray) => tray.trayCode === trayCode);
+
+    expect(centralFlow.status).toBe("已到达暂存间");
+    expect(activeLabel(centralFlow)).toBe("已到达暂存间");
+    expect(visualTray).toEqual(expect.objectContaining({
+      canonicalStatus: centralFlow.canonicalStatus,
+      status: centralFlow.status,
+      taskCode,
+      trayCode,
+    }));
+    expect(activeLabel(visualTray)).toBe(activeLabel(centralFlow));
   });
 });

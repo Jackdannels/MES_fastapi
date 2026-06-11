@@ -5,7 +5,7 @@ import {
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
 import { formatLocalDateTime } from "@/lib/dateTime";
-import { scheduleMatchesLab } from "@/lib/labIdentity";
+import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   STATUS_COMPLETED,
   STATUS_RETENTION,
@@ -913,11 +913,28 @@ const trayBelongsToCurrentLaboratoryWorkflow = (row, currentTask) =>
   trayIsDispatchedToCurrentLaboratory(row, currentTask);
 const taskHasCurrentLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
-const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null) => {
+const resolveLaboratoryOperationLabRef = (currentTask = null, lab = null) => {
+  const explicitLab = resolveLabRef(lab);
+  const explicitName = normalizeText(explicitLab?.name);
+  const explicitCode = normalizeText(explicitLab?.code);
+  const explicitId = normalizeText(explicitLab?.id);
+  if (explicitName || explicitCode || explicitId) {
+    return explicitLab;
+  }
+  return resolveLabRef({
+    code: currentTask?.labCode,
+    device: currentTask?.device,
+  });
+};
+const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null, lab = null) => {
   const currentKey = laboratoryOperationKey(currentTask);
+  const labRef = resolveLaboratoryOperationLabRef(currentTask, lab);
+  const hasLabScope = Boolean(normalizeText(labRef?.name) || normalizeText(labRef?.code) || normalizeText(labRef?.id));
   const lockedRow = asArray(scheduleRows).find((row) => {
     const rowKey = laboratoryOperationKey(row);
-    return (!currentKey || rowKey !== currentKey) && laboratoryRowHasStartedOperation(row);
+    return (!currentKey || rowKey !== currentKey)
+      && (!hasLabScope || scheduleMatchesLab(row, labRef))
+      && laboratoryRowHasStartedOperation(row);
   });
   if (!lockedRow) {
     return { active: false };

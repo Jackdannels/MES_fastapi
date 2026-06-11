@@ -424,6 +424,70 @@ def test_storage_rejects_appearance_stock_in_after_laboratory_progress(monkeypat
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_allows_staging_stock_in_for_other_tray_when_sample_has_laboratory_progress(monkeypatch):
+    samples = [
+        {
+            "code": "SP-MULTI-TRAY-STAGING",
+            "location": "盐雾试验室",
+            "status": "实验进行中",
+            "flow_status": "实验进行中",
+            "task_code": "SYLU-2026-05-715",
+            "trays": [
+                {"tray_code": "TP-MULTI-STAGING-001", "status": "实验进行中", "quantity": 1},
+                {"tray_code": "TP-MULTI-STAGING-002", "status": "送至暂存间", "quantity": 1},
+            ],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（暂存间）"
+    attempted[0]["status"] = "已到达暂存间"
+    attempted[0]["flow_status"] = "已到达暂存间"
+    attempted[0]["trays"][1]["status"] = "已到达暂存间"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+
+
+def test_storage_allows_appearance_stock_in_for_other_tray_when_sample_has_laboratory_progress(monkeypatch):
+    samples = [
+        {
+            "code": "SP-MULTI-TRAY-APPEARANCE",
+            "location": "盐雾试验室",
+            "status": "实验进行中",
+            "flow_status": "实验进行中",
+            "task_code": "SYLU-2026-05-716",
+            "trays": [
+                {"tray_code": "TP-MULTI-APPEARANCE-001", "status": "实验进行中", "quantity": 1},
+                {"tray_code": "TP-MULTI-APPEARANCE-002", "status": "送至外观检测间", "quantity": 1},
+            ],
+            "history": [
+                {
+                    "detail": "SYLU-2026-05-716 / 盐雾试验 / 实验已完成",
+                    "location": "盐雾试验室",
+                    "status": "实验已完成",
+                    "time": "2026-06-07T10:00:00",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "外观检测间存放"
+    attempted[0]["flow_status"] = "外观检测间存放"
+    attempted[0]["trays"][1]["status"] = "外观检测间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+
+
 def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatch):
     samples = [
         {

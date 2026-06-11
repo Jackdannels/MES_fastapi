@@ -264,7 +264,12 @@ function useLaboratoryPage(options = {}) {
   });
   const runningExperiment = computed(() => view.value.runningExperiment);
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
-  const operationLock = computed(() => getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value));
+  const operationLock = computed(() =>
+    getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value, {
+      code: laboratoryConfig.value.labCode,
+      name: laboratoryConfig.value.labName,
+    }),
+  );
   const actionState = computed(() => {
     const state = getLaboratoryActionState(workflow.value);
     if (!currentTask.value || laboratoryUnderMaintenance.value) {

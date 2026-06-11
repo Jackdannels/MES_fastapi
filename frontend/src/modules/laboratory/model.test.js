@@ -662,25 +662,35 @@ describe("laboratory model", () => {
 
   test("operation lock blocks another task while a lab task is past comparison and before reset", () => {
     const lockedRow = {
+      device: "盐雾试验室",
       experimentKey: "SYLU-2026-04-101::SYLU-2026-04-101-A",
       experimentName: "盐雾试验-A",
       taskCode: "SYLU-2026-04-101",
       trayRows: [{ trayCode: "TP-001", trayStatus: "已到达实验室" }],
     };
     const otherRow = {
+      device: "盐雾试验室",
       experimentKey: "SYLU-2026-04-201::SYLU-2026-04-201-A",
       experimentName: "盐雾试验-B",
       taskCode: "SYLU-2026-04-201",
       trayRows: [{ trayCode: "TP-101", trayStatus: "送至实验室" }],
     };
+    const otherLabRow = {
+      device: "振动一室",
+      experimentKey: "SYLU-2026-04-301::SYLU-2026-04-301-A",
+      experimentName: "振动试验",
+      taskCode: "SYLU-2026-04-301",
+      trayRows: [{ trayCode: "TP-301", trayStatus: "已到达实验室" }],
+    };
 
-    expect(getLaboratoryOperationLock([lockedRow, otherRow], otherRow)).toEqual(expect.objectContaining({
+    expect(getLaboratoryOperationLock([lockedRow, otherRow], otherRow, { name: "盐雾试验室" })).toEqual(expect.objectContaining({
       active: true,
       experimentKey: "SYLU-2026-04-101::SYLU-2026-04-101-A",
       taskCode: "SYLU-2026-04-101",
     }));
-    expect(getLaboratoryOperationLock([lockedRow, otherRow], lockedRow)).toEqual({ active: false });
-    expect(getLaboratoryOperationLock([{ ...lockedRow, trayRows: [{ trayCode: "TP-001", trayStatus: "送至实验室" }] }, otherRow], otherRow)).toEqual({ active: false });
+    expect(getLaboratoryOperationLock([lockedRow, otherRow], lockedRow, { name: "盐雾试验室" })).toEqual({ active: false });
+    expect(getLaboratoryOperationLock([{ ...lockedRow, trayRows: [{ trayCode: "TP-001", trayStatus: "送至实验室" }] }, otherRow], otherRow, { name: "盐雾试验室" })).toEqual({ active: false });
+    expect(getLaboratoryOperationLock([lockedRow, otherLabRow], otherLabRow, { name: "振动一室" })).toEqual({ active: false });
   });
 
   test("defaults to the prepared task, otherwise the earliest scheduled task", () => {
@@ -2836,6 +2846,87 @@ describe("laboratory model", () => {
       message: "托盘正在其他实验中",
       ok: false,
       trayCode: "TP-001",
+    }));
+  });
+
+  test("blocks comparison from active run tray codes even without run-tray relation rows", () => {
+    const taskCode = "SYLU-2026-06-RUN";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          run_no: "run-impact-only",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          device: "冲击一室",
+          tray_codes: [trayCode],
+          status: "实验进行中",
+          started_at: "2026-06-06 13:44:20",
+        },
+      ],
+      experimentRunTrays: [],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", status: "实验进行中" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "振动试验", status: "已排程" },
+      ],
+      labName: "振动一室",
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "振动一室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: `${taskCode}-B`,
+              target_lab: "振动一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          device: "冲击一室",
+          status: "实验进行中",
+          start_at: "2026-06-06 13:30:00",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          device: "振动一室",
+          status: "已排程",
+          start_at: "2026-06-06 13:30:00",
+        },
+      ],
+      tasks: [{ code: taskCode, test_type: "冲击试验 / 振动试验" }],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask.experimentCode).toBe(`${taskCode}-B`);
+    expect(workflow.hasActiveOtherExperimentRun).toBe(true);
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: false,
+      canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: trayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘正在其他实验中",
+      ok: false,
+      trayCode,
     }));
   });
 

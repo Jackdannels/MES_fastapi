@@ -1072,32 +1072,38 @@ describe("staging-management model", () => {
     expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-031-TP-001");
   });
 
-  test("appearance inspection room excludes trays whose assigned experiments are all completed", () => {
+  test.each([
+    ["salt-spray", "SYLU-2026-06-027", "盐雾试验", "盐雾试验室"],
+    ["mold", "SYLU-2026-06-028", "霉菌试验", "霉菌试验室"],
+  ])("appearance inspection room lists a single %s tray after lab completion and staging does not relist it", (_caseName, taskCode, experimentName, requiredDevice) => {
     const snapshot = createSnapshot();
-    const taskCode = "SYLU-2026-06-033";
     const trayCode = `${taskCode}-TP-001`;
     snapshot[STORAGE_KEYS.tasks].push({
-      id: "task-appearance-completed",
+      id: `task-appearance-single-${_caseName}`,
       code: taskCode,
-      test_type: "盐雾试验 / 霉菌试验",
+      test_type: experimentName,
       sample_type: "组件",
       source: "内部新增",
     });
-    snapshot[STORAGE_KEYS.experiments].push(
-      { id: "exp-appearance-completed-a", task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "盐雾试验", required_device: "盐雾试验室" },
-      { id: "exp-appearance-completed-b", task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "霉菌试验", required_device: "霉菌试验室" },
-    );
-    snapshot[STORAGE_KEYS.experiment_trays].push(
-      { id: "rel-appearance-completed-a", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
-      { id: "rel-appearance-completed-b", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
-    );
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: `exp-appearance-single-${_caseName}`,
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      experiment_name: experimentName,
+      required_device: requiredDevice,
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: `rel-appearance-single-${_caseName}`,
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      tray_code: trayCode,
+    });
     snapshot[STORAGE_KEYS.experiment_run_trays] = [
       ...(snapshot[STORAGE_KEYS.experiment_run_trays] || []),
-      { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode, run_tray_status: "实验已完成" },
-      { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode, run_tray_status: "实验已完成" },
+      { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode, run_tray_status: "实验已完成", updated_at: "2026-06-11T16:24:48" },
     ];
     snapshot[STORAGE_KEYS.samples].push({
-      id: "sample-appearance-completed",
+      id: `sample-appearance-single-${_caseName}`,
       code: `${taskCode}-SP-001`,
       task_code: taskCode,
       owner: "周工",
@@ -1106,12 +1112,23 @@ describe("staging-management model", () => {
       flow_status: "送至外观检测间",
       trays: [{ tray_code: trayCode, status: "送至外观检测间", quantity: 1 }],
       history: [
-        { detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成", time: "2026-06-07T10:00:00" },
-        { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成", time: "2026-06-07T11:00:00" },
+        { detail: `${taskCode} / ${experimentName} / 实验已完成`, status: "实验已完成", time: "2026-06-11T16:24:48" },
       ],
     });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: `evt-appearance-single-${_caseName}-out`,
+      tray_code: trayCode,
+      task_code: taskCode,
+      action: "stock_out",
+      time: "2026-06-11T16:17:58",
+      operator: "暂存员B",
+      target_lab: requiredDevice,
+    });
 
-    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const appearanceRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const appearanceSections = buildZancunInventorySections(appearanceRows, { room: "appearance" });
+    const stagingRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "staging" });
+    const stagingSections = buildZancunInventorySections(stagingRows, { room: "staging" });
     const stockInResult = applyZancunInventoryAction({
       now: TODAY,
       payload: { code: trayCode, mode: "stockIn" },
@@ -1119,8 +1136,19 @@ describe("staging-management model", () => {
       snapshot,
     });
 
-    expect(rows.map((row) => row.trayCode)).not.toContain(trayCode);
-    expect(stockInResult.error).toBe("未找到对应的入库托盘。");
+    expect(appearanceSections.plannedInboundRows).toContainEqual(expect.objectContaining({
+      inboundKindLabel: "计划入库",
+      status: "待入库",
+      trayCode,
+    }));
+    expect(stagingSections.plannedInboundRows.map((row) => row.trayCode)).not.toContain(trayCode);
+    expect(stagingSections.currentStagingRows.map((row) => row.trayCode)).not.toContain(trayCode);
+    expect(stockInResult.error).toBe("");
+    expect(stockInResult.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === `sample-appearance-single-${_caseName}`)).toMatchObject({
+      location: "外观检测间",
+      status: "外观检测间存放",
+      flow_status: "外观检测间存放",
+    });
   });
 
   test("fully completed trays waiting for post-experiment staging are marked as planned staging", () => {
