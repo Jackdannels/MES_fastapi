@@ -105,6 +105,15 @@ const waitForSamplesUpdatedEvent = async (spy, count) => {
   }
   expect(spy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(count);
 };
+const waitForQueueLength = async (queue, count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (queue.length >= count) {
+      return;
+    }
+  }
+  expect(queue).toHaveLength(count);
+};
 const createSnapshot = () => ({
   [STORAGE_KEYS.tasks]: [
     { code: "SYLU-2026-04-101", name: "盐雾连接器", test_type: "盐雾试验" },
@@ -964,6 +973,219 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
   });
 
+  test("allows another main laboratory to compare a different tray while a different laboratory is operating", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-101-SP-001",
+          flow_status: "已到达实验室",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
+        },
+        {
+          code: "SYLU-2026-04-102-SP-001",
+          flow_status: "送至实验室",
+          location: "振动一室",
+          owner: "李工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-102",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-201" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", tray_code: "TP-201" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-salt-operating",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-vibration-candidate",
+          task_code: "SYLU-2026-04-102",
+          experiment_code: "SYLU-2026-04-102-A",
+          device: "振动一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("SYLU-2026-04-102 / 振动试验");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-201");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("does not overwrite another laboratory tray state when persisting comparison from a stale snapshot", async () => {
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-101-SP-001",
+          flow_status: "送至实验室",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+        },
+        {
+          code: "SYLU-2026-04-102-SP-001",
+          flow_status: "送至实验室",
+          location: "振动一室",
+          owner: "李工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-04-102",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-201" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", tray_code: "TP-201" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-salt-candidate",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-vibration-candidate",
+          task_code: "SYLU-2026-04-102",
+          experiment_code: "SYLU-2026-04-102-A",
+          device: "振动一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) =>
+        sample.task_code === "SYLU-2026-04-102"
+          ? {
+              ...sample,
+              flow_status: "已到达实验室",
+              status: "已到达实验室",
+              trays: sample.trays.map((tray) => ({ ...tray, status: "已到达实验室" })),
+            }
+          : sample,
+      ),
+    };
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+
+    const vibrationSample = snapshotState[STORAGE_KEYS.samples].find((sample) => sample.task_code === "SYLU-2026-04-102");
+    expect(vibrationSample).toEqual(expect.objectContaining({
+      flow_status: "已到达实验室",
+      status: "已到达实验室",
+      trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "TP-201" })],
+    }));
+  });
+
+  test("publishes fixture installation for the selected laboratory while another laboratory has already started", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-101-SP-001",
+          flow_status: "已到达实验室",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-101",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
+        },
+        {
+          code: "SYLU-2026-04-102-SP-001",
+          flow_status: "已到达实验室",
+          location: "振动一室",
+          owner: "李工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-04-102",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-201" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+        { task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", tray_code: "TP-201" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-salt-operating",
+          task_code: "SYLU-2026-04-101",
+          experiment_code: "SYLU-2026-04-101-A",
+          device: "盐雾试验室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+        {
+          id: "schedule-vibration-candidate",
+          task_code: "SYLU-2026-04-102",
+          experiment_code: "SYLU-2026-04-102-A",
+          device: "振动一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T11:00:00.000Z",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    const mqCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
+    const payload = JSON.parse(String(mqCall[1]?.body || "{}"));
+
+    expect(payload).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-102-A",
+      lab_code: "LAB_VIBRATION_1",
+      task_code: "SYLU-2026-04-102",
+    }));
+  });
+
   test("collapses many task-list trays and opens a full tray detail modal", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({
@@ -1093,6 +1315,7 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    await waitForQueueLength(storageWrites, 1);
     storageWrites.shift()();
     await nextTick();
     await nextTick();
@@ -1104,12 +1327,14 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    await waitForQueueLength(storageWrites, 1);
     storageWrites.shift()();
     await nextTick();
     await nextTick();
   });
 
   test("keeps the prepared task in place and blocks next-task operations after switching", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
       {
@@ -1148,8 +1373,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     expect(snapshotState[STORAGE_KEYS.samples][0].trays).toEqual(
       expect.arrayContaining([
@@ -1189,6 +1413,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("keeps the first prepared task locked when switching through unprepared tasks", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.tasks] = [
       ...snapshotState[STORAGE_KEYS.tasks],
@@ -1260,8 +1485,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
     await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
@@ -1299,6 +1523,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("blocks additional compared tasks until the prepared task is reset", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.tasks] = [
       ...snapshotState[STORAGE_KEYS.tasks],
@@ -1370,8 +1595,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
     await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
@@ -1892,8 +2116,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-001");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "已到达实验室",
@@ -1912,10 +2135,7 @@ describe("LaboratoryPage runtime", () => {
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
-    await Promise.resolve();
-    await Promise.resolve();
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 2);
 
     const fixtureInstallCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     expect(fixtureInstallCall).toBeDefined();
@@ -1979,8 +2199,7 @@ describe("LaboratoryPage runtime", () => {
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
-    await nextTick();
-    await nextTick();
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
 
     const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
     expect(readyCall).toBeDefined();
@@ -2246,6 +2465,7 @@ describe("LaboratoryPage runtime", () => {
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
     await flushPageUpdates();
 
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);

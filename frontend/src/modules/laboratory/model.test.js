@@ -693,6 +693,99 @@ describe("laboratory model", () => {
     expect(getLaboratoryOperationLock([lockedRow, otherLabRow], otherLabRow, { name: "振动一室" })).toEqual({ active: false });
   });
 
+  test("operation lock allows every main laboratory to compare different trays at the same time", () => {
+    const mainLabs = [
+      "冲击二室",
+      "冲击一室",
+      "高低温湿热一室",
+      "霉菌试验室",
+      "四综合实验室",
+      "温度冲击二室",
+      "温度冲击一室",
+      "盐雾试验室",
+      "振动二室",
+      "振动一室",
+    ];
+    const startedRows = mainLabs.map((device, index) => ({
+      device,
+      experimentCode: `EXP-STARTED-${index + 1}`,
+      experimentKey: `TASK-STARTED-${index + 1}::EXP-STARTED-${index + 1}`,
+      experimentName: `${device}进行中任务`,
+      taskCode: `TASK-STARTED-${index + 1}`,
+      trayRows: [{ trayCode: `TP-STARTED-${index + 1}`, trayStatus: "已到达实验室" }],
+    }));
+
+    mainLabs.forEach((device, index) => {
+      const candidate = {
+        device,
+        experimentCode: `EXP-CANDIDATE-${index + 1}`,
+        experimentKey: `TASK-CANDIDATE-${index + 1}::EXP-CANDIDATE-${index + 1}`,
+        experimentName: `${device}待比对任务`,
+        taskCode: `TASK-CANDIDATE-${index + 1}`,
+        trayRows: [{ trayCode: `TP-CANDIDATE-${index + 1}`, trayStatus: "送至实验室" }],
+      };
+      const otherLabRows = startedRows.filter((row) => row.device !== device);
+
+      expect(getLaboratoryOperationLock([...otherLabRows, candidate], candidate, { name: device })).toEqual({ active: false });
+      expect(getLaboratoryOperationLock([...startedRows, candidate], candidate, { name: device })).toEqual(expect.objectContaining({
+        active: true,
+        taskCode: `TASK-STARTED-${index + 1}`,
+      }));
+    });
+  });
+
+  test("operation lock uses the current task laboratory instead of falling back to a global lock", () => {
+    const saltStarted = {
+      device: "盐雾试验室",
+      experimentCode: "EXP-SALT-1",
+      experimentKey: "TASK-SALT-1::EXP-SALT-1",
+      experimentName: "盐雾试验进行中",
+      taskCode: "TASK-SALT-1",
+      trayRows: [{ trayCode: "TP-SALT-1", trayStatus: "已到达实验室" }],
+    };
+    const vibrationCandidate = {
+      device: "振动一室",
+      experimentCode: "EXP-VIB-1",
+      experimentKey: "TASK-VIB-1::EXP-VIB-1",
+      experimentName: "振动试验待比对",
+      taskCode: "TASK-VIB-1",
+      trayRows: [{ trayCode: "TP-VIB-1", trayStatus: "送至实验室" }],
+    };
+
+    expect(getLaboratoryOperationLock([saltStarted, vibrationCandidate], vibrationCandidate)).toEqual({ active: false });
+  });
+
+  test("operation lock blocks a different laboratory when the same tray is already in an operation stage", () => {
+    const saltStarted = {
+      device: "盐雾试验室",
+      experimentCode: "EXP-SALT-1",
+      experimentKey: "TASK-SALT-1::EXP-SALT-1",
+      experimentName: "盐雾试验进行中",
+      taskCode: "TASK-SALT-1",
+      trayRows: [{ trayCode: "TP-001", trayStatus: "已到达实验室" }],
+    };
+    const vibrationSameTray = {
+      device: "振动一室",
+      experimentCode: "EXP-VIB-1",
+      experimentKey: "TASK-VIB-1::EXP-VIB-1",
+      experimentName: "振动试验待比对",
+      taskCode: "TASK-VIB-1",
+      trayRows: [{ trayCode: "TP-001", trayStatus: "送至实验室" }],
+    };
+    const vibrationDifferentTray = {
+      ...vibrationSameTray,
+      experimentKey: "TASK-VIB-2::EXP-VIB-2",
+      taskCode: "TASK-VIB-2",
+      trayRows: [{ trayCode: "TP-201", trayStatus: "送至实验室" }],
+    };
+
+    expect(getLaboratoryOperationLock([saltStarted, vibrationSameTray], vibrationSameTray, { name: "振动一室" })).toEqual(expect.objectContaining({
+      active: true,
+      taskCode: "TASK-SALT-1",
+    }));
+    expect(getLaboratoryOperationLock([saltStarted, vibrationDifferentTray], vibrationDifferentTray, { name: "振动一室" })).toEqual({ active: false });
+  });
+
   test("defaults to the prepared task, otherwise the earliest scheduled task", () => {
     const baseInput = {
       experimentTrays: [

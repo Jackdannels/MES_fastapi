@@ -826,6 +826,15 @@ const laboratoryRowHasStartedOperation = (row) =>
     const rank = resolveLaboratoryStatusRank(tray?.trayStatus);
     return rank >= 1 && rank < 5;
   });
+const laboratoryOperationTrayCodeSet = (row) =>
+  new Set(asArray(row?.trayRows).map((tray) => normalizeText(tray?.trayCode)).filter(Boolean));
+const laboratoryRowsShareTray = (left, right) => {
+  const leftTrayCodes = laboratoryOperationTrayCodeSet(left);
+  if (!leftTrayCodes.size) {
+    return false;
+  }
+  return asArray(right?.trayRows).some((tray) => leftTrayCodes.has(normalizeText(tray?.trayCode)));
+};
 const rowCompletedExperimentCodeSet = (row) =>
   new Set(asArray(row?.completedExperimentCodes).map((code) => normalizeText(code)).filter(Boolean));
 const rowHasUnfinishedDifferentTargetExperiment = (row, currentTask) => {
@@ -932,8 +941,12 @@ const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null, lab =
   const hasLabScope = Boolean(normalizeText(labRef?.name) || normalizeText(labRef?.code) || normalizeText(labRef?.id));
   const lockedRow = asArray(scheduleRows).find((row) => {
     const rowKey = laboratoryOperationKey(row);
+    const matchesOperationScope =
+      (!hasLabScope && !currentTask)
+      || (hasLabScope && scheduleMatchesLab(row, labRef))
+      || laboratoryRowsShareTray(row, currentTask);
     return (!currentKey || rowKey !== currentKey)
-      && (!hasLabScope || scheduleMatchesLab(row, labRef))
+      && matchesOperationScope
       && laboratoryRowHasStartedOperation(row);
   });
   if (!lockedRow) {

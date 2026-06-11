@@ -58,6 +58,89 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
+const sampleMergeKey = (sample) => normalizeText(sample?.code) || normalizeText(sample?.id);
+const trayMergeKey = (tray) => normalizeText(tray?.tray_code);
+const valuesEqual = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+const mergeHistoryEntries = (baseHistory = [], nextHistory = [], latestHistory = []) => {
+  const baseKeys = new Set((Array.isArray(baseHistory) ? baseHistory : []).map((entry) => JSON.stringify(entry ?? null)));
+  const latestKeys = new Set((Array.isArray(latestHistory) ? latestHistory : []).map((entry) => JSON.stringify(entry ?? null)));
+  const changedEntries = (Array.isArray(nextHistory) ? nextHistory : [])
+    .filter((entry) => !baseKeys.has(JSON.stringify(entry ?? null)));
+  const merged = [];
+  changedEntries.forEach((entry) => {
+    const key = JSON.stringify(entry ?? null);
+    if (!latestKeys.has(key)) {
+      merged.push(entry);
+      latestKeys.add(key);
+    }
+  });
+  return [...merged, ...(Array.isArray(latestHistory) ? latestHistory : [])];
+};
+const mergeChangedSample = (baseSample = null, nextSample = null, latestSample = null) => {
+  if (!nextSample) {
+    return latestSample;
+  }
+  if (!baseSample || !latestSample) {
+    return nextSample;
+  }
+  if (valuesEqual(baseSample, nextSample)) {
+    return latestSample;
+  }
+
+  const baseTraysByCode = new Map((Array.isArray(baseSample.trays) ? baseSample.trays : []).map((tray) => [trayMergeKey(tray), tray]));
+  const changedTraysByCode = new Map();
+  (Array.isArray(nextSample.trays) ? nextSample.trays : []).forEach((tray) => {
+    const trayCode = trayMergeKey(tray);
+    if (!trayCode || valuesEqual(baseTraysByCode.get(trayCode), tray)) {
+      return;
+    }
+    changedTraysByCode.set(trayCode, tray);
+  });
+  const mergedSample = {
+    ...latestSample,
+    ...Object.fromEntries(
+      Object.entries(nextSample).filter(([key, value]) =>
+        key !== "trays"
+        && key !== "history"
+        && !valuesEqual(baseSample?.[key], value),
+      ),
+    ),
+  };
+  if (Array.isArray(latestSample.trays) || changedTraysByCode.size > 0) {
+    const seenTrayCodes = new Set();
+    mergedSample.trays = (Array.isArray(latestSample.trays) ? latestSample.trays : []).map((tray) => {
+      const trayCode = trayMergeKey(tray);
+      seenTrayCodes.add(trayCode);
+      return changedTraysByCode.get(trayCode) || tray;
+    });
+    changedTraysByCode.forEach((tray, trayCode) => {
+      if (!seenTrayCodes.has(trayCode)) {
+        mergedSample.trays.push(tray);
+      }
+    });
+  }
+  if (!valuesEqual(baseSample.history, nextSample.history)) {
+    mergedSample.history = mergeHistoryEntries(baseSample.history, nextSample.history, latestSample.history);
+  }
+  return mergedSample;
+};
+const mergeSamplesWithLatestSnapshot = ({ baseSamples = [], latestSamples = [], nextSamples = [] } = {}) => {
+  const baseByKey = new Map((Array.isArray(baseSamples) ? baseSamples : []).map((sample) => [sampleMergeKey(sample), sample]));
+  const nextByKey = new Map((Array.isArray(nextSamples) ? nextSamples : []).map((sample) => [sampleMergeKey(sample), sample]));
+  const mergedKeys = new Set();
+  const mergedSamples = (Array.isArray(latestSamples) ? latestSamples : []).map((latestSample) => {
+    const key = sampleMergeKey(latestSample);
+    const nextSample = nextByKey.get(key);
+    mergedKeys.add(key);
+    return nextSample ? mergeChangedSample(baseByKey.get(key), nextSample, latestSample) : latestSample;
+  });
+  nextByKey.forEach((nextSample, key) => {
+    if (!mergedKeys.has(key)) {
+      mergedSamples.push(nextSample);
+    }
+  });
+  return mergedSamples;
+};
 
 const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
@@ -265,7 +348,7 @@ function useLaboratoryPage(options = {}) {
   const runningExperiment = computed(() => view.value.runningExperiment);
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const operationLock = computed(() =>
-    getLaboratoryOperationLock(view.value.scheduleRows, currentTask.value, {
+    getLaboratoryOperationLock(view.value.allScheduleRows, currentTask.value, {
       code: laboratoryConfig.value.labCode,
       name: laboratoryConfig.value.labName,
     }),
@@ -757,11 +840,16 @@ function useLaboratoryPage(options = {}) {
     lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
     task_code: currentTask.value?.taskCode || "",
   });
-  const persistSamples = (nextSamples) => {
-    const writeSamples = () =>
-      persistSnapshot({
-        [STORAGE_KEYS.samples]: nextSamples,
+  const persistSamples = (nextSamples, { baseSamples = samples.value } = {}) => {
+    const writeSamples = async () => {
+      const latestSnapshot = await loadSnapshot();
+      const latestSamples = Array.isArray(latestSnapshot?.[STORAGE_KEYS.samples]) ? latestSnapshot[STORAGE_KEYS.samples] : baseSamples;
+      const mergedSamples = mergeSamplesWithLatestSnapshot({ baseSamples, latestSamples, nextSamples });
+      samples.value = mergedSamples;
+      return persistSnapshot({
+        [STORAGE_KEYS.samples]: mergedSamples,
       });
+    };
     const persistOperation = samplesPersistQueue
       ? samplesPersistQueue.catch(() => {}).then(writeSamples)
       : writeSamples();
@@ -820,7 +908,7 @@ function useLaboratoryPage(options = {}) {
       });
     }
     samples.value = nextSamples;
-    await persistSamples(nextSamples);
+    await persistSamples(nextSamples, { baseSamples });
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
@@ -831,7 +919,8 @@ function useLaboratoryPage(options = {}) {
     if (!targetTaskCode || targetTrayCodes.size === 0) {
       return;
     }
-    const nextSamples = samples.value.map((sample) => {
+    const baseSamples = samples.value;
+    const nextSamples = baseSamples.map((sample) => {
       if (String(sample?.task_code || "").trim() !== targetTaskCode || !Array.isArray(sample?.trays)) {
         return sample;
       }
@@ -845,7 +934,7 @@ function useLaboratoryPage(options = {}) {
       };
     });
     samples.value = nextSamples;
-    await persistSamples(nextSamples);
+    await persistSamples(nextSamples, { baseSamples });
     if (typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
