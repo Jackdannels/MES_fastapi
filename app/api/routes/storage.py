@@ -10,6 +10,8 @@ from fastapi.responses import StreamingResponse
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.laboratory_completion import tray_assigned_experiments_are_completed
+from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.storage_atomic import merge_concurrent_storage_updates
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -685,8 +687,10 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
     if key not in STORAGE_KEYS:
         raise HTTPException(status_code=404, detail="Unknown storage key")
     storage = get_storage_backend()
-    _validate_storage_update(storage, {key: payload})
-    storage.write(key, payload)
+    with acquire_laboratory_storage_commit_lock():
+        updates = merge_concurrent_storage_updates(storage.read_all(), {key: payload})
+        _validate_storage_update(storage, updates)
+        storage.write(key, updates[key])
     publish_storage_update([key])
     return {"ok": True}
 
@@ -697,7 +701,9 @@ def write_many(payload: Dict[str, Any] = Body(...)) -> Dict[str, bool]:
     updates = {key: value for key, value in payload.items() if key in STORAGE_KEYS}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid storage keys provided")
-    _validate_storage_update(storage, updates)
-    storage.write_many(updates)
+    with acquire_laboratory_storage_commit_lock():
+        updates = merge_concurrent_storage_updates(storage.read_all(), updates)
+        _validate_storage_update(storage, updates)
+        storage.write_many(updates)
     publish_storage_update(list(updates.keys()))
     return {"ok": True}

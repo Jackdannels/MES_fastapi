@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
-from app.services.laboratory_operations import clear_fixture_ready_marker
+from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock, clear_fixture_ready_marker
+from app.services.storage_atomic import merge_concurrent_storage_updates
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -239,19 +240,19 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
 
 def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
     storage = get_storage_backend()
-    storage.write_many(
-        {
-            "mes.tasks": snapshot["tasks"],
-            "mes.samples": snapshot["samples"],
-            "mes.schedules": snapshot["schedules"],
-            "mes.experiments": snapshot["experiments"],
-            "mes.experiment_runs": snapshot["experiment_runs"],
-            "mes.experiment_run_trays": snapshot["experiment_run_trays"],
-            "mes.experiment_trays": snapshot["experiment_trays"],
-            "mes.experiment_samples": snapshot["experiment_samples"],
-            "mes.staging_events": snapshot["staging_events"],
-        }
-    )
+    updates = {
+        "mes.tasks": snapshot["tasks"],
+        "mes.samples": snapshot["samples"],
+        "mes.schedules": snapshot["schedules"],
+        "mes.experiments": snapshot["experiments"],
+        "mes.experiment_runs": snapshot["experiment_runs"],
+        "mes.experiment_run_trays": snapshot["experiment_run_trays"],
+        "mes.experiment_trays": snapshot["experiment_trays"],
+        "mes.experiment_samples": snapshot["experiment_samples"],
+        "mes.staging_events": snapshot["staging_events"],
+    }
+    with acquire_laboratory_storage_commit_lock():
+        storage.write_many(merge_concurrent_storage_updates(storage.read_all(), updates))
     publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
 
 

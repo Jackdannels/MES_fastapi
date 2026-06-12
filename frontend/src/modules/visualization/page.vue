@@ -48,7 +48,7 @@
           <component
             :is="resolveScreenComponent(screen)"
             :screen="screen"
-            :labs="defaultLabs"
+            :labs="labsForScreen(screen)"
             :lab-names="labNames"
             :devices="deviceItems"
             :schedule-view="scheduleView"
@@ -79,13 +79,13 @@
           <component
             :is="resolveScreenComponent(selectedScreen)"
             :screen="selectedScreen"
-            :labs="selectedLabs"
+            :labs="labsForScreen(selectedScreen)"
             :lab-names="labNames"
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
             :interactive="selectedScreen.kind === 'lab-process' || selectedScreen.kind === 'schedule-three-day' || selectedScreen.kind === 'staging-samples' || selectedScreen.kind === 'analysis'"
-            @open-lab-picker="openLabPicker"
+            @open-lab-picker="(position) => openLabPicker(position, selectedScreen)"
             @schedule-today="resetScheduleWindow"
             @schedule-window="shiftScheduleWindow"
           />
@@ -167,13 +167,13 @@
                 <component
                   :is="resolveScreenComponent(screen)"
                   :screen="screen"
-                  :labs="screen.kind === 'lab-process' ? selectedLabs : defaultLabs"
+                  :labs="labsForScreen(screen)"
                   :lab-names="labNames"
                   :devices="deviceItems"
                   :schedule-view="scheduleView"
                   :staging-view="stagingSamplesView"
                   :interactive="screen.kind === 'lab-process' || screen.kind === 'schedule-three-day' || screen.kind === 'staging-samples' || screen.kind === 'analysis'"
-                  @open-lab-picker="openLabPicker"
+                  @open-lab-picker="(position) => openLabPicker(position, screen)"
                   @schedule-today="resetScheduleWindow"
                   @schedule-window="shiftScheduleWindow"
                 />
@@ -243,17 +243,17 @@ const screenCards = [
     tone: "sync",
   },
   {
-    key: "today-plan",
-    name: "今日任务计划屏",
-    kind: "placeholder",
-    status: "排程中",
-    metric: "18 项计划",
-    accent: "lime",
+    key: "today-task-plan-overview",
+    name: "今日任务计划总览屏",
+    kind: "today-task-plan",
+    status: "模拟数据",
+    metric: "6 项任务",
+    accent: "cyan",
     tone: "live",
     indicators: [
-      ["上午", "8"],
-      ["下午", "7"],
-      ["夜间", "3"],
+      ["已分盘", "4"],
+      ["待分盘", "2"],
+      ["样品", "48"],
     ],
   },
   {
@@ -271,17 +271,18 @@ const screenCards = [
     ],
   },
   {
-    key: "today-task-plan-overview",
-    name: "今日任务计划总览屏",
-    kind: "today-task-plan",
-    status: "模拟数据",
-    metric: "6 项任务",
+    key: "lab-process-secondary",
+    name: "实验室流程监控屏B组",
+    kind: "lab-process",
+    group: "secondary",
+    status: "运行中",
+    metric: "后续试验间",
     accent: "cyan",
     tone: "live",
     indicators: [
-      ["已分盘", "4"],
-      ["待分盘", "2"],
-      ["样品", "48"],
+      ["试验间", "2"],
+      ["优先", "有托盘"],
+      ["去重", "开启"],
     ],
   },
   {
@@ -347,11 +348,14 @@ const deviceItems = computed(() => {
 const labNames = computed(() => getVisualizationLabNames(deviceItems.value));
 
 const selectedScreen = ref(null);
-const selectedPrimaryLabName = ref("");
-const selectedSecondaryLabName = ref("");
+const selectedLabSlots = ref({
+  primary: ["", ""],
+  secondary: ["", ""],
+});
 const combinedPreviewOpen = ref(false);
 const viewportSize = ref({ height: 1080, width: 1920 });
 const labPickerPosition = ref("");
+const labPickerGroup = ref("");
 const manualLabSelection = ref(false);
 const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
@@ -432,25 +436,76 @@ const labDisplayOrder = computed(() => {
     return labNames.value.indexOf(left.name) - labNames.value.indexOf(right.name);
   });
 });
-const defaultLabs = computed(() => labDisplayOrder.value.slice(0, 2).filter(Boolean));
-const selectedLabs = computed(() => [
-  manualLabSelection.value
-    ? labScreens.value.find((lab) => lab.name === selectedPrimaryLabName.value) || defaultLabs.value[0]
-    : defaultLabs.value[0],
-  manualLabSelection.value
-    ? labScreens.value.find((lab) => lab.name === selectedSecondaryLabName.value) || defaultLabs.value[1]
-    : defaultLabs.value[1],
-].filter(Boolean));
-const activePickerLabName = computed(() => {
-  const index = labPickerPosition.value === "secondary" ? 1 : 0;
-  return selectedLabs.value[index]?.name || "";
+const LAB_PROCESS_GROUPS = ["primary", "secondary"];
+const LAB_PROCESS_SLOT_COUNT = 2;
+const normalizeLabProcessGroup = (group) => (group === "secondary" ? "secondary" : "primary");
+const resolveScreenLabGroup = (screen) => normalizeLabProcessGroup(screen?.group);
+const findLabScreenByName = (name) => labScreens.value.find((lab) => lab.name === name);
+const defaultLabGroups = computed(() => ({
+  primary: labDisplayOrder.value.slice(0, LAB_PROCESS_SLOT_COUNT).filter(Boolean),
+  secondary: labDisplayOrder.value.slice(LAB_PROCESS_SLOT_COUNT, LAB_PROCESS_SLOT_COUNT * 2).filter(Boolean),
+}));
+const displayedLabGroups = computed(() => {
+  const usedLabNames = new Set();
+  const groups = {};
+  LAB_PROCESS_GROUPS.forEach((group) => {
+    const defaults = defaultLabGroups.value[group] || [];
+    const selectedNames = selectedLabSlots.value[group] || [];
+    groups[group] = Array.from({ length: LAB_PROCESS_SLOT_COUNT }, (_, slotIndex) => {
+      const selectedLab = manualLabSelection.value ? findLabScreenByName(selectedNames[slotIndex]) : null;
+      if (selectedLab && !usedLabNames.has(selectedLab.name)) {
+        usedLabNames.add(selectedLab.name);
+        return selectedLab;
+      }
+      const defaultSlotLab = defaults[slotIndex];
+      if (defaultSlotLab && !usedLabNames.has(defaultSlotLab.name)) {
+        usedLabNames.add(defaultSlotLab.name);
+        return defaultSlotLab;
+      }
+      const defaultGroupLab = defaults.find((lab) => lab && !usedLabNames.has(lab.name));
+      if (defaultGroupLab) {
+        usedLabNames.add(defaultGroupLab.name);
+        return defaultGroupLab;
+      }
+      const fallbackLab = labDisplayOrder.value.find((lab) => lab && !usedLabNames.has(lab.name));
+      if (fallbackLab) {
+        usedLabNames.add(fallbackLab.name);
+        return fallbackLab;
+      }
+      return null;
+    }).filter(Boolean);
+  });
+  return groups;
 });
-const excludedPickerLabName = computed(() => {
-  const index = labPickerPosition.value === "secondary" ? 0 : 1;
-  return selectedLabs.value[index]?.name || "";
+const labsForScreen = (screen) => {
+  if (screen?.kind !== "lab-process") {
+    return [];
+  }
+  const group = resolveScreenLabGroup(screen);
+  return displayedLabGroups.value[group] || [];
+};
+const activePickerSlotIndex = computed(() => (labPickerPosition.value === "secondary" ? 1 : 0));
+const activePickerLabName = computed(() => {
+  const group = normalizeLabProcessGroup(labPickerGroup.value);
+  return (displayedLabGroups.value[group] || [])[activePickerSlotIndex.value]?.name || "";
+});
+const occupiedPickerLabNames = computed(() => {
+  const activeGroup = normalizeLabProcessGroup(labPickerGroup.value);
+  const names = new Set();
+  LAB_PROCESS_GROUPS.forEach((group) => {
+    (displayedLabGroups.value[group] || []).forEach((lab, slotIndex) => {
+      if (group === activeGroup && slotIndex === activePickerSlotIndex.value) {
+        return;
+      }
+      if (lab?.name) {
+        names.add(lab.name);
+      }
+    });
+  });
+  return names;
 });
 const labPickerTitle = computed(() => (labPickerPosition.value === "secondary" ? "选择下方试验间" : "选择上方试验间"));
-const labPickerOptions = computed(() => labScreens.value.filter((lab) => lab.name !== excludedPickerLabName.value));
+const labPickerOptions = computed(() => labScreens.value.filter((lab) => lab.name === activePickerLabName.value || !occupiedPickerLabNames.value.has(lab.name)));
 const combinedScale = computed(() => {
   const availableWidth = Math.max(1, viewportSize.value.width - COMBINED_PADDING * 2 - COMBINED_GAP * (COMBINED_COLUMNS - 1));
   const availableHeight = Math.max(1, viewportSize.value.height - COMBINED_PADDING * 2 - COMBINED_GAP * (COMBINED_ROWS - 1));
@@ -511,26 +566,34 @@ const closeCombinedPreview = () => {
 };
 
 const formatScreenIndex = (index) => String(index + 1).padStart(2, "0");
-const openLabPicker = (position) => {
+const openLabPicker = (position, screen = null) => {
+  labPickerGroup.value = resolveScreenLabGroup(screen);
   labPickerPosition.value = position === "secondary" ? "secondary" : "primary";
 };
 const closeLabPicker = () => {
   labPickerPosition.value = "";
+  labPickerGroup.value = "";
+};
+const persistDisplayedLabSlots = () => {
+  selectedLabSlots.value = {
+    primary: Array.from({ length: LAB_PROCESS_SLOT_COUNT }, (_, index) => (displayedLabGroups.value.primary || [])[index]?.name || ""),
+    secondary: Array.from({ length: LAB_PROCESS_SLOT_COUNT }, (_, index) => (displayedLabGroups.value.secondary || [])[index]?.name || ""),
+  };
 };
 const selectLabFromPicker = (labName) => {
   const nextName = String(labName || "").trim();
-  if (!nextName || nextName === excludedPickerLabName.value) {
+  if (!nextName || occupiedPickerLabNames.value.has(nextName)) {
     return;
   }
-  const currentSelectedLabs = selectedLabs.value;
+  const group = normalizeLabProcessGroup(labPickerGroup.value);
+  const slotIndex = activePickerSlotIndex.value;
+  persistDisplayedLabSlots();
   manualLabSelection.value = true;
-  selectedPrimaryLabName.value = currentSelectedLabs[0]?.name || "";
-  selectedSecondaryLabName.value = currentSelectedLabs[1]?.name || "";
-  if (labPickerPosition.value === "secondary") {
-    selectedSecondaryLabName.value = nextName;
-  } else {
-    selectedPrimaryLabName.value = nextName;
-  }
+  const nextGroupSlots = Array.from({ length: LAB_PROCESS_SLOT_COUNT }, (_, index) => (selectedLabSlots.value[group] || [])[index] || "");
+  selectedLabSlots.value = {
+    ...selectedLabSlots.value,
+    [group]: nextGroupSlots.map((name, index) => (index === slotIndex ? nextName : name)),
+  };
   closeLabPicker();
 };
 
@@ -671,7 +734,7 @@ const LabProcessScreen = {
         h("div", { class: "visual-board-top" }, [
           h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "LAB PROCESS"),
-            h("div", { class: "visual-board-title" }, "例行试验站智能控制中心"),
+            h("div", { class: "visual-board-title" }, props.screen?.group === "secondary" ? props.screen.name : "例行试验站智能控制中心"),
           ]),
           h("div", { class: "visual-board-state" }, [
             h("span", { class: "visual-board-live" }, "LIVE"),
@@ -766,7 +829,7 @@ const LabProcessScreen = {
                         h(
                           "div",
                           { class: "visual-flow-line" },
-                          (props.compact ? tray.steps : tray.steps || displayedFlowSteps).map((step, stepIndex) =>
+                          (props.compact ? compactFlowSteps(tray.steps) : tray.steps || displayedFlowSteps).map((step, stepIndex) =>
                             h("div", {
                               class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns)],
                               title: resolveVisualFlowStepTitle(step, formatBeijingFlowTime),

@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -154,6 +156,64 @@ def build_client(monkeypatch):
     app = FastAPI()
     app.include_router(transfer_area_route.router)
     return TestClient(app), storage
+
+
+def test_transfer_area_write_snapshot_merges_without_reverting_concurrent_lab_progress(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    storage = FakeTransferStorage(
+        {
+            "mes.samples": [
+                {
+                    "code": "SP-LAB",
+                    "location": "冲击一室",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "task_code": "TASK-CONCURRENT",
+                    "updated_at": "2026-06-12 10:01:00",
+                    "trays": [{"tray_code": "TP-A", "status": "已到达实验室", "quantity": 1, "updated_at": "2026-06-12 10:01:00"}],
+                },
+                {
+                    "code": "SP-STAGING",
+                    "location": "接驳区",
+                    "status": "到货",
+                    "flow_status": "到货",
+                    "task_code": "TASK-CONCURRENT",
+                    "updated_at": "2026-06-12 10:00:00",
+                    "trays": [{"tray_code": "TP-B", "status": "到货", "quantity": 1, "updated_at": "2026-06-12 10:00:00"}],
+                },
+            ],
+            "mes.staging_events": [
+                {"id": "event-existing", "tray_code": "TP-A", "task_code": "TASK-CONCURRENT", "action": "stock_out", "time": "2026-06-12 10:00:30"}
+            ],
+        }
+    )
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+
+    stale_snapshot = deepcopy(transfer_area_route.read_snapshot())
+    stale_snapshot["samples"][0]["status"] = "送至实验室"
+    stale_snapshot["samples"][0]["flow_status"] = "送至实验室"
+    stale_snapshot["samples"][0]["updated_at"] = "2026-06-12 10:00:00"
+    stale_snapshot["samples"][0]["trays"][0]["status"] = "送至实验室"
+    stale_snapshot["samples"][0]["trays"][0]["updated_at"] = "2026-06-12 10:00:00"
+    stale_snapshot["samples"][1]["status"] = "送至暂存间"
+    stale_snapshot["samples"][1]["flow_status"] = "送至暂存间"
+    stale_snapshot["samples"][1]["location"] = "恒温恒湿间（暂存间）"
+    stale_snapshot["samples"][1]["updated_at"] = "2026-06-12 10:02:00"
+    stale_snapshot["samples"][1]["trays"][0]["status"] = "送至暂存间"
+    stale_snapshot["samples"][1]["trays"][0]["updated_at"] = "2026-06-12 10:02:00"
+    stale_snapshot["staging_events"] = [
+        {"id": "event-new", "tray_code": "TP-B", "task_code": "TASK-CONCURRENT", "action": "stock_out", "time": "2026-06-12 10:02:00"}
+    ]
+
+    transfer_area_route.write_snapshot(stale_snapshot)
+
+    samples = {sample["code"]: sample for sample in storage.read("mes.samples")}
+    assert samples["SP-LAB"]["status"] == "已到达实验室"
+    assert samples["SP-LAB"]["trays"][0]["status"] == "已到达实验室"
+    assert samples["SP-STAGING"]["status"] == "送至暂存间"
+    assert samples["SP-STAGING"]["trays"][0]["status"] == "送至暂存间"
+    assert [event["id"] for event in storage.read("mes.staging_events")] == ["event-existing", "event-new"]
 
 
 def valid_task_101_experiment_trays(first_tray_id=1001, second_tray_id=1002):

@@ -44,6 +44,68 @@ vi.mock("@/composables/useStorageSnapshotRefresh", () => ({
 
 const mountPage = () => mount(VisualizationPage);
 
+const buildFourActiveLabSnapshot = () => {
+  const activeLabs = [
+    { lab: "振动一室", task: "TASK-VIB-A", experiment: "EXP-VIB-A", tray: "TRAY-VIB-A" },
+    { lab: "盐雾试验室", task: "TASK-SALT-A", experiment: "EXP-SALT-A", tray: "TRAY-SALT-A" },
+    { lab: "冲击一室", task: "TASK-IMPACT-A", experiment: "EXP-IMPACT-A", tray: "TRAY-IMPACT-A" },
+    { lab: "霉菌试验室", task: "TASK-MOLD-A", experiment: "EXP-MOLD-A", tray: "TRAY-MOLD-A" },
+  ];
+  return {
+    "mes.tasks": activeLabs.map((item) => ({ code: item.task, name: `${item.lab}任务` })),
+    "mes.experiments": activeLabs.map((item) => ({
+      task_code: item.task,
+      experiment_code: item.experiment,
+      experiment_name: `${item.lab}试验`,
+      required_device: item.lab,
+    })),
+    "mes.experiment_trays": activeLabs.map((item) => ({
+      task_code: item.task,
+      experiment_code: item.experiment,
+      tray_code: item.tray,
+    })),
+    "mes.schedules": activeLabs.map((item) => ({
+      task_code: item.task,
+      experiment_code: item.experiment,
+      device: item.lab,
+      status: "实验进行中",
+    })),
+    "mes.samples": activeLabs.map((item) => ({
+      code: `${item.task}-SAMPLE-001`,
+      task_code: item.task,
+      location: item.lab,
+      status: "实验进行中",
+      trays: [{ tray_code: item.tray, status: "实验进行中", quantity: 1 }],
+    })),
+  };
+};
+
+const buildSingleRunningLabSnapshot = () => ({
+  "mes.tasks": [{ code: "TASK-VIS-001", name: "可视化真实任务" }],
+  "mes.experiments": [
+    { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
+  ],
+  "mes.experiment_trays": [
+    { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", tray_code: "TRAY-VIS-001" },
+  ],
+  "mes.schedules": [
+    { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", device: "振动一室", status: "实验进行中" },
+  ],
+  "mes.samples": [
+    {
+      code: "SAMPLE-VIS-001",
+      task_code: "TASK-VIS-001",
+      location: "振动一室",
+      status: "实验进行中",
+      trays: [{ tray_code: "TRAY-VIS-001", status: "实验进行中", quantity: 1 }],
+      history: [
+        { status: "到货", time: "2026-05-22T09:00:00+08:00" },
+        { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00+08:00" },
+      ],
+    },
+  ],
+});
+
 describe("VisualizationPage runtime", () => {
   beforeEach(() => {
     snapshotState.refreshRegistrations = [];
@@ -77,6 +139,112 @@ describe("VisualizationPage runtime", () => {
     expect(cards[0].findAll(".visual-lab-panel")).toHaveLength(2);
     expect(cards[0].find("select").exists()).toBe(false);
     expect(cards[0].find('[data-testid="visual-lab-select"]').exists()).toBe(false);
+  });
+
+  test("uses screens one and five together to show the four most active laboratory process panels", async () => {
+    snapshotState.snapshot = buildFourActiveLabSnapshot();
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    const cards = wrapper.findAll('[data-testid="visual-screen-card"]');
+    const firstScreenLabNames = cards[0].findAll(".visual-lab-name").map((name) => name.text());
+    const fifthScreenLabNames = cards[4].findAll(".visual-lab-name").map((name) => name.text());
+    const displayedLabNames = [...firstScreenLabNames, ...fifthScreenLabNames];
+
+    expect(cards[4].text()).toContain("实验室流程监控屏B组");
+    expect(cards[4].findAll(".visual-lab-panel")).toHaveLength(2);
+    expect(firstScreenLabNames).toEqual(["振动一室", "盐雾试验室"]);
+    expect(fifthScreenLabNames).toEqual(["冲击一室", "霉菌试验室"]);
+    expect(new Set(displayedLabNames).size).toBe(4);
+    expect(cards[4].text()).not.toContain("今日任务计划总览屏");
+    expect(cards[4].text()).not.toContain("SYLU-2026-0524-001");
+
+    await cards[4].trigger("click");
+
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.findAll(".visual-lab-panel")).toHaveLength(2);
+    expect(preview.text()).toContain("冲击一室");
+    expect(preview.text()).toContain("霉菌试验室");
+    expect(preview.text()).toContain("TRAY-IMPACT-A");
+    expect(preview.text()).toContain("TRAY-MOLD-A");
+  });
+
+  test("moves the original fifth-screen today task plan board onto the third screen", async () => {
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    const thirdCard = wrapper.findAll('[data-testid="visual-screen-card"]')[2];
+
+    expect(thirdCard.text()).toContain("今日任务计划总览屏");
+    expect(thirdCard.text()).toContain("SYLU-2026-0524-001");
+    expect(thirdCard.text()).toContain("冲击试验");
+    expect(thirdCard.text()).toContain("振动试验");
+    expect(thirdCard.text()).not.toContain("18 项计划");
+
+    await thirdCard.trigger("click");
+
+    const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
+    expect(previewText).toContain("方案A");
+    expect(previewText).not.toContain("方案B");
+    expect(previewText).not.toContain("方案C");
+    expect(previewText).toContain("任务编号");
+    expect(previewText).not.toContain("任务名称");
+    expect(previewText).not.toContain("结构可靠性联合验证");
+    expect(previewText).toContain("SYLU-2026-0524-001");
+    expect(previewText).toContain("09:00-11:30");
+    expect(previewText).toContain("冲击一室");
+    expect(previewText).toContain("13:00-16:00");
+    expect(previewText).toContain("振动一室");
+    expect(previewText).toContain("TP-001");
+    expect(previewText).toContain("TP-003");
+    expect(previewText).toContain("8件");
+  });
+
+  test("compresses laboratory process flow steps in thumbnails", async () => {
+    snapshotState.snapshot = buildSingleRunningLabSnapshot();
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    const firstCard = wrapper.findAll('[data-testid="visual-screen-card"]')[0];
+    const thumbnailSteps = firstCard.findAll(".visual-flow-step");
+
+    await firstCard.trigger("click");
+
+    const expandedSteps = wrapper.find('[data-testid="visual-single-preview"]').findAll(".visual-flow-step");
+    expect(expandedSteps.length).toBeGreaterThan(9);
+    expect(thumbnailSteps.length).toBeLessThan(expandedSteps.length);
+    expect(thumbnailSteps.length).toBeLessThanOrEqual(9);
+  });
+
+  test("excludes laboratories already shown on the companion lab process screen when switching screen five", async () => {
+    snapshotState.snapshot = buildFourActiveLabSnapshot();
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[4].trigger("click");
+    await wrapper.get('[data-testid="visual-lab-cycle-primary"]').trigger("click");
+
+    const picker = wrapper.get('[data-testid="visual-lab-picker"]');
+    const optionText = picker.text();
+    expect(optionText).toContain("冲击一室");
+    expect(optionText).toContain("高低温湿热一室");
+    expect(optionText).not.toContain("振动一室");
+    expect(optionText).not.toContain("盐雾试验室");
+    expect(optionText).not.toContain("霉菌试验室");
+
+    const replacement = wrapper.findAll('[data-testid="visual-lab-picker-option"]').find((option) => option.text().includes("高低温湿热一室"));
+    expect(replacement).toBeTruthy();
+    await replacement.trigger("click");
+
+    const fifthPreviewText = wrapper.find('[data-testid="visual-single-preview"]').text();
+    expect(fifthPreviewText).toContain("高低温湿热一室");
+    expect(fifthPreviewText).toContain("霉菌试验室");
+    expect(fifthPreviewText).not.toContain("振动一室");
+    expect(fifthPreviewText).not.toContain("盐雾试验室");
   });
 
   test("renders an operations summary and numbered screen metadata", () => {
@@ -199,31 +367,7 @@ describe("VisualizationPage runtime", () => {
   });
 
   test("renders real tray flow for selected labs in the first screen", async () => {
-    snapshotState.snapshot = {
-      "mes.tasks": [{ code: "TASK-VIS-001", name: "可视化真实任务" }],
-      "mes.experiments": [
-        { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
-      ],
-      "mes.experiment_trays": [
-        { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", tray_code: "TRAY-VIS-001" },
-      ],
-      "mes.schedules": [
-        { task_code: "TASK-VIS-001", experiment_code: "EXP-VIB", device: "振动一室", status: "实验进行中" },
-      ],
-      "mes.samples": [
-        {
-          code: "SAMPLE-VIS-001",
-          task_code: "TASK-VIS-001",
-          location: "振动一室",
-          status: "实验进行中",
-          trays: [{ tray_code: "TRAY-VIS-001", status: "实验进行中", quantity: 1 }],
-          history: [
-            { status: "到货", time: "2026-05-22T09:00:00+08:00" },
-            { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00+08:00" },
-          ],
-        },
-      ],
-    };
+    snapshotState.snapshot = buildSingleRunningLabSnapshot();
     const wrapper = mountPage();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -511,34 +655,36 @@ describe("VisualizationPage runtime", () => {
     }
   });
 
-  test("renders the fifth screen as a task-number grouped today task plan board", async () => {
+  test("renders the fifth screen as the secondary laboratory process board", async () => {
+    snapshotState.snapshot = buildFourActiveLabSnapshot();
     const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
     const fifthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[4];
 
-    expect(fifthCard.text()).toContain("今日任务计划总览屏");
-    expect(fifthCard.text()).toContain("SYLU-2026-0524-001");
-    expect(fifthCard.text()).toContain("冲击试验");
-    expect(fifthCard.text()).toContain("振动试验");
+    expect(fifthCard.text()).toContain("实验室流程监控屏B组");
+    expect(fifthCard.findAll(".visual-lab-panel")).toHaveLength(2);
+    expect(fifthCard.text()).toContain("冲击一室");
+    expect(fifthCard.text()).toContain("霉菌试验室");
+    expect(fifthCard.text()).toContain("TRAY-IMPACT-A");
+    expect(fifthCard.text()).toContain("TRAY-MOLD-A");
+    expect(fifthCard.text()).not.toContain("今日任务计划总览屏");
+    expect(fifthCard.text()).not.toContain("SYLU-2026-0524-001");
     expect(fifthCard.text()).not.toContain("合格率趋势屏");
     expect(fifthCard.text()).not.toContain("97.3%");
 
     await fifthCard.trigger("click");
 
-    const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
-    expect(previewText).toContain("方案A");
-    expect(previewText).not.toContain("方案B");
-    expect(previewText).not.toContain("方案C");
-    expect(previewText).toContain("任务编号");
-    expect(previewText).not.toContain("任务名称");
-    expect(previewText).not.toContain("结构可靠性联合验证");
-    expect(previewText).toContain("SYLU-2026-0524-001");
-    expect(previewText).toContain("09:00-11:30");
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    const previewText = preview.text();
+    expect(preview.find(".visual-board").classes()).toContain("is-layout-a");
+    expect(preview.findAll(".visual-lab-panel")).toHaveLength(2);
+    expect(previewText).toContain("任务切换");
+    expect(previewText).toContain("托盘切换");
     expect(previewText).toContain("冲击一室");
-    expect(previewText).toContain("13:00-16:00");
-    expect(previewText).toContain("振动一室");
-    expect(previewText).toContain("TP-001");
-    expect(previewText).toContain("TP-003");
-    expect(previewText).toContain("8件");
+    expect(previewText).toContain("霉菌试验室");
+    expect(previewText).toContain("任务编号：TASK-IMPACT-A");
+    expect(previewText).toContain("任务编号：TASK-MOLD-A");
   });
 
   test("renders the sixth screen as a staging sample board with task tray switching and all-samples modal", async () => {
@@ -969,9 +1115,10 @@ describe("VisualizationPage runtime", () => {
       expect(wrapper.find('[data-testid="visual-combined-preview"]').text()).toContain("5/26");
 
       const fifthCombinedScreen = wrapper.findAll('[data-testid="visual-combined-screen"]')[4];
-      expect(fifthCombinedScreen.text()).toContain("任务编号");
-      expect(fifthCombinedScreen.text()).toContain("托盘信息");
-      expect(fifthCombinedScreen.text()).toContain("TP-003");
+      expect(fifthCombinedScreen.text()).toContain("LAB PROCESS");
+      expect(fifthCombinedScreen.text()).toContain("实验室流程监控屏B组");
+      expect(fifthCombinedScreen.findAll(".visual-lab-panel")).toHaveLength(2);
+      expect(fifthCombinedScreen.text()).not.toContain("今日任务计划总览屏");
 
       await wrapper.get('[data-testid="visual-combined-preview-close"]').trigger("click");
       expect(wrapper.find('[data-testid="visual-combined-preview"]').exists()).toBe(false);

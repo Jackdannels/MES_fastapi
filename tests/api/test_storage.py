@@ -97,6 +97,104 @@ def test_storage_bulk_update_rejects_lab_arrival_when_sample_has_no_dispatched_t
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_bulk_update_merges_stale_storage_room_snapshot_without_reverting_lab_progress(monkeypatch):
+    current_samples = [
+        {
+            "code": "SP-LAB",
+            "location": "盐雾试验室",
+            "status": "已到达实验室",
+            "flow_status": "已到达实验室",
+            "task_code": "TASK-CONCURRENT",
+            "updated_at": "2026-06-12 10:01:00",
+            "trays": [
+                {
+                    "tray_code": "TP-A",
+                    "status": "已到达实验室",
+                    "quantity": 1,
+                    "updated_at": "2026-06-12 10:01:00",
+                }
+            ],
+        },
+        {
+            "code": "SP-STAGING",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "送至暂存间",
+            "flow_status": "送至暂存间",
+            "task_code": "TASK-CONCURRENT",
+            "updated_at": "2026-06-12 10:00:00",
+            "trays": [
+                {
+                    "tray_code": "TP-B",
+                    "status": "送至暂存间",
+                    "quantity": 1,
+                    "updated_at": "2026-06-12 10:00:00",
+                }
+            ],
+        },
+    ]
+    current_events = [
+        {"id": "event-existing", "tray_code": "TP-A", "task_code": "TASK-CONCURRENT", "action": "stock_out", "time": "2026-06-12 10:00:30"}
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": current_samples,
+            "mes.staging_events": current_events,
+        },
+    )
+
+    stale_storage_room_samples = [
+        {
+            **deepcopy(current_samples[0]),
+            "location": "盐雾试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "updated_at": "2026-06-12 10:00:00",
+            "trays": [
+                {
+                    **deepcopy(current_samples[0]["trays"][0]),
+                    "status": "送至实验室",
+                    "updated_at": "2026-06-12 10:00:00",
+                }
+            ],
+        },
+        {
+            **deepcopy(current_samples[1]),
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+            "flow_status": "已到达暂存间",
+            "updated_at": "2026-06-12 10:02:00",
+            "trays": [
+                {
+                    **deepcopy(current_samples[1]["trays"][0]),
+                    "status": "已到达暂存间",
+                    "updated_at": "2026-06-12 10:02:00",
+                }
+            ],
+        },
+    ]
+    stale_storage_room_events = [
+        {"id": "event-new", "tray_code": "TP-B", "task_code": "TASK-CONCURRENT", "action": "stock_in", "time": "2026-06-12 10:02:00"}
+    ]
+
+    response = client.put(
+        "/api/storage",
+        json={
+            "mes.samples": stale_storage_room_samples,
+            "mes.staging_events": stale_storage_room_events,
+        },
+    )
+
+    assert response.status_code == 200
+    samples = {sample["code"]: sample for sample in storage.read("mes.samples")}
+    assert samples["SP-LAB"]["status"] == "已到达实验室"
+    assert samples["SP-LAB"]["trays"][0]["status"] == "已到达实验室"
+    assert samples["SP-STAGING"]["status"] == "已到达暂存间"
+    assert samples["SP-STAGING"]["trays"][0]["status"] == "已到达暂存间"
+    event_ids = [event["id"] for event in storage.read("mes.staging_events")]
+    assert event_ids == ["event-existing", "event-new"]
+
+
 def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
     samples = [
         {
