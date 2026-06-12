@@ -82,6 +82,29 @@ const isReturnedTaskRecord = (task, schedules) => {
     (entry) => normalizeText(entry?.task_code) === taskCode && isRetentionSchedule(entry),
   );
 };
+const trayIsReturned = (tray) => normalizeStatusLabel(tray?.status) === STATUS_RETENTION;
+const collectReturnedTaskCodesFromSamples = (samples) => {
+  const trayReturnStatsByTaskCode = new Map();
+  (Array.isArray(samples) ? samples : []).forEach((sample) => {
+    const taskCode = normalizeText(sample?.task_code);
+    if (!taskCode) {
+      return;
+    }
+    const trays = Array.isArray(sample?.trays) ? sample.trays : [];
+    trays.forEach((tray) => {
+      const stats = trayReturnStatsByTaskCode.get(taskCode) || { returned: 0, total: 0 };
+      stats.total += 1;
+      if (trayIsReturned(tray)) {
+        stats.returned += 1;
+      }
+      trayReturnStatsByTaskCode.set(taskCode, stats);
+    });
+  });
+
+  return [...trayReturnStatsByTaskCode.entries()]
+    .filter(([, stats]) => stats.total > 0 && stats.returned === stats.total)
+    .map(([taskCode]) => taskCode);
+};
 const hasFormalScheduleForExperiment = (schedules, taskCode, experimentCode) =>
   (Array.isArray(schedules) ? schedules : []).some(
     (entry) =>
@@ -279,11 +302,14 @@ function resolveDeviceDotClass(status) {
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
 function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, experimentRunTrays, samples, experimentTrays, conflicts, now = Date.now() }) {
+  const sampleList = Array.isArray(samples) ? samples : [];
   const returnedTaskCodes = new Set(
-    (Array.isArray(tasks) ? tasks : [])
-      .filter((task) => isReturnedTaskRecord(task, schedules))
-      .map((task) => normalizeText(task?.code))
-      .filter(Boolean),
+    [
+      ...(Array.isArray(tasks) ? tasks : [])
+        .filter((task) => isReturnedTaskRecord(task, schedules))
+        .map((task) => normalizeText(task?.code)),
+      ...collectReturnedTaskCodesFromSamples(sampleList),
+    ].filter(Boolean),
   );
   const taskList = (Array.isArray(tasks) ? tasks : []).filter((task) => !returnedTaskCodes.has(normalizeText(task?.code)));
   const scheduleList = Array.isArray(schedules) ? schedules : [];
@@ -291,7 +317,6 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   const streamList = Array.isArray(streams) ? streams : [];
   const experimentList = Array.isArray(experiments) ? experiments : [];
   const activeExperimentList = experimentList.filter((experiment) => !returnedTaskCodes.has(normalizeText(experiment?.task_code)));
-  const sampleList = Array.isArray(samples) ? samples : [];
   const experimentTrayList = Array.isArray(experimentTrays) ? experimentTrays : [];
   const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
   const experimentRunTrayList = Array.isArray(experimentRunTrays) ? experimentRunTrays : [];
@@ -364,7 +389,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
     };
   });
 
-  const unscheduledExperimentItems = experimentList
+  const unscheduledExperimentItems = activeExperimentList
     .map((experiment) => {
       const taskCode = normalizeText(experiment?.task_code);
       const experimentCode = normalizeText(experiment?.experiment_code);

@@ -173,6 +173,69 @@ describe("dashboard model", () => {
     expect(viewModel.unscheduledExperimentItems).toEqual([]);
   });
 
+  test("treats all-returned task samples as terminal even when task and schedules are stale", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-06-021",
+          source: "外部委托",
+          status: "待排程",
+          transfer_status: "已入库",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          task_code: "SYLU-2026-06-021",
+          status: "厂家收回",
+          flow_status: "厂家收回",
+          location: "厂家收回",
+          history: [{ action: "任务已确认入库", time: "2026-06-12T13:40:00.000Z" }],
+          trays: [
+            { tray_code: "SYLU-2026-06-021-TP-001", status: "厂家收回" },
+          ],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "冲击试验",
+          status: "待排程",
+          unscheduled_since: "2026-06-12T13:40:00.000Z",
+        },
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-B",
+          experiment_name: "霉菌试验",
+          status: "待排程",
+          unscheduled_since: "2026-06-12T13:40:00.000Z",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "冲击一室",
+          status: "已排程",
+        },
+      ],
+      devices: [{ code: "冲击一室", status: "可用" }],
+      streams: [],
+      now: Date.parse("2026-06-12T14:10:00.000Z"),
+    });
+
+    expect(viewModel.summaryCards.intakeCount).toBe(0);
+    expect(viewModel.summaryCards.scheduledCount).toBe(0);
+    expect(viewModel.summaryCards.unscheduledCount).toBe(0);
+    expect(viewModel.summaryCards.deviceCount).toBe(0);
+    expect(viewModel.taskRows).toEqual([]);
+    expect(viewModel.unscheduledExperimentItems).toEqual([]);
+    expect(viewModel.deviceItems).toEqual([
+      expect.objectContaining({ code: "冲击一室", status: "可用" }),
+    ]);
+  });
+
   test("counts formal schedules once per task instead of once per schedule record", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

@@ -70,6 +70,8 @@ const synchronizeSamplesForTrayCodes = (input = {}) => {
   const historyAction = normalizeText(input.historyAction);
   const historyDetail = normalizeText(input.historyDetail);
   const clearTrayTarget = input.clearTrayTarget === true;
+  const targetLab = normalizeText(input.targetLab);
+  const targetExperimentCode = normalizeText(input.targetExperimentCode);
 
   if (trayCodes.size === 0 || !nextStatus) {
     return { samples, updatedCount: 0 };
@@ -96,6 +98,15 @@ const synchronizeSamplesForTrayCodes = (input = {}) => {
         delete nextTray.targetLab;
         delete nextTray.target_experiment_code;
         delete nextTray.targetExperimentCode;
+      } else {
+        if (targetLab) {
+          nextTray.target_lab = targetLab;
+          delete nextTray.targetLab;
+        }
+        if (targetExperimentCode) {
+          nextTray.target_experiment_code = targetExperimentCode;
+          delete nextTray.targetExperimentCode;
+        }
       }
       return nextTray;
     });

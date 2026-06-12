@@ -126,6 +126,8 @@ const visualizationFlowStatusRank = (status) => {
   }
   return FLOW_STEP_RANK_BY_LABEL.get(normalized) ?? -1;
 };
+const CENTRAL_RESTORE_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
+const isCentralRestoreStatus = (status) => CENTRAL_RESTORE_STATUSES.has(normalizeLifecycleStatus("", status));
 
 const resolveVisualizationFlowTime = ({ sample, status, tray, trayCode }) => {
   const normalizedStatus = normalizeLifecycleStatus("", status);
@@ -161,40 +163,46 @@ const resolveVisualizationFlowTime = ({ sample, status, tray, trayCode }) => {
   return candidateTimes.length > 0 ? Math.max(...candidateTimes) : 0;
 };
 
-const resolveActiveFlowStepTime = (flow) => {
-  const activeStep = asArray(flow?.steps).find((step) => step?.active);
-  return parseTimeValue(activeStep?.time);
-};
-
-const shouldReplaceVisualizationTrayFlow = (current, candidate) => {
-  if (!candidate?.hasActiveFlow) {
-    return false;
-  }
-  if (!current?._hasActiveFlow) {
+const shouldReplaceVisualizationTrayEntry = (current, candidate) => {
+  if (!current) {
     return true;
   }
-  const candidateTime = Number(candidate.flowTime) || 0;
-  const currentTime = Number(current?._flowTime) || 0;
+  const candidateRank = visualizationFlowStatusRank(candidate.lifecycleStatus);
+  const currentRank = visualizationFlowStatusRank(current.lifecycleStatus);
+  const candidateTime = resolveVisualizationFlowTime(candidate);
+  const currentTime = resolveVisualizationFlowTime(current);
   if (candidateTime || currentTime) {
     if (candidateTime !== currentTime) {
       return candidateTime > currentTime;
     }
-    if (
-      ["到货", "已接收", "送至暂存间", "已到达暂存间"].includes(normalizeLifecycleStatus("", current?.canonicalStatus))
-      && !["到货", "已接收", "送至暂存间", "已到达暂存间"].includes(normalizeLifecycleStatus("", candidate?.flowStatus))
-      && candidate.flowRank >= (FLOW_STEP_RANK_BY_LABEL.get("实验已完成") ?? 9)
-    ) {
+    const completedRank = FLOW_STEP_RANK_BY_LABEL.get("实验已完成") ?? 9;
+    const candidateIsCentralRestore = isCentralRestoreStatus(candidate.lifecycleStatus);
+    const currentIsCentralRestore = isCentralRestoreStatus(current.lifecycleStatus);
+    if (currentIsCentralRestore && !candidateIsCentralRestore && candidateRank >= completedRank) {
       return false;
     }
-    return candidate.flowRank > (Number(current?._flowRank) || -1);
+    if (candidateIsCentralRestore && !currentIsCentralRestore && currentRank >= completedRank) {
+      return true;
+    }
   }
-  return candidate.flowRank > (Number(current?._flowRank) || -1);
+  return candidateRank > currentRank;
 };
 
-const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRuns, experimentRunTrays, experimentTrays, schedules, stagingEvents }) => {
+const buildTrayRowsForLab = ({
+  lab,
+  labName,
+  samples,
+  experiments,
+  experimentRuns,
+  experimentRunTrays,
+  experimentTrays,
+  schedules,
+  stagingEvents,
+  buildTrayFlow = buildTrayFlowView,
+}) => {
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
-  const trayMap = new Map();
+  const trayAggregates = new Map();
 
   asArray(samples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code || sample?.sample_code);
@@ -244,75 +252,64 @@ const buildTrayRowsForLab = ({ lab, labName, samples, experiments, experimentRun
         return;
       }
 
-      const flow = buildTrayFlowView({
+      const entry = {
         currentExperimentCode: activeTargetExperimentCode,
         dispatchTargetLab: activeTargetLab,
-        experimentRuns,
-        experimentRunTrays,
-        experimentTrays,
-        experiments,
-        location: lifecycleLocation,
-        samples,
-        schedules,
+        lifecycleLocation,
+        lifecycleStatus,
+        sample,
         status: lifecycleStatus,
-        taskCode,
+        tray,
         trayCode,
-      });
-      const flowStatus = flow.canonicalStatus || flow.status || lifecycleStatus;
-      const flowCandidate = {
-        flow,
-        flowRank: visualizationFlowStatusRank(flowStatus),
-        flowStatus,
-        flowTime: resolveActiveFlowStepTime(flow)
-          || resolveVisualizationFlowTime({
-            sample,
-            status: flowStatus,
-            tray,
-            trayCode,
-          }),
-        hasActiveFlow: (flow.steps || []).some((step) => step.active),
       };
-
-      if (!trayMap.has(trayMapKey)) {
-        trayMap.set(trayMapKey, {
-          canonicalStatus: flow.canonicalStatus || flow.status || "-",
-          _flowRank: flowCandidate.flowRank,
-          _flowTime: flowCandidate.flowTime,
-          _hasActiveFlow: flowCandidate.hasActiveFlow,
+      if (!trayAggregates.has(trayMapKey)) {
+        trayAggregates.set(trayMapKey, {
           quantity: 0,
-          sampleCodes: [],
-          status: flow.status || "-",
-          steps: asArray(flow.steps),
+          representativeEntry: null,
+          sampleCodeSet: new Set(),
           taskCode,
           trayCode,
         });
       }
-      const current = trayMap.get(trayMapKey);
-      current.quantity += normalizeQuantity(tray?.quantity);
-      if (sampleCode && !current.sampleCodes.includes(sampleCode)) {
-        current.sampleCodes.push(sampleCode);
+      const aggregate = trayAggregates.get(trayMapKey);
+      aggregate.quantity += normalizeQuantity(tray?.quantity);
+      if (sampleCode) {
+        aggregate.sampleCodeSet.add(sampleCode);
       }
-      if (shouldReplaceVisualizationTrayFlow(current, flowCandidate)) {
-        current.canonicalStatus = flow.canonicalStatus || current.canonicalStatus;
-        current._flowRank = flowCandidate.flowRank;
-        current._flowTime = flowCandidate.flowTime;
-        current._hasActiveFlow = flowCandidate.hasActiveFlow;
-        current.status = flow.status || current.status;
-        current.steps = asArray(flow.steps);
+      if (shouldReplaceVisualizationTrayEntry(aggregate.representativeEntry, entry)) {
+        aggregate.representativeEntry = entry;
       }
     });
   });
 
-  return Array.from(trayMap.values())
-    .map((tray) => ({
-      canonicalStatus: tray.canonicalStatus,
-      quantity: tray.quantity,
-      sampleCodes: tray.sampleCodes.slice().sort(compareText),
-      status: tray.status,
-      steps: tray.steps,
-      taskCode: tray.taskCode,
-      trayCode: tray.trayCode,
-    }))
+  return Array.from(trayAggregates.values())
+    .map((aggregate) => {
+      const entry = aggregate.representativeEntry || {};
+      const flow = buildTrayFlow({
+        currentExperimentCode: entry.currentExperimentCode,
+        dispatchTargetLab: entry.dispatchTargetLab,
+        experimentRuns,
+        experimentRunTrays,
+        experimentTrays,
+        experiments,
+        location: entry.lifecycleLocation,
+        samples,
+        schedules,
+        status: entry.lifecycleStatus,
+        taskCode: aggregate.taskCode,
+        trayCode: aggregate.trayCode,
+      });
+
+      return {
+        canonicalStatus: flow.canonicalStatus || flow.status || "-",
+        quantity: aggregate.quantity,
+        sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
+        status: flow.status || "-",
+        steps: asArray(flow.steps),
+        taskCode: aggregate.taskCode,
+        trayCode: aggregate.trayCode,
+      };
+    })
     .sort((left, right) => compareText(left.trayCode, right.trayCode));
 };
 
@@ -343,6 +340,7 @@ function buildLabProcessPanels(input = {}) {
       experimentRuns,
       experimentRunTrays,
       experimentTrays,
+      buildTrayFlow: input.buildTrayFlow,
       stagingEvents: input.stagingEvents || input.staging_events,
       schedules,
     });

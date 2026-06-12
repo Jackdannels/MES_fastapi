@@ -10,7 +10,11 @@ from app.db.session import get_connection
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
 )
-from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.laboratory_operations import (
+    acquire_laboratory_storage_commit_lock,
+    merge_scoped_samples,
+    scope_snapshot_samples_for_experiment as scope_laboratory_samples_for_experiment,
+)
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
 
@@ -186,37 +190,6 @@ def storage_completion_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[
     }
 
 
-def sample_code(sample: dict[str, Any]) -> str:
-    return normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sampleCode") or sample.get("id"))
-
-
-def sample_identity(sample: dict[str, Any]) -> tuple[str, str]:
-    return (
-        normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo")),
-        sample_code(sample),
-    )
-
-
-def sample_tray_codes(sample: dict[str, Any]) -> set[str]:
-    return {
-        normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
-        for tray in sample.get("trays", [])
-        if isinstance(tray, dict)
-        and normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
-    }
-
-
-def tray_target_experiment_code(tray: dict[str, Any]) -> str:
-    return normalize_text(
-        tray.get("target_experiment_code")
-        or tray.get("targetExperimentCode")
-        or tray.get("experiment_code")
-        or tray.get("experimentCode")
-        or tray.get("experiment_no")
-        or tray.get("experimentNo")
-    )
-
-
 def scope_snapshot_samples_for_experiment(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
@@ -224,101 +197,13 @@ def scope_snapshot_samples_for_experiment(
     experiment_code: str,
     tray_codes: list[str],
 ) -> dict[str, list[dict[str, Any]]]:
-    normalized_task_code = normalize_text(task_code)
-    normalized_experiment_code = normalize_text(experiment_code)
-    scoped_tray_codes = {normalize_text(code) for code in tray_codes if normalize_text(code)}
-    if not normalized_task_code or not normalized_experiment_code or not scoped_tray_codes:
-        return snapshot
-
-    experiment_sample_codes = {
-        normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
-        for item in snapshot.get("experiment_samples", [])
-        if normalize_text(item.get("task_code") or item.get("taskCode") or item.get("task_no") or item.get("taskNo")) == normalized_task_code
-        and normalize_text(
-            item.get("experiment_code")
-            or item.get("experimentCode")
-            or item.get("experiment_no")
-            or item.get("experimentNo")
-        ) == normalized_experiment_code
-        and normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
-    }
-    has_task_sample_relations = any(
-        normalize_text(item.get("task_code") or item.get("taskCode") or item.get("task_no") or item.get("taskNo")) == normalized_task_code
-        and normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
-        for item in snapshot.get("experiment_samples", [])
+    return scope_laboratory_samples_for_experiment(
+        snapshot,
+        task_code=task_code,
+        experiment_code=experiment_code,
+        tray_codes=tray_codes,
+        legacy_fallback_hit_id="backend.mq.scope_sample.legacy_tray_target_fallback",
     )
-
-    experiments_by_tray: dict[str, set[str]] = {}
-    for item in snapshot.get("experiment_trays", []):
-        relation_task_code = normalize_text(item.get("task_code") or item.get("taskCode") or item.get("task_no") or item.get("taskNo"))
-        tray_code = normalize_text(item.get("tray_code") or item.get("trayCode") or item.get("tray_no") or item.get("trayNo"))
-        experiment_no = normalize_text(
-            item.get("experiment_code")
-            or item.get("experimentCode")
-            or item.get("experiment_no")
-            or item.get("experimentNo")
-        )
-        if relation_task_code == normalized_task_code and tray_code in scoped_tray_codes and experiment_no:
-            experiments_by_tray.setdefault(tray_code, set()).add(experiment_no)
-
-    eligible_sample_codes: set[str] = set()
-    explicit_tray_codes: set[str] = set()
-    fallback_sample_codes_by_tray: dict[str, set[str]] = {}
-    for sample in snapshot.get("samples", []):
-        if normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo")) != normalized_task_code:
-            continue
-        current_sample_code = sample_code(sample)
-        matching_tray_codes = sample_tray_codes(sample).intersection(scoped_tray_codes)
-        if not matching_tray_codes:
-            continue
-        if current_sample_code in experiment_sample_codes:
-            eligible_sample_codes.add(current_sample_code)
-            explicit_tray_codes.update(matching_tray_codes)
-            continue
-        for tray in sample.get("trays", []):
-            if not isinstance(tray, dict):
-                continue
-            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
-            if tray_code not in matching_tray_codes:
-                continue
-            target_experiment_code = tray_target_experiment_code(tray)
-            if target_experiment_code == normalized_experiment_code:
-                eligible_sample_codes.add(current_sample_code)
-                explicit_tray_codes.add(tray_code)
-            elif not target_experiment_code:
-                fallback_sample_codes_by_tray.setdefault(tray_code, set()).add(current_sample_code)
-
-    if not has_task_sample_relations:
-        for tray_code, fallback_sample_codes in fallback_sample_codes_by_tray.items():
-            assigned_experiments = experiments_by_tray.get(tray_code, set())
-            if tray_code in explicit_tray_codes:
-                continue
-            if assigned_experiments and assigned_experiments != {normalized_experiment_code}:
-                continue
-            if fallback_sample_codes:
-                record_legacy_fallback_hit(
-                    "backend.mq.scope_sample.legacy_tray_target_fallback",
-                    reason="missing_experiment_sample_relation",
-                )
-            eligible_sample_codes.update(code for code in fallback_sample_codes if code)
-
-    scoped_samples = [
-        dict(sample)
-        for sample in snapshot.get("samples", [])
-        if sample_code(sample) in eligible_sample_codes
-    ]
-    return {**snapshot, "samples": scoped_samples}
-
-
-def merge_scoped_samples(
-    original_samples: list[dict[str, Any]],
-    scoped_samples: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    scoped_by_identity = {sample_identity(sample): sample for sample in scoped_samples if sample_identity(sample)[1]}
-    return [
-        dict(scoped_by_identity.get(sample_identity(sample), sample))
-        for sample in original_samples
-    ]
 
 
 def run_context_from_snapshot(snapshot: dict[str, list[dict[str, Any]]], run_no: str) -> dict[str, Any]:

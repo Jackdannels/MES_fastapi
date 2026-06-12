@@ -98,6 +98,52 @@ describe("visualization model", () => {
     });
   });
 
+  test("buildLabProcessPanels builds one flow per task tray even when many samples share it", () => {
+    const flowCalls = [];
+    const samples = Array.from({ length: 99 }, (_, index) => ({
+      code: `SAMPLE-${String(index + 1).padStart(3, "0")}`,
+      task_code: "TASK-BATCH",
+      location: "振动一室",
+      status: "实验进行中",
+      trays: [{ tray_code: "TRAY-BATCH-001", status: "实验进行中", quantity: 1 }],
+    }));
+    const panels = buildLabProcessPanels({
+      buildTrayFlow: (input) => {
+        flowCalls.push(input);
+        return {
+          canonicalStatus: "振动试验进行中",
+          status: "振动试验进行中",
+          steps: [{ active: true, label: "振动试验进行中", reached: true }],
+        };
+      },
+      labNames: ["振动一室"],
+      experiments: [
+        { task_code: "TASK-BATCH", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-BATCH", experiment_code: "EXP-VIB", tray_code: "TRAY-BATCH-001" },
+      ],
+      schedules: [
+        { task_code: "TASK-BATCH", experiment_code: "EXP-VIB", device: "振动一室", status: "实验进行中" },
+      ],
+      samples,
+    });
+
+    expect(flowCalls).toHaveLength(1);
+    expect(flowCalls[0]).toEqual(expect.objectContaining({
+      taskCode: "TASK-BATCH",
+      trayCode: "TRAY-BATCH-001",
+    }));
+    expect(panels[0].trays).toEqual([
+      expect.objectContaining({
+        quantity: 99,
+        sampleCodes: expect.arrayContaining(["SAMPLE-001", "SAMPLE-099"]),
+        status: "振动试验进行中",
+        trayCode: "TRAY-BATCH-001",
+      }),
+    ]);
+  });
+
   test("buildLabProcessPanels matches tray relations by schedule lab code before display device text", () => {
     const panels = buildLabProcessPanels({
       labNames: [{ code: "LAB_SALT", name: "Salt Spray Lab" }],

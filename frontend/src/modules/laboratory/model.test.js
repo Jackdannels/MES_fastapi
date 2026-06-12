@@ -826,6 +826,200 @@ describe("laboratory model", () => {
     expect(getLaboratoryOperationLock([impactGhost, vibrationCurrent], vibrationCurrent, { name: "振动一室" })).toEqual({ active: false });
   });
 
+  test("operation lock ignores a withdrawn shared-tray experiment after a later laboratory comparison", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      labName: "振动一室",
+      selectedTaskCode: `${taskCode}::${taskCode}-D`,
+      tasks: [{ code: taskCode, name: "撤回后重进试验任务" }],
+      schedules: [
+        {
+          id: "schedule-vibration",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          device: "振动一室",
+          start_at: "2026-06-12 15:13:00",
+          end_at: "2026-06-12 18:43:00",
+        },
+        {
+          id: "schedule-salt",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          device: "盐雾试验室",
+          start_at: "2026-06-12 15:13:00",
+          end_at: "2026-06-12 18:43:00",
+        },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "盐雾试验", status: "实验进行中" },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, experiment_name: "振动试验", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, tray_code: trayCode },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "振动一室",
+          owner: "周工",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: trayCode }],
+          history: [
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 振动试验 / 已到达实验室 / 托盘：${trayCode}`,
+              location: "振动一室",
+              status: "已到达实验室",
+              time: "2026-06-12 15:19:15",
+              tray_code: trayCode,
+            },
+            {
+              action: "任务切换撤回",
+              detail: `${taskCode} / 盐雾试验 / 撤回至冲击试验已完成（试验间内撤回当前实验任务）`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-06-12 15:19:08",
+              tray_code: trayCode,
+            },
+            {
+              action: "样品安装",
+              detail: `${taskCode} / 盐雾试验 / 工装夹具安装 / 托盘：${trayCode}`,
+              location: "盐雾试验室",
+              status: "工装夹具安装",
+              time: "2026-06-12 15:19:04",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(getLaboratoryActionState(workflow).canInstallSample).toBe(true);
+    expect(getLaboratoryOperationLock(view.allScheduleRows, view.currentTask, { name: "振动一室" })).toEqual({ active: false });
+  });
+
+  test("operation lock ignores a withdrawn old experiment when run trays exclude the current tray", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const saltTrayCode = `${taskCode}-TP-001`;
+    const vibrationTrayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      labName: "振动一室",
+      selectedTaskCode: `${taskCode}::${taskCode}-D`,
+      tasks: [{ code: taskCode, name: "撤回后进入振动试验" }],
+      schedules: [
+        {
+          id: "schedule-salt",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          device: "盐雾试验室",
+          start_at: "2026-06-12 15:13:00",
+          end_at: "2026-06-12 18:43:00",
+        },
+        {
+          id: "schedule-vibration",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-D`,
+          device: "振动一室",
+          start_at: "2026-06-12 15:13:00",
+          end_at: "2026-06-12 18:43:00",
+        },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "盐雾试验", status: "实验进行中" },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, experiment_name: "振动试验", status: "已排程" },
+      ],
+      experimentRuns: [
+        {
+          run_no: "run-salt-c",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          device: "盐雾试验室",
+          status: "实验进行中",
+          started_at: "2026-06-12 15:18:50",
+          tray_codes: [saltTrayCode, vibrationTrayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-salt-c",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-C`,
+          tray_code: saltTrayCode,
+          run_tray_status: "实验进行中",
+          status: "实验进行中",
+          started_at: "2026-06-12 15:18:50",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: vibrationTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: saltTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: vibrationTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, tray_code: vibrationTrayCode },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          location: "振动一室",
+          owner: "周工",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "已到达实验室",
+              target_experiment_code: `${taskCode}-D`,
+              target_lab: "振动一室",
+              tray_code: vibrationTrayCode,
+            },
+          ],
+          history: [
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 振动试验 / 已到达实验室 / 托盘：${vibrationTrayCode}`,
+              location: "振动一室",
+              status: "已到达实验室",
+              time: "2026-06-12 15:19:15",
+              tray_code: vibrationTrayCode,
+            },
+            {
+              action: "任务切换撤回",
+              detail: `${taskCode} / 盐雾试验 / 撤回至冲击试验已完成`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-06-12 15:19:08",
+              tray_code: vibrationTrayCode,
+            },
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 盐雾试验 / 已到达实验室 / 托盘：${vibrationTrayCode}`,
+              location: "盐雾试验室",
+              status: "已到达实验室",
+              time: "2026-06-12 15:18:45",
+              tray_code: vibrationTrayCode,
+            },
+          ],
+        },
+      ],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      device: "振动一室",
+      experimentCode: `${taskCode}-D`,
+    }));
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: false,
+      canInstallSample: true,
+      canMarkReady: false,
+    });
+    expect(getLaboratoryOperationLock(view.allScheduleRows, view.currentTask, { name: "振动一室" })).toEqual({ active: false });
+  });
+
   test("defaults to the prepared task, otherwise the earliest scheduled task", () => {
     const baseInput = {
       experimentTrays: [
@@ -4274,6 +4468,46 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("applyLaboratoryTaskStep rewrites stale tray target to the current experiment", () => {
+    const updatedSamples = applyLaboratoryTaskStep({
+      currentTask: {
+        device: "高低温湿热一室",
+        experimentCode: "SYLU-2026-06-021-C",
+        experimentName: "高低温湿热试验",
+        taskCode: "SYLU-2026-06-021",
+        trayCodes: ["SYLU-2026-06-021-TP-001"],
+      },
+      historyAction: "任务比对",
+      nextStatus: "已到达实验室",
+      now: "2026-06-12 13:50:58",
+      samples: [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          flow_status: "已到达实验室",
+          history: [],
+          location: "高低温湿热一室",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-06-021",
+          trays: [
+            {
+              quantity: 1,
+              status: "已到达实验室",
+              target_experiment_code: "SYLU-2026-06-021-F",
+              target_lab: "温度冲击一室",
+              tray_code: "SYLU-2026-06-021-TP-001",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0].trays[0]).toEqual(expect.objectContaining({
+      status: "已到达实验室",
+      target_experiment_code: "SYLU-2026-06-021-C",
+      target_lab: "高低温湿热一室",
+    }));
+  });
+
   test("resetLaboratoryExperimentTrays only resets trays for the current task and experiment", () => {
     const updatedSamples = resetLaboratoryExperimentTrays({
       currentTask: {
@@ -5231,6 +5465,100 @@ describe("laboratory model", () => {
         ok: false,
         trayCode,
       }));
+    });
+  });
+
+  test("allows installation when current experiment comparison history overrides stale tray target", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-B`,
+          tray_code: trayCode,
+          status: "实验已完成",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: `${taskCode}-F`,
+          tray_code: trayCode,
+          status: "实验已完成",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-F`, tray_code: trayCode },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "霉菌试验", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "高低温湿热试验", status: "已排程" },
+        { task_code: taskCode, experiment_code: `${taskCode}-F`, experiment_name: "温度冲击试验", status: "实验已完成" },
+      ],
+      labCode: "LAB_HOT_HUMID",
+      labName: "高低温湿热一室",
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "已到达实验室",
+          history: [
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 高低温湿热试验 / 已到达实验室`,
+              location: "高低温湿热一室",
+              status: "已到达实验室",
+              time: "2026-06-12 13:50:58",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 温度冲击试验 / 实验已完成`,
+              location: "温度冲击一室",
+              status: "实验已完成",
+              time: "2026-06-12 13:49:42",
+              tray_code: trayCode,
+            },
+          ],
+          location: "高低温湿热一室",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "已到达实验室",
+              target_experiment_code: `${taskCode}-F`,
+              target_lab: "温度冲击一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "高低温湿热一室",
+          experiment_code: `${taskCode}-C`,
+          lab_code: "LAB_HOT_HUMID",
+          start_at: "2026-06-12 13:46:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "复合实验任务" }],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask.experimentCode).toBe(`${taskCode}-C`);
+    expect(view.currentTask.trayRows[0]).toEqual(expect.objectContaining({
+      targetExperimentCode: `${taskCode}-C`,
+      targetLab: "高低温湿热一室",
+      trayStatus: "已到达实验室",
+    }));
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: false,
+      canInstallSample: true,
+      canMarkReady: false,
     });
   });
 

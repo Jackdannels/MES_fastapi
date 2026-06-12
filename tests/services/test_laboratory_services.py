@@ -1,6 +1,7 @@
 import pytest
 
 from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fallback_hits
+from app.services import mq_event_processor
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
@@ -195,6 +196,96 @@ def test_ready_clears_fixture_ready_marker_after_countdown():
     assert tray["status"] == "实验准备就绪"
     assert "fixture_ready" not in tray
     assert "fixtureReady" not in tray
+
+
+def test_install_after_current_recompare_overwrites_stale_experiment_target():
+    current_sample = _sample("SP-CURRENT", "TASK-1", "TP-1", "已到达实验室", "振动一室")
+    current_sample["trays"][0]["target_experiment_code"] = "EXP-SALT"
+    current_sample["trays"][0]["target_lab"] = "盐雾试验室"
+    returned_sample = _sample("SP-SALT", "TASK-1", "TP-1", "厂家收回", "厂家收回")
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-VIB", "experiment_name": "振动试验"},
+        ],
+        "schedules": [{"id": "SCH-VIB", "task_code": "TASK-1", "experiment_code": "EXP-VIB", "device": "振动一室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-SALT",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-SALT",
+                "tray_code": "TP-1",
+                "run_tray_status": "厂家收回",
+            }
+        ],
+        "experiment_trays": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "tray_code": "TP-1"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-VIB", "tray_code": "TP-1"},
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "sample_code": "SP-SALT"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-VIB", "sample_code": "SP-CURRENT"},
+        ],
+        "samples": [returned_sample, current_sample],
+    }
+
+    result = apply_laboratory_task_operation(
+        snapshot,
+        operation_type="install",
+        task_code="TASK-1",
+        experiment_code="EXP-VIB",
+        lab_name="振动一室",
+        tray_codes=["TP-1"],
+        occurred_at="2026-06-12 14:20:00",
+    )
+
+    returned, current = result["samples"]
+    assert returned["status"] == "厂家收回"
+    assert returned["trays"][0]["status"] == "厂家收回"
+    assert current["status"] == "工装夹具安装"
+    assert current["trays"][0]["status"] == "工装夹具安装"
+    assert current["trays"][0]["target_experiment_code"] == "EXP-VIB"
+    assert current["trays"][0]["target_lab"] == "振动一室"
+
+
+def test_mqtt_sample_scope_delegates_to_shared_laboratory_scope(monkeypatch):
+    calls = []
+    snapshot = {"samples": []}
+    scoped = {"samples": [{"code": "SP-1"}]}
+
+    def fake_scope(snapshot_arg, *, task_code, experiment_code, tray_codes, legacy_fallback_hit_id=""):
+        calls.append(
+            {
+                "snapshot": snapshot_arg,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "tray_codes": tray_codes,
+                "legacy_fallback_hit_id": legacy_fallback_hit_id,
+            }
+        )
+        return scoped
+
+    monkeypatch.setattr(mq_event_processor, "scope_laboratory_samples_for_experiment", fake_scope)
+
+    result = mq_event_processor.scope_snapshot_samples_for_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-VIB",
+        tray_codes=["TP-1"],
+    )
+
+    assert result is scoped
+    assert calls == [
+        {
+            "snapshot": snapshot,
+            "task_code": "TASK-1",
+            "experiment_code": "EXP-VIB",
+            "tray_codes": ["TP-1"],
+            "legacy_fallback_hit_id": "backend.mq.scope_sample.legacy_tray_target_fallback",
+        }
+    ]
 
 
 def test_start_logs_legacy_tray_sample_fallback_without_changing_scope():

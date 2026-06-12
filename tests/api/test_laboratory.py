@@ -735,6 +735,67 @@ def test_laboratory_compare_operation_clears_stale_fixture_ready(monkeypatch):
     assert "fixture_ready" not in tray
 
 
+def test_laboratory_compare_operation_rewrites_stale_tray_target(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"id": "task-stale-target", "code": "TASK-STALE", "name": "旧目标字段任务"}],
+            "mes.experiments": [
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "experiment_name": "高低温湿热试验"},
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-TEMP", "experiment_name": "温度冲击试验"},
+            ],
+            "mes.schedules": [
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "device": "高低温湿热一室"},
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "tray_code": "TP-STALE"},
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-TEMP", "tray_code": "TP-STALE"},
+            ],
+            "mes.experiment_samples": [
+                {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "sample_code": "SP-STALE"},
+            ],
+            "mes.samples": [
+                {
+                    "id": "sample-stale-target",
+                    "code": "SP-STALE",
+                    "task_code": "TASK-STALE",
+                    "status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "location": "高低温湿热一室",
+                    "trays": [
+                        {
+                            "quantity": 1,
+                            "status": "已到达实验室",
+                            "target_experiment_code": "EXP-TEMP",
+                            "target_lab": "温度冲击一室",
+                            "tray_code": "TP-STALE",
+                        }
+                    ],
+                    "history": [],
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "compare",
+            "taskCode": "TASK-STALE",
+            "experimentCode": "EXP-HUMID",
+            "labName": "高低温湿热一室",
+            "trayCodes": ["TP-STALE"],
+            "occurredAt": "2026-06-12 13:50:58",
+        },
+    )
+
+    assert response.status_code == 200
+    tray = storage.read("mes.samples")[0]["trays"][0]
+    assert tray["status"] == "已到达实验室"
+    assert tray["target_experiment_code"] == "EXP-HUMID"
+    assert tray["target_lab"] == "高低温湿热一室"
+
+
 def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_commit():
     class DelayedFirstWriteStorage(FakeLaboratoryStorage):
         def __init__(self, payloads):

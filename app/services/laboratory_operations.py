@@ -4,6 +4,7 @@ import threading
 from contextlib import ExitStack, contextmanager
 from typing import Any, Callable, Iterable
 
+from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.core.storage_backend import normalize_storage_payload
 from app.core.time_utils import format_business_datetime, now_business_text
 
@@ -120,6 +121,7 @@ def scope_snapshot_samples_for_experiment(
     task_code: str,
     experiment_code: str,
     tray_codes: list[str],
+    legacy_fallback_hit_id: str = "",
 ) -> dict[str, list[dict[str, Any]]]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
@@ -182,6 +184,11 @@ def scope_snapshot_samples_for_experiment(
                 continue
             if assigned_experiments and assigned_experiments != {normalized_experiment_code}:
                 continue
+            if fallback_sample_codes and legacy_fallback_hit_id:
+                record_legacy_fallback_hit(
+                    legacy_fallback_hit_id,
+                    reason="missing_experiment_sample_relation",
+                )
             eligible_sample_codes.update(code for code in fallback_sample_codes if code)
 
     scoped_samples = [
@@ -293,6 +300,11 @@ def apply_laboratory_task_operation(
             else:
                 tray["status"] = next_status
                 tray["updated_at"] = occurred_time
+                tray["target_experiment_code"] = normalized_experiment_code
+                if target_lab_name:
+                    tray["target_lab"] = target_lab_name
+                tray.pop("targetExperimentCode", None)
+                tray.pop("targetLab", None)
                 clear_fixture_ready_marker(tray)
             touched = True
             touched_tray_codes.add(tray_code)
