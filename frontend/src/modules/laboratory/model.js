@@ -25,9 +25,14 @@ const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
 const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
 const APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放";
+const PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS = "实验前外观检测存放";
 const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
 const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
-const APPEARANCE_STORAGE_STATUSES = new Set([APPEARANCE_INSPECTION_STOCKED_STATUS, "已到达外观检测间"]);
+const APPEARANCE_STORAGE_STATUSES = new Set([
+  APPEARANCE_INSPECTION_STOCKED_STATUS,
+  PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS,
+  "已到达外观检测间",
+]);
 const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
@@ -241,7 +246,7 @@ const resolveAppearanceStorageSnapshot = (sample) => {
       return {
         experimentName: "",
         location: APPEARANCE_INSPECTION_LOCATION,
-        status: APPEARANCE_INSPECTION_STOCKED_STATUS,
+        status: APPEARANCE_STORAGE_STATUSES.has(status) ? status : APPEARANCE_INSPECTION_STOCKED_STATUS,
         time: toTime(entry?.time) || -Infinity,
       };
     })

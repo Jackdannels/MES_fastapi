@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
+from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import (
     acquire_laboratory_operation_locks,
@@ -478,21 +479,22 @@ def latest_appearance_origin_snapshot(
         location = normalize_text(entry.get("location"))
         entry_time = parse_datetime_value(entry.get("time")) or datetime.min
         marks_appearance_storage = (
-            status in {APPEARANCE_STOCKED_STATUS, "已到达外观检测间"}
+            status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"}
             or action == "外观检测间扫码入库"
-            and (status in {"", APPEARANCE_STOCKED_STATUS, "已到达外观检测间"} or location == APPEARANCE_LOCATION)
+            and (status in {"", APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"} or location == APPEARANCE_LOCATION)
         )
         if marks_appearance_storage and latest_withdrawal_time < entry_time <= dispatch_time:
-            stable_entries.append({"time": entry_time})
+            stable_status = status if status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS} else APPEARANCE_STOCKED_STATUS
+            stable_entries.append({"status": stable_status, "time": entry_time})
 
     stable_entries.sort(key=lambda entry: entry["time"])
-    stable_time = stable_entries[-1]["time"] if stable_entries else dispatch_time
+    stable_entry = stable_entries[-1] if stable_entries else {"status": APPEARANCE_STOCKED_STATUS, "time": dispatch_time}
     return {
-        "status": APPEARANCE_STOCKED_STATUS,
+        "status": stable_entry["status"],
         "location": APPEARANCE_LOCATION,
         "scope": "appearance",
         "experimentName": "",
-        "time": stable_time,
+        "time": stable_entry["time"],
     }
 
 

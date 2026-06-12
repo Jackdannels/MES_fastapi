@@ -32,6 +32,9 @@ from app.core.mysql_storage_codecs import (
     parse_storage_datetime,
 )
 
+APPEARANCE_INSPECTION_LOCATION = "外观检测间"
+PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测存放"
+
 def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
     now_beijing = current_beijing_datetime()
     return {
@@ -443,16 +446,21 @@ def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) 
     for event in event_rows or []:
         action = normalize_text(event.get("action") or event.get("action_type"))
         status = normalize_experiment_status_text(event.get("status") or event.get("sample_status"))
-        if action != "送至实验室" and status != "送至实验室":
+        is_pre_appearance = action == PRE_EXPERIMENT_APPEARANCE_STATUS or status == PRE_EXPERIMENT_APPEARANCE_STATUS
+        if action != "送至实验室" and status != "送至实验室" and not is_pre_appearance:
             continue
         detail = normalize_experiment_detail_text(event.get("detail"))
         tray_match = re.search(r"(?P<tray_code>\S+-TP-\d+)", detail)
         tray_code = normalize_text(tray_match.group("tray_code")) if tray_match else ""
-        target_lab = (
-            normalize_text(event.get("target_lab") or event.get("targetLab"))
-            or normalize_text(event.get("location") or event.get("location_desc"))
-            or extract_dispatch_target_lab(detail, tray_code)
-        )
+        explicit_target_lab = normalize_text(event.get("target_lab") or event.get("targetLab"))
+        if is_pre_appearance:
+            target_lab = explicit_target_lab or extract_dispatch_target_lab(detail, tray_code)
+        else:
+            target_lab = (
+                explicit_target_lab
+                or normalize_text(event.get("location") or event.get("location_desc"))
+                or extract_dispatch_target_lab(detail, tray_code)
+            )
         if not tray_code or not target_lab:
             continue
         event_time = parse_storage_datetime(event.get("time") or event.get("event_time")) or datetime.min
@@ -526,6 +534,47 @@ def build_scheduled_dispatch_target_map(
     }
 
 
+def event_is_appearance_stock_in(event: Dict[str, Any], task_code: str, tray_code: str) -> bool:
+    event_tray_code = normalize_text(event.get("tray_code") or event.get("trayCode"))
+    if event_tray_code != tray_code:
+        return False
+    event_task_code = normalize_text(event.get("task_code") or event.get("taskCode") or event.get("task_no"))
+    if event_task_code and event_task_code != task_code:
+        return False
+    room = normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom"))
+    return normalize_text(event.get("action")) == "stock_in" and room == "appearance"
+
+
+def history_has_appearance_stock_in(history: Iterable[Dict[str, Any]], tray_code: str) -> bool:
+    for event in history or []:
+        action = normalize_text(event.get("action") or event.get("action_type"))
+        detail = normalize_experiment_detail_text(event.get("detail"))
+        if tray_code and tray_code not in detail:
+            continue
+        if APPEARANCE_INSPECTION_LOCATION in action and "入库" in action:
+            return True
+    return False
+
+
+def latest_non_appearance_history_state(history: Iterable[Dict[str, Any]]) -> dict[str, str]:
+    for event in history or []:
+        status = normalize_experiment_status_text(event.get("status"))
+        location = normalize_text(event.get("location"))
+        action = normalize_text(event.get("action"))
+        if (
+            status == PRE_EXPERIMENT_APPEARANCE_STATUS
+            or action == PRE_EXPERIMENT_APPEARANCE_STATUS
+            or location == APPEARANCE_INSPECTION_LOCATION
+        ):
+            continue
+        if status or location:
+            return {
+                "location": location or "接驳区",
+                "status": status or "到货",
+            }
+    return {"location": "接驳区", "status": "到货"}
+
+
 def build_storage_sample_item(
     row: Dict[str, Any],
     *,
@@ -537,8 +586,10 @@ def build_storage_sample_item(
 ) -> Dict[str, Any]:
     meta = decode_sample_meta(row.get("remark"))
     resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
-    target_lab_by_tray_code = build_tray_dispatch_target_map(event_rows)
-    staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_rows)
+    event_row_list = list(event_rows or [])
+    staging_event_row_list = list(staging_event_rows or [])
+    target_lab_by_tray_code = build_tray_dispatch_target_map(event_row_list)
+    staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_row_list)
     scheduled_target_by_key = build_scheduled_dispatch_target_map(schedules, experiment_trays)
     trays = []
     for tray in tray_rows or []:
@@ -547,9 +598,12 @@ def build_storage_sample_item(
             continue
         tray_status = normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status"))
         tray_completed = tray_status in EXPERIMENT_COMPLETED_STATUSES
+        raw_target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+        if tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS and raw_target_lab == APPEARANCE_INSPECTION_LOCATION:
+            raw_target_lab = ""
         staging_target = staging_target_by_tray_code.get(tray_code, {})
         target_lab = "" if tray_completed else (
-            normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+            raw_target_lab
             or normalize_text(staging_target.get("target_lab"))
             or target_lab_by_tray_code.get(tray_code, "")
         )
@@ -581,9 +635,37 @@ def build_storage_sample_item(
             "status": normalize_experiment_status_text(event.get("status") or event.get("sample_status")),
             "detail": normalize_experiment_detail_text(event.get("detail")),
         }
-        for event in (event_rows or [])
+        for event in event_row_list
     ]
     history.sort(key=lambda item: normalize_text(item.get("time")), reverse=True)
+    restored_state = latest_non_appearance_history_state(history)
+    for tray in trays:
+        if tray.get("status") != PRE_EXPERIMENT_APPEARANCE_STATUS:
+            continue
+        tray_code = normalize_text(tray.get("tray_code"))
+        has_appearance_stock_in = any(
+            event_is_appearance_stock_in(event, resolved_task_code, tray_code)
+            for event in staging_event_row_list
+            if isinstance(event, dict)
+        ) or history_has_appearance_stock_in(history, tray_code)
+        if has_appearance_stock_in:
+            continue
+        tray["status"] = restored_state["status"]
+        tray["target_lab"] = ""
+        tray["target_experiment_code"] = ""
+
+    status = normalize_experiment_status_text(row.get("sample_status"))
+    flow_status = normalize_experiment_status_text(row.get("flow_status"))
+    location = normalize_text(row.get("location_desc"))
+    if (
+        status == PRE_EXPERIMENT_APPEARANCE_STATUS
+        and location == APPEARANCE_INSPECTION_LOCATION
+        and not any(tray.get("status") == PRE_EXPERIMENT_APPEARANCE_STATUS for tray in trays)
+    ):
+        location = restored_state["location"]
+        status = restored_state["status"]
+        flow_status = restored_state["status"]
+
     return {
         "id": normalize_text(row.get("sample_no")),
         "code": normalize_text(row.get("sample_no")),
@@ -595,10 +677,10 @@ def build_storage_sample_item(
         "storage_condition": normalize_text(row.get("storage_condition")),
         "barcode": normalize_text(row.get("barcode_no")),
         "remark": meta["remark"],
-        "location": normalize_text(row.get("location_desc")),
+        "location": location,
         "owner": meta["owner"],
-        "status": normalize_experiment_status_text(row.get("sample_status")),
-        "flow_status": normalize_experiment_status_text(row.get("flow_status")),
+        "status": status,
+        "flow_status": flow_status,
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
         "trays": trays,

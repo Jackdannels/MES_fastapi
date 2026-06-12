@@ -72,6 +72,140 @@ def test_storage_rejects_lab_arrival_when_tray_was_not_dispatched_from_transfer_
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_allows_pre_experiment_appearance_stock_for_salt_target_from_handover(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE",
+            "location": "接驳区",
+            "status": "到货",
+            "flow_status": "到货",
+            "task_code": "TASK-PRE-APPEARANCE",
+            "trays": [{"tray_code": "TP-PRE-APPEARANCE", "status": "到货", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE",
+                    "experiment_code": "EXP-SALT",
+                    "experiment_name": "盐雾试验",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测存放"
+    attempted[0]["flow_status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["target_lab"] = "盐雾试验室"
+    attempted[0]["trays"][0]["target_experiment_code"] = "EXP-SALT"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测存放"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "盐雾试验室"
+
+
+def test_storage_allows_pre_experiment_appearance_stock_for_mold_target_after_lab_dispatch(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-DISPATCHED",
+            "location": "霉菌试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "TASK-PRE-APPEARANCE-DISPATCHED",
+            "trays": [
+                {
+                    "tray_code": "TP-PRE-APPEARANCE-DISPATCHED",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "霉菌试验室",
+                    "target_experiment_code": "EXP-MOLD",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-DISPATCHED",
+                    "experiment_code": "EXP-MOLD",
+                    "experiment_name": "霉菌试验",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测存放"
+    attempted[0]["flow_status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测存放"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "霉菌试验室"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-MOLD"
+
+
+def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_or_staging(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-WRONG-SOURCE",
+            "location": "盐雾试验室",
+            "status": "实验已完成",
+            "flow_status": "实验已完成",
+            "task_code": "TASK-PRE-APPEARANCE-WRONG-SOURCE",
+            "trays": [{"tray_code": "TP-PRE-APPEARANCE-WRONG-SOURCE", "status": "实验已完成", "quantity": 1}],
+            "history": [
+                {
+                    "action": "实验完成",
+                    "detail": "TASK-PRE-APPEARANCE-WRONG-SOURCE / 盐雾试验 / 实验已完成",
+                    "status": "实验已完成",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-WRONG-SOURCE",
+                    "experiment_code": "EXP-SALT",
+                    "experiment_name": "盐雾试验",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测存放"
+    attempted[0]["flow_status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["target_lab"] = "盐雾试验室"
+    attempted[0]["trays"][0]["target_experiment_code"] = "EXP-SALT"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+    assert storage.read("mes.samples") == samples
+
+
 def test_storage_bulk_update_rejects_lab_arrival_when_sample_has_no_dispatched_tray(monkeypatch):
     samples = [
         {
@@ -572,7 +706,23 @@ def test_storage_allows_appearance_stock_in_for_other_tray_when_sample_has_labor
             ],
         }
     ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {"task_code": "SYLU-2026-05-716", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"}
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-05-716",
+                    "experiment_code": "EXP-SALT",
+                    "tray_code": "TP-MULTI-APPEARANCE-002",
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+        },
+    )
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
@@ -605,7 +755,23 @@ def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatc
             ],
         }
     ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {"task_code": "SYLU-2026-05-706", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"}
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-05-706",
+                    "experiment_code": "EXP-SALT",
+                    "tray_code": "TP-APPEARANCE-DISPATCHED",
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+        },
+    )
 
     attempted = deepcopy(samples)
     attempted[0]["status"] = "外观检测间存放"

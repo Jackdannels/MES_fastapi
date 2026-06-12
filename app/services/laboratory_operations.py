@@ -4,7 +4,6 @@ import threading
 from contextlib import ExitStack, contextmanager
 from typing import Any, Callable, Iterable
 
-from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.core.storage_backend import normalize_storage_payload
 from app.core.time_utils import format_business_datetime, now_business_text
 
@@ -121,7 +120,6 @@ def scope_snapshot_samples_for_experiment(
     task_code: str,
     experiment_code: str,
     tray_codes: list[str],
-    legacy_fallback_hit_id: str = "",
 ) -> dict[str, list[dict[str, Any]]]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
@@ -136,23 +134,7 @@ def scope_snapshot_samples_for_experiment(
         and normalize_text(item.get("experiment_code") or item.get("experimentCode") or item.get("experiment_no") or item.get("experimentNo")) == normalized_experiment_code
         and normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
     }
-    has_task_sample_relations = any(
-        normalize_text(item.get("task_code") or item.get("taskCode") or item.get("task_no") or item.get("taskNo")) == normalized_task_code
-        and normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
-        for item in snapshot.get("experiment_samples", [])
-    )
-
-    experiments_by_tray: dict[str, set[str]] = {}
-    for item in snapshot.get("experiment_trays", []):
-        relation_task_code = normalize_text(item.get("task_code") or item.get("taskCode") or item.get("task_no") or item.get("taskNo"))
-        tray_code = normalize_text(item.get("tray_code") or item.get("trayCode") or item.get("tray_no") or item.get("trayNo"))
-        experiment_no = normalize_text(item.get("experiment_code") or item.get("experimentCode") or item.get("experiment_no") or item.get("experimentNo"))
-        if relation_task_code == normalized_task_code and tray_code in scoped_tray_codes and experiment_no:
-            experiments_by_tray.setdefault(tray_code, set()).add(experiment_no)
-
     eligible_sample_codes: set[str] = set()
-    explicit_tray_codes: set[str] = set()
-    fallback_sample_codes_by_tray: dict[str, set[str]] = {}
     for sample in snapshot.get("samples", []):
         if normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo")) != normalized_task_code:
             continue
@@ -162,7 +144,6 @@ def scope_snapshot_samples_for_experiment(
             continue
         if current_sample_code in experiment_sample_codes:
             eligible_sample_codes.add(current_sample_code)
-            explicit_tray_codes.update(matching_tray_codes)
             continue
         for tray in as_list(sample.get("trays")):
             if not isinstance(tray, dict):
@@ -173,23 +154,6 @@ def scope_snapshot_samples_for_experiment(
             target_experiment_code = tray_target_experiment_code(tray)
             if target_experiment_code == normalized_experiment_code:
                 eligible_sample_codes.add(current_sample_code)
-                explicit_tray_codes.add(tray_code)
-            elif not target_experiment_code:
-                fallback_sample_codes_by_tray.setdefault(tray_code, set()).add(current_sample_code)
-
-    if not has_task_sample_relations:
-        for tray_code, fallback_sample_codes in fallback_sample_codes_by_tray.items():
-            assigned_experiments = experiments_by_tray.get(tray_code, set())
-            if tray_code in explicit_tray_codes:
-                continue
-            if assigned_experiments and assigned_experiments != {normalized_experiment_code}:
-                continue
-            if fallback_sample_codes and legacy_fallback_hit_id:
-                record_legacy_fallback_hit(
-                    legacy_fallback_hit_id,
-                    reason="missing_experiment_sample_relation",
-                )
-            eligible_sample_codes.update(code for code in fallback_sample_codes if code)
 
     scoped_samples = [
         dict(sample)

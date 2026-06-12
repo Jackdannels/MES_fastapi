@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
+from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock, clear_fixture_ready_marker
 from app.services.storage_atomic import merge_concurrent_storage_updates
 
@@ -83,6 +84,7 @@ TRAY_OUTBOUND_STATUSES = {
     "放置实验后暂存间",
     "送至外观检测间",
     "外观检测间存放",
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
     "厂家收回",
 }
 TRAY_LAB_REDISPATCH_STATUSES = {
@@ -90,6 +92,7 @@ TRAY_LAB_REDISPATCH_STATUSES = {
     "放置实验后暂存间",
     "送至外观检测间",
     "外观检测间存放",
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
     "实验完成",
     "实验已经完成",
     "实验已完成",
@@ -112,6 +115,7 @@ RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {
     "已到达实验室",
     "工装夹具安装",
     "实验准备就绪",
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
 }
 STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
     TASK_STATUS_STORED,
@@ -1254,6 +1258,39 @@ def sample_has_staging_dispatch_history(task_samples: list[dict[str, Any]], tray
     return normalize_text(dispatch_entries[-1].get("action")) == "暂存间扫码出库"
 
 
+def latest_appearance_storage_status_for_tray(
+    task_samples: list[dict[str, Any]],
+    tray_code: str,
+    dispatch_time: datetime,
+) -> str:
+    normalized_tray_code = normalize_text(tray_code)
+    candidates: list[dict[str, Any]] = []
+    for sample in task_samples:
+        if not any(normalize_text(entry.get("tray_code")) == normalized_tray_code for entry in as_list(sample.get("trays"))):
+            continue
+        for history_entry in as_list(sample.get("history")):
+            action = normalize_text(history_entry.get("action"))
+            status = normalize_text(history_entry.get("status"))
+            location = normalize_text(history_entry.get("location"))
+            if action != "外观检测间扫码入库":
+                continue
+            if status not in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"} and location != APPEARANCE_LOCATION:
+                continue
+            entry_time = parse_datetime_value(history_entry.get("time")) or datetime.min
+            if entry_time > dispatch_time:
+                continue
+            candidates.append(
+                {
+                    "status": status if status in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS} else APPEARANCE_STORED_STATUS,
+                    "time": entry_time,
+                }
+            )
+    if not candidates:
+        return APPEARANCE_STORED_STATUS
+    candidates.sort(key=lambda entry: entry["time"])
+    return candidates[-1]["status"]
+
+
 def restore_status_for_withdrawal(
     snapshot: dict[str, list[dict[str, Any]]],
     task_samples: list[dict[str, Any]],
@@ -1262,7 +1299,8 @@ def restore_status_for_withdrawal(
     latest_stock_out_event = latest_staging_event_for_tray(snapshot, tray_code, action="stock_out")
     if latest_stock_out_event:
         if staging_event_matches_room(latest_stock_out_event, "appearance"):
-            return APPEARANCE_STORED_STATUS, APPEARANCE_LOCATION, "appearance"
+            dispatch_time = parse_datetime_value(latest_stock_out_event.get("time")) or datetime.max
+            return latest_appearance_storage_status_for_tray(task_samples, tray_code, dispatch_time), APPEARANCE_LOCATION, "appearance"
         return "已到达暂存间", STAGING_LOCATION, "staging"
     if sample_has_staging_dispatch_history(task_samples, tray_code):
         return "已到达暂存间", STAGING_LOCATION, "staging"
@@ -1524,7 +1562,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
                 normalized["updated_at"] = timestamp
                 clear_fixture_ready_marker(normalized)
                 if target_type == "lab":
-                    normalized["target_lab"] = next_location
+                    normalized["target_lab"] = target_name
                     normalized["target_experiment_code"] = normalize_text(request.experiment_code)
                 else:
                     normalized.pop("target_lab", None)

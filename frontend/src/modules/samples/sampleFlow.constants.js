@@ -42,7 +42,13 @@ const SAMPLE_FLOW_STEPS = [
 const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
+const APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS = "实验前外观检测存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
+
+const requiresPreExperimentAppearanceStorage = (...values) => {
+  const text = values.map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+  return APPEARANCE_REQUIRED_KEYWORDS.some((keyword) => text.includes(keyword));
+};
 
 const FLOW_STEP_KEY_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step) => [step.label, step.key]));
 const FLOW_STEP_INDEX_BY_KEY = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.key, index]));
@@ -56,12 +62,19 @@ const MULTI_EXPERIMENT_ROUTE_STEPS = ["送至暂存间", "已到达暂存间", "
 const WITHDRAWAL_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
 
-const DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
+const BASE_DETAIL_STATUS_OPTIONS = SAMPLE_FLOW_STEPS.map((step) => step.label);
+const PRE_EXPERIMENT_APPEARANCE_OPTION_INDEX = BASE_DETAIL_STATUS_OPTIONS.indexOf("已到达暂存间") + 1;
+const DETAIL_STATUS_OPTIONS = [
+  ...BASE_DETAIL_STATUS_OPTIONS.slice(0, PRE_EXPERIMENT_APPEARANCE_OPTION_INDEX),
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+  ...BASE_DETAIL_STATUS_OPTIONS.slice(PRE_EXPERIMENT_APPEARANCE_OPTION_INDEX),
+];
 const FLOW_STATUS_LABELS = new Set(DETAIL_STATUS_OPTIONS);
 const TRAY_STATUS_OPTIONS = DETAIL_STATUS_OPTIONS.slice();
 
 export {
   APPEARANCE_INSPECTION_LOCATION,
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   APPEARANCE_REQUIRED_KEYWORDS,
   APPEARANCE_SENT_STATUS,
   APPEARANCE_STOCKED_STATUS,
@@ -79,4 +92,5 @@ export {
   TEST_LABS,
   TRAY_STATUS_OPTIONS,
   WITHDRAWAL_ACTIONS,
+  requiresPreExperimentAppearanceStorage,
 };

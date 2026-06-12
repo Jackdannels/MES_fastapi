@@ -1,4 +1,8 @@
 import { synchronizeSamplesForTrayCodes } from "@/modules/samples/samplesFlowModel";
+import {
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+  requiresPreExperimentAppearanceStorage,
+} from "@/modules/samples/sampleFlow.constants";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
@@ -22,7 +26,7 @@ const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
-const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, "已到达外观检测间"]);
+const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
@@ -76,7 +80,7 @@ const STORAGE_ROOM_CONFIGS = {
   },
   appearance: {
     currentLocation: APPEARANCE_LOCATION,
-    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, "已到达外观检测间"]),
+    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]),
     duplicateStockInError: "该托盘已完成外观检测间扫码入库。",
     eventRoom: "appearance",
     historyStockInAction: "外观检测间扫码入库",
@@ -381,9 +385,21 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
     return "厂家收回";
   }
   if (normalizeText(latestEvent?.action) === "stock_in") {
+    if (
+      config.key === "appearance"
+      && statuses.some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS)
+    ) {
+      return APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+    }
     return options.isPostExperimentInbound && config.key === "staging" ? config.stockInStatus : config.stockedDisplayStatus;
   }
   if (hasStoredStatus) {
+    if (
+      config.key === "appearance"
+      && statuses.some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS)
+    ) {
+      return APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+    }
     if (options.isPostExperimentInbound && config.key === "staging") {
       return config.stockInStatus;
     }
@@ -526,7 +542,40 @@ const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experimen
 
 const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
   const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunTrays, samples, taskCode, trayCode });
-  return appearanceExperimentIsAllowed(latestCompleted?.experimentName);
+  if (appearanceExperimentIsAllowed(latestCompleted?.experimentName)) {
+    return true;
+  }
+  const experimentMap = buildExperimentMap(experiments);
+  return asArray(samples).some((sample) => (
+    normalizeText(sample?.task_code) === normalizeText(taskCode)
+    && asArray(sample?.trays).some((tray) => {
+      if (normalizeText(tray?.tray_code) !== normalizeText(trayCode)) {
+        return false;
+      }
+      const status = normalizeText(tray?.status) || normalizeText(sample?.status) || normalizeText(sample?.flow_status);
+      if (status !== APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS && status !== "送至实验室") {
+        return false;
+      }
+      const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+      const targetExperiment = experimentMap.get(targetExperimentCode);
+      return requiresPreExperimentAppearanceStorage(
+        tray?.target_lab,
+        tray?.targetLab,
+        targetExperimentCode,
+        resolveExperimentName(targetExperiment),
+      );
+    })
+  ));
+};
+
+const trayTargetsPreExperimentAppearance = ({ row, experiments }) => {
+  const targetExperimentCode = normalizeText(row?.targetExperimentCode);
+  const targetExperiment = buildExperimentMap(experiments).get(targetExperimentCode);
+  return requiresPreExperimentAppearanceStorage(
+    row?.targetLab,
+    targetExperimentCode,
+    resolveExperimentName(targetExperiment),
+  );
 };
 
 const resolveInboundKind = ({ config, isPostExperimentInbound, status }) => {
@@ -913,8 +962,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         quantity: 0,
         sampleType: trayExperimentTypeText || fallbackSampleType,
         source: normalizeText(task?.source) || "待确认来源",
+        originalTargetExperimentCode: "",
+        originalTargetLab: "",
         statuses: [],
         taskCode,
+        targetExperimentCode: "",
+        targetLab: "",
         testType: normalizeText(task?.test_type),
         trayCode,
       };
@@ -925,6 +978,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       current.sampleType = trayExperimentTypeText || current.sampleType || fallbackSampleType;
       current.source = current.source || normalizeText(task?.source) || "待确认来源";
       current.testType = current.testType || normalizeText(task?.test_type);
+      const trayTargetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+      const trayTargetLab = normalizeText(tray?.target_lab || tray?.targetLab);
+      current.originalTargetExperimentCode = current.originalTargetExperimentCode || trayTargetExperimentCode;
+      current.originalTargetLab = current.originalTargetLab || trayTargetLab;
+      current.targetExperimentCode = current.targetExperimentCode || trayTargetExperimentCode;
+      current.targetLab = current.targetLab || trayTargetLab;
       current.quantity += Number(tray?.quantity) || 1;
       const rowStatuses = [
         normalizeText(tray?.status),
@@ -948,6 +1007,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: "待确认来源",
         statuses: [],
         taskCode: normalizeText(latestEvent?.task_code),
+        originalTargetExperimentCode: "",
+        originalTargetLab: "",
         testType: "",
         trayCode,
       });
@@ -985,6 +1046,13 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const explicitAppearanceInboundStatus =
         hasPreAppearanceInboundStatus(row.statuses)
         && (config.key === "appearance" || !latestEventDispatchesToCurrentRoom);
+      const hasPreExperimentAppearanceStorageStatus = row.statuses.some(
+        (statusItem) => normalizeText(statusItem) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+      );
+      const isPreExperimentAppearanceLabDispatch =
+        config.key === "appearance"
+        && row.statuses.some((statusItem) => normalizeText(statusItem) === "送至实验室")
+        && trayTargetsPreExperimentAppearance({ experiments, row });
       const isPostExperimentInbound =
         !explicitAppearanceInboundStatus
         && (hasCompletedExperimentStatus || allAssignedExperimentsCompleted)
@@ -997,7 +1065,10 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           trayCode: normalizeText(row.trayCode),
         });
       let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
-      if (latestEventDispatchesToCurrentRoom) {
+      if (isPreExperimentAppearanceLabDispatch) {
+        status = "待入库";
+      }
+      if (latestEventDispatchesToCurrentRoom && !(config.key === "appearance" && hasPreExperimentAppearanceStorageStatus)) {
         status = "待入库";
       }
       if (config.key === "appearance" && latestEventDispatchesToPostExperimentStaging) {
@@ -1078,6 +1149,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         stockOutToday,
         taskCode: normalizeText(row.taskCode),
         isPostExperimentInbound,
+        isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
+        originalTargetExperimentCode: normalizeText(row.originalTargetExperimentCode || row.targetExperimentCode),
+        originalTargetLab: normalizeText(row.originalTargetLab || row.targetLab),
         targetExperimentCode: targetDestination?.targetExperimentCode || "",
         targetExperimentName: targetDestination?.targetExperimentName || "",
         targetIsFallback: Boolean(targetDestination?.targetIsFallback),
@@ -1471,6 +1545,13 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
+  const stockOutTargetExperimentCode =
+    normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
+  const stockOutTargetExperimentName =
+    normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName);
+  const stockOutEventTargetType =
+    normalizeText(selectedDestination?.targetType) || selectedTargetType || "lab";
+
   nextSnapshot[STAGING_EVENTS_KEY].push({
     id: createId("staging-event"),
     tray_code: matchedRow.trayCode,
@@ -1490,18 +1571,23 @@ function applyZancunInventoryAction(input = {}) {
         }
       : actionMode === "stockOut"
       ? {
-          target_experiment_code: normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode),
-          target_experiment_name: normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName),
+          target_experiment_code: stockOutTargetExperimentCode,
+          target_experiment_name: stockOutTargetExperimentName,
           target_lab: resolvedTargetLab,
           target_lab_code: resolvedTargetLabCode,
           target_lab_id: resolvedTargetLabId,
-          target_type: normalizeText(selectedDestination?.targetType) || selectedTargetType || "lab",
+          target_type: stockOutEventTargetType,
         }
       : {}),
   });
 
   if (actionMode === "stockIn") {
-    const nextStockInStatus = matchedRow.isPostExperimentInbound && config.key === "staging" ? POST_EXPERIMENT_STAGING_STATUS : config.stockInStatus;
+    const nextStockInStatus =
+      matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
+        ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        : matchedRow.isPostExperimentInbound && config.key === "staging"
+          ? POST_EXPERIMENT_STAGING_STATUS
+          : config.stockInStatus;
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockInAction,
       historyDetail: `${matchedRow.trayCode} ${nextStockInStatus}`,
@@ -1510,6 +1596,12 @@ function applyZancunInventoryAction(input = {}) {
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
       status: nextStockInStatus,
+      targetExperimentCode: matchedRow.isPreExperimentAppearanceInbound
+        ? normalizeText(matchedRow.originalTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
+        : "",
+      targetLab: matchedRow.isPreExperimentAppearanceInbound
+        ? normalizeText(matchedRow.originalTargetLab) || normalizeText(matchedRow.targetLab)
+        : "",
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples;
@@ -1522,14 +1614,21 @@ function applyZancunInventoryAction(input = {}) {
       || normalizeText(resolvedTargetLab) === STAGING_LOCATION;
     const targetExperimentCode =
       normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
+    const outboundLocation = isStagingTarget ? STAGING_LOCATION : resolvedTargetLab;
+    const outboundStatus =
+      isStagingTarget
+        ? "送至暂存间"
+        : "送至实验室";
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockOutAction,
-      historyDetail: `${matchedRow.trayCode} 送至 ${resolvedTargetLab}`,
-      location: isStagingTarget ? STAGING_LOCATION : resolvedTargetLab,
+      historyDetail: `${matchedRow.trayCode} 送至 ${outboundLocation}`,
+      location: outboundLocation,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
-      status: isStagingTarget ? "送至暂存间" : "送至实验室",
+      status: outboundStatus,
+      targetExperimentCode,
+      targetLab: isStagingTarget ? "" : resolvedTargetLab,
       trayCodes: [matchedRow.trayCode],
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples.map((sample) => ({

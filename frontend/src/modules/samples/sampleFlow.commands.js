@@ -140,6 +140,7 @@ function dispatchStagingSamples(input = {}) {
   const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
   const selectedCodes = Array.isArray(input.selectedCodes) ? input.selectedCodes : [];
   const targetLab = normalizeText(payload.targetLab);
+  const targetExperimentCode = normalizeText(payload.targetExperimentCode || payload.target_experiment_code);
   const owner = normalizeText(payload.owner);
   const preRetentionLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation);
   const codes = Array.from(new Set([...selectedCodes, ...parseCodeList(payload.codes)].map((code) => normalizeText(code)).filter(Boolean)));
@@ -157,6 +158,8 @@ function dispatchStagingSamples(input = {}) {
   const dispatchedCodes = [];
   const now = input.now || formatLocalDateTime();
   const trayCodesToSync = new Set();
+  const dispatchLocation = targetLab;
+  const dispatchStatus = "已到达实验室";
 
   codes.forEach((code) => {
     const sample = samples.find((item) => normalizeText(item?.code) === code);
@@ -175,9 +178,9 @@ function dispatchStagingSamples(input = {}) {
         trayCodesToSync.add(trayCode);
       }
     });
-    sample.location = targetLab;
+    sample.location = dispatchLocation;
     sample.owner = owner || normalizeText(sample.owner);
-    sample.status = normalizeLifecycleStatus(targetLab, "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4", labels);
+    sample.status = normalizeLifecycleStatus(dispatchLocation, dispatchStatus, labels);
     sample.flow_status = sample.status;
     sample.updated_at = now;
     sample.history = appendSampleHistory(sample, "暂存间派发", "", now);
@@ -188,11 +191,13 @@ function dispatchStagingSamples(input = {}) {
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: "",
       labels,
-      location: targetLab,
+      location: dispatchLocation,
       now,
       owner,
       samples,
-      status: "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4",
+      status: dispatchStatus,
+      targetExperimentCode,
+      targetLab,
       trayCodes: Array.from(trayCodesToSync),
     });
     samples = synced.samples;

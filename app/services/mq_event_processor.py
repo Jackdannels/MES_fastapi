@@ -202,7 +202,6 @@ def scope_snapshot_samples_for_experiment(
         task_code=task_code,
         experiment_code=experiment_code,
         tray_codes=tray_codes,
-        legacy_fallback_hit_id="backend.mq.scope_sample.legacy_tray_target_fallback",
     )
 
 

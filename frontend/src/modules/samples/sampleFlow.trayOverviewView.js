@@ -22,6 +22,7 @@ function buildSamplesTrayOverviewView(input = {}) {
     ]),
   );
   const trayMap = new Map();
+  const buildTrayRowKey = (taskCode, trayCode) => `${normalizeText(taskCode)}::${normalizeText(trayCode)}`;
 
   samples.forEach((sample) => {
     const sampleCode = normalizeText(sample?.code);
@@ -37,8 +38,9 @@ function buildSamplesTrayOverviewView(input = {}) {
       if (isReturnedTrayStatus(trayStatus)) {
         return;
       }
-      if (!trayMap.has(trayCode)) {
-        trayMap.set(trayCode, {
+      const trayRowKey = buildTrayRowKey(taskCode, trayCode);
+      if (!trayMap.has(trayRowKey)) {
+        trayMap.set(trayRowKey, {
           trayCode,
           taskCode,
           taskName: task.name,
@@ -47,7 +49,7 @@ function buildSamplesTrayOverviewView(input = {}) {
           sampleCodes: [],
         });
       }
-      const row = trayMap.get(trayCode);
+      const row = trayMap.get(trayRowKey);
       if (!row.sampleCodes.includes(sampleCode)) {
         row.sampleCodes.push(sampleCode);
       }
@@ -74,7 +76,7 @@ function buildSamplesTrayOverviewView(input = {}) {
         .join(" ")
         .includes(query);
     })
-    .sort((left, right) => compareText(left.trayCode, right.trayCode));
+    .sort((left, right) => compareText(left.trayCode, right.trayCode) || compareText(left.taskCode, right.taskCode));
 
   return { rows };
 }

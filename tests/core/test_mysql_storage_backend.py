@@ -1744,6 +1744,158 @@ def test_build_storage_sample_item_recovers_tray_target_lab_from_dispatch_histor
     assert storage_item["trays"][0]["target_lab"] == "温度冲击一室"
 
 
+def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_in_history() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 131,
+            "sample_no": "SYLU-2026-06-021-SP-001",
+            "task_no": "SYLU-2026-06-021",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "外观检测间",
+            "sample_status": "实验前外观检测存放",
+            "flow_status": "实验前外观检测存放",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"扫码登记\",\"remark\":\"\"}}",
+            "created_at": "2026-06-12 17:20:29",
+            "updated_at": "2026-06-12 21:19:08",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-021-TP-001",
+                "tray_code": "SYLU-2026-06-021-TP-001",
+                "sample_code": "SYLU-2026-06-021-SP-001",
+                "quantity": 1,
+                "status": "实验前外观检测存放",
+                "target_lab": "外观检测间",
+                "target_experiment_code": "",
+                "created_at": "2026-06-12 17:20:37",
+                "updated_at": "2026-06-12 21:19:08",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 1165654,
+                "event_time": "2026-06-12 21:19:08",
+                "action_type": "外观检测间扫码入库",
+                "location_desc": "外观检测间",
+                "sample_status": "实验前外观检测存放",
+                "detail": "SYLU-2026-06-021-TP-001 实验前外观检测存放",
+            },
+            {
+                "event_id": 1165655,
+                "event_time": "2026-06-12 20:48:14",
+                "action_type": "送至实验室",
+                "location_desc": "霉菌试验室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-06-021-TP-001 -> 霉菌试验室",
+            },
+        ],
+        staging_event_rows=[
+            {
+                "tray_code": "SYLU-2026-06-021-TP-001",
+                "task_code": "SYLU-2026-06-021",
+                "room": "appearance",
+                "action": "stock_in",
+                "time": "2026-06-12 21:19:08",
+            },
+        ],
+        schedules=[
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-A",
+                "device": "霉菌试验室",
+            },
+        ],
+        experiment_trays=[
+            {
+                "task_code": "SYLU-2026-06-021",
+                "experiment_code": "SYLU-2026-06-021-A",
+                "tray_code": "SYLU-2026-06-021-TP-001",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["status"] == "实验前外观检测存放"
+    assert storage_item["trays"][0]["target_lab"] == "霉菌试验室"
+    assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-06-021-A"
+
+
+def test_build_storage_sample_item_restores_pre_appearance_half_state_without_stock_in_to_arrival() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 121,
+            "sample_no": "SYLU-2026-06-022-SP-001",
+            "task_no": "SYLU-2026-06-022",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "外观检测间",
+            "sample_status": "实验前外观检测存放",
+            "flow_status": "实验前外观检测存放",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-12 17:20:55",
+            "updated_at": "2026-06-12 17:22:14",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-06-022-TP-001",
+                "tray_code": "SYLU-2026-06-022-TP-001",
+                "sample_code": "SYLU-2026-06-022-SP-001",
+                "quantity": 1,
+                "status": "实验前外观检测存放",
+                "created_at": "2026-06-12 17:20:55",
+                "updated_at": "2026-06-12 17:22:13",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 1165638,
+                "event_time": "2026-06-12 17:22:13",
+                "action_type": "实验前外观检测存放",
+                "location_desc": "外观检测间",
+                "sample_status": "实验前外观检测存放",
+                "detail": "SYLU-2026-06-022-TP-001 -> 霉菌试验室",
+            },
+            {
+                "event_id": 1165639,
+                "event_time": "2026-06-12 17:21:20",
+                "action_type": "任务已确认入库",
+                "location_desc": "接驳区",
+                "sample_status": "到货",
+                "detail": "SYLU-2026-06-022",
+            },
+        ],
+        schedules=[
+            {
+                "task_code": "SYLU-2026-06-022",
+                "experiment_code": "SYLU-2026-06-022-B",
+                "device": "霉菌试验室",
+            },
+        ],
+        experiment_trays=[
+            {
+                "task_code": "SYLU-2026-06-022",
+                "experiment_code": "SYLU-2026-06-022-B",
+                "tray_code": "SYLU-2026-06-022-TP-001",
+            },
+        ],
+    )
+
+    assert storage_item["location"] == "接驳区"
+    assert storage_item["status"] == "到货"
+    assert storage_item["flow_status"] == "到货"
+    assert storage_item["trays"][0]["status"] == "到货"
+    assert storage_item["trays"][0]["target_lab"] == ""
+    assert storage_item["trays"][0]["target_experiment_code"] == ""
+
+
 def test_build_storage_sample_item_recovers_tray_target_experiment_from_staging_event() -> None:
     storage_item = build_storage_sample_item(
         {

@@ -921,6 +921,35 @@ describe("staging-management model", () => {
     expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
   });
 
+  test("appearance inspection room excludes pre-experiment half-state without target metadata or stock-in event", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-pre-appearance-half-state",
+      code: "SYLU-2026-06-021-SP-001",
+      task_code: "SYLU-2026-06-021",
+      owner: "周工",
+      location: "外观检测间",
+      status: "实验前外观检测存放",
+      flow_status: "实验前外观检测存放",
+      trays: [
+        {
+          tray_code: "SYLU-2026-06-021-TP-001",
+          status: "实验前外观检测存放",
+          quantity: 1,
+          target_experiment_code: "",
+          target_lab: "",
+        },
+      ],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const sections = buildZancunInventorySections(rows, { room: "appearance" });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
+    expect(sections.currentStagingRows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
+    expect(sections.plannedInboundRows.map((row) => row.trayCode)).not.toContain("SYLU-2026-06-021-TP-001");
+  });
+
   test("appearance inspection room shows second inbound after another salt or mold completion", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.tasks].push({
@@ -1788,6 +1817,193 @@ describe("staging-management model", () => {
       target_lab: "振动一室",
     });
     expect(metrics.stockedOutTodayCount).toBe(2);
+  });
+
+  test("stock-out to salt lab stays a lab dispatch instead of forced pre-experiment appearance storage", () => {
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-04-102-TP-001",
+        mode: "stockOut",
+        targetExperimentCode: "SYLU-2026-04-102-B",
+        targetLab: "盐雾试验室",
+      },
+      snapshot: createSnapshot(),
+    });
+    const stockOutSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001");
+
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      target_experiment_code: "SYLU-2026-04-102-B",
+      target_lab: "盐雾试验室",
+      target_type: "lab",
+    });
+    expect(stockOutSample).toMatchObject({
+      location: "盐雾试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+    });
+    expect(stockOutSample?.trays[0]).toMatchObject({
+      status: "送至实验室",
+      target_experiment_code: "SYLU-2026-04-102-B",
+      target_lab: "盐雾试验室",
+      target_type: "lab",
+    });
+  });
+
+  test("appearance room can stock in a tray dispatched to a mold lab as optional pre-experiment inspection", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-pre-mold-appearance",
+      code: "SYLU-2026-06-021",
+      test_type: "霉菌试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-pre-mold-appearance",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      experiment_name: "霉菌试验",
+      required_device: "霉菌试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-pre-mold-appearance",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      tray_code: "SYLU-2026-06-021-TP-001",
+    });
+    snapshot[STORAGE_KEYS.schedules].push({
+      id: "schedule-pre-mold-appearance",
+      task_code: "SYLU-2026-06-021",
+      experiment_code: "SYLU-2026-06-021-A",
+      device: "霉菌试验室",
+      start_at: "2026-06-28T12:00:00",
+      end_at: "2026-06-28T15:30:00",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-pre-mold-appearance",
+      code: "SYLU-2026-06-021-SP-001",
+      task_code: "SYLU-2026-06-021",
+      owner: "周工",
+      location: "霉菌试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: [
+        {
+          tray_code: "SYLU-2026-06-021-TP-001",
+          status: "送至实验室",
+          quantity: 1,
+          target_experiment_code: "SYLU-2026-06-021-A",
+          target_lab: "霉菌试验室",
+        },
+      ],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const sections = buildZancunInventorySections(rows, { room: "appearance" });
+    const row = rows.find((item) => item.trayCode === "SYLU-2026-06-021-TP-001");
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-06-021-TP-001",
+        mode: "stockIn",
+      },
+      room: "appearance",
+      snapshot,
+    });
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-pre-mold-appearance");
+
+    expect(row).toEqual(expect.objectContaining({
+      status: "待入库",
+      targetExperimentCode: "SYLU-2026-06-021-A",
+      targetLab: "霉菌试验室",
+      trayCode: "SYLU-2026-06-021-TP-001",
+    }));
+    expect(sections.plannedInboundRows.map((item) => item.trayCode)).toContain("SYLU-2026-06-021-TP-001");
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_in",
+      room: "appearance",
+      tray_code: "SYLU-2026-06-021-TP-001",
+    });
+    expect(updatedSample).toMatchObject({
+      location: "外观检测间",
+      status: "实验前外观检测存放",
+      flow_status: "实验前外观检测存放",
+    });
+    expect(updatedSample?.trays[0]).toMatchObject({
+      status: "实验前外观检测存放",
+      target_experiment_code: "SYLU-2026-06-021-A",
+      target_lab: "霉菌试验室",
+    });
+  });
+
+  test("pre-experiment appearance stock-in preserves the original lab target when the room destination differs", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-pre-mold-appearance-unscheduled",
+      code: "SYLU-2026-06-031",
+      test_type: "霉菌试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-pre-mold-appearance-unscheduled",
+      task_code: "SYLU-2026-06-031",
+      experiment_code: "SYLU-2026-06-031-A",
+      experiment_name: "霉菌试验",
+      required_device: "",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-pre-mold-appearance-unscheduled",
+      task_code: "SYLU-2026-06-031",
+      experiment_code: "SYLU-2026-06-031-A",
+      tray_code: "SYLU-2026-06-031-TP-001",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-pre-mold-appearance-unscheduled",
+      code: "SYLU-2026-06-031-SP-001",
+      task_code: "SYLU-2026-06-031",
+      owner: "周工",
+      location: "霉菌试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: [
+        {
+          tray_code: "SYLU-2026-06-031-TP-001",
+          status: "送至实验室",
+          quantity: 1,
+          target_experiment_code: "SYLU-2026-06-031-A",
+          target_lab: "霉菌试验室",
+        },
+      ],
+    });
+
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: "SYLU-2026-06-031-TP-001",
+        mode: "stockIn",
+      },
+      room: "appearance",
+      snapshot,
+    });
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-pre-mold-appearance-unscheduled");
+    const rowsAfterStockIn = buildZancunRowsFromSnapshot(result.snapshot, { now: TODAY, room: "appearance" });
+    const sectionsAfterStockIn = buildZancunInventorySections(rowsAfterStockIn, { room: "appearance" });
+
+    expect(result.error).toBe("");
+    expect(updatedSample?.trays[0]).toMatchObject({
+      status: "实验前外观检测存放",
+      target_experiment_code: "SYLU-2026-06-031-A",
+      target_lab: "霉菌试验室",
+    });
+    expect(sectionsAfterStockIn.currentStagingRows).toContainEqual(expect.objectContaining({
+      status: "实验前外观检测存放",
+      trayCode: "SYLU-2026-06-031-TP-001",
+    }));
   });
 
   test("stock-out selects a destination by lab code when display names differ", () => {

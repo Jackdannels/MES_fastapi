@@ -138,6 +138,43 @@ describe("useSamplesFlow", () => {
     );
   });
 
+  test("opens sample detail using the task-scoped tray row instead of a same-code tray from another task", async () => {
+    mocks.readTasks.mockResolvedValueOnce([
+      { code: "TASK-OLD", name: "旧任务", test_type: "盐雾试验" },
+      { code: "TASK-CURRENT", name: "当前任务", test_type: "冲击试验" },
+    ]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "SP-OLD",
+          task_code: "TASK-OLD",
+          location: "外观检测间",
+          status: "实验前外观检测存放",
+          trays: [{ tray_code: "TP-001", status: "实验前外观检测存放", quantity: 1 }],
+        },
+        {
+          code: "SP-CURRENT",
+          task_code: "TASK-CURRENT",
+          location: "接驳区",
+          status: "到货",
+          trays: [{ tray_code: "TP-001", status: "到货", quantity: 1 }],
+        },
+      ],
+      "mes.experiments": [],
+      "mes.experiment_runs": [],
+      "mes.experiment_trays": [],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openDetailDrawer("SP-CURRENT");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-001 | 当前状态：到货");
+  });
+
   test("loads experiment runs for tray flow runtime times", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-RUN", name: "运行任务" }]);
     mocks.loadSnapshot.mockResolvedValueOnce({

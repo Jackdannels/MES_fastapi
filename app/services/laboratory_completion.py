@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.appearance_inspection import (
+    APPEARANCE_INSPECTION_DISPATCH_STATUS,
+    APPEARANCE_INSPECTION_LOCATION,
+    APPEARANCE_INSPECTION_STOCKED_STATUS,
+    experiment_requires_appearance_inspection,
+)
 from app.services.laboratory_operations import clear_fixture_ready_marker
 
 
 COMPLETED_STATUS = "实验已完成"
 COMPLETION_ACTION = "实验完成"
 RUNNING_STATUS = "实验进行中"
-APPEARANCE_INSPECTION_LOCATION = "外观检测间"
-APPEARANCE_INSPECTION_DISPATCH_STATUS = "送至外观检测间"
-APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放"
-APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 EXPERIMENT_TRAY_FINISHED_STATUSES = {
     COMPLETED_STATUS,
     "实验完成",
@@ -31,18 +32,6 @@ def normalize_text(value: Any) -> str:
 
 def completion_history_detail(task_code: Any, experiment_name: Any) -> str:
     return f"{normalize_text(task_code)} / {normalize_text(experiment_name)} / {COMPLETED_STATUS}"
-
-
-def experiment_requires_appearance_inspection(experiment_name: Any, experiment: dict[str, Any] | None = None) -> bool:
-    texts = [
-        experiment_name,
-        (experiment or {}).get("experiment_name"),
-        (experiment or {}).get("experiment_type"),
-        (experiment or {}).get("test_type"),
-        (experiment or {}).get("required_device"),
-    ]
-    joined = " / ".join(normalize_text(text) for text in texts if normalize_text(text))
-    return any(keyword in joined for keyword in APPEARANCE_REQUIRED_KEYWORDS)
 
 
 def run_tray_completed_statuses_for_experiment(
@@ -179,19 +168,6 @@ def complete_storage_laboratory_experiment(
         and normalize_text(item.get("experiment_code")) == normalized_experiment_code
         and normalize_text(item.get("tray_code"))
     }
-    experiment_codes_by_tray: dict[str, set[str]] = {}
-    for item in experiment_trays:
-        if normalize_text(item.get("task_code") or item.get("task_no")) != normalized_task_code:
-            continue
-        tray_code = normalize_text(item.get("tray_code") or item.get("tray_no"))
-        experiment_no = normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-        if tray_code and experiment_no:
-            experiment_codes_by_tray.setdefault(tray_code, set()).add(experiment_no)
-    ambiguous_tray_codes = {
-        tray_code
-        for tray_code, experiment_codes in experiment_codes_by_tray.items()
-        if len(experiment_codes) > 1
-    }
     requested_tray_codes = {normalize_text(code) for code in (tray_codes or []) if normalize_text(code)}
     def run_matches_request(run: dict[str, Any]) -> bool:
         run_key = normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
@@ -240,40 +216,28 @@ def complete_storage_laboratory_experiment(
         and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == normalized_experiment_code
         and normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
     }
-    recorded_legacy_scope_sample_codes: set[str] = set()
 
     def sample_matches_current_experiment(sample: dict[str, Any]) -> bool:
         if normalize_text(sample.get("task_code") or sample.get("task_no")) != normalized_task_code:
             return False
         sample_code = normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sample_no") or sample.get("id"))
-        if not scoped_sample_codes:
-            matched_by_legacy_tray_scope = False
-            for tray in sample.get("trays", []):
-                tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
-                if tray_code not in affected_tray_codes:
-                    continue
-                target_experiment_code = normalize_text(
-                    tray.get("target_experiment_code")
-                    or tray.get("targetExperimentCode")
-                    or tray.get("experiment_code")
-                    or tray.get("experimentCode")
-                    or tray.get("experiment_no")
-                    or tray.get("experimentNo")
-                )
-                if target_experiment_code:
-                    return target_experiment_code == normalized_experiment_code
-                if tray_code in ambiguous_tray_codes:
-                    return False
-                matched_by_legacy_tray_scope = True
-            legacy_scope_key = sample_code or str(id(sample))
-            if matched_by_legacy_tray_scope and legacy_scope_key not in recorded_legacy_scope_sample_codes:
-                recorded_legacy_scope_sample_codes.add(legacy_scope_key)
-                record_legacy_fallback_hit(
-                    "backend.laboratory_completion.sample_scope_legacy_tray_fallback",
-                    reason="missing_experiment_sample_relation",
-                )
+        if sample_code in scoped_sample_codes:
             return True
-        return sample_code in scoped_sample_codes
+        for tray in sample.get("trays", []):
+            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
+            if tray_code not in affected_tray_codes:
+                continue
+            target_experiment_code = normalize_text(
+                tray.get("target_experiment_code")
+                or tray.get("targetExperimentCode")
+                or tray.get("experiment_code")
+                or tray.get("experimentCode")
+                or tray.get("experiment_no")
+                or tray.get("experimentNo")
+            )
+            if target_experiment_code == normalized_experiment_code:
+                return True
+        return False
 
     detail = completion_history_detail(normalized_task_code, experiment_name)
     affected_sample_count = 0

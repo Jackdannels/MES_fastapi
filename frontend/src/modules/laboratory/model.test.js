@@ -4805,6 +4805,48 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("revertLaboratoryTaskToPreviousStableState restores pre-experiment appearance storage before current lab dispatch", () => {
+    const updatedSamples = revertLaboratoryTaskToPreviousStableState({
+      currentTask: {
+        device: "盐雾试验室",
+        experimentCode: "TASK-703-B",
+        experimentName: "盐雾试验",
+        taskCode: "TASK-703",
+        trayCodes: ["TP-703"],
+      },
+      now: "2026-06-06T22:10:00.000Z",
+      samples: [
+        {
+          code: "TASK-703-SP-001",
+          flow_status: "已到达实验室",
+          history: [
+            { action: "任务比对", detail: "TASK-703 / 盐雾试验 / 已到达实验室", location: "盐雾试验室", status: "已到达实验室", time: "2026-06-06T22:00:00.000Z" },
+            { action: "外观检测间扫码出库", detail: "TP-703 送至 盐雾试验室", location: "盐雾试验室", status: "送至实验室", time: "2026-06-06T21:50:00.000Z" },
+            { action: "外观检测间扫码入库", detail: "TP-703 实验前外观检测存放", location: "外观检测间", status: "实验前外观检测存放", time: "2026-06-06T21:40:00.000Z" },
+          ],
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "已到达实验室",
+          task_code: "TASK-703",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-703" }],
+        },
+      ],
+    });
+
+    expect(updatedSamples[0]).toEqual(expect.objectContaining({
+      flow_status: "实验前外观检测存放",
+      location: "外观检测间",
+      status: "实验前外观检测存放",
+      trays: [expect.objectContaining({ status: "实验前外观检测存放", tray_code: "TP-703" })],
+    }));
+    expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
+      action: "任务切换撤回",
+      detail: "TASK-703 / 盐雾试验 / 撤回至实验前外观检测存放",
+      location: "外观检测间",
+      status: "实验前外观检测存放",
+    }));
+  });
+
   test("buildLaboratoryWorkbenchView shows the current experiment flow after a shared tray moves from impact to temperature shock", () => {
     const view = buildLaboratoryWorkbenchView({
       experimentTrays: [

@@ -9,6 +9,11 @@ from fastapi.responses import StreamingResponse
 
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
+from app.services.appearance_inspection import (
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
+    should_route_pre_experiment_appearance,
+    target_requires_appearance_inspection,
+)
 from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.storage_atomic import merge_concurrent_storage_updates
@@ -24,7 +29,7 @@ RETURNED_REARRIVAL_BLOCKED_DETAIL = "该托盘已厂家收回，不能再次到�
 STAGING_LOCATION_KEYWORD = "暂存间"
 STAGING_INBOUND_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
 APPEARANCE_LOCATION_KEYWORD = "外观检测间"
-APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间"}
+APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间", PRE_EXPERIMENT_APPEARANCE_STATUS}
 APPEARANCE_SOURCE_REQUIRED_DETAIL = "只有盐雾、霉菌实验完成后才能进入外观检测间。"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 RETURNED_STATUS = "厂家收回"
@@ -79,25 +84,6 @@ def _status(value: Any) -> str:
 def _appearance_experiment_name_is_allowed(value: Any) -> bool:
     text = _normalize_text(value)
     return any(keyword in text for keyword in APPEARANCE_REQUIRED_KEYWORDS)
-
-
-def _history_has_allowed_appearance_source(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    for entry in _as_list(sample.get("history")):
-        if not isinstance(entry, dict):
-            continue
-        detail = _normalize_text(entry.get("detail"))
-        status = _normalize_text(entry.get("status"))
-        segments = [_normalize_text(segment) for segment in detail.split(" / ") if _normalize_text(segment)]
-        experiment_name = segments[1] if len(segments) >= 3 else detail
-        completion_status = segments[2] if len(segments) >= 3 else status
-        if _appearance_experiment_name_is_allowed(experiment_name) and (
-            completion_status in COMPLETED_EXPERIMENT_STATUSES
-            or status in COMPLETED_EXPERIMENT_STATUSES
-        ):
-            return True
-    return False
 
 
 def _experiment_name_by_code(experiments: Any) -> dict[str, str]:
@@ -157,11 +143,96 @@ def _tray_has_allowed_appearance_source(
     experiment_run_trays: Any,
 ) -> bool:
     return (
-        _history_has_allowed_appearance_source(current_sample)
-        or _history_has_allowed_appearance_source(next_sample)
-        or _run_trays_have_allowed_appearance_source(current_sample, current_tray, experiments, experiment_run_trays)
+        _run_trays_have_allowed_appearance_source(current_sample, current_tray, experiments, experiment_run_trays)
         or _run_trays_have_allowed_appearance_source(next_sample, next_tray, experiments, experiment_run_trays)
     )
+
+
+def _tray_has_allowed_pre_experiment_appearance_target(
+    current_sample: Any,
+    next_tray: Any,
+    experiments: Any,
+    current_tray: Any = None,
+) -> bool:
+    if not isinstance(current_sample, dict) or not isinstance(next_tray, dict):
+        return False
+    source_status = _status(current_tray) if isinstance(current_tray, dict) else ""
+    if not source_status:
+        source_status = _normalize_text(current_sample.get("status")) or _normalize_text(current_sample.get("flow_status"))
+    return should_route_pre_experiment_appearance(
+        source_location=_normalize_text(current_sample.get("location")),
+        source_status=source_status,
+        target_lab=_normalize_text(next_tray.get("target_lab") or next_tray.get("targetLab")),
+        target_experiment_code=_normalize_text(
+            next_tray.get("target_experiment_code")
+            or next_tray.get("targetExperimentCode")
+            or next_tray.get("experiment_code")
+            or next_tray.get("experimentCode")
+        ),
+        experiments=experiments,
+    )
+
+
+def _tray_has_allowed_dispatched_pre_experiment_appearance_target(
+    current_sample: Any,
+    next_tray: Any,
+    experiments: Any,
+    current_tray: Any = None,
+) -> bool:
+    if not isinstance(current_sample, dict) or not isinstance(next_tray, dict):
+        return False
+    current_statuses = {
+        _normalize_text(current_sample.get("status")),
+        _normalize_text(current_sample.get("flow_status")),
+    }
+    if isinstance(current_tray, dict):
+        current_statuses.add(_status(current_tray))
+    if LAB_DISPATCHED_STATUS not in current_statuses:
+        return False
+
+    target_lab = (
+        _normalize_text(next_tray.get("target_lab") or next_tray.get("targetLab"))
+        or (
+            _normalize_text(current_tray.get("target_lab") or current_tray.get("targetLab"))
+            if isinstance(current_tray, dict)
+            else ""
+        )
+    )
+    target_experiment_code = (
+        _normalize_text(
+            next_tray.get("target_experiment_code")
+            or next_tray.get("targetExperimentCode")
+            or next_tray.get("experiment_code")
+            or next_tray.get("experimentCode")
+        )
+        or (
+            _normalize_text(
+                current_tray.get("target_experiment_code")
+                or current_tray.get("targetExperimentCode")
+                or current_tray.get("experiment_code")
+                or current_tray.get("experimentCode")
+            )
+            if isinstance(current_tray, dict)
+            else ""
+        )
+    )
+    return target_requires_appearance_inspection(
+        target_lab=target_lab,
+        target_experiment_code=target_experiment_code,
+        experiments=experiments,
+    )
+
+
+def _is_pre_experiment_appearance_inbound(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    if isinstance(tray, dict):
+        return _status(tray) == PRE_EXPERIMENT_APPEARANCE_STATUS and APPEARANCE_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    return PRE_EXPERIMENT_APPEARANCE_STATUS in statuses and APPEARANCE_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
 
 
 def _appearance_inbound_state_changed(current_sample: Any, next_sample: Any, current_tray: Any, next_tray: Any) -> bool:
@@ -331,12 +402,12 @@ def _is_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
 def _is_appearance_inbound(sample: Any, tray: Any | None = None) -> bool:
     if not isinstance(sample, dict):
         return False
+    if isinstance(tray, dict):
+        return _status(tray) in APPEARANCE_INBOUND_STATUSES
     statuses = {
         _normalize_text(sample.get("status")),
         _normalize_text(sample.get("flow_status")),
     }
-    if isinstance(tray, dict):
-        statuses.add(_status(tray))
     return bool(statuses & APPEARANCE_INBOUND_STATUSES) or APPEARANCE_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
 
 
@@ -452,6 +523,7 @@ def _validate_samples_lab_arrival_transition(current_samples: Any, next_samples:
 def _validate_samples_staging_reentry_transition(
     current_samples: Any,
     next_samples: Any,
+    experiments: Any,
     experiment_trays: Any,
     experiment_run_trays: Any,
 ) -> None:
@@ -475,6 +547,13 @@ def _validate_samples_staging_reentry_transition(
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
             if _tray_has_blocked_lab_status(current_sample, current_tray) and _tray_is_storage_room_inbound(next_tray):
+                if _is_pre_experiment_appearance_inbound(next_sample, next_tray) and _tray_has_allowed_dispatched_pre_experiment_appearance_target(
+                    current_sample,
+                    next_tray,
+                    experiments,
+                    current_tray,
+                ):
+                    continue
                 if _is_post_experiment_staging_inbound(next_sample, next_tray) and _post_staging_reentry_is_completed(
                     current_sample,
                     current_tray,
@@ -518,6 +597,22 @@ def _validate_samples_appearance_source_transition(
             current_tray = current_trays.get(_tray_code(next_tray))
             if not _appearance_inbound_state_changed(current_sample, next_sample, current_tray, next_tray):
                 continue
+            if _is_pre_experiment_appearance_inbound(next_sample, next_tray) and _tray_has_allowed_pre_experiment_appearance_target(
+                current_sample,
+                next_tray,
+                experiments,
+                current_tray,
+            ):
+                continue
+            if _is_pre_experiment_appearance_inbound(next_sample, next_tray) and _tray_has_allowed_dispatched_pre_experiment_appearance_target(
+                current_sample,
+                next_tray,
+                experiments,
+                current_tray,
+            ):
+                continue
+            if _is_pre_experiment_appearance_inbound(next_sample, next_tray):
+                raise HTTPException(status_code=400, detail=APPEARANCE_SOURCE_REQUIRED_DETAIL)
             if not _tray_has_allowed_appearance_source(
                 current_sample,
                 next_sample,
@@ -610,6 +705,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
     _validate_samples_staging_reentry_transition(
         current_samples,
         updates["mes.samples"],
+        storage.read("mes.experiments"),
         storage.read("mes.experiment_trays"),
         storage.read("mes.experiment_run_trays"),
     )

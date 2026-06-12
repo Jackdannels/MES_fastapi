@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fallback_hits
+from app.core.legacy_fallback import reset_legacy_fallback_hits
 from app.services import mq_event_processor
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import apply_laboratory_task_operation
@@ -250,19 +250,56 @@ def test_install_after_current_recompare_overwrites_stale_experiment_target():
     assert current["trays"][0]["target_lab"] == "振动一室"
 
 
+def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handover_or_staging_origin():
+    from app.services.appearance_inspection import should_route_pre_experiment_appearance
+
+    experiments = [
+        {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"},
+        {"task_code": "TASK-1", "experiment_code": "EXP-VIB", "experiment_name": "振动试验"},
+    ]
+
+    assert should_route_pre_experiment_appearance(
+        source_location="接驳区",
+        source_status="到货",
+        target_lab="振动一室",
+        target_experiment_code="EXP-SALT",
+        experiments=experiments,
+    )
+    assert should_route_pre_experiment_appearance(
+        source_location="恒温恒湿间（暂存间）",
+        source_status="已到达暂存间",
+        target_lab="霉菌试验室",
+        target_experiment_code="EXP-MISSING",
+        experiments=experiments,
+    )
+    assert not should_route_pre_experiment_appearance(
+        source_location="外观检测间",
+        source_status="实验前外观检测存放",
+        target_lab="盐雾试验室",
+        target_experiment_code="EXP-SALT",
+        experiments=experiments,
+    )
+    assert not should_route_pre_experiment_appearance(
+        source_location="接驳区",
+        source_status="到货",
+        target_lab="振动一室",
+        target_experiment_code="EXP-VIB",
+        experiments=experiments,
+    )
+
+
 def test_mqtt_sample_scope_delegates_to_shared_laboratory_scope(monkeypatch):
     calls = []
     snapshot = {"samples": []}
     scoped = {"samples": [{"code": "SP-1"}]}
 
-    def fake_scope(snapshot_arg, *, task_code, experiment_code, tray_codes, legacy_fallback_hit_id=""):
+    def fake_scope(snapshot_arg, *, task_code, experiment_code, tray_codes):
         calls.append(
             {
                 "snapshot": snapshot_arg,
                 "task_code": task_code,
                 "experiment_code": experiment_code,
                 "tray_codes": tray_codes,
-                "legacy_fallback_hit_id": legacy_fallback_hit_id,
             }
         )
         return scoped
@@ -283,12 +320,11 @@ def test_mqtt_sample_scope_delegates_to_shared_laboratory_scope(monkeypatch):
             "task_code": "TASK-1",
             "experiment_code": "EXP-VIB",
             "tray_codes": ["TP-1"],
-            "legacy_fallback_hit_id": "backend.mq.scope_sample.legacy_tray_target_fallback",
         }
     ]
 
 
-def test_start_logs_legacy_tray_sample_fallback_without_changing_scope():
+def test_start_rejects_missing_sample_relation_and_target_without_legacy_tray_fallback():
     snapshot = {
         "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
         "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
@@ -303,27 +339,17 @@ def test_start_logs_legacy_tray_sample_fallback_without_changing_scope():
         ],
     }
 
-    result = start_storage_laboratory_experiment(
-        snapshot,
-        task_code="TASK-1",
-        experiment_code="EXP-A",
-        run_no="RUN-A",
-        lab_name="盐雾试验室",
-        schedule_id="SCH-A",
-        tray_codes=["TP-A"],
-        started_at="2026-06-06 09:00:00",
-    )
-
-    assert result["affectedTrayCodes"] == ["TP-A"]
-    assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
-    assert result["samples"][1]["trays"][0]["status"] == "实验准备就绪"
-    assert get_legacy_fallback_hits() == [
-        {
-            "count": 1,
-            "id": "backend.laboratory_start.sample_scope_legacy_tray_fallback",
-            "last_detail": {"reason": "missing_experiment_sample_relation"},
-        }
-    ]
+    with pytest.raises(ValueError, match="current experiment has no matching"):
+        start_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-1",
+            experiment_code="EXP-A",
+            run_no="RUN-A",
+            lab_name="盐雾试验室",
+            schedule_id="SCH-A",
+            tray_codes=["TP-A"],
+            started_at="2026-06-06 09:00:00",
+        )
 
 
 def test_start_rejects_ambiguous_legacy_sample_without_experiment_sample_relation():
@@ -439,7 +465,7 @@ def test_complete_clears_stale_fixture_ready_marker():
     assert "fixtureReady" not in tray
 
 
-def test_complete_logs_legacy_tray_sample_fallback_without_changing_scope():
+def test_complete_rejects_missing_sample_relation_and_target_without_legacy_tray_fallback():
     snapshot = {
         "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "振动试验"}],
         "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "振动一室"}],
@@ -469,25 +495,15 @@ def test_complete_logs_legacy_tray_sample_fallback_without_changing_scope():
         ],
     }
 
-    result = complete_storage_laboratory_experiment(
-        snapshot,
-        task_code="TASK-1",
-        experiment_code="EXP-A",
-        run_no="RUN-A",
-        tray_codes=["TP-A"],
-        completed_at="2026-06-06 10:00:00",
-    )
-
-    assert result["affectedTrayCodes"] == ["TP-A"]
-    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
-    assert result["samples"][1]["trays"][0]["status"] == "实验进行中"
-    assert get_legacy_fallback_hits() == [
-        {
-            "count": 1,
-            "id": "backend.laboratory_completion.sample_scope_legacy_tray_fallback",
-            "last_detail": {"reason": "missing_experiment_sample_relation"},
-        }
-    ]
+    with pytest.raises(ValueError, match="current experiment has no matching tray samples"):
+        complete_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-1",
+            experiment_code="EXP-A",
+            run_no="RUN-A",
+            tray_codes=["TP-A"],
+            completed_at="2026-06-06 10:00:00",
+        )
 
 
 def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():

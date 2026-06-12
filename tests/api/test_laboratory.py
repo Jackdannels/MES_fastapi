@@ -1154,6 +1154,51 @@ def test_laboratory_withdraw_current_restores_appearance_storage_before_current_
     assert staging_events[-1]["target_experiment_code"] == "EXP-D"
 
 
+def test_laboratory_withdraw_current_restores_pre_experiment_appearance_storage(monkeypatch):
+    payloads = base_payloads(
+        [
+            sample_with_history(
+                "已到达实验室",
+                "盐雾试验室",
+                [
+                    {"action": "任务比对", "detail": "TASK-501 / 盐雾试验 / 已到达实验室", "status": "已到达实验室", "location": "盐雾试验室", "time": "2026-06-06T22:00:00"},
+                    {"action": "外观检测间扫码出库", "detail": "TP-501 送至 盐雾试验室", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-06-06T21:50:00"},
+                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测存放", "status": "实验前外观检测存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                ],
+            )
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"},
+        ],
+        staging_events=[
+            {"id": "pre-appearance-in", "tray_code": "TP-501", "task_code": "TASK-501", "room": "appearance", "action": "stock_in", "time": "2026-06-06T21:40:00"},
+            {
+                "id": "pre-appearance-out",
+                "tray_code": "TP-501",
+                "task_code": "TASK-501",
+                "room": "appearance",
+                "action": "stock_out",
+                "target_lab": "盐雾试验室",
+                "target_experiment_code": "EXP-B",
+                "time": "2026-06-06T21:50:00",
+            },
+        ],
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "实验前外观检测存放"
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "实验前外观检测存放"
+    assert updated["flow_status"] == "实验前外观检测存放"
+    assert updated["location"] == "外观检测间"
+    assert updated["trays"][0]["status"] == "实验前外观检测存放"
+    assert "撤回至实验前外观检测存放" in updated["history"][0]["detail"]
+
+
 def test_laboratory_withdraw_current_restores_previous_completed_experiment(monkeypatch):
     client, storage = build_client(
         monkeypatch,

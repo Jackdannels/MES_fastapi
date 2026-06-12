@@ -625,6 +625,154 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeUndefined();
   });
 
+  test("stock-out to salt lab stays a lab dispatch and appearance stock-in can optionally store it", async () => {
+    const taskCode = "SYLU-2026-04-171";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        ...createSnapshot()[STORAGE_KEYS.tasks],
+        { id: "task-171", code: taskCode, test_type: "盐雾试验", sample_type: "结构件", source: "内部新增" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        {
+          id: "exp-171-a",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        { id: "rel-171-a", task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        ...createSnapshot()[STORAGE_KEYS.schedules],
+        {
+          id: "schedule-171-a",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "盐雾试验",
+          device: "盐雾试验室",
+          start_at: "2026-04-01T12:30:00",
+          end_at: "2026-04-01T15:30:00",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: "sample-171",
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          owner: "周工",
+          location: "恒温恒湿间（暂存间）",
+          status: "已到达暂存间",
+          flow_status: "已到达暂存间",
+          trays: [{ tray_code: trayCode, status: "已到达暂存间", quantity: 1 }],
+        },
+      ],
+      [STORAGE_KEYS.staging_events]: [
+        ...createSnapshot()[STORAGE_KEYS.staging_events],
+        {
+          id: "evt-171-in",
+          tray_code: trayCode,
+          task_code: taskCode,
+          action: "stock_in",
+          time: "2026-04-01T11:20:00",
+          operator: "暂存员A",
+        },
+      ],
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+
+    let updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`);
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      target_experiment_code: experimentCode,
+      target_lab: "盐雾试验室",
+      target_type: "lab",
+      tray_code: trayCode,
+    });
+    expect(updatedSample).toMatchObject({
+      location: "盐雾试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+    });
+    expect(updatedSample.trays[0]).toMatchObject({
+      status: "送至实验室",
+      target_experiment_code: experimentCode,
+      target_lab: "盐雾试验室",
+    });
+
+    mounted.unmount();
+    wrapper = undefined;
+    headerActions?.remove();
+    headerActions = undefined;
+    const appearanceMounted = await mountPage({ room: "appearance" });
+
+    await appearanceMounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await appearanceMounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await appearanceMounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    await settlePage(appearanceMounted);
+
+    updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`);
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_in",
+      room: "appearance",
+      tray_code: trayCode,
+    });
+    expect(updatedSample).toMatchObject({
+      location: "外观检测间",
+      status: "实验前外观检测存放",
+      flow_status: "实验前外观检测存放",
+    });
+    expect(updatedSample.trays[0]).toMatchObject({
+      status: "实验前外观检测存放",
+      target_experiment_code: experimentCode,
+      target_lab: "盐雾试验室",
+    });
+
+    await appearanceMounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await settlePage(appearanceMounted);
+    await appearanceMounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await appearanceMounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await appearanceMounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const destinationModal = appearanceMounted.get('[data-testid="zancun-destination-modal"]');
+    expect(destinationModal.text()).toContain("盐雾试验室");
+    expect(destinationModal.text()).not.toContain("送至外观检测间");
+
+    await appearanceMounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+
+    updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`);
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      room: "appearance",
+      target_experiment_code: experimentCode,
+      target_lab: "盐雾试验室",
+      target_type: "lab",
+      tray_code: trayCode,
+    });
+    expect(updatedSample).toMatchObject({
+      location: "盐雾试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+    });
+    expect(updatedSample.trays[0]).toMatchObject({
+      status: "送至实验室",
+      target_experiment_code: experimentCode,
+      target_lab: "盐雾试验室",
+    });
+  });
+
   test("stock-out scan shows fallback lab as disabled when the experiment is not scheduled", async () => {
     remoteSnapshot = {
       ...createSnapshot(),

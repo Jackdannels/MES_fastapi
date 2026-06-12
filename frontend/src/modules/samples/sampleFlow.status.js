@@ -1,5 +1,6 @@
 import {
   APPEARANCE_INSPECTION_LOCATION,
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   APPEARANCE_STOCKED_STATUS,
   DEFAULT_LABELS,
   FLOW_STATUS_LABELS,
@@ -26,7 +27,12 @@ const isAmbiguousStagingStatus = (value) => {
 
 const isAppearanceInspectionStatus = (value) => {
   const text = normalizeText(value);
-  return text === "送至外观检测间" || text === APPEARANCE_STOCKED_STATUS || text === "已到达外观检测间";
+  return (
+    text === "送至外观检测间"
+    || text === APPEARANCE_STOCKED_STATUS
+    || text === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+    || text === "已到达外观检测间"
+  );
 };
 
 const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS) => {

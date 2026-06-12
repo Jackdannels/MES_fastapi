@@ -389,7 +389,7 @@ def test_merge_scoped_samples_uses_task_and_sample_code_identity():
     assert merged[1]["trays"][0]["status"] == "实验进行中"
 
 
-def test_scope_snapshot_samples_for_experiment_logs_legacy_tray_sample_fallback_without_changing_scope():
+def test_scope_snapshot_samples_for_experiment_requires_sample_relation_or_tray_target():
     reset_legacy_fallback_hits()
     snapshot = {
         "experiment_samples": [],
@@ -417,17 +417,9 @@ def test_scope_snapshot_samples_for_experiment_logs_legacy_tray_sample_fallback_
         tray_codes=["TP-001"],
     )
 
-    assert [sample["code"] for sample in scoped["samples"]] == ["SP-001"]
+    assert scoped["samples"] == []
     assert [sample["code"] for sample in snapshot["samples"]] == ["SP-001", "SP-002"]
-    assert get_legacy_fallback_hits() == [
-        {
-            "count": 1,
-            "id": "backend.mq.scope_sample.legacy_tray_target_fallback",
-            "last_detail": {
-                "reason": "missing_experiment_sample_relation",
-            },
-        }
-    ]
+    assert get_legacy_fallback_hits() == []
 
 
 def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):

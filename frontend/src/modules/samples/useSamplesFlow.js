@@ -170,8 +170,12 @@ function useSamplesFlow() {
   const detailSample = computed(() => detailDrawer.payload.value || null);
   const detailSampleTray = computed(() => getSampleTrayList(detailSample.value)[0] || null);
   const detailSampleTrayCode = computed(() => String(detailSampleTray.value?.tray_code || "").trim());
+  const detailSampleTaskCode = computed(() => String(detailSample.value?.task_code || "").trim());
   const detailSampleTrayRow = computed(() =>
-    trayRows.value.find((row) => String(row?.trayCode || "").trim() === detailSampleTrayCode.value) || null,
+    trayRows.value.find((row) =>
+      String(row?.trayCode || "").trim() === detailSampleTrayCode.value
+      && String(row?.taskCode || "").trim() === detailSampleTaskCode.value,
+    ) || null,
   );
   const detailSampleTrayFlow = computed(() => {
     const trayCode = detailSampleTrayCode.value;
@@ -192,7 +196,7 @@ function useSamplesFlow() {
       location: status === "已到达暂存间" ? DEFAULT_LABELS.preRetentionLocation : "",
       samples: rawSamples.value,
       schedules: rawSchedules.value,
-      taskCode: String(trayRow?.taskCode || sample?.task_code || "").trim(),
+      taskCode: String(trayRow?.taskCode || detailSampleTaskCode.value || "").trim(),
       trayCode,
       status,
     });

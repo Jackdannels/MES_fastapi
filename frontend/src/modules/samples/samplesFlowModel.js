@@ -1,5 +1,6 @@
 // 构建样品流转列表、暂存视图和更新辅助逻辑。
 import {
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   APPEARANCE_SENT_STATUS,
   APPEARANCE_STOCKED_STATUS,
   DETAIL_STATUS_OPTIONS,
@@ -1294,7 +1295,17 @@ function buildTrayFlowView(input = {}) {
   if (shouldShowSingleAppearance && (status === "实验已完成" || status === "实验完成")) {
     status = APPEARANCE_SENT_STATUS;
   }
-  const singleFlowSteps = shouldShowSingleAppearance
+  const isPreExperimentAppearanceStatus = status === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+  const singleFlowSteps = isPreExperimentAppearanceStatus
+    ? SAMPLE_FLOW_STEPS.flatMap((step) =>
+        step.key === "arrived_staging"
+          ? [
+              step,
+              { key: "pre_experiment_appearance_storage", label: APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS },
+            ]
+          : [step],
+      )
+    : shouldShowSingleAppearance
     ? SAMPLE_FLOW_STEPS.flatMap((step) =>
         step.key === "completed"
           ? [
