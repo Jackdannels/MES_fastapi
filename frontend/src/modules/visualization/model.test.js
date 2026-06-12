@@ -1,8 +1,28 @@
 import { describe, expect, test } from "vitest";
 
+import * as visualizationModelPublicApi from "./model";
 import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
+import {
+  buildLabProcessPanels as buildLabProcessPanelsFromLabProcessModel,
+  getVisualizationLabNames as getVisualizationLabNamesFromLabProcessModel,
+} from "./labProcessModel";
+import { buildLabScheduleThreeDayView as buildLabScheduleThreeDayViewFromScheduleThreeDayModel } from "./scheduleThreeDayModel";
+import { buildStagingSamplesView as buildStagingSamplesViewFromStagingSamplesModel } from "./stagingSamplesModel";
 
 describe("visualization model", () => {
+  test("keeps the visualization model public compatibility exports stable", () => {
+    expect(Object.keys(visualizationModelPublicApi).sort()).toEqual([
+      "buildLabProcessPanels",
+      "buildLabScheduleThreeDayView",
+      "buildStagingSamplesView",
+      "getVisualizationLabNames",
+    ].sort());
+    expect(visualizationModelPublicApi.buildLabProcessPanels).toBe(buildLabProcessPanelsFromLabProcessModel);
+    expect(visualizationModelPublicApi.getVisualizationLabNames).toBe(getVisualizationLabNamesFromLabProcessModel);
+    expect(visualizationModelPublicApi.buildLabScheduleThreeDayView).toBe(buildLabScheduleThreeDayViewFromScheduleThreeDayModel);
+    expect(visualizationModelPublicApi.buildStagingSamplesView).toBe(buildStagingSamplesViewFromStagingSamplesModel);
+  });
+
   test("uses only real device ledger entries as visualization laboratories", () => {
     expect(getVisualizationLabNames()).toEqual([]);
     expect(getVisualizationLabNames([

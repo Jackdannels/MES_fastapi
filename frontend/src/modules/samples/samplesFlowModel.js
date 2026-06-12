@@ -1,6 +1,4 @@
 // 构建样品流转列表、暂存视图和更新辅助逻辑。
-import { formatLocalDateTime } from "@/lib/dateTime";
-import { isReturnedTrayStatus } from "@/lib/taskArchive";
 import {
   APPEARANCE_SENT_STATUS,
   APPEARANCE_STOCKED_STATUS,
@@ -10,13 +8,11 @@ import {
   FLOW_STEP_KEY_BY_LABEL,
   RUNNING_EXPERIMENT_RUN_STATUSES,
   SAMPLE_FLOW_STEPS,
-  TEST_LAB_OPTIONS,
   TRAY_STATUS_OPTIONS,
 } from "./sampleFlow.constants";
 import { normalizeText } from "./sampleFlow.shared";
 import {
   asArray,
-  compareText,
   entryMatchesTrayCode,
   entryTimeValue,
   firstNonEmptyArray,
@@ -31,9 +27,7 @@ import {
   isAmbiguousStagingStatus,
   isAppearanceInspectionStatus,
   isPostRetentionLocation,
-  normalizeLabels,
   normalizeLifecycleStatus,
-  normalizeSampleRecord,
   normalizeSamplesSnapshot,
   resolveFlowStatusByLocation,
   syncTrayStatusToSampleStatus,
@@ -43,10 +37,8 @@ import {
   buildLabDispatchStepLabel,
   experimentRequiresAppearanceInspection,
   findCompletedExperimentHistoryEntry,
-  generateId,
   hasExperimentEnteredLabFlow,
   latestWithdrawalHistoryEntry,
-  parseCodeList,
   parseExperimentHistoryDetail,
   parseRetainedCompletedExperimentBeforeWithdrawal,
   parseWithdrawalRestoreTarget,
@@ -58,17 +50,7 @@ import {
   resolveExperimentRunEntry,
   resolveExperimentRunStatus,
 } from "./sampleFlow.experimentRuns";
-import {
-  compareValue,
-  filterSamplesForActiveTasks,
-  resolveStatusClass,
-} from "./sampleFlow.sampleTableHelpers";
-import {
-  appendSampleHistory,
-  cloneSampleCollection,
-  resolveSampleStatus,
-  synchronizeSamplesForTrayCodes,
-} from "./sampleFlow.sampleCollection";
+import { synchronizeSamplesForTrayCodes } from "./sampleFlow.sampleCollection";
 import {
   hidePendingFlowStepTimes,
   normalizeHistoryFlowLabel,
@@ -82,6 +64,15 @@ import {
   resolveExperimentEvent,
   resolveLatestExperimentEventMap,
 } from "./sampleFlow.experimentEvents";
+import { buildSamplesTrayOverviewView } from "./sampleFlow.trayOverviewView";
+import { buildSamplesFlowView } from "./sampleFlow.samplesListView";
+import { buildSamplesStagingView } from "./sampleFlow.stagingView";
+import {
+  dispatchStagingSamples,
+  submitSamplesBatchIntake,
+  updateSampleDetail,
+  updateTrayStatus,
+} from "./sampleFlow.commands";
 
 const resolveSingleTrayExperiment = (input = {}) => {
   const orderedExperiments = buildOrderedTrayExperiments({
@@ -521,78 +512,6 @@ const buildTrayExperimentFlow = (input = {}) => {
     };
   });
 };
-
-function buildSamplesTrayOverviewView(input = {}) {
-  const tasks = Array.isArray(input.tasks) ? input.tasks : [];
-  const samples = Array.isArray(input.samples) ? input.samples : [];
-  const query = normalizeText(input.query).toLowerCase();
-  const taskMap = new Map(
-    tasks.map((task) => [
-      normalizeText(task?.code),
-      {
-        code: normalizeText(task?.code),
-        name: normalizeText(task?.name),
-        testType: normalizeText(task?.test_type),
-      },
-    ]),
-  );
-  const trayMap = new Map();
-
-  samples.forEach((sample) => {
-    const sampleCode = normalizeText(sample?.code);
-    const taskCode = normalizeText(sample?.task_code);
-    const task = taskMap.get(taskCode) || { code: taskCode, name: "", testType: "" };
-    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
-    getSampleTrayList(sample).forEach((tray) => {
-      const trayCode = normalizeText(tray?.tray_code);
-      if (!trayCode) {
-        return;
-      }
-      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
-      if (isReturnedTrayStatus(trayStatus)) {
-        return;
-      }
-      if (!trayMap.has(trayCode)) {
-        trayMap.set(trayCode, {
-          trayCode,
-          taskCode,
-          taskName: task.name,
-          testType: task.testType,
-          status: trayStatus,
-          sampleCodes: [],
-        });
-      }
-      const row = trayMap.get(trayCode);
-      if (!row.sampleCodes.includes(sampleCode)) {
-        row.sampleCodes.push(sampleCode);
-      }
-      if (!row.status) {
-        row.status = trayStatus;
-      }
-    });
-  });
-
-  const rows = Array.from(trayMap.values())
-    .map((row) => ({
-      ...row,
-      sampleCodes: row.sampleCodes.slice().sort(compareText),
-      sampleCount: row.sampleCodes.length,
-      statusClass: resolveStatusClass(row.status),
-      sampleSummary: row.sampleCodes.slice().sort(compareText).join("、"),
-    }))
-    .filter((row) => {
-      if (!query) {
-        return true;
-      }
-      return [row.trayCode, row.taskCode, row.taskName, row.testType, row.status, row.sampleSummary]
-        .map((item) => normalizeText(item).toLowerCase())
-        .join(" ")
-        .includes(query);
-    })
-    .sort((left, right) => compareText(left.trayCode, right.trayCode));
-
-  return { rows };
-}
 
 const buildTrayFlowTimeMap = (input = {}) => {
   const taskCode = normalizeText(input.taskCode);
@@ -1422,378 +1341,6 @@ function buildTrayFlowView(input = {}) {
     status: displayCurrentStatus,
     currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${displayCurrentStatus}` : `当前状态：${displayCurrentStatus}`,
     steps,
-  };
-}
-
-// 在筛选和排序后构建分页样品流转表格。
-function buildSamplesFlowView(input = {}) {
-  const tasks = Array.isArray(input.tasks) ? input.tasks : [];
-  const samples = filterSamplesForActiveTasks(input.samples, tasks).slice();
-  const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
-  const sort = input.sort && typeof input.sort === "object" ? input.sort : {};
-  const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 8;
-
-  const query = normalizeText(filters.query).toLowerCase();
-  const selectedTaskCode = normalizeText(filters.taskCode);
-  const selectedStatus = normalizeText(filters.status);
-
-  const normalizedSamples = samples.map((sample) => normalizeSampleRecord(sample));
-  const rows = normalizedSamples
-    .filter((sample) => {
-      // 列表筛选同时支持任务号、状态和自由关键词。
-      if (selectedTaskCode && normalizeText(sample.task_code) !== selectedTaskCode) {
-        return false;
-      }
-      if (selectedStatus && normalizeText(sample.status) !== selectedStatus) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      const trayText = getSampleTrayList(sample)
-        .map((tray) => normalizeText(tray.tray_code))
-        .join(" ");
-      const searchText = [
-        sample.task_code,
-        sample.code,
-        trayText,
-        sample.location,
-        sample.owner,
-        sample.status,
-        sample.flow_status,
-      ]
-        .map((item) => normalizeText(item).toLowerCase())
-        .join(" ");
-      return searchText.includes(query);
-    })
-    .map((sample) => {
-      const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
-      return {
-        ...sample,
-        // 托盘编号和状态样式都在视图层消费，因此提前派生好。
-        trayCodes,
-        trayCodesText: trayCodes.join("、"),
-        statusClass: resolveStatusClass(sample.status),
-      };
-    });
-
-  const sortKey = normalizeText(sort.key);
-  const sortDirection = normalizeText(sort.direction) === "desc" ? "desc" : "asc";
-  const sortedRows = rows.slice().sort((left, right) => {
-    if (!sortKey) {
-      return compareValue(left.code, right.code, "asc");
-    }
-    const order = compareValue(left?.[sortKey], right?.[sortKey], sortDirection);
-    if (order !== 0) {
-      return order;
-    }
-    return compareValue(left.code, right.code, "asc");
-  });
-
-  const totalPages = Math.max(1, Math.ceil(sortedRows.length / pageSize));
-  const rawPage = Number.parseInt(String(input.page ?? 1), 10);
-  const currentPage = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), totalPages) : 1;
-  const startIndex = (currentPage - 1) * pageSize;
-
-  const taskCodes = Array.from(
-    new Set(normalizedSamples.map((sample) => normalizeText(sample?.task_code)).filter(Boolean)),
-  ).sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
-  const statusOptions = Array.from(new Set(normalizedSamples.map((sample) => normalizeText(sample?.status)).filter(Boolean))).sort(
-    (left, right) => left.localeCompare(right, "zh-Hans-CN"),
-  );
-
-  return {
-    currentPage,
-    rows: sortedRows.slice(startIndex, startIndex + pageSize),
-    statusOptions,
-    taskOptions: taskCodes,
-    totalCount: sortedRows.length,
-    totalPages,
-  };
-}
-
-// 对多个样品一次性执行批量接样操作。
-function submitSamplesBatchIntake(input = {}) {
-  const labels = normalizeLabels(input.labels);
-  const samples = Array.isArray(input.samples)
-    ? input.samples.map((sample) => ({
-        ...sample,
-        history: Array.isArray(sample?.history) ? sample.history.slice() : [],
-        trays: Array.isArray(sample?.trays) ? sample.trays.slice() : [],
-      }))
-    : [];
-  const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
-  const codes = parseCodeList(payload.codes);
-  const targetLocation =
-    normalizeText(payload.location) ||
-    normalizeText(labels.intakeLocation) ||
-    normalizeText(labels.unpackingLocation) ||
-      normalizeText(labels.preRetentionLocation) ||
-      normalizeText(labels.retentionLocation);
-
-  // 批量接样要求同时提供目标位置和至少一个样品号。
-  if (!targetLocation || codes.length === 0) {
-    return { error: "\u8BF7\u586B\u5199\u5165\u5E93\u4F4D\u7F6E\u548C\u6837\u54C1\u5217\u8868\u3002", samples };
-  }
-
-  const now = input.now || formatLocalDateTime();
-  codes.forEach((code) => {
-    const existing = samples.find((sample) => normalizeText(sample.code) === code);
-    const nextStatus = resolveSampleStatus(targetLocation, labels);
-    if (existing) {
-      // 已存在样品按“更新位置与状态”处理，不重复生成记录。
-      existing.location = targetLocation;
-      existing.owner = normalizeText(payload.owner) || existing.owner || "";
-      existing.status = normalizeLifecycleStatus(targetLocation, nextStatus, labels);
-      existing.flow_status = existing.status;
-      existing.updated_at = now;
-      existing.history = appendSampleHistory(existing, "\u6279\u91CF\u5165\u5E93", "", now);
-      return;
-    }
-
-    const created = {
-      // 不存在的样品号会在批量接样时被直接创建。
-      id: generateId("sample"),
-      code,
-      task_code: "",
-      location: targetLocation,
-      owner: normalizeText(payload.owner),
-      status: normalizeLifecycleStatus(targetLocation, nextStatus, labels),
-      flow_status: normalizeLifecycleStatus(targetLocation, nextStatus, labels),
-      created_at: now,
-      updated_at: now,
-      trays: [],
-      history: [],
-    };
-    created.history = appendSampleHistory(created, "\u6279\u91CF\u5165\u5E93", "", now);
-    samples.unshift(created);
-  });
-
-  return { error: "", samples: normalizeSamplesSnapshot(samples, labels) };
-}
-
-// 更新单个样品可编辑的明细字段及其派生状态。
-function updateSampleDetail(input = {}) {
-  const sample = input.sample && typeof input.sample === "object" ? { ...input.sample } : null;
-  if (!sample) {
-    return { error: "\u672A\u627E\u5230\u6837\u54C1\u3002", sample: null };
-  }
-  const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
-  const labels = normalizeLabels(input.labels);
-  const nextStatus = normalizeText(payload.status) || normalizeText(sample.status);
-  const nextRemark = normalizeText(payload.remark);
-  const now = input.now || formatLocalDateTime();
-  const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
-
-  if (trayCodes.length > 0) {
-    const result = synchronizeSamplesForTrayCodes({
-      historyAction: "\u6837\u54C1\u8BE6\u60C5\u66F4\u65B0",
-      historyDetail: nextRemark,
-      labels,
-      now,
-      samples: [sample],
-      status: nextStatus,
-      trayCodes,
-    });
-    return { error: "", sample: result.samples[0] || sample };
-  }
-
-  // 明细抽屉只允许改状态与备注，流转状态由位置和状态共同派生。
-  sample.status = normalizeLifecycleStatus(sample.location, nextStatus, labels);
-  sample.flow_status = sample.status;
-  sample.updated_at = now;
-  sample.history = appendSampleHistory(sample, "\u6837\u54C1\u8BE6\u60C5\u66F4\u65B0", nextRemark, now);
-
-  return { error: "", sample };
-}
-
-function updateTrayStatus(input = {}) {
-  const trayCode = normalizeText(input.trayCode);
-  const labels = normalizeLabels(input.labels);
-  const now = input.now || formatLocalDateTime();
-  const samples = cloneSampleCollection(input.samples);
-
-  if (!trayCode || !normalizeText(input.status)) {
-    return { error: "请选择托盘和目标状态。", samples };
-  }
-
-  const nextStatus = syncTrayStatusToSampleStatus(input.status, "", labels);
-  const result = synchronizeSamplesForTrayCodes({
-    historyAction: "托盘状态更新",
-    historyDetail: `${trayCode} -> ${nextStatus}`,
-    labels,
-    now,
-    samples,
-    status: nextStatus,
-    trayCodes: [trayCode],
-  });
-
-  return {
-    error: result.updatedCount > 0 ? "" : `未找到托盘 ${trayCode}。`,
-    samples: result.samples,
-  };
-}
-
-// 构建当前位于前置或实验后暂存间的只读样品列表。
-function buildSamplesStagingView(input = {}) {
-  const labels = normalizeLabels(input.labels);
-  const samples = Array.isArray(input.samples) ? input.samples : [];
-  const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
-  const query = normalizeText(filters.query || input.query).toLowerCase();
-  const selectedTaskCode = normalizeText(filters.taskCode);
-  const selectedStatus = normalizeText(filters.status);
-  const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 8;
-  const selectedCodes = Array.isArray(input.selectedCodes)
-    ? input.selectedCodes.map((code) => normalizeText(code)).filter(Boolean)
-    : [];
-  const selectedSet = new Set(selectedCodes);
-  const preRetentionLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation);
-  const postRetentionLocation = normalizeText(labels.postRetentionLocation);
-
-  const normalizedSamples = normalizeSamplesSnapshot(samples, labels);
-  const stagingSamples = normalizedSamples.filter((sample) => {
-    // 样品信息中的暂存间只做查看，包含前置暂存间和实验后暂存间。
-    const location = normalizeText(sample?.location);
-    return location === preRetentionLocation || location === postRetentionLocation;
-  });
-  const rows = stagingSamples
-    .filter((sample) => {
-      if (selectedTaskCode && normalizeText(sample?.task_code) !== selectedTaskCode) {
-        return false;
-      }
-      if (selectedStatus && normalizeText(sample?.status) !== selectedStatus) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      const searchText = [
-        sample?.code,
-        sample?.task_code,
-        sample?.location,
-        sample?.status,
-        sample?.owner,
-        sample?.flow_status,
-      ]
-        .map((item) => normalizeText(item).toLowerCase())
-        .join(" ");
-      return searchText.includes(query);
-    })
-    .map((sample) => {
-      const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
-      return {
-        ...sample,
-        selected: selectedSet.has(normalizeText(sample?.code)),
-        statusClass: resolveStatusClass(sample?.status),
-        trayCodes,
-        trayCodesText: trayCodes.join("、"),
-      };
-    })
-    .sort((left, right) => compareValue(left.code, right.code, "asc"));
-
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const rawPage = Number.parseInt(String(input.page ?? 1), 10);
-  const currentPage = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), totalPages) : 1;
-  const startIndex = (currentPage - 1) * pageSize;
-  const taskOptions = Array.from(new Set(stagingSamples.map((sample) => normalizeText(sample?.task_code)).filter(Boolean))).sort(
-    (left, right) => left.localeCompare(right, "zh-Hans-CN"),
-  );
-  const statusOptions = Array.from(new Set(stagingSamples.map((sample) => normalizeText(sample?.status)).filter(Boolean))).sort(
-    (left, right) => left.localeCompare(right, "zh-Hans-CN"),
-  );
-
-  return {
-    count: rows.length,
-    currentPage,
-    labOptions: TEST_LAB_OPTIONS.slice(),
-    rows: rows.slice(startIndex, startIndex + pageSize),
-    statusOptions,
-    taskOptions,
-    totalCount: rows.length,
-    totalPages,
-  };
-}
-
-// 将选中的暂存样品派发到目标实验室和责任人。
-function dispatchStagingSamples(input = {}) {
-  const labels = normalizeLabels(input.labels);
-  let samples = cloneSampleCollection(input.samples);
-  const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
-  const selectedCodes = Array.isArray(input.selectedCodes) ? input.selectedCodes : [];
-  const targetLab = normalizeText(payload.targetLab);
-  const owner = normalizeText(payload.owner);
-  const preRetentionLocation = normalizeText(labels.preRetentionLocation || labels.retentionLocation);
-  const codes = Array.from(new Set([...selectedCodes, ...parseCodeList(payload.codes)].map((code) => normalizeText(code)).filter(Boolean)));
-
-  // 暂存派发要求目标实验室和样品集合都有效。
-  if (!targetLab || codes.length === 0) {
-    return {
-      error: "请填写样品编号并选择目标实验室。",
-      samples,
-      dispatchedCodes: [],
-    };
-  }
-
-  const missing = [];
-  const notStaging = [];
-  const dispatchedCodes = [];
-  const now = input.now || formatLocalDateTime();
-  const trayCodesToSync = new Set();
-
-  codes.forEach((code) => {
-    const sample = samples.find((item) => normalizeText(item?.code) === code);
-    if (!sample) {
-      missing.push(code);
-      return;
-    }
-    if (normalizeText(sample.location) !== preRetentionLocation) {
-      notStaging.push(code);
-      return;
-    }
-
-    // 只有当前位于暂存间的样品才允许派发到正式实验室。
-    getSampleTrayList(sample).forEach((tray) => {
-      const trayCode = normalizeText(tray?.tray_code);
-      if (trayCode) {
-        trayCodesToSync.add(trayCode);
-      }
-    });
-    sample.location = targetLab;
-    sample.owner = owner || normalizeText(sample.owner);
-    sample.status = normalizeLifecycleStatus(targetLab, "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4", labels);
-    sample.flow_status = sample.status;
-    sample.updated_at = now;
-    sample.history = appendSampleHistory(sample, "暂存间派发", "", now);
-    dispatchedCodes.push(code);
-  });
-
-  if (trayCodesToSync.size > 0) {
-    const synced = synchronizeSamplesForTrayCodes({
-      historyAction: "",
-      labels,
-      location: targetLab,
-      now,
-      owner,
-      samples,
-      status: "\u5DF2\u5230\u8FBE\u5B9E\u9A8C\u5BA4",
-      trayCodes: Array.from(trayCodesToSync),
-    });
-    samples = synced.samples;
-  }
-
-  const warnings = [];
-  if (missing.length) {
-    warnings.push(`未找到样品：${missing.join("、")}`);
-  }
-  if (notStaging.length) {
-    warnings.push(`不在暂存间：${notStaging.join("、")}`);
-  }
-
-  return {
-    // 部分成功时会同时返回更新后的样品集合和告警文本。
-    error: warnings.length ? `${warnings.join("；")}。` : "",
-    samples,
-    dispatchedCodes,
   };
 }
 

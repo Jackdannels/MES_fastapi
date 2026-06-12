@@ -5,7 +5,6 @@ import {
   asArray,
   compareText,
   entryTimeValue,
-  parseTimeValue,
   resolveEntryExperimentCode,
   resolveEntryTaskCode,
   resolveEntryTrayCode,

@@ -14,6 +14,12 @@ import {
 } from "./sampleFlow.status";
 import { getSampleTrayList as getSampleTrayListFromTrayScope } from "./sampleFlow.trayScope";
 import {
+  dispatchStagingSamples as dispatchStagingSamplesFromCommands,
+  submitSamplesBatchIntake as submitSamplesBatchIntakeFromCommands,
+  updateSampleDetail as updateSampleDetailFromCommands,
+  updateTrayStatus as updateTrayStatusFromCommands,
+} from "./sampleFlow.commands";
+import {
   buildTrayFlowView as buildTrayFlowViewRaw,
   buildSamplesTrayOverviewView,
   buildSamplesFlowView,
@@ -3765,6 +3771,10 @@ describe("samplesFlowModel", () => {
     expect(samplesFlowModelPublicApi.normalizeSamplesSnapshot).toBe(normalizeSamplesSnapshotFromStatus);
     expect(samplesFlowModelPublicApi.resolveFlowStatusByLocation).toBe(resolveFlowStatusByLocationFromStatus);
     expect(samplesFlowModelPublicApi.syncTrayStatusToSampleStatus).toBe(syncTrayStatusToSampleStatusFromStatus);
+    expect(samplesFlowModelPublicApi.submitSamplesBatchIntake).toBe(submitSamplesBatchIntakeFromCommands);
+    expect(samplesFlowModelPublicApi.updateSampleDetail).toBe(updateSampleDetailFromCommands);
+    expect(samplesFlowModelPublicApi.updateTrayStatus).toBe(updateTrayStatusFromCommands);
+    expect(samplesFlowModelPublicApi.dispatchStagingSamples).toBe(dispatchStagingSamplesFromCommands);
   });
 
   test("syncTrayStatusToSampleStatus maps tray status directly to the same sample status label", () => {

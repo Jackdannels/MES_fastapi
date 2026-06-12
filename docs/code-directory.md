@@ -107,6 +107,10 @@
 - `frontend/src/modules/samples/sampleFlow.experimentEvents.js`：样品流转实验事件 helper，负责实验历史事件映射、实验别名事件匹配、实验状态优先级和单实验状态展示标签。
 - `frontend/src/modules/samples/sampleFlow.sampleTableHelpers.js`：样品流转列表 helper，负责列表状态 class、排序比较和按活跃任务过滤样品。
 - `frontend/src/modules/samples/sampleFlow.sampleCollection.js`：样品集合命令 helper，负责按位置反推样品状态、追加样品历史、克隆样品集合，以及按托盘号批量同步样品/托盘状态。
+- `frontend/src/modules/samples/sampleFlow.commands.js`：样品流转命令函数，负责批量接样、样品详情更新、托盘状态更新和暂存样品派发。
+- `frontend/src/modules/samples/sampleFlow.samplesListView.js`：样品流转列表视图 builder，负责样品列表筛选、排序、分页、托盘编号摘要和状态样式派生。
+- `frontend/src/modules/samples/sampleFlow.trayOverviewView.js`：样品流转托盘总览视图 builder，负责按托盘聚合样品、关联任务信息、过滤已收回托盘和托盘管理搜索。
+- `frontend/src/modules/samples/sampleFlow.stagingView.js`：样品流转暂存视图 builder，负责前置/实验后暂存样品过滤、搜索分页、勾选状态、托盘摘要和实验室选项输出。
 - `frontend/src/modules/samples/sampleFlow.flowTimeHelpers.js`：样品流转时间线 helper，负责历史状态标签归一化、时间历史去重、步骤最新时间选择和未到达步骤时间隐藏。
 - `frontend/src/modules/samples/sampleFlow.trayLifecycle.js`：样品流转托盘生命周期 helper，负责厂家收回/已处置状态识别、托盘/历史记录收回判定，以及按任务和托盘解析有效生命周期状态。
 - `frontend/src/modules/samples/sampleFlow.shared.js`：样品流转共享底层 helper。
@@ -115,7 +119,9 @@
 - `frontend/src/modules/samples/SamplesManagementPanel.vue`：样品管理面板。
 - `frontend/src/modules/samples/TrayManagementPanel.vue`：托盘管理面板。
 - `frontend/src/modules/schedule/`：排班模块。
-- `frontend/src/modules/schedule/model.js`：排班状态、甘特图、冲突、表单和任务状态派生。
+- `frontend/src/modules/schedule/model.js`：排班模型兼容入口和业务编排，负责排班状态、甘特图、冲突、任务状态派生和排班增删改。
+- `frontend/src/modules/schedule/sharedModel.js`：排班共享基础 helper，负责暂存设备识别、时段常量、文本/时间格式化、日期偏移、重叠判断和甘特槽状态。
+- `frontend/src/modules/schedule/formModel.js`：排班表单模型，负责手动排程默认状态、时段选项、编辑/重排表单、计划时长归一化和排程时间解析。
 - `frontend/src/modules/schedule/useSchedulePage.js`：排班页面组合式状态。
 - `frontend/src/modules/staging-management/`：暂存间管理模块。
 - `frontend/src/modules/staging-management/model.js`：暂存间库存、扫描、指标和动作模型。
@@ -130,7 +136,12 @@
 - `frontend/src/modules/transfer-workbench/TransferDispatchPanel.vue`：托盘派发面板。
 - `frontend/src/modules/transfer-workbench/useTransferDispatch.js`：派发流程组合式逻辑。
 - `frontend/src/modules/visualization/`：可视化大屏模块。
-- `frontend/src/modules/visualization/model.js`：可视化数据模型、实验室面板、暂存展示和流程视图。
+- `frontend/src/modules/visualization/model.js`：可视化数据模型兼容入口，重导出实验室面板、三日排班和暂存展示 builder。
+- `frontend/src/modules/visualization/sharedModel.js`：可视化模型共享 helper，负责文本/时间/数量归一化、任务/实验/托盘字段解析和实验索引构建。
+- `frontend/src/modules/visualization/experimentCompletionModel.js`：可视化实验完成判定 helper，负责实验历史解析、运行托盘完成状态、厂家收回和托盘实验完成判定。
+- `frontend/src/modules/visualization/labProcessModel.js`：可视化实验室流程面板 builder，负责实验室设备健康、实验室托盘行、流程步骤和实验室面板汇总。
+- `frontend/src/modules/visualization/scheduleThreeDayModel.js`：可视化三日排班 builder，负责三日窗口、甘特行、冲突数量和实验室负载摘要。
+- `frontend/src/modules/visualization/stagingSamplesModel.js`：可视化暂存展示 builder，负责暂存/外观/实验后暂存托盘分类、容量统计和任务分组。
 - `frontend/src/modules/visualization/flowStepState.js`：可视化流程步骤状态展示辅助。
 - `frontend/src/modules/visualization/page.vue`：可视化页面组件。
 - `frontend/src/modules/visualization/styles.css`：可视化页面样式。

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import * as scheduleModelPublicApi from "./model";
 import {
   analyzeTaskTrayConflict,
   buildManualTimeSlotOptions,
@@ -24,9 +25,48 @@ import {
   resolveScheduleTimes,
   updateScheduleRecord,
 } from "./model";
+import {
+  PLANNED_DURATION_MAX_DAYS as PLANNED_DURATION_MAX_DAYS_FROM_FORM_MODEL,
+  PLANNED_DURATION_MAX_HOURS as PLANNED_DURATION_MAX_HOURS_FROM_FORM_MODEL,
+  buildManualTimeSlotOptions as buildManualTimeSlotOptionsFromFormModel,
+  buildScheduleEditForm as buildScheduleEditFormFromFormModel,
+  buildScheduleRescheduleForm as buildScheduleRescheduleFormFromFormModel,
+  createManualScheduleForm as createManualScheduleFormFromFormModel,
+  createScheduleEditForm as createScheduleEditFormFromFormModel,
+  isManualScheduleSelectionLegal as isManualScheduleSelectionLegalFromFormModel,
+  resolveLegalManualScheduleState as resolveLegalManualScheduleStateFromFormModel,
+  resolveScheduleTimes as resolveScheduleTimesFromFormModel,
+} from "./formModel";
+import {
+  RETENTION_DEVICE as RETENTION_DEVICE_FROM_SHARED_MODEL,
+  formatDateTime as formatDateTimeFromSharedModel,
+  isRetentionDevice as isRetentionDeviceFromSharedModel,
+  normalizeText as normalizeTextFromSharedModel,
+  toLocalDateValue as toLocalDateValueFromSharedModel,
+  toLocalTimeValue as toLocalTimeValueFromSharedModel,
+} from "./sharedModel";
 
 // 这组测试主要保护排程页最容易回归的时间边界、暂存间迁移和甘特图契约。
 describe("schedulePageModel", () => {
+  test("keeps the schedule model public compatibility exports stable after splitting helpers", () => {
+    expect(scheduleModelPublicApi.RETENTION_DEVICE).toBe(RETENTION_DEVICE_FROM_SHARED_MODEL);
+    expect(scheduleModelPublicApi.formatDateTime).toBe(formatDateTimeFromSharedModel);
+    expect(scheduleModelPublicApi.isRetentionDevice).toBe(isRetentionDeviceFromSharedModel);
+    expect(scheduleModelPublicApi.normalizeText).toBe(normalizeTextFromSharedModel);
+    expect(scheduleModelPublicApi.toLocalDateValue).toBe(toLocalDateValueFromSharedModel);
+    expect(scheduleModelPublicApi.toLocalTimeValue).toBe(toLocalTimeValueFromSharedModel);
+    expect(scheduleModelPublicApi.PLANNED_DURATION_MAX_DAYS).toBe(PLANNED_DURATION_MAX_DAYS_FROM_FORM_MODEL);
+    expect(scheduleModelPublicApi.PLANNED_DURATION_MAX_HOURS).toBe(PLANNED_DURATION_MAX_HOURS_FROM_FORM_MODEL);
+    expect(scheduleModelPublicApi.buildManualTimeSlotOptions).toBe(buildManualTimeSlotOptionsFromFormModel);
+    expect(scheduleModelPublicApi.buildScheduleEditForm).toBe(buildScheduleEditFormFromFormModel);
+    expect(scheduleModelPublicApi.buildScheduleRescheduleForm).toBe(buildScheduleRescheduleFormFromFormModel);
+    expect(scheduleModelPublicApi.createManualScheduleForm).toBe(createManualScheduleFormFromFormModel);
+    expect(scheduleModelPublicApi.createScheduleEditForm).toBe(createScheduleEditFormFromFormModel);
+    expect(scheduleModelPublicApi.isManualScheduleSelectionLegal).toBe(isManualScheduleSelectionLegalFromFormModel);
+    expect(scheduleModelPublicApi.resolveLegalManualScheduleState).toBe(resolveLegalManualScheduleStateFromFormModel);
+    expect(scheduleModelPublicApi.resolveScheduleTimes).toBe(resolveScheduleTimesFromFormModel);
+  });
+
   test("resolveScheduleTimes keeps fixed slot boundaries", () => {
     const result = resolveScheduleTimes(
       {

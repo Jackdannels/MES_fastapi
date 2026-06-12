@@ -3,7 +3,7 @@ import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
-import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab } from "@/lib/labIdentity";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
 const STATUS_WAITING = "待排程";
@@ -14,8 +14,6 @@ const STATUS_RETENTION = "暂存间存放";
 const DEVICE_STATUS_MAINTENANCE = "维护/校准";
 const DEVICE_STATUS_DISABLED = "停用";
 const STREAMING_STATUS = "Streaming";
-const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
-const RETENTION_KEYWORD = "暂存间";
 const STARTED_TRAY_STATUSES = new Set([
   STATUS_RUNNING,
   "实验中",
@@ -34,15 +32,33 @@ const COMPLETED_TRAY_STATUSES = new Set([
   "放置实验后暂存间",
   "厂家收回",
 ]);
-const SLOT_RANGES = Object.freeze({
-  morning: { start: "08:00", end: "12:00", label: "上午 08:00-12:00" },
-  afternoon: { start: "12:00", end: "18:00", label: "下午 12:00-18:00" },
-});
-const SLOT_BUFFER_MINUTES = 10;
-
-// 排程模块的大部分判断都依赖稳定字符串，因此先做统一规范化。
-const normalizeText = (value) => String(value ?? "").trim();
-
+import {
+  RETENTION_DEVICE,
+  RETENTION_KEYWORD,
+  SLOT_RANGES,
+  addDays,
+  createId,
+  formatDateTime,
+  getSlotState,
+  isRetentionDevice,
+  normalizeText,
+  overlaps,
+  parseDate,
+  toLocalDateValue,
+  toLocalTimeValue,
+} from "./sharedModel";
+import {
+  PLANNED_DURATION_MAX_DAYS,
+  PLANNED_DURATION_MAX_HOURS,
+  buildManualTimeSlotOptions,
+  buildScheduleEditForm,
+  buildScheduleRescheduleForm,
+  createManualScheduleForm,
+  createScheduleEditForm,
+  isManualScheduleSelectionLegal,
+  resolveLegalManualScheduleState,
+  resolveScheduleTimes,
+} from "./formModel";
 const buildActiveTaskContext = (tasks, samples = []) => {
   const taskList = Array.isArray(tasks) ? tasks : [];
   if (taskList.length === 0) {
@@ -110,20 +126,6 @@ const buildExperimentCandidates = ({ taskCode, experiments, tasks }) => {
   }
 
   return taskList.flatMap((task) => buildFallbackExperimentsForTask(task));
-};
-
-// 暂存间是特殊设备类型，很多冲突和状态判断都要排除它。
-const isRetentionDevice = (value) => {
-  if (value && typeof value === "object") {
-    return scheduleTargetsStorageArea(value);
-  }
-  return normalizeText(value).includes(RETENTION_KEYWORD);
-};
-
-// 输入可能来自 ISO 字符串、空值或 Date 实例，统一在这里做容错解析。
-const parseDate = (value) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
@@ -213,433 +215,7 @@ const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt })
 const findDeviceRecord = (devices = [], deviceCode = "") =>
   (Array.isArray(devices) ? devices : []).find((device) => normalizeText(device?.code) === normalizeText(deviceCode));
 
-// 把 Date 对象格式化成日期输入框可直接消费的 yyyy-MM-dd。
-const toLocalDateValue = (date) => {
-  const source = date instanceof Date ? new Date(date.getTime()) : new Date(date);
-  if (Number.isNaN(source.getTime())) {
-    return "";
-  }
-  const year = source.getFullYear();
-  const month = String(source.getMonth() + 1).padStart(2, "0");
-  const day = String(source.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-// 从日期对象中提取 HH:mm，供时间输入框和展示逻辑复用。
-const toLocalTimeValue = (value) => {
-  const date = parseDate(value);
-  if (!date) {
-    return "";
-  }
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-};
-
-const truncateToMinute = (value) => {
-  const date = parseDate(value);
-  if (!date) {
-    return null;
-  }
-  date.setSeconds(0, 0);
-  return date;
-};
-
-// 排程表格统一展示 yyyy-MM-dd HH:mm 格式。
-const formatDateTime = (value) => {
-  const date = parseDate(value);
-  if (!date) {
-    return "";
-  }
-  return `${toLocalDateValue(date)} ${toLocalTimeValue(date)}`;
-};
-
-// 甘特图和默认排程窗口经常需要按天偏移。
-const addDays = (date, days) => {
-  const nextDate = new Date(date.getTime());
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
-};
-
-const buildSlotBoundary = (dateValue, timeValue) => parseDate(`${dateValue}T${timeValue}:00`);
-
-const getLatestMorningScheduleEnd = (dateValue, schedules = []) => {
-  const noonBoundary = buildSlotBoundary(dateValue, SLOT_RANGES.afternoon.start);
-  if (!noonBoundary) {
-    return null;
-  }
-
-  let latestEnd = null;
-  (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
-    if (isRetentionDevice(schedule)) {
-      return;
-    }
-    const startAt = parseDate(schedule?.start_at);
-    const endAt = parseDate(schedule?.end_at);
-    if (!startAt || !endAt) {
-      return;
-    }
-    if (toLocalDateValue(startAt) !== dateValue) {
-      return;
-    }
-    if (startAt >= noonBoundary) {
-      return;
-    }
-    if (!latestEnd || endAt > latestEnd) {
-      latestEnd = endAt;
-    }
-  });
-
-  return latestEnd;
-};
-
-const resolveFixedSlotStartAt = ({ dateValue, now = new Date(), schedules = [], slot }) => {
-  const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-  const current = truncateToMinute(now) || new Date();
-  let earliestStart = buildSlotBoundary(dateValue, range.start);
-  const slotEnd = buildSlotBoundary(dateValue, range.end);
-
-  if (!earliestStart || !slotEnd) {
-    return null;
-  }
-
-  if (slot === "afternoon") {
-    const latestMorningEnd = getLatestMorningScheduleEnd(dateValue, schedules);
-    if (latestMorningEnd) {
-      const bufferedStart = new Date(latestMorningEnd.getTime() + SLOT_BUFFER_MINUTES * 60 * 1000);
-      if (bufferedStart > earliestStart) {
-        earliestStart = bufferedStart;
-      }
-    }
-  }
-
-  if (toLocalDateValue(current) === dateValue && current >= earliestStart && current < slotEnd) {
-    earliestStart = current;
-  }
-
-  return truncateToMinute(earliestStart);
-};
-
-const buildFixedSlotLabel = ({ dateValue, now = new Date(), schedules = [], slot }) => {
-  const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-  const prefix = slot === "afternoon" ? "下午" : "上午";
-  const earliestStart = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
-  const earliestText = toLocalTimeValue(earliestStart);
-  if (!earliestText || earliestText === range.start) {
-    return `${prefix}（${range.start}-${range.end}）`;
-  }
-  return `${prefix}（${range.start}-${range.end}，最早 ${earliestText} 开始）`;
-};
-
-// 判断两个时间区间是否重叠，是冲突检测和甘特图命中的基础工具。
-const overlaps = (startA, endA, startB, endB) => startA < endB && endA > startB;
-
-// 新增排程、流记录等前端实体时使用轻量级本地 ID。
-const createId = (prefix) => {
-  const random = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0");
-  return `${prefix}-${Date.now()}-${random}`;
-};
-
 const SLOT_SEQUENCE = ["am", "pm"];
-const HALF_DAY_HOURS = 12;
-const PLANNED_DURATION_MAX_DAYS = 99;
-const PLANNED_DURATION_MAX_HOURS = 9999;
-
-// 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
-const parsePlannedHours = (value) => {
-  const rawValue = Number.parseFloat(String(value ?? "").trim());
-  if (!Number.isFinite(rawValue)) {
-    return null;
-  }
-  const normalized = Math.round(rawValue * 2) / 2;
-  return normalized >= 0.5 ? Math.min(normalized, PLANNED_DURATION_MAX_HOURS) : null;
-};
-
-const parsePlannedDays = (value) => {
-  const rawValue = Number.parseFloat(String(value ?? "").trim());
-  if (!Number.isFinite(rawValue)) {
-    return null;
-  }
-  const normalized = Math.round(rawValue * 2) / 2;
-  return normalized >= 0.5 ? Math.min(normalized, PLANNED_DURATION_MAX_DAYS) : null;
-};
-
-const resolvePlannedHours = (form) => {
-  const unit = normalizeText(form?.planned_duration_unit) || "hours";
-  if (unit === "days") {
-    const days = parsePlannedDays(form?.planned_hours);
-    return days ? days * 24 : null;
-  }
-  return parsePlannedHours(form?.planned_hours);
-};
-
-// 如果没有显式填写计划时长，则从开始/结束时间反推。
-const inferPlannedHours = (startAt, endAt) => {
-  if (!startAt || !endAt) {
-    return 3.5;
-  }
-  const hours = (endAt.getTime() - startAt.getTime()) / (1000 * 60 * 60);
-  return parsePlannedHours(hours) || 3.5;
-};
-
-const buildPlannedDurationFormState = (plannedHours) => {
-  const hours = parsePlannedHours(plannedHours);
-  if (hours && Number.isInteger(hours / HALF_DAY_HOURS)) {
-    return {
-      plannedDurationUnit: "days",
-      plannedHours: hours / 24,
-    };
-  }
-  return {
-    plannedDurationUnit: "hours",
-    plannedHours: hours || 3.5,
-  };
-};
-
-// 甘特图里的时间段会根据当前时刻区分为进行中、已完成或忙碌。
-const getSlotState = ({ startAt, endAt, now, started = false, completed = false }) => {
-  if (completed && startAt && endAt) {
-    if (endAt < now) {
-      return { state: "completed", className: "gantt-slot busy completed" };
-    }
-    if (startAt <= now && endAt >= now) {
-      return { state: "running", className: "gantt-slot busy running" };
-    }
-  }
-  if (started) {
-    return { state: "running", className: "gantt-slot busy running" };
-  }
-  return { state: "busy", className: "gantt-slot busy" };
-};
-
-// 手动排程默认落在“当前时刻之后最近一个合法时段”。
-const resolveLegalManualScheduleState = (now = new Date()) => {
-  const current = parseDate(now) || new Date();
-  const currentHour = current.getHours();
-
-  if (currentHour < 12) {
-    return {
-      schedule_date: toLocalDateValue(current),
-      time_slot: "morning",
-    };
-  }
-
-  if (currentHour < 18) {
-    return {
-      schedule_date: toLocalDateValue(current),
-      time_slot: "afternoon",
-    };
-  }
-
-  return {
-    schedule_date: toLocalDateValue(addDays(current, 1)),
-    time_slot: "morning",
-  };
-};
-
-function buildManualTimeSlotOptions({ now = new Date(), scheduleDate = "", schedules = [] } = {}) {
-  const selectedDate = normalizeText(scheduleDate) || toLocalDateValue(now);
-  return [
-    {
-      value: "morning",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "morning" }),
-    },
-    {
-      value: "afternoon",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "afternoon" }),
-    },
-    {
-      value: "custom",
-      label: "自定义",
-    },
-  ];
-}
-
-// 阻止用户把手动排程放到已经过去的非法时间片。
-const isManualScheduleSelectionLegal = (form, now = new Date()) => {
-  const selectedDate = normalizeText(form?.schedule_date);
-  const selectedSlot = normalizeText(form?.time_slot) || "morning";
-  if (!selectedDate || selectedSlot === "custom") {
-    return true;
-  }
-
-  const today = toLocalDateValue(now);
-  if (selectedDate > today) {
-    return true;
-  }
-  if (selectedDate < today) {
-    return false;
-  }
-
-  const currentHour = now.getHours();
-  if (currentHour >= 18) {
-    return false;
-  }
-  if (currentHour >= 12 && selectedSlot === "morning") {
-    return false;
-  }
-  return true;
-};
-
-// 表单工厂用于统一手动创建和编辑状态的数据结构。
-function createManualScheduleForm(now = new Date()) {
-  const legalState = resolveLegalManualScheduleState(now);
-  return {
-    custom_end: "",
-    custom_start: "",
-    device: "",
-    experiment_code: "",
-    lab_code: "",
-    lab_id: "",
-    planned_hours: 3.5,
-    planned_duration_unit: "hours",
-    schedule_date: legalState.schedule_date,
-    task_code: "",
-    time_slot: legalState.time_slot,
-  };
-}
-
-function createScheduleEditForm() {
-  return {
-    custom_end: "",
-    custom_start: "",
-    device: "",
-    experiment_code: "",
-    id: "",
-    lab_code: "",
-    lab_id: "",
-    planned_hours: 3.5,
-    planned_duration_unit: "hours",
-    schedule_date: "",
-    task_code: "",
-    time_slot: "morning",
-  };
-}
-
-// 将已存排程映射为编辑抽屉所需的表单结构。
-function buildScheduleEditForm(schedule) {
-  const startAt = parseDate(schedule?.start_at);
-  const endAt = parseDate(schedule?.end_at);
-  const startTime = startAt ? toLocalTimeValue(startAt) : "";
-  const endTime = endAt ? toLocalTimeValue(endAt) : "";
-  const duration = buildPlannedDurationFormState(schedule?.planned_hours || inferPlannedHours(startAt, endAt));
-  let timeSlot = "custom";
-
-  if (startTime === SLOT_RANGES.morning.start) {
-    timeSlot = "morning";
-  } else if (startTime === SLOT_RANGES.afternoon.start) {
-    timeSlot = "afternoon";
-  }
-
-  // 编辑表单会尽量把固定时段还原回上午/下午选项，否则回退到自定义时段。
-  return {
-    custom_end: endTime,
-    custom_start: startTime,
-    device: normalizeText(schedule?.device),
-    experiment_code: normalizeText(schedule?.experiment_code),
-    id: normalizeText(schedule?.id),
-    lab_code: normalizeText(schedule?.lab_code ?? schedule?.labCode),
-    lab_id: schedule?.lab_id ?? schedule?.labId ?? "",
-    planned_hours: duration.plannedHours,
-    planned_duration_unit: duration.plannedDurationUnit,
-    schedule_date: startAt ? toLocalDateValue(startAt) : "",
-    task_code: normalizeText(schedule?.task_code),
-    time_slot: timeSlot,
-  };
-}
-
-function buildScheduleRescheduleForm(schedule) {
-  const editForm = buildScheduleEditForm(schedule);
-  return {
-    custom_end: editForm.custom_end,
-    custom_start: editForm.custom_start,
-    device: editForm.device,
-    experiment_code: editForm.experiment_code,
-    lab_code: editForm.lab_code,
-    lab_id: editForm.lab_id,
-    planned_hours: editForm.planned_hours,
-    planned_duration_unit: editForm.planned_duration_unit,
-    schedule_date: editForm.schedule_date,
-    task_code: editForm.task_code,
-    time_slot: editForm.time_slot,
-  };
-}
-
-// 解析手动排程操作实际使用的开始和结束时间。
-function resolveScheduleTimes(form, now = new Date(), schedules = []) {
-  const dateValue = normalizeText(form?.schedule_date);
-  if (!dateValue) {
-    return { error: "Invalid schedule date" };
-  }
-
-  const isRetention = isRetentionDevice(form?.device);
-  if (isRetention) {
-    // 暂存间记录按“立即进入、立即结束”的占位逻辑处理，不占正式实验时长。
-    const startAt = new Date(now.getTime());
-    const endAt = new Date(now.getTime());
-    return {
-      dateValue: toLocalDateValue(startAt),
-      endAt,
-      endTime: toLocalTimeValue(endAt),
-      plannedHours: 0,
-      slot: "retention",
-      startAt,
-      startTime: toLocalTimeValue(startAt),
-    };
-  }
-
-  const slot = normalizeText(form?.time_slot) || "morning";
-  let startTime = "";
-  let plannedHours = resolvePlannedHours(form);
-
-  if (slot === "custom") {
-    // 自定义时段优先使用手填开始时间，如未填计划时长则从结束时间反推。
-    startTime = normalizeText(form?.custom_start);
-    if (!startTime) {
-      return { error: "Custom start time required" };
-    }
-    const customStartAt = parseDate(`${dateValue}T${startTime}:00`);
-    const earliestCustomStart = truncateToMinute(now) || new Date();
-    if (!customStartAt || customStartAt < earliestCustomStart) {
-      return { error: "自定义开始时间不能早于当前时间" };
-    }
-    if (!plannedHours) {
-      const endTime = normalizeText(form?.custom_end);
-      const endAt = parseDate(`${dateValue}T${endTime}:00`);
-      plannedHours = inferPlannedHours(customStartAt, endAt);
-    }
-  } else {
-    // 上午/下午快捷时段直接复用预设时间窗。
-    const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-    const slotStartAt = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
-    startTime = toLocalTimeValue(slotStartAt) || range.start;
-    plannedHours ||= inferPlannedHours(
-      slotStartAt,
-      parseDate(`${dateValue}T${range.end}:00`),
-    );
-  }
-
-  if (!plannedHours) {
-    return { error: "Planned hours must be at least 0.5" };
-  }
-
-  const startAt = parseDate(`${dateValue}T${startTime}:00`);
-  const endAt = startAt ? new Date(startAt.getTime() + plannedHours * 60 * 60 * 1000) : null;
-  if (!startAt || !endAt || endAt <= startAt) {
-    return { error: "Invalid schedule time" };
-  }
-
-  return {
-    dateValue,
-    endAt,
-    endTime: toLocalTimeValue(endAt),
-    plannedHours,
-    slot,
-    startAt,
-    startTime,
-  };
-}
-
 const resolveScheduleTaskStatusArgs = (samplesOrNow, nowMaybe, experimentTraysMaybe) => {
   if (Array.isArray(samplesOrNow)) {
     return {
