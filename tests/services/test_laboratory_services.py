@@ -42,6 +42,7 @@ def test_start_ignores_stale_sample_returned_status_when_current_experiment_tray
             }
         ],
         "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-1"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-1"}],
         "samples": [_sample("SP-1", "TASK-1", "TP-1", "厂家收回", "厂家收回")],
     }
     snapshot["samples"][0]["trays"][0]["status"] = "实验准备就绪"
@@ -84,6 +85,7 @@ def test_start_does_not_apply_returned_state_from_another_sample_to_requested_tr
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-ACTIVE"}],
         "samples": [returned_sample, active_sample],
     }
 
@@ -113,6 +115,7 @@ def test_start_scopes_requested_trays_to_current_experiment_assignment():
             {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"},
             {"task_code": "TASK-1", "experiment_code": "EXP-B", "tray_code": "TP-B"},
         ],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
         "samples": [
             _sample("SP-A", "TASK-1", "TP-A", "实验准备就绪", "盐雾试验室"),
             _sample("SP-B", "TASK-1", "TP-B", "实验准备就绪", "霉菌试验室"),
@@ -147,6 +150,7 @@ def test_start_clears_stale_fixture_ready_marker():
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
         "samples": [sample],
     }
 
@@ -178,7 +182,7 @@ def test_ready_clears_fixture_ready_marker_after_countdown():
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
-        "experiment_samples": [],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
         "samples": [sample],
     }
 
@@ -270,6 +274,13 @@ def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handove
         source_status="已到达暂存间",
         target_lab="霉菌试验室",
         target_experiment_code="EXP-MISSING",
+        experiments=experiments,
+    )
+    assert not should_route_pre_experiment_appearance(
+        source_location="",
+        source_status="已入库",
+        target_lab="盐雾试验室",
+        target_experiment_code="EXP-SALT",
         experiments=experiments,
     )
     assert not should_route_pre_experiment_appearance(
@@ -406,6 +417,7 @@ def test_complete_scopes_requested_trays_to_current_experiment_assignment():
             {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"},
             {"task_code": "TASK-1", "experiment_code": "EXP-B", "tray_code": "TP-B"},
         ],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
         "samples": [
             _sample("SP-A", "TASK-1", "TP-A", "实验进行中", "盐雾试验室"),
             _sample("SP-B", "TASK-1", "TP-B", "实验进行中", "霉菌试验室"),
@@ -447,6 +459,7 @@ def test_complete_clears_stale_fixture_ready_marker():
         ],
         "experiment_run_trays": [],
         "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
         "samples": [sample],
     }
 
@@ -522,6 +535,7 @@ def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():
             ],
             "experiment_run_trays": [],
             "experiment_trays": [{"task_code": "TASK-APPEAR", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+            "experiment_samples": [{"task_code": "TASK-APPEAR", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
             "samples": [_sample("SP-A", "TASK-APPEAR", "TP-A", "实验进行中", lab_name)],
         }
 
@@ -570,6 +584,7 @@ def test_complete_does_not_route_other_experiments_to_appearance_inspection_room
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_trays": [{"task_code": "TASK-VIB", "experiment_code": "EXP-VIB", "tray_code": "TP-VIB"}],
+        "experiment_samples": [{"task_code": "TASK-VIB", "experiment_code": "EXP-VIB", "sample_code": "SP-VIB"}],
         "samples": [_sample("SP-VIB", "TASK-VIB", "TP-VIB", "实验进行中", "振动一室")],
     }
 
@@ -648,3 +663,87 @@ def test_complete_rejects_trays_outside_current_experiment_assignment():
             tray_codes=["TP-B"],
             completed_at="2026-06-06 10:00:00",
         )
+
+
+def test_complete_rejects_single_tray_auto_completion_without_tray_codes_or_run_relation():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "振动试验"}],
+        "schedules": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "device": "振动一室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
+        "samples": [_sample("SP-A", "TASK-1", "TP-A", "实验进行中", "振动一室")],
+    }
+
+    with pytest.raises(ValueError, match="trayCodes"):
+        complete_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-1",
+            experiment_code="EXP-A",
+            completed_at="2026-06-06 10:00:00",
+        )
+
+    assert snapshot["samples"][0]["trays"][0]["status"] == "实验进行中"
+
+
+def test_complete_rejects_run_tray_codes_fallback_without_structured_run_relation():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "振动试验"}],
+        "schedules": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "device": "振动一室"}],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-A"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
+        "samples": [_sample("SP-A", "TASK-1", "TP-A", "实验进行中", "振动一室")],
+    }
+
+    with pytest.raises(ValueError, match="experiment_run_trays"):
+        complete_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-1",
+            experiment_code="EXP-A",
+            run_no="RUN-A",
+            completed_at="2026-06-06 10:00:00",
+        )
+
+    assert snapshot["samples"][0]["trays"][0]["status"] == "实验进行中"
+
+
+def test_complete_does_not_mark_run_completed_from_run_tray_codes_without_structured_relation():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "振动试验"}],
+        "schedules": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "device": "振动一室"}],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-A"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [],
+        "experiment_trays": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-A"}],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-A"}],
+        "samples": [_sample("SP-A", "TASK-1", "TP-A", "实验进行中", "振动一室")],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        tray_codes=["TP-A"],
+        completed_at="2026-06-06 10:00:00",
+    )
+
+    assert result["affectedTrayCodes"] == ["TP-A"]
+    assert result["experimentRuns"][0]["status"] == "实验进行中"

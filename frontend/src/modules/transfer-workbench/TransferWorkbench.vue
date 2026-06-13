@@ -167,9 +167,27 @@
                       <span class="muted">{{ task.taskProgress || task.taskStatus || "-" }}</span>
                     </div>
                     <div class="transfer-table__codes">
-                      <span v-for="sampleCode in task.sampleCodes || []" :key="sampleCode" class="transfer-sample-code-chip">{{ sampleCode }}</span>
+                      <span
+                        v-for="sampleCode in visibleOverviewSampleCodes(task)"
+                        :key="sampleCode"
+                        class="transfer-sample-code-chip"
+                      >
+                        {{ sampleCode }}
+                      </span>
                     </div>
-                    <div class="transfer-table__count">{{ task.sampleCount || 0 }}</div>
+                    <div class="transfer-table__count">
+                      <strong>{{ task.sampleCount || 0 }}</strong>
+                      <button
+                        v-if="overviewSampleOverflowCount(task) > 0"
+                        class="transfer-sample-code-overflow"
+                        :data-testid="`transfer-sample-code-overflow-${task.taskId}`"
+                        :aria-label="`查看 ${task.taskNo || '任务'} 的全部样品编号`"
+                        type="button"
+                        @click.stop="openSampleCodesModal(task)"
+                      >
+                        +{{ overviewSampleOverflowCount(task) }}
+                      </button>
+                    </div>
                   </template>
                 </div>
               </template>
@@ -443,6 +461,30 @@
       </div>
     </div>
 
+    <div v-if="sampleCodesModalVisible" class="transfer-modal transfer-modal--compact">
+      <div class="transfer-modal__backdrop" @click="closeSampleCodesModal"></div>
+      <div class="transfer-modal__panel transfer-sample-codes-modal" data-testid="transfer-sample-codes-modal">
+        <div class="transfer-modal__head">
+          <div>
+            <h3>全部样品编号</h3>
+            <div class="muted">
+              {{ sampleCodesModalTask?.taskNo || "--" }} | 共 {{ sampleCodesModalSampleCodes.length }} 个样品
+            </div>
+          </div>
+          <button class="action-btn secondary" type="button" @click="closeSampleCodesModal">关闭</button>
+        </div>
+        <div class="transfer-sample-codes-modal__grid">
+          <span
+            v-for="sampleCode in sampleCodesModalSampleCodes"
+            :key="sampleCode"
+            class="transfer-sample-code-chip"
+          >
+            {{ sampleCode }}
+          </span>
+        </div>
+      </div>
+    </div>
+
     <ModuleExitDialog
       v-if="showModeHeader"
       :current-module="'handover'"
@@ -493,7 +535,6 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "到货";
-const legacyStoredStatus = "已入库";
 const MAX_TRAY_LIMIT = 99;
 
 const activeWorkbenchView = ref("overview");
@@ -529,6 +570,8 @@ const printingAllBarcodes = ref(false);
 const barcodeModalVisible = ref(false);
 const barcodePreviewItems = ref([]);
 const barcodePrintConfirmed = ref(false);
+const sampleCodesModalVisible = ref(false);
+const sampleCodesModalTask = ref(null);
 const lockedOperationHint = ref("");
 const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 const taskPage = ref(1);
@@ -593,13 +636,46 @@ const XML_ESCAPE_MAP = {
 
 const normalizeTaskStatus = (status) => {
   const text = String(status || "").trim();
-  if (text.includes(storedStatus) || text.includes(legacyStoredStatus)) return storedStatus;
-  if (text.includes(pendingStatus)) return pendingStatus;
+  if (text === storedStatus) return storedStatus;
+  if (text === pendingStatus) return pendingStatus;
   return text;
 };
 const BARCODE_SAMPLE_PREVIEW_LIMIT = 8;
+const OVERVIEW_SAMPLE_CODE_LIMIT = 12;
 
 const normalizeText = (value) => String(value || "").trim();
+
+const splitSampleCodesText = (value) => normalizeText(value)
+  .split(/[、,，/|\s]+/u)
+  .map((sampleCode) => normalizeText(sampleCode))
+  .filter(Boolean);
+
+const resolveOverviewSampleCodes = (task) => {
+  const sampleCodes = Array.isArray(task?.sampleCodes)
+    ? task.sampleCodes.map((sampleCode) => normalizeText(sampleCode)).filter(Boolean)
+    : [];
+  if (sampleCodes.length) {
+    return sampleCodes;
+  }
+  return splitSampleCodesText(task?.sampleCodesText);
+};
+
+const visibleOverviewSampleCodes = (task) => resolveOverviewSampleCodes(task).slice(0, OVERVIEW_SAMPLE_CODE_LIMIT);
+
+const overviewSampleOverflowCount = (task) => Math.max(0, resolveOverviewSampleCodes(task).length - OVERVIEW_SAMPLE_CODE_LIMIT);
+
+const sampleCodesModalSampleCodes = computed(() => resolveOverviewSampleCodes(sampleCodesModalTask.value));
+
+const closeSampleCodesModal = () => {
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
+  flushPendingRealtimeRefresh();
+};
+
+const openSampleCodesModal = (task) => {
+  sampleCodesModalTask.value = task;
+  sampleCodesModalVisible.value = true;
+};
 
 const resolveExperimentDisplayName = (experiment) =>
   normalizeText(experiment?.requiredDevice || experiment?.required_device || experiment?.experimentType || experiment?.experiment_type)
@@ -1148,6 +1224,8 @@ const clearWorkspace = () => {
   activeAssignmentMode.value = "task";
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
   resetInteractiveState();
 };
 
@@ -1204,6 +1282,8 @@ const openTask = async (task) => {
   clearWorkbenchFeedback();
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
   viewMode.value = "detail";
   try {
     await loadWorkspace(task.taskId);
@@ -1228,6 +1308,7 @@ const refreshTransferWorkspaceAfterTrayChange = async () => {
 
 const isTransferRealtimeRefreshPaused = () => Boolean(
   barcodeModalVisible.value
+  || sampleCodesModalVisible.value
   || printingAllBarcodes.value
   || errorSample.state.open
   || errorSample.state.loading
@@ -1292,6 +1373,8 @@ const setActiveWorkbenchView = (nextView) => {
   activeWorkbenchView.value = resolvedView;
   if (resolvedView === "overview") {
     barcodeModalVisible.value = false;
+    sampleCodesModalVisible.value = false;
+    sampleCodesModalTask.value = null;
     viewMode.value = "overview";
   }
 };
@@ -1312,6 +1395,8 @@ const toggleOverviewTaskNoSort = () => {
 
 const backToOverview = async () => {
   barcodeModalVisible.value = false;
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
   await loadBootstrap();
   viewMode.value = "overview";
   flushPendingRealtimeRefresh();
@@ -1791,6 +1876,8 @@ const printAllTrayBarcodes = async () => {
     });
     barcodePrintConfirmed.value = false;
     barcodeModalVisible.value = true;
+    sampleCodesModalVisible.value = false;
+    sampleCodesModalTask.value = null;
     showWorkbenchFeedback(payload.message, "success");
   } finally {
     printingAllBarcodes.value = false;
@@ -1829,6 +1916,8 @@ const reloadWorkspace = async () => {
   clearWorkbenchFeedback();
   barcodeModalVisible.value = false;
   barcodePreviewItems.value = [];
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
   const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
   applyWorkspace(payload.workspace);
   activeTrayIndex.value = -1;

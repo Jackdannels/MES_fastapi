@@ -584,17 +584,16 @@ const buildTrayFlowTimeMap = (input = {}) => {
       }
     }
 
-    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
-    if (parseTimeValue(sample?.created_at) > 0 && resolveFlowStatusRank("", sampleStatus) >= (FLOW_STEP_INDEX_BY_KEY.get("arrived") ?? 1)) {
-      recordLatestFlowTime("到货", sample?.created_at, "fallback");
-    }
-
     trayEntries.forEach((tray) => {
-      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+      const rawTrayStatus = normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
+      if (!rawTrayStatus) {
+        return;
+      }
+      const trayStatus = normalizeLifecycleStatus(sample?.location, rawTrayStatus);
       const trayStatusLabel = isPostRetentionLocation(sample?.location) && isAmbiguousStagingStatus(trayStatus)
         ? "放置实验后暂存间"
         : trayStatus;
-      recordLatestFlowTime(trayStatusLabel, tray?.updated_at || sample?.updated_at, "fallback");
+      recordLatestFlowTime(trayStatusLabel, tray?.updated_at, "fallback");
     });
 
     historyEntries.forEach((entry) => {

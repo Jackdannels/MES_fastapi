@@ -624,6 +624,12 @@ describe("useProcessLabs", () => {
         { experiment_code: "TASK-001-A", experiment_name: "Impact Test", task_code: "TASK-001" },
         { experiment_code: "TASK-001-B", experiment_name: "Thermal Cycle Test", task_code: "TASK-001" },
       ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TRAY-001" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TRAY-002" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TRAY-003" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-B", tray_code: "TRAY-004" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -746,6 +752,11 @@ describe("useProcessLabs", () => {
       "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "已排程", test_type: "Impact Test" }],
       "mes.experiments": [
         { task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "Impact Test", status: "已排程" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-READY-1" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-READY-2" },
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-WAIT" },
       ],
       "mes.samples": [
         {
@@ -1118,6 +1129,9 @@ describe("useProcessLabs", () => {
         },
       ],
       "mes.tasks": [{ code: "TASK-001", name: "Task A", status: "已排程", test_type: "Impact Test" }],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-READY-1" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
@@ -1166,6 +1180,15 @@ describe("useProcessLabs", () => {
           device: "Lab-A",
           tray_codes: ["TRAY-RUNNING"],
           status: "实验进行中",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-TASK-001-A",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          tray_code: "TRAY-RUNNING",
+          run_tray_status: "实验进行中",
         },
       ],
       "mes.experiment_trays": [
@@ -1545,6 +1568,15 @@ describe("useProcessLabs", () => {
           status: "实验进行中",
         },
       ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-TASK-001-A",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          tray_code: "TRAY-001",
+          run_tray_status: "实验进行中",
+        },
+      ],
       "mes.experiment_trays": [
         { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-001" },
       ],
@@ -1626,14 +1658,17 @@ describe("useProcessLabs", () => {
         },
       ],
       "mes.tasks": [{ code: "TASK-001", name: "Task A", test_type: "Impact Test" }],
+      "mes.experiment_trays": [
+        { task_code: "TASK-001", experiment_code: "TASK-001-A", tray_code: "TRAY-001" },
+      ],
       "mes.samples": [
         {
           code: "S-001",
           task_code: "TASK-001",
           location: "接驳区",
           owner: "张三",
-          status: "已入库",
-          trays: [{ tray_code: "TRAY-001", status: "已入库", quantity: 1 }],
+          status: "到货",
+          trays: [{ tray_code: "TRAY-001", status: "到货", quantity: 1 }],
         },
       ],
     }));
@@ -1718,13 +1753,13 @@ describe("useProcessLabs", () => {
       "SYLU-2026-03-001-TP-002",
     ]);
     expect(selectedTaskDetail.value.selectedTraySummary).toMatchObject({
-      flowStatus: "样品运输中",
-      status: "样品运输中",
+      flowStatus: "-",
+      status: "",
       trayCode: "SYLU-2026-03-001-TP-001",
     });
   });
 
-  test("falls back to transfer workspace trays when storage snapshots do not yet carry tray relations", async () => {
+  test("does not fall back to transfer workspace trays when storage snapshots do not carry experiment tray relations", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
         {
@@ -1787,17 +1822,11 @@ describe("useProcessLabs", () => {
 
     expect(loadTransferWorkspace).toHaveBeenCalledWith("SYLU-2026-03-001");
     expect(selectedTaskDetail.value).toMatchObject({
-      trayCount: 2,
-      traySummary: "SYLU-2026-03-001-TP-001, SYLU-2026-03-001-TP-002",
+      trayCount: 0,
+      traySummary: "未分配托盘",
     });
-    expect(selectedTaskDetail.value.trayRows.map((row) => row.trayCode)).toEqual([
-      "SYLU-2026-03-001-TP-001",
-      "SYLU-2026-03-001-TP-002",
-    ]);
-    expect(selectedTaskDetail.value.selectedTraySummary).toMatchObject({
-      sampleSummary: "SYLU-2026-03-001-SP-001、SYLU-2026-03-001-SP-002",
-      trayCode: "SYLU-2026-03-001-TP-001",
-    });
+    expect(selectedTaskDetail.value.trayRows).toEqual([]);
+    expect(selectedTaskDetail.value.selectedTraySummary).toBe(null);
   });
 
   test("scopes task detail trays and samples to the scheduled experiment when experiment tray mappings exist", async () => {
@@ -1825,6 +1854,12 @@ describe("useProcessLabs", () => {
         { id: "rel-2", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", tray_code: "SYLU-2026-03-001-TP-002" },
         { id: "rel-3", task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-B", tray_code: "SYLU-2026-03-001-TP-003" },
       ],
+      "mes.experiment_samples": [
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-001" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-002" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-003" },
+        { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-004" },
+      ],
       "mes.experiment_runs": [
         {
           run_no: "RUN-2026-03-001-A",
@@ -1833,6 +1868,15 @@ describe("useProcessLabs", () => {
           device: "冲击一室",
           tray_codes: ["SYLU-2026-03-001-TP-001"],
           status: "实验进行中",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-2026-03-001-A",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          tray_code: "SYLU-2026-03-001-TP-001",
+          run_tray_status: "实验进行中",
         },
       ],
       "mes.samples": [
@@ -2299,7 +2343,7 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
-  test("starts ready trays when the sample is ready but tray-level status is blank", async () => {
+  test("does not start trays when only the sample is ready but tray-level status is blank", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T08:05:00Z"));
     const loadSnapshot = vi.fn(async () => ({
@@ -2345,20 +2389,11 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
     await openStartExperimentModal(labCards.value[0]);
 
-    expect(startExperimentModalOpen.value).toBe(true);
+    expect(startExperimentModalOpen.value).toBe(false);
 
     await startExperiment(labCards.value[0]);
 
-    const persisted = persistSnapshot.mock.calls[0][0];
-    expect(persisted["mes.samples"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "SYLU-2026-03-002-SP-001",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "SYLU-2026-03-002-TP-001", status: "实验进行中" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -2410,6 +2445,22 @@ describe("useProcessLabs", () => {
           device: "盐雾试验室",
           tray_codes: ["SYLU-2026-03-002-TP-001", "SYLU-2026-03-002-TP-002"],
           status: "实验进行中",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-SALT-002",
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-001",
+          run_tray_status: "实验进行中",
+        },
+        {
+          run_no: "RUN-SALT-002",
+          task_code: "SYLU-2026-03-002",
+          experiment_code: "SYLU-2026-03-002-A",
+          tray_code: "SYLU-2026-03-002-TP-002",
+          run_tray_status: "实验进行中",
         },
       ],
       "mes.samples": [
@@ -2735,6 +2786,14 @@ describe("useProcessLabs", () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
         {
+          device: "冲击二室",
+          end_at: "2026-06-05T15:30:00+08:00",
+          experiment_code: "SYLU-2026-06-021-A",
+          id: "schedule-impact",
+          start_at: "2026-06-05T12:00:00+08:00",
+          task_code: "SYLU-2026-06-021",
+        },
+        {
           device: "温度冲击二室",
           end_at: "2026-06-05T19:19:00+08:00",
           experiment_code: "SYLU-2026-06-021-B",
@@ -3057,6 +3116,15 @@ describe("useProcessLabs", () => {
           experiment_code: "SYLU-2026-03-006-A",
           tray_codes: ["SYLU-2026-03-006-TP-001"],
           status: "实验进行中",
+          started_at: "2026-04-03 08:30:00",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          tray_code: "SYLU-2026-03-006-TP-001",
+          run_tray_status: "实验进行中",
           started_at: "2026-04-03 08:30:00",
         },
       ],

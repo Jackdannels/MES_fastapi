@@ -265,35 +265,7 @@ def build_experiment_run_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, 
 
 
 def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str, Any]]:
-    now_beijing = current_beijing_datetime()
-    run_no = normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
-    task_no = normalize_text(run.get("task_code"))
-    experiment_no = normalize_text(run.get("experiment_code"))
-    status = normalize_experiment_status(run.get("status"))
-    started_at = parse_storage_datetime(run.get("started_at"))
-    ended_at = parse_storage_datetime(run.get("ended_at"))
-    rows: list[Dict[str, Any]] = []
-    tray_codes = run.get("tray_codes")
-    if not isinstance(tray_codes, list):
-        tray_codes = []
-    for tray_code in tray_codes:
-        normalized_tray_code = normalize_text(tray_code)
-        if not run_no or not normalized_tray_code:
-            continue
-        rows.append(
-            {
-                "run_no": run_no,
-                "task_no": task_no,
-                "experiment_no": experiment_no,
-                "tray_no": normalized_tray_code,
-                "run_tray_status": status,
-                "started_at": started_at,
-                "ended_at": ended_at,
-                "created_at": parse_storage_datetime(run.get("created_at")) or now_beijing,
-                "updated_at": parse_storage_datetime(run.get("updated_at")) or now_beijing,
-            }
-        )
-    return rows
+    return []
 
 
 def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:

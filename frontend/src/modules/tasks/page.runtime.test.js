@@ -1241,7 +1241,7 @@ describe("TasksPage runtime", () => {
           test_type: "冲击试验",
           test_types: ["冲击试验"],
           required_device: "冲击试验",
-          transfer_status: "已入库",
+          transfer_status: "到货",
         }),
       ],
       samples: [
@@ -1249,9 +1249,9 @@ describe("TasksPage runtime", () => {
           id: "SYLU-2026-05-004-SP-001",
           code: "SYLU-2026-05-004-SP-001",
           task_code: "SYLU-2026-05-004",
-          status: "已入库",
-          flow_status: "已入库",
-          trays: [{ tray_code: "SYLU-2026-05-004-TP-001", status: "已入库" }],
+          status: "到货",
+          flow_status: "到货",
+          trays: [{ tray_code: "SYLU-2026-05-004-TP-001", status: "到货" }],
         },
       ],
     });
@@ -1270,6 +1270,50 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("该任务样品已在接驳区确认到货，不允许更改实验类型");
     expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-storage-confirmed") && options?.method === "PUT")).toBe(
       false,
+    );
+  });
+
+  test("allows experiment type changes when only legacy stored status exists", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-legacy-stored",
+          code: "SYLU-2026-05-104",
+          name: "旧状态任务",
+          test_type: "冲击试验",
+          test_types: ["冲击试验"],
+          required_device: "冲击试验",
+          transfer_status: "已入库",
+        }),
+      ],
+      samples: [
+        {
+          id: "SYLU-2026-05-104-SP-001",
+          code: "SYLU-2026-05-104-SP-001",
+          task_code: "SYLU-2026-05-104",
+          status: "已入库",
+          flow_status: "已入库",
+          trays: [{ tray_code: "SYLU-2026-05-104-TP-001", status: "已入库" }],
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-scheduled-removal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).not.toContain("该任务样品已在接驳区确认到货，不允许更改实验类型");
+    expect(fetchMock.mock.calls.some(([url, options]) => url === buildTaskEndpoint("task-legacy-stored") && options?.method === "PUT")).toBe(
+      true,
     );
   });
 

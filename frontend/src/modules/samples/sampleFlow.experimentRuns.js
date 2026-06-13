@@ -8,7 +8,6 @@ import {
   resolveEntryExperimentCode,
   resolveEntryTaskCode,
   resolveEntryTrayCode,
-  uniqueNormalizedTexts,
 } from "./sampleFlow.trayScope";
 import { experimentRunTimeValue } from "./sampleFlow.experimentHelpers";
 
@@ -91,8 +90,7 @@ const resolveExperimentRunEntry = ({ experimentCode, experimentRuns = [], experi
       if (hasExperimentRunTrayRowsForRun({ experimentCode: normalizedExperimentCode, experimentRunTrays, run, taskCode: normalizedTaskCode })) {
         return null;
       }
-      const runTrayCodes = uniqueNormalizedTexts(run?.tray_codes || run?.trayCodes);
-      return Boolean(normalizedTrayCode) && runTrayCodes.includes(normalizedTrayCode) ? run : null;
+      return null;
     })
     .filter(Boolean);
   const relationOnlyMatches = normalizedTrayCode

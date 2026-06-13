@@ -206,7 +206,7 @@ def test_tasks_list_hides_returned_tasks_unless_archived_are_requested(monkeypat
         monkeypatch,
         tasks=[
             {"id": "task-active", "code": "TASK-ACTIVE", "name": "活跃任务", "status": "待排程"},
-            {"id": "task-returned", "code": "TASK-RETURNED", "name": "历史任务", "status": "厂家收回"},
+            {"id": "task-returned", "code": "TASK-RETURNED", "name": "历史任务", "status": "任务进行中", "transfer_status": "厂家收回"},
         ],
         samples=[
             {
@@ -233,6 +233,30 @@ def test_tasks_list_hides_returned_tasks_unless_archived_are_requested(monkeypat
     assert [item["code"] for item in active.json()] == ["TASK-ACTIVE"]
     assert archived.status_code == 200
     assert [item["code"] for item in archived.json()] == ["TASK-ACTIVE", "TASK-RETURNED"]
+
+
+def test_tasks_list_keeps_task_visible_when_only_sample_trays_are_returned(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {"id": "task-returned-samples", "code": "TASK-RETURNED-SAMPLES", "name": "样品已回收任务", "status": "任务进行中"},
+        ],
+        samples=[
+            {
+                "id": "sample-returned",
+                "code": "TASK-RETURNED-SAMPLES-SP-001",
+                "task_code": "TASK-RETURNED-SAMPLES",
+                "status": "厂家收回",
+                "flow_status": "厂家收回",
+                "trays": [{"tray_code": "TASK-RETURNED-SAMPLES-TP-001", "status": "厂家收回"}],
+            },
+        ],
+    )
+
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 200
+    assert [item["code"] for item in response.json()] == ["TASK-RETURNED-SAMPLES"]
 
 
 def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch):
@@ -737,7 +761,7 @@ def test_update_task_rejects_test_type_change_after_storage_confirmed(monkeypatc
                 "test_type": "冲击试验",
                 "test_types": ["冲击试验"],
                 "required_device": "冲击试验",
-                "transfer_status": "已入库",
+                "transfer_status": "到货",
                 "status": "待排程",
             }
         ],
@@ -755,9 +779,9 @@ def test_update_task_rejects_test_type_change_after_storage_confirmed(monkeypatc
                 "id": "SYLU-2026-05-004-SP-001",
                 "code": "SYLU-2026-05-004-SP-001",
                 "task_code": "SYLU-2026-05-004",
-                "status": "已入库",
-                "flow_status": "已入库",
-                "trays": [{"tray_code": "SYLU-2026-05-004-TP-001", "status": "已入库"}],
+                "status": "到货",
+                "flow_status": "到货",
+                "trays": [{"tray_code": "SYLU-2026-05-004-TP-001", "status": "到货"}],
             }
         ],
     )
@@ -772,7 +796,7 @@ def test_update_task_rejects_test_type_change_after_storage_confirmed(monkeypatc
             "test_type": "盐雾试验",
             "test_types": ["盐雾试验"],
             "required_device": "盐雾试验",
-            "transfer_status": "已入库",
+            "transfer_status": "到货",
             "status": "待排程",
         },
     )
@@ -783,6 +807,65 @@ def test_update_task_rejects_test_type_change_after_storage_confirmed(monkeypatc
     assert response.json() == {"detail": "该任务样品已在接驳区确认到货，不允许更改实验类型"}
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验"]
     assert storage.read("mes.experiments")[0]["experiment_name"] == "冲击试验"
+
+
+def test_update_task_allows_test_type_change_when_only_legacy_storage_status_exists(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-legacy-storage-confirmed",
+                "code": "SYLU-2026-05-014",
+                "name": "旧状态任务",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "transfer_status": "已入库",
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "exp-legacy-storage-confirmed",
+                "task_code": "SYLU-2026-05-014",
+                "experiment_code": "SYLU-2026-05-014-A",
+                "experiment_name": "冲击试验",
+                "status": "待排程",
+            }
+        ],
+        samples=[
+            {
+                "id": "SYLU-2026-05-014-SP-001",
+                "code": "SYLU-2026-05-014-SP-001",
+                "task_code": "SYLU-2026-05-014",
+                "status": "已入库",
+                "flow_status": "已入库",
+                "trays": [{"tray_code": "SYLU-2026-05-014-TP-001", "status": "已入库"}],
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-legacy-storage-confirmed",
+        json={
+            "id": "task-legacy-storage-confirmed",
+            "code": "SYLU-2026-05-014",
+            "name": "旧状态任务",
+            "sample_count": "2",
+            "test_type": "盐雾试验",
+            "test_types": ["盐雾试验"],
+            "required_device": "盐雾试验",
+            "transfer_status": "已入库",
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+
+    assert response.status_code == 200
+    assert storage.read("mes.tasks")[0]["test_types"] == ["盐雾试验"]
+    assert storage.read("mes.experiments")[0]["experiment_name"] == "盐雾试验"
 
 
 def test_update_task_requires_confirmation_before_removing_scheduled_experiment(monkeypatch):

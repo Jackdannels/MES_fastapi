@@ -31,7 +31,7 @@ const DEFAULT_LABELS = {
   postRetentionLocation: "\u6052\u6E29\u6052\u6E7F\u95F4\uFF08\u5B9E\u9A8C\u540E\u6682\u5B58\u95F4\uFF09",
   sampleReceived: "\u5DF2\u63A5\u6536",
   sampleTesting: "\u8BD5\u9A8C\u4E2D",
-  sampleStored: "\u5DF2\u5165\u5E93",
+  sampleStored: "\u5230\u8D27",
 };
 
 const DEFAULT_LOCATION_OPTIONS = [
@@ -187,7 +187,7 @@ function useSamplesFlow() {
       };
     }
     const trayRow = detailSampleTrayRow.value;
-    const status = String(trayRow?.status || detailSampleTray.value?.status || sample?.status || "").trim();
+    const status = String(trayRow?.status || detailSampleTray.value?.status || "").trim();
     return buildTrayFlowView({
       experimentRuns: rawExperimentRuns.value,
       experimentRunTrays: rawExperimentRunTrays.value,

@@ -192,32 +192,28 @@ const statusClass = (value) => {
 const collectTaskTrayStatuses = (taskCode, samples) => {
   const normalizedTaskCode = normalizeText(taskCode);
   const trayStatusMap = new Map();
-  const fallbackStatuses = [];
 
   (Array.isArray(samples) ? samples : []).forEach((sample) => {
     if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
       return;
     }
 
-    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     const sampleTrays = Array.isArray(sample?.trays) ? sample.trays : [];
-    if (sampleTrays.length === 0) {
-      if (sampleStatus) {
-        fallbackStatuses.push(sampleStatus);
-      }
-      return;
-    }
 
-    sampleTrays.forEach((tray, index) => {
-      const trayCode = normalizeText(tray?.tray_code) || `${normalizedTaskCode}-tray-${index + 1}`;
-      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+    sampleTrays.forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      if (!trayCode) {
+        return;
+      }
+      const rawTrayStatus = normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
+      const trayStatus = rawTrayStatus ? normalizeLifecycleStatus(sample?.location, rawTrayStatus) : "";
       if (trayStatus) {
         trayStatusMap.set(trayCode, trayStatus);
       }
     });
   });
 
-  return trayStatusMap.size > 0 ? Array.from(trayStatusMap.values()) : fallbackStatuses;
+  return Array.from(trayStatusMap.values());
 };
 
 const aggregateTaskStatusFromSamples = (task, samples) => {

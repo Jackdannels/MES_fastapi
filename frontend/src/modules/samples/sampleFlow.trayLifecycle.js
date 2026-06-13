@@ -67,29 +67,13 @@ const resolveEffectiveTrayLifecycleStatus = (input = {}) => {
     if (!matchingTrays.length) {
       continue;
     }
-    const sampleReturned =
-      isReturnedStatusText(sample?.status)
-      || isReturnedStatusText(sample?.flow_status)
-      || isReturnedStatusText(sample?.flowStatus)
-      || isReturnedStatusText(sample?.location);
     const trayReturned = matchingTrays.some((tray) =>
       trayHasReturnedStatus(tray),
-    );
-    const trayHasExplicitNonReturnedStatus = matchingTrays.some((tray) =>
-      normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus)
-      && !trayHasReturnedStatus(tray),
     );
     const historyReturned = asArray(sample?.history).some((entry) =>
       entryMarksTrayReturned(entry, trayCode),
     );
-    const sampleReturnedApplies =
-      sampleReturned
-      && !trayHasExplicitNonReturnedStatus
-      && (
-        trays.length <= 1
-        || trays.every((tray) => trayHasReturnedStatus(tray))
-      );
-    if (sampleReturnedApplies || trayReturned || historyReturned) {
+    if (trayReturned || historyReturned) {
       return "厂家收回";
     }
   }

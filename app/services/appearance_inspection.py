@@ -10,7 +10,7 @@ PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测存放"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 
 HANDOVER_LOCATION_KEYWORDS = ("接驳区",)
-HANDOVER_STORED_STATUSES = {"到货", "已入库"}
+HANDOVER_STORED_STATUSES = {"到货"}
 STAGING_LOCATION_KEYWORD = "暂存间"
 STAGING_STORED_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
 
@@ -89,4 +89,3 @@ def should_route_pre_experiment_appearance(
         target_experiment_code=target_experiment_code,
         experiments=experiments,
     )
-

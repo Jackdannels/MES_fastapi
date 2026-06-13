@@ -773,7 +773,7 @@ describe("StagingManagementPage runtime", () => {
     });
   });
 
-  test("stock-out scan shows fallback lab as disabled when the experiment is not scheduled", async () => {
+  test("stock-out scan does not show fallback lab when the experiment is not scheduled", async () => {
     remoteSnapshot = {
       ...createSnapshot(),
       [STORAGE_KEYS.schedules]: createSnapshot()[STORAGE_KEYS.schedules].filter(
@@ -788,8 +788,8 @@ describe("StagingManagementPage runtime", () => {
 
     const destinationModal = mounted.get('[data-testid="zancun-destination-modal"]');
     expect(destinationModal.classes()).toContain("is-open");
-    expect(destinationModal.text()).toContain("当前实验未排程，仅作为托底目标，暂不可出库。");
-    expect(destinationModal.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeDefined();
+    expect(destinationModal.text()).not.toContain("当前实验未排程，仅作为托底目标，暂不可出库。");
+    expect(destinationModal.find('[data-testid="zancun-destination-submit-0"]').exists()).toBe(false);
   });
 
   test("manufacturer return opens a danger confirmation modal when experiments remain unfinished", async () => {

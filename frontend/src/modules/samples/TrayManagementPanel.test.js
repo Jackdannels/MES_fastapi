@@ -261,6 +261,16 @@ describe("TrayManagementPanel", () => {
               started_at: "2026-06-04T19:12:09+08:00",
             },
           ],
+          rawExperimentRunTrays: [
+            {
+              task_code: "SYLU-2026-06-021",
+              experiment_code: "SYLU-2026-06-021-A",
+              run_no: "RUN-SYLU-2026-06-021-A",
+              tray_code: "SYLU-2026-06-021-TP-001",
+              run_tray_status: "实验进行中",
+              started_at: "2026-06-04T19:12:09+08:00",
+            },
+          ],
           rawExperimentTrays: [
             { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
             { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-B", tray_code: "SYLU-2026-06-021-TP-001" },

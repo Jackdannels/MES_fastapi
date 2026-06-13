@@ -14,7 +14,7 @@ from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data,
 from app.core.storage_backend import normalize_storage_payload
 
 
-def test_normalize_storage_payload_scopes_single_tray_experiment_history_entries() -> None:
+def test_normalize_storage_payload_does_not_scope_single_tray_experiment_history_entries() -> None:
     payload = {
         "mes.tasks": [],
         "mes.samples": [
@@ -35,7 +35,52 @@ def test_normalize_storage_payload_scopes_single_tray_experiment_history_entries
 
     normalized = normalize_storage_payload(payload)
 
-    assert normalized["mes.samples"][0]["history"][0]["tray_code"] == "TP-001"
+    assert "tray_code" not in normalized["mes.samples"][0]["history"][0]
+
+
+def test_normalize_storage_payload_does_not_assign_returned_samples_by_sorted_tray_limit() -> None:
+    task_code = "TASK-NO-SAMPLE-TRAY"
+    payload = {
+        "mes.tasks": [
+            {
+                "code": task_code,
+                "status": "任务进行中",
+                "transfer_status": "到货",
+                "tray_limit": 1,
+            }
+        ],
+        "mes.samples": [
+            {"code": f"{task_code}-SP-001", "task_code": task_code, "status": "实验进行中", "flow_status": "实验进行中"},
+            {"code": f"{task_code}-SP-002", "task_code": task_code, "status": "实验进行中", "flow_status": "实验进行中"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-001"},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": f"{task_code}-TP-002"},
+        ],
+        "mes.staging_events": [
+            {
+                "tray_code": f"{task_code}-TP-001",
+                "task_code": task_code,
+                "action": "manufacturer_return",
+                "time": "2026-06-06 15:30:00",
+                "target_lab": "厂家收回",
+            },
+            {
+                "tray_code": f"{task_code}-TP-002",
+                "task_code": task_code,
+                "action": "manufacturer_return",
+                "time": "2026-06-06 15:31:00",
+                "target_lab": "厂家收回",
+            },
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
+    assert [sample["status"] for sample in normalized["mes.samples"]] == ["实验进行中", "实验进行中"]
+    assert all("trays" not in sample for sample in normalized["mes.samples"])
 
 
 def test_normalize_storage_payload_does_not_scope_ambiguous_multi_tray_experiment_history_entries() -> None:
@@ -314,18 +359,13 @@ def test_normalize_storage_payload_marks_task_returned_from_staging_events_when_
 
     assert normalized["mes.tasks"][0]["status"] == "厂家收回"
     assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["history"][1]["status"] == "已到达暂存间"
-    assert normalized["mes.samples"][0]["trays"] == [
-        {
-            "tray_code": "SYLU-2026-03-001-TP-001",
-            "sample_code": "SYLU-2026-03-001-SP-001",
-            "status": "厂家收回",
-            "quantity": 1,
-                "updated_at": "2026-04-28 11:32:34",
-        }
-    ]
+    assert normalized["mes.samples"][0]["status"] == "已入库"
+    assert normalized["mes.samples"][0]["flow_status"] == "已入库"
+    assert normalized["mes.samples"][0]["history"][0]["status"] == "已到达暂存间"
+    assert normalized["mes.samples"][0]["trays"] == []
+    assert normalized["mes.samples"][1]["status"] == "已入库"
+    assert normalized["mes.samples"][1]["flow_status"] == "已入库"
+    assert normalized["mes.samples"][1]["trays"] == []
 
 
 def test_normalize_storage_payload_closes_experiment_schedules_when_scoped_trays_are_completed_or_returned() -> None:
@@ -646,7 +686,7 @@ def test_normalize_storage_payload_closes_running_schedules_when_return_events_o
     }
 
 
-def test_normalize_storage_payload_converts_legacy_handover_stored_status_to_arrived() -> None:
+def test_normalize_storage_payload_preserves_legacy_handover_stored_status_without_arrival_conversion() -> None:
     payload = {
         "mes.tasks": [
             {
@@ -670,11 +710,11 @@ def test_normalize_storage_payload_converts_legacy_handover_stored_status_to_arr
 
     normalized = normalize_storage_payload(payload)
 
-    assert normalized["mes.tasks"][0]["transfer_status"] == "到货"
-    assert normalized["mes.samples"][0]["status"] == "到货"
-    assert normalized["mes.samples"][0]["flow_status"] == "到货"
-    assert normalized["mes.samples"][0]["trays"][0]["status"] == "到货"
-    assert normalized["mes.samples"][0]["history"][0]["status"] == "到货"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "已入库"
+    assert normalized["mes.samples"][0]["status"] == "已入库"
+    assert normalized["mes.samples"][0]["flow_status"] == "已入库"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "已入库"
+    assert normalized["mes.samples"][0]["history"][0]["status"] == "已入库"
 
 
 def test_normalize_storage_payload_keeps_returned_task_archived_even_if_legacy_stock_in_followed() -> None:
@@ -802,14 +842,14 @@ def test_normalize_storage_payload_does_not_use_legacy_sample_tray_return_for_mu
     normalized = normalize_storage_payload(payload)
 
     assert normalized["mes.tasks"][0]["status"] == "任务进行中"
-    assert normalized["mes.tasks"][0]["transfer_status"] == "到货"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "已入库"
     assert normalized["mes.samples"][0]["status"] == "实验进行中"
     assert normalized["mes.samples"][0]["flow_status"] == "实验进行中"
     assert normalized["mes.samples"][0]["location"] == "温度冲击二室"
     assert normalized["mes.samples"][0]["trays"][0]["status"] == "实验进行中"
 
 
-def test_normalize_storage_payload_allows_legacy_sample_tray_return_for_single_experiment_single_tray() -> None:
+def test_normalize_storage_payload_rejects_legacy_sample_tray_return_for_single_experiment_single_tray() -> None:
     task_code = "SYLU-2026-06-100"
     tray_code = f"{task_code}-TP-001"
     payload = {
@@ -853,11 +893,11 @@ def test_normalize_storage_payload_allows_legacy_sample_tray_return_for_single_e
 
     normalized = normalize_storage_payload(payload)
 
-    assert normalized["mes.tasks"][0]["status"] == "厂家收回"
-    assert normalized["mes.tasks"][0]["transfer_status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["flow_status"] == "厂家收回"
-    assert normalized["mes.samples"][0]["trays"][0]["status"] == "厂家收回"
+    assert normalized["mes.tasks"][0]["status"] == "待排程"
+    assert normalized["mes.tasks"][0]["transfer_status"] == "已入库"
+    assert normalized["mes.samples"][0]["status"] == "已到达暂存间"
+    assert normalized["mes.samples"][0]["flow_status"] == "已到达暂存间"
+    assert normalized["mes.samples"][0]["trays"][0]["status"] == "已到达暂存间"
 
 
 def test_normalize_storage_payload_does_not_return_unmapped_legacy_sample_when_structured_relation_exists() -> None:

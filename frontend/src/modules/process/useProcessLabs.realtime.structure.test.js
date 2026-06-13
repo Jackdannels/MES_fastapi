@@ -15,6 +15,7 @@ describe("useProcessLabs realtime refresh structure", () => {
     expect(source).toContain("hasPendingSamplesRefresh");
     expect(source).toContain("taskDrawerOpen.value");
     expect(source).toContain("startExperimentModalOpen.value");
+    expect(source).toContain("STORAGE_KEYS.experiment_samples");
     expect(source).not.toContain("subscribeStorageSnapshotUpdates");
     expect(source).not.toContain("SNAPSHOT_UPDATED_STORAGE_KEY");
   });

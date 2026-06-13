@@ -250,7 +250,7 @@ describe("tray flow consistency", () => {
           trays: [{ tray_code: "TP-001", status: "已到达实验室", quantity: 1 }],
           history: [
             { detail: "TASK-SCOPED / 盐雾试验 / 实验进行中", status: "实验进行中", time: "2026-06-05 10:10:00" },
-            { detail: "TASK-SCOPED / 盐雾试验 / 实验准备就绪 / 托盘：TP-001", status: "实验准备就绪", time: "2026-06-05 10:00:00" },
+            { detail: "TASK-SCOPED / 盐雾试验 / 实验准备就绪 / 托盘：TP-001", status: "实验准备就绪", time: "2026-06-05 10:00:00", tray_code: "TP-001" },
           ],
         },
       ],
@@ -430,6 +430,16 @@ describe("tray flow consistency", () => {
           status: "实验进行中",
           started_at: "2026-06-04 10:10:00",
           tray_codes: [trayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: "EXP-IMPACT",
+          run_no: "RUN-IMPACT-001",
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-04 10:10:00",
         },
       ],
       samples: [

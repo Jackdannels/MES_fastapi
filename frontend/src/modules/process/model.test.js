@@ -276,6 +276,79 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards does not mark lab cards running from experiment run tray_codes without run-tray relations", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Salt Lab", testType: "盐雾试验" }],
+      [{ code: "TASK-RUN-CODES", test_type: "盐雾试验" }],
+      [
+        {
+          device: "Salt Lab",
+          end_at: "2026-04-09T21:35:00Z",
+          experiment_code: "TASK-RUN-CODES-A",
+          start_at: "2026-04-09T18:05:00Z",
+          task_code: "TASK-RUN-CODES",
+        },
+      ],
+      [],
+      Date.parse("2026-04-09T18:30:00Z"),
+      [{ task_code: "TASK-RUN-CODES", experiment_code: "TASK-RUN-CODES-A", experiment_name: "盐雾试验" }],
+      [{ task_code: "TASK-RUN-CODES", experiment_code: "TASK-RUN-CODES-A", tray_code: "TASK-RUN-CODES-TP-001" }],
+      [],
+      [
+        {
+          task_code: "TASK-RUN-CODES",
+          experiment_code: "TASK-RUN-CODES-A",
+          device: "Salt Lab",
+          status: "实验进行中",
+          tray_codes: ["TASK-RUN-CODES-TP-001"],
+        },
+      ],
+      []
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        status: "已排程",
+        statusClass: "is-scheduled",
+      }),
+    );
+  });
+
+  test("buildProcessLabCards does not mark trays ready from sample status when tray status is blank", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Salt Lab", testType: "盐雾试验" }],
+      [{ code: "TASK-SAMPLE-READY", test_type: "盐雾试验" }],
+      [
+        {
+          device: "Salt Lab",
+          end_at: "2026-04-09T21:35:00Z",
+          experiment_code: "TASK-SAMPLE-READY-A",
+          start_at: "2026-04-09T18:05:00Z",
+          task_code: "TASK-SAMPLE-READY",
+        },
+      ],
+      [
+        {
+          code: "TASK-SAMPLE-READY-SP-001",
+          location: "Salt Lab",
+          status: "实验准备就绪",
+          task_code: "TASK-SAMPLE-READY",
+          trays: [{ tray_code: "TASK-SAMPLE-READY-TP-001", quantity: 1 }],
+        },
+      ],
+      Date.parse("2026-04-09T18:30:00Z"),
+      [{ task_code: "TASK-SAMPLE-READY", experiment_code: "TASK-SAMPLE-READY-A", experiment_name: "盐雾试验" }],
+      [{ task_code: "TASK-SAMPLE-READY", experiment_code: "TASK-SAMPLE-READY-A", tray_code: "TASK-SAMPLE-READY-TP-001" }]
+    );
+
+    expect(cards[0]).toEqual(
+      expect.objectContaining({
+        canStartExperiment: false,
+        status: "已排程",
+      }),
+    );
+  });
+
   test("buildProcessLabCards ignores active schedules whose experiment is already completed", () => {
     const cards = buildProcessLabCards(
       [{ name: "Impact Lab 1", testType: "冲击试验" }],
@@ -705,6 +778,16 @@ describe("processLabModel", () => {
       [
         { task_code: "TASK-SHARED", experiment_code: "EXP-IMPACT", tray_code: "TP-SHARED" },
         { task_code: "TASK-SHARED", experiment_code: "EXP-TEMP", tray_code: "TP-SHARED" },
+      ],
+      [],
+      [],
+      [
+        {
+          task_code: "TASK-SHARED",
+          experiment_code: "EXP-IMPACT",
+          tray_code: "TP-SHARED",
+          run_tray_status: "实验已完成",
+        },
       ]
     );
 

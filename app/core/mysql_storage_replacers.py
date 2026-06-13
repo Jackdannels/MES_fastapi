@@ -8,7 +8,6 @@ from app.core.mysql_storage_mappers import (
     build_experiment_insert_row,
     build_experiment_run_insert_row,
     build_experiment_run_tray_insert_row,
-    build_experiment_run_tray_insert_rows,
     build_experiment_sample_insert_row,
     build_experiment_tray_insert_row,
     build_schedule_insert_row,
@@ -260,13 +259,6 @@ def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, re
         for run in experiment_runs
         if normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
     ]
-    tray_rows = [
-        tray_row
-        for run in experiment_runs
-        for tray_row in build_experiment_run_tray_insert_rows(run)
-    ]
-    if replace_trays:
-        cursor.execute("DELETE FROM biz_experiment_run_tray")
     cursor.execute("DELETE FROM biz_experiment_run")
     if rows:
         cursor.executemany(
@@ -291,26 +283,6 @@ def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, re
               updated_at = VALUES(updated_at)
             """,
             rows,
-        )
-    if replace_trays and tray_rows:
-        cursor.executemany(
-            """
-            INSERT INTO biz_experiment_run_tray (
-              run_no, task_no, experiment_no, tray_no, run_tray_status,
-              started_at, ended_at, created_at, updated_at
-            ) VALUES (
-              %(run_no)s, %(task_no)s, %(experiment_no)s, %(tray_no)s, %(run_tray_status)s,
-              %(started_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
-            )
-            ON DUPLICATE KEY UPDATE
-              task_no = VALUES(task_no),
-              experiment_no = VALUES(experiment_no),
-              run_tray_status = VALUES(run_tray_status),
-              started_at = VALUES(started_at),
-              ended_at = VALUES(ended_at),
-              updated_at = VALUES(updated_at)
-            """,
-            tray_rows,
         )
 
 

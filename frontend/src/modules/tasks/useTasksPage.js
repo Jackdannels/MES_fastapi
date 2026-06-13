@@ -381,7 +381,7 @@ function useTasksPage() {
     return leftItems.length === rightItems.length && leftItems.every((item, index) => item === rightItems[index]);
   };
 
-  const isStorageConfirmedStatus = (value) => ["到货", "已入库"].includes(normalizeText(value));
+  const isStorageConfirmedStatus = (value) => normalizeText(value) === "到货";
 
   const taskStorageConfirmed = (task, samples) => {
     const taskCode = taskCodeOf(task);

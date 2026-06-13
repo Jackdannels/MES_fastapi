@@ -21,8 +21,8 @@ const LAB_INSTALL_STATUS = "工装夹具安装";
 const LAB_READY_STATUS = "实验准备就绪";
 const LAB_RESET_STATUS = "送至实验室";
 const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
-const PRE_DISPATCH_FALLBACK_LOCATION = "恒温恒湿间（暂存间）";
-const PRE_DISPATCH_FALLBACK_STATUS = "已到达暂存间";
+const PRE_DISPATCH_STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const PRE_DISPATCH_STAGING_STATUS = "已到达暂存间";
 const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
 const APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放";
 const PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS = "实验前外观检测存放";
@@ -186,13 +186,13 @@ const resolvePreDispatchLocation = (status, location = "") => {
   if (normalizedStatus === "到货" || normalizedStatus === "已接收") {
     return "接驳区";
   }
-  return PRE_DISPATCH_FALLBACK_LOCATION;
+  return PRE_DISPATCH_STAGING_LOCATION;
 };
 
 const resolvePreDispatchStatusFromLocation = (location) => {
   const normalizedLocation = normalizeText(location);
-  if (normalizedLocation === PRE_DISPATCH_FALLBACK_LOCATION) {
-    return PRE_DISPATCH_FALLBACK_STATUS;
+  if (normalizedLocation === PRE_DISPATCH_STAGING_LOCATION) {
+    return PRE_DISPATCH_STAGING_STATUS;
   }
   if (normalizedLocation === "接驳区" || normalizedLocation === "室外接驳区") {
     return "到货";
@@ -221,11 +221,7 @@ const resolvePreDispatchSnapshot = (sample) => {
       };
     }
   }
-  return {
-    location: PRE_DISPATCH_FALLBACK_LOCATION,
-    status: PRE_DISPATCH_FALLBACK_STATUS,
-    time: -Infinity,
-  };
+  return null;
 };
 
 const resolveAppearanceStorageSnapshot = (sample) => {
@@ -490,13 +486,14 @@ const resolvePreviousCompletedExperimentSnapshot = (sample, taskCode, currentExp
 };
 
 const resolvePreviousStableSnapshot = (sample, taskCode, currentExperimentName) => {
+  const preDispatchSnapshot = resolvePreDispatchSnapshot(sample);
   const candidates = [
     resolvePreviousCompletedExperimentSnapshot(sample, taskCode, currentExperimentName),
     resolveAppearanceStorageSnapshot(sample),
-    {
-    ...resolvePreDispatchSnapshot(sample),
-    experimentName: "",
-    },
+    preDispatchSnapshot ? {
+      ...preDispatchSnapshot,
+      experimentName: "",
+    } : null,
   ].filter(Boolean);
   candidates.sort((left, right) => left.time - right.time);
   return candidates[candidates.length - 1];
@@ -914,17 +911,33 @@ const currentExperimentIsNextUnfinishedForTray = (row, currentTask) => {
   }
   return experimentCodes.slice(0, currentIndex).every((experimentCode) => completedCodes.has(experimentCode));
 };
+const taskHasDispatchValidationScope = (task) =>
+  Boolean(normalizeText(task?.experimentCode) || normalizeText(task?.device));
 const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   const trayStatus = normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus);
   const targetExperimentCode = normalizeText(row?.targetExperimentCode || row?.target_experiment_code);
   const currentExperimentCode = normalizeText(currentTask?.experimentCode);
+  const experimentCodes = asArray(row?.experimentCodes).map((code) => normalizeText(code)).filter(Boolean);
+  const currentExperimentIndex = experimentCodes.indexOf(currentExperimentCode);
+  const targetLab = normalizeText(row?.targetLab || row?.target_lab);
+  const currentLab = normalizeText(currentTask?.device);
+  const targetLabMatchesCurrent = Boolean(targetLab && currentLab && targetLab === currentLab);
+  const hasCurrentExperimentRelation = Boolean(
+    currentExperimentCode && experimentCodes.includes(currentExperimentCode),
+  );
+  const targetExperimentMatchesCurrent = Boolean(
+    targetExperimentCode
+    && currentExperimentCode
+    && targetExperimentCode === currentExperimentCode,
+  );
+  const currentIsNextUnfinished = currentExperimentIsNextUnfinishedForTray(row, currentTask);
   if (
     targetExperimentCode
     && currentExperimentCode
     && targetExperimentCode !== currentExperimentCode
     && row?.completedForOtherExperiment === true
     && row?.completedForCurrentExperiment !== true
-    && currentExperimentIsNextUnfinishedForTray(row, currentTask)
+    && currentIsNextUnfinished
     && rowCompletedExperimentCodeSet(row).has(targetExperimentCode)
   ) {
     return true;
@@ -935,17 +948,28 @@ const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
   if (trayStatus !== LAB_RESET_STATUS) {
     return true;
   }
+  if (targetExperimentMatchesCurrent) {
+    return targetLab ? targetLabMatchesCurrent : Boolean(currentLab);
+  }
+  if (!targetExperimentCode && hasCurrentExperimentRelation) {
+    if (targetLabMatchesCurrent) {
+      return true;
+    }
+    if (targetLab) {
+      return row?.completedForOtherExperiment === true && currentIsNextUnfinished;
+    }
+    return experimentCodes.length <= 1 || currentExperimentIndex === 0 || currentIsNextUnfinished;
+  }
   if (
     !targetExperimentCode
     && row?.completedForOtherExperiment === true
     && row?.completedForCurrentExperiment !== true
     && currentExperimentCode
+    && currentIsNextUnfinished
   ) {
-    return true;
+    return targetLabMatchesCurrent;
   }
-  const location = normalizeText(row?.targetLab || row?.target_lab || row?.currentLocation || row?.location);
-  const currentLab = normalizeText(currentTask?.device);
-  return !location || !currentLab || location === currentLab;
+  return false;
 };
 const trayLifecycleIsBeforeLaboratoryDispatch = (row) => {
   const lifecycleStatus = normalizeText(row?.lifecycleStatus);
@@ -957,9 +981,10 @@ const trayLifecycleIsBeforeLaboratoryDispatch = (row) => {
   return rank >= 0 && rank < sentToLabRank;
 };
 const taskHasWrongLaboratoryDispatch = (task) =>
-  asArray(task?.trayRows).some((row) => !trayIsDispatchedToCurrentLaboratory(row, task));
+  taskHasDispatchValidationScope(task)
+  && asArray(task?.trayRows).some((row) => !trayIsDispatchedToCurrentLaboratory(row, task));
 const trayBelongsToCurrentLaboratoryWorkflow = (row, currentTask) =>
-  trayIsDispatchedToCurrentLaboratory(row, currentTask);
+  !taskHasDispatchValidationScope(currentTask) || trayIsDispatchedToCurrentLaboratory(row, currentTask);
 const taskHasCurrentLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
 const resolveLaboratoryOperationLabRef = (currentTask = null, lab = null) => {
@@ -2153,6 +2178,9 @@ function revertLaboratoryTaskToPreDispatch({
         return { ...tray };
       }
       restoreSnapshot = restoreSnapshot || resolvePreDispatchSnapshot(sample);
+      if (!restoreSnapshot) {
+        return { ...tray };
+      }
       reverted = true;
       return {
         ...tray,

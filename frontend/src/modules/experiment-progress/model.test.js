@@ -75,4 +75,26 @@ describe("experiment progress model", () => {
       experimentCode: "EXP-MOLD",
     })).toBe(false);
   });
+
+  test("ignores sample history text as a terminal fallback for a scoped tray", () => {
+    expect(experimentScopeIsTerminal({
+      experimentTrays: [
+        { task_code: "TASK-HISTORY-TEXT", experiment_code: "EXP-SALT", tray_code: "TP-001" },
+      ],
+      experiments: [
+        { task_code: "TASK-HISTORY-TEXT", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-HISTORY-TEXT",
+          trays: [{ tray_code: "TP-001", status: "已到达实验室" }],
+          history: [
+            { detail: "TASK-HISTORY-TEXT / 盐雾试验 / 实验已完成", status: "实验已完成" },
+          ],
+        },
+      ],
+      taskCode: "TASK-HISTORY-TEXT",
+      experimentCode: "EXP-SALT",
+    })).toBe(false);
+  });
 });

@@ -38,4 +38,32 @@ describe("taskArchive", () => {
     expect(isReturnedTrayStatus("厂家收回")).toBe(true);
     expect(isReturnedTrayStatus("已入库")).toBe(false);
   });
+
+  test("does not archive a task from sample-level returned status without assigned trays", () => {
+    const samples = [
+      {
+        task_code: "TASK-SAMPLE-ONLY",
+        status: "厂家收回",
+        flow_status: "厂家收回",
+        trays: [],
+      },
+    ];
+
+    expect(isReturnedTask({ code: "TASK-SAMPLE-ONLY", status: "待排程" }, samples)).toBe(false);
+    expect(filterActiveTasks([{ code: "TASK-SAMPLE-ONLY", status: "待排程" }], samples)).toEqual([
+      { code: "TASK-SAMPLE-ONLY", status: "待排程" },
+    ]);
+  });
+
+  test("does not archive a task from tray statuses that have no structured tray code", () => {
+    const samples = [
+      {
+        task_code: "TASK-UNCODED-TRAY",
+        status: "厂家收回",
+        trays: [{ status: "厂家收回" }],
+      },
+    ];
+
+    expect(isReturnedTask({ code: "TASK-UNCODED-TRAY", status: "待排程" }, samples)).toBe(false);
+  });
 });

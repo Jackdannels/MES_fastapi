@@ -5,7 +5,7 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 
 const resolveTaskCode = (task) => normalizeText(task?.code || task?.task_code || task?.taskNo || task?.task_no || task?.id);
 const resolveSampleTaskCode = (sample) => normalizeText(sample?.task_code || sample?.taskCode || sample?.taskNo || sample?.task_no);
-const resolveTrayStatus = (tray, sample) => normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus || sample?.status || sample?.flow_status);
+const resolveTrayStatus = (tray) => normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
 
 const isReturnedTrayStatus = (status) => normalizeText(status) === RETURNED_STATUS;
 
@@ -19,9 +19,9 @@ const collectAssignedTrayStatuses = (task, samples) => {
     if (resolveSampleTaskCode(sample) !== taskCode) {
       return;
     }
-    asArray(sample?.trays).forEach((tray, index) => {
-      const trayCode = normalizeText(tray?.tray_code || tray?.trayCode || tray?.trayNo || tray?.tray_no || tray?.code) || `${taskCode}-tray-${index + 1}`;
-      const status = resolveTrayStatus(tray, sample);
+    asArray(sample?.trays).forEach((tray) => {
+      const trayCode = normalizeText(tray?.tray_code || tray?.trayCode || tray?.trayNo || tray?.tray_no || tray?.code);
+      const status = resolveTrayStatus(tray);
       if (trayCode && status) {
         statusByTrayCode.set(trayCode, status);
       }

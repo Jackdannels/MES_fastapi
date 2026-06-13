@@ -6,7 +6,6 @@ const RETURNED_STATUS = "厂家收回";
 const EXPERIMENT_STATUS_RUNNING = "实验进行中";
 const EXPERIMENT_STATUS_COMPLETED = "实验已完成";
 
-const LEGACY_TRANSFER_ARRIVED_STATUSES = new Set(["已入库"]);
 const LEGACY_EXPERIMENT_RUNNING_STATUSES = new Set(["实验中"]);
 const LEGACY_EXPERIMENT_COMPLETED_STATUSES = new Set(["实验完成", "实验已经完成"]);
 const LEGACY_STAGING_TASK_STATUSES = new Set(["暂存间排放", "暂存间存放"]);
@@ -15,9 +14,6 @@ const normalizeStatusText = (value) => String(value ?? "").trim();
 
 const normalizeExperimentStatusLabel = (value) => {
   const normalized = normalizeStatusText(value);
-  if (LEGACY_TRANSFER_ARRIVED_STATUSES.has(normalized)) {
-    return TRANSFER_STATUS_ARRIVED;
-  }
   if (normalized === EXPERIMENT_STATUS_RUNNING || LEGACY_EXPERIMENT_RUNNING_STATUSES.has(normalized)) {
     return EXPERIMENT_STATUS_RUNNING;
   }
@@ -29,9 +25,6 @@ const normalizeExperimentStatusLabel = (value) => {
 
 const normalizeTaskStatusLabel = (value) => {
   const normalized = normalizeStatusText(value);
-  if (LEGACY_TRANSFER_ARRIVED_STATUSES.has(normalized)) {
-    return TRANSFER_STATUS_ARRIVED;
-  }
   if (
     normalized === TASK_STATUS_RUNNING
     || normalized === EXPERIMENT_STATUS_RUNNING

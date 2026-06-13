@@ -175,6 +175,36 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-001 | 当前状态：到货");
   });
 
+  test("opens sample detail without falling back to sample-level status for tray flow", async () => {
+    mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-SAMPLE-STATUS", name: "样品状态任务" }]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "SP-SAMPLE-STATUS",
+          task_code: "TASK-SAMPLE-STATUS",
+          location: "冲击一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-SAMPLE-STATUS", quantity: 1 }],
+        },
+      ],
+      "mes.experiments": [],
+      "mes.experiment_runs": [],
+      "mes.experiment_trays": [],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openDetailDrawer("SP-SAMPLE-STATUS");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-SAMPLE-STATUS | 当前状态：样品运输中");
+    expect(wrapper.vm.detailSampleTrayFlow.steps.find((step) => step.key === "running")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+  });
+
   test("loads experiment runs for tray flow runtime times", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-RUN", name: "运行任务" }]);
     mocks.loadSnapshot.mockResolvedValueOnce({
@@ -193,10 +223,21 @@ describe("useSamplesFlow", () => {
       ],
       "mes.experiment_runs": [
         {
+          run_no: "RUN-TP-RUN-001",
           task_code: "TASK-RUN",
           experiment_code: "EXP-RUN",
           tray_codes: ["TP-RUN-001"],
           status: "实验进行中",
+          started_at: "2026-06-04T19:12:09+08:00",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-TP-RUN-001",
+          task_code: "TASK-RUN",
+          experiment_code: "EXP-RUN",
+          tray_code: "TP-RUN-001",
+          run_tray_status: "实验进行中",
           started_at: "2026-06-04T19:12:09+08:00",
         },
       ],

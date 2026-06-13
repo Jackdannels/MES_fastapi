@@ -4025,6 +4025,40 @@ describe("laboratory model", () => {
     expect(result.guidance).not.toContain("接驳间");
   });
 
+  test("validateLaboratoryTrayScan rejects current trays without structured dispatch target", () => {
+    const currentTask = {
+      taskCode: "SYLU-2026-05-706",
+      experimentCode: "SYLU-2026-05-706-A",
+      device: "盐雾试验室",
+      trayCodes: ["TP-MISSING-TARGET"],
+      allTrayCodes: [],
+      trayRows: [
+        {
+          currentLocation: "盐雾试验室",
+          displayStatus: "送至实验室",
+          targetExperimentCode: "",
+          targetLab: "",
+          trayCode: "TP-MISSING-TARGET",
+          trayStatus: "送至实验室",
+        },
+      ],
+      allTrayRows: [],
+    };
+
+    const result = validateLaboratoryTrayScan({
+      currentTask,
+      scanCode: "TP-MISSING-TARGET",
+      scheduleRows: [currentTask],
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      message: "托盘未送达当前试验间",
+      ok: false,
+      tone: "error",
+      trayCode: "TP-MISSING-TARGET",
+    }));
+  });
+
   test("validateLaboratoryTrayScan blocks trays that must enter appearance inspection before another lab", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
@@ -4673,6 +4707,34 @@ describe("laboratory model", () => {
       status: "实验准备就绪",
       trays: [expect.objectContaining({ status: "实验准备就绪", tray_code: "TP-B" })],
     }));
+  });
+
+  test("revertLaboratoryTaskToPreDispatch leaves trays unchanged when no restore snapshot exists", () => {
+    const originalSample = {
+      code: "SYLU-2026-04-503-SP-001",
+      flow_status: "工装夹具安装",
+      history: [],
+      location: "盐雾试验室",
+      owner: "王工",
+      status: "工装夹具安装",
+      task_code: "SYLU-2026-04-503",
+      trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TP-NO-RESTORE" }],
+    };
+
+    const updatedSamples = revertLaboratoryTaskToPreDispatch({
+      currentTask: {
+        device: "盐雾试验室",
+        experimentCode: "SYLU-2026-04-503-A",
+        experimentName: "盐雾试验",
+        taskCode: "SYLU-2026-04-503",
+        trayCodes: ["TP-NO-RESTORE"],
+      },
+      now: "2026-04-02T10:50:00.000Z",
+      samples: [originalSample],
+    });
+
+    expect(updatedSamples[0]).toEqual(originalSample);
+    expect(updatedSamples[0].status).not.toBe("已到达暂存间");
   });
 
   test("revertLaboratoryTaskToPreviousStableState restores a switched task to the previous completed experiment", () => {

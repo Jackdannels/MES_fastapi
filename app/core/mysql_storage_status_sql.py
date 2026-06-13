@@ -306,15 +306,6 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
 
     cursor.execute(
         """
-        SELECT relation_id, experiment_no, task_no, sample_no
-        FROM biz_experiment_sample
-        ORDER BY task_no ASC, experiment_no ASC, sample_no ASC
-        """
-    )
-    experiment_samples = cursor.fetchall()
-
-    cursor.execute(
-        """
         SELECT relation_id, experiment_no, task_no, tray_no
         FROM biz_experiment_tray
         ORDER BY task_no ASC, experiment_no ASC, tray_no ASC
@@ -331,24 +322,9 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
     )
     experiment_run_trays = cursor.fetchall()
 
-    cursor.execute(
-        """
-        SELECT sample_no, task_no, detail
-        FROM biz_sample_event
-        WHERE task_no IN (
-          SELECT task_no FROM biz_task WHERE source_system = %s
-        )
-        ORDER BY event_time ASC, event_id ASC
-        """,
-        (STORAGE_MARKER,),
-    )
-    sample_events = cursor.fetchall()
-
     experiment_status_map = derive_experiment_status_map(
         experiments,
         schedules,
-        experiment_samples,
-        sample_events,
         experiment_trays=experiment_trays,
         experiment_run_trays=experiment_run_trays,
     )

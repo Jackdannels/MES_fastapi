@@ -998,6 +998,7 @@ describe("samplesFlowModel", () => {
               sample_code: "SYLU-2026-06-001-SP-002",
               quantity: 1,
               status: "送至实验室",
+              target_lab: "冲击一室",
             },
           ],
           history: [
@@ -1068,10 +1069,21 @@ describe("samplesFlowModel", () => {
       currentExperimentCode: experimentCode,
       experimentRuns: [
         {
+          run_no: "RUN-IMPACT-001",
           task_code: taskCode,
           experiment_code: experimentCode,
           tray_codes: [trayCode],
           status: "实验进行中",
+          started_at: "2026-06-04T16:11:53+08:00",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-IMPACT-001",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
           started_at: "2026-06-04T16:11:53+08:00",
         },
       ],
@@ -1230,10 +1242,21 @@ describe("samplesFlowModel", () => {
       currentExperimentCode: experimentCode,
       experimentRuns: [
         {
+          run_no: "RUN-IMPACT-START-001",
           task_code: taskCode,
           experiment_code: experimentCode,
           tray_codes: [trayCode],
           status: "实验进行中",
+          started_at: "2026-06-04T19:12:09+08:00",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-IMPACT-START-001",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
           started_at: "2026-06-04T19:12:09+08:00",
         },
       ],
@@ -1871,10 +1894,20 @@ describe("samplesFlowModel", () => {
       currentExperimentCode: "EXP-IMPACT",
       experimentRuns: [
         {
+          run_no: "RUN-MQTT-RUN-001",
           task_code: "TASK-MQTT-RUN",
           experiment_code: "EXP-IMPACT",
           tray_codes: ["TP-MQTT-RUN-001"],
           status: "实验进行中",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-MQTT-RUN-001",
+          task_code: "TASK-MQTT-RUN",
+          experiment_code: "EXP-IMPACT",
+          tray_code: "TP-MQTT-RUN-001",
+          run_tray_status: "实验进行中",
         },
       ],
       experimentTrays: [
@@ -1910,6 +1943,45 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "实验准备就绪")).toEqual(
       expect.objectContaining({ active: false, reached: true }),
     );
+  });
+
+  test("buildTrayFlowView ignores run header tray codes without a structured run-tray relation", () => {
+    const taskCode = "TASK-RUN-HEADER-ONLY";
+    const experimentCode = "EXP-HEADER-ONLY";
+    const trayCode = "TP-HEADER-ONLY-001";
+    const view = buildTrayFlowView({
+      currentExperimentCode: experimentCode,
+      experimentRuns: [
+        {
+          run_no: "RUN-HEADER-ONLY-001",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_codes: [trayCode],
+          status: "实验进行中",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验", status: "实验准备就绪" },
+      ],
+      samples: [
+        {
+          task_code: taskCode,
+          code: "SP-HEADER-ONLY-001",
+          location: "冲击一室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: trayCode, status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+      status: "实验准备就绪",
+      taskCode,
+      trayCode,
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-HEADER-ONLY-001 | 当前状态：实验准备就绪");
+    expect(view.steps.find((step) => step.label === "冲击试验进行中")?.active).not.toBe(true);
   });
 
   test("buildTrayFlowView ignores experiment runs that do not identify the current tray", () => {
@@ -1979,6 +2051,25 @@ describe("samplesFlowModel", () => {
           experiment_code: "EXP-A",
           tray_codes: [trayCode],
           status: "实验进行中",
+          started_at: "2026-06-04T20:45:00+08:00",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "OLD-COMPLETED",
+          task_code: taskCode,
+          experiment_code: "EXP-A",
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-04T20:00:00+08:00",
+          updated_at: "2026-06-04T20:30:00+08:00",
+        },
+        {
+          run_no: "NEW-RUNNING",
+          task_code: taskCode,
+          experiment_code: "EXP-A",
+          tray_code: trayCode,
+          run_tray_status: "实验进行中",
           started_at: "2026-06-04T20:45:00+08:00",
         },
       ],
@@ -3428,8 +3519,8 @@ describe("samplesFlowModel", () => {
           status: "实验进行中",
           trays: [{ trayCode, status: "实验进行中" }],
           history: [
-            { time: "2026-06-06 13:16:51", status: "已到达暂存间", detail: `${trayCode} 已到达暂存间` },
-            { time: "2026-06-06 13:17:08", status: "厂家收回", detail: `${trayCode} 厂家收回` },
+            { time: "2026-06-06 13:16:51", status: "已到达暂存间", detail: `${trayCode} 已到达暂存间`, tray_code: trayCode },
+            { time: "2026-06-06 13:17:08", status: "厂家收回", detail: `${trayCode} 厂家收回`, tray_code: trayCode },
           ],
         },
       ],
@@ -3441,6 +3532,27 @@ describe("samplesFlowModel", () => {
 
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
     expect(view.steps.some((step) => step.label === "冲击试验进行中")).toBe(false);
+  });
+
+  test("buildTrayFlowView ignores exact tray-code text in history when tray scope is not structured", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      status: "实验进行中",
+      samples: [
+        {
+          task_code: taskCode,
+          trays: [{ tray_code: trayCode, status: "实验进行中", quantity: 1 }],
+          history: [
+            { time: "2026-06-06 13:17:08", status: "厂家收回", detail: `${trayCode} 厂家收回` },
+          ],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验进行中`);
   });
 
   test("buildTrayFlowView does not mark a tray returned from a substring tray-code history match", () => {
@@ -3824,6 +3936,12 @@ describe("samplesFlowModel", () => {
     expect(syncTrayStatusToSampleStatus("未知状态")).toBe("样品运输中");
   });
 
+  test("does not normalize legacy stored status to canonical arrival", () => {
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "到货")).toBe("到货");
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "已入库")).toBe("样品运输中");
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("恒温恒湿间（暂存间）", "已入库")).toBe("已到达暂存间");
+  });
+
   test("buildSamplesFlowView filters sorts and paginates samples", () => {
     const view = buildSamplesFlowView({
       samples: [
@@ -4100,6 +4218,29 @@ describe("samplesFlowModel", () => {
     expect(view.rows.map((row) => row.trayCode)).toEqual(["TP-ACTIVE"]);
   });
 
+  test("buildSamplesTrayOverviewView does not exclude a tray from sample-level returned status", () => {
+    const view = buildSamplesTrayOverviewView({
+      tasks: [{ code: "TASK-SAMPLE-RETURNED", name: "样品状态任务", test_type: "冲击试验" }],
+      samples: [
+        {
+          code: "SP-SAMPLE-RETURNED",
+          task_code: "TASK-SAMPLE-RETURNED",
+          status: "厂家收回",
+          location: "厂家收回",
+          trays: [{ tray_code: "TP-SAMPLE-RETURNED", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(view.rows).toEqual([
+      expect.objectContaining({
+        trayCode: "TP-SAMPLE-RETURNED",
+        status: "",
+        sampleCodes: ["SP-SAMPLE-RETURNED"],
+      }),
+    ]);
+  });
+
   test("buildSamplesTrayOverviewView only keeps the latest active tray for each sample", () => {
     const view = buildSamplesTrayOverviewView({
       tasks: [{ code: "SYLU-2026-03-001", name: "任务A", test_type: "冲击试验" }],
@@ -4209,6 +4350,52 @@ describe("samplesFlowModel", () => {
     expect(view.currentStatus).toBe("当前托盘：TP-002 | 当前状态：已到达实验室");
     expect(view.steps.find((step) => step.label === "厂家收回")).toEqual(
       expect.objectContaining({ active: false, reached: false }),
+    );
+  });
+
+  test("buildTrayFlowView does not apply sample-level returned status to an unstatused single tray", () => {
+    const view = buildTrayFlowView({
+      trayCode: "TP-SINGLE-RETURNED",
+      taskCode: "TASK-SINGLE-RETURNED",
+      status: "已到达实验室",
+      samples: [
+        {
+          task_code: "TASK-SINGLE-RETURNED",
+          status: "厂家收回",
+          location: "厂家收回",
+          trays: [{ tray_code: "TP-SINGLE-RETURNED", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(view.currentStatus).toBe("当前托盘：TP-SINGLE-RETURNED | 当前状态：已到达实验室");
+    expect(view.steps.find((step) => step.label === "厂家收回")).toEqual(
+      expect.objectContaining({ active: false, reached: false }),
+    );
+  });
+
+  test("buildTrayFlowView does not fill tray step times from sample-level status timestamps", () => {
+    const view = buildTrayFlowView({
+      trayCode: "TP-SAMPLE-TIME",
+      taskCode: "TASK-SAMPLE-TIME",
+      status: "已到达实验室",
+      samples: [
+        {
+          task_code: "TASK-SAMPLE-TIME",
+          status: "已到达实验室",
+          location: "冲击一室",
+          created_at: "2026-06-01T08:00:00+08:00",
+          updated_at: "2026-06-01T09:00:00+08:00",
+          trays: [{ tray_code: "TP-SAMPLE-TIME", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "到货")).toEqual(
+      expect.objectContaining({ time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "已到达实验室")).toEqual(
+      expect.objectContaining({ active: true, time: "" }),
     );
   });
 

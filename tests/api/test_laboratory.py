@@ -55,6 +55,14 @@ def build_client(monkeypatch, payloads):
 
 
 def base_payloads(samples, experiment_trays=None, staging_events=None):
+    tray_rows = experiment_trays or [{"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"}]
+    sample_by_tray = {}
+    for sample in samples:
+        sample_code = sample.get("code")
+        for tray in sample.get("trays", []):
+            tray_code = tray.get("tray_code")
+            if sample_code and tray_code:
+                sample_by_tray[tray_code] = sample_code
     return {
         "mes.tasks": [{"id": "task-501", "code": "TASK-501", "name": "多实验任务"}],
         "mes.experiments": [
@@ -68,9 +76,16 @@ def base_payloads(samples, experiment_trays=None, staging_events=None):
             {"task_code": "TASK-501", "experiment_code": "EXP-C", "device": "振动一室"},
         ],
         "mes.experiment_runs": [],
-        "mes.experiment_trays": experiment_trays
-        or [{"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"}],
-        "mes.experiment_samples": [],
+        "mes.experiment_trays": tray_rows,
+        "mes.experiment_samples": [
+            {
+                "task_code": row["task_code"],
+                "experiment_code": row["experiment_code"],
+                "sample_code": sample_by_tray[row["tray_code"]],
+            }
+            for row in tray_rows
+            if row.get("tray_code") in sample_by_tray
+        ],
         "mes.samples": samples,
         "mes.staging_events": staging_events or [],
     }
@@ -232,7 +247,7 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     assert storage.read("mes.experiment_runs")[1]["status"] == "实验准备就绪"
 
 
-def test_laboratory_complete_experiment_infers_batch_trays_from_run_when_tray_codes_omitted(monkeypatch):
+def test_laboratory_complete_experiment_infers_batch_trays_from_run_tray_relations_when_tray_codes_omitted(monkeypatch):
     payloads = base_payloads(
         [
             sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501"),
@@ -248,16 +263,35 @@ def test_laboratory_complete_experiment_infers_batch_trays_from_run_when_tray_co
             "run_no": "RUN-501-A",
             "task_code": "TASK-501",
             "experiment_code": "EXP-A",
-            "tray_codes": ["TP-501"],
             "status": "实验进行中",
         },
         {
             "run_no": "RUN-501-B",
             "task_code": "TASK-501",
             "experiment_code": "EXP-A",
-            "tray_codes": ["TP-502"],
             "status": "实验准备就绪",
         },
+    ]
+    payloads["mes.experiment_run_trays"] = [
+        {
+            "run_no": "RUN-501-A",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-501",
+            "status": "实验进行中",
+            "run_tray_status": "实验进行中",
+        },
+        {
+            "run_no": "RUN-501-B",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-502",
+            "status": "实验准备就绪",
+            "run_tray_status": "实验准备就绪",
+        },
+    ]
+    payloads["mes.experiment_samples"] = [
+        {"task_code": "TASK-501", "experiment_code": "EXP-A", "sample_code": "SP-501"},
     ]
     client, storage = build_client(monkeypatch, payloads)
 
@@ -280,12 +314,44 @@ def test_laboratory_complete_experiment_infers_batch_trays_from_run_when_tray_co
             "tray_code": "TP-501",
             "status": "实验已完成",
             "run_tray_status": "实验已完成",
-            "started_at": "",
             "ended_at": "2026-05-19 10:00:00",
-            "created_at": "2026-05-19 10:00:00",
             "updated_at": "2026-05-19 10:00:00",
+        },
+        {
+            "run_no": "RUN-501-B",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-502",
+            "status": "实验准备就绪",
+            "run_tray_status": "实验准备就绪",
+        },
+    ]
+
+
+def test_laboratory_complete_experiment_rejects_run_tray_codes_fallback_when_tray_codes_omitted(monkeypatch):
+    payloads = base_payloads(
+        [sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501")],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"}],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-501-A",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_codes": ["TP-501"],
+            "status": "实验进行中",
         }
     ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-501-A", "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 400
+    assert "experiment_run_trays" in response.json()["detail"]
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验进行中"
 
 
 def test_laboratory_complete_experiment_rejects_ambiguous_multi_tray_completion(monkeypatch):
@@ -391,6 +457,7 @@ def test_laboratory_start_does_not_treat_multi_tray_sample_returned_status_as_al
         "experiment_trays": [
             {"task_code": task_code, "experiment_code": "EXP-B", "tray_code": "TP-501-B"},
         ],
+        "experiment_samples": [{"task_code": task_code, "experiment_code": "EXP-B", "sample_code": "SP-501"}],
     }
 
     result = start_storage_laboratory_experiment(
@@ -432,6 +499,7 @@ def test_laboratory_start_rejects_target_tray_returned_status_without_run_tray_r
         "experiment_trays": [
             {"task_code": task_code, "experiment_code": "EXP-B", "tray_code": "TP-501-A"},
         ],
+        "experiment_samples": [{"task_code": task_code, "experiment_code": "EXP-B", "sample_code": "SP-501"}],
     }
 
     with pytest.raises(ValueError, match="current experiment has no matching active tray samples"):
@@ -624,6 +692,10 @@ def test_laboratory_operation_preserves_other_lab_tray_state(monkeypatch):
             "mes.experiment_trays": [
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "tray_code": "TP-B"},
+            ],
+            "mes.experiment_samples": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "sample_code": "SP-A"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "sample_code": "SP-B"},
             ],
             "mes.samples": [
                 {
@@ -834,6 +906,10 @@ def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_
             "mes.experiment_trays": [
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "tray_code": "TP-B"},
+            ],
+            "mes.experiment_samples": [
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "sample_code": "SP-A"},
+                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "sample_code": "SP-B"},
             ],
             "mes.samples": [
                 {

@@ -6,7 +6,6 @@ import {
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
-import { recordLegacyFallbackHit } from "@/lib/legacyFallback";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
@@ -19,7 +18,6 @@ const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
 const APPEARANCE_LOCATION = "外观检测间";
 const STAGING_STOCKED_STATUS = "到货";
-const LEGACY_STAGING_STOCKED_STATUS = "已入库";
 const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
 const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
@@ -65,7 +63,7 @@ const APPEARANCE_MANUFACTURER_RETURN_ERROR = "外观检测间不允许厂家收�
 const STORAGE_ROOM_CONFIGS = {
   staging: {
     currentLocation: STAGING_LOCATION,
-    currentStatuses: new Set([STAGING_STOCKED_STATUS, LEGACY_STAGING_STOCKED_STATUS, "已到达暂存间", "暂存间存放", POST_EXPERIMENT_STAGING_STATUS]),
+    currentStatuses: new Set([STAGING_STOCKED_STATUS, "已到达暂存间", "暂存间存放", POST_EXPERIMENT_STAGING_STATUS]),
     duplicateStockInError: "该托盘已完成暂存间扫码入库。",
     eventRoom: "staging",
     historyStockInAction: "暂存间扫码入库",
@@ -552,7 +550,7 @@ const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experimen
       if (normalizeText(tray?.tray_code) !== normalizeText(trayCode)) {
         return false;
       }
-      const status = normalizeText(tray?.status) || normalizeText(sample?.status) || normalizeText(sample?.flow_status);
+      const status = normalizeText(tray?.status);
       if (status !== APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS && status !== "送至实验室") {
         return false;
       }
@@ -658,8 +656,6 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   });
 
   const scheduledCandidates = [];
-  const fallbackCandidates = [];
-
   candidateExperiments.forEach((experiment) => {
     const nextExperimentCode = normalizeText(experiment?.experiment_code);
     const scheduledDestinations = asArray(schedules)
@@ -692,24 +688,6 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       return;
     }
 
-    const requiredDevice = normalizeText(experiment?.required_device);
-    if (requiredDevice && !isStagingDestination(requiredDevice)) {
-      recordLegacyFallbackHit("staging.stock_out.required_device_unscheduled_fallback", {
-        reason: "missing_schedule",
-        targetIsFallback: true,
-      });
-      fallbackCandidates.push({
-        preferred: false,
-        scheduled: false,
-        targetExperimentCode: nextExperimentCode,
-        targetExperimentName: resolveExperimentName(experiment),
-        targetIsFallback: true,
-        targetLab: requiredDevice,
-        targetScheduleStartAt: "",
-        targetScheduleEndAt: "",
-        targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-      });
-    }
   });
 
   scheduledCandidates.sort(
@@ -781,54 +759,8 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     return [...directScheduledCandidates, ...appearanceStagingDestination];
   }
 
-  if (scheduledCandidates.length || fallbackCandidates.length || trayExperimentCodes.size > 0) {
-    return [...scheduledCandidates, ...fallbackCandidates, ...appearanceStagingDestination];
-  }
-
-  const fallbackCandidatesByExperiment = asArray(experiments)
-    .filter((experiment) => {
-    const experimentCode = normalizeText(experiment?.experiment_code);
-    const requiredDevice = normalizeText(experiment?.required_device);
-    return (
-      normalizeText(experiment?.task_code) === taskCode
-      && requiredDevice
-      && !isStagingDestination(requiredDevice)
-      && acceptsExperimentCode(experimentCode)
-      && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
-    );
-  })
-    .map((experiment) => ({
-      preferred: false,
-      scheduled: false,
-      targetExperimentCode: normalizeText(experiment?.experiment_code),
-      targetExperimentName: resolveExperimentName(experiment),
-      targetIsFallback: true,
-      targetLab: normalizeText(experiment?.required_device),
-      targetScheduleStartAt: "",
-      targetScheduleEndAt: "",
-      targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-    }));
-  if (fallbackCandidatesByExperiment.length) {
-    return [...fallbackCandidatesByExperiment, ...appearanceStagingDestination];
-  }
-
-  const fallbackLab = getLabsForTestType(row?.testType)[0] || "";
-  if (fallbackLab && !isStagingDestination(fallbackLab)) {
-    recordLegacyFallbackHit("staging.stock_out.test_type_lab_fallback", {
-      reason: "missing_experiment_destination",
-      targetIsFallback: true,
-    });
-    return [{
-      preferred: false,
-      scheduled: false,
-      targetExperimentCode: "",
-      targetExperimentName: normalizeText(row?.testType),
-      targetIsFallback: true,
-      targetLab: fallbackLab,
-      targetScheduleStartAt: "",
-      targetScheduleEndAt: "",
-      targetUnavailableReason: "当前实验未排程，仅作为托底目标，暂不可出库。",
-    }, ...appearanceStagingDestination];
+  if (scheduledCandidates.length || trayExperimentCodes.size > 0) {
+    return [...scheduledCandidates, ...appearanceStagingDestination];
   }
 
   return appearanceStagingDestination;
@@ -1032,6 +964,13 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         config.key === "appearance"
         && latestAction === "stock_out"
         && eventTargetsPostExperimentStaging(latestStorageEvent);
+      const appearancePreInspectionAlreadyDispatched =
+        config.key === "appearance"
+        && normalizeText(lastEvent?.action) === "stock_out"
+        && !eventTargetsPostExperimentStaging(lastEvent)
+        && events
+          .slice(0, -1)
+          .some((event) => normalizeText(event?.action) === "stock_in");
       const lastStockInEvent = events
         .slice()
         .reverse()
@@ -1051,6 +990,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       );
       const isPreExperimentAppearanceLabDispatch =
         config.key === "appearance"
+        && !appearancePreInspectionAlreadyDispatched
         && row.statuses.some((statusItem) => normalizeText(statusItem) === "送至实验室")
         && trayTargetsPreExperimentAppearance({ experiments, row });
       const isPostExperimentInbound =

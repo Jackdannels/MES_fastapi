@@ -1198,8 +1198,8 @@ describe("visualization model", () => {
           code: `SALT-SAMPLE-00${index + 1}`,
           task_code: "TASK-STAGING-001",
           location: "恒温恒湿间（暂存间）",
-          status: "已入库",
-          trays: [{ tray_code: "TRAY-SALT-001", status: "已入库", quantity: 1 }],
+          status: "已到达暂存间",
+          trays: [{ tray_code: "TRAY-SALT-001", status: "已到达暂存间", quantity: 1 }],
         })),
         {
           code: "MOLD-SAMPLE-001",
@@ -1244,12 +1244,55 @@ describe("visualization model", () => {
       experimentType: "盐雾试验",
       overflowSampleCount: 1,
       sampleCount: 6,
-      status: "已入库",
+      status: "已到达暂存间",
       trayCode: "TRAY-SALT-001",
       visibleSampleCodes: ["SALT-SAMPLE-001", "SALT-SAMPLE-002", "SALT-SAMPLE-003", "SALT-SAMPLE-004", "SALT-SAMPLE-005"],
     });
     expect(view.tasks[0].trays[0].sampleCodes).toContain("SALT-SAMPLE-006");
     expect(JSON.stringify(view)).not.toContain("MOLD-SAMPLE-OUT");
+  });
+
+  test("does not treat legacy stored status as current staging inventory", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-LEGACY-STORED", name: "旧入库状态任务", test_type: "盐雾试验" }],
+      samples: [
+        {
+          code: "SP-LEGACY-STORED",
+          task_code: "TASK-LEGACY-STORED",
+          location: "恒温恒湿间（暂存间）",
+          status: "已入库",
+          trays: [{ tray_code: "TP-LEGACY-STORED", status: "已入库", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(view.tasks).toEqual([]);
+    expect(view.summary.currentTrayCount).toBe(0);
+  });
+
+  test("uses canonical staging status for stock-in events", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-STOCK-IN", name: "暂存入库任务", test_type: "盐雾试验" }],
+      samples: [
+        {
+          code: "SP-STOCK-IN",
+          task_code: "TASK-STOCK-IN",
+          location: "恒温恒湿间（暂存间）",
+          status: "运输中",
+          trays: [{ tray_code: "TP-STOCK-IN", status: "运输中", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [
+        { tray_code: "TP-STOCK-IN", task_code: "TASK-STOCK-IN", action: "stock_in", time: "2026-05-28T08:00:00+08:00" },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "current",
+      status: "已到达暂存间",
+      trayCode: "TP-STOCK-IN",
+    }));
   });
 
   test("only marks trays sent to staging as planned staging samples", () => {

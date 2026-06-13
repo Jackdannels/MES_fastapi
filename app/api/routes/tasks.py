@@ -27,7 +27,6 @@ RETURNED_STATUS = "厂家收回"
 MIN_SAMPLE_COUNT = 1
 MAX_SAMPLE_COUNT = 999
 STORAGE_CONFIRMED_STATUS = "到货"
-LEGACY_STORAGE_CONFIRMED_STATUS = "已入库"
 TRANSFER_PENDING_STATUS = "未入库"
 SAMPLE_TRANSPORT_STATUS = "运输中"
 SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
@@ -52,7 +51,7 @@ def normalize_text(value: Any) -> str:
 
 
 def is_storage_confirmed_status(value: Any) -> bool:
-    return normalize_text(value) in {STORAGE_CONFIRMED_STATUS, LEGACY_STORAGE_CONFIRMED_STATUS}
+    return normalize_text(value) == STORAGE_CONFIRMED_STATUS
 
 
 def load_snapshot(storage=None) -> dict[str, Any]:
@@ -83,37 +82,17 @@ def has_returned_status(value: Any) -> bool:
     return normalize_text(value) == RETURNED_STATUS
 
 
-def is_returned_task(task: dict[str, Any], samples: list[dict[str, Any]]) -> bool:
-    code = task_code(task)
-    tray_statuses: dict[str, str] = {}
-    for sample in samples:
-        if sample_task_code(sample) != code:
-            continue
-        sample_status = normalize_text(sample.get("status") or sample.get("flow_status"))
-        for index, tray in enumerate(as_list(sample.get("trays"))):
-            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or tray.get("tray_no")) or f"{code}-tray-{index + 1}"
-            tray_status = normalize_text(tray.get("status") or tray.get("tray_status") or tray.get("trayStatus") or sample_status)
-            if tray_code and tray_status:
-                tray_statuses[tray_code] = tray_status
-    if tray_statuses:
-        return all(has_returned_status(status) for status in tray_statuses.values())
-    return (
-        has_returned_status(task.get("transfer_status"))
-        or has_returned_status(task.get("transferStatus"))
-        or has_returned_status(task.get("status"))
-        or has_returned_status(task.get("displayStatus"))
-        or has_returned_status(task.get("display_status"))
-    )
+def is_returned_task(task: dict[str, Any]) -> bool:
+    return has_returned_status(task.get("transfer_status")) or has_returned_status(task.get("transferStatus"))
 
 
 def load_tasks(include_archived: bool = False) -> list[dict[str, Any]]:
     snapshot = load_snapshot()
     tasks = snapshot.get("mes.tasks", [])
-    samples = [dict(sample) for sample in snapshot.get("mes.samples", [])] if isinstance(snapshot.get("mes.samples"), list) else []
     task_list = [dict(task) for task in tasks] if isinstance(tasks, list) else []
     if include_archived:
         return task_list
-    return [task for task in task_list if not is_returned_task(task, samples)]
+    return [task for task in task_list if not is_returned_task(task)]
 
 
 def find_task_index(tasks: list[dict[str, Any]], task_id: str) -> int:

@@ -595,7 +595,7 @@ def complete_current_experiment(
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
     initial_snapshot = read_snapshot()
-    initial_tray_codes = request.tray_codes or experiment_tray_codes(initial_snapshot, normalized_task_code, normalized_experiment_code)
+    initial_tray_codes = request.tray_codes
     resource_keys = operation_resource_keys(
         lab_name=resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code),
         tray_codes=initial_tray_codes,

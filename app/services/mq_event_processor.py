@@ -5,7 +5,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
-from app.core.legacy_fallback import record_legacy_fallback_hit
 from app.db.session import get_connection
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
@@ -54,8 +53,6 @@ class MqEventRepository(Protocol):
     def find_run_by_no(self, run_no: str) -> dict[str, Any] | None: ...
 
     def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
-
-    def find_recent_completed_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
     def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None: ...
 
@@ -381,42 +378,6 @@ class MySQLMqEventRepository:
                 row = cursor_row_as_dict(cursor)
         return row
 
-    def find_recent_completed_run_by_lab(self, lab_code: str) -> dict[str, Any] | None:
-        normalized_lab_code = normalize_text(lab_code)
-        if not normalized_lab_code:
-            return None
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      er.run_no,
-                      er.task_no,
-                      er.experiment_no,
-                      er.device_name,
-                      er.run_status
-                    FROM biz_experiment_run er
-                    JOIN biz_experiment_run_tray ert
-                      ON ert.run_no = er.run_no
-                    JOIN biz_tray tr
-                      ON tr.tray_no = ert.tray_no
-                    JOIN md_lab lab
-                      ON lab.lab_id = tr.current_lab_id
-                    WHERE lab.lab_code = %s
-                      AND er.run_status IN ('实验已完成', '实验完成', '实验已经完成')
-                    ORDER BY
-                      er.ended_at DESC,
-                      er.updated_at DESC,
-                      er.started_at DESC,
-                      er.created_at DESC,
-                      er.run_no DESC
-                    LIMIT 1
-                    """,
-                    (normalized_lab_code,),
-                )
-                row = cursor_row_as_dict(cursor)
-        return row
-
     def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None:
         normalized_lab_code = normalize_text(lab_code)
         statuses = [normalize_text(status) for status in candidate_statuses if normalize_text(status)]
@@ -472,22 +433,12 @@ class MySQLMqEventRepository:
                       AND (
                         ti.status IN ({status_placeholders})
                         OR tr.test_state IN ({status_placeholders})
-                        OR (
-                          COALESCE(ti.status, '') = ''
-                          AND COALESCE(tr.test_state, '') = ''
-                          AND (
-                            sm.sample_status IN ({status_placeholders})
-                            OR sm.flow_status IN ({status_placeholders})
-                          )
-                        )
                       )
                       AND lab.lab_code = %s
                     ORDER BY tr.tray_no ASC, sm.sample_no ASC
                     """,
                     [
                         task_no,
-                        *statuses,
-                        *statuses,
                         *statuses,
                         *statuses,
                         normalized_lab_code,
@@ -652,7 +603,7 @@ class MySQLMqEventRepository:
                 and normalize_text(item.get("tray_code") or item.get("tray_no"))
             ]
             if not tray_codes:
-                tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
+                raise ValueError("experiment_run_trays are required for experiment start")
             scoped_snapshot = scope_snapshot_samples_for_experiment(
                 snapshot,
                 task_code=task_no,
@@ -698,7 +649,7 @@ class MySQLMqEventRepository:
                 and normalize_text(item.get("tray_code") or item.get("tray_no"))
             ]
             if not tray_codes:
-                tray_codes = [normalize_text(code) for code in run.get("tray_codes", []) if normalize_text(code)]
+                raise ValueError("experiment_run_trays are required for experiment completion")
             scoped_snapshot = scope_snapshot_samples_for_experiment(
                 snapshot,
                 task_code=task_no,
@@ -744,13 +695,11 @@ def process_laboratory_event(
 
     context = None
     payload_run_no = first_text(payload, "run_no", "runNo")
+    if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
+        raise ValueError("run_no is required for experiment result")
     run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
     if message_type == "EXPERIMENT_RESULT" and payload_run_no:
         run = repo.find_run_by_no(payload_run_no)
-    if message_type == "EXPERIMENT_RESULT" and not run and not payload_run_no:
-        run = repo.find_recent_completed_run_by_lab(lab_code)
-        if run:
-            record_legacy_fallback_hit("backend.mq.experiment_result.recent_completed_run_fallback", reason="missing_active_run")
     created_run_from_context = False
     if message_type == "FIXTURE_READY" and not first_text(payload, "task_code"):
         context = repo.find_current_context_by_lab(lab_code, ["工装夹具安装"])

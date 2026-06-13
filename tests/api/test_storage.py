@@ -159,6 +159,89 @@ def test_storage_allows_pre_experiment_appearance_stock_for_mold_target_after_la
     assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-MOLD"
 
 
+def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance_dispatch(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-REPEAT",
+            "location": "盐雾试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "TASK-PRE-APPEARANCE-REPEAT",
+            "trays": [
+                {
+                    "tray_code": "TP-PRE-APPEARANCE-REPEAT",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "盐雾试验室",
+                    "target_experiment_code": "EXP-SALT",
+                }
+            ],
+            "history": [
+                {
+                    "action": "外观检测间扫码出库",
+                    "detail": "TP-PRE-APPEARANCE-REPEAT 送至 盐雾试验室",
+                    "location": "盐雾试验室",
+                    "status": "送至实验室",
+                    "time": "2026-06-06T21:50:00",
+                },
+                {
+                    "action": "外观检测间扫码入库",
+                    "detail": "TP-PRE-APPEARANCE-REPEAT 实验前外观检测存放",
+                    "location": "外观检测间",
+                    "status": "实验前外观检测存放",
+                    "time": "2026-06-06T21:40:00",
+                },
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-REPEAT",
+                    "experiment_code": "EXP-SALT",
+                    "experiment_name": "盐雾试验",
+                }
+            ],
+            "mes.staging_events": [
+                {
+                    "id": "pre-appearance-in",
+                    "tray_code": "TP-PRE-APPEARANCE-REPEAT",
+                    "task_code": "TASK-PRE-APPEARANCE-REPEAT",
+                    "room": "appearance",
+                    "action": "stock_in",
+                    "time": "2026-06-06T21:40:00",
+                },
+                {
+                    "id": "pre-appearance-out",
+                    "tray_code": "TP-PRE-APPEARANCE-REPEAT",
+                    "task_code": "TASK-PRE-APPEARANCE-REPEAT",
+                    "room": "appearance",
+                    "action": "stock_out",
+                    "target_lab": "盐雾试验室",
+                    "target_experiment_code": "EXP-SALT",
+                    "target_type": "lab",
+                    "time": "2026-06-06T21:50:00",
+                },
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测存放"
+    attempted[0]["flow_status"] = "实验前外观检测存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
+    assert storage.read("mes.samples") == samples
+
+
 def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_or_staging(monkeypatch):
     samples = [
         {
@@ -378,6 +461,37 @@ def test_storage_rejects_rearrival_after_manufacturer_return(monkeypatch):
     assert response.status_code == 400
     assert response.json()["detail"] == "该托盘已厂家收回，不能再次到货。"
     assert storage.read("mes.samples") == samples
+
+
+def test_storage_handover_arrival_statuses_exclude_legacy_stored_status():
+    from app.api.routes import storage as storage_route
+
+    assert storage_route.HANDOVER_ARRIVAL_STATUSES == {"到货"}
+
+
+def test_storage_allows_legacy_stored_status_after_manufacturer_return_without_rearrival_block(monkeypatch):
+    samples = [
+        {
+            "code": "SP-RETURNED-LEGACY-STORED",
+            "location": "厂家收回",
+            "status": "厂家收回",
+            "flow_status": "厂家收回",
+            "task_code": "SYLU-2026-05-708",
+            "trays": [{"tray_code": "TP-RETURNED-LEGACY-STORED", "status": "厂家收回", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "接驳区"
+    attempted[0]["status"] = "已入库"
+    attempted[0]["flow_status"] = "已入库"
+    attempted[0]["trays"][0]["status"] = "已入库"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
 
 
 def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):

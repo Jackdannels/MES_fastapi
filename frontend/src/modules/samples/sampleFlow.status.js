@@ -22,7 +22,7 @@ const isPostRetentionLocation = (location, labels = DEFAULT_LABELS) => {
 
 const isAmbiguousStagingStatus = (value) => {
   const text = normalizeText(value);
-  return text === "已到达暂存间" || text === "到达暂存间" || text === "放置暂存间" || text === "入库" || text === "已入库";
+  return text === "已到达暂存间" || text === "到达暂存间" || text === "放置暂存间";
 };
 
 const isAppearanceInspectionStatus = (value) => {
@@ -64,7 +64,10 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   if (currentStatus === "放置暂存间") {
     return "放置实验后暂存间";
   }
-  if (currentStatus === "入库" || currentStatus === "已入库" || currentStatus === normalizedLabels.sampleStored) {
+  if (
+    currentStatus === normalizedLabels.sampleStored
+    && normalizedLabels.sampleStored === "到货"
+  ) {
     return isPostRetention ? "放置实验后暂存间" : isPreRetention ? "已到达暂存间" : "到货";
   }
   if (currentStatus === "实验完成" || currentStatus === "实验已完成") {
@@ -102,10 +105,13 @@ const normalizeSampleRecord = (sample, labels = DEFAULT_LABELS) => {
   const record = sample && typeof sample === "object" ? { ...sample } : {};
   const normalizedStatus = normalizeLifecycleStatus(record.location, record.status, labels);
   const trays = Array.isArray(record.trays)
-    ? record.trays.map((tray) => ({
-        ...tray,
-        status: normalizeLifecycleStatus(record.location, normalizeText(tray?.status) || normalizedStatus, labels),
-      }))
+    ? record.trays.map((tray) => {
+        const rawTrayStatus = normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
+        return {
+          ...tray,
+          status: rawTrayStatus ? normalizeLifecycleStatus(record.location, rawTrayStatus, labels) : "",
+        };
+      })
     : [];
 
   return {

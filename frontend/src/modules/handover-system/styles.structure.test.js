@@ -37,14 +37,20 @@ describe("handover system styles", () => {
     expect(styleSource).toMatch(/\.transfer-overview-toolbar-frame\s*>\s*\.transfer-overview-feedback\s*\{[^}]*margin-top:\s*0/i);
   });
 
-  test("overview table rows and sample code lists are height bounded so pagination stays fixed", () => {
+  test("overview table body divides available height into three adaptive task rows", () => {
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
     const source = readFileSync(stylesPath, "utf8");
 
-    expect(source).toMatch(/\.transfer-table__row\s*\{[^}]*height:\s*214px/i);
-    expect(source).toMatch(/\.transfer-table__row\s*\{[^}]*max-height:\s*214px/i);
+    expect(source).toMatch(/\.transfer-table__body\s*\{[^}]*display:\s*grid/i);
+    expect(source).toMatch(/\.transfer-table__body\s*\{[^}]*grid-template-rows:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/i);
+    expect(source).toMatch(/\.transfer-table__row\s*\{[^}]*height:\s*auto/i);
+    expect(source).toMatch(/\.transfer-table__row\s*\{[^}]*min-height:\s*0/i);
+    expect(source).toMatch(/\.transfer-table__row\s*\{[^}]*max-height:\s*none/i);
+    expect(source).not.toMatch(/\.transfer-table__row\s*\{[^}]*height:\s*214px/i);
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*max-height:\s*190px/i);
-    expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*overflow:\s*auto/i);
+    expect(source).toMatch(/\.transfer-table__body\s*\{[^}]*overflow:\s*hidden/i);
+    expect(source).not.toMatch(/\.transfer-table__body\s*\{[^}]*overflow:\s*auto/i);
+    expect(source).not.toMatch(/\.transfer-table__codes\s*\{[^}]*overflow:\s*auto/i);
   });
 
   test("overview table compresses task columns and centers headers and cells", () => {
@@ -65,7 +71,16 @@ describe("handover system styles", () => {
 
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*display:\s*grid/i);
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/i);
+    expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*grid-template-rows:\s*repeat\(4,\s*40px\)/i);
     expect(source).toMatch(/\.transfer-table__codes\s*\{[^}]*grid-auto-rows:\s*40px/i);
+  });
+
+  test("overview sample code rows compress on short viewports instead of clipping the third task", () => {
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const source = readFileSync(stylesPath, "utf8");
+
+    expect(source).toMatch(/@media\s*\(\s*max-height:\s*900px\s*\)\s*\{[\s\S]*\.transfer-table__codes\s*\{[\s\S]*grid-template-rows:\s*repeat\(4,\s*34px\)/i);
+    expect(source).toMatch(/@media\s*\(\s*max-height:\s*900px\s*\)\s*\{[\s\S]*\.transfer-sample-code-chip\s*\{[\s\S]*min-height:\s*34px/i);
   });
 
   test("dispatch result cards use globally loaded dark handover surfaces", () => {

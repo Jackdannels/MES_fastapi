@@ -60,7 +60,7 @@ const createBootstrapPayload = () => ({
       taskType: "冲击试验 / 振动试验",
       experimentTypeText: "冲击试验 / 振动试验",
       receivedTime: "2026-03-19 09:10",
-      taskStatus: "已入库",
+      taskStatus: "到货",
       taskProgress: "已确认入库",
       sampleCodes: ["SYLU-2026-03-102-SP-001", "SYLU-2026-03-102-SP-002"],
       sampleCodesText: "SYLU-2026-03-102-SP-001 / SYLU-2026-03-102-SP-002",
@@ -130,7 +130,7 @@ const createStoredWorkspace = () => ({
     taskName: "连接器批次 B",
     taskType: "冲击试验 / 振动试验",
     experimentTypeText: "冲击试验 / 振动试验",
-    taskStatus: "已入库",
+    taskStatus: "到货",
     taskProgress: "已确认入库",
     receivedTime: "2026-03-19 09:10",
     trayLimit: 2,
@@ -144,12 +144,12 @@ const createStoredWorkspace = () => ({
       trayId: 301,
       trayNo: "SYLU-2026-03-102-TP-001",
       trayType: "标准托盘",
-      trayStatus: "已入库",
+      trayStatus: "到货",
       capacity: 2,
       experimentLabels: ["冲击试验"],
       experimentCodes: ["SYLU-2026-03-102-A"],
       samples: [
-        { sampleId: 11, sampleNo: "SYLU-2026-03-102-SP-001", sampleStatus: "已入库" },
+        { sampleId: 11, sampleNo: "SYLU-2026-03-102-SP-001", sampleStatus: "到货" },
       ],
       barcode: { barcodeId: 901, objectId: 301, barcodeNo: "SYLU-2026-03-102-TP-001" },
       barcodeData: null,
@@ -166,7 +166,7 @@ const createStartedStoredWorkspace = () => ({
     taskName: "连接器批次 B",
     taskType: "冲击试验 / 振动试验",
     experimentTypeText: "冲击试验 / 振动试验",
-    taskStatus: "已入库",
+    taskStatus: "到货",
     taskProgress: "实验进行中",
     receivedTime: "2026-03-19 09:10",
     trayLimit: 2,
@@ -199,7 +199,7 @@ const createStartedStoredWorkspace = () => ({
 const createDispatchLookupPayload = () => ({
   tray: {
     trayNo: "SYLU-2026-03-102-TP-001",
-    trayStatus: "已入库",
+    trayStatus: "到货",
     taskNo: "SYLU-2026-03-102",
     taskName: "连接器批次 B",
     sampleCount: 2,
@@ -435,6 +435,44 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(fetchMock.mock.calls.length).toBeGreaterThan(fetchCallCountBeforeEvent);
+  });
+
+  test("does not treat legacy stored task status as arrived in the overview filter", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = [
+      {
+        ...bootstrapPayload.taskOverview[0],
+        taskId: 201,
+        taskNo: "SYLU-2026-03-201",
+        taskStatus: "已入库",
+      },
+    ];
+    bootstrapPayload.pendingTaskCount = 0;
+    bootstrapPayload.storedTaskCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-filter-stored"]').text()).toContain("0");
+    await wrapper.get('[data-testid="transfer-filter-stored"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-task-row-201"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="transfer-filter-all"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-task-row-201"]').text()).toContain("SYLU-2026-03-201");
   });
 
   test("handover dispatch view scans a tray, shows preferred destinations, and submits dispatch", async () => {
@@ -1588,6 +1626,54 @@ describe("TransferWorkbench runtime", () => {
     expect(taskRows).toHaveLength(2);
     expect(taskRows[0].text()).toContain("SYLU-2026-03-101");
     expect(taskRows[1].text()).toContain("SYLU-2026-03-102");
+  });
+
+  test("overview limits direct sample codes to twelve and opens all samples from the overflow button", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = [
+      {
+        ...bootstrapPayload.taskOverview[0],
+        sampleCount: 14,
+        sampleCodes: Array.from({ length: 14 }, (_, index) =>
+          `SYLU-2026-03-101-SP-${String(index + 1).padStart(3, "0")}`,
+        ),
+        sampleCodesText: "",
+      },
+    ];
+    bootstrapPayload.pendingTaskCount = 1;
+    bootstrapPayload.storedTaskCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    const row = wrapper.get('[data-testid="transfer-task-row-101"]');
+    const visibleChips = row.findAll(".transfer-table__codes .transfer-sample-code-chip");
+    expect(visibleChips).toHaveLength(12);
+    expect(row.text()).toContain("SYLU-2026-03-101-SP-012");
+    expect(row.text()).not.toContain("SYLU-2026-03-101-SP-013");
+    expect(row.get('[data-testid="transfer-sample-code-overflow-101"]').text()).toBe("+2");
+
+    await row.get('[data-testid="transfer-sample-code-overflow-101"]').trigger("click");
+    await settle(wrapper);
+
+    const modal = wrapper.get('[data-testid="transfer-sample-codes-modal"]');
+    expect(modal.text()).toContain("SYLU-2026-03-101");
+    expect(modal.findAll(".transfer-sample-code-chip")).toHaveLength(14);
+    expect(modal.text()).toContain("SYLU-2026-03-101-SP-014");
   });
 
   test("barcode preview uses the tray number as the real barcode value and compact summary copy", async () => {

@@ -33,10 +33,10 @@ describe("statusNormalization", () => {
     expect(normalizeTaskStatusLabel("暂存间存放")).toBe(TASK_STATUS_WAITING);
   });
 
-  test("recognizes legacy and canonical transfer arrival labels", () => {
+  test("recognizes only canonical transfer arrival labels", () => {
     expect(isTransferArrivedStatus("到货")).toBe(true);
-    expect(isTransferArrivedStatus("已入库")).toBe(true);
-    expect(normalizeTaskStatusLabel("已入库")).toBe(TRANSFER_STATUS_ARRIVED);
+    expect(isTransferArrivedStatus("已入库")).toBe(false);
+    expect(normalizeTaskStatusLabel("已入库")).toBe("已入库");
   });
 
   test("recognizes canonical and legacy experiment running/completed labels", () => {

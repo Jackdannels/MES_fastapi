@@ -15,7 +15,6 @@ RUNTIME_STORAGE_BACKEND = "mysql"
 UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 RETURNED_STATUS = "厂家收回"
 CANONICAL_HANDOVER_STORED_STATUS = "到货"
-LEGACY_HANDOVER_STORED_STATUSES = {"已入库"}
 EXPERIMENT_TERMINAL_STATUSES = {
     "实验已完成",
     RETURNED_STATUS,
@@ -149,8 +148,6 @@ def normalize_experiment_status_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if text in LEGACY_HANDOVER_STORED_STATUSES:
-        return CANONICAL_HANDOVER_STORED_STATUS
     if text == CANONICAL_RUNNING_STATUS or text in LEGACY_RUNNING_STATUSES:
         return CANONICAL_RUNNING_STATUS
     if text == CANONICAL_COMPLETED_STATUS or text in LEGACY_COMPLETED_STATUSES:
@@ -162,8 +159,6 @@ def normalize_task_status_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if text in LEGACY_HANDOVER_STORED_STATUSES:
-        return CANONICAL_HANDOVER_STORED_STATUS
     if text in {CANONICAL_TASK_RUNNING_STATUS, CANONICAL_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}:
         return CANONICAL_TASK_RUNNING_STATUS
     if text in {CANONICAL_TASK_COMPLETED_STATUS, CANONICAL_COMPLETED_STATUS, *LEGACY_COMPLETED_STATUSES}:
@@ -455,14 +450,6 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         dict(item)
         for item in (payload.get("mes.experiment_run_trays") if isinstance(payload.get("mes.experiment_run_trays"), list) else [])
     ]
-    experiments = [
-        dict(item)
-        for item in (payload.get("mes.experiments") if isinstance(payload.get("mes.experiments"), list) else [])
-    ]
-    schedules = [
-        dict(item)
-        for item in (payload.get("mes.schedules") if isinstance(payload.get("mes.schedules"), list) else [])
-    ]
     staging_events = [
         dict(item)
         for item in (payload.get("mes.staging_events") if isinstance(payload.get("mes.staging_events"), list) else [])
@@ -482,42 +469,6 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
 
     task_trays: dict[str, set[str]] = {}
     sample_trays: dict[tuple[str, str], set[str]] = {}
-    legacy_sample_trays: dict[tuple[str, str], set[str]] = {}
-    task_sample_codes: dict[str, set[str]] = {}
-    task_tray_limits: dict[str, int] = {}
-    task_experiment_codes: dict[str, set[str]] = {}
-    clear_runtime_or_relation_evidence: set[str] = set()
-
-    for task in tasks:
-        task_code = str(task.get("code") or task.get("task_code") or task.get("id") or "").strip()
-        if not task_code:
-            continue
-        try:
-            tray_limit = int(str(task.get("tray_limit") or "").strip())
-        except (TypeError, ValueError):
-            tray_limit = 0
-        task_tray_limits[task_code] = tray_limit if tray_limit > 0 else 4
-        raw_experiment_codes = task.get("experiment_codes")
-        if isinstance(raw_experiment_codes, list):
-            for experiment_code in raw_experiment_codes:
-                normalized_code = str(experiment_code or "").strip()
-                if normalized_code:
-                    task_experiment_codes.setdefault(task_code, set()).add(normalized_code)
-
-    for experiment in experiments:
-        task_code = str(experiment.get("task_code") or experiment.get("taskCode") or "").strip()
-        experiment_code = str(experiment.get("experiment_code") or experiment.get("experimentCode") or "").strip()
-        if task_code and experiment_code:
-            task_experiment_codes.setdefault(task_code, set()).add(experiment_code)
-        status = str(experiment.get("status") or experiment.get("experiment_status") or experiment.get("experimentStatus") or "").strip()
-        if task_code and status in {CANONICAL_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}:
-            clear_runtime_or_relation_evidence.add(task_code)
-
-    for schedule in schedules:
-        task_code = str(schedule.get("task_code") or schedule.get("taskCode") or "").strip()
-        status = str(schedule.get("status") or schedule.get("schedule_status") or schedule.get("scheduleStatus") or "").strip()
-        if task_code and status in {CANONICAL_RUNNING_STATUS, *LEGACY_RUNNING_STATUSES}:
-            clear_runtime_or_relation_evidence.add(task_code)
 
     for relation in experiment_trays:
         task_code = str(relation.get("task_code") or "").strip()
@@ -525,7 +476,6 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         if not task_code or not tray_code:
             continue
         task_trays.setdefault(task_code, set()).add(tray_code)
-        clear_runtime_or_relation_evidence.add(task_code)
 
     for relation in experiment_run_trays:
         task_code = str(relation.get("task_code") or relation.get("taskCode") or relation.get("task_no") or relation.get("taskNo") or "").strip()
@@ -533,13 +483,10 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         if not task_code or not tray_code:
             continue
         task_trays.setdefault(task_code, set()).add(tray_code)
-        clear_runtime_or_relation_evidence.add(task_code)
 
     for sample in samples:
         task_code = str(sample.get("task_code") or "").strip()
         sample_code = str(sample.get("code") or sample.get("sample_code") or sample.get("id") or "").strip()
-        if task_code and sample_code:
-            task_sample_codes.setdefault(task_code, set()).add(sample_code)
         for tray in sample.get("trays") if isinstance(sample.get("trays"), list) else []:
             tray_code = str(tray.get("tray_code") or tray.get("trayCode") or tray.get("trayNo") or "").strip()
             if not task_code or not tray_code:
@@ -547,36 +494,6 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
             structured_task_trays = task_trays.get(task_code, set())
             if tray_code in structured_task_trays and sample_code:
                 sample_trays.setdefault((task_code, sample_code), set()).add(tray_code)
-            elif not structured_task_trays and sample_code:
-                legacy_sample_trays.setdefault((task_code, sample_code), set()).add(tray_code)
-
-    for (task_code, sample_code), tray_codes in legacy_sample_trays.items():
-        experiment_count = len(task_experiment_codes.get(task_code, set())) or 1
-        task_legacy_trays = {
-            tray_code
-            for (legacy_task_code, _sample_code), legacy_tray_codes in legacy_sample_trays.items()
-            if legacy_task_code == task_code
-            for tray_code in legacy_tray_codes
-        }
-        if (
-            experiment_count == 1
-            and len(task_legacy_trays) == 1
-            and task_code not in clear_runtime_or_relation_evidence
-        ):
-            task_trays.setdefault(task_code, set()).update(task_legacy_trays)
-            sample_trays.setdefault((task_code, sample_code), set()).update(tray_codes)
-
-    for task_code, tray_codes in task_trays.items():
-        if any(key[0] == task_code for key in sample_trays):
-            continue
-        sorted_samples = sorted(task_sample_codes.get(task_code, set()))
-        sorted_trays = sorted(tray_codes)
-        if not sorted_samples or not sorted_trays:
-            continue
-        tray_limit = task_tray_limits.get(task_code, 4)
-        for index, sample_code in enumerate(sorted_samples):
-            tray_index = min(index // tray_limit, len(sorted_trays) - 1)
-            sample_trays.setdefault((task_code, sample_code), set()).add(sorted_trays[tray_index])
 
     returned_task_codes = {
         task_code
@@ -604,9 +521,8 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
         sample_code = str(sample.get("code") or sample.get("sample_code") or sample.get("id") or "").strip()
         if task_code not in returned_task_codes:
             continue
-        task_has_sample_tray_mapping = any(key[0] == task_code for key in sample_trays)
         tray_codes = sorted(sample_trays.get((task_code, sample_code), set()))
-        if task_has_sample_tray_mapping and not tray_codes:
+        if not tray_codes:
             continue
         latest_return_time = ""
         for tray_code in tray_codes:
@@ -833,96 +749,6 @@ def _normalize_value(key: str, value: Any) -> Any:
     return value
 
 
-def _entry_tray_code(entry: dict[str, Any]) -> str:
-    return str(
-        entry.get("tray_code")
-        or entry.get("trayCode")
-        or entry.get("tray_no")
-        or entry.get("trayNo")
-        or ""
-    ).strip()
-
-
-def _history_entry_matches_task_experiment_detail(entry: dict[str, Any], task_code: str) -> bool:
-    normalized_task_code = str(task_code or "").strip()
-    detail = str(entry.get("detail") or "").strip()
-    if not normalized_task_code or not detail:
-        return False
-    segments = [segment.strip() for segment in detail.split(" / ") if segment.strip()]
-    return len(segments) >= 3 and segments[0] == normalized_task_code and bool(segments[1]) and bool(segments[2])
-
-
-def _detail_mentions_code(detail: Any, code: str) -> bool:
-    normalized_code = str(code or "").strip()
-    normalized_detail = str(detail or "").strip()
-    if not normalized_code or not normalized_detail:
-        return False
-    pattern = rf"(^|[^A-Za-z0-9_-]){re.escape(normalized_code)}($|[^A-Za-z0-9_-])"
-    return re.search(pattern, normalized_detail) is not None
-
-
-def _scope_single_tray_experiment_history_entries(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
-    samples = payload.get("mes.samples")
-    if not isinstance(samples, list):
-        return payload, False
-
-    known_tray_codes = {
-        str(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo") or "").strip()
-        for sample in samples
-        if isinstance(sample, dict)
-        for tray in (sample.get("trays") if isinstance(sample.get("trays"), list) else [])
-        if isinstance(tray, dict)
-    }
-    known_tray_codes.discard("")
-
-    changed = False
-    next_samples: list[Any] = []
-    for sample in samples:
-        if not isinstance(sample, dict):
-            next_samples.append(sample)
-            continue
-        history = sample.get("history")
-        trays = sample.get("trays")
-        if not isinstance(history, list) or not isinstance(trays, list):
-            next_samples.append(sample)
-            continue
-        sample_tray_codes = [
-            str(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo") or "").strip()
-            for tray in trays
-            if isinstance(tray, dict)
-        ]
-        sample_tray_codes = [code for code in sample_tray_codes if code]
-        if len(set(sample_tray_codes)) != 1:
-            next_samples.append(sample)
-            continue
-        tray_code = sample_tray_codes[0]
-        task_code = str(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo") or "").strip()
-        next_history: list[Any] = []
-        sample_changed = False
-        for entry in history:
-            if not isinstance(entry, dict):
-                next_history.append(entry)
-                continue
-            if _entry_tray_code(entry) or not _history_entry_matches_task_experiment_detail(entry, task_code):
-                next_history.append(entry)
-                continue
-            detail = entry.get("detail")
-            if any(_detail_mentions_code(detail, known_code) for known_code in known_tray_codes if known_code != tray_code):
-                next_history.append(entry)
-                continue
-            next_history.append({**entry, "tray_code": tray_code})
-            sample_changed = True
-        if sample_changed:
-            next_samples.append({**sample, "history": next_history})
-            changed = True
-        else:
-            next_samples.append(sample)
-
-    if not changed:
-        return payload, False
-    return {**payload, "mes.samples": next_samples}, True
-
-
 def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     normalized = dict(payload)
     changed = False
@@ -948,9 +774,6 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         changed = True
     normalized, experiment_changed = _ensure_task_experiment_rows(normalized)
     if experiment_changed:
-        changed = True
-    normalized, history_scope_changed = _scope_single_tray_experiment_history_entries(normalized)
-    if history_scope_changed:
         changed = True
     normalized, returned_changed = _apply_staging_returned_tasks(normalized)
     if returned_changed:

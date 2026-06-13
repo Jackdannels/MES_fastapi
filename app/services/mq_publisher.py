@@ -161,24 +161,6 @@ def bind_laboratory_context(payload: dict[str, Any]) -> None:
                       '实验准备就绪',
                       '实验进行中'
                     )
-                    OR (
-                      COALESCE(ti.status, '') = ''
-                      AND COALESCE(tr.test_state, '') = ''
-                      AND (
-                        sm.sample_status IN (
-                          '已到达实验室',
-                          '工装夹具安装',
-                          '实验准备就绪',
-                          '实验进行中'
-                        )
-                        OR sm.flow_status IN (
-                          '已到达实验室',
-                          '工装夹具安装',
-                          '实验准备就绪',
-                          '实验进行中'
-                        )
-                      )
-                    )
                   )
                 """,
                 params,

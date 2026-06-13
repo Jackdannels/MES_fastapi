@@ -28,13 +28,13 @@ function buildSamplesTrayOverviewView(input = {}) {
     const sampleCode = normalizeText(sample?.code);
     const taskCode = normalizeText(sample?.task_code);
     const task = taskMap.get(taskCode) || { code: taskCode, name: "", testType: "" };
-    const sampleStatus = normalizeLifecycleStatus(sample?.location, sample?.status);
     getSampleTrayList(sample).forEach((tray) => {
       const trayCode = normalizeText(tray?.tray_code);
       if (!trayCode) {
         return;
       }
-      const trayStatus = normalizeLifecycleStatus(sample?.location, normalizeText(tray?.status) || sampleStatus);
+      const rawTrayStatus = normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
+      const trayStatus = rawTrayStatus ? normalizeLifecycleStatus(sample?.location, rawTrayStatus) : "";
       if (isReturnedTrayStatus(trayStatus)) {
         return;
       }

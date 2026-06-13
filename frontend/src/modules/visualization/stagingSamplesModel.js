@@ -14,7 +14,7 @@ import {
 } from "./sharedModel";
 import { COMPLETED_EXPERIMENT_STATUSES, resolveRelationStatus, sampleHasCompletedExperiment } from "./experimentCompletionModel";
 
-const STAGING_CURRENT_STATUSES = new Set(["已入库", "暂存间存放", "已到达暂存间"]);
+const STAGING_CURRENT_STATUSES = new Set(["暂存间存放", "已到达暂存间"]);
 const APPEARANCE_CURRENT_STATUSES = new Set(["外观检测间存放", APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
 const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
@@ -197,7 +197,7 @@ const resolveStagingTrayKind = (row, latestEvent) => {
     return buildStagingKind("planned", "送至暂存间");
   }
   if (latestAction === "stock_in") {
-    return buildStagingKind("current", "已入库");
+    return buildStagingKind("current", "已到达暂存间");
   }
   if (PLANNED_STAGING_ACTIONS.has(latestAction)) {
     return buildStagingKind("planned", latestAction);

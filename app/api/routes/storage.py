@@ -31,9 +31,10 @@ STAGING_INBOUND_STATUSES = {"已到达暂存间", "放置实验后暂存间"}
 APPEARANCE_LOCATION_KEYWORD = "外观检测间"
 APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间", PRE_EXPERIMENT_APPEARANCE_STATUS}
 APPEARANCE_SOURCE_REQUIRED_DETAIL = "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
 RETURNED_STATUS = "厂家收回"
-HANDOVER_ARRIVAL_STATUSES = {"到货", "已入库"}
+HANDOVER_ARRIVAL_STATUSES = {"到货"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES = {
     LAB_DISPATCHED_STATUS,
@@ -73,6 +74,16 @@ def _sample_code(sample: Any) -> str:
 
 def _tray_code(tray: Any) -> str:
     return _normalize_text(tray.get("tray_code")) if isinstance(tray, dict) else ""
+
+
+def _staging_event_room(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+    return _normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom"))
+
+
+def _staging_event_matches_appearance(event: Any) -> bool:
+    return _staging_event_room(event) == "appearance"
 
 
 def _status(value: Any) -> str:
@@ -221,6 +232,62 @@ def _tray_has_allowed_dispatched_pre_experiment_appearance_target(
         target_experiment_code=target_experiment_code,
         experiments=experiments,
     )
+
+
+def _appearance_flow_markers(sample: Any, staging_events: Any, tray_code: str) -> list[tuple[datetime, int, str]]:
+    markers: list[tuple[datetime, int, str]] = []
+    normalized_tray_code = _normalize_text(tray_code)
+    if not normalized_tray_code:
+        return markers
+
+    sequence = 0
+    for event in _as_list(staging_events):
+        if not isinstance(event, dict):
+            continue
+        if not _staging_event_matches_appearance(event):
+            continue
+        if _normalize_text(event.get("tray_code") or event.get("trayCode")) != normalized_tray_code:
+            continue
+        action = _normalize_text(event.get("action"))
+        if action not in {"stock_in", "stock_out", "stock_out_withdraw"}:
+            continue
+        markers.append((_parse_datetime(event.get("time")) or datetime.min, sequence, action))
+        sequence += 1
+
+    if isinstance(sample, dict):
+        for entry in _as_list(sample.get("history")):
+            if not isinstance(entry, dict):
+                continue
+            action = _normalize_text(entry.get("action"))
+            marker_action = ""
+            if action == "外观检测间扫码入库":
+                marker_action = "stock_in"
+            elif action == "外观检测间扫码出库":
+                marker_action = "stock_out"
+            elif action in {"撤回出库", "实验任务撤回", "任务切换撤回"}:
+                marker_action = "stock_out_withdraw"
+            if not marker_action:
+                continue
+            detail = _normalize_text(entry.get("detail"))
+            if normalized_tray_code not in detail and _normalize_text(entry.get("tray_code") or entry.get("trayCode")) not in {"", normalized_tray_code}:
+                continue
+            markers.append((_parse_datetime(entry.get("time")) or datetime.min, sequence, marker_action))
+            sequence += 1
+
+    markers.sort(key=lambda marker: (marker[0], marker[1]))
+    return markers
+
+
+def _pre_experiment_appearance_already_dispatched(current_sample: Any, current_tray: Any, staging_events: Any) -> bool:
+    if not isinstance(current_sample, dict) or not isinstance(current_tray, dict):
+        return False
+    if _status(current_tray) != LAB_DISPATCHED_STATUS and not _sample_was_dispatched(current_sample):
+        return False
+    markers = _appearance_flow_markers(current_sample, staging_events, _tray_code(current_tray))
+    if not markers:
+        return False
+    latest_action = markers[-1][2]
+    return latest_action == "stock_out" and any(action == "stock_in" for _, _, action in markers[:-1])
 
 
 def _is_pre_experiment_appearance_inbound(sample: Any, tray: Any | None = None) -> bool:
@@ -526,6 +593,7 @@ def _validate_samples_staging_reentry_transition(
     experiments: Any,
     experiment_trays: Any,
     experiment_run_trays: Any,
+    staging_events: Any,
 ) -> None:
     if not isinstance(next_samples, list):
         return
@@ -553,6 +621,8 @@ def _validate_samples_staging_reentry_transition(
                     experiments,
                     current_tray,
                 ):
+                    if _pre_experiment_appearance_already_dispatched(current_sample, current_tray, staging_events):
+                        raise HTTPException(status_code=400, detail=APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL)
                     continue
                 if _is_post_experiment_staging_inbound(next_sample, next_tray) and _post_staging_reentry_is_completed(
                     current_sample,
@@ -575,6 +645,7 @@ def _validate_samples_appearance_source_transition(
     next_samples: Any,
     experiments: Any,
     experiment_run_trays: Any,
+    staging_events: Any,
 ) -> None:
     if not isinstance(next_samples, list):
         return
@@ -610,6 +681,8 @@ def _validate_samples_appearance_source_transition(
                 experiments,
                 current_tray,
             ):
+                if _pre_experiment_appearance_already_dispatched(current_sample, current_tray, staging_events):
+                    raise HTTPException(status_code=400, detail=APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL)
                 continue
             if _is_pre_experiment_appearance_inbound(next_sample, next_tray):
                 raise HTTPException(status_code=400, detail=APPEARANCE_SOURCE_REQUIRED_DETAIL)
@@ -708,12 +781,14 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         storage.read("mes.experiments"),
         storage.read("mes.experiment_trays"),
         storage.read("mes.experiment_run_trays"),
+        storage.read("mes.staging_events"),
     )
     _validate_samples_appearance_source_transition(
         current_samples,
         updates["mes.samples"],
         storage.read("mes.experiments"),
         storage.read("mes.experiment_run_trays"),
+        storage.read("mes.staging_events"),
     )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))

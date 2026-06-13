@@ -44,7 +44,6 @@ from app.core.mysql_storage_backend import (
     derive_task_status_map,
     format_iso_storage_datetime,
     parse_storage_datetime,
-    parse_experiment_event_detail,
     resolve_experiment_sample_codes,
 )
 from app.core.demo_data_reset import reset_demo_data
@@ -109,7 +108,6 @@ def test_mysql_storage_backend_reexports_extracted_mappers() -> None:
 def test_mysql_storage_backend_reexports_extracted_status_rules() -> None:
     status_rule_names = [
         "is_task_stored_status",
-        "parse_experiment_event_detail",
         "derive_experiment_status_map",
         "derive_task_status_map",
         "has_formal_schedule",
@@ -200,6 +198,51 @@ def test_mysql_storage_backend_reexports_extracted_replacers() -> None:
         assert getattr(mysql_storage_backend_module, name) is getattr(mysql_storage_replacers_module, name)
 
 
+def test_build_experiment_run_tray_insert_rows_ignores_run_tray_codes_fallback() -> None:
+    rows = mysql_storage_mappers_module.build_experiment_run_tray_insert_rows(
+        {
+            "run_no": "RUN-LEGACY",
+            "task_code": "TASK-001",
+            "experiment_code": "TASK-001-A",
+            "status": "实验进行中",
+            "tray_codes": ["TASK-001-TP-001"],
+        }
+    )
+
+    assert rows == []
+
+
+def test_replace_experiment_runs_does_not_write_run_tray_rows_from_run_tray_codes() -> None:
+    class TrackingCursor:
+        def __init__(self):
+            self.executemany_calls = []
+            self.execute_calls = []
+
+        def execute(self, sql, params=None):
+            self.execute_calls.append((" ".join(str(sql).split()), params))
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+    cursor = TrackingCursor()
+
+    mysql_storage_replacers_module.replace_experiment_runs(
+        cursor,
+        [
+            {
+                "run_no": "RUN-LEGACY",
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "status": "实验进行中",
+                "tray_codes": ["TASK-001-TP-001"],
+            }
+        ],
+    )
+
+    assert not any("INSERT INTO biz_experiment_run_tray" in sql for sql, _rows in cursor.executemany_calls)
+    assert not any("DELETE FROM biz_experiment_run_tray" in sql for sql, _params in cursor.execute_calls)
+
+
 def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> None:
     sample_write_names = [
         "build_fixture_ready_events",
@@ -283,7 +326,7 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     assert storage_item["priority"] == "高"
     assert storage_item["contact_info"] == "13800000001"
     assert storage_item["due_at"] == "2026-03-18 10:00"
-    assert storage_item["transfer_status"] == "到货"
+    assert storage_item["transfer_status"] == "已入库"
     assert storage_item["tray_limit"] == 2
 
 
@@ -861,7 +904,7 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
         tasks=[
             {
                 "code": "SYLU-2026-04-106",
-                "transfer_status": "已入库",
+                "transfer_status": "到货",
             }
         ],
         schedules=[],
@@ -891,7 +934,7 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
             {
                 "code": "SYLU-2026-04-106-SP-001",
                 "task_code": "SYLU-2026-04-106",
-                "status": "已入库",
+                "status": "到货",
                 "updated_at": "2026-03-17T11:00:00Z",
                 "history": [
                     {
@@ -903,7 +946,7 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
             {
                 "code": "SYLU-2026-04-106-SP-002",
                 "task_code": "SYLU-2026-04-106",
-                "status": "已入库",
+                "status": "到货",
                 "updated_at": "2026-03-17T12:00:00Z",
                 "history": [
                     {
@@ -919,6 +962,53 @@ def test_backfill_missing_unscheduled_since_uses_earliest_sample_storage_time() 
     assert repaired == {
         "SYLU-2026-04-106-A": datetime(2026, 3, 17, 17, 0),
     }
+
+
+def test_backfill_missing_unscheduled_since_ignores_legacy_stored_status() -> None:
+    experiments, repaired = backfill_missing_unscheduled_since(
+        tasks=[
+            {
+                "code": "SYLU-2026-04-116",
+                "transfer_status": "已入库",
+            }
+        ],
+        schedules=[],
+        experiments=[
+            {
+                "task_code": "SYLU-2026-04-116",
+                "experiment_code": "SYLU-2026-04-116-A",
+                "experiment_name": "A实验",
+                "status": "待排程",
+                "unscheduled_since": "",
+            }
+        ],
+        experiment_trays=[],
+        experiment_samples=[
+            {
+                "task_code": "SYLU-2026-04-116",
+                "experiment_code": "SYLU-2026-04-116-A",
+                "sample_code": "SYLU-2026-04-116-SP-001",
+            }
+        ],
+        samples=[
+            {
+                "code": "SYLU-2026-04-116-SP-001",
+                "task_code": "SYLU-2026-04-116",
+                "status": "已入库",
+                "updated_at": "2026-03-17T11:00:00Z",
+                "history": [
+                    {
+                        "action": "任务已确认入库",
+                        "status": "已入库",
+                        "time": "2026-03-17T09:00:00Z",
+                    }
+                ],
+            }
+        ],
+    )
+
+    assert experiments[0]["unscheduled_since"] == ""
+    assert repaired == {}
 
 
 def test_backfill_missing_unscheduled_since_skips_formal_schedule_and_started_experiment() -> None:
@@ -997,7 +1087,7 @@ def test_resolve_experiment_sample_codes_does_not_guess_all_samples_without_stru
     assert resolve_experiment_sample_codes(experiment, [], [], samples) == []
 
 
-def test_resolve_experiment_sample_codes_keeps_unique_legacy_single_tray_fallback() -> None:
+def test_resolve_experiment_sample_codes_rejects_unique_legacy_single_tray_fallback() -> None:
     experiment = {
         "task_code": "TASK-LEGACY",
         "experiment_code": "EXP-LEGACY",
@@ -1011,7 +1101,7 @@ def test_resolve_experiment_sample_codes_keeps_unique_legacy_single_tray_fallbac
         }
     ]
 
-    assert resolve_experiment_sample_codes(experiment, [], [], samples) == ["SP-001"]
+    assert resolve_experiment_sample_codes(experiment, [], [], samples) == []
 
 
 def test_experiment_mapping_normalizes_legacy_running_status() -> None:
@@ -1066,19 +1156,7 @@ def test_experiment_mapping_normalizes_legacy_completed_statuses() -> None:
     assert storage_item["status"] == "实验已完成"
 
 
-def test_parse_experiment_event_detail_extracts_experiment_name_and_status() -> None:
-    parsed = parse_experiment_event_detail(
-        "SYLU-2026-03-002 / 盐雾试验 / 实验已完成",
-        "SYLU-2026-03-002",
-    )
-
-    assert parsed == {
-        "experiment_name": "盐雾试验",
-        "status": "实验已完成",
-    }
-
-
-def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> None:
+def test_derive_experiment_status_map_ignores_sample_history_progress() -> None:
     experiments = [
         {"experiment_no": "SYLU-2026-03-002-A", "task_no": "SYLU-2026-03-002", "experiment_name": "盐雾试验"},
         {"experiment_no": "SYLU-2026-03-002-B", "task_no": "SYLU-2026-03-002", "experiment_name": "高低温湿热试验"},
@@ -1095,20 +1173,14 @@ def test_derive_experiment_status_map_uses_schedule_and_history_progress() -> No
         {"experiment_no": "SYLU-2026-03-002-B", "sample_no": "SP-005"},
         {"experiment_no": "SYLU-2026-03-002-C", "sample_no": "SP-001"},
     ]
-    sample_events = [
-        {"sample_no": "SP-001", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
-        {"sample_no": "SP-002", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 盐雾试验 / 实验已完成"},
-        {"sample_no": "SP-005", "task_no": "SYLU-2026-03-002", "detail": "SYLU-2026-03-002 / 高低温湿热试验 / 实验中"},
-    ]
-
-    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
-        "SYLU-2026-03-002-A": "实验已完成",
-        "SYLU-2026-03-002-B": "实验进行中",
+    assert derive_experiment_status_map(experiments, schedules) == {
+        "SYLU-2026-03-002-A": "已排程",
+        "SYLU-2026-03-002-B": "已排程",
         "SYLU-2026-03-002-C": "已排程",
     }
 
 
-def test_derive_experiment_status_map_scopes_legacy_sample_history_by_task() -> None:
+def test_derive_experiment_status_map_does_not_scope_sample_history_by_task() -> None:
     experiments = [
         {"experiment_no": "TASK-A-EXP", "task_no": "TASK-A", "experiment_name": "盐雾试验"},
         {"experiment_no": "TASK-B-EXP", "task_no": "TASK-B", "experiment_name": "盐雾试验"},
@@ -1121,26 +1193,18 @@ def test_derive_experiment_status_map_scopes_legacy_sample_history_by_task() -> 
         {"experiment_no": "TASK-A-EXP", "task_no": "TASK-A", "sample_no": "SP-001"},
         {"experiment_no": "TASK-B-EXP", "task_no": "TASK-B", "sample_no": "SP-001"},
     ]
-    sample_events = [
-        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
-    ]
-
-    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
-        "TASK-A-EXP": "实验已完成",
+    assert derive_experiment_status_map(experiments, schedules) == {
+        "TASK-A-EXP": "已排程",
         "TASK-B-EXP": "已排程",
     }
 
 
-def test_derive_experiment_status_map_uses_unique_legacy_history_when_experiment_task_is_missing() -> None:
+def test_derive_experiment_status_map_rejects_unique_history_when_experiment_task_is_missing() -> None:
     experiments = [{"experiment_no": "LEGACY-EXP", "experiment_name": "盐雾试验"}]
     schedules = [{"schedule_id": 1, "experiment_no": "LEGACY-EXP", "schedule_status": "已排程"}]
     experiment_samples = [{"experiment_no": "LEGACY-EXP", "sample_no": "SP-001"}]
-    sample_events = [
-        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
-    ]
-
-    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
-        "LEGACY-EXP": "实验已完成",
+    assert derive_experiment_status_map(experiments, schedules) == {
+        "LEGACY-EXP": "已排程",
     }
 
 
@@ -1148,12 +1212,7 @@ def test_derive_experiment_status_map_skips_ambiguous_legacy_history_when_experi
     experiments = [{"experiment_no": "LEGACY-EXP", "experiment_name": "盐雾试验"}]
     schedules = [{"schedule_id": 1, "experiment_no": "LEGACY-EXP", "schedule_status": "已排程"}]
     experiment_samples = [{"experiment_no": "LEGACY-EXP", "sample_no": "SP-001"}]
-    sample_events = [
-        {"sample_no": "SP-001", "task_no": "TASK-A", "detail": "TASK-A / 盐雾试验 / 实验已完成"},
-        {"sample_no": "SP-001", "task_no": "TASK-B", "detail": "TASK-B / 盐雾试验 / 实验已完成"},
-    ]
-
-    assert derive_experiment_status_map(experiments, schedules, experiment_samples, sample_events) == {
+    assert derive_experiment_status_map(experiments, schedules) == {
         "LEGACY-EXP": "已排程",
     }
 
@@ -1179,7 +1238,7 @@ def test_derive_experiment_status_map_keeps_completed_status_without_history_det
         {"experiment_no": "SYLU-2026-03-008-A", "sample_no": "SP-001"},
     ]
 
-    assert derive_experiment_status_map(experiments, schedules, experiment_samples, []) == {
+    assert derive_experiment_status_map(experiments, schedules) == {
         "SYLU-2026-03-008-A": "实验已完成",
     }
 
@@ -1217,8 +1276,6 @@ def test_derive_experiment_status_map_reopens_stale_completed_batch_when_run_tra
     assert derive_experiment_status_map(
         experiments,
         schedules,
-        [],
-        [],
         experiment_trays=experiment_trays,
         experiment_run_trays=experiment_run_trays,
     ) == {
@@ -1265,8 +1322,6 @@ def test_derive_experiment_status_map_keeps_completed_batch_when_remaining_run_t
     assert derive_experiment_status_map(
         experiments,
         schedules,
-        [],
-        [],
         experiment_trays=experiment_trays,
         experiment_run_trays=experiment_run_trays,
     ) == {
@@ -3220,7 +3275,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     monkeypatch.setattr(
         backend,
         "_load_tasks",
-        lambda cursor: [{"code": "TASK-001", "transfer_status": "已入库"}],
+        lambda cursor: [{"code": "TASK-001", "transfer_status": "到货"}],
     )
     monkeypatch.setattr(backend, "_load_schedules", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_devices", lambda cursor: [])
@@ -3232,7 +3287,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
             {
                 "code": "TASK-001-SP-001",
                 "task_code": "TASK-001",
-                "status": "已入库",
+                "status": "到货",
                 "updated_at": "2026-03-17T10:00:00Z",
                 "history": [{"action": "任务已确认入库", "time": "2026-03-17T09:00:00Z"}],
             }
@@ -3254,7 +3309,17 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
-    monkeypatch.setattr(backend, "_load_experiment_samples", lambda cursor: [])
+    monkeypatch.setattr(
+        backend,
+        "_load_experiment_samples",
+        lambda cursor: [
+            {
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-A",
+                "sample_code": "TASK-001-SP-001",
+            }
+        ],
+    )
     monkeypatch.setattr(
         backend,
         "_update_experiment_unscheduled_since",

@@ -6,8 +6,8 @@ describe("taskOverviewAlerts", () => {
   test("returns the lowest overdue waiting task code when multiple tasks are overdue", () => {
     const taskCode = findFirstOverdueWaitingTaskCode(
       [
-        { code: "SYLU-2026-03-003", transfer_status: "已入库" },
-        { code: "SYLU-2026-03-002", transfer_status: "已入库" },
+        { code: "SYLU-2026-03-003", transfer_status: "到货" },
+        { code: "SYLU-2026-03-002", transfer_status: "到货" },
       ],
       [
         {
@@ -34,7 +34,7 @@ describe("taskOverviewAlerts", () => {
 
   test("ignores experiments that already have a formal schedule when computing alert visibility", () => {
     const hasAlert = hasOverdueWaitingExperiment(
-      [{ code: "SYLU-2026-03-002", transfer_status: "已入库" }],
+      [{ code: "SYLU-2026-03-002", transfer_status: "到货" }],
       [
         {
           task_code: "SYLU-2026-03-002",
@@ -53,6 +53,21 @@ describe("taskOverviewAlerts", () => {
     );
 
     expect(hasAlert).toBe(false);
+  });
+
+  test("ignores legacy stored status when checking overdue waiting experiments", () => {
+    const now = Date.parse("2026-03-20T10:00:00.000Z");
+    const tasks = [{ code: "TASK-LEGACY-STORED", status: "待排程", transfer_status: "已入库" }];
+    const experiments = [
+      {
+        task_code: "TASK-LEGACY-STORED",
+        experiment_code: "TASK-LEGACY-STORED-A",
+        unscheduled_since: "2026-03-18T08:00:00.000Z",
+      },
+    ];
+
+    expect(hasOverdueWaitingExperiment(tasks, experiments, [], now)).toBe(false);
+    expect(findFirstOverdueWaitingTaskCode(tasks, experiments, [], now)).toBe("");
   });
 
   test("ignores returned tasks when checking overdue waiting experiments", () => {

@@ -38,23 +38,13 @@ const resolveEntryExperimentCode = (entry) =>
   || normalizeText(entry?.experiment_id)
   || normalizeText(entry?.experimentId);
 
-const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 const entryMatchesTrayCode = (entry, trayCode) => {
   const normalizedTrayCode = normalizeText(trayCode);
   if (!normalizedTrayCode) {
     return false;
   }
   const structuredTrayCodes = resolveEntryTrayCodes(entry);
-  if (structuredTrayCodes.length > 0) {
-    return structuredTrayCodes.includes(normalizedTrayCode);
-  }
-  const detail = normalizeText(entry?.detail);
-  if (!detail) {
-    return false;
-  }
-  const escaped = escapeRegExp(normalizedTrayCode);
-  return new RegExp(`(^|[^A-Za-z0-9_-])${escaped}($|[^A-Za-z0-9_-])`).test(detail);
+  return structuredTrayCodes.includes(normalizedTrayCode);
 };
 
 const compareText = (left, right) => normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN");

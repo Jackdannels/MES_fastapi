@@ -757,7 +757,7 @@ describe("taskOverviewModel", () => {
 
   test("buildTaskRows marks overdue waiting experiments after 24 hours", () => {
     const rows = buildTaskRows({
-      tasks: [{ code: "SYLU-2026-03-011", test_type: "振动试验", status: "待排程", transfer_status: "已入库" }],
+      tasks: [{ code: "SYLU-2026-03-011", test_type: "振动试验", status: "待排程", transfer_status: "到货" }],
       experiments: [
         {
           task_code: "SYLU-2026-03-011",
@@ -955,6 +955,31 @@ describe("taskOverviewModel", () => {
       expect.objectContaining({ experimentCode: "SYLU-2026-03-001-B", displayStatus: "待排程" }),
       expect.objectContaining({ experimentCode: "SYLU-2026-03-001-C", displayStatus: "待排程" }),
     ]);
+  });
+
+  test("buildTaskRows does not treat legacy stored status as transfer arrival", () => {
+    const rows = buildTaskRows({
+      tasks: [{ code: "SYLU-2026-03-013", test_type: "振动试验", status: "待排程", transfer_status: "已入库" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-013",
+          experiment_code: "SYLU-2026-03-013-A",
+          experiment_name: "振动试验",
+          status: "待排程",
+          unscheduled_since: "2026-03-10T08:00:00.000Z",
+        },
+      ],
+      samples: [],
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "待排程",
+      now: Date.parse("2026-03-11T09:00:00.000Z"),
+    });
+
+    expect(rows[0].experiments[0]).toEqual(expect.objectContaining({
+      experimentCode: "SYLU-2026-03-013-A",
+      isOverdueWaiting: false,
+    }));
   });
 
   test("buildTaskRows labels running experiments with completed tray progress", () => {

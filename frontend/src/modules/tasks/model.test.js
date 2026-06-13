@@ -91,6 +91,58 @@ describe("tasks model", () => {
     expect(rows[0].displayStatus).toBe("任务进行中");
   });
 
+  test("does not derive task status from sample-level status when no tray is assigned", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          status: "实验进行中",
+          trays: [],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("待排程");
+  });
+
+  test("does not derive task status from tray records without a structured tray code", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          status: "实验进行中",
+          trays: [{ status: "实验进行中", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("待排程");
+  });
+
+  test("does not derive task status from sample location when tray status is empty", () => {
+    const rows = buildTaskRows(
+      [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],
+      [],
+      [
+        {
+          code: "SYLU-2026-03-001-SP-001",
+          task_code: "SYLU-2026-03-001",
+          location: "冲击一室",
+          status: "",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-001", quantity: 1 }],
+        },
+      ],
+    );
+
+    expect(rows[0].displayStatus).toBe("待排程");
+  });
+
   test("keeps a partially completed task running and annotates the completed experiment count", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],

@@ -240,7 +240,7 @@ def test_publish_laboratory_command_records_context_before_mqtt_publish(monkeypa
     ]
 
 
-def test_bind_laboratory_context_guards_sample_status_fallback(monkeypatch):
+def test_bind_laboratory_context_does_not_fallback_to_sample_status(monkeypatch):
     class TupleCursor:
         description = None
 
@@ -289,10 +289,10 @@ def test_bind_laboratory_context_guards_sample_status_fallback(monkeypatch):
     mq_publisher.bind_laboratory_context({"task_code": "TASK-SHARED", "lab_code": "LAB_IMPACT_1"})
 
     assert connection.committed is True
-    assert "COALESCE(ti.status, '') = ''" in connection.cursor_obj.update_sql
-    assert "COALESCE(tr.test_state, '') = ''" in connection.cursor_obj.update_sql
-    assert "sm.sample_status IN" in connection.cursor_obj.update_sql
-    assert "sm.flow_status IN" in connection.cursor_obj.update_sql
+    assert "COALESCE(ti.status, '') = ''" not in connection.cursor_obj.update_sql
+    assert "COALESCE(tr.test_state, '') = ''" not in connection.cursor_obj.update_sql
+    assert "sm.sample_status IN" not in connection.cursor_obj.update_sql
+    assert "sm.flow_status IN" not in connection.cursor_obj.update_sql
 
 
 def test_bind_laboratory_context_scopes_update_by_payload_experiment(monkeypatch):
@@ -945,9 +945,6 @@ class FakeMqEventRepository:
                 return dict(run)
         return None
 
-    def find_recent_completed_run_by_lab(self, lab_code):
-        return self.completed_runs_by_lab.get(lab_code)
-
     def find_current_context_by_lab(self, lab_code, candidate_statuses):
         context = self.contexts_by_lab.get(lab_code)
         if not context:
@@ -1377,6 +1374,9 @@ def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
                         "tray_code": "TRAY-001",
                     }
                 ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
             }
 
         def read_all(self):
@@ -1475,6 +1475,9 @@ def test_mysql_start_run_for_context_rejects_returned_trays_with_mock_start_rule
                         "tray_code": "TRAY-001",
                     }
                 ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
             }
 
         def read_all(self):
@@ -1549,6 +1552,9 @@ def test_mysql_start_run_for_context_rejects_tray_status_returned_without_run_tr
                         "experiment_code": "EXP-001",
                         "tray_code": "TRAY-001",
                     }
+                ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
                 ],
             }
 
@@ -2161,7 +2167,7 @@ def test_mysql_find_current_context_does_not_use_moved_sample_location_as_device
     assert "温度冲击一室" not in connection.cursor_obj.schedule_query_params
 
 
-def test_mysql_find_current_context_guards_sample_status_fallback_with_empty_tray_status(monkeypatch):
+def test_mysql_find_current_context_does_not_fallback_to_sample_status_when_tray_status_is_empty(monkeypatch):
     class TupleCursor:
         description = None
 
@@ -2226,8 +2232,10 @@ def test_mysql_find_current_context_guards_sample_status_fallback_with_empty_tra
     context = MySQLMqEventRepository().find_current_context_by_lab("LAB_IMPACT_1", ["实验准备就绪"])
 
     assert context is None
-    assert "COALESCE(ti.status, '') = ''" in connection.cursor_obj.tray_query
-    assert "COALESCE(tr.test_state, '') = ''" in connection.cursor_obj.tray_query
+    assert "COALESCE(ti.status, '') = ''" not in connection.cursor_obj.tray_query
+    assert "COALESCE(tr.test_state, '') = ''" not in connection.cursor_obj.tray_query
+    assert "sm.sample_status IN" not in connection.cursor_obj.tray_query
+    assert "sm.flow_status IN" not in connection.cursor_obj.tray_query
 
 
 def test_mysql_find_current_context_rejects_old_lab_after_tray_moved_to_next_lab(monkeypatch):
@@ -2370,6 +2378,9 @@ def test_mysql_mark_run_ended_keeps_mock_completion_history_idempotent(monkeypat
                         "tray_code": "TRAY-001",
                     }
                 ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
             }
 
         def read_all(self):
@@ -2392,6 +2403,120 @@ def test_mysql_mark_run_ended_keeps_mock_completion_history_idempotent(monkeypat
     assert [entry["detail"] for entry in history].count(completion_detail) == 1
     assert history[0]["location"] == "振动一室"
     assert history[0]["owner"] == "测试员"
+
+
+def test_mysql_mark_run_started_rejects_missing_run_tray_relation_without_run_tray_codes_fallback(monkeypatch):
+    class FakeStorage:
+        def __init__(self):
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验准备就绪",
+                        "flow_status": "实验准备就绪",
+                        "location": "振动一室",
+                        "trays": [{"tray_code": "TRAY-001", "status": "实验准备就绪"}],
+                        "history": [],
+                    }
+                ],
+                "mes.experiments": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "experiment_name": "振动实验"}
+                ],
+                "mes.schedules": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "status": "实验准备就绪"}
+                ],
+                "mes.experiment_runs": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验准备就绪",
+                        "tray_codes": ["TRAY-001"],
+                    }
+                ],
+                "mes.experiment_run_trays": [],
+                "mes.experiment_trays": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "tray_code": "TRAY-001"}
+                ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
+            }
+
+        def read_all(self):
+            return self.payload
+
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
+
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+
+    with pytest.raises(ValueError, match="experiment_run_trays"):
+        MySQLMqEventRepository().mark_run_started("RUN-001", "2026-05-16 11:00:00")
+
+    assert storage.writes == []
+
+
+def test_mysql_mark_run_ended_rejects_missing_run_tray_relation_without_run_tray_codes_fallback(monkeypatch):
+    class FakeStorage:
+        def __init__(self):
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"id": "TASK-001", "code": "TASK-001", "status": "任务进行中"}],
+                "mes.samples": [
+                    {
+                        "code": "SAMPLE-001",
+                        "task_code": "TASK-001",
+                        "status": "实验进行中",
+                        "flow_status": "实验进行中",
+                        "location": "振动一室",
+                        "trays": [{"tray_code": "TRAY-001", "status": "实验进行中"}],
+                        "history": [],
+                    }
+                ],
+                "mes.experiments": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "experiment_name": "振动实验"}
+                ],
+                "mes.schedules": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "status": "实验进行中"}
+                ],
+                "mes.experiment_runs": [
+                    {
+                        "run_no": "RUN-001",
+                        "task_code": "TASK-001",
+                        "experiment_code": "EXP-001",
+                        "status": "实验进行中",
+                        "tray_codes": ["TRAY-001"],
+                    }
+                ],
+                "mes.experiment_run_trays": [],
+                "mes.experiment_trays": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "tray_code": "TRAY-001"}
+                ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
+            }
+
+        def read_all(self):
+            return self.payload
+
+        def write_many(self, updates):
+            self.writes.append(updates)
+            self.payload.update(updates)
+
+    storage = FakeStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+
+    with pytest.raises(ValueError, match="experiment_run_trays"):
+        MySQLMqEventRepository().mark_run_ended("RUN-001", "2026-05-16 12:00:00")
+
+    assert storage.writes == []
 
 
 def test_mysql_mark_run_ended_uses_mock_completion_rules(monkeypatch):
@@ -2459,7 +2584,9 @@ def test_mysql_mark_run_ended_uses_mock_completion_rules(monkeypatch):
                         "tray_code": "TRAY-001",
                     }
                 ],
-                "mes.experiment_samples": [],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}
+                ],
             }
 
         def read_all(self):
@@ -2656,6 +2783,10 @@ def test_mysql_mark_run_ended_keeps_experiment_open_when_bound_tray_is_not_finis
                         "experiment_code": "EXP-001",
                         "tray_code": "TRAY-002",
                     },
+                ],
+                "mes.experiment_samples": [
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"},
+                    {"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-002"},
                 ],
             }
 
@@ -2935,6 +3066,7 @@ def test_process_experiment_result_records_result_package():
         "mes/v1/labs/salt-spray-lab-01/events/experiment-result",
         {
             "lab_code": "LAB_SALT",
+            "run_no": "RUN-SALT-001",
             "result_at": "2026-05-16 17:30:00",
             "result_package": {
                 "result_id": "R-001",
@@ -2952,7 +3084,7 @@ def test_process_experiment_result_records_result_package():
     assert repository.results[0]["summary"] == "合格"
 
 
-def test_process_experiment_result_uses_recent_completed_run_after_ended_event():
+def test_process_experiment_result_rejects_missing_run_no_after_ended_event():
     repository = FakeMqEventRepository()
 
     process_laboratory_event(
@@ -2964,26 +3096,26 @@ def test_process_experiment_result_uses_recent_completed_run_after_ended_event()
         repository=repository,
     )
 
-    ack = process_laboratory_event(
-        "mes/v1/labs/LAB_SALT/events/experiment-result",
-        {
-            "lab_code": "LAB_SALT",
-            "result_at": "2026-05-16 17:31:00",
-            "result_package": {
-                "result_id": "R-ENDED-001",
-                "conclusion": "PASS",
-                "summary": "结束后结果包",
-                "items": [],
-                "attachments": [],
+    with pytest.raises(ValueError, match="run_no is required"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_SALT/events/experiment-result",
+            {
+                "lab_code": "LAB_SALT",
+                "result_at": "2026-05-16 17:31:00",
+                "result_package": {
+                    "result_id": "R-ENDED-001",
+                    "conclusion": "PASS",
+                    "summary": "结束后结果包",
+                    "items": [],
+                    "attachments": [],
+                },
             },
-        },
-        repository=repository,
-    )
+            repository=repository,
+        )
 
-    assert ack["status"] == "PROCESSED"
-    assert repository.results[0]["task_no"] == "SYLU-2026-03-001"
-    assert repository.results[0]["experiment_no"] == "SYLU-2026-03-001-A"
-    assert repository.results[0]["summary"] == "结束后结果包"
+    assert repository.results == []
+    assert repository.messages[-1]["message_type"] == "EXPERIMENT_ENDED"
+    assert get_legacy_fallback_hits() == []
 
 
 def test_process_experiment_result_uses_payload_run_no_without_recent_completed_fallback():
@@ -3065,6 +3197,7 @@ def test_process_experiment_result_prefers_active_run_over_payload_experiment_co
         "mes/v1/labs/salt-spray-lab-01/events/experiment-result",
         {
             "lab_code": "LAB_SALT",
+            "run_no": "RUN-SALT-001",
             "task_code": "SYLU-2026-03-OLD",
             "experiment_code": "SYLU-2026-03-001-OLD",
             "result_at": "2026-05-16 17:30:00",
