@@ -1413,6 +1413,70 @@ describe("visualization model", () => {
     expect(view.summary.plannedTrayCount).toBe(0);
   });
 
+  test("removes trays from staging board after stock-out dispatches them to a laboratory", () => {
+    const taskCode = "SYLU-2026-07-001";
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildStagingSamplesView({
+      tasks: [{ code: taskCode, name: "132", test_type: "冲击试验 / 霉菌试验 / 盐雾试验 / 振动试验" }],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "霉菌试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "盐雾试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, tray_code: trayCode },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "盐雾试验室",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [
+            {
+              tray_code: trayCode,
+              status: "送至实验室",
+              target_experiment_code: `${taskCode}-C`,
+              target_lab: "盐雾试验室",
+              quantity: 1,
+            },
+          ],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          room: "staging",
+          task_code: taskCode,
+          time: "2026-07-01T08:00:00+08:00",
+          tray_code: trayCode,
+        },
+        {
+          action: "stock_out",
+          room: "staging",
+          target_experiment_code: `${taskCode}-C`,
+          target_lab: "盐雾试验室",
+          target_type: "lab",
+          task_code: taskCode,
+          time: "2026-07-01T09:00:00+08:00",
+          tray_code: trayCode,
+        },
+      ],
+    });
+
+    expect(JSON.stringify(view.tasks)).not.toContain(trayCode);
+    expect(view.summary.totalTaskCount).toBe(0);
+    expect(view.summary.totalTrayCount).toBe(0);
+    expect(view.summary.totalSampleCount).toBe(0);
+    expect(view.summary.appearancePlannedTrayCount).toBe(0);
+    expect(view.summary.plannedTrayCount).toBe(0);
+  });
+
   test("keeps stock-out trays visible when the destination is staging", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "TASK-STOCK-OUT-STAGING", name: "转暂存任务", test_type: "盐雾试验" }],
@@ -1576,7 +1640,7 @@ describe("visualization model", () => {
     expect(view.summary.currentTrayCount).toBe(0);
   });
 
-  test("keeps sent-to-appearance trays planned until appearance stock-in occurs", () => {
+  test("does not show sent-to-appearance trays as planned appearance inbound", () => {
     const view = buildStagingSamplesView({
       tasks: [
         { code: "TASK-SENT-APPEARANCE", name: "霉菌完成待外观", test_type: "霉菌试验" },
@@ -1600,14 +1664,9 @@ describe("visualization model", () => {
       stagingEvents: [],
     });
 
-    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
-      stagingKind: "appearance-planned",
-      stagingKindLabel: "计划入库",
-      status: "送至外观检测间",
-      trayCode: "TP-SENT-APPEARANCE",
-    }));
+    expect(JSON.stringify(view)).not.toContain("TP-SENT-APPEARANCE");
     expect(view.summary.appearanceTrayCount).toBe(0);
-    expect(view.summary.appearancePlannedTrayCount).toBe(1);
+    expect(view.summary.appearancePlannedTrayCount).toBe(0);
   });
 
   test("does not show manufacturer-returned sent-to-appearance trays as planned appearance inbound", () => {
@@ -1638,7 +1697,7 @@ describe("visualization model", () => {
     expect(view.summary.appearancePlannedTrayCount).toBe(0);
   });
 
-  test("shows fully completed trays as planned post-test staging inbound", () => {
+  test("does not show fully completed neutral trays as planned post-test staging inbound", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "TASK-FINISHED-STAGING", name: "全部完成任务", test_type: "冲击试验 / 振动试验" }],
       experiments: [
@@ -1666,16 +1725,11 @@ describe("visualization model", () => {
       stagingEvents: [],
     });
 
-    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
-      stagingKind: "planned",
-      stagingKindLabel: "计划暂存",
-      status: "送至暂存间",
-      trayCode: "TP-FINISHED-STAGING",
-    }));
-    expect(view.summary.plannedTrayCount).toBe(1);
+    expect(JSON.stringify(view)).not.toContain("TP-FINISHED-STAGING");
+    expect(view.summary.plannedTrayCount).toBe(0);
   });
 
-  test("keeps a fully completed tray visible in staging even when the latest event sent it to a lab", () => {
+  test("does not show a fully completed neutral tray in staging when the latest event sent it to a lab", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "SYLU-2026-06-022", name: "06-022任务", test_type: "冲击试验 / 霉菌试验 / 盐雾试验 / 振动试验" }],
       experiments: [
@@ -1723,16 +1777,11 @@ describe("visualization model", () => {
       .flatMap((task) => task.trays)
       .find((item) => item.trayCode === "SYLU-2026-06-022-TP-002");
 
-    expect(tray).toEqual(expect.objectContaining({
-      trayCode: "SYLU-2026-06-022-TP-002",
-      stagingKind: "planned",
-      stagingKindLabel: "计划暂存",
-      status: "送至暂存间",
-    }));
-    expect(view.summary.plannedTrayCount).toBe(1);
+    expect(tray).toBeUndefined();
+    expect(view.summary.plannedTrayCount).toBe(0);
   });
 
-  test("keeps a fully completed tray planned for staging even when run-tray rows are missing", () => {
+  test("does not infer planned staging from completed history when run-tray rows are missing", () => {
     const taskCode = "TASK-FINISHED-FALLBACK";
     const trayCode = "TP-FINISHED-FALLBACK";
     const view = buildStagingSamplesView({
@@ -1759,13 +1808,8 @@ describe("visualization model", () => {
       stagingEvents: [],
     });
 
-    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
-      stagingKind: "planned",
-      stagingKindLabel: "计划暂存",
-      status: "送至暂存间",
-      trayCode,
-    }));
-    expect(view.summary.plannedTrayCount).toBe(1);
+    expect(JSON.stringify(view)).not.toContain(trayCode);
+    expect(view.summary.plannedTrayCount).toBe(0);
   });
 
   test("calculates staging tray remaining from the project-wide used tray count", () => {

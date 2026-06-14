@@ -5,9 +5,7 @@ from typing import Any
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.appearance_inspection import (
     APPEARANCE_INSPECTION_DISPATCH_STATUS,
-    APPEARANCE_INSPECTION_LOCATION,
     APPEARANCE_INSPECTION_STOCKED_STATUS,
-    experiment_requires_appearance_inspection,
 )
 from app.services.laboratory_operations import clear_fixture_ready_marker
 
@@ -147,9 +145,7 @@ def complete_storage_laboratory_experiment(
         None,
     )
     experiment_name = normalize_text((experiment or {}).get("experiment_name") or (experiment or {}).get("experiment_type")) or normalized_experiment_code
-    requires_appearance_inspection = experiment_requires_appearance_inspection(experiment_name, experiment)
-    sample_completion_status = APPEARANCE_INSPECTION_DISPATCH_STATUS if requires_appearance_inspection else COMPLETED_STATUS
-    sample_completion_location = APPEARANCE_INSPECTION_LOCATION if requires_appearance_inspection else ""
+    sample_completion_status = COMPLETED_STATUS
     scoped_tray_codes = {
         normalize_text(item.get("tray_code"))
         for item in experiment_trays
@@ -255,8 +251,6 @@ def complete_storage_laboratory_experiment(
         if next_trays and all(normalize_text(tray.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES for tray in next_trays):
             sample["status"] = sample_completion_status
             sample["flow_status"] = sample_completion_status
-            if sample_completion_location:
-                sample["location"] = sample_completion_location
         sample["updated_at"] = completed_time
         sample["trays"] = next_trays
         history_entry = {

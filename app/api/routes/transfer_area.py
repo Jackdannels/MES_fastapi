@@ -1490,14 +1490,11 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
     target_type = normalize_text(request.target_type)
     target_name = normalize_text(request.target_name)
     if target_type == "staging":
-        post_experiment_staging_dispatch = (
-            current_tray_status == APPEARANCE_STORED_STATUS
-            and tray_assigned_experiments_are_completed(
-                task_code=task_code(task),
-                tray_code=tray_code,
-                experiment_trays=snapshot["experiment_trays"],
-                experiment_run_trays=snapshot["experiment_run_trays"],
-            )
+        post_experiment_staging_dispatch = tray_assigned_experiments_are_completed(
+            task_code=task_code(task),
+            tray_code=tray_code,
+            experiment_trays=snapshot["experiment_trays"],
+            experiment_run_trays=snapshot["experiment_run_trays"],
         )
         appearance_to_staging_dispatch = current_tray_status == APPEARANCE_STORED_STATUS
         if current_tray_status in TRAY_OUTBOUND_STATUSES and not (post_experiment_staging_dispatch or appearance_to_staging_dispatch):

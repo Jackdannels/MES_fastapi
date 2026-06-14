@@ -32,6 +32,7 @@ const STAGING_KIND_LABELS = {
   "post-test": "实验后暂存间",
   appearance: "外观检测间存放",
 };
+const VISIBLE_STAGING_KINDS = new Set(["current", "planned", "post-test", "appearance"]);
 const STORAGE_SNAPSHOT_KEYS = {
   tasks: "mes.tasks",
   schedules: "mes.schedules",
@@ -266,9 +267,6 @@ const resolveStagingTrayKind = (row, latestEvent) => {
   if (currentStatus) {
     return buildStagingKind("current", currentStatus);
   }
-  if (row.allAssignedExperimentsCompleted) {
-    return buildStagingKind("planned", "送至暂存间");
-  }
   if (latestAction === "stock_in") {
     return buildStagingKind("current", "已到达暂存间");
   }
@@ -435,6 +433,9 @@ function buildStagingSamplesView(input = {}) {
         return null;
       }
       if (!stagingKind) {
+        return null;
+      }
+      if (!VISIBLE_STAGING_KINDS.has(stagingKind.kind)) {
         return null;
       }
       const experimentType = row.experimentLabels.join(" / ") || row.testType || row.sampleTypeFallback || "待确认实验";

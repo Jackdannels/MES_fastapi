@@ -517,9 +517,9 @@ def test_complete_scopes_requested_trays_to_current_experiment_assignment():
     )
 
     assert result["affectedTrayCodes"] == ["TP-A"]
-    assert result["samples"][0]["location"] == "外观检测间"
-    assert result["samples"][0]["status"] == "送至外观检测间"
-    assert result["samples"][0]["trays"][0]["status"] == "送至外观检测间"
+    assert result["samples"][0]["location"] == "盐雾试验室"
+    assert result["samples"][0]["status"] == "实验已完成"
+    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
     assert result["samples"][1]["trays"][0]["status"] == "实验进行中"
     assert result["experimentRunTrays"][0]["tray_code"] == "TP-A"
 
@@ -556,7 +556,7 @@ def test_complete_clears_stale_fixture_ready_marker():
     )
 
     tray = result["samples"][0]["trays"][0]
-    assert tray["status"] == "送至外观检测间"
+    assert tray["status"] == "实验已完成"
     assert "fixture_ready" not in tray
     assert "fixtureReady" not in tray
 
@@ -602,7 +602,7 @@ def test_complete_rejects_missing_sample_relation_and_target_without_legacy_tray
         )
 
 
-def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():
+def test_complete_keeps_mold_and_salt_trays_at_neutral_completed_status():
     for experiment_name, lab_name in (("盐雾试验", "盐雾试验室"), ("霉菌试验", "霉菌试验室")):
         snapshot = {
             "experiments": [{"task_code": "TASK-APPEAR", "experiment_code": "EXP-A", "experiment_name": experiment_name}],
@@ -631,10 +631,10 @@ def test_complete_routes_mold_and_salt_trays_to_appearance_inspection_room():
             completed_at="2026-06-06 10:00:00",
         )
 
-        assert result["samples"][0]["location"] == "外观检测间"
-        assert result["samples"][0]["status"] == "送至外观检测间"
-        assert result["samples"][0]["flow_status"] == "送至外观检测间"
-        assert result["samples"][0]["trays"][0]["status"] == "送至外观检测间"
+        assert result["samples"][0]["location"] == lab_name
+        assert result["samples"][0]["status"] == "实验已完成"
+        assert result["samples"][0]["flow_status"] == "实验已完成"
+        assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
         assert result["experimentRunTrays"][-1]["run_tray_status"] == "实验已完成"
 
 

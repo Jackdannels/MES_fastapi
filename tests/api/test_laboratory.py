@@ -134,10 +134,10 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
     payload = response.json()
     assert payload["affectedTrayCodes"] == ["TP-501"]
     updated_sample = storage.read("mes.samples")[0]
-    assert updated_sample["location"] == "外观检测间"
-    assert updated_sample["status"] == "送至外观检测间"
-    assert updated_sample["flow_status"] == "送至外观检测间"
-    assert updated_sample["trays"][0]["status"] == "送至外观检测间"
+    assert updated_sample["location"] == "盐雾试验室"
+    assert updated_sample["status"] == "实验已完成"
+    assert updated_sample["flow_status"] == "实验已完成"
+    assert updated_sample["trays"][0]["status"] == "实验已完成"
     assert updated_sample["history"][0] == {
         "action": "实验完成",
         "detail": "TASK-501 / 盐雾试验 / 实验已完成",
@@ -239,7 +239,7 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     )
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -302,7 +302,7 @@ def test_laboratory_complete_experiment_infers_batch_trays_from_run_tray_relatio
 
     assert response.status_code == 200
     assert response.json()["affectedTrayCodes"] == ["TP-501"]
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -426,7 +426,7 @@ def test_laboratory_complete_experiment_ignores_other_experiment_completion_when
     )
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "送至外观检测间"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
@@ -558,7 +558,7 @@ def test_laboratory_complete_does_not_promote_multi_tray_sample_status_from_one_
     updated_sample = storage.read("mes.samples")[0]
     assert updated_sample["status"] == "实验进行中"
     assert updated_sample["flow_status"] == "实验进行中"
-    assert updated_sample["trays"][0]["status"] == "送至外观检测间"
+    assert updated_sample["trays"][0]["status"] == "实验已完成"
     assert updated_sample["trays"][1]["status"] == "实验准备就绪"
 
 

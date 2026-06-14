@@ -494,6 +494,48 @@ def test_transfer_area_dispatch_from_completed_appearance_to_post_experiment_sta
     assert updated["history"][0]["action"] == "送至实验后暂存间"
 
 
+def test_transfer_area_dispatch_from_neutral_completed_to_post_experiment_staging(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-06-032"
+    tray_code = f"{task_code}-TP-001"
+    sample_code = f"{task_code}-SP-001"
+    storage.write("mes.tasks", [{"code": task_code, "transfer_status": "到货", "status": "任务进行中"}])
+    storage.write("mes.samples", [
+        {
+            "code": sample_code,
+            "task_code": task_code,
+            "location": "盐雾试验室",
+            "status": "实验已完成",
+            "flow_status": "实验已完成",
+            "trays": [{"tray_code": tray_code, "status": "实验已完成", "quantity": 1}],
+        }
+    ])
+    storage.write("mes.experiment_trays", [
+        {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_code},
+    ])
+    storage.write("mes.experiment_run_trays", [
+        {
+            "task_code": task_code,
+            "experiment_code": f"{task_code}-A",
+            "tray_code": tray_code,
+            "run_tray_status": "实验已完成",
+        },
+    ])
+
+    response = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+
+    assert response.status_code == 200
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "送至实验后暂存间"
+    assert updated["flow_status"] == "送至实验后暂存间"
+    assert updated["location"] == "恒温恒湿间（暂存间）"
+    assert updated["trays"][0]["status"] == "送至实验后暂存间"
+    assert updated["history"][0]["action"] == "送至实验后暂存间"
+
+
 def test_transfer_area_dispatch_from_partial_appearance_to_regular_staging(monkeypatch):
     client, storage = build_client(monkeypatch)
     task_code = "SYLU-2026-06-030"

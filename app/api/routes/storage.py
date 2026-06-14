@@ -562,6 +562,13 @@ def _validate_samples_staging_reentry_transition(
             if not isinstance(next_tray, dict):
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
+            if _is_post_experiment_staging_inbound(next_sample, next_tray) and not _post_staging_reentry_is_completed(
+                current_sample,
+                current_tray,
+                experiment_trays,
+                experiment_run_trays,
+            ):
+                raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
             if _tray_has_blocked_lab_status(current_sample, current_tray) and _tray_is_storage_room_inbound(next_tray):
                 if _is_pre_experiment_appearance_inbound(next_sample, next_tray) and _tray_has_allowed_dispatched_pre_experiment_appearance_target(
                     current_sample,

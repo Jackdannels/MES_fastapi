@@ -652,9 +652,6 @@ const buildTrayFlowTimeMap = (input = {}) => {
         }
         if (experimentStatus === "实验已完成" || experimentStatus === "实验完成") {
           recordLatestFlowTime(`${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`, time);
-          if (experimentRequiresAppearanceInspection({ name: experimentEvent.experimentName })) {
-            recordLatestFlowTime(APPEARANCE_SENT_STATUS, time);
-          }
         }
       }
     });
@@ -822,22 +819,26 @@ function buildTrayFlowView(input = {}) {
       };
       const completedStepIndexes = [];
       const completedAppearanceIndexes = [];
+      const hasActualAppearanceMilestone =
+        isAppearanceInspectionStatus(normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status))
+        || Boolean(stepTimeMap.get(APPEARANCE_SENT_STATUS))
+        || Boolean(stepTimeMap.get(APPEARANCE_STOCKED_STATUS));
       experimentsBeforeCurrent.forEach((experiment, index) => {
         completedStepIndexes.push(pushExperimentStep(experiment, index));
-        if (!experimentRequiresAppearanceInspection(experiment)) {
-          return;
+        if (hasActualAppearanceMilestone && experimentRequiresAppearanceInspection(experiment)) {
+          completedAppearanceIndexes.push({
+            sent: pushStep({
+              key: `route-completed-appearance-sent-${index}`,
+              label: APPEARANCE_SENT_STATUS,
+              time: stepTimeMap.get(APPEARANCE_SENT_STATUS) || "",
+            }),
+            stocked: pushStep({
+              key: `route-completed-appearance-stocked-${index}`,
+              label: APPEARANCE_STOCKED_STATUS,
+              time: stepTimeMap.get(APPEARANCE_STOCKED_STATUS) || "",
+            }),
+          });
         }
-        const completedAppearanceIndex = {
-          sent: pushStep({
-            key: `route-completed-appearance-sent-${index}`,
-            label: APPEARANCE_SENT_STATUS,
-          }),
-          stocked: pushStep({
-            key: `route-completed-appearance-stocked-${index}`,
-            label: APPEARANCE_STOCKED_STATUS,
-          }),
-        };
-        completedAppearanceIndexes.push(completedAppearanceIndex);
       });
       const latestCompletedTimeBeforeCurrent = experimentsBeforeCurrent.reduce(
         (latest, experiment, index) => Math.max(latest, completedExperimentTime(experiment, index)),
@@ -909,19 +910,9 @@ function buildTrayFlowView(input = {}) {
         !activeExperiment?.unstarted || inputCurrentExperimentCode === normalizeText(activeExperiment?.code);
       const activeExperimentRequiresAppearance = experimentRequiresAppearanceInspection(activeExperiment);
       const shouldShowActiveAppearance =
-        (
-          isAppearanceInspectionStatus(normalizedRouteStatus)
-          && activeExperimentRequiresAppearance
-          && activeExperimentCanOwnCompletedRoute
-        )
-        || (
-          activeExperimentRequiresAppearance
-          && activeExperimentCanOwnCompletedRoute
-          && (
-            normalizedRouteStatus === "实验已完成"
-            || normalizedRouteStatus === "实验完成"
-          )
-        );
+        isAppearanceInspectionStatus(normalizedRouteStatus)
+        && activeExperimentRequiresAppearance
+        && activeExperimentCanOwnCompletedRoute;
       const activeAppearanceBelongsToCurrentExperiment = activeExperimentRequiresAppearance;
       const activeAppearanceIndexes = shouldShowActiveAppearance
         ? {
@@ -1037,17 +1028,6 @@ function buildTrayFlowView(input = {}) {
         });
         markCompletedAppearanceReached();
         steps[stableAppearanceIndexes.sent].reached = true;
-      } else if (
-        (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
-        && latestCompletedAppearanceIndexes
-        && latestCompletedExperimentRequiresAppearance
-      ) {
-        currentStatus = APPEARANCE_SENT_STATUS;
-        activeIndex = latestCompletedAppearanceIndexes.sent;
-        completedStepIndexes.forEach((stepIndex) => {
-          steps[stepIndex].reached = true;
-        });
-        markCompletedAppearanceReached(latestCompletedAppearancePosition);
       } else if (
         (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成")
         && activeAppearanceIndexes
@@ -1224,11 +1204,7 @@ function buildTrayFlowView(input = {}) {
       const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
       const shouldShowFinalAppearance =
         experimentRequiresAppearanceInspection(lastExperiment)
-        && (
-          isAppearanceInspectionStatus(normalizedFinalStatus)
-          || normalizedFinalStatus === "实验已完成"
-          || normalizedFinalStatus === "实验完成"
-        );
+        && isAppearanceInspectionStatus(normalizedFinalStatus);
       const finalAppearanceIndexes = shouldShowFinalAppearance
         ? {
             sent: pushStep({ key: "route-final-appearance-sent", label: APPEARANCE_SENT_STATUS }),
@@ -1244,10 +1220,15 @@ function buildTrayFlowView(input = {}) {
             label: POST_EXPERIMENT_STAGING_SENT_STATUS,
           })
         : -1;
-      const postTestStagingIndex = pushStep({
-        key: "route-final-post-staging-stocked",
-        label: POST_EXPERIMENT_STAGING_STOCKED_STATUS,
-      });
+      const shouldShowPostTestStagingStocked =
+        normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS
+        || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_STOCKED_STATUS));
+      const postTestStagingIndex = shouldShowPostTestStagingStocked
+        ? pushStep({
+            key: "route-final-post-staging-stocked",
+            label: POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+          })
+        : -1;
       const returnedIndex = pushStep({
         key: "route-final-returned",
         label: "厂家收回",
@@ -1256,7 +1237,7 @@ function buildTrayFlowView(input = {}) {
         activeIndex = postTestStagingSentIndex;
         steps[completedIndex].reached = true;
         currentStatus = POST_EXPERIMENT_STAGING_SENT_STATUS;
-      } else if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "已到达暂存间") {
+      } else if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {
         activeIndex = postTestStagingIndex;
         steps[completedIndex].reached = true;
         if (postTestStagingSentIndex >= 0) {
@@ -1286,7 +1267,9 @@ function buildTrayFlowView(input = {}) {
         if (postTestStagingSentIndex >= 0) {
           steps[postTestStagingSentIndex].reached = true;
         }
-        steps[postTestStagingIndex].reached = true;
+        if (postTestStagingIndex >= 0) {
+          steps[postTestStagingIndex].reached = true;
+        }
         currentStatus = normalizedFinalStatus;
       } else {
         activeIndex = completedIndex;
@@ -1355,14 +1338,7 @@ function buildTrayFlowView(input = {}) {
   const shouldShowSingleAppearance =
     isAppearanceInspectionStatus(status)
     || status === POST_EXPERIMENT_STAGING_SENT_STATUS
-    || status === POST_EXPERIMENT_STAGING_STOCKED_STATUS
-    || (
-      singleExperimentRequiresAppearance
-      && (
-        singleExperimentEventStatus === "实验已完成"
-        || normalizeLifecycleStatus("", singleExperimentRuntimeStatus) === "实验已完成"
-      )
-    );
+    || status === POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   if (shouldShowSingleAppearance && (status === "实验已完成" || status === "实验完成")) {
     status = APPEARANCE_SENT_STATUS;
   }

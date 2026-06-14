@@ -4,6 +4,7 @@ import {
   normalizeLifecycleStatus,
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
+import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import {
@@ -34,6 +35,7 @@ const APPEARANCE_STORAGE_STATUSES = new Set([
   "已到达外观检测间",
 ]);
 const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
+const LAB_DISPATCH_HISTORY_ACTIONS = new Set(["暂存间扫码出库", "外观检测间扫码出库", "接驳区扫码出库", "送至实验室"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },
   { key: "scheduled", label: STATUS_SCHEDULED },
@@ -521,6 +523,57 @@ const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode
     }
   });
   return latestStatus;
+};
+
+const resolveLatestLaboratoryDispatchSnapshot = ({
+  currentExperimentCode = "",
+  currentLab = "",
+  sample,
+  trayCode = "",
+}) => {
+  const normalizedCurrentExperimentCode = normalizeText(currentExperimentCode);
+  const normalizedCurrentLab = normalizeText(currentLab);
+  const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
+  let latestSnapshot = null;
+  let latestTime = -Infinity;
+  asArray(sample?.history).forEach((entry) => {
+    const status = normalizeLifecycleStatus(normalizeText(entry?.status || entry?.flow_status || entry?.flowStatus));
+    const action = normalizeText(entry?.action);
+    const targetType = normalizeText(entry?.target_type || entry?.targetType);
+    if (targetType && targetType !== "lab") {
+      return;
+    }
+    if (status !== LAB_RESET_STATUS && !LAB_DISPATCH_HISTORY_ACTIONS.has(action)) {
+      return;
+    }
+    if (trayCode && !historyEntryAppliesToTray(entry, sampleTrayCodes, trayCode)) {
+      return;
+    }
+    const targetLab = resolveLabDestinationName(
+      entry?.target_lab,
+      entry?.targetLab,
+      entry?.location,
+      entry?.location_desc,
+      entry?.locationDesc,
+      entry?.detail,
+    );
+    if (!targetLab) {
+      return;
+    }
+    const targetExperimentCode =
+      normalizeText(entry?.target_experiment_code || entry?.targetExperimentCode)
+      || (normalizedCurrentLab && targetLab === normalizedCurrentLab ? normalizedCurrentExperimentCode : "");
+    const eventTime = toTime(entry?.time) || 0;
+    if (eventTime > latestTime) {
+      latestSnapshot = {
+        targetExperimentCode,
+        targetLab,
+        time: eventTime,
+      };
+      latestTime = eventTime;
+    }
+  });
+  return latestSnapshot;
 };
 
 const experimentIsCompletedInSampleHistory = ({ experimentName, sample, taskCode, trayCode = "" }) =>
@@ -1503,6 +1556,21 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
       }
       const targetLab = normalizeText(tray?.target_lab || tray?.targetLab);
       const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+      const physicalTrayStatus = normalizeText(tray?.status);
+      const restoredDispatch = physicalTrayStatus === LAB_RESET_STATUS && (!targetLab || !targetExperimentCode)
+        ? resolveLatestLaboratoryDispatchSnapshot({
+            currentExperimentCode,
+            currentLab: device,
+            sample,
+            trayCode,
+          })
+        : null;
+      const restoredTargetLab = targetLab || normalizeText(restoredDispatch?.targetLab);
+      const restoredTargetExperimentCode =
+        targetExperimentCode
+        || (restoredTargetLab === normalizeText(restoredDispatch?.targetLab)
+          ? normalizeText(restoredDispatch?.targetExperimentCode)
+          : "");
       const currentExperimentHistoryStatus = resolveLatestExperimentHistoryStatus({
         experimentName,
         sample,
@@ -1512,8 +1580,8 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
       const sampleHasCurrentExperimentHistory = Boolean(currentExperimentHistoryStatus);
       const currentExperimentHistoryRank = resolveLaboratoryStatusRank(currentExperimentHistoryStatus);
       const currentExperimentProgressIsAuthoritative = sampleHasCurrentExperimentHistory && currentExperimentHistoryRank > 0;
-      const effectiveTargetLab = currentExperimentProgressIsAuthoritative ? device : targetLab;
-      const effectiveTargetExperimentCode = currentExperimentProgressIsAuthoritative ? currentExperimentCode : targetExperimentCode;
+      const effectiveTargetLab = currentExperimentProgressIsAuthoritative ? device : restoredTargetLab;
+      const effectiveTargetExperimentCode = currentExperimentProgressIsAuthoritative ? currentExperimentCode : restoredTargetExperimentCode;
       pushRow(
         trayCode,
         sampleCode,
@@ -1552,7 +1620,6 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
         row.currentExperimentHistoryStatus = currentExperimentHistoryStatus;
       }
       const currentRank = resolveLaboratoryStatusRank(row?.trayStatus);
-      const physicalTrayStatus = normalizeText(tray?.status);
       const nextStatus = physicalTrayStatus
         ? resolveCurrentExperimentTrayStatus({
             completedForCurrentExperiment: row.completedForCurrentExperiment,

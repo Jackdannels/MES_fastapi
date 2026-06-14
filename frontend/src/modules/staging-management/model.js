@@ -1011,6 +1011,16 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && !appearancePreInspectionAlreadyDispatched
         && row.statuses.some((statusItem) => normalizeText(statusItem) === "送至实验室")
         && trayTargetsPreExperimentAppearance({ experiments, row });
+      const isPostExperimentAppearanceInbound =
+        config.key === "appearance"
+        && hasCompletedExperimentStatus
+        && trayHasAllowedAppearanceSource({
+          experiments,
+          experimentRunTrays,
+          samples,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+        });
       const isPostExperimentInbound =
         !explicitAppearanceInboundStatus
         && (hasCompletedExperimentStatus || allAssignedExperimentsCompleted)
@@ -1024,6 +1034,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         });
       let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
       if (isPreExperimentAppearanceLabDispatch) {
+        status = "待入库";
+      }
+      if (isPostExperimentAppearanceInbound && !isCurrentStagingStatus(status, config)) {
         status = "待入库";
       }
       if (latestEventDispatchesToCurrentRoom && !(config.key === "appearance" && hasPreExperimentAppearanceStorageStatus)) {
@@ -1107,6 +1120,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         stockOutToday,
         taskCode: normalizeText(row.taskCode),
         isPostExperimentInbound,
+        isPostExperimentAppearanceInbound,
         isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
         originalTargetExperimentCode: normalizeText(row.originalTargetExperimentCode || row.targetExperimentCode),
         originalTargetLab: normalizeText(row.originalTargetLab || row.targetLab),
@@ -1543,6 +1557,8 @@ function applyZancunInventoryAction(input = {}) {
     const nextStockInStatus =
       matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
         ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
+          ? APPEARANCE_STOCKED_STATUS
         : matchedRow.isPostExperimentInbound && config.key === "staging"
           ? POST_EXPERIMENT_STAGING_STATUS
           : config.stockInStatus;

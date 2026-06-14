@@ -571,6 +571,57 @@ def test_storage_allows_legacy_stored_status_after_manufacturer_return_without_r
     assert storage.read("mes.samples") == attempted
 
 
+def test_storage_rejects_post_staging_stock_in_when_tray_has_unfinished_experiments(monkeypatch):
+    samples = [
+        {
+            "code": "SYLU-2026-06-025-SP-001",
+            "location": "盐雾试验室",
+            "status": "实验已完成",
+            "flow_status": "实验已完成",
+            "task_code": "SYLU-2026-06-025",
+            "trays": [{"tray_code": "SYLU-2026-06-025-TP-001", "status": "实验已完成", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiment_trays": [
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-A",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                },
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-B",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                },
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-A",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                    "run_tray_status": "实验已完成",
+                },
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
+    attempted[0]["status"] = "实验后暂存间存放"
+    attempted[0]["flow_status"] = "实验后暂存间存放"
+    attempted[0]["trays"][0]["status"] = "实验后暂存间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已进入试验间流程，不能暂存间入库。"
+    assert storage.read("mes.samples") == samples
+
+
 def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):
     samples = [
         {
