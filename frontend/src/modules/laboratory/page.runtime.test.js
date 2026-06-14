@@ -420,7 +420,7 @@ describe("LaboratoryPage runtime", () => {
           (entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode,
         );
         const experimentName = experiment?.experiment_name || experimentCode;
-        const completedStatuses = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回", "已到达暂存间"]);
+        const completedStatuses = new Set(["实验已完成", "实验已经完成", "实验完成", "实验后暂存间存放", "厂家收回", "已到达暂存间"]);
         const scopedTrayCodes = new Set(
           (snapshotState[STORAGE_KEYS.experiment_trays] || [])
             .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)

@@ -33,7 +33,7 @@ const ARRIVED_OR_LATER_SAMPLE_STATUSES = new Set([
   EXPERIMENT_STATUS_COMPLETED,
   LEGACY_STATUS_COMPLETED,
   LEGACY_STATUS_COMPLETED_ALT,
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   "已到达暂存间",
 ]);
 

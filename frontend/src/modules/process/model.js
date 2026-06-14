@@ -32,7 +32,7 @@ const TASK_STATUS_RUNNING = "任务进行中";
 const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
 const STATUS_MAINTENANCE = "维护/校准";
-const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "放置实验后暂存间", RETURNED_STATUS]);
+const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "实验后暂存间存放", RETURNED_STATUS]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const isDeviceUnavailable = (device) => {

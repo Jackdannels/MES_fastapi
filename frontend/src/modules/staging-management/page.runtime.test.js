@@ -848,8 +848,8 @@ describe("StagingManagementPage runtime", () => {
           task_code: "SYLU-2026-03-001",
           owner: "周工",
           location: "恒温恒湿间（暂存间）",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "放置实验后暂存间", quantity: 4 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "实验后暂存间存放", quantity: 4 }],
           history: [{ detail: "SYLU-2026-03-001 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:30:00" }],
         },
       ],
@@ -926,9 +926,9 @@ describe("StagingManagementPage runtime", () => {
           task_code: taskCode,
           owner: "周工",
           location: "恒温恒湿间（暂存间）",
-          status: "放置实验后暂存间",
-          flow_status: "放置实验后暂存间",
-          trays: [{ tray_code: trayCode, status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          flow_status: "实验后暂存间存放",
+          trays: [{ tray_code: trayCode, status: "实验后暂存间存放", quantity: 1 }],
         },
         {
           id: "sample-022-008",
@@ -936,9 +936,9 @@ describe("StagingManagementPage runtime", () => {
           task_code: taskCode,
           owner: "周工",
           location: "恒温恒湿间（暂存间）",
-          status: "放置实验后暂存间",
-          flow_status: "放置实验后暂存间",
-          trays: [{ tray_code: trayCode, status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          flow_status: "实验后暂存间存放",
+          trays: [{ tray_code: trayCode, status: "实验后暂存间存放", quantity: 1 }],
         },
       ],
       [STORAGE_KEYS.staging_events]: [
@@ -1037,13 +1037,13 @@ describe("StagingManagementPage runtime", () => {
 
     expect(updatedSample).toMatchObject({
       location: "恒温恒湿间（暂存间）",
-      status: "放置实验后暂存间",
-      flow_status: "放置实验后暂存间",
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
     });
     expect(updatedSample?.trays).toContainEqual(
       expect.objectContaining({
         tray_code: "SYLU-2026-04-107-TP-001",
-        status: "放置实验后暂存间",
+        status: "实验后暂存间存放",
       }),
     );
     await mounted.get('[data-testid="zancun-console-search"]').setValue("SYLU-2026-04-107-TP-001");

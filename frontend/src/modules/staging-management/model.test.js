@@ -392,9 +392,9 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-06-023",
       owner: "周工",
       location: "恒温恒湿间（暂存间）",
-      status: "放置实验后暂存间",
-      flow_status: "放置实验后暂存间",
-      trays: [{ tray_code: "SYLU-2026-06-023-TP-002", status: "放置实验后暂存间", quantity: 1 }],
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
+      trays: [{ tray_code: "SYLU-2026-06-023-TP-002", status: "实验后暂存间存放", quantity: 1 }],
     });
 
     const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
@@ -2318,8 +2318,8 @@ describe("staging-management model", () => {
         code: `${taskCode}-SP-003`,
         task_code: taskCode,
         location: "恒温恒湿间（实验后暂存间）",
-        status: "放置实验后暂存间",
-        trays: [{ tray_code: `${taskCode}-TP-003`, status: "放置实验后暂存间", quantity: 1 }],
+        status: "实验后暂存间存放",
+        trays: [{ tray_code: `${taskCode}-TP-003`, status: "实验后暂存间存放", quantity: 1 }],
       },
       {
         id: "sample-021-4",
@@ -2521,20 +2521,20 @@ describe("staging-management model", () => {
     expect(result.error).toBe("");
     expect(updatedSample).toMatchObject({
       location: "恒温恒湿间（暂存间）",
-      status: "放置实验后暂存间",
-      flow_status: "放置实验后暂存间",
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
     });
     expect(updatedSample?.trays).toContainEqual(
       expect.objectContaining({
         tray_code: "SYLU-2026-04-107-TP-001",
-        status: "放置实验后暂存间",
+        status: "实验后暂存间存放",
       }),
     );
 
     const updatedRows = buildZancunRowsFromSnapshot(result.snapshot, { now: TODAY });
     const updatedSections = buildZancunInventorySections(updatedRows);
     const updatedRow = updatedRows.find((row) => row.trayCode === "SYLU-2026-04-107-TP-001");
-    expect(updatedRow?.status).toBe("已到达暂存间");
+    expect(updatedRow?.status).toBe("实验后暂存间存放");
     expect(updatedSections.currentStagingRows.map((row) => row.trayCode)).toContain("SYLU-2026-04-107-TP-001");
   });
 
@@ -2644,7 +2644,18 @@ describe("staging-management model", () => {
 
     expect(row).toEqual(expect.objectContaining({ isPostExperimentInbound: true, status: "待入库" }));
     expect(result.error).toBe("");
-    expect(result.row).toEqual(expect.objectContaining({ status: "已到达暂存间" }));
+    expect(result.row).toEqual(expect.objectContaining({ status: "实验后暂存间存放" }));
+    const updatedSample = result.snapshot[STORAGE_KEYS.samples].find((sample) =>
+      sample.trays?.some((tray) => tray.tray_code === "SYLU-2026-06-021-TP-003"),
+    );
+    expect(updatedSample).toEqual(expect.objectContaining({
+      location: "恒温恒湿间（暂存间）",
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
+    }));
+    expect(updatedSample?.trays[0]).toEqual(expect.objectContaining({
+      status: "实验后暂存间存放",
+    }));
   });
 
   test("does not fall back to task-level experiment types for fully completed mapped trays", () => {
@@ -2692,8 +2703,8 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-03-001",
       owner: "周工",
       location: "恒温恒湿间（暂存间）",
-      status: "放置实验后暂存间",
-      trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "放置实验后暂存间", quantity: 4 }],
+      status: "实验后暂存间存放",
+      trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "实验后暂存间存放", quantity: 4 }],
       history: [
         { detail: "SYLU-2026-03-001 / 四综合试验 / 实验已完成", time: "2026-04-01T10:30:00" },
         { detail: "SYLU-2026-03-001 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:30:00" },
@@ -2721,7 +2732,7 @@ describe("staging-management model", () => {
     });
 
     expect(detail).toMatchObject({
-      status: "已到达暂存间",
+      status: "实验后暂存间存放",
       targetExperimentName: "",
       targetLab: "",
     });

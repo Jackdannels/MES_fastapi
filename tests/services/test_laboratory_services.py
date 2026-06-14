@@ -2,7 +2,10 @@ import pytest
 
 from app.core.legacy_fallback import reset_legacy_fallback_hits
 from app.services import mq_event_processor
-from app.services.laboratory_completion import complete_storage_laboratory_experiment
+from app.services.laboratory_completion import (
+    complete_storage_laboratory_experiment,
+    tray_assigned_experiments_are_completed,
+)
 from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
@@ -297,6 +300,86 @@ def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handove
         target_experiment_code="EXP-VIB",
         experiments=experiments,
     )
+
+
+def test_staging_arrival_does_not_complete_assigned_experiment_for_post_staging_rules():
+    experiment_trays = [
+        {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-1"},
+        {"task_code": "TASK-1", "experiment_code": "EXP-B", "tray_code": "TP-1"},
+    ]
+    experiment_run_trays = [
+        {
+            "task_code": "TASK-1",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-1",
+            "run_tray_status": "实验已完成",
+        },
+        {
+            "task_code": "TASK-1",
+            "experiment_code": "EXP-B",
+            "tray_code": "TP-1",
+            "run_tray_status": "已到达暂存间",
+        },
+    ]
+
+    assert not tray_assigned_experiments_are_completed(
+        task_code="TASK-1",
+        tray_code="TP-1",
+        experiment_trays=experiment_trays,
+        experiment_run_trays=experiment_run_trays,
+    )
+
+
+def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn():
+    from app.services.appearance_inspection import pre_experiment_appearance_already_dispatched
+
+    sample = {
+        "task_code": "TASK-1",
+        "location": "盐雾试验室",
+        "status": "送至实验室",
+        "flow_status": "送至实验室",
+        "trays": [
+            {
+                "tray_code": "TP-1",
+                "status": "送至实验室",
+                "target_lab": "盐雾试验室",
+                "target_experiment_code": "EXP-SALT",
+            }
+        ],
+    }
+    tray = sample["trays"][0]
+    staging_events = [
+        {
+            "tray_code": "TP-1",
+            "task_code": "TASK-1",
+            "room": "appearance",
+            "action": "stock_in",
+            "time": "2026-06-06T21:40:00",
+        },
+        {
+            "tray_code": "TP-1",
+            "task_code": "TASK-1",
+            "room": "appearance",
+            "action": "stock_out",
+            "target_lab": "盐雾试验室",
+            "target_experiment_code": "EXP-SALT",
+            "time": "2026-06-06T21:50:00",
+        },
+    ]
+
+    assert pre_experiment_appearance_already_dispatched(sample, tray, staging_events)
+
+    withdrawn_events = [
+        *staging_events,
+        {
+            "tray_code": "TP-1",
+            "task_code": "TASK-1",
+            "room": "appearance",
+            "action": "stock_out_withdraw",
+            "time": "2026-06-06T21:55:00",
+        },
+    ]
+    assert not pre_experiment_appearance_already_dispatched(sample, tray, withdrawn_events)
 
 
 def test_mqtt_sample_scope_delegates_to_shared_laboratory_scope(monkeypatch):

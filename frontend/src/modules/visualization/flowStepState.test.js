@@ -7,7 +7,7 @@ import {
 
 describe("visualization flow step state", () => {
   test("marks actual reached steps with time as done and exposes time only in title", () => {
-    const step = { label: "放置实验后暂存间", reached: true, time: "2026-06-07T16:31:49+08:00" };
+    const step = { label: "实验后暂存间存放", reached: true, time: "2026-06-07T16:31:49+08:00" };
 
     expect(visualFlowStepClass(step)).toMatchObject({
       "is-active": false,
@@ -19,7 +19,7 @@ describe("visualization flow step state", () => {
   });
 
   test("marks reached non-completion steps without time as inferred", () => {
-    const step = { label: "放置实验后暂存间", reached: true, time: "" };
+    const step = { label: "实验后暂存间存放", reached: true, time: "" };
 
     expect(visualFlowStepClass(step)).toMatchObject({
       "is-active": false,

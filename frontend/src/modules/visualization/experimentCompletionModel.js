@@ -4,8 +4,7 @@ import { asArray, normalizeText, resolveExperimentCode, resolveTaskCode, resolve
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
 const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
-  "放置实验后暂存间",
-  "已到达暂存间",
+  "实验后暂存间存放",
   "厂家收回",
 ]);
 const resolveRelationStatus = (relation) =>

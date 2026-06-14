@@ -1,6 +1,10 @@
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
-import { APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS } from "@/modules/samples/sampleFlow.constants";
+import {
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+  POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+} from "@/modules/samples/sampleFlow.constants";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
+import { buildZancunRowsFromSnapshot } from "@/modules/staging-management/model";
 import {
   asArray,
   buildExperimentByTaskAndCode,
@@ -27,6 +31,15 @@ const STAGING_KIND_LABELS = {
   planned: "计划暂存",
   "post-test": "实验后暂存间",
   appearance: "外观检测间存放",
+};
+const STORAGE_SNAPSHOT_KEYS = {
+  tasks: "mes.tasks",
+  schedules: "mes.schedules",
+  experiments: "mes.experiments",
+  experiment_run_trays: "mes.experiment_run_trays",
+  experiment_trays: "mes.experiment_trays",
+  samples: "mes.samples",
+  staging_events: "mes.staging_events",
 };
 
 const resolveTaskName = (task) => normalizeText(task?.name || task?.task_name || task?.code);
@@ -90,7 +103,10 @@ const isAppearanceStatus = (status) => APPEARANCE_CURRENT_STATUSES.has(normalize
 const isPlannedAppearanceStatus = (status) => PLANNED_APPEARANCE_STATUSES.has(normalizeText(status));
 const isAppearanceLocation = (value) => normalizeText(value).includes(APPEARANCE_LOCATION_KEYWORD);
 const isPostTestStagingLocation = (value) => normalizeText(value).includes(POST_TEST_STAGING_KEYWORD);
-const isPostTestStagingStatus = (status) => normalizeText(status) === "放置实验后暂存间";
+const POST_TEST_STAGING_STATUSES = new Set([
+  POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+]);
+const isPostTestStagingStatus = (status) => POST_TEST_STAGING_STATUSES.has(normalizeText(status));
 const isPlannedStagingStatus = (status) => PLANNED_STAGING_STATUSES.has(normalizeText(status));
 const isReturnedStatus = (status) => normalizeLifecycleStatus("", status) === "厂家收回";
 const isStagingDestination = (value) => {
@@ -113,6 +129,63 @@ const buildStagingKind = (kind, status = "", label = "") => ({
   label: normalizeText(label) || STAGING_KIND_LABELS[kind],
   status: normalizeText(status) || STAGING_KIND_LABELS[kind],
 });
+
+const buildStorageSnapshot = (input = {}) => ({
+  [STORAGE_SNAPSHOT_KEYS.tasks]: input.tasks,
+  [STORAGE_SNAPSHOT_KEYS.schedules]: input.schedules,
+  [STORAGE_SNAPSHOT_KEYS.experiments]: input.experiments,
+  [STORAGE_SNAPSHOT_KEYS.experiment_run_trays]: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
+  [STORAGE_SNAPSHOT_KEYS.experiment_trays]: input.experimentTrays || input.experiment_trays,
+  [STORAGE_SNAPSHOT_KEYS.samples]: input.samples,
+  [STORAGE_SNAPSHOT_KEYS.staging_events]: input.stagingEvents || input.staging_events,
+});
+
+const buildStorageRowMap = (rows) =>
+  asArray(rows).reduce((map, row) => {
+    const taskCode = normalizeText(row?.taskCode);
+    const trayCode = normalizeText(row?.trayCode);
+    if (taskCode && trayCode) {
+      map.set(`${taskCode}::${trayCode}`, row);
+    }
+    return map;
+  }, new Map());
+
+const isStorageRowCurrent = (row, statuses) => statuses.has(normalizeText(row?.status));
+
+const resolveStorageBackedStagingKind = ({ appearanceRow, stagingRow }) => {
+  if (appearanceRow) {
+    if (normalizeText(appearanceRow.status) === "待入库") {
+      return buildStagingKind("appearance-planned", "送至外观检测间");
+    }
+    if (isStorageRowCurrent(appearanceRow, APPEARANCE_CURRENT_STATUSES)) {
+      return buildStagingKind("appearance", appearanceRow.status);
+    }
+  }
+  if (stagingRow) {
+    if (normalizeText(stagingRow.status) === "待入库") {
+      return buildStagingKind("planned", "送至暂存间");
+    }
+    if (isPostTestStagingStatus(stagingRow.status)) {
+      return buildStagingKind("post-test", POST_EXPERIMENT_STAGING_STOCKED_STATUS);
+    }
+    if (isStorageRowCurrent(stagingRow, STAGING_CURRENT_STATUSES) || normalizeText(stagingRow.status) === "到货") {
+      return buildStagingKind("current", "已到达暂存间");
+    }
+  }
+  return null;
+};
+
+const plannedKindHasExplicitStagingEvidence = (row, latestEvent) => {
+  const latestAction = normalizeText(latestEvent?.action);
+  return row.statuses.some((status) => isPlannedStagingStatus(status))
+    || isStockOutToStaging(latestEvent)
+    || PLANNED_STAGING_ACTIONS.has(latestAction);
+};
+
+const plannedKindRequiresStorageConfirmation = (row, stagingKind, latestEvent) =>
+  stagingKind?.kind === "planned"
+  && row.allAssignedExperimentsCompleted
+  && !plannedKindHasExplicitStagingEvidence(row, latestEvent);
 
 const collectTrayExperimentCodes = ({ experimentTrays, taskCode, trayCode }) => {
   const codes = new Set();
@@ -187,7 +260,7 @@ const resolveStagingTrayKind = (row, latestEvent) => {
     return buildStagingKind("appearance", appearanceStatus);
   }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
-    return buildStagingKind("post-test", "放置实验后暂存间");
+    return buildStagingKind("post-test", POST_EXPERIMENT_STAGING_STOCKED_STATUS);
   }
   const currentStatus = row.statuses.find((status) => isCurrentStagingStatus(status));
   if (currentStatus) {
@@ -240,6 +313,10 @@ function buildStagingSamplesView(input = {}) {
     experimentTrays,
   });
   const latestEventByTray = buildLatestStagingEventByTray(input.stagingEvents || input.staging_events);
+  const storageSnapshot = buildStorageSnapshot(input);
+  const storageNow = input.now || new Date();
+  const stagingRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "staging" }));
+  const appearanceRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "appearance" }));
   const usedSystemTrayCount = countUsedSystemTrays({ latestEventByTray, samples });
   const trayMap = new Map();
 
@@ -346,8 +423,17 @@ function buildStagingSamplesView(input = {}) {
 
   const trays = Array.from(trayMap.values())
     .map((row) => {
+      const rowKey = `${row.taskCode}::${row.trayCode}`;
       const latestEvent = latestEventByTray.get(row.trayCode);
-      const stagingKind = resolveStagingTrayKind(row, latestEvent);
+      const storageBackedKind = resolveStorageBackedStagingKind({
+        appearanceRow: appearanceRowByKey.get(rowKey),
+        stagingRow: stagingRowByKey.get(rowKey),
+      });
+      const legacyKind = resolveStagingTrayKind(row, latestEvent);
+      const stagingKind = legacyKind || (storageBackedKind?.kind === "planned" ? null : storageBackedKind);
+      if (plannedKindRequiresStorageConfirmation(row, stagingKind, latestEvent) && !storageBackedKind) {
+        return null;
+      }
       if (!stagingKind) {
         return null;
       }

@@ -14,14 +14,14 @@ import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, ST
 const STARTED_STATUSES = new Set([
   EXPERIMENT_STATUS_RUNNING,
   EXPERIMENT_STATUS_COMPLETED,
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   "送至外观检测间",
   "外观检测间存放",
   RETURNED_STATUS,
 ]);
 const COMPLETED_STATUSES = new Set([
   EXPERIMENT_STATUS_COMPLETED,
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   "送至外观检测间",
   "外观检测间存放",
   RETURNED_STATUS,

@@ -7,6 +7,8 @@ import {
   EXPERIMENT_FLOW_STATUS_LABELS,
   FLOW_STEP_INDEX_BY_KEY,
   FLOW_STEP_KEY_BY_LABEL,
+  POST_EXPERIMENT_STAGING_SENT_STATUS,
+  POST_EXPERIMENT_STAGING_STOCKED_STATUS,
   RUNNING_EXPERIMENT_RUN_STATUSES,
   SAMPLE_FLOW_STEPS,
   TRAY_STATUS_OPTIONS,
@@ -199,7 +201,9 @@ const buildTrayExperimentFlow = (input = {}) => {
     : "";
   const inputCurrentExperimentCode = normalizeText(input.currentExperimentCode);
   const dispatchTargetExperimentCode = normalizeText(dispatchTarget.targetExperimentCode);
-  const trayTargetExperimentCode = dispatchTargetExperimentCode || targetLabExperimentCode;
+  const trayTargetExperimentCode =
+    dispatchTargetExperimentCode
+    || (input.preferCurrentExperimentCode && inputCurrentExperimentCode ? "" : targetLabExperimentCode);
   const trayTargetExperiment = trayTargetExperimentCode
     ? orderedExperiments.find((experiment) => experiment.code === trayTargetExperimentCode)
     : null;
@@ -591,7 +595,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
       }
       const trayStatus = normalizeLifecycleStatus(sample?.location, rawTrayStatus);
       const trayStatusLabel = isPostRetentionLocation(sample?.location) && isAmbiguousStagingStatus(trayStatus)
-        ? "放置实验后暂存间"
+        ? POST_EXPERIMENT_STAGING_STOCKED_STATUS
         : trayStatus;
       recordLatestFlowTime(trayStatusLabel, tray?.updated_at, "fallback");
     });
@@ -601,7 +605,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location);
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
-      const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].includes("放置实验后暂存间");
+      const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].some((label) =>
+        label === POST_EXPERIMENT_STAGING_SENT_STATUS || label === POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+      );
       const actualAppearanceStorage =
         statusLabel === APPEARANCE_STOCKED_STATUS
         && normalizeText(entry?.location).includes("外观检测间");
@@ -837,9 +843,6 @@ function buildTrayFlowView(input = {}) {
         (latest, experiment, index) => Math.max(latest, completedExperimentTime(experiment, index)),
         0,
       );
-      const routeSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
-        ? activeExperiment.routeSteps.filter(Boolean)
-        : buildExperimentRouteSteps();
       const explicitRouteStatus = normalizeText(activeExperiment?.routeStatus);
       const lifecycleRouteStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
       const normalizedRouteStatus = explicitRouteStatus
@@ -847,6 +850,16 @@ function buildTrayFlowView(input = {}) {
         : activeExperiment?.unstarted && !lifecycleRouteStatus
           ? ""
           : lifecycleRouteStatus;
+      const baseRouteSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
+        ? activeExperiment.routeSteps.filter(Boolean)
+        : buildExperimentRouteSteps();
+      const routeSteps = normalizedRouteStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        ? baseRouteSteps.flatMap((label) =>
+            label === "已到达暂存间"
+              ? [label, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]
+              : [label],
+          )
+        : baseRouteSteps;
       const routeStatusIndex = routeSteps.findIndex((label) => label === normalizedRouteStatus);
       const suppressRouteDestinationLab = Boolean(activeExperiment?.suppressDestinationLab);
       const shouldUseExperimentDestinationLab =
@@ -929,10 +942,23 @@ function buildTrayFlowView(input = {}) {
       experimentsAfterCurrent.forEach((experiment, index) => {
         pushExperimentStep(experiment, index + experimentsBeforeCurrent.length + 1);
       });
-      const postTestStagingIndex = pushStep({
-        key: `route-post-staging-${currentExperimentIndex}`,
-        label: "放置实验后暂存间",
-      });
+      const shouldShowPostTestStagingSent =
+        normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+        || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+      const postTestStagingSentIndex = shouldShowPostTestStagingSent
+        ? pushStep({
+            key: `route-post-staging-sent-${currentExperimentIndex}`,
+            label: POST_EXPERIMENT_STAGING_SENT_STATUS,
+          })
+        : -1;
+      const shouldShowPostTestStagingStocked =
+        normalizedRouteStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS;
+      const postTestStagingIndex = shouldShowPostTestStagingStocked
+        ? pushStep({
+            key: `route-post-staging-stocked-${currentExperimentIndex}`,
+            label: POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+          })
+        : -1;
       const returnedIndex = pushStep({
         key: `route-returned-${currentExperimentIndex}`,
         label: "厂家收回",
@@ -949,6 +975,16 @@ function buildTrayFlowView(input = {}) {
             }
           });
         });
+      };
+      const markPostTestStagingSentReached = () => {
+        if (postTestStagingSentIndex >= 0) {
+          steps[postTestStagingSentIndex].reached = true;
+        }
+      };
+      const markPostTestStagingStockedReached = () => {
+        if (postTestStagingIndex >= 0) {
+          steps[postTestStagingIndex].reached = true;
+        }
       };
 
       if (
@@ -1076,7 +1112,15 @@ function buildTrayFlowView(input = {}) {
             steps[stepIndex].reached = true;
           });
         }
-      } else if (normalizedRouteStatus === "放置实验后暂存间") {
+      } else if (normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS) {
+        currentStatus = normalizedRouteStatus;
+        activeIndex = postTestStagingSentIndex;
+        markCompletedAppearanceReached();
+        routeIndexes.forEach((stepIndex) => {
+          steps[stepIndex].reached = true;
+        });
+        steps[currentExperimentIndexInSteps].reached = true;
+      } else if (normalizedRouteStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {
         currentStatus = normalizedRouteStatus;
         activeIndex = postTestStagingIndex;
         markCompletedAppearanceReached();
@@ -1084,6 +1128,7 @@ function buildTrayFlowView(input = {}) {
           steps[stepIndex].reached = true;
         });
         steps[currentExperimentIndexInSteps].reached = true;
+        markPostTestStagingSentReached();
       } else if (normalizedRouteStatus === APPEARANCE_SENT_STATUS && activeAppearanceIndexes) {
         currentStatus = normalizedRouteStatus;
         activeIndex = activeAppearanceIndexes.sent;
@@ -1120,7 +1165,8 @@ function buildTrayFlowView(input = {}) {
             steps[stepIndex].reached = true;
           });
           steps[currentExperimentIndexInSteps].reached = true;
-          steps[postTestStagingIndex].reached = true;
+          markPostTestStagingSentReached();
+          markPostTestStagingStockedReached();
         }
       } else if (normalizedRouteStatus === "样品运输中") {
         currentStatus = normalizedRouteStatus;
@@ -1189,18 +1235,34 @@ function buildTrayFlowView(input = {}) {
             stocked: pushStep({ key: "route-final-appearance-stocked", label: APPEARANCE_STOCKED_STATUS }),
           }
         : null;
+      const shouldShowPostTestStagingSent =
+        normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+        || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+      const postTestStagingSentIndex = shouldShowPostTestStagingSent
+        ? pushStep({
+            key: "route-final-post-staging-sent",
+            label: POST_EXPERIMENT_STAGING_SENT_STATUS,
+          })
+        : -1;
       const postTestStagingIndex = pushStep({
-        key: "route-final-post-staging",
-        label: "放置实验后暂存间",
+        key: "route-final-post-staging-stocked",
+        label: POST_EXPERIMENT_STAGING_STOCKED_STATUS,
       });
       const returnedIndex = pushStep({
         key: "route-final-returned",
         label: "厂家收回",
       });
-      if (normalizedFinalStatus === "放置实验后暂存间" || normalizedFinalStatus === "已到达暂存间") {
+      if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS) {
+        activeIndex = postTestStagingSentIndex;
+        steps[completedIndex].reached = true;
+        currentStatus = POST_EXPERIMENT_STAGING_SENT_STATUS;
+      } else if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "已到达暂存间") {
         activeIndex = postTestStagingIndex;
         steps[completedIndex].reached = true;
-        currentStatus = "放置实验后暂存间";
+        if (postTestStagingSentIndex >= 0) {
+          steps[postTestStagingSentIndex].reached = true;
+        }
+        currentStatus = POST_EXPERIMENT_STAGING_STOCKED_STATUS;
       } else if (normalizedFinalStatus === APPEARANCE_SENT_STATUS && finalAppearanceIndexes) {
         activeIndex = finalAppearanceIndexes.sent;
         steps[completedIndex].reached = true;
@@ -1220,6 +1282,9 @@ function buildTrayFlowView(input = {}) {
         if (finalAppearanceIndexes) {
           steps[finalAppearanceIndexes.sent].reached = true;
           steps[finalAppearanceIndexes.stocked].reached = true;
+        }
+        if (postTestStagingSentIndex >= 0) {
+          steps[postTestStagingSentIndex].reached = true;
         }
         steps[postTestStagingIndex].reached = true;
         currentStatus = normalizedFinalStatus;
@@ -1270,13 +1335,18 @@ function buildTrayFlowView(input = {}) {
     : "";
   const singleExperimentEventStatus = normalizeLifecycleStatus("", singleExperimentEvent?.status);
   let status = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status) || SAMPLE_FLOW_STEPS[0].label;
+  const statusIsPostExperimentStaging =
+    status === POST_EXPERIMENT_STAGING_SENT_STATUS
+    || status === POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   if (
-    singleExperimentEventStatus === "实验已完成"
+    !statusIsPostExperimentStaging
+    && singleExperimentEventStatus === "实验已完成"
     && experimentFlowStatusRank(singleExperimentEventStatus) >= experimentFlowStatusRank(status)
   ) {
     status = singleExperimentEventStatus;
   } else if (
-    singleExperimentRuntimeStatus
+    !statusIsPostExperimentStaging
+    && singleExperimentRuntimeStatus
     && experimentFlowStatusRank(singleExperimentRuntimeStatus) >= experimentFlowStatusRank(status)
   ) {
     status = singleExperimentRuntimeStatus;
@@ -1284,6 +1354,8 @@ function buildTrayFlowView(input = {}) {
   const singleExperimentRequiresAppearance = singleExperiment && experimentRequiresAppearanceInspection(singleExperiment);
   const shouldShowSingleAppearance =
     isAppearanceInspectionStatus(status)
+    || status === POST_EXPERIMENT_STAGING_SENT_STATUS
+    || status === POST_EXPERIMENT_STAGING_STOCKED_STATUS
     || (
       singleExperimentRequiresAppearance
       && (
@@ -1295,7 +1367,7 @@ function buildTrayFlowView(input = {}) {
     status = APPEARANCE_SENT_STATUS;
   }
   const isPreExperimentAppearanceStatus = status === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
-  const singleFlowSteps = isPreExperimentAppearanceStatus
+  const baseSingleFlowSteps = isPreExperimentAppearanceStatus
     ? SAMPLE_FLOW_STEPS.flatMap((step) =>
         step.key === "arrived_staging"
           ? [
@@ -1315,6 +1387,19 @@ function buildTrayFlowView(input = {}) {
           : [step],
       )
     : SAMPLE_FLOW_STEPS;
+  const shouldShowSinglePostTestStagingSent =
+    status === POST_EXPERIMENT_STAGING_SENT_STATUS
+    || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+  const singleFlowSteps = shouldShowSinglePostTestStagingSent
+    ? baseSingleFlowSteps.flatMap((step) =>
+        step.key === "post_test_staging"
+          ? [
+              { key: "post_test_staging_sent", label: POST_EXPERIMENT_STAGING_SENT_STATUS },
+              step,
+            ]
+          : [step],
+      )
+    : baseSingleFlowSteps;
   const currentStepIndex = singleFlowSteps.findIndex((step) => step.label === status);
   const currentKey = currentStepIndex >= 0 ? singleFlowSteps[currentStepIndex].key : FLOW_STEP_KEY_BY_LABEL.get(status) || SAMPLE_FLOW_STEPS[0].key;
   const currentIndex = currentStepIndex >= 0 ? currentStepIndex : Math.max(0, singleFlowSteps.findIndex((step) => step.key === currentKey));

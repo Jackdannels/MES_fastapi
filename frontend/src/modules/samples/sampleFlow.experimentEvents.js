@@ -37,6 +37,38 @@ const buildSingleExperimentStatusLabel = (experimentName, status) => {
   return normalizedStatus;
 };
 
+const isReturnedStatus = (value, location = "") =>
+  normalizeLifecycleStatus(location, value) === "厂家收回" || normalizeText(value) === "厂家收回";
+
+const sampleHasOnlyCurrentTray = (sample, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  const trayCodes = uniqueNormalizedTexts(
+    asArray(sample?.trays).map((tray) => tray?.tray_code || tray?.trayCode || tray?.tray_no || tray?.trayNo),
+  );
+  return trayCodes.length === 1 && trayCodes[0] === normalizedTrayCode;
+};
+
+const sampleCurrentTrayIsReturned = (sample, trayCode) => {
+  if (!sampleHasOnlyCurrentTray(sample, trayCode)) {
+    return false;
+  }
+  if (isReturnedStatus(sample?.status, sample?.location) || isReturnedStatus(sample?.location)) {
+    return true;
+  }
+  return asArray(sample?.trays).some((tray) =>
+    normalizeText(tray?.tray_code || tray?.trayCode || tray?.tray_no || tray?.trayNo) === normalizeText(trayCode)
+    && isReturnedStatus(tray?.status || tray?.tray_status || tray?.trayStatus, sample?.location),
+  );
+};
+
+const shouldRetainReturnedSingleTrayCompletedEvent = ({ parsed, sample, trayCode, trayScoped }) =>
+  !trayScoped
+  && normalizeLifecycleStatus("", parsed?.status) === "实验已完成"
+  && sampleCurrentTrayIsReturned(sample, trayCode);
+
 const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) => {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
@@ -106,7 +138,15 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
         return;
       }
       const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode);
-      if (!trayScoped) {
+      if (
+        !trayScoped
+        && !shouldRetainReturnedSingleTrayCompletedEvent({
+          parsed,
+          sample,
+          trayCode: normalizedTrayCode,
+          trayScoped,
+        })
+      ) {
         return;
       }
       setExperimentEvent(parsed, currentTime, trayScoped);

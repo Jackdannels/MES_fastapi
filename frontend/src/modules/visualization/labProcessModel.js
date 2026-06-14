@@ -1,4 +1,4 @@
-import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
+import { labIdentityMatches, resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import { buildTrayFlowView, normalizeLifecycleStatus, SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 import {
   asArray,
@@ -91,6 +91,11 @@ const resolveTrayTargetLab = (tray) => normalizeText(tray?.target_lab || tray?.t
 const resolveTrayTargetExperimentCode = (tray) => normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
 const resolveRelationLabName = (relation) =>
   resolveLabDevice(relation?.schedule) || resolveLabDevice(relation?.experiment);
+const LAB_FLOW_OWNER_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中"]);
+const lifecycleStatusBelongsToLabFlow = (status, location = "") =>
+  LAB_FLOW_OWNER_STATUSES.has(normalizeLifecycleStatus(location, status));
+const textMatchesLab = (value, lab) =>
+  Boolean(normalizeText(value)) && labIdentityMatches({ location: value }, lab);
 
 const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
   const map = new Map();
@@ -251,9 +256,18 @@ const buildTrayRowsForLab = ({
       if (!scheduledLabMatches) {
         return;
       }
+      const sampleLocationMatchesLab = textMatchesLab(sample?.location, lab || labName);
+      const targetLabMatchesLab = textMatchesLab(targetLab, lab || labName);
+      const currentLabExperimentCode =
+        !activeTargetExperimentCode
+        && incompleteLabRelations.length === 1
+        && lifecycleStatusBelongsToLabFlow(lifecycleStatus, lifecycleLocation)
+        && (sampleLocationMatchesLab || targetLabMatchesLab)
+          ? incompleteLabRelations[0].experimentCode
+          : "";
 
       const entry = {
-        currentExperimentCode: activeTargetExperimentCode,
+        currentExperimentCode: activeTargetExperimentCode || currentLabExperimentCode,
         dispatchTargetLab: activeTargetLab,
         lifecycleLocation,
         lifecycleStatus,
@@ -293,6 +307,7 @@ const buildTrayRowsForLab = ({
         experimentTrays,
         experiments,
         location: entry.lifecycleLocation,
+        preferCurrentExperimentCode: Boolean(entry.currentExperimentCode),
         samples,
         schedules,
         status: entry.lifecycleStatus,

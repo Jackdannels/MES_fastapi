@@ -4,6 +4,8 @@ import {
   APPEARANCE_STOCKED_STATUS,
   DEFAULT_LABELS,
   FLOW_STATUS_LABELS,
+  POST_EXPERIMENT_STAGING_SENT_STATUS,
+  POST_EXPERIMENT_STAGING_STOCKED_STATUS,
   SAMPLE_FLOW_STEPS,
   TEST_LABS,
 } from "./sampleFlow.constants";
@@ -46,6 +48,9 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
   const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
 
+  if (isPostRetention && isAmbiguousStagingStatus(currentStatus)) {
+    return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
+  }
   if (FLOW_STATUS_LABELS.has(currentStatus)) {
     return currentStatus === "运输中" ? "样品运输中" : currentStatus;
   }
@@ -62,13 +67,13 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
     return currentStatus;
   }
   if (currentStatus === "放置暂存间") {
-    return "放置实验后暂存间";
+    return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
   if (
     currentStatus === normalizedLabels.sampleStored
     && normalizedLabels.sampleStored === "到货"
   ) {
-    return isPostRetention ? "放置实验后暂存间" : isPreRetention ? "已到达暂存间" : "到货";
+    return isPostRetention ? POST_EXPERIMENT_STAGING_STOCKED_STATUS : isPreRetention ? "已到达暂存间" : "到货";
   }
   if (currentStatus === "实验完成" || currentStatus === "实验已完成") {
     return "实验已完成";
@@ -80,7 +85,9 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
     return "实验准备就绪";
   }
   if (isPostRetention) {
-    return "放置实验后暂存间";
+    return currentStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+      ? POST_EXPERIMENT_STAGING_SENT_STATUS
+      : POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
   if (normalizedLocation.includes(APPEARANCE_INSPECTION_LOCATION)) {
     return currentStatus || APPEARANCE_STOCKED_STATUS;

@@ -21,7 +21,7 @@ const STARTED_TRAY_STATUSES = new Set([
   "实验完成",
   "送至外观检测间",
   "外观检测间存放",
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   "厂家收回",
 ]);
 const COMPLETED_TRAY_STATUSES = new Set([
@@ -29,7 +29,7 @@ const COMPLETED_TRAY_STATUSES = new Set([
   "实验完成",
   "送至外观检测间",
   "外观检测间存放",
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   "厂家收回",
 ]);
 import {

@@ -25,6 +25,8 @@ router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
 APPEARANCE_STOCKED_STATUS = "外观检测间存放"
+POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
+POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -34,7 +36,8 @@ BLOCK_WITHDRAW_TRAY_STATUSES = {
     "实验已完成",
     "实验完成",
     "实验已经完成",
-    "放置实验后暂存间",
+    POST_EXPERIMENT_STAGING_SENT_STATUS,
+    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
     "外观检测间存放",
     "厂家收回",

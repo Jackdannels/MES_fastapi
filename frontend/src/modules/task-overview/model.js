@@ -23,7 +23,7 @@ const SCHEDULED_EXPERIMENT_STATUSES = new Set([
   "实验准备就绪",
   "工装夹具安装",
   EXPERIMENT_STATUS_RUNNING,
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   EXPERIMENT_COMPLETED_STATUS,
 ]);
 const STARTED_EXPERIMENT_STATUSES = new Set([
@@ -32,7 +32,7 @@ const STARTED_EXPERIMENT_STATUSES = new Set([
   "实验完成",
   "送至外观检测间",
   "外观检测间存放",
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   STATUS_RETENTION,
 ]);
 const COMPLETED_EXPERIMENT_STATUSES = new Set([
@@ -40,7 +40,7 @@ const COMPLETED_EXPERIMENT_STATUSES = new Set([
   "实验完成",
   "送至外观检测间",
   "外观检测间存放",
-  "放置实验后暂存间",
+  "实验后暂存间存放",
   STATUS_RETENTION,
 ]);
 

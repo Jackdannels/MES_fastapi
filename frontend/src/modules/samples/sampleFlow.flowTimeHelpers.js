@@ -1,6 +1,8 @@
 import {
   APPEARANCE_STOCKED_STATUS,
   FLOW_STEP_KEY_BY_LABEL,
+  POST_EXPERIMENT_STAGING_SENT_STATUS,
+  POST_EXPERIMENT_STAGING_STOCKED_STATUS,
   SAMPLE_FLOW_STEPS,
 } from "./sampleFlow.constants";
 import { normalizeText } from "./sampleFlow.shared";
@@ -18,7 +20,7 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
     return "";
   }
   if (isPostRetentionLocation(location) && (isAmbiguousStagingStatus(text) || text.includes("已到达暂存间"))) {
-    return "放置实验后暂存间";
+    return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
   if (isAppearanceInspectionStatus(text)) {
     return text === "已到达外观检测间" ? APPEARANCE_STOCKED_STATUS : text;
@@ -32,10 +34,17 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
   if (text === "实验完成" || text === "试验完成") {
     return "实验已完成";
   }
-  if (text === "放置实验后暂存" || text === "实验后暂存") {
-    return "放置实验后暂存间";
+  if (
+    text === POST_EXPERIMENT_STAGING_SENT_STATUS
+    || text === POST_EXPERIMENT_STAGING_STOCKED_STATUS
+    || text === "实验后暂存"
+  ) {
+    return text === POST_EXPERIMENT_STAGING_SENT_STATUS
+      ? POST_EXPERIMENT_STAGING_SENT_STATUS
+      : POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
-  if (text === "收回" || text === "已收回" || text.includes("厂家收回")) {
+  if (
+    text === "收回" || text === "已收回" || text.includes("厂家收回")) {
     return "厂家收回";
   }
   const matchedStep = SAMPLE_FLOW_STEPS.find((step) => text.includes(step.label));
@@ -43,6 +52,9 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
     return matchedStep.label;
   }
   const normalized = normalizeLifecycleStatus(location, text);
+  if (normalized === POST_EXPERIMENT_STAGING_SENT_STATUS || normalized === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {
+    return normalized;
+  }
   return FLOW_STEP_KEY_BY_LABEL.has(normalized) ? normalized : "";
 };
 

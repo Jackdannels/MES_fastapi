@@ -1515,7 +1515,7 @@ def test_laboratory_withdraw_current_uses_sample_status_when_tray_status_lags(mo
 
 
 def test_laboratory_withdraw_current_rejects_running_or_finished_states(monkeypatch):
-    for blocked_status in ["实验进行中", "实验已完成", "放置实验后暂存间", "厂家收回"]:
+    for blocked_status in ["实验进行中", "实验已完成", "实验后暂存间存放", "厂家收回"]:
         client, storage = build_client(
             monkeypatch,
             base_payloads([sample_with_history(blocked_status, "霉菌试验室", [])]),

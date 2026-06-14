@@ -656,7 +656,7 @@ const openDestinationModal = (detail) => {
 const manufacturerReturnSafe = computed(() =>
   activeRoom.value === "staging"
   && (
-    activeDetail.status === "放置实验后暂存间"
+    activeDetail.status === "实验后暂存间存放"
     || activeDetail.isPostExperimentInbound
   ),
 );
@@ -760,7 +760,7 @@ const completeScan = async () => {
     return;
   }
 
-  if (!["到货", "已到达暂存间", "放置实验后暂存间", "外观检测间存放", "实验前外观检测存放"].includes(detail.status)) {
+  if (!["到货", "已到达暂存间", "实验后暂存间存放", "外观检测间存放", "实验前外观检测存放"].includes(detail.status)) {
     scanWarning.value = activeRoom.value === "appearance" ? "该托盘尚未完成外观检测间扫码入库。" : "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;

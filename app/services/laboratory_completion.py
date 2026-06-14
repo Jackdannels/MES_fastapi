@@ -19,9 +19,8 @@ EXPERIMENT_TRAY_FINISHED_STATUSES = {
     COMPLETED_STATUS,
     "实验完成",
     "实验已经完成",
-    "放置实验后暂存间",
+    "实验后暂存间存放",
     "厂家收回",
-    "已到达暂存间",
     APPEARANCE_INSPECTION_DISPATCH_STATUS,
     APPEARANCE_INSPECTION_STOCKED_STATUS,
 }

@@ -41,7 +41,6 @@ const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays = [],
     && resolveExperimentCode(entry) === experimentCode
     && (
       isExperimentCompletedStatus(resolveRunStatus(entry))
-      || resolveRunStatus(entry) === "放置实验后暂存间"
       || resolveRunStatus(entry) === "送至外观检测间"
       || resolveRunStatus(entry) === "外观检测间存放"
       || resolveRunStatus(entry) === RETURNED_STATUS

@@ -11,7 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
-from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
+from app.services.appearance_inspection import (
+    APPEARANCE_EVENT_ROOM,
+    APPEARANCE_STOCK_OUT_ACTION,
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
+)
+from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock, clear_fixture_ready_marker
 from app.services.storage_atomic import merge_concurrent_storage_updates
 
@@ -27,6 +32,11 @@ TRAY_STATUS_STORED = "到货"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
 SYSTEM_TRAY_TOTAL = 10
+STAGING_LOCATION = "恒温恒湿间（暂存间）"
+APPEARANCE_LOCATION = "外观检测间"
+APPEARANCE_STORED_STATUS = "外观检测间存放"
+POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
+POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 WITHDRAW_BLOCKED_TRAY_STATUSES = {
     "已到达实验室",
     "工装夹具安装",
@@ -36,7 +46,7 @@ WITHDRAW_BLOCKED_TRAY_STATUSES = {
     "实验已完成",
     "实验完成",
     "实验已经完成",
-    "放置实验后暂存间",
+    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
     "外观检测间存放",
     "厂家收回",
@@ -68,11 +78,9 @@ STOCK_TRAY_ID_BASE = 2000
 TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
 STOCK_TRAY_CODE_PATTERN = re.compile(r"^STOCK-TP-(\d+)$")
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
-STAGING_LOCATION = "恒温恒湿间（暂存间）"
-APPEARANCE_LOCATION = "外观检测间"
-APPEARANCE_STORED_STATUS = "外观检测间存放"
 TRAY_OUTBOUND_STATUSES = {
     "送至暂存间",
+    POST_EXPERIMENT_STAGING_SENT_STATUS,
     "已到达暂存间",
     "送至实验室",
     "已到达实验室",
@@ -80,7 +88,7 @@ TRAY_OUTBOUND_STATUSES = {
     "实验准备就绪",
     "实验进行中",
     "实验已完成",
-    "放置实验后暂存间",
+    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
     "外观检测间存放",
     PRE_EXPERIMENT_APPEARANCE_STATUS,
@@ -88,7 +96,7 @@ TRAY_OUTBOUND_STATUSES = {
 }
 TRAY_LAB_REDISPATCH_STATUSES = {
     "已到达暂存间",
-    "放置实验后暂存间",
+    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
     "外观检测间存放",
     PRE_EXPERIMENT_APPEARANCE_STATUS,
@@ -102,13 +110,14 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验已完成",
     "实验完成",
     "实验已经完成",
-    "放置实验后暂存间",
+    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
     "外观检测间存放",
     "厂家收回",
 )
 RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {
     "送至暂存间",
+    POST_EXPERIMENT_STAGING_SENT_STATUS,
     "已到达暂存间",
     "送至实验室",
     "已到达实验室",
@@ -432,7 +441,7 @@ def started_experiment_status_for_task(task_samples: list[dict[str, Any]]) -> st
     priority = {
         "实验进行中": 0,
         "实验已完成": 1,
-        "放置实验后暂存间": 2,
+        POST_EXPERIMENT_STAGING_STOCKED_STATUS: 2,
         "厂家收回": 3,
     }
     normalized_statuses = sorted(
@@ -913,7 +922,11 @@ def are_task_experiments_all_completed(task: dict[str, Any], experiments: list[d
     if not task_experiments:
         return False
 
-    completed_statuses = {"实验已完成", "放置实验后暂存间", "厂家收回"}
+    completed_statuses = {
+        "实验已完成",
+        POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+        "厂家收回",
+    }
     return all(
         normalize_experiment_status_text(experiment.get("status")) in completed_statuses
         for experiment in task_experiments
@@ -1477,9 +1490,19 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
     target_type = normalize_text(request.target_type)
     target_name = normalize_text(request.target_name)
     if target_type == "staging":
-        if current_tray_status in TRAY_OUTBOUND_STATUSES:
+        post_experiment_staging_dispatch = (
+            current_tray_status == APPEARANCE_STORED_STATUS
+            and tray_assigned_experiments_are_completed(
+                task_code=task_code(task),
+                tray_code=tray_code,
+                experiment_trays=snapshot["experiment_trays"],
+                experiment_run_trays=snapshot["experiment_run_trays"],
+            )
+        )
+        appearance_to_staging_dispatch = current_tray_status == APPEARANCE_STORED_STATUS
+        if current_tray_status in TRAY_OUTBOUND_STATUSES and not (post_experiment_staging_dispatch or appearance_to_staging_dispatch):
             raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
-        next_status = "送至暂存间"
+        next_status = POST_EXPERIMENT_STAGING_SENT_STATUS if post_experiment_staging_dispatch else "送至暂存间"
         next_location = STAGING_LOCATION
         detail = normalize_text(tray_code)
     elif target_type == "lab":
@@ -1512,6 +1535,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         raise HTTPException(status_code=400, detail="请选择有效的目标位置")
 
     timestamp = now_business_text()
+    dispatched_from_pre_appearance = target_type == "lab" and current_tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS
     for sample in tray_samples:
         sample["location"] = next_location
         sample["status"] = next_status
@@ -1533,6 +1557,22 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
             next_trays.append(normalized)
         sample["trays"] = next_trays
         append_history(sample, next_status, detail)
+
+    if dispatched_from_pre_appearance:
+        normalized_tray_code = normalize_text(tray_code)
+        snapshot["staging_events"].append(
+            {
+                "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
+                "tray_code": normalized_tray_code,
+                "task_code": task_code(task),
+                "room": APPEARANCE_EVENT_ROOM,
+                "action": APPEARANCE_STOCK_OUT_ACTION,
+                "target_lab": target_name,
+                "target_experiment_code": normalize_text(request.experiment_code),
+                "target_type": "lab",
+                "time": timestamp,
+            }
+        )
 
     write_snapshot(snapshot)
     return {

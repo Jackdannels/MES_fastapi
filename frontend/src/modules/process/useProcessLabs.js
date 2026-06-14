@@ -32,7 +32,7 @@ const TRAY_STATUS_READY = "实验准备就绪";
 const TRAY_STATUS_RUNNING = "实验进行中";
 const TASK_STATUS_RUNNING = "任务进行中";
 const RUNNING_TRAY_STATUSES = new Set([TRAY_STATUS_RUNNING, "实验中"]);
-const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成", "实验后暂存间存放", "厂家收回"]);
 const PROCESS_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.devices,
   STORAGE_KEYS.tasks,
@@ -56,7 +56,7 @@ const TRAY_FLOW_STATUS_RANK = new Map(
     TRAY_STATUS_READY,
     TRAY_STATUS_RUNNING,
     "实验已完成",
-    "放置实验后暂存间",
+    "实验后暂存间存放",
     "厂家收回",
   ].map((status, index) => [status, index]),
 );

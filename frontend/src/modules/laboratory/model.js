@@ -43,11 +43,10 @@ const LABORATORY_TASK_FLOW_STEPS = [
 ];
 const LABORATORY_TASK_FLOW_INDEX = new Map(LABORATORY_TASK_FLOW_STEPS.map((step, index) => [step.label, index]));
 const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成"]);
-const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "放置实验后暂存间", "厂家收回"]);
+const COMPLETED_TRAY_STATUSES = new Set(["实验已完成", "实验已经完成", "实验完成", "实验后暂存间存放", "厂家收回"]);
 const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
-  "放置实验后暂存间",
-  "已到达暂存间",
+  "实验后暂存间存放",
   "厂家收回",
 ]);
 
@@ -271,7 +270,7 @@ const resolveLaboratoryStatusRank = (value) => {
   if (normalized === "实验进行中" || normalized === "实验中") {
     return 4;
   }
-  if (normalized === "实验已完成" || normalized === "放置实验后暂存间" || normalized === "厂家收回") {
+  if (normalized === "实验已完成" || normalized === "实验后暂存间存放" || normalized === "厂家收回") {
     return 5;
   }
   return 0;
@@ -369,7 +368,7 @@ const isFixtureReady = (value) => {
 const buildBlockedComparisonResult = (trayCode, status) => {
   const normalizedTrayCode = normalizeText(trayCode);
   const normalizedStatus = normalizeText(status);
-  if (normalizedStatus === "实验已完成" || normalizedStatus === "实验完成" || normalizedStatus === "放置实验后暂存间" || normalizedStatus === "厂家收回") {
+  if (normalizedStatus === "实验已完成" || normalizedStatus === "实验完成" || normalizedStatus === "实验后暂存间存放" || normalizedStatus === "厂家收回") {
     return {
       guidance: `${normalizedTrayCode} 已完成实验，无需再次比对。`,
       message: "托盘已完成实验",

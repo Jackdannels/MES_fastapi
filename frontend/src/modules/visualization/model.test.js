@@ -203,7 +203,7 @@ describe("visualization model", () => {
           status: "厂家收回",
           trays: [{ tray_code: `${taskCode}-TP-002`, status: "厂家收回", quantity: 1 }],
           history: [
-            { status: "放置实验后暂存间", time: "2026-06-06T12:12:23+08:00" },
+            { status: "实验后暂存间存放", time: "2026-06-06T12:12:23+08:00" },
             { status: "厂家收回", time: "2026-06-06T12:13:02+08:00" },
           ],
         },
@@ -414,10 +414,21 @@ describe("visualization model", () => {
       labNames: ["冲击一室", "振动一室"],
       experimentRuns: [
         {
+          run_no: "RUN-IMPACT-021",
           task_code: "SYLU-2026-06-021",
           experiment_code: "SYLU-2026-06-021-A",
           tray_codes: ["SYLU-2026-06-021-TP-001"],
           status: "实验进行中",
+          started_at: "2026-06-04T13:55:06+08:00",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-IMPACT-021",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          tray_code: "SYLU-2026-06-021-TP-001",
+          run_tray_status: "实验进行中",
           started_at: "2026-06-04T13:55:06+08:00",
         },
       ],
@@ -589,7 +600,6 @@ describe("visualization model", () => {
         "工装夹具安装",
         "实验准备就绪",
         "振动试验未完成",
-        "放置实验后暂存间",
         "厂家收回",
       ]),
     );
@@ -808,7 +818,7 @@ describe("visualization model", () => {
           ],
           history: [
             { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成", time: "2026-06-05 14:53:33" },
-            { detail: `${trayCode} -> 恒温恒湿间（实验后暂存间）`, status: "放置实验后暂存间", location: "恒温恒湿间（实验后暂存间）", time: "2026-06-05 14:54:58" },
+            { detail: `${trayCode} -> 恒温恒湿间（实验后暂存间）`, status: "实验后暂存间存放", location: "恒温恒湿间（实验后暂存间）", time: "2026-06-05 14:54:58" },
             { detail: `${trayCode} -> 温度冲击二室`, status: "送至实验室", location: "恒温恒湿间（暂存间）", time: "2026-06-05 14:55:01" },
           ],
         },
@@ -1205,8 +1215,8 @@ describe("visualization model", () => {
           code: "MOLD-SAMPLE-001",
           task_code: "TASK-STAGING-002",
           location: "恒温恒湿间（暂存间）",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "TRAY-MOLD-001", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "TRAY-MOLD-001", status: "实验后暂存间存放", quantity: 1 }],
         },
         {
           code: "MOLD-SAMPLE-OUT",
@@ -1341,6 +1351,68 @@ describe("visualization model", () => {
     expect(view.summary.appearanceTrayCount).toBe(0);
   });
 
+  test("does not plan staging for handover-arrival trays that are only scheduled for lab experiments", () => {
+    const taskCode = "SYLU-2026-07-001";
+    const trayCode = `${taskCode}-TP-004`;
+    const view = buildStagingSamplesView({
+      tasks: [{ code: taskCode, name: "132", test_type: "冲击试验 / 盐雾试验 / 霉菌试验 / 振动试验" }],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "盐雾试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "霉菌试验" },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, tray_code: trayCode },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "冲击一室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "盐雾试验室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-C`, device: "霉菌试验室" },
+        { task_code: taskCode, experiment_code: `${taskCode}-D`, device: "振动一室" },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-005`,
+          task_code: taskCode,
+          location: "接驳区",
+          status: "到货",
+          flow_status: "到货",
+          trays: [{ tray_code: trayCode, status: "到货", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-006`,
+          task_code: taskCode,
+          location: "接驳区",
+          status: "到货",
+          flow_status: "到货",
+          trays: [{ tray_code: trayCode, status: "到货", quantity: 1 }],
+        },
+        {
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          location: "外观检测间",
+          status: "外观检测间存放",
+          flow_status: "外观检测间存放",
+          trays: [{ tray_code: `${taskCode}-TP-001`, status: "外观检测间存放", quantity: 1 }],
+          history: [
+            { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成" },
+            { detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成" },
+            { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成" },
+            { detail: `${taskCode} / 振动试验 / 实验已完成`, status: "实验已完成" },
+          ],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(JSON.stringify(view)).not.toContain(trayCode);
+    expect(view.summary.plannedTrayCount).toBe(0);
+  });
+
   test("keeps stock-out trays visible when the destination is staging", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "TASK-STOCK-OUT-STAGING", name: "转暂存任务", test_type: "盐雾试验" }],
@@ -1445,8 +1517,8 @@ describe("visualization model", () => {
           code: "SP-POST",
           task_code: "TASK-STAGING-KINDS",
           location: "恒温恒湿间（实验后暂存间）",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "TP-POST", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "TP-POST", status: "实验后暂存间存放", quantity: 1 }],
         },
       ],
     });

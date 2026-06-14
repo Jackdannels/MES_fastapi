@@ -18,7 +18,8 @@ const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
 const APPEARANCE_LOCATION = "外观检测间";
 const STAGING_STOCKED_STATUS = "到货";
-const POST_EXPERIMENT_STAGING_STATUS = "放置实验后暂存间";
+const POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间";
+const POST_EXPERIMENT_STAGING_STATUS = "实验后暂存间存放";
 const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
@@ -30,6 +31,7 @@ const STOCK_IN_CANDIDATE_STATUSES = new Set([
   "实验已完成",
   "实验完成",
   POST_EXPERIMENT_STAGING_STATUS,
+  POST_EXPERIMENT_STAGING_SENT_STATUS,
 ]);
 const APPEARANCE_STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_APPEARANCE_STATUSES,
@@ -45,7 +47,11 @@ const eventMatchesRoom = (event, config = STORAGE_ROOM_CONFIGS.staging) => {
   const eventRoom = normalizeText(event?.room || event?.storage_room || event?.storageRoom);
   return eventRoom ? eventRoom === config.eventRoom : config.key === "staging";
 };
-const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", POST_EXPERIMENT_STAGING_STATUS]);
+const COMPLETED_EXPERIMENT_STATUSES = new Set([
+  "实验已完成",
+  "实验完成",
+  POST_EXPERIMENT_STAGING_STATUS,
+]);
 const STRICT_COMPLETED_RUN_TRAY_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
   "实验已经完成",
@@ -53,7 +59,6 @@ const STRICT_COMPLETED_RUN_TRAY_STATUSES = new Set([
 const COMPLETED_RUN_TRAY_STATUSES = new Set([
   ...COMPLETED_EXPERIMENT_STATUSES,
   "实验已经完成",
-  "已到达暂存间",
   "厂家收回",
 ]);
 const STAGING_STOCK_IN_BLOCKED_STATUS_ERROR = "该托盘已进入试验间流程，不能暂存间入库。";
@@ -63,7 +68,12 @@ const APPEARANCE_MANUFACTURER_RETURN_ERROR = "外观检测间不允许厂家收�
 const STORAGE_ROOM_CONFIGS = {
   staging: {
     currentLocation: STAGING_LOCATION,
-    currentStatuses: new Set([STAGING_STOCKED_STATUS, "已到达暂存间", "暂存间存放", POST_EXPERIMENT_STAGING_STATUS]),
+    currentStatuses: new Set([
+      STAGING_STOCKED_STATUS,
+      "已到达暂存间",
+      "暂存间存放",
+      POST_EXPERIMENT_STAGING_STATUS,
+    ]),
     duplicateStockInError: "该托盘已完成暂存间扫码入库。",
     eventRoom: "staging",
     historyStockInAction: "暂存间扫码入库",
@@ -388,6 +398,14 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
       && statuses.some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS)
     ) {
       return APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+    }
+    if (
+      config.key === "staging"
+      && statuses.some((status) =>
+        normalizeText(status) === POST_EXPERIMENT_STAGING_STATUS,
+      )
+    ) {
+      return POST_EXPERIMENT_STAGING_STATUS;
     }
     return options.isPostExperimentInbound && config.key === "staging" ? config.stockInStatus : config.stockedDisplayStatus;
   }
@@ -1557,7 +1575,9 @@ function applyZancunInventoryAction(input = {}) {
     const outboundLocation = isStagingTarget ? STAGING_LOCATION : resolvedTargetLab;
     const outboundStatus =
       isStagingTarget
-        ? "送至暂存间"
+        ? matchedRow.isPostExperimentInbound
+          ? POST_EXPERIMENT_STAGING_SENT_STATUS
+          : "送至暂存间"
         : "送至实验室";
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockOutAction,

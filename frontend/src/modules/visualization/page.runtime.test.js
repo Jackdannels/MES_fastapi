@@ -717,8 +717,8 @@ describe("VisualizationPage runtime", () => {
           code: "MOLD-SAMPLE-001",
           task_code: "TASK-STAGING-002",
           location: "恒温恒湿间（暂存间）",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "TRAY-MOLD-001", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "TRAY-MOLD-001", status: "实验后暂存间存放", quantity: 1 }],
         },
       ],
     };
@@ -789,8 +789,8 @@ describe("VisualizationPage runtime", () => {
           code: "SP-POST",
           task_code: "TASK-STAGING-KINDS",
           location: "恒温恒湿间（实验后暂存间）",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "TP-POST", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "TP-POST", status: "实验后暂存间存放", quantity: 1 }],
         },
       ],
     };

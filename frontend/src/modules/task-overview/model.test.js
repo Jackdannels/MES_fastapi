@@ -743,8 +743,8 @@ describe("taskOverviewModel", () => {
         {
           task_code: "SYLU-2026-03-001",
           code: "SYLU-2026-03-001-SP-002",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "SYLU-2026-03-001-TP-002", status: "实验后暂存间存放", quantity: 1 }],
         },
       ],
       schedules: [],
@@ -1005,8 +1005,8 @@ describe("taskOverviewModel", () => {
         {
           task_code: "SYLU-2026-05-021",
           code: "SYLU-2026-05-021-SP-003",
-          status: "放置实验后暂存间",
-          trays: [{ tray_code: "SYLU-2026-05-021-TP-003", status: "放置实验后暂存间", quantity: 1 }],
+          status: "实验后暂存间存放",
+          trays: [{ tray_code: "SYLU-2026-05-021-TP-003", status: "实验后暂存间存放", quantity: 1 }],
           history: [
             { time: "2026-05-30T13:34:34.000Z", detail: "SYLU-2026-05-021 / 冲击试验 / 实验进行中" },
             { time: "2026-05-30T13:37:58.000Z", detail: "SYLU-2026-05-021 / 冲击试验 / 实验已完成" },

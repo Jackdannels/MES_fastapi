@@ -8,14 +8,13 @@ const TASK_STATUS_FLOW_STEPS = [
   { key: "completed", label: "任务已完成" },
   { key: "returned", label: RETURNED_STATUS },
 ];
-const EXPERIMENT_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "放置实验后暂存间"]);
+const EXPERIMENT_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "实验后暂存间存放"]);
 const FLOW_LABEL_ALIASES = new Map([
   ["运输中", "样品运输中"],
   ["已运输", "样品运输中"],
   ["实验完成", "实验已完成"],
   ["试验完成", "实验已完成"],
-  ["实验后暂存", "放置实验后暂存间"],
-  ["放置实验后暂存", "放置实验后暂存间"],
+  ["实验后暂存", "实验后暂存间存放"],
   ["收回", "厂家收回"],
   ["已收回", "厂家收回"],
 ]);
