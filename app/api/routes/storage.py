@@ -461,6 +461,72 @@ def _is_post_experiment_staging_inbound(sample: Any, tray: Any | None = None) ->
     )
 
 
+def _is_post_experiment_staging_stored(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    return POST_EXPERIMENT_STAGING_STOCKED_STATUS in statuses or "实验后暂存间" in _normalize_text(sample.get("location"))
+
+
+def _is_appearance_stored(sample: Any, tray: Any | None = None) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    return bool(statuses & {"外观检测间存放", "已到达外观检测间", PRE_EXPERIMENT_APPEARANCE_STATUS})
+
+
+def _latest_storage_event_for_tray(staging_events: Any, tray_code: str) -> dict[str, Any] | None:
+    normalized_tray_code = _normalize_text(tray_code)
+    latest_event: dict[str, Any] | None = None
+    latest_key: tuple[datetime, int] | None = None
+    for index, event in enumerate(_as_list(staging_events)):
+        if not isinstance(event, dict) or _normalize_text(event.get("tray_code")) != normalized_tray_code:
+            continue
+        event_time = _parse_datetime(event.get("time") or event.get("created_at") or event.get("updated_at")) or datetime.min
+        event_key = (event_time, index)
+        if latest_key is None or event_key > latest_key:
+            latest_key = event_key
+            latest_event = event
+    return latest_event
+
+
+def _event_targets_staging(event: Any) -> bool:
+    if not isinstance(event, dict):
+        return False
+    target_type = _normalize_text(event.get("target_type") or event.get("targetType"))
+    target_text = " ".join(
+        value
+        for value in (
+            _normalize_text(event.get("target_lab") or event.get("targetLab")),
+            _normalize_text(event.get("target_name") or event.get("targetName")),
+        )
+        if value
+    )
+    return target_type == "staging" or STAGING_LOCATION_KEYWORD in target_text
+
+
+def _has_latest_appearance_dispatch_to_staging(staging_events: Any, tray_code: str) -> bool:
+    latest_event = _latest_storage_event_for_tray(staging_events, tray_code)
+    if not latest_event:
+        return False
+    room = _normalize_text(latest_event.get("room") or latest_event.get("storage_room") or latest_event.get("storageRoom"))
+    return (
+        room == "appearance"
+        and _normalize_text(latest_event.get("action")) == "stock_out"
+        and _event_targets_staging(latest_event)
+    )
+
+
 def _post_staging_reentry_is_completed(
     sample: Any,
     tray: Any,
@@ -542,6 +608,7 @@ def _validate_samples_staging_reentry_transition(
     experiment_trays: Any,
     experiment_run_trays: Any,
     staging_events: Any,
+    next_staging_events: Any | None = None,
 ) -> None:
     if not isinstance(next_samples, list):
         return
@@ -562,6 +629,13 @@ def _validate_samples_staging_reentry_transition(
             if not isinstance(next_tray, dict):
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
+            if _is_post_experiment_staging_inbound(next_sample, next_tray) and _is_appearance_stored(
+                current_sample,
+                current_tray,
+            ):
+                proposed_events = next_staging_events if next_staging_events is not None else staging_events
+                if not _has_latest_appearance_dispatch_to_staging(proposed_events, _tray_code(next_tray)):
+                    raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
             if _is_post_experiment_staging_inbound(next_sample, next_tray) and not _post_staging_reentry_is_completed(
                 current_sample,
                 current_tray,
@@ -623,6 +697,8 @@ def _validate_samples_appearance_source_transition(
             current_tray = current_trays.get(_tray_code(next_tray))
             if not _appearance_inbound_state_changed(current_sample, next_sample, current_tray, next_tray):
                 continue
+            if _is_post_experiment_staging_stored(current_sample, current_tray):
+                raise HTTPException(status_code=400, detail=APPEARANCE_STOCK_IN_BLOCKED_DETAIL)
             if _is_pre_experiment_appearance_inbound(next_sample, next_tray) and _tray_has_allowed_pre_experiment_appearance_target(
                 current_sample,
                 next_tray,
@@ -729,6 +805,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
     if "mes.samples" not in updates:
         return
     current_samples = storage.read("mes.samples")
+    current_staging_events = storage.read("mes.staging_events")
     _validate_samples_lab_arrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_staging_reentry_transition(
         current_samples,
@@ -736,14 +813,15 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         storage.read("mes.experiments"),
         storage.read("mes.experiment_trays"),
         storage.read("mes.experiment_run_trays"),
-        storage.read("mes.staging_events"),
+        current_staging_events,
+        updates.get("mes.staging_events", current_staging_events),
     )
     _validate_samples_appearance_source_transition(
         current_samples,
         updates["mes.samples"],
         storage.read("mes.experiments"),
         storage.read("mes.experiment_run_trays"),
-        storage.read("mes.staging_events"),
+        current_staging_events,
     )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))

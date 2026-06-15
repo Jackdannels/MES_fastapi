@@ -2819,6 +2819,179 @@ describe("staging-management model", () => {
     }));
   });
 
+  test("appearance room cannot stock in a tray already stored in post-experiment staging", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-post-staging-appearance-blocked",
+      code: "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+      test_type: "盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-post-staging-salt",
+      task_code: "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+      experiment_code: "EXP-POST-STAGING-SALT",
+      experiment_name: "盐雾试验",
+      required_device: "盐雾试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-post-staging-salt",
+      task_code: "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+      experiment_code: "EXP-POST-STAGING-SALT",
+      tray_code: "TP-POST-STAGING-APPEARANCE-BLOCKED",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+      experiment_code: "EXP-POST-STAGING-SALT",
+      tray_code: "TP-POST-STAGING-APPEARANCE-BLOCKED",
+      run_tray_status: "实验已完成",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-post-staging-appearance-blocked",
+      code: "SP-POST-STAGING-APPEARANCE-BLOCKED",
+      task_code: "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+      owner: "周工",
+      location: "恒温恒湿间（暂存间）",
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
+      trays: [{ tray_code: "TP-POST-STAGING-APPEARANCE-BLOCKED", status: "实验后暂存间存放", quantity: 1 }],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: { code: "TP-POST-STAGING-APPEARANCE-BLOCKED", mode: "stockIn" },
+      room: "appearance",
+      snapshot,
+    });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("TP-POST-STAGING-APPEARANCE-BLOCKED");
+    expect(result.error).toBe("未找到对应的入库托盘。");
+  });
+
+  test("appearance room can stock in a completed tray after post-staging stock-out targets appearance", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-post-staging-appearance-after-out",
+      code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      test_type: "盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-post-staging-appearance-after-out",
+      task_code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      experiment_code: "EXP-POST-STAGING-APPEARANCE-AFTER-OUT",
+      experiment_name: "盐雾试验",
+      required_device: "盐雾试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-post-staging-appearance-after-out",
+      task_code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      experiment_code: "EXP-POST-STAGING-APPEARANCE-AFTER-OUT",
+      tray_code: "TP-POST-STAGING-APPEARANCE-AFTER-OUT",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      experiment_code: "EXP-POST-STAGING-APPEARANCE-AFTER-OUT",
+      tray_code: "TP-POST-STAGING-APPEARANCE-AFTER-OUT",
+      run_tray_status: "实验已完成",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-post-staging-appearance-after-out",
+      code: "SP-POST-STAGING-APPEARANCE-AFTER-OUT",
+      task_code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      owner: "周工",
+      location: "恒温恒湿间（暂存间）",
+      status: "实验后暂存间存放",
+      flow_status: "实验后暂存间存放",
+      trays: [{ tray_code: "TP-POST-STAGING-APPEARANCE-AFTER-OUT", status: "实验后暂存间存放", quantity: 1 }],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-post-staging-appearance-after-out",
+      action: "stock_out",
+      room: "staging",
+      target_type: "appearance",
+      target_lab: "外观检测间",
+      task_code: "TASK-POST-STAGING-APPEARANCE-AFTER-OUT",
+      time: "2026-06-12T09:00:00",
+      tray_code: "TP-POST-STAGING-APPEARANCE-AFTER-OUT",
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: { code: "TP-POST-STAGING-APPEARANCE-AFTER-OUT", mode: "stockIn" },
+      room: "appearance",
+      snapshot,
+    });
+
+    expect(rows).toContainEqual(expect.objectContaining({
+      status: "待入库",
+      trayCode: "TP-POST-STAGING-APPEARANCE-AFTER-OUT",
+    }));
+    expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-post-staging-appearance-after-out")).toMatchObject({
+      location: "外观检测间",
+      status: "外观检测间存放",
+      flow_status: "外观检测间存放",
+    });
+  });
+
+  test("staging room cannot stock in a tray already stored in appearance room", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-appearance-staging-blocked",
+      code: "TASK-APPEARANCE-STAGING-BLOCKED",
+      test_type: "盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-appearance-salt",
+      task_code: "TASK-APPEARANCE-STAGING-BLOCKED",
+      experiment_code: "EXP-APPEARANCE-SALT",
+      experiment_name: "盐雾试验",
+      required_device: "盐雾试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-appearance-salt",
+      task_code: "TASK-APPEARANCE-STAGING-BLOCKED",
+      experiment_code: "EXP-APPEARANCE-SALT",
+      tray_code: "TP-APPEARANCE-STAGING-BLOCKED",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: "TASK-APPEARANCE-STAGING-BLOCKED",
+      experiment_code: "EXP-APPEARANCE-SALT",
+      tray_code: "TP-APPEARANCE-STAGING-BLOCKED",
+      run_tray_status: "实验已完成",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-staging-blocked",
+      code: "SP-APPEARANCE-STAGING-BLOCKED",
+      task_code: "TASK-APPEARANCE-STAGING-BLOCKED",
+      owner: "周工",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      flow_status: "外观检测间存放",
+      trays: [{ tray_code: "TP-APPEARANCE-STAGING-BLOCKED", status: "外观检测间存放", quantity: 1 }],
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: { code: "TP-APPEARANCE-STAGING-BLOCKED", mode: "stockIn" },
+      snapshot,
+    });
+
+    expect(rows.map((row) => row.trayCode)).not.toContain("TP-APPEARANCE-STAGING-BLOCKED");
+    expect(result.error).toBe("未找到对应的入库托盘。");
+  });
+
   test("does not fall back to task-level experiment types for fully completed mapped trays", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.tasks].push({

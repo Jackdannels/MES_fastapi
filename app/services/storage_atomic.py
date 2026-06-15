@@ -35,6 +35,12 @@ def sample_key(sample: Any) -> str:
     return normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("sampleCode") or sample.get("id"))
 
 
+def task_code_value(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return normalize_text(item.get("task_code") or item.get("taskCode"))
+
+
 def tray_key(tray: Any) -> str:
     if not isinstance(tray, dict):
         return ""
@@ -82,11 +88,7 @@ def merge_trays(current_trays: list[Any], incoming_trays: list[Any], *, preserve
         incoming = incoming_by_key.get(key)
         if current is None and incoming is not None:
             merged.append(dict(incoming))
-        elif (
-            incoming is None
-            and current is not None
-            and (preserve_current_only or item_time(current) is not None)
-        ):
+        elif incoming is None and current is not None and preserve_current_only:
             merged.append(dict(current))
         elif current is not None and incoming is not None:
             merged.append(dict(incoming if incoming_is_not_older(incoming, current) else current))
@@ -194,7 +196,14 @@ def generic_item_key(key: str, item: Any) -> str:
     return normalize_text(item.get("id"))
 
 
-def merge_keyed_rows(key: str, current_rows: list[Any], incoming_rows: list[Any]) -> list[dict[str, Any]]:
+def merge_keyed_rows(
+    key: str,
+    current_rows: list[Any],
+    incoming_rows: list[Any],
+    *,
+    replace_task_codes: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_replace_task_codes = {normalize_text(task_code) for task_code in replace_task_codes or set() if normalize_text(task_code)}
     current_by_key = {generic_item_key(key, item): dict(item) for item in as_list(current_rows) if isinstance(item, dict) and generic_item_key(key, item)}
     incoming_by_key = {generic_item_key(key, item): dict(item) for item in as_list(incoming_rows) if isinstance(item, dict) and generic_item_key(key, item)}
     ordered_keys = []
@@ -209,14 +218,24 @@ def merge_keyed_rows(key: str, current_rows: list[Any], incoming_rows: list[Any]
         incoming = incoming_by_key.get(item_key)
         if current is None and incoming is not None:
             merged.append(dict(incoming))
-        elif incoming is None and current is not None and item_time(current) is not None:
+        elif (
+            incoming is None
+            and current is not None
+            and task_code_value(current) not in normalized_replace_task_codes
+            and item_time(current) is not None
+        ):
             merged.append(dict(current))
         elif current is not None and incoming is not None:
             merged.append(dict(incoming if incoming_is_not_older(incoming, current) else current))
     return merged
 
 
-def merge_concurrent_storage_updates(current_payload: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
+def merge_concurrent_storage_updates(
+    current_payload: dict[str, Any],
+    updates: dict[str, Any],
+    *,
+    replace_task_codes: set[str] | None = None,
+) -> dict[str, Any]:
     merged = dict(updates)
     if "mes.samples" in merged:
         merged["mes.samples"] = merge_samples(current_payload.get("mes.samples"), merged["mes.samples"])
@@ -232,5 +251,10 @@ def merge_concurrent_storage_updates(current_payload: dict[str, Any], updates: d
         "mes.experiment_samples",
     ):
         if key in merged:
-            merged[key] = merge_keyed_rows(key, current_payload.get(key), merged[key])
+            merged[key] = merge_keyed_rows(
+                key,
+                current_payload.get(key),
+                merged[key],
+                replace_task_codes=replace_task_codes,
+            )
     return merged

@@ -357,6 +357,19 @@ const collectTrayStorageEvents = (stagingEvents, trayCode) =>
 const hasPreAppearanceInboundStatus = (statuses) =>
   asArray(statuses).some((status) => PRE_APPEARANCE_STATUSES.has(normalizeText(status)));
 
+const hasPostExperimentStagingStorageStatus = (row) => {
+  const statuses = asArray(row?.statuses).map((status) => normalizeText(status));
+  return (
+    statuses.includes(POST_EXPERIMENT_STAGING_STATUS)
+    || normalizeText(row?.location).includes("实验后暂存间")
+  );
+};
+
+const hasAppearanceStorageStatus = (row) =>
+  asArray(row?.statuses).some((status) =>
+    STORAGE_ROOM_CONFIGS.appearance.currentStatuses.has(normalizeText(status)),
+  );
+
 const isCurrentStagingStatus = (status, config = STORAGE_ROOM_CONFIGS.staging) => {
   const normalized = normalizeText(status);
   return config.currentStatuses.has(normalized);
@@ -978,6 +991,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const inboundSourceLabel = resolveStorageInboundSourceLabel(trayStorageEvents, config, storageEventContext);
       const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config, storageEventContext);
       const latestAction = normalizeText(latestStorageEvent?.action);
+      const storedInPostExperimentStaging =
+        hasPostExperimentStagingStorageStatus(row)
+        && !(config.key === "appearance" && latestEventDispatchesToCurrentRoom);
+      const storedInAppearance =
+        hasAppearanceStorageStatus(row)
+        && !(config.key === "staging" && latestEventDispatchesToCurrentRoom);
       const latestEventDispatchesToPostExperimentStaging =
         config.key === "appearance"
         && latestAction === "stock_out"
@@ -1013,6 +1032,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && trayTargetsPreExperimentAppearance({ experiments, row });
       const isPostExperimentAppearanceInbound =
         config.key === "appearance"
+        && !storedInPostExperimentStaging
         && hasCompletedExperimentStatus
         && trayHasAllowedAppearanceSource({
           experiments,
@@ -1023,6 +1043,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         });
       const isPostExperimentInbound =
         !explicitAppearanceInboundStatus
+        && !(config.key === "staging" && storedInAppearance)
         && (hasCompletedExperimentStatus || allAssignedExperimentsCompleted)
         && !hasRemainingMappedExperiment({
           experiments,
@@ -1043,6 +1064,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         status = "待入库";
       }
       if (config.key === "appearance" && latestEventDispatchesToPostExperimentStaging) {
+        status = "";
+      }
+      if (
+        (config.key === "appearance" && storedInPostExperimentStaging)
+        || (config.key === "staging" && storedInAppearance)
+      ) {
         status = "";
       }
       if (latestAction === "manufacturer_return" || row.statuses.some((item) => normalizeText(item) === "厂家收回")) {

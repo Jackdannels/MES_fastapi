@@ -622,6 +622,202 @@ def test_storage_rejects_post_staging_stock_in_when_tray_has_unfinished_experime
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_rejects_appearance_stock_in_when_tray_is_in_post_staging(monkeypatch):
+    samples = [
+        {
+            "code": "SP-POST-STAGING-APPEARANCE-BLOCKED",
+            "location": "恒温恒湿间（实验后暂存间）",
+            "status": "实验后暂存间存放",
+            "flow_status": "实验后暂存间存放",
+            "task_code": "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+            "trays": [
+                {
+                    "tray_code": "TP-POST-STAGING-APPEARANCE-BLOCKED",
+                    "status": "实验后暂存间存放",
+                    "quantity": 1,
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+                    "experiment_code": "EXP-POST-STAGING-SALT",
+                    "experiment_name": "盐雾试验",
+                }
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "TASK-POST-STAGING-APPEARANCE-BLOCKED",
+                    "experiment_code": "EXP-POST-STAGING-SALT",
+                    "tray_code": "TP-POST-STAGING-APPEARANCE-BLOCKED",
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "外观检测间存放"
+    attempted[0]["flow_status"] = "外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已进入试验间流程，不能外观检测间入库。"
+    assert storage.read("mes.samples") == samples
+
+
+def test_storage_rejects_post_staging_stock_in_when_tray_is_in_appearance_room(monkeypatch):
+    samples = [
+        {
+            "code": "SP-APPEARANCE-STAGING-BLOCKED",
+            "location": "外观检测间",
+            "status": "外观检测间存放",
+            "flow_status": "外观检测间存放",
+            "task_code": "TASK-APPEARANCE-STAGING-BLOCKED",
+            "trays": [
+                {
+                    "tray_code": "TP-APPEARANCE-STAGING-BLOCKED",
+                    "status": "外观检测间存放",
+                    "quantity": 1,
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiment_trays": [
+                {
+                    "task_code": "TASK-APPEARANCE-STAGING-BLOCKED",
+                    "experiment_code": "EXP-APPEARANCE-SALT",
+                    "tray_code": "TP-APPEARANCE-STAGING-BLOCKED",
+                }
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "TASK-APPEARANCE-STAGING-BLOCKED",
+                    "experiment_code": "EXP-APPEARANCE-SALT",
+                    "tray_code": "TP-APPEARANCE-STAGING-BLOCKED",
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
+    attempted[0]["status"] = "实验后暂存间存放"
+    attempted[0]["flow_status"] = "实验后暂存间存放"
+    attempted[0]["trays"][0]["status"] = "实验后暂存间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已进入试验间流程，不能暂存间入库。"
+    assert storage.read("mes.samples") == samples
+
+
+def test_storage_allows_completed_appearance_dispatch_to_post_staging(monkeypatch):
+    samples = [
+        {
+            "code": "SYLU-2026-06-025-SP-001",
+            "location": "外观检测间",
+            "status": "外观检测间存放",
+            "flow_status": "外观检测间存放",
+            "task_code": "SYLU-2026-06-025",
+            "trays": [
+                {
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                    "status": "外观检测间存放",
+                    "quantity": 1,
+                    "target_lab": "盐雾试验室",
+                    "target_experiment_code": "SYLU-2026-06-025-B",
+                }
+            ],
+        }
+    ]
+    staging_events = [
+        {
+            "id": "appearance-stock-in",
+            "tray_code": "SYLU-2026-06-025-TP-001",
+            "task_code": "SYLU-2026-06-025",
+            "room": "appearance",
+            "action": "stock_in",
+            "time": "2026-06-15 15:40:18",
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.staging_events": staging_events,
+            "mes.experiment_trays": [
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-A",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                },
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-B",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                },
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-A",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                    "run_tray_status": "实验已完成",
+                },
+                {
+                    "task_code": "SYLU-2026-06-025",
+                    "experiment_code": "SYLU-2026-06-025-B",
+                    "tray_code": "SYLU-2026-06-025-TP-001",
+                    "run_tray_status": "实验已完成",
+                },
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
+    attempted[0]["status"] = "送至实验后暂存间"
+    attempted[0]["flow_status"] = "送至实验后暂存间"
+    attempted[0]["trays"][0]["status"] = "送至实验后暂存间"
+    attempted[0]["trays"][0]["target_lab"] = "恒温恒湿间（暂存间）"
+    attempted[0]["trays"][0]["target_experiment_code"] = ""
+    attempted[0]["trays"][0]["target_type"] = "staging"
+    next_events = [
+        *staging_events,
+        {
+            "id": "appearance-stock-out-to-staging",
+            "tray_code": "SYLU-2026-06-025-TP-001",
+            "task_code": "SYLU-2026-06-025",
+            "room": "appearance",
+            "action": "stock_out",
+            "target_lab": "恒温恒湿间（暂存间）",
+            "target_type": "staging",
+            "time": "2026-06-15 16:05:00",
+        },
+    ]
+
+    response = client.put("/api/storage", json={"mes.samples": attempted, "mes.staging_events": next_events})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+    assert storage.read("mes.staging_events")[-1]["id"] == "appearance-stock-out-to-staging"
+
+
 def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):
     samples = [
         {

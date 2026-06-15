@@ -1658,6 +1658,80 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
 
 
+def test_transfer_area_reload_clears_timestamped_mysql_style_preallocation(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": [
+            {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-B", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+            {"experimentCode": "SYLU-2026-03-101-C", "trayIds": [workspace["assignedTrays"][0]["trayId"]]},
+        ],
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert allocated.status_code == 200
+    assert confirmed.status_code == 200
+
+    timestamped_samples = []
+    for sample in storage.read("mes.samples"):
+        next_sample = deepcopy(sample)
+        if next_sample.get("task_code") == "SYLU-2026-03-101":
+            next_sample["updated_at"] = "2026-06-15 15:31:56"
+            next_sample["trays"] = [
+                {
+                    **tray,
+                    "updated_at": "2026-06-15 15:31:56",
+                    "created_at": "2026-06-15 15:31:56",
+                }
+                for tray in next_sample.get("trays", [])
+            ]
+        timestamped_samples.append(next_sample)
+    storage.write("mes.samples", timestamped_samples)
+
+    for key in ("mes.experiment_trays", "mes.experiment_samples"):
+        timestamped_rows = [
+            {
+                **row,
+                "created_at": "2026-06-15 15:31:56",
+                "updated_at": "2026-06-15 15:31:56",
+            }
+            for row in storage.read(key)
+        ]
+        storage.write(key, timestamped_rows)
+
+    reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
+
+    assert reloaded.status_code == 200
+    payload = reloaded.json()["workspace"]
+    assert payload["allocationSaved"] is False
+    assert all(tray["samples"] for tray in payload["assignedTrays"])
+    assert all(tray["experimentLabels"] == [] for tray in payload["assignedTrays"])
+    assert all(item["assignedTrayCount"] == 0 for item in payload["experiments"])
+    assert storage.read("mes.experiment_trays") == []
+    assert storage.read("mes.experiment_samples") == []
+    assert all(sample["trays"] == [] for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101")
+
+    refreshed = client.get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert refreshed.status_code == 200
+    refreshed_payload = refreshed.json()
+    assert refreshed_payload["allocationSaved"] is False
+    assert all(tray["experimentLabels"] == [] for tray in refreshed_payload["assignedTrays"])
+    assert all(item["assignedTrayCount"] == 0 for item in refreshed_payload["experiments"])
+
+
 def test_transfer_area_workspace_mutations_publish_storage_updates(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 

@@ -249,7 +249,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
+def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], *, replace_task_codes: set[str] | None = None) -> None:
     storage = get_storage_backend()
     updates = {
         "mes.tasks": snapshot["tasks"],
@@ -263,7 +263,13 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
         "mes.staging_events": snapshot["staging_events"],
     }
     with acquire_laboratory_storage_commit_lock():
-        storage.write_many(merge_concurrent_storage_updates(storage.read_all(), updates))
+        storage.write_many(
+            merge_concurrent_storage_updates(
+                storage.read_all(),
+                updates,
+                replace_task_codes=replace_task_codes,
+            )
+        )
     publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
 
 
@@ -1726,7 +1732,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     task["updated_at"] = now_business_text()
     snapshot["experiment_trays"] = next_experiment_trays
     snapshot["experiment_samples"] = next_experiment_samples
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, replace_task_codes={task_code(task)})
     return {
         "ok": True,
         "message": "托盘分配已保存",
@@ -1889,7 +1895,7 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
         sample["trays"] = []
         append_history(sample, "任务重新入库", task_code(task))
 
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, replace_task_codes={task_code(task)})
     return {
         "ok": True,
         "message": "任务已重新入库，已回到未入库列表",
