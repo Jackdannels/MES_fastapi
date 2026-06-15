@@ -90,6 +90,23 @@ function useSchedulePage() {
     return detail ? `${prefix}，${detail}` : prefix;
   };
 
+  const buildSnapshotFallback = () => ({
+    [STORAGE_KEYS.conflicts]: rawConflicts.value,
+    [STORAGE_KEYS.devices]: rawDevices.value,
+    [STORAGE_KEYS.experiments]: rawExperiments.value,
+    [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
+    [STORAGE_KEYS.samples]: rawSamples.value,
+    [STORAGE_KEYS.schedules]: rawSchedules.value,
+    [STORAGE_KEYS.streams]: rawStreams.value,
+    [STORAGE_KEYS.tasks]: rawTasks.value,
+  });
+
+  const applySnapshotArray = (snapshot, key, target) => {
+    if (Array.isArray(snapshot?.[key])) {
+      target.value = snapshot[key];
+    }
+  };
+
   const activeTaskCodes = computed(() => {
     if (!rawTasks.value.length) {
       return null;
@@ -836,18 +853,18 @@ function useSchedulePage() {
   const loadSchedulePage = async ({ resetForm: shouldResetForm = true } = {}) => {
     try {
       const [snapshot, loadedMasterLabs] = await Promise.all([
-        loadSnapshot(),
+        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback() }),
         readMasterLabs().catch(() => []),
       ]);
       masterLabs.value = Array.isArray(loadedMasterLabs) ? loadedMasterLabs : [];
-      rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
-      rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
-      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-      rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+      applySnapshotArray(snapshot, STORAGE_KEYS.conflicts, rawConflicts);
+      applySnapshotArray(snapshot, STORAGE_KEYS.devices, rawDevices);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
+      applySnapshotArray(snapshot, STORAGE_KEYS.streams, rawStreams);
+      applySnapshotArray(snapshot, STORAGE_KEYS.tasks, rawTasks);
       if (shouldResetForm) {
         resetScheduleForm();
       }

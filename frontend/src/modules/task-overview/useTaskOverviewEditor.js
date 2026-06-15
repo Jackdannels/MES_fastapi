@@ -24,10 +24,44 @@ const createEmptyEditForm = () => ({
   experiments: [],
 });
 
+const MAX_SAMPLE_COUNT = 99;
+const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
+
 // 样品数、托盘数等编辑输入统一归一化为非负整数。
 const normalizeCount = (value) => {
   const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.min(Math.floor(parsed), MAX_SAMPLE_COUNT) : 0;
+};
+
+const normalizeText = (value) => String(value || "").trim();
+const taskCodeOf = (entry) => normalizeText(entry?.task_code || entry?.taskCode || entry?.taskNo || entry?.code || entry?.id);
+const isStorageConfirmedStatus = (value) => normalizeText(value) === "到货";
+const taskStorageConfirmed = (task, samples) => {
+  const code = taskCodeOf(task);
+  if (isStorageConfirmedStatus(task?.transfer_status || task?.transferStatus)) {
+    return true;
+  }
+  return (Array.isArray(samples) ? samples : []).some((sample) => {
+    if (taskCodeOf(sample) !== code) {
+      return false;
+    }
+    if (isStorageConfirmedStatus(sample?.status) || isStorageConfirmedStatus(sample?.flow_status)) {
+      return true;
+    }
+    return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) =>
+      isStorageConfirmedStatus(tray?.status || tray?.tray_status || tray?.trayStatus),
+    );
+  });
+};
+const taskHasSelectedExperiments = (task, experiments) => {
+  const code = taskCodeOf(task);
+  if ((Array.isArray(experiments) ? experiments : []).some((experiment) => taskCodeOf(experiment) === code)) {
+    return true;
+  }
+  if (Array.isArray(task?.test_types) && task.test_types.some((type) => normalizeText(type))) {
+    return true;
+  }
+  return Boolean(normalizeText(task?.test_type || task?.required_device));
 };
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
@@ -359,6 +393,20 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         finalCodes = finalCodes.concat(generated);
       }
 
+      const currentTask = tasks[taskIndex];
+      const taskSamples = samples
+        .filter((sample) => String(sample?.task_code || "").trim() === code)
+        .sort((left, right) => compareText(left?.code, right?.code));
+      const originalSampleCount = normalizeCount(currentTask?.sample_count) || taskSamples.length;
+      if (
+        finalCodes.length !== originalSampleCount
+        && taskStorageConfirmed(currentTask, samples)
+        && taskHasSelectedExperiments(currentTask, experiments)
+      ) {
+        showEditError(SAMPLE_COUNT_LOCKED_MESSAGE);
+        return;
+      }
+
       const otherTaskCodeSet = new Set(
         samples
           .filter((sample) => String(sample?.task_code || "").trim() !== code)
@@ -373,10 +421,6 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       }
 
       const now = formatLocalDateTime();
-      const taskSamples = samples
-        .filter((sample) => String(sample?.task_code || "").trim() === code)
-        .sort((left, right) => compareText(left?.code, right?.code));
-
       const nextTaskSamples = finalCodes.map((sampleCode, index) => {
         const existing = taskSamples[index];
         if (existing) {

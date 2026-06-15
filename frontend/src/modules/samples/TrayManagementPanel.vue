@@ -17,7 +17,7 @@
             </select>
           </label>
         </div>
-        <table class="table">
+        <table class="table samples-trays-table">
           <thead>
             <tr>
               <th>序号</th>
@@ -33,48 +33,53 @@
               <td colspan="6" class="muted">暂无托盘数据</td>
             </tr>
             <tr
-              v-for="(row, index) in pagedTrayRows"
-              :key="row.trayCode"
+              v-for="(slot, index) in pagedTraySlots"
+              :key="slot.key"
               :data-testid="`samples-trays-row-${index}`"
-              :class="{ 'tray-row-active': row.trayCode === selectedTrayCode, 'is-active': row.trayCode === selectedTrayCode }"
-              @click="selectTray(row.trayCode)"
+              :class="{
+                'tray-row-active': slot.row?.trayCode === selectedTrayCode,
+                'is-active': slot.row?.trayCode === selectedTrayCode,
+                'samples-trays-row--placeholder': slot.isPlaceholder,
+              }"
+              @click="slot.row ? selectTray(slot.row.trayCode) : undefined"
             >
+              <template v-if="slot.row">
               <td>{{ index + 1 }}</td>
               <td :data-testid="`samples-trays-task-code-${index}`">
                 <div class="tray-code-stack">
-                  <span class="tray-code-line">{{ row.taskCode || "-" }}</span>
+                  <span class="tray-code-line">{{ slot.row.taskCode || "-" }}</span>
                 </div>
               </td>
               <td :data-testid="`samples-trays-tray-code-${index}`">
                 <div class="tray-code-stack">
-                  <span class="tray-code-line">{{ row.trayCode || "-" }}</span>
+                  <span class="tray-code-line">{{ slot.row.trayCode || "-" }}</span>
                 </div>
               </td>
               <td>
                 <div class="tray-current-status" :data-testid="`samples-trays-current-status-${index}`">
-                  {{ row.status || "-" }}
+                  {{ slot.row.status || "-" }}
                 </div>
               </td>
-              <td>{{ row.sampleCount }}</td>
+              <td>{{ slot.row.sampleCount }}</td>
               <td class="tray-sample-summary" :data-testid="`samples-trays-sample-codes-${index}`">
                 <div class="tray-sample-lines" tabindex="0">
                   <span
-                    v-for="sampleCode in visibleSampleCodes(row)"
-                    :key="`${row.trayCode}-${sampleCode}`"
+                    v-for="sampleCode in visibleSampleCodes(slot.row)"
+                    :key="`${slot.row.trayCode}-${sampleCode}`"
                     class="tray-sample-line"
                     :class="{ 'is-ellipsis': sampleCode === SAMPLE_CODES_ELLIPSIS }"
                   >
                     {{ sampleCode }}
                   </span>
                   <div
-                    v-if="hasHiddenSampleCodes(row)"
+                    v-if="hasHiddenSampleCodes(slot.row)"
                     class="tray-sample-popover"
                     :data-testid="`samples-trays-sample-popover-${index}`"
                   >
                     <strong>全部样品编号</strong>
                     <span
-                      v-for="sampleCode in allSampleCodes(row)"
-                      :key="`${row.trayCode}-popover-${sampleCode}`"
+                      v-for="sampleCode in allSampleCodes(slot.row)"
+                      :key="`${slot.row.trayCode}-popover-${sampleCode}`"
                       class="tray-sample-popover-line"
                     >
                       {{ sampleCode }}
@@ -82,6 +87,8 @@
                   </div>
                 </div>
               </td>
+              </template>
+              <td v-else colspan="6" aria-hidden="true">&nbsp;</td>
             </tr>
           </tbody>
         </table>
@@ -220,6 +227,21 @@ const safeTrayPage = computed(() => Math.min(Math.max(Number.parseInt(String(tra
 const pagedTrayRows = computed(() => {
   const startIndex = (safeTrayPage.value - 1) * TRAY_PAGE_SIZE;
   return filteredTrayRows.value.slice(startIndex, startIndex + TRAY_PAGE_SIZE);
+});
+const pagedTraySlots = computed(() => {
+  const rows = pagedTrayRows.value.map((row) => ({ key: row.trayCode, row }));
+  if (!filteredTrayRows.value.length) {
+    return rows;
+  }
+  const placeholderCount = Math.max(0, TRAY_PAGE_SIZE - rows.length);
+  return [
+    ...rows,
+    ...Array.from({ length: placeholderCount }, (_, index) => ({
+      isPlaceholder: true,
+      key: `placeholder-${safeTrayPage.value}-${index}`,
+      row: null,
+    })),
+  ];
 });
 
 const allSampleCodes = (row) => {

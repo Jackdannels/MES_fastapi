@@ -332,8 +332,9 @@ import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { formatLocalDateTime } from "@/lib/dateTime";
-import { readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
+import { writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
@@ -401,6 +402,40 @@ const overviewPageSize = 4;
 const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
+const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const STAGING_SNAPSHOT_KEYS = [
+  STORAGE_KEYS.tasks,
+  STORAGE_KEYS.schedules,
+  STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.experiment_run_trays,
+  STORAGE_KEYS.samples,
+  STORAGE_KEYS.staging_events,
+];
+const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
+
+const readRawStorageSnapshot = async () => {
+  const response = await fetch(STORAGE_API_URL, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
+  }
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+};
+
+const mergeArraySnapshot = (previousSnapshot, nextSnapshot, keys) => {
+  const source = nextSnapshot && typeof nextSnapshot === "object" ? nextSnapshot : {};
+  const merged = { ...(previousSnapshot || {}) };
+  keys.forEach((key) => {
+    if (hasOwn(source, key) && Array.isArray(source[key])) {
+      merged[key] = source[key];
+    }
+  });
+  return merged;
+};
 
 const nowValue = () => formatLocalDateTime();
 
@@ -611,24 +646,8 @@ const resetDetail = () => {
 };
 
 const loadSnapshot = async () => {
-  const nextSnapshot = await readStorageSnapshot([
-    STORAGE_KEYS.tasks,
-    STORAGE_KEYS.schedules,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.experiment_run_trays,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.staging_events,
-  ]);
-  snapshot.value = {
-    [STORAGE_KEYS.tasks]: nextSnapshot[STORAGE_KEYS.tasks] || [],
-    [STORAGE_KEYS.schedules]: nextSnapshot[STORAGE_KEYS.schedules] || [],
-    [STORAGE_KEYS.experiments]: nextSnapshot[STORAGE_KEYS.experiments] || [],
-    [STORAGE_KEYS.experiment_trays]: nextSnapshot[STORAGE_KEYS.experiment_trays] || [],
-    [STORAGE_KEYS.experiment_run_trays]: nextSnapshot[STORAGE_KEYS.experiment_run_trays] || [],
-    [STORAGE_KEYS.samples]: nextSnapshot[STORAGE_KEYS.samples] || [],
-    [STORAGE_KEYS.staging_events]: nextSnapshot[STORAGE_KEYS.staging_events] || [],
-  };
+  const nextSnapshot = await readRawStorageSnapshot();
+  snapshot.value = mergeArraySnapshot(snapshot.value, nextSnapshot, STAGING_SNAPSHOT_KEYS);
 };
 
 const openScanModal = async (mode) => {
@@ -951,14 +970,7 @@ const flushPendingRealtimeRefresh = () => {
 };
 
 const storageRefresh = useStorageSnapshotRefresh({
-  keys: [
-    STORAGE_KEYS.tasks,
-    STORAGE_KEYS.schedules,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.staging_events,
-  ],
+  keys: STAGING_SNAPSHOT_KEYS,
   refresh: loadSnapshot,
   paused: isRealtimeRefreshPaused,
 });

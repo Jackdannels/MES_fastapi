@@ -112,8 +112,9 @@ describe("TrayManagementPanel", () => {
     await wrapper.get('[data-page="next"]').trigger("click");
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(1);
+    expect(wrapper.findAll('[data-testid^="samples-trays-row-"]')).toHaveLength(5);
     expect(wrapper.text()).toContain("SYLU-2026-05-001-TP-006");
+    expect(wrapper.findAll(".samples-trays-row--placeholder")).toHaveLength(4);
   });
 
   test("keeps only the unified tray flow title above the tray flow", () => {

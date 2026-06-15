@@ -225,6 +225,7 @@ defineOptions({
 import { computed, h, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
@@ -329,7 +330,8 @@ const screenCards = [
   },
 ];
 
-const { loadSnapshot } = useStorageSnapshot([
+const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const VISUALIZATION_SNAPSHOT_KEYS = [
   STORAGE_KEYS.devices,
   STORAGE_KEYS.tasks,
   STORAGE_KEYS.samples,
@@ -339,8 +341,34 @@ const { loadSnapshot } = useStorageSnapshot([
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.staging_events,
-]);
+];
+const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS);
 const rawSnapshot = ref({});
+const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
+
+const readRawStorageSnapshot = async () => {
+  const response = await fetch(STORAGE_API_URL, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
+  }
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+};
+
+const mergeArraySnapshot = (previousSnapshot, nextSnapshot, keys) => {
+  const source = nextSnapshot && typeof nextSnapshot === "object" ? nextSnapshot : {};
+  const merged = { ...(previousSnapshot || {}) };
+  keys.forEach((key) => {
+    if (hasOwn(source, key) && Array.isArray(source[key])) {
+      merged[key] = source[key];
+    }
+  });
+  return merged;
+};
+
 const deviceItems = computed(() => {
   const devices = rawSnapshot.value?.[STORAGE_KEYS.devices];
   return Array.isArray(devices) ? devices : [];
@@ -624,21 +652,16 @@ const resolveScreenComponent = (screen) => {
 };
 
 const refreshSnapshot = async () => {
-  const snapshot = loadSnapshot();
-  rawSnapshot.value = snapshot && typeof snapshot.then === "function" ? await snapshot : snapshot;
+  const snapshot = await readRawStorageSnapshot();
+  rawSnapshot.value = mergeArraySnapshot(rawSnapshot.value, snapshot, VISUALIZATION_SNAPSHOT_KEYS);
+};
+const initializeSnapshot = async () => {
+  const snapshot = loadInitialSnapshot();
+  const resolvedSnapshot = snapshot && typeof snapshot.then === "function" ? await snapshot : snapshot;
+  rawSnapshot.value = mergeArraySnapshot(rawSnapshot.value, resolvedSnapshot, VISUALIZATION_SNAPSHOT_KEYS);
 };
 useStorageSnapshotRefresh({
-  keys: [
-    STORAGE_KEYS.devices,
-    STORAGE_KEYS.tasks,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_runs,
-    STORAGE_KEYS.experiment_run_trays,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.schedules,
-    STORAGE_KEYS.staging_events,
-  ],
+  keys: VISUALIZATION_SNAPSHOT_KEYS,
   refresh: refreshSnapshot,
   debounceMs: 100,
 });
@@ -699,13 +722,11 @@ const formatBeijingFlowTime = (value) => {
 
 onMounted(() => {
   refreshViewportSize();
-  refreshSnapshot();
-  window.addEventListener("mes:samples-updated", refreshSnapshot);
+  initializeSnapshot();
   window.addEventListener("resize", refreshViewportSize);
 });
 
 onUnmounted(() => {
-  window.removeEventListener("mes:samples-updated", refreshSnapshot);
   window.removeEventListener("resize", refreshViewportSize);
 });
 

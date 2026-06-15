@@ -48,7 +48,7 @@ const mountCard = (props = {}) =>
   });
 
 describe("TaskOverviewCard", () => {
-  test("renders as a readonly detail card and emits selection actions", async () => {
+  test("keeps single-click selection and uses double-click readonly detail guidance", async () => {
     const wrapper = mountCard({ selected: true });
 
     await wrapper.trigger("click");
@@ -58,7 +58,7 @@ describe("TaskOverviewCard", () => {
     expect(wrapper.emitted("dblclick-card")).toEqual([[baseRow]]);
     expect(wrapper.find(".task-overview-edit-btn").exists()).toBe(true);
     expect(wrapper.find(".task-overview-editor").exists()).toBe(false);
-    expect(wrapper.text()).toContain("已进入详情模式，所有信息只读");
+    expect(wrapper.text()).toContain("双击进入详情模式，所有信息只读");
   });
 
   test("renders the old detail panel style as readonly when expanded", async () => {

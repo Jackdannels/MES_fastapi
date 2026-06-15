@@ -15,9 +15,20 @@ function useStorageSnapshot(keys) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
 
   return {
-    loadSnapshot: async () => {
+    loadSnapshot: async (options = {}) => {
       const loadedKeys = Array.from(new Set([...requestedKeys, ...RECONCILIATION_KEYS]));
-      const snapshot = await readStorageSnapshot(loadedKeys);
+      const fallbackSnapshot = options?.fallbackSnapshot || {};
+      const rawSnapshot = await readStorageSnapshot(loadedKeys, { normalizeMissing: false });
+      const snapshot = Object.fromEntries(
+        loadedKeys.map((key) => [
+          key,
+          Array.isArray(rawSnapshot?.[key])
+            ? rawSnapshot[key]
+            : Array.isArray(fallbackSnapshot?.[key])
+              ? fallbackSnapshot[key]
+              : [],
+        ]),
+      );
       const reconciled = reconcileScheduleExceptions(snapshot);
       if (reconciled.changed) {
         await writeStorageUpdates(reconciled.updates);

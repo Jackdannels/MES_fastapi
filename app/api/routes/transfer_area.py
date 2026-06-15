@@ -31,6 +31,7 @@ TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "到货"
 DEFAULT_TRAY_LIMIT = 4
 MAX_TRAY_LIMIT = 99
+TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT = 12
 SYSTEM_TRAY_TOTAL = 10
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
@@ -336,8 +337,7 @@ def limit_task_samples_to_planned_count(
 
     surplus_keys = {sample_key(sample) for sample in surplus_samples}
     snapshot["samples"] = [sample for sample in snapshot["samples"] if sample_key(sample) not in surplus_keys]
-    refreshed_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
-    return refreshed_samples, True
+    return ordered_samples[:planned_count], True
 
 
 def build_task_sample_map(samples: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -405,17 +405,24 @@ def build_generated_task_samples(task: dict[str, Any], task_samples: list[dict[s
     return generated
 
 
-def ensure_task_samples(snapshot: dict[str, list[dict[str, Any]]], task: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
-    samples_by_task = build_task_sample_map(snapshot["samples"])
-    task_code_value = task_code(task)
-    task_samples = samples_by_task.get(task_code_value, [])
+def ensure_task_samples_from_list(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool]:
     task_samples, trimmed = limit_task_samples_to_planned_count(snapshot, task, task_samples)
     generated_samples = build_generated_task_samples(task, task_samples)
     if not generated_samples:
         return task_samples, trimmed
     snapshot["samples"].extend(generated_samples)
-    refreshed_samples = build_task_sample_map(snapshot["samples"]).get(task_code_value, [])
+    refreshed_samples = sorted([*task_samples, *generated_samples], key=sample_sort_key)
     return refreshed_samples, True
+
+
+def ensure_task_samples(snapshot: dict[str, list[dict[str, Any]]], task: dict[str, Any]) -> tuple[list[dict[str, Any]], bool]:
+    samples_by_task = build_task_sample_map(snapshot["samples"])
+    task_samples = samples_by_task.get(task_code(task), [])
+    return ensure_task_samples_from_list(snapshot, task, task_samples)
 
 
 def is_visible_task(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
@@ -1036,6 +1043,56 @@ def serialize_workspace(
     }
 
 
+def build_overview_tray_progress_rows(task_samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    ordered_codes: list[str] = []
+    for sample in task_samples:
+        trays = as_list(sample.get("trays"))
+        if not trays:
+            continue
+        tray = dict(trays[0])
+        tray_code_value = normalize_text(tray.get("tray_code"))
+        if not tray_code_value:
+            continue
+        if tray_code_value not in grouped:
+            grouped[tray_code_value] = {
+                "samples": [],
+                "barcode": bool(normalize_text(tray.get("barcode_no")) or normalize_text(tray.get("printed_at"))),
+            }
+            ordered_codes.append(tray_code_value)
+        grouped[tray_code_value]["samples"].append(True)
+    return [grouped[tray_code_value] for tray_code_value in sorted(ordered_codes, key=tray_serial_from_code)]
+
+
+def build_transfer_overview_row(
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+    experiments: list[dict[str, Any]],
+    seq: int,
+) -> dict[str, Any]:
+    current_task_status = transfer_status_for_task(task, task_samples)
+    assigned_tray_rows = build_overview_tray_progress_rows(task_samples)
+    experiment_summary = build_experiment_summary(task, experiments)
+    sample_codes = [sample_code(sample) for sample in task_samples if sample_code(sample)]
+    return {
+        "seq": seq,
+        "taskId": task_key(task),
+        "taskNo": task_code(task),
+        "taskName": normalize_text(task.get("name")),
+        "taskType": normalize_text(task.get("test_type")),
+        "experimentTypeText": experiment_summary or normalize_text(task.get("test_type")),
+        "sampleCount": len(task_samples) or int(task.get("sample_count") or 0),
+        "taskStatus": current_task_status,
+        "taskProgress": task_progress(task, current_task_status, assigned_tray_rows, task_samples, experiments),
+        "receivedTime": task_arrival_time(task),
+        "sampleCodes": sample_codes[:TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT],
+        "sampleCodePreview": sample_codes[:TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT],
+        "sampleCodeSearchText": " ".join(sample_codes),
+        "sampleCodesText": " / ".join(sample_codes[:TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT]),
+        "sampleCodeCount": len(sample_codes),
+    }
+
+
 def find_task(snapshot: dict[str, list[dict[str, Any]]], task_id: str) -> dict[str, Any]:
     normalized = normalize_text(task_id)
     for task in snapshot["tasks"]:
@@ -1406,33 +1463,10 @@ def read_bootstrap() -> dict[str, Any]:
     overview = []
     snapshot_changed = False
     for index, task in enumerate(visible_tasks, start=1):
-        task_samples, changed = ensure_task_samples(snapshot, task)
+        task_samples, changed = ensure_task_samples_from_list(snapshot, task, samples_by_task.get(task_code(task), []))
         snapshot_changed = snapshot_changed or changed
-        workspace = serialize_workspace(
-            task,
-            task_samples,
-            snapshot["samples"],
-            snapshot["experiments"],
-            snapshot["experiment_trays"],
-            snapshot["experiment_samples"],
-        )
-        task_payload = workspace["task"]
-        overview.append(
-            {
-                "seq": index,
-                "taskId": task_payload["taskId"],
-                "taskNo": task_payload["taskNo"],
-                "taskName": task_payload["taskName"],
-                "taskType": task_payload["taskType"],
-                "experimentTypeText": task_payload["experimentTypeText"],
-                "sampleCount": task_payload["sampleCount"],
-                "taskStatus": task_payload["taskStatus"],
-                "taskProgress": task_payload["taskProgress"],
-                "receivedTime": task_payload["receivedTime"],
-                "sampleCodes": [sample_code(sample) for sample in task_samples],
-                "sampleCodesText": " / ".join(sample_code(sample) for sample in task_samples),
-            }
-        )
+        samples_by_task[task_code(task)] = task_samples
+        overview.append(build_transfer_overview_row(task, task_samples, snapshot["experiments"], index))
 
     if snapshot_changed:
         write_snapshot(snapshot)

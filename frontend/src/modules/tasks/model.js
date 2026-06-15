@@ -32,7 +32,7 @@ const COMPLETED_EXPERIMENT_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGA
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
 const MIN_SAMPLE_COUNT = 1;
-const MAX_SAMPLE_COUNT = 999;
+const MAX_SAMPLE_COUNT = 99;
 const INVALID_TASK_TEXT_PATTERN = /[\uFFFD&^*#<>`{}|\\]/;
 const TASK_TEXT_FIELD_LABELS = {
   attachment: "附件",
@@ -65,6 +65,15 @@ const validateTaskSampleCount = (value) => {
     return `样品数量最多为 ${MAX_SAMPLE_COUNT}`;
   }
   return "";
+};
+const normalizeTaskSampleCount = (value, fallback = 0) => {
+  const parsed = Number.parseInt(value, 10);
+  const fallbackParsed = Number.parseInt(fallback, 10);
+  const count = Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackParsed;
+  if (!Number.isFinite(count) || count <= 0) {
+    return 0;
+  }
+  return Math.min(count, MAX_SAMPLE_COUNT);
 };
 const validateTaskTextFields = (form = {}, options = {}) => {
   const requireContact = Boolean(options?.requireContact);
@@ -661,9 +670,9 @@ function buildTaskSampleCodes(taskCode, sampleCount, taskSamples) {
   });
 
   const plannedRaw = Number.parseInt(sampleCount, 10);
-  let targetCount = Number.isFinite(plannedRaw) && plannedRaw > 0 ? plannedRaw : existingSamples.length;
+  let targetCount = normalizeTaskSampleCount(plannedRaw, existingSamples.length);
   if (targetCount <= 0 && maxIndex > 0) {
-    targetCount = maxIndex;
+    targetCount = normalizeTaskSampleCount(maxIndex);
   }
 
   return Array.from({ length: targetCount }, (_, index) => `${normalizedCode}-SP-${String(index + 1).padStart(3, "0")}`);
@@ -680,6 +689,9 @@ function validateSampleCodeDraft({ codes, samples, taskCode }) {
   const codeList = Array.isArray(codes) ? codes.map((code) => normalizeText(code)).filter(Boolean) : [];
   if (codeList.length === 0) {
     return "请填写至少一个样品编号";
+  }
+  if (codeList.length > MAX_SAMPLE_COUNT) {
+    return `样品编号最多为 ${MAX_SAMPLE_COUNT} 个`;
   }
   if (codeList.length !== new Set(codeList).size) {
     return "样品编号不能重复";
@@ -821,6 +833,7 @@ export {
   createTaskRecord,
   deleteTaskSnapshot,
   normalizeText,
+  normalizeTaskSampleCount,
   applyTaskSampleCodes,
   aggregateTaskStatusFromSamples,
   resolveTaskStatus,

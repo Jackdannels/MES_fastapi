@@ -57,6 +57,34 @@ describe("useTaskOverview helpers", () => {
     expect(filtered[0].taskCode).toBe("TASK-001");
   });
 
+  test("filters rows by full sample search text when the rendered sample preview is truncated", () => {
+    const rows = [
+      {
+        currentStatus: "待排程",
+        sampleCodeSearchText: "SYLU-2026-06-099-SP-001 SYLU-2026-06-099-SP-099",
+        sampleCodes: ["SYLU-2026-06-099-SP-001"],
+        scheduleLabel: "未排程",
+        taskCode: "SYLU-2026-06-099",
+        taskType: "冲击试验",
+        timeValue: "2026-06-10T10:00:00Z",
+        trays: [],
+      },
+    ];
+
+    const filtered = filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "SP-099",
+      rows,
+      testTypeFilter: "",
+      timeFilter: "all",
+      now: new Date("2026-06-10T12:00:00Z"),
+    });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].taskCode).toBe("SYLU-2026-06-099");
+  });
+
   test("rejects an inverted custom date range instead of swapping it", () => {
     const rows = [
       {

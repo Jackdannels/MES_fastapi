@@ -18,6 +18,7 @@ import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/s
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_SCHEDULED = "已排程";
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
+const SAMPLE_CODE_PREVIEW_LIMIT = 50;
 const SCHEDULED_EXPERIMENT_STATUSES = new Set([
   "已排程",
   "实验准备就绪",
@@ -625,6 +626,8 @@ function buildTaskRows({
         scheduleLabel,
         scheduledExperimentCount: currentStatus === STATUS_RETENTION ? 0 : scheduledExperimentCount,
         sampleCodes: uniqueSampleCodes,
+        sampleCodePreview: uniqueSampleCodes.slice(0, SAMPLE_CODE_PREVIEW_LIMIT),
+        sampleCodeSearchText: uniqueSampleCodes.join(" "),
         sampleCount: uniqueSampleCodes.length,
         taskType: buildExperimentTypeSummary(row.taskType),
         trays,

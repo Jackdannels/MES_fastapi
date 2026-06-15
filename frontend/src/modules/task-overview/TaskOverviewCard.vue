@@ -25,7 +25,7 @@
           </button>
         </div>
         <div v-if="selected" class="task-overview-card-hint">
-          已进入详情模式，所有信息只读
+          双击进入详情模式，所有信息只读
         </div>
         <div class="task-overview-readonly-meta">
           <span>任务编号</span>
@@ -48,17 +48,18 @@
         @cancel-edit="emit('cancel-edit')"
       />
 
-      <TaskOverviewSampleCodes :sample-codes="row.sampleCodes" />
+      <TaskOverviewSampleCodes :sample-codes="displaySampleCodes" />
     </div>
   </article>
 </template>
 
 <script setup>
+import { computed } from "vue";
 import TaskOverviewEditorPanel from "./TaskOverviewEditorPanel.vue";
 import TaskOverviewSampleCodes from "./TaskOverviewSampleCodes.vue";
 import TaskOverviewSummaryTable from "./TaskOverviewSummaryTable.vue";
 
-defineProps({
+const props = defineProps({
   deleteConfirm: {
     type: Object,
     default: () => ({}),
@@ -118,6 +119,10 @@ defineProps({
     default: () => [],
   },
 });
+
+const displaySampleCodes = computed(() =>
+  Array.isArray(props.row?.sampleCodePreview) ? props.row.sampleCodePreview : props.row?.sampleCodes || []
+);
 
 const emit = defineEmits([
   "cancel-edit",

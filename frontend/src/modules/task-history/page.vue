@@ -162,9 +162,9 @@ defineOptions({
 
 import { computed, onMounted, ref, watch } from "vue";
 
-import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import AppPagination from "@/components/shared/AppPagination.vue";
+import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTasks } from "@/lib/tasksApi";
 import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
@@ -189,14 +189,34 @@ const experimentRuns = ref([]);
 const experimentRunTrays = ref([]);
 const experimentTrays = ref([]);
 const schedules = ref([]);
-const { loadSnapshot } = useStorageSnapshot([
+const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const HISTORY_SNAPSHOT_KEYS = [
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
-]);
+];
+const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
+
+const readRawStorageSnapshot = async () => {
+  const response = await fetch(STORAGE_API_URL, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
+  }
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+};
+
+const assignArrayFromSnapshot = (targetRef, snapshot, key) => {
+  if (hasOwn(snapshot, key) && Array.isArray(snapshot[key])) {
+    targetRef.value = snapshot[key];
+  }
+};
 
 const historyView = computed(() => buildReturnedTaskHistoryView({
   filters: {
@@ -279,15 +299,18 @@ const refreshHistoryData = async () => {
   try {
     const [loadedTasks, snapshot] = await Promise.all([
       readTasks({ includeArchived: true }),
-      loadSnapshot(),
+      readRawStorageSnapshot(),
     ]);
-    tasks.value = Array.isArray(loadedTasks) ? loadedTasks : [];
-    samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-    experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-    experimentRuns.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
-    experimentRunTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
-    experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-    schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
+    if (Array.isArray(loadedTasks)) {
+      tasks.value = loadedTasks;
+    }
+    const safeSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
+    assignArrayFromSnapshot(samples, safeSnapshot, STORAGE_KEYS.samples);
+    assignArrayFromSnapshot(experiments, safeSnapshot, STORAGE_KEYS.experiments);
+    assignArrayFromSnapshot(experimentRuns, safeSnapshot, STORAGE_KEYS.experiment_runs);
+    assignArrayFromSnapshot(experimentRunTrays, safeSnapshot, STORAGE_KEYS.experiment_run_trays);
+    assignArrayFromSnapshot(experimentTrays, safeSnapshot, STORAGE_KEYS.experiment_trays);
+    assignArrayFromSnapshot(schedules, safeSnapshot, STORAGE_KEYS.schedules);
     loadError.value = "";
   } catch (error) {
     const detail = error instanceof Error ? error.message : "";
@@ -298,12 +321,7 @@ const refreshHistoryData = async () => {
 useStorageSnapshotRefresh({
   keys: [
     STORAGE_KEYS.tasks,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_runs,
-    STORAGE_KEYS.experiment_run_trays,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.schedules,
+    ...HISTORY_SNAPSHOT_KEYS,
     STORAGE_KEYS.staging_events,
   ],
   refresh: refreshHistoryData,

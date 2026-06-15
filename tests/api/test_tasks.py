@@ -1269,11 +1269,11 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
     non_integer = client.post("/api/tasks", json={**base_payload, "sample_count": "1.5"})
     zero = client.post("/api/tasks", json={**base_payload, "sample_count": "0"})
     negative = client.post("/api/tasks", json={**base_payload, "sample_count": "-1"})
-    too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "1000"})
+    too_many = client.post("/api/tasks", json={**base_payload, "sample_count": "100"})
     one_sample = client.post("/api/tasks", json={**base_payload, "sample_count": "1"})
     valid = client.post(
         "/api/tasks",
-        json={**base_payload, "id": "SYLU-2026-04-110-B", "code": "SYLU-2026-04-110-B", "sample_count": "999"},
+        json={**base_payload, "id": "SYLU-2026-04-110-B", "code": "SYLU-2026-04-110-B", "sample_count": "99"},
     )
 
     assert missing.status_code == 400
@@ -1285,7 +1285,7 @@ def test_create_task_rejects_invalid_sample_count(monkeypatch):
     assert negative.status_code == 400
     assert negative.json() == {"detail": "样品数量至少为 1"}
     assert too_many.status_code == 400
-    assert too_many.json() == {"detail": "样品数量最多为 999"}
+    assert too_many.json() == {"detail": "样品数量最多为 99"}
     assert one_sample.status_code == 201
     assert one_sample.json()["sample_count"] == "1"
     assert valid.status_code == 201
@@ -1319,9 +1319,23 @@ def test_update_task_rejects_invalid_sample_count(monkeypatch):
             "status": "待排程",
         },
     )
+    too_many = client.put(
+        "/api/tasks/SYLU-2026-04-111",
+        json={
+            "id": "SYLU-2026-04-111",
+            "code": "SYLU-2026-04-111",
+            "name": "样品数量校验",
+            "sample_count": "100",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
 
     assert response.status_code == 400
     assert response.json() == {"detail": "样品数量至少为 1"}
+    assert too_many.status_code == 400
+    assert too_many.json() == {"detail": "样品数量最多为 99"}
 
 
 def test_update_task_sample_count_shrinks_related_samples(monkeypatch):
@@ -1373,6 +1387,65 @@ def test_update_task_sample_count_shrinks_related_samples(monkeypatch):
         "SYLU-2026-04-112-SP-001",
         "SYLU-2026-04-112-SP-002",
     ]
+
+
+def test_update_task_rejects_sample_count_change_after_storage_confirmed_with_experiments(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-confirmed-sample-count",
+                "code": "SYLU-2026-04-113",
+                "name": "已入库样品数锁定",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "transfer_status": "到货",
+                "status": "待排程",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-04-113-A",
+                "task_code": "SYLU-2026-04-113",
+                "experiment_code": "SYLU-2026-04-113-A",
+                "experiment_name": "冲击试验",
+            }
+        ],
+        samples=[
+            {
+                "id": "sample-1",
+                "code": "SYLU-2026-04-113-SP-001",
+                "task_code": "SYLU-2026-04-113",
+                "status": "到货",
+            },
+            {
+                "id": "sample-2",
+                "code": "SYLU-2026-04-113-SP-002",
+                "task_code": "SYLU-2026-04-113",
+                "status": "到货",
+            },
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-confirmed-sample-count",
+        json={
+            "id": "task-confirmed-sample-count",
+            "code": "SYLU-2026-04-113",
+            "name": "已入库样品数锁定",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "transfer_status": "到货",
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "该任务样品已在接驳区确认到货，不允许更改样品数量"}
+    assert client.app.state.storage.read("mes.tasks")[0]["sample_count"] == "2"
+    assert len(client.app.state.storage.read("mes.samples")) == 2
 
 
 def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch):

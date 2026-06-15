@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import VisualizationPage from "./page.vue";
 
@@ -110,6 +110,25 @@ describe("VisualizationPage runtime", () => {
   beforeEach(() => {
     snapshotState.refreshRegistrations = [];
     snapshotState.snapshot = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url) => {
+        if (String(url).includes("/api/storage")) {
+          return {
+            ok: true,
+            json: () => ({
+              "mes.devices": REAL_DEVICE_LEDGER,
+              ...snapshotState.snapshot,
+            }),
+          };
+        }
+        throw new Error(`Unhandled request: ${String(url)}`);
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   test("subscribes to realtime snapshot updates for visualization data", () => {
@@ -126,6 +145,27 @@ describe("VisualizationPage runtime", () => {
       "mes.devices",
       "mes.staging_events",
     ]));
+  });
+
+  test("keeps the visible board data when a background refresh omits array snapshot keys", async () => {
+    snapshotState.snapshot = buildSingleRunningLabSnapshot();
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAll('[data-testid="visual-screen-card"]')[0].trigger("click");
+    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-VIS-001");
+
+    snapshotState.snapshot = {
+      "mes.samples": "not-an-array",
+    };
+    await snapshotState.refreshRegistrations[0].refresh();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-VIS-001");
+    expect(wrapper.get('[data-testid="visual-operations-summary"]').text()).toContain("运行任务1");
+    expect(wrapper.get('[data-testid="visual-operations-summary"]').text()).toContain("托盘流程1");
   });
 
   test("renders eight non-interactive screen thumbnails", async () => {

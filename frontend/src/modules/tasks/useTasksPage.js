@@ -25,6 +25,7 @@ import {
   createTaskRecord,
   deleteTaskSnapshot,
   normalizeText,
+  normalizeTaskSampleCount,
   applyTaskSampleCodes,
   splitSampleCodeText,
   syncTaskSamples,
@@ -38,6 +39,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 const TASK_INTAKE_HASH = "#task-intake-modal";
 const TASK_RESET_EVENT = "mes:open-task-reset";
 const RESET_FEEDBACK_DISMISS_MS = 10000;
+const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
 
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
@@ -117,11 +119,22 @@ function useTasksPage() {
     if (!taskCode) {
       return [];
     }
-    return rawSamples.value
+    const codes = rawSamples.value
       .filter((sample) => normalizeText(sample?.task_code) === taskCode)
       .map((sample) => normalizeText(sample?.code))
       .filter(Boolean)
       .sort((left, right) => left.localeCompare(right, "zh-Hans-CN", { numeric: true, sensitivity: "base" }));
+    const plannedCount = normalizeTaskSampleCount(editForm.value.sample_count, codes.length);
+    if (plannedCount <= 0) {
+      return [];
+    }
+    if (codes.length >= plannedCount) {
+      return codes.slice(0, plannedCount);
+    }
+    const codeSet = new Set(codes);
+    const generatedCodes = buildTaskSampleCodes(taskCode, plannedCount, [])
+      .filter((code) => !codeSet.has(code));
+    return codes.concat(generatedCodes).slice(0, plannedCount);
   });
   const taskDetailSampleCodePreview = computed(() => taskDetailSampleCodes.value.slice(0, 5));
 
@@ -401,6 +414,22 @@ function useTasksPage() {
     });
   };
 
+  const taskHasSelectedExperiments = (task) => {
+    const taskCode = taskCodeOf(task);
+    if (rawExperiments.value.some((experiment) => taskCodeOf(experiment) === taskCode)) {
+      return true;
+    }
+    return collectExperimentTypes(task?.test_types, task?.test_type).length > 0;
+  };
+
+  const sampleCountChanged = (originalTask, updatedTask) => {
+    const taskCode = taskCodeOf(originalTask);
+    const relatedSampleCount = rawSamples.value.filter((sample) => taskCodeOf(sample) === taskCode).length;
+    const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, relatedSampleCount);
+    const nextCount = normalizeTaskSampleCount(updatedTask?.sample_count, originalCount);
+    return originalCount !== nextCount;
+  };
+
   const isRetentionSchedule = (schedule) => normalizeText(schedule?.device).includes("暂存间");
 
   const resolveAffectedExperimentCodes = (taskCode, nextExperimentTypes) => {
@@ -487,6 +516,21 @@ function useTasksPage() {
   };
 
   const readAllTasks = () => readTasks({ includeArchived: true });
+
+  const buildSnapshotFallback = () => ({
+    [STORAGE_KEYS.schedules]: rawSchedules.value,
+    [STORAGE_KEYS.samples]: rawSamples.value,
+    [STORAGE_KEYS.streams]: rawStreams.value,
+    [STORAGE_KEYS.experiments]: rawExperiments.value,
+    [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
+    [STORAGE_KEYS.experiment_samples]: rawExperimentSamples.value,
+  });
+
+  const applySnapshotArray = (snapshot, key, target) => {
+    if (Array.isArray(snapshot?.[key])) {
+      target.value = snapshot[key];
+    }
+  };
 
   const persistRelated = async (updates) => {
     // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
@@ -659,6 +703,10 @@ function useTasksPage() {
     const originalTypes = collectExperimentTypes(originalTask?.test_types, originalTask?.test_type);
     const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
     const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);
+    if (sampleCountChanged(originalTask, updatedTask) && taskStorageConfirmed(originalTask, rawSamples.value) && taskHasSelectedExperiments(originalTask)) {
+      editWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
+      return;
+    }
     if (experimentTypesChanged && taskStorageConfirmed(originalTask, rawSamples.value)) {
       editWarning.value = "该任务样品已在接驳区确认到货，不允许更改实验类型";
       return;
@@ -721,6 +769,11 @@ function useTasksPage() {
     const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === taskId);
     if (!originalTask) {
       sampleCodesWarning.value = "当前任务不存在，请刷新后重试";
+      return;
+    }
+    const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);
+    if (codes.length !== originalCount && taskStorageConfirmed(originalTask, rawSamples.value) && taskHasSelectedExperiments(originalTask)) {
+      sampleCodesWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
       return;
     }
 
@@ -853,16 +906,16 @@ function useTasksPage() {
     try {
       const [tasks, snapshot, testTypes] = await Promise.all([
         readAllTasks(),
-        loadSnapshot(),
+        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback() }),
         readMasterTestTypes().catch(() => []),
       ]);
       rawTasks.value = Array.isArray(tasks) ? tasks : [];
-      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-      rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      rawExperimentSamples.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_samples]) ? snapshot[STORAGE_KEYS.experiment_samples] : [];
+      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
+      applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.streams, rawStreams);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_samples, rawExperimentSamples);
       masterTestTypes.value = Array.isArray(testTypes) ? testTypes : [];
       loadError.value = "";
       if (taskDrawer.open.value) {

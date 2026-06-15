@@ -224,29 +224,53 @@ function useSamplesFlow() {
     warning.value = "";
   };
 
-  const load = async () => {
+  const selectArraySnapshot = (value, currentValue, preserveExisting, transform = (items) => items) => {
+    if (Array.isArray(value)) {
+      return transform(value);
+    }
+    return preserveExisting ? currentValue : [];
+  };
+
+  const load = async ({ silent = false } = {}) => {
     // 托盘流程需要同时读取实验、排程和运行记录，保持中控与试验间/可视化口径一致。
-    loading.value = true;
+    const showBlockingLoading = !silent || (rawTasks.value.length === 0 && rawSamples.value.length === 0);
+    if (showBlockingLoading) {
+      loading.value = true;
+    }
     try {
       const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
-      rawTasks.value = Array.isArray(tasks) ? tasks : [];
-      const normalizedSamples = normalizeSamplesSnapshot(
-        Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [],
-        DEFAULT_LABELS,
+      const preserveExisting = Boolean(silent);
+      rawTasks.value = selectArraySnapshot(tasks, rawTasks.value, preserveExisting);
+      rawSamples.value = selectArraySnapshot(
+        snapshot?.[STORAGE_KEYS.samples],
+        rawSamples.value,
+        preserveExisting,
+        (items) => normalizeSamplesSnapshot(items, DEFAULT_LABELS),
       );
-      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-      rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
-      rawExperimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
-      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      rawSamples.value = normalizedSamples;
+      rawExperiments.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiments], rawExperiments.value, preserveExisting);
+      rawExperimentRuns.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiment_runs], rawExperimentRuns.value, preserveExisting);
+      rawExperimentRunTrays.value = selectArraySnapshot(
+        snapshot?.[STORAGE_KEYS.experiment_run_trays],
+        rawExperimentRunTrays.value,
+        preserveExisting,
+      );
+      rawExperimentTrays.value = selectArraySnapshot(
+        snapshot?.[STORAGE_KEYS.experiment_trays],
+        rawExperimentTrays.value,
+        preserveExisting,
+      );
+      rawSchedules.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.schedules], rawSchedules.value, preserveExisting);
       warning.value = "";
     } catch (error) {
       warning.value = buildFailureMessage("样品数据加载失败，请稍后重试", error);
     } finally {
-      loading.value = false;
+      if (showBlockingLoading) {
+        loading.value = false;
+      }
     }
   };
+
+  const refreshRealtime = () => load({ silent: true });
 
   const resetPage = () => {
     currentPage.value = 1;
@@ -532,7 +556,7 @@ function useSamplesFlow() {
     }
     hasPendingSamplesRefresh = false;
     if (!flushedStorage) {
-      void load();
+      void refreshRealtime();
     }
     return true;
   };
@@ -543,7 +567,7 @@ function useSamplesFlow() {
       return;
     }
     hasPendingSamplesRefresh = false;
-    void load();
+    void refreshRealtime();
   };
 
   const storageRefresh = useStorageSnapshotRefresh({
@@ -556,7 +580,7 @@ function useSamplesFlow() {
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.schedules,
     ],
-    refresh: load,
+    refresh: refreshRealtime,
     paused: isRealtimeRefreshPaused,
   });
   flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;

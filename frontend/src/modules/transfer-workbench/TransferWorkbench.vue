@@ -650,31 +650,70 @@ const splitSampleCodesText = (value) => normalizeText(value)
   .map((sampleCode) => normalizeText(sampleCode))
   .filter(Boolean);
 
-const resolveOverviewSampleCodes = (task) => {
-  const sampleCodes = Array.isArray(task?.sampleCodes)
-    ? task.sampleCodes.map((sampleCode) => normalizeText(sampleCode)).filter(Boolean)
-    : [];
-  if (sampleCodes.length) {
+const normalizeSampleCodeList = (sampleCodes) => (Array.isArray(sampleCodes)
+  ? sampleCodes.map((sampleCode) => normalizeText(sampleCode)).filter(Boolean)
+  : []);
+
+const resolveOverviewSampleCodes = (task, { full = false } = {}) => {
+  if (!full) {
+    const previewCodes = normalizeSampleCodeList(task?.sampleCodePreview);
+    if (previewCodes.length) {
+      return previewCodes;
+    }
+  }
+  const sampleCodes = normalizeSampleCodeList(task?.sampleCodes);
+  if (sampleCodes.length && (!full || !task?.sampleCodeSearchText)) {
     return sampleCodes;
+  }
+  const searchCodes = splitSampleCodesText(task?.sampleCodeSearchText);
+  if (searchCodes.length) {
+    return searchCodes;
   }
   return splitSampleCodesText(task?.sampleCodesText);
 };
 
-const visibleOverviewSampleCodes = (task) => resolveOverviewSampleCodes(task).slice(0, OVERVIEW_SAMPLE_CODE_LIMIT);
-
-const overviewSampleOverflowCount = (task) => Math.max(0, resolveOverviewSampleCodes(task).length - OVERVIEW_SAMPLE_CODE_LIMIT);
-
-const sampleCodesModalSampleCodes = computed(() => resolveOverviewSampleCodes(sampleCodesModalTask.value));
-
-const closeSampleCodesModal = () => {
-  sampleCodesModalVisible.value = false;
-  sampleCodesModalTask.value = null;
-  flushPendingRealtimeRefresh();
+const resolveOverviewSampleCodeCount = (task) => {
+  const explicitCount = Number.parseInt(task?.sampleCodeCount, 10);
+  if (Number.isFinite(explicitCount) && explicitCount >= 0) {
+    return explicitCount;
+  }
+  return resolveOverviewSampleCodes(task, { full: true }).length;
 };
 
-const openSampleCodesModal = (task) => {
-  sampleCodesModalTask.value = task;
-  sampleCodesModalVisible.value = true;
+const visibleOverviewSampleCodes = (task) => resolveOverviewSampleCodes(task).slice(0, OVERVIEW_SAMPLE_CODE_LIMIT);
+
+const overviewSampleOverflowCount = (task) => Math.max(0, resolveOverviewSampleCodeCount(task) - visibleOverviewSampleCodes(task).length);
+
+const sampleCodesModalSampleCodes = computed(() => resolveOverviewSampleCodes(sampleCodesModalTask.value, { full: true }));
+
+const buildOverviewSearchText = (task) => {
+  const sampleSearchText = normalizeText(task?.sampleCodeSearchText)
+    || normalizeText(task?.sampleCodesText)
+    || normalizeSampleCodeList(task?.sampleCodes).join(" ");
+  return [
+    task?.taskNo,
+    task?.taskType,
+    task?.experimentTypeText,
+    task?.taskProgress,
+    sampleSearchText,
+  ].join(" ").toLowerCase();
+};
+
+const normalizeTaskRecord = (task) => {
+  const sampleCodePreview = normalizeSampleCodeList(task?.sampleCodePreview).length
+    ? normalizeSampleCodeList(task?.sampleCodePreview)
+    : normalizeSampleCodeList(task?.sampleCodes).slice(0, OVERVIEW_SAMPLE_CODE_LIMIT);
+  return {
+    ...task,
+    taskStatus: normalizeTaskStatus(task?.taskStatus),
+    sampleCodePreview,
+    sampleCodeSearchText: normalizeText(task?.sampleCodeSearchText) || normalizeText(task?.sampleCodesText),
+    overviewSearchText: buildOverviewSearchText({
+      ...task,
+      sampleCodePreview,
+      sampleCodeSearchText: normalizeText(task?.sampleCodeSearchText) || normalizeText(task?.sampleCodesText),
+    }),
+  };
 };
 
 const resolveExperimentDisplayName = (experiment) =>
@@ -694,6 +733,17 @@ const formatSampleCodePreview = (sampleCodes, limit = BARCODE_SAMPLE_PREVIEW_LIM
   }
   const visibleCodes = codes.slice(0, limit);
   return `${visibleCodes.join(" / ")}${codes.length > limit ? " / ..." : ""}`;
+};
+
+const closeSampleCodesModal = () => {
+  sampleCodesModalVisible.value = false;
+  sampleCodesModalTask.value = null;
+  flushPendingRealtimeRefresh();
+};
+
+const openSampleCodesModal = (task) => {
+  sampleCodesModalTask.value = task;
+  sampleCodesModalVisible.value = true;
 };
 
 const resolveExperimentTagToneIndex = (value) => {
@@ -723,11 +773,6 @@ const buildPrintExperimentTags = (item) => {
   }
   return `<div class="transfer-tray-experiment-tags print-experiment-tags">${tags}</div>`;
 };
-
-const normalizeTaskRecord = (task) => ({
-  ...task,
-  taskStatus: normalizeTaskStatus(task?.taskStatus),
-});
 
 const normalizeTrayLimit = (value) => {
   const parsed = Number.parseInt(value, 10);
@@ -832,14 +877,7 @@ const filteredTaskOverview = computed(() => {
   return taskOverview.value.filter((task) => {
     const typeMatch = matchesExperimentTypeFilter(taskTypeFilter.value, task.experimentTypeText, task.taskType);
     const statusMatch = !taskStatusFilter.value || normalizeTaskStatus(task.taskStatus) === taskStatusFilter.value;
-    const searchTextPool = [
-      task.taskNo,
-      task.taskType,
-      task.experimentTypeText,
-      task.taskProgress,
-      task.sampleCodesText,
-      ...(Array.isArray(task.sampleCodes) ? task.sampleCodes : []),
-    ].join(" ").toLowerCase();
+    const searchTextPool = task.overviewSearchText || buildOverviewSearchText(task);
     return typeMatch && statusMatch && (!query || searchTextPool.includes(query));
   });
 });
@@ -1229,8 +1267,11 @@ const clearWorkspace = () => {
   resetInteractiveState();
 };
 
-const loadBootstrap = async () => {
-  isBootstrapLoading.value = true;
+const loadBootstrap = async ({ silent = false } = {}) => {
+  const showBlockingLoading = !silent || taskOverview.value.length === 0;
+  if (showBlockingLoading) {
+    isBootstrapLoading.value = true;
+  }
   bootstrapError.value = "";
   try {
     const payload = await fetchJson("/api/transfer-area/bootstrap");
@@ -1242,12 +1283,16 @@ const loadBootstrap = async () => {
     pendingTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === pendingStatus).length;
     storedTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === storedStatus).length;
   } catch (error) {
-    bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
-    taskOverview.value = [];
-    pendingTaskCount.value = 0;
-    storedTaskCount.value = 0;
+    if (showBlockingLoading) {
+      bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
+      taskOverview.value = [];
+      pendingTaskCount.value = 0;
+      storedTaskCount.value = 0;
+    }
   } finally {
-    isBootstrapLoading.value = false;
+    if (showBlockingLoading) {
+      isBootstrapLoading.value = false;
+    }
   }
 };
 
@@ -1299,7 +1344,7 @@ const openTask = async (task) => {
 };
 
 const refreshTransferWorkspaceAfterTrayChange = async () => {
-  await loadBootstrap();
+  await loadBootstrap({ silent: true });
   if (!selectedTaskId.value) {
     return;
   }

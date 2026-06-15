@@ -68,6 +68,23 @@ def test_fixture_install_endpoint_publishes_minimal_payload(monkeypatch):
     ]
 
 
+def test_fixture_install_endpoint_rejects_sample_count_above_task_limit(monkeypatch):
+    client, published = build_client(monkeypatch)
+
+    response = client.post(
+        "/api/mq/laboratory/fixture-install",
+        json={
+            "task_code": "SYLU-2026-03-001",
+            "lab_code": "LAB_SALT",
+            "sample_type": "",
+            "sample_count": 100,
+        },
+    )
+
+    assert response.status_code == 422
+    assert published == []
+
+
 def test_ready_endpoint_publishes_minimal_payload(monkeypatch):
     client, published = build_client(monkeypatch)
 

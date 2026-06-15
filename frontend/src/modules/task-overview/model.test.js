@@ -53,6 +53,33 @@ describe("taskOverviewModel", () => {
     ]);
   });
 
+  test("buildTaskRows keeps large sample lists lightweight while preserving count and search text", () => {
+    const rows = buildTaskRows({
+      tasks: [
+        {
+          code: "SYLU-2026-06-099",
+          test_type: "冲击试验",
+          status: "待排程",
+          sample_count: 99,
+        },
+      ],
+      samples: Array.from({ length: 99 }, (_, index) => ({
+        task_code: "SYLU-2026-06-099",
+        code: `SYLU-2026-06-099-SP-${String(index + 1).padStart(3, "0")}`,
+        trays: [],
+      })),
+      schedules: [],
+      scheduledLabel: "已排程",
+      unscheduledLabel: "未排程",
+    });
+
+    expect(rows[0].sampleCount).toBe(99);
+    expect(rows[0].sampleCodes).toHaveLength(99);
+    expect(rows[0].sampleCodePreview.length).toBeLessThan(99);
+    expect(rows[0].sampleCodePreview).toContain("SYLU-2026-06-099-SP-001");
+    expect(rows[0].sampleCodeSearchText).toContain("SYLU-2026-06-099-SP-099");
+  });
+
   test("buildTaskRows includes experiment counts and summary labels for multi-experiment tasks", () => {
     const rows = buildTaskRows({
       tasks: [

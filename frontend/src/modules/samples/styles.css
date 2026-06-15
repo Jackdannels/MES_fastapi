@@ -714,8 +714,10 @@
 }
 
 .tray-management-workspace {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  min-height: 720px;
 }
 
 .tray-management-head {
@@ -772,6 +774,28 @@
 
 .tray-row-active td:first-child {
   border-left: 3px solid rgba(var(--industrial-accent-rgb), 0.64);
+}
+
+.samples-trays-table {
+  table-layout: fixed;
+}
+
+.samples-trays-table tbody tr {
+  height: 130px;
+}
+
+.samples-trays-row--placeholder {
+  cursor: default;
+  pointer-events: none;
+}
+
+.samples-trays-row--placeholder td {
+  background: transparent;
+  color: transparent;
+}
+
+.tray-management-workspace > .task-list-pagination {
+  margin-top: auto;
 }
 
 .tray-sample-summary {

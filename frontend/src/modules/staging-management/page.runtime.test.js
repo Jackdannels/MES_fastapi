@@ -281,6 +281,24 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-101-TP-001");
   });
 
+  test("keeps existing staging rows when a background refresh omits array snapshot keys", async () => {
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-102-TP-001");
+
+    remoteSnapshot = {
+      [STORAGE_KEYS.samples]: "not-an-array",
+      [STORAGE_KEYS.staging_events]: "not-an-array",
+    };
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await settlePage(mounted);
+
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-102-TP-001");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("当前在库 1");
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"]').text()).toContain("SYLU-2026-04-101-TP-001");
+  });
+
   test("renders planned inbound and actual staging trays in separate columns", async () => {
     const mounted = await mountPage();
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');

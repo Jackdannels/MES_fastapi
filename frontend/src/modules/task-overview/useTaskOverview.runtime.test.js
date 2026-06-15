@@ -207,6 +207,84 @@ describe("useTaskOverview runtime", () => {
     expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-003"]);
   });
 
+  test("keeps tray overview rows visible while realtime sample refresh is loading", async () => {
+    let resolveRefresh = null;
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-101",
+            sample_count: 1,
+            status: "已排程",
+            test_type: "盐雾试验",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [
+          {
+            code: "SYLU-2026-03-101-SP-001",
+            task_code: "SYLU-2026-03-101",
+            location: "盐雾试验室",
+            status: "送至实验室",
+            trays: [
+              {
+                tray_code: "SYLU-2026-03-101-TP-001",
+                status: "送至实验室",
+                quantity: 1,
+              },
+            ],
+          },
+        ],
+        "mes.schedules": [],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-101",
+            experiment_code: "SYLU-2026-03-101-A",
+            experiment_name: "盐雾试验",
+            status: "已排程",
+          },
+        ],
+        "mes.experiment_trays": [
+          {
+            task_code: "SYLU-2026-03-101",
+            experiment_code: "SYLU-2026-03-101-A",
+            tray_code: "SYLU-2026-03-101-TP-001",
+          },
+        ],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRefresh = () => resolve({
+          "mes.tasks": [],
+          "mes.samples": [],
+          "mes.schedules": [],
+          "mes.experiments": [],
+          "mes.experiment_trays": [],
+        });
+      }));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-101-TP-001",
+      hasTray: true,
+    }));
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-101-TP-001",
+      hasTray: true,
+    }));
+
+    resolveRefresh();
+    await settle(wrapper);
+  });
+
   test("reloads overview data when storage snapshot updates are broadcast", async () => {
     mocks.loadSnapshot
       .mockResolvedValueOnce({
@@ -259,6 +337,143 @@ describe("useTaskOverview runtime", () => {
 
     expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
     expect(wrapper.vm.filteredRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-03-004"]);
+  });
+
+  test("keeps tray overview rows visible while storage snapshot refresh is loading", async () => {
+    let resolveRefresh = null;
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-105",
+            sample_count: 1,
+            status: "已排程",
+            test_type: "振动试验",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [
+          {
+            code: "SYLU-2026-03-105-SP-001",
+            task_code: "SYLU-2026-03-105",
+            location: "振动一室",
+            status: "送至实验室",
+            trays: [
+              {
+                tray_code: "SYLU-2026-03-105-TP-001",
+                status: "送至实验室",
+                quantity: 1,
+              },
+            ],
+          },
+        ],
+        "mes.schedules": [],
+        "mes.experiments": [
+          {
+            task_code: "SYLU-2026-03-105",
+            experiment_code: "SYLU-2026-03-105-A",
+            experiment_name: "振动试验",
+            status: "已排程",
+          },
+        ],
+        "mes.experiment_trays": [
+          {
+            task_code: "SYLU-2026-03-105",
+            experiment_code: "SYLU-2026-03-105-A",
+            tray_code: "SYLU-2026-03-105-TP-001",
+          },
+        ],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRefresh = () => resolve({
+          "mes.tasks": [],
+          "mes.samples": [],
+          "mes.schedules": [],
+          "mes.experiments": [],
+          "mes.experiment_trays": [],
+        });
+      }));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-105-TP-001",
+      hasTray: true,
+    }));
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.samples"] } }));
+    vi.advanceTimersByTime(100);
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-105-TP-001",
+      hasTray: true,
+    }));
+
+    resolveRefresh();
+    await settle(wrapper);
+  });
+
+  test("keeps tray overview rows when background snapshot omits collections", async () => {
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.tasks": [
+          {
+            code: "SYLU-2026-03-106",
+            sample_count: 1,
+            status: "已排程",
+            test_type: "振动试验",
+            transfer_status: "到货",
+          },
+        ],
+        "mes.samples": [
+          {
+            code: "SYLU-2026-03-106-SP-001",
+            task_code: "SYLU-2026-03-106",
+            location: "振动一室",
+            status: "送至实验室",
+            trays: [
+              {
+                tray_code: "SYLU-2026-03-106-TP-001",
+                status: "送至实验室",
+                quantity: 1,
+              },
+            ],
+          },
+        ],
+        "mes.schedules": [],
+        "mes.experiments": [],
+        "mes.experiment_trays": [],
+      })
+      .mockImplementationOnce((options = {}) => options.fallbackSnapshot || {});
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-106-TP-001",
+      hasTray: true,
+    }));
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.samples"] } }));
+    vi.advanceTimersByTime(100);
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+      fallbackSnapshot: expect.objectContaining({
+        "mes.tasks": expect.any(Array),
+        "mes.samples": expect.any(Array),
+      }),
+    }));
+    expect(wrapper.vm.filteredTrayOverviewRows[0]).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-03-106-TP-001",
+      hasTray: true,
+    }));
   });
 
   test("uses experiment run state for tray overview flows when tray status is still ready", async () => {
@@ -340,10 +555,21 @@ describe("useTaskOverview runtime", () => {
       ],
       "mes.experiment_runs": [
         {
+          run_no: "RUN-IMPACT-001",
           task_code: "SYLU-2026-06-021",
           experiment_code: "EXP-IMPACT",
           tray_codes: ["SYLU-2026-06-021-TP-001"],
           status: "实验进行中",
+          updated_at: "2026-06-04T10:30:00.000Z",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-IMPACT-001",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT",
+          tray_code: "SYLU-2026-06-021-TP-001",
+          run_tray_status: "实验进行中",
           updated_at: "2026-06-04T10:30:00.000Z",
         },
       ],

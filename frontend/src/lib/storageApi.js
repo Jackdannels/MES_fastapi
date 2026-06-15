@@ -19,8 +19,9 @@ function fetchStorageSnapshot() {
   });
 }
 
-function readStorageSnapshot(keys) {
+function readStorageSnapshot(keys, options = {}) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
+  const normalizeMissing = options.normalizeMissing !== false;
   const requestKey = JSON.stringify([...new Set(requestedKeys)].sort());
   if (!pendingSnapshotReads.has(requestKey)) {
     const pendingRead = fetchStorageSnapshot().then(
@@ -37,7 +38,10 @@ function readStorageSnapshot(keys) {
   }
   return pendingSnapshotReads.get(requestKey).then((payload) =>
     Object.fromEntries(
-      requestedKeys.map((key) => [key, Array.isArray(payload?.[key]) ? payload[key] : []]),
+      requestedKeys.map((key) => [
+        key,
+        Array.isArray(payload?.[key]) || !normalizeMissing ? payload?.[key] : [],
+      ]),
     ),
   );
 }

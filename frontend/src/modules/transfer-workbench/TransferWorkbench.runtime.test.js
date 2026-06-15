@@ -437,6 +437,44 @@ describe("TransferWorkbench runtime", () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(fetchCallCountBeforeEvent);
   });
 
+  test("keeps overview rows visible while realtime refresh is loading", async () => {
+    let bootstrapCalls = 0;
+    let resolveRefresh = null;
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        bootstrapCalls += 1;
+        if (bootstrapCalls > 1) {
+          return new Promise((resolve) => {
+            resolveRefresh = () => resolve({ ok: true, status: 200, json: async () => createBootstrapPayload() });
+          });
+        }
+        return Promise.resolve({ ok: true, status: 200, json: async () => createBootstrapPayload() });
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-loading-state"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
+
+    resolveRefresh();
+    await settle(wrapper);
+  });
+
   test("does not treat legacy stored task status as arrived in the overview filter", async () => {
     const bootstrapPayload = createBootstrapPayload();
     bootstrapPayload.taskOverview = [
@@ -1630,13 +1668,16 @@ describe("TransferWorkbench runtime", () => {
 
   test("overview limits direct sample codes to twelve and opens all samples from the overflow button", async () => {
     const bootstrapPayload = createBootstrapPayload();
+    const allSampleCodes = Array.from({ length: 14 }, (_, index) =>
+      `SYLU-2026-03-101-SP-${String(index + 1).padStart(3, "0")}`,
+    );
     bootstrapPayload.taskOverview = [
       {
         ...bootstrapPayload.taskOverview[0],
         sampleCount: 14,
-        sampleCodes: Array.from({ length: 14 }, (_, index) =>
-          `SYLU-2026-03-101-SP-${String(index + 1).padStart(3, "0")}`,
-        ),
+        sampleCodes: allSampleCodes.slice(0, 12),
+        sampleCodePreview: allSampleCodes.slice(0, 12),
+        sampleCodeSearchText: allSampleCodes.join(" "),
         sampleCodesText: "",
       },
     ];
@@ -1674,6 +1715,11 @@ describe("TransferWorkbench runtime", () => {
     expect(modal.text()).toContain("SYLU-2026-03-101");
     expect(modal.findAll(".transfer-sample-code-chip")).toHaveLength(14);
     expect(modal.text()).toContain("SYLU-2026-03-101-SP-014");
+
+    await wrapper.get(".search-input").setValue("SP-014");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
   });
 
   test("barcode preview uses the tray number as the real barcode value and compact summary copy", async () => {

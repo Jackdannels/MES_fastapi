@@ -137,6 +137,41 @@ describe("useTaskOverviewEditor", () => {
     );
   });
 
+  test("saveEdit rejects sample count changes after storage is confirmed with experiments", async () => {
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [
+        { code: "TASK-001", test_type: "冲击试验", name: "冲击试验", required_device: "冲击试验", sample_count: 2, transfer_status: "到货" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { id: "TASK-001-A", task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "冲击试验" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        { id: "sample-1", code: "TASK-001-SP-001", task_code: "TASK-001", status: "到货", trays: [] },
+        { id: "sample-2", code: "TASK-001-SP-002", task_code: "TASK-001", status: "到货", trays: [] },
+      ],
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const { openEdit, editForm, saveEdit, persistSnapshot, editError } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    openEdit({
+      taskCode: "TASK-001",
+      taskType: "冲击试验",
+      sampleCount: 2,
+      sampleCodes: ["TASK-001-SP-001", "TASK-001-SP-002"],
+      experiments: [{ experimentCode: "TASK-001-A", experimentName: "冲击试验", requiredDevice: "冲击试验" }],
+    });
+    editForm.value.sampleCount = 3;
+    editForm.value.sampleCodesText = "TASK-001-SP-001\nTASK-001-SP-002\nTASK-001-SP-003";
+
+    await saveEdit("TASK-001");
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
+    expect(editError.value).toBe("该任务样品已在接驳区确认到货，不允许更改样品数量");
+  });
+
   test("saveEdit persists task experiments and updates task experiment summary fields", async () => {
     const snapshot = {
       [STORAGE_KEYS.tasks]: [

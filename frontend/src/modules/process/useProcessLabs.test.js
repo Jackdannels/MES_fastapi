@@ -229,6 +229,105 @@ describe("useProcessLabs", () => {
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
   });
 
+  test("keeps current process cards visible while realtime refresh is loading", async () => {
+    let resolveRealtimeRefresh = null;
+    const loadSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({
+        "mes.schedules": [],
+        "mes.tasks": [],
+        "mes.experiments": [],
+        "mes.experiment_trays": [],
+        "mes.samples": [],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRealtimeRefresh = () => resolve({
+          "mes.schedules": [],
+          "mes.tasks": [],
+          "mes.experiments": [],
+          "mes.experiment_trays": [],
+          "mes.samples": [],
+        });
+      }));
+    let exposed = null;
+    const Harness = {
+      setup() {
+        exposed = useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+          loadSnapshot,
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(exposed.loading.value).toBe(false);
+    expect(exposed.labCards.value).toHaveLength(1);
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(exposed.loading.value).toBe(false);
+    expect(exposed.labCards.value).toHaveLength(1);
+
+    resolveRealtimeRefresh();
+    await Promise.resolve();
+    await nextTick();
+    wrapper.unmount();
+  });
+
+  test("keeps current process cards when background snapshot omits collections", async () => {
+    const loadSnapshot = vi
+      .fn()
+      .mockResolvedValueOnce({
+        "mes.schedules": [],
+        "mes.tasks": [{ code: "TASK-PROCESS", name: "过程任务", test_type: "盐雾试验" }],
+        "mes.experiments": [],
+        "mes.experiment_trays": [],
+        "mes.samples": [],
+      })
+      .mockImplementationOnce((options = {}) => options.fallbackSnapshot || {});
+    let exposed = null;
+    const Harness = {
+      setup() {
+        exposed = useProcessLabs({
+          autoLoad: true,
+          labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
+          loadSnapshot,
+        });
+        return {};
+      },
+      template: "<div />",
+    };
+
+    const wrapper = mount(Harness);
+    await Promise.resolve();
+    await nextTick();
+
+    expect(exposed.labCards.value).toHaveLength(1);
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await Promise.resolve();
+    await nextTick();
+
+    expect(loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(loadSnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
+      fallbackSnapshot: expect.objectContaining({
+        "mes.tasks": expect.any(Array),
+        "mes.samples": expect.any(Array),
+      }),
+    }));
+    expect(exposed.labCards.value).toHaveLength(1);
+    wrapper.unmount();
+  });
+
   test("reloads lab status when a cross-window storage update marker changes", async () => {
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [],

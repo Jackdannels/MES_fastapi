@@ -1566,6 +1566,98 @@ def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypa
     ]
 
 
+def test_transfer_area_bootstrap_reuses_sample_index_for_many_tasks(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    client, storage = build_client(monkeypatch)
+    tasks = []
+    samples = []
+    for task_index in range(30):
+        task_code = f"SYLU-2026-06-{task_index + 1:03d}"
+        tasks.append(
+            {
+                "id": f"task-{task_index + 1}",
+                "code": task_code,
+                "name": f"批次 {task_index + 1}",
+                "test_type": "盐雾试验",
+                "sample_count": 99,
+                "arrival_at": "2026-06-01 10:00",
+                "status": "待排程",
+            }
+        )
+        samples.extend(
+            {
+                "id": f"sample-{task_index + 1}-{sample_index + 1}",
+                "code": f"{task_code}-SP-{sample_index + 1:03d}",
+                "task_code": task_code,
+                "status": "运输中",
+                "flow_status": "运输中",
+                "location": "",
+            }
+            for sample_index in range(99)
+        )
+    storage.write("mes.tasks", tasks)
+    storage.write("mes.samples", samples)
+
+    original_build_task_sample_map = transfer_area_route.build_task_sample_map
+    calls = []
+
+    def counted_build_task_sample_map(all_samples):
+        calls.append(len(all_samples))
+        return original_build_task_sample_map(all_samples)
+
+    monkeypatch.setattr(transfer_area_route, "build_task_sample_map", counted_build_task_sample_map)
+
+    response = client.get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    assert len(response.json()["taskOverview"]) == 30
+    assert calls == [2970]
+
+
+def test_transfer_area_bootstrap_returns_preview_codes_for_large_sample_tasks(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-06-099"
+    storage.write(
+        "mes.tasks",
+        [
+            {
+                "id": "task-99",
+                "code": task_code,
+                "name": "99 样品任务",
+                "test_type": "盐雾试验",
+                "sample_count": 99,
+                "arrival_at": "2026-06-01 10:00",
+                "status": "待排程",
+            }
+        ],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": f"sample-{index + 1}",
+                "code": f"{task_code}-SP-{index + 1:03d}",
+                "task_code": task_code,
+                "status": "运输中",
+                "flow_status": "运输中",
+                "location": "",
+            }
+            for index in range(99)
+        ],
+    )
+
+    response = client.get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    task_row = response.json()["taskOverview"][0]
+    assert task_row["sampleCount"] == 99
+    assert task_row["sampleCodeCount"] == 99
+    assert task_row["sampleCodes"] == [f"{task_code}-SP-{index + 1:03d}" for index in range(12)]
+    assert task_row["sampleCodePreview"] == [f"{task_code}-SP-{index + 1:03d}" for index in range(12)]
+    assert f"{task_code}-SP-099" in task_row["sampleCodeSearchText"]
+
+
 def test_transfer_area_lazy_sample_backfill_publishes_storage_update(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 

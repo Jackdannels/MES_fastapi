@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -54,6 +54,7 @@ describe("useSamplesFlow", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     mocks.loadSnapshot.mockReset();
     mocks.persistSnapshot.mockReset();
     mocks.readTasks.mockReset();
@@ -259,4 +260,172 @@ describe("useSamplesFlow", () => {
       expect.objectContaining({ active: true, time: "2026-06-04T19:12:09+08:00" }),
     );
   });
+
+  test("keeps sample rows visible without blocking loading while realtime refresh is pending", async () => {
+    let resolveRefresh = null;
+    mocks.readTasks.mockResolvedValue([{ code: "TASK-LIVE", name: "实时任务" }]);
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.samples": [
+          {
+            code: "SP-LIVE-001",
+            task_code: "TASK-LIVE",
+            status: "到货",
+            trays: [{ tray_code: "TP-LIVE-001", status: "到货", quantity: 1 }],
+          },
+        ],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_trays": [],
+        "mes.experiment_trays": [],
+        "mes.schedules": [],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRefresh = () => resolve({
+          "mes.samples": [],
+          "mes.experiments": [],
+          "mes.experiment_runs": [],
+          "mes.experiment_run_trays": [],
+          "mes.experiment_trays": [],
+          "mes.schedules": [],
+        });
+      }));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-LIVE-001"]);
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-LIVE-001"]);
+
+    resolveRefresh();
+    await settle(wrapper);
+  });
+
+  test("keeps sample rows visible without blocking loading while storage snapshot refresh is pending", async () => {
+    vi.useFakeTimers();
+    let resolveRefresh = null;
+    mocks.readTasks.mockResolvedValue([{ code: "TASK-STORAGE", name: "存储任务" }]);
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.samples": [
+          {
+            code: "SP-STORAGE-001",
+            task_code: "TASK-STORAGE",
+            status: "到货",
+            trays: [{ tray_code: "TP-STORAGE-001", status: "到货", quantity: 1 }],
+          },
+        ],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_trays": [],
+        "mes.experiment_trays": [],
+        "mes.schedules": [],
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRefresh = () => resolve({
+          "mes.samples": [],
+          "mes.experiments": [],
+          "mes.experiment_runs": [],
+          "mes.experiment_run_trays": [],
+          "mes.experiment_trays": [],
+          "mes.schedules": [],
+        });
+      }));
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-STORAGE-001"]);
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.samples"] } }));
+    vi.advanceTimersByTime(100);
+    await settle(wrapper);
+
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(wrapper.vm.loading).toBe(false);
+    expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-STORAGE-001"]);
+
+    resolveRefresh();
+    await settle(wrapper);
+  });
+
+  test("preserves current raw data when a background refresh omits keys or returns non-arrays", async () => {
+    mocks.readTasks
+      .mockResolvedValueOnce([{ code: "TASK-KEEP", name: "保留任务" }])
+      .mockResolvedValueOnce({ error: "bad tasks" });
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.samples": [{ code: "SP-KEEP-001", task_code: "TASK-KEEP", status: "到货" }],
+        "mes.experiments": [{ task_code: "TASK-KEEP", experiment_code: "EXP-KEEP" }],
+        "mes.experiment_runs": [{ run_no: "RUN-KEEP", task_code: "TASK-KEEP" }],
+        "mes.experiment_run_trays": [{ run_no: "RUN-KEEP", tray_code: "TP-KEEP-001" }],
+        "mes.experiment_trays": [{ task_code: "TASK-KEEP", tray_code: "TP-KEEP-001" }],
+        "mes.schedules": [{ task_code: "TASK-KEEP", lab: "冲击一室" }],
+      })
+      .mockResolvedValueOnce({
+        "mes.samples": { error: "bad samples" },
+        "mes.experiments": "bad experiments",
+      });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(wrapper.vm.rawTasks).toEqual([{ code: "TASK-KEEP", name: "保留任务" }]);
+    expect(wrapper.vm.rawSamples.map((sample) => sample.code)).toEqual(["SP-KEEP-001"]);
+    expect(wrapper.vm.rawExperiments).toEqual([{ task_code: "TASK-KEEP", experiment_code: "EXP-KEEP" }]);
+    expect(wrapper.vm.rawExperimentRuns).toEqual([{ run_no: "RUN-KEEP", task_code: "TASK-KEEP" }]);
+    expect(wrapper.vm.rawExperimentRunTrays).toEqual([{ run_no: "RUN-KEEP", tray_code: "TP-KEEP-001" }]);
+    expect(wrapper.vm.rawExperimentTrays).toEqual([{ task_code: "TASK-KEEP", tray_code: "TP-KEEP-001" }]);
+    expect(wrapper.vm.rawSchedules).toEqual([{ task_code: "TASK-KEEP", lab: "冲击一室" }]);
+  });
+
+  test("allows a background refresh to replace existing raw data with real empty arrays", async () => {
+    mocks.readTasks
+      .mockResolvedValueOnce([{ code: "TASK-CLEAR", name: "清空任务" }])
+      .mockResolvedValueOnce([]);
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.samples": [{ code: "SP-CLEAR-001", task_code: "TASK-CLEAR", status: "到货" }],
+        "mes.experiments": [{ task_code: "TASK-CLEAR", experiment_code: "EXP-CLEAR" }],
+        "mes.experiment_runs": [{ run_no: "RUN-CLEAR", task_code: "TASK-CLEAR" }],
+        "mes.experiment_run_trays": [{ run_no: "RUN-CLEAR", tray_code: "TP-CLEAR-001" }],
+        "mes.experiment_trays": [{ task_code: "TASK-CLEAR", tray_code: "TP-CLEAR-001" }],
+        "mes.schedules": [{ task_code: "TASK-CLEAR", lab: "振动一室" }],
+      })
+      .mockResolvedValueOnce({
+        "mes.samples": [],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_trays": [],
+        "mes.experiment_trays": [],
+        "mes.schedules": [],
+      });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    await settle(wrapper);
+
+    expect(wrapper.vm.rawTasks).toEqual([]);
+    expect(wrapper.vm.rawSamples).toEqual([]);
+    expect(wrapper.vm.rawExperiments).toEqual([]);
+    expect(wrapper.vm.rawExperimentRuns).toEqual([]);
+    expect(wrapper.vm.rawExperimentRunTrays).toEqual([]);
+    expect(wrapper.vm.rawExperimentTrays).toEqual([]);
+    expect(wrapper.vm.rawSchedules).toEqual([]);
+  });
 });
+
+enableAutoUnmount(afterEach);

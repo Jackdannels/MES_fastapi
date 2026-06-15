@@ -109,6 +109,17 @@ describe("TaskOverviewEditorPanel", () => {
     ]);
   });
 
+  test("limits edited sample count to 99", async () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: baseProps,
+    });
+
+    await wrapper.find('input[type="number"]').setValue("100");
+
+    expect(wrapper.find('input[type="number"]').attributes("max")).toBe("99");
+    expect(wrapper.emitted("update-edit-form")).toEqual([[{ sampleCount: 99 }]]);
+  });
+
   test("renders experiments and emits patches for editing experiment drafts", async () => {
     const wrapper = mount(TaskOverviewEditorPanel, {
       props: baseProps,

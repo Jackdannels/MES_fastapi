@@ -27,6 +27,7 @@
           class="search-input"
           type="number"
           min="0"
+          max="99"
           step="1"
           :readonly="readonly"
           @input="updateEditForm('sampleCount', $event.target.valueAsNumber)"
@@ -281,7 +282,7 @@ const normalizeSampleCount = (value) => {
   if (!Number.isFinite(value) || value < 0) {
     return 0;
   }
-  return Math.floor(value);
+  return Math.min(Math.floor(value), 99);
 };
 
 const updateEditForm = (field, value) => {

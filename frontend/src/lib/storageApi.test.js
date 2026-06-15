@@ -52,6 +52,30 @@ describe("storageApi", () => {
     expect(window.localStorage.getItem(STORAGE_KEYS.tasks)).toBeNull();
   });
 
+  test("can preserve missing or malformed collections for background refresh fallback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+          [STORAGE_KEYS.samples]: { stale: true },
+        }),
+      })
+    );
+
+    const snapshot = await readStorageSnapshot(
+      [STORAGE_KEYS.tasks, STORAGE_KEYS.samples, STORAGE_KEYS.schedules],
+      { normalizeMissing: false },
+    );
+
+    expect(snapshot).toEqual({
+      [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+      [STORAGE_KEYS.samples]: { stale: true },
+      [STORAGE_KEYS.schedules]: undefined,
+    });
+  });
+
   test("coalesces concurrent snapshot reads for the same key set into one remote request", async () => {
     let resolveResponse;
     const fetchMock = vi.fn().mockReturnValue(new Promise((resolve) => {

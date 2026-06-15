@@ -234,6 +234,75 @@ describe("useDashboardPage", () => {
     ]);
   });
 
+  test.each([
+    [
+      "samples-updated",
+      async () => {
+        window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+      },
+    ],
+    [
+      "storage snapshot update",
+      async () => {
+        window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.experiments"] } }));
+        vi.advanceTimersByTime(100);
+      },
+    ],
+  ])("keeps existing dashboard data when a %s refresh returns missing or malformed snapshot collections", async (_label, triggerRefresh) => {
+    const initialSnapshot = {
+      "mes.tasks": [{ code: "SYLU-2026-04-122", source: "外部委托", status: "待排程", transfer_status: "到货" }],
+      "mes.schedules": [],
+      "mes.devices": [],
+      "mes.samples": [
+        {
+          task_code: "SYLU-2026-04-122",
+          history: [{ action: "任务已确认入库", time: "2026-03-17T09:50:00.000Z" }],
+          status: "到货",
+          trays: [{ tray_code: "SYLU-2026-04-122-TP-001", status: "到货" }],
+        },
+      ],
+      "mes.streams": [],
+      "mes.experiments": [
+        {
+          task_code: "SYLU-2026-04-122",
+          experiment_code: "SYLU-2026-04-122-A",
+          experiment_name: "振动试验",
+          unscheduled_since: "2026-03-17T09:50:00.000Z",
+        },
+      ],
+    };
+    mocks.loadSnapshot.mockResolvedValueOnce(initialSnapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      expect(wrapper.vm.unscheduledExperimentItems).toEqual([
+        expect.objectContaining({
+          taskCode: "SYLU-2026-04-122",
+          elapsedLabel: "00:10:00",
+        }),
+      ]);
+
+      mocks.loadSnapshot.mockClear();
+      mocks.loadSnapshot.mockResolvedValue({
+        "mes.experiments": { stale: true },
+      });
+
+      await triggerRefresh();
+      await settle(wrapper);
+
+      expect(mocks.loadSnapshot).toHaveBeenCalled();
+      expect(wrapper.vm.unscheduledExperimentItems).toEqual([
+        expect.objectContaining({
+          taskCode: "SYLU-2026-04-122",
+          elapsedLabel: "00:10:00",
+        }),
+      ]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   test("surfaces snapshot load failures without throwing an unhandled rejection", async () => {
     mocks.loadSnapshot.mockRejectedValueOnce(new Error("offline"));
 

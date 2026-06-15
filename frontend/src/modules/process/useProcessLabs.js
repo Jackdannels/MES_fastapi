@@ -971,12 +971,33 @@ function useProcessLabs(options = {}) {
     startExperimentTaskDetail.value = buildTaskDetail(lab);
   };
 
-  const loadLabStatus = async () => {
+  const buildSnapshotFallback = () => ({
+    [STORAGE_KEYS.devices]: devices.value,
+    [STORAGE_KEYS.tasks]: tasks.value,
+    [STORAGE_KEYS.schedules]: schedules.value,
+    [STORAGE_KEYS.samples]: samples.value,
+    [STORAGE_KEYS.experiment_trays]: experimentTrays.value,
+    [STORAGE_KEYS.experiment_samples]: experimentSamples.value,
+    [STORAGE_KEYS.experiment_runs]: experimentRuns.value,
+    [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays.value,
+    [STORAGE_KEYS.experiments]: experiments.value,
+  });
+
+  const applySnapshotArray = (snapshot, key, target) => {
+    if (Array.isArray(snapshot?.[key])) {
+      target.value = snapshot[key];
+    }
+  };
+
+  const loadLabStatus = async ({ silent = false } = {}) => {
     const loadVersion = ++labStatusLoadVersion;
-    loading.value = true;
+    const showBlockingLoading = !silent || labCards.value.length === 0;
+    if (showBlockingLoading) {
+      loading.value = true;
+    }
     try {
       const [snapshot, masterLabs] = await Promise.all([
-        loadSnapshot(),
+        loadSnapshot(silent ? { fallbackSnapshot: buildSnapshotFallback() } : undefined),
         hasExplicitLabs ? Promise.resolve([]) : readMasterLabs().catch(() => []),
       ]);
       if (loadVersion !== labStatusLoadVersion) {
@@ -988,15 +1009,15 @@ function useProcessLabs(options = {}) {
           ? mergeProcessLabsWithStaticFallback(normalizedMasterLabs, fallbackLabs)
           : fallbackLabs;
       }
-      devices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
-      tasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
-      schedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      samples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-      experimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      experimentSamples.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_samples]) ? snapshot[STORAGE_KEYS.experiment_samples] : [];
-      experimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
-      experimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
-      experiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
+      applySnapshotArray(snapshot, STORAGE_KEYS.devices, devices);
+      applySnapshotArray(snapshot, STORAGE_KEYS.tasks, tasks);
+      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, schedules);
+      applySnapshotArray(snapshot, STORAGE_KEYS.samples, samples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, experimentTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_samples, experimentSamples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, experimentRuns);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, experimentRunTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, experiments);
       rebuildLabCards();
       if (taskDrawerOpen.value) {
         refreshSelectedTaskDetail(selectedTrayCode.value);
@@ -1005,7 +1026,7 @@ function useProcessLabs(options = {}) {
         refreshStartExperimentTaskDetail();
       }
     } finally {
-      if (loadVersion === labStatusLoadVersion) {
+      if (showBlockingLoading && loadVersion === labStatusLoadVersion) {
         loading.value = false;
       }
     }
@@ -1289,7 +1310,7 @@ function useProcessLabs(options = {}) {
     }
     hasPendingSamplesRefresh = false;
     if (!flushedStorage) {
-      void loadLabStatus();
+      void loadLabStatus({ silent: true });
     }
     return true;
   };
@@ -1300,13 +1321,13 @@ function useProcessLabs(options = {}) {
       return;
     }
     hasPendingSamplesRefresh = false;
-    void loadLabStatus();
+    void loadLabStatus({ silent: true });
   };
 
   if (autoLoad) {
     const storageRefresh = useStorageSnapshotRefresh({
       keys: Array.from(PROCESS_SNAPSHOT_KEYS),
-      refresh: loadLabStatus,
+      refresh: () => loadLabStatus({ silent: true }),
       paused: isProcessRealtimeRefreshPaused,
     });
     flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;

@@ -530,11 +530,45 @@ function useLaboratoryPage(options = {}) {
       SWITCH_REVERTIBLE_TRAY_STATUSES.has(String(row?.trayStatus || row?.displayStatus || "").trim()),
     );
 
-  const load = async () => {
-    loading.value = true;
+  const buildCurrentSnapshotFallback = () => ({
+    [STORAGE_KEYS.tasks]: tasks.value,
+    [STORAGE_KEYS.schedules]: schedules.value,
+    [STORAGE_KEYS.experiments]: experiments.value,
+    [STORAGE_KEYS.experiment_runs]: experimentRuns.value,
+    [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays.value,
+    [STORAGE_KEYS.experiment_trays]: experimentTrays.value,
+    [STORAGE_KEYS.samples]: samples.value,
+    [STORAGE_KEYS.devices]: devices.value,
+  });
+
+  const hasLoadedSnapshotData = () =>
+    tasks.value.length > 0
+    || schedules.value.length > 0
+    || experiments.value.length > 0
+    || experimentRuns.value.length > 0
+    || experimentRunTrays.value.length > 0
+    || experimentTrays.value.length > 0
+    || samples.value.length > 0
+    || devices.value.length > 0;
+
+  const applySnapshotArray = (snapshot, key, target, { preserveInvalid = false } = {}) => {
+    if (Array.isArray(snapshot?.[key])) {
+      target.value = snapshot[key];
+      return;
+    }
+    if (!preserveInvalid) {
+      target.value = [];
+    }
+  };
+
+  const load = async ({ silent = false } = {}) => {
+    const showBlockingLoading = !silent || !hasLoadedSnapshotData();
+    if (showBlockingLoading) {
+      loading.value = true;
+    }
     try {
       const [snapshot, masterLabs] = await Promise.all([
-        loadSnapshot(),
+        loadSnapshot(silent ? { fallbackSnapshot: buildCurrentSnapshotFallback() } : undefined),
         readMasterLabs().catch(() => []),
       ]);
       const explicitLabName = getSelectedLabName();
@@ -546,16 +580,19 @@ function useLaboratoryPage(options = {}) {
       if (explicitLabName) {
         writeStoredLabName(nextConfig.labName);
       }
-      tasks.value = Array.isArray(snapshot?.[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
-      schedules.value = Array.isArray(snapshot?.[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      experiments.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-      experimentRuns.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
-      experimentRunTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
-      experimentTrays.value = Array.isArray(snapshot?.[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      samples.value = Array.isArray(snapshot?.[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-      devices.value = Array.isArray(snapshot?.[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
+      const preserveInvalid = silent;
+      applySnapshotArray(snapshot, STORAGE_KEYS.tasks, tasks, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, schedules, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, experiments, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, experimentRuns, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, experimentRunTrays, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, experimentTrays, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.samples, samples, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.devices, devices, { preserveInvalid });
     } finally {
-      loading.value = false;
+      if (showBlockingLoading) {
+        loading.value = false;
+      }
     }
   };
 
@@ -583,7 +620,7 @@ function useLaboratoryPage(options = {}) {
     }
     hasPendingSamplesRefresh = false;
     if (!flushedStorage) {
-      void load();
+      void load({ silent: true });
     }
     return true;
   };
@@ -598,12 +635,12 @@ function useLaboratoryPage(options = {}) {
       return;
     }
     hasPendingSamplesRefresh = false;
-    void load();
+    void load({ silent: true });
   };
 
   const storageRefresh = useStorageSnapshotRefresh({
     keys: Array.from(LABORATORY_SNAPSHOT_KEYS),
-    refresh: load,
+    refresh: () => load({ silent: true }),
     paused: isLaboratoryRealtimeRefreshPaused,
   });
   flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;

@@ -10,6 +10,7 @@ from app.services.mq_runtime import default_mq_runtime
 
 
 router = APIRouter(prefix="/api/mq", tags=["mq"])
+MAX_SAMPLE_COUNT = 99
 
 
 class FixtureInstallRequest(BaseModel):
@@ -17,7 +18,7 @@ class FixtureInstallRequest(BaseModel):
     lab_code: str = Field(min_length=1)
     experiment_code: str = ""
     sample_type: str = ""
-    sample_count: int = Field(ge=0)
+    sample_count: int = Field(ge=0, le=MAX_SAMPLE_COUNT)
 
     @field_validator("task_code", "lab_code", "experiment_code", "sample_type", mode="before")
     @classmethod

@@ -6,8 +6,10 @@ import {
   buildTaskEditForm,
   buildTaskMetrics,
   buildTaskRows,
+  buildTaskSampleCodes,
   createTaskIntakeForm,
   createTaskRecord,
+  validateSampleCodeDraft,
   updateTaskRecord,
   validateTaskTextFields,
   validateTaskSampleCount,
@@ -377,14 +379,29 @@ describe("tasks model", () => {
     );
   });
 
-  test("validateTaskSampleCount requires an integer from 1 to 999", () => {
+  test("validateTaskSampleCount requires an integer from 1 to 99", () => {
     expect(validateTaskSampleCount("")).toBe("请填写样品数量");
     expect(validateTaskSampleCount("1.5")).toBe("样品数量必须为整数");
     expect(validateTaskSampleCount("0")).toBe("样品数量至少为 1");
     expect(validateTaskSampleCount("-1")).toBe("样品数量至少为 1");
-    expect(validateTaskSampleCount("1000")).toBe("样品数量最多为 999");
+    expect(validateTaskSampleCount("100")).toBe("样品数量最多为 99");
     expect(validateTaskSampleCount("1")).toBe("");
-    expect(validateTaskSampleCount("999")).toBe("");
+    expect(validateTaskSampleCount("99")).toBe("");
+  });
+
+  test("buildTaskSampleCodes caps generated task sample codes at 99", () => {
+    const codes = buildTaskSampleCodes("SYLU-2026-06-001", "100", []);
+
+    expect(codes).toHaveLength(99);
+    expect(codes.at(-1)).toBe("SYLU-2026-06-001-SP-099");
+  });
+
+  test("validateSampleCodeDraft rejects more than 99 sample codes", () => {
+    const codes = Array.from({ length: 100 }, (_, index) =>
+      `SYLU-2026-06-001-SP-${String(index + 1).padStart(3, "0")}`
+    );
+
+    expect(validateSampleCodeDraft({ codes, samples: [], taskCode: "SYLU-2026-06-001" })).toBe("样品编号最多为 99 个");
   });
 
   test("validateTaskTextFields rejects obvious garbled symbol input in intake text fields", () => {

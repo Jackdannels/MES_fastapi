@@ -463,6 +463,43 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.manualLabOptions).toContain("冲击一室");
   });
 
+  test.each([
+    [
+      "samples-updated",
+      async () => {
+        window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+      },
+    ],
+    [
+      "storage snapshot update",
+      async () => {
+        window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.schedules"] } }));
+        vi.advanceTimersByTime(100);
+      },
+    ],
+  ])("keeps existing schedule data when a %s refresh returns missing or malformed snapshot collections", async (_label, triggerRefresh) => {
+    mocks.loadSnapshot.mockResolvedValueOnce(buildSnapshot());
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      expect(wrapper.vm.scheduleRows.map((row) => row.id)).toContain("schedule-1");
+
+      mocks.loadSnapshot.mockClear();
+      mocks.loadSnapshot.mockResolvedValue({
+        "mes.schedules": { stale: true },
+      });
+
+      await triggerRefresh();
+      await settle(wrapper);
+
+      expect(mocks.loadSnapshot).toHaveBeenCalled();
+      expect(wrapper.vm.scheduleRows.map((row) => row.id)).toContain("schedule-1");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   test("surfaces snapshot load failures on the scheduling form instead of rejecting", async () => {
     mocks.loadSnapshot.mockRejectedValueOnce(new Error("offline"));
 

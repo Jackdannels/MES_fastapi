@@ -119,7 +119,7 @@ function filterTaskOverviewRows({
       row?.currentStatus,
       row?.scheduleLabel,
       Array.isArray(row?.experiments) ? row.experiments.map((item) => `${item?.experimentName || ""} ${item?.displayStatus || ""}`).join(" ") : "",
-      Array.isArray(row?.sampleCodes) ? row.sampleCodes.join(" ") : "",
+      row?.sampleCodeSearchText || (Array.isArray(row?.sampleCodes) ? row.sampleCodes.join(" ") : ""),
       Array.isArray(row?.trays) ? row.trays.map((tray) => tray?.trayCode).join(" ") : "",
     ]
       .join(" ")
@@ -284,6 +284,7 @@ function useTaskOverview() {
   let highlightedCardElement = null;
   let hasPendingSamplesRefresh = false;
   let flushPendingStorageRefresh = () => false;
+  let lastOverviewSnapshot = null;
 
   const buildRows = (tasks, samples, schedules, experiments, experimentTrays) =>
     buildTaskRows({
@@ -352,11 +353,14 @@ function useTaskOverview() {
     experimentTypeOptions: taskTypeEditOptions,
   });
 
-  const loadOverview = async () => {
-    loading.value = true;
+  const loadOverview = async ({ silent = false } = {}) => {
+    const showBlockingLoading = !silent || (rows.value.length === 0 && trayOverviewRows.value.length === 0);
+    if (showBlockingLoading) {
+      loading.value = true;
+    }
     try {
       const [snapshot, masterTestTypes] = await Promise.all([
-        loadSnapshot(),
+        loadSnapshot(silent && lastOverviewSnapshot ? { fallbackSnapshot: lastOverviewSnapshot } : undefined),
         readMasterTestTypes().catch(() => []),
       ]);
       masterTestTypeOptions.value = (Array.isArray(masterTestTypes) ? masterTestTypes : [])
@@ -371,8 +375,19 @@ function useTaskOverview() {
         snapshot[STORAGE_KEYS.experiment_runs],
         snapshot[STORAGE_KEYS.experiment_run_trays],
       );
+      lastOverviewSnapshot = {
+        [STORAGE_KEYS.tasks]: snapshot[STORAGE_KEYS.tasks],
+        [STORAGE_KEYS.samples]: snapshot[STORAGE_KEYS.samples],
+        [STORAGE_KEYS.schedules]: snapshot[STORAGE_KEYS.schedules],
+        [STORAGE_KEYS.experiments]: snapshot[STORAGE_KEYS.experiments],
+        [STORAGE_KEYS.experiment_trays]: snapshot[STORAGE_KEYS.experiment_trays],
+        [STORAGE_KEYS.experiment_runs]: snapshot[STORAGE_KEYS.experiment_runs],
+        [STORAGE_KEYS.experiment_run_trays]: snapshot[STORAGE_KEYS.experiment_run_trays],
+      };
     } finally {
-      loading.value = false;
+      if (showBlockingLoading) {
+        loading.value = false;
+      }
     }
   };
 
@@ -599,7 +614,7 @@ function useTaskOverview() {
     }
     hasPendingSamplesRefresh = false;
     if (!flushedStorage) {
-      void loadOverview();
+      void loadOverview({ silent: true });
     }
     return true;
   };
@@ -610,7 +625,7 @@ function useTaskOverview() {
       return;
     }
     hasPendingSamplesRefresh = false;
-    void loadOverview();
+    void loadOverview({ silent: true });
   };
 
   watch(
@@ -633,7 +648,7 @@ function useTaskOverview() {
       STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_run_trays,
     ],
-    refresh: loadOverview,
+    refresh: () => loadOverview({ silent: true }),
     paused: isRealtimeRefreshPaused,
   });
   flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;

@@ -25,13 +25,14 @@ TASK_STORAGE_UPDATE_KEYS = (
 )
 RETURNED_STATUS = "厂家收回"
 MIN_SAMPLE_COUNT = 1
-MAX_SAMPLE_COUNT = 999
+MAX_SAMPLE_COUNT = 99
 STORAGE_CONFIRMED_STATUS = "到货"
 TRANSFER_PENDING_STATUS = "未入库"
 SAMPLE_TRANSPORT_STATUS = "运输中"
 SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
+SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量"
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
 TASK_TEXT_FIELD_LABELS = {
@@ -423,6 +424,12 @@ def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dic
     )
 
 
+def task_has_selected_experiments(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> bool:
+    if existing_experiments:
+        return True
+    return bool(extract_task_test_types(task, existing_experiments))
+
+
 def build_experiment_types(task: dict[str, Any], count: int, existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
     experiment_types = extract_task_test_types(task, existing_experiments)
     if isinstance(task.get("test_types"), list) and experiment_types:
@@ -570,6 +577,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     confirm_remove_scheduled_experiments = parse_bool_flag(payload_dict.pop("confirm_remove_scheduled_experiments", False))
     updated_task = {**tasks[task_index], **payload_dict}
     all_experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
+    samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
     previous_task_code = task_code(previous_task)
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == previous_task_code]
     previous_test_types = extract_task_test_types(previous_task, existing_experiments)
@@ -578,13 +586,20 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         updated_task["test_types"] = parse_test_types(updated_task.get("test_types"))
         experiment_types_changed = test_types_changed(previous_test_types, updated_task["test_types"])
         if experiment_types_changed:
-            samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
             if task_storage_confirmed(previous_task, samples):
                 raise HTTPException(status_code=400, detail=EXPERIMENT_TYPE_LOCKED_MESSAGE)
     if not normalize_text(updated_task.get("name")):
         updated_task["name"] = build_default_task_name(task_code(updated_task), tasks)
     validate_task_text_fields(updated_task)
-    updated_task["sample_count"] = validate_sample_count(updated_task.get("sample_count"))
+    next_sample_count = validate_sample_count(updated_task.get("sample_count"))
+    sample_count_changed = parse_int(previous_task.get("sample_count")) != parse_int(next_sample_count)
+    if (
+        sample_count_changed
+        and task_storage_confirmed(previous_task, samples)
+        and task_has_selected_experiments(previous_task, existing_experiments)
+    ):
+        raise HTTPException(status_code=400, detail=SAMPLE_COUNT_LOCKED_MESSAGE)
+    updated_task["sample_count"] = next_sample_count
     next_experiments = persist_task_experiments(updated_task, existing_experiments)
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]

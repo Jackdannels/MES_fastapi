@@ -390,6 +390,48 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-101");
   });
 
+  test("limits task detail sample code count to the task sample count", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ sample_count: 99 })],
+      samples: Array.from({ length: 101 }, (_, index) => ({
+        id: `sample-${index + 1}`,
+        code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
+        task_code: "SYLU-2026-03-001",
+        status: "样品运输中",
+      })),
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+
+    expect(wrapper.text()).toContain("共 99 个，显示前 5 个");
+    expect(wrapper.text()).not.toContain("共 101 个");
+  });
+
+  test("previews generated sample codes up to the edited sample count", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ sample_count: 12 })],
+      samples: Array.from({ length: 12 }, (_, index) => ({
+        id: `sample-${index + 1}`,
+        code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
+        task_code: "SYLU-2026-03-001",
+        status: "样品运输中",
+      })),
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="task-detail-modal"] input[name="sample_count"]').setValue("99");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("共 99 个，显示前 5 个");
+    expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-005");
+  });
+
   test("does not mention showing the first five sample codes when fewer than five exist", async () => {
     installApiFetchMock({
       tasks: [createTask({ sample_count: 2 })],
@@ -782,7 +824,7 @@ describe("TasksPage runtime", () => {
     await wrapper.get('input[name="name"]').setValue("字段校验任务");
     await wrapper.get('input[name="contact"]').setValue("张三");
     await wrapper.get('input[name="contact_info"]').setValue("1380000ABC");
-    await wrapper.get('input[name="sample_count"]').setValue("1000");
+    await wrapper.get('input[name="sample_count"]').setValue("100");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
@@ -792,7 +834,7 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("样品数量最多为 999");
+    expect(wrapper.text()).toContain("样品数量最多为 99");
     expect(state.tasks).toHaveLength(0);
     expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
   });

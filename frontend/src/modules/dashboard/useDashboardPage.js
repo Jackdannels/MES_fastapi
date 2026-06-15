@@ -71,19 +71,38 @@ function useDashboardPage() {
     currentPage.value = Math.min(Math.max(page, 1), pageCount.value);
   };
 
+  const buildSnapshotFallback = () => ({
+    [STORAGE_KEYS.conflicts]: rawConflicts.value,
+    [STORAGE_KEYS.devices]: rawDevices.value,
+    [STORAGE_KEYS.experiments]: rawExperiments.value,
+    [STORAGE_KEYS.experiment_runs]: rawExperimentRuns.value,
+    [STORAGE_KEYS.experiment_run_trays]: rawExperimentRunTrays.value,
+    [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
+    [STORAGE_KEYS.schedules]: rawSchedules.value,
+    [STORAGE_KEYS.samples]: rawSamples.value,
+    [STORAGE_KEYS.streams]: rawStreams.value,
+    [STORAGE_KEYS.tasks]: rawTasks.value,
+  });
+
+  const applySnapshotArray = (snapshot, key, target) => {
+    if (Array.isArray(snapshot?.[key])) {
+      target.value = snapshot[key];
+    }
+  };
+
   const loadDashboard = async () => {
     try {
-      const snapshot = await loadSnapshot();
-      rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
-      rawDevices.value = Array.isArray(snapshot[STORAGE_KEYS.devices]) ? snapshot[STORAGE_KEYS.devices] : [];
-      rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
-      rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
-      rawExperimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
-      rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays]) ? snapshot[STORAGE_KEYS.experiment_trays] : [];
-      rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
-      rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
-      rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-      rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+      const snapshot = await loadSnapshot({ fallbackSnapshot: buildSnapshotFallback() });
+      applySnapshotArray(snapshot, STORAGE_KEYS.conflicts, rawConflicts);
+      applySnapshotArray(snapshot, STORAGE_KEYS.devices, rawDevices);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, rawExperimentRuns);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
+      applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.streams, rawStreams);
+      applySnapshotArray(snapshot, STORAGE_KEYS.tasks, rawTasks);
       loadError.value = "";
       // 数据量变化后若当前页已越界，则自动回退到最后一页。
       if (currentPage.value > pageCount.value) {
