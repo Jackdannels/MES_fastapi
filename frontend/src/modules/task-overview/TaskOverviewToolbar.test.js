@@ -135,13 +135,17 @@ describe("TaskOverviewToolbar", () => {
       customEndDate: "2026-03-10",
     });
 
-    const inputs = wrapper.findAll('input[type="date"]');
+    const inputs = wrapper.findAll(".task-overview-custom-range input");
     await wrapper.find('input[placeholder="按任务编号、试验内容或样品编号筛选"]').setValue(" TASK-001 ");
     await wrapper.findAll("select.search-input")[1].setValue("振动试验");
-    await inputs[0].setValue("2026-03-02");
-    await inputs[1].setValue("2026-03-09");
+    await inputs[0].trigger("click");
+    await wrapper.get('[data-date-value="2026-03-02"]').trigger("click");
+    await inputs[1].trigger("click");
+    await wrapper.get('[data-date-value="2026-03-09"]').trigger("click");
 
     expect(inputs).toHaveLength(2);
+    expect(inputs[0].attributes("type")).toBe("text");
+    expect(inputs[1].attributes("type")).toBe("text");
     expect(inputs[0].attributes("max")).toBe("2026-03-10");
     expect(inputs[1].attributes("min")).toBe("2026-03-01");
     expect(wrapper.emitted("update:keyword")).toEqual([["TASK-001"]]);

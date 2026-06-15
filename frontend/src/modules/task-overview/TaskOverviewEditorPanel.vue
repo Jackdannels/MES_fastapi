@@ -22,15 +22,14 @@
       </label>
       <label class="task-overview-editor-field">
         <span>样品数量</span>
-        <input
-          :value="editForm.sampleCount"
+        <AppNumberInput
+          :model-value="editForm.sampleCount"
           class="search-input"
-          type="number"
           min="0"
           max="99"
           step="1"
           :readonly="readonly"
-          @input="updateEditForm('sampleCount', $event.target.valueAsNumber)"
+          @update:model-value="updateEditForm('sampleCount', Number.parseInt(String($event || '0'), 10) || 0)"
         />
       </label>
       <label class="task-overview-editor-field task-overview-editor-field-full">
@@ -186,6 +185,7 @@
 <script setup>
 import { computed } from "vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 
 const emit = defineEmits([
   "cancel-edit",

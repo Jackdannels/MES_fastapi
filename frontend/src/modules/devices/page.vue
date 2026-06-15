@@ -93,7 +93,7 @@
       </div>
       <div class="form-field">
         <label>从站地址</label>
-        <input v-model="connectionForm.stationId" type="number" placeholder="例如：1" />
+        <AppNumberInput v-model="connectionForm.stationId" placeholder="例如：1" />
       </div>
       <div class="form-field">
         <label>功能码</label>
@@ -354,6 +354,7 @@ defineOptions({
 
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDevicesPage } from "./useDevicesPage";
 

@@ -55,7 +55,7 @@
   width: 100%;
 }
 
-.schedule-duration-control input {
+.schedule-duration-control .app-number-input {
   min-width: 0;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;

@@ -13,4 +13,11 @@ describe("shared table styles", () => {
     expect(source).toMatch(/\.table td\s*\{[^}]*text-align:\s*center/i);
     expect(source).not.toMatch(/text-align:\s*middle/i);
   });
+
+  test("keeps the custom calendar compact enough for modal forms", () => {
+    const source = readFileSync(stylesPath, "utf8");
+
+    expect(source).toMatch(/\.picker-only-calendar\s*\{[^}]*width:\s*min\(292px,\s*calc\(100vw - 24px\)\)/i);
+    expect(source).toMatch(/\.picker-only-calendar__day\s*\{[^}]*height:\s*30px/i);
+  });
 });

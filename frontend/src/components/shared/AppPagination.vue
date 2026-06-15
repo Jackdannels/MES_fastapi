@@ -18,10 +18,9 @@
     </span>
 
     <label class="task-list-pagination__jump">
-      <input
+      <AppNumberInput
         v-model="jumpValue"
         data-testid="pagination-jump-input"
-        type="number"
         aria-label="页码"
         min="1"
         :max="safePageCount"
@@ -56,6 +55,7 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
+import AppNumberInput from "./AppNumberInput.vue";
 
 const props = defineProps({
   currentPage: {

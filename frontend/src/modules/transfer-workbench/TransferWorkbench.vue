@@ -278,9 +278,7 @@
                 <div class="transfer-tray-limit-toolbar">
                   <span class="transfer-tray-limit-toolbar__label">统一上限</span>
                   <div class="transfer-tray-limit-stepper">
-                    <input data-testid="transfer-tray-limit-input" type="number" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :value="trayLimit" @change="setTrayLimit($event.target.value)" />
-                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="decreaseTrayLimit">-</button>
-                    <button class="action-btn secondary transfer-tray-limit-btn" type="button" :disabled="taskEditingLocked" @click="increaseTrayLimit">+</button>
+                    <AppNumberInput data-testid="transfer-tray-limit-input" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :model-value="trayLimit" @change="setTrayLimit" />
                   </div>
                 </div>
 
@@ -501,6 +499,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
@@ -1543,18 +1542,6 @@ const setActiveTray = (index) => {
 const setTrayLimit = (value) => {
   if (taskEditingLocked.value) return;
   const nextLimit = normalizeTrayLimit(value);
-  rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
-};
-
-const increaseTrayLimit = () => {
-  if (taskEditingLocked.value) return;
-  const nextLimit = normalizeTrayLimit(trayLimit.value + 1);
-  rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
-};
-
-const decreaseTrayLimit = () => {
-  if (taskEditingLocked.value) return;
-  const nextLimit = normalizeTrayLimit(trayLimit.value - 1);
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 

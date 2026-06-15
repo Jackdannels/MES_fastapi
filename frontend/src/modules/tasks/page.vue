@@ -113,7 +113,7 @@
         </div>
         <div class="form-field">
           <label>样品数量</label>
-          <input v-model="intakeForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+          <AppNumberInput v-model="intakeForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
         </div>
         <div class="form-field tasks-sample-preview">
           <label>样品编号预览</label>
@@ -140,12 +140,12 @@
           </div>
         </div>
         <div class="form-field">
-          <label>期望完成时间</label>
-          <PickerOnlyInput v-model="intakeForm.due_at" type="datetime-local" name="due_at" />
+          <label>期望完成日期</label>
+          <PickerOnlyInput v-model="intakeForm.due_at" type="date" name="due_at" />
         </div>
         <div class="form-field">
-          <label>到样时间</label>
-          <PickerOnlyInput v-model="intakeForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+          <label>到样日期</label>
+          <PickerOnlyInput v-model="intakeForm.arrival_at" type="date" name="arrival_at" placeholder="确认入库后自动回写" readonly />
           <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
@@ -261,7 +261,7 @@
       </div>
       <div class="form-field">
         <label>样品数量</label>
-        <input v-model="editForm.sample_count" type="number" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+        <AppNumberInput v-model="editForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
       </div>
       <div class="form-field tasks-sample-preview">
         <label>样品编号</label>
@@ -413,6 +413,7 @@ defineOptions({
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useTasksPage } from "./useTasksPage";

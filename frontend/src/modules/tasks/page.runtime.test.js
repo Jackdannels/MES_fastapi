@@ -724,6 +724,25 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 
+  test("shows date-only localized empty hints in the intake modal", async () => {
+    installApiFetchMock({
+      tasks: [createTask()],
+      samples: [],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const dueInput = wrapper.get('input[name="due_at"]');
+    const arrivalInput = wrapper.get('input[name="arrival_at"]');
+
+    expect(dueInput.attributes("type")).toBe("text");
+    expect(arrivalInput.attributes("type")).toBe("text");
+    expect(dueInput.attributes("data-format-hint")).toBe("年 / 月 / 日");
+    expect(arrivalInput.attributes("data-format-hint")).toBe("年 / 月 / 日");
+  });
+
   test("opens the intake modal from the route hash, supports multi-select experiments, and submits a task", async () => {
     const { state } = installApiFetchMock({
       tasks: [createTask()],

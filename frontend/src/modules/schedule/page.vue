@@ -66,9 +66,8 @@
         <div class="form-field">
           <label>{{ uiText.plannedDuration }}</label>
           <div class="schedule-duration-control">
-            <input
+            <AppNumberInput
               v-model="scheduleForm.planned_hours"
-              type="number"
               name="planned_hours"
               :min="0.5"
               :max="scheduleForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
@@ -492,9 +491,8 @@
       <div class="form-field">
         <label>{{ uiText.plannedDuration }}</label>
         <div class="schedule-duration-control">
-          <input
+          <AppNumberInput
             v-model="editForm.planned_hours"
-            type="number"
             name="edit_planned_hours"
             :min="0.5"
             :max="editForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
@@ -548,6 +546,7 @@ import { computed } from "vue";
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSchedulePage } from "./useSchedulePage";

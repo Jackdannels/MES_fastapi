@@ -4,6 +4,44 @@ import { describe, expect, test, vi } from "vitest";
 import PickerOnlyInput from "./PickerOnlyInput.vue";
 
 describe("PickerOnlyInput", () => {
+  test("shows localized empty date hints instead of browser default date text", () => {
+    const dateInput = mount(PickerOnlyInput, {
+      props: {
+        initialCalendarDate: "2026-06-01",
+        modelValue: "",
+        type: "date",
+      },
+    });
+    const dateTimeInput = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "",
+        type: "datetime-local",
+      },
+    });
+
+    expect(dateInput.get("input").attributes("type")).toBe("text");
+    expect(dateInput.get(".picker-only-input__hint").text()).toBe("年 / 月 / 日");
+    expect(dateTimeInput.get("input").attributes("data-format-hint")).toBe("年 / 月 / 日 --:--");
+  });
+
+  test("opens a themed calendar for date values and emits the selected day", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "",
+        type: "date",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+
+    expect(wrapper.get(".picker-only-calendar").exists()).toBe(true);
+    expect(wrapper.get(".picker-only-calendar__month").text()).toMatch(/\d{4}年\d{1,2}月/);
+
+    await wrapper.get('[data-date-value="2026-06-15"]').trigger("click");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["2026-06-15"]]);
+  });
+
   test("blocks manual text entry while still emitting picker changes", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {
