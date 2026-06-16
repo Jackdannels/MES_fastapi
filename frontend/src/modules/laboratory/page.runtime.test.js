@@ -52,6 +52,8 @@ const interfaceModeCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/interface-mode") && (options.method || "GET") === "POST");
 const laboratoryCompleteCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/complete") && (options.method || "GET") === "POST");
+const laboratoryStartCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/start") && (options.method || "GET") === "POST");
 const laboratoryOperationCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/operations") && (options.method || "GET") === "POST");
 const handleLaboratoryOperationFetch = (url, options = {}) => {
@@ -157,6 +159,15 @@ const waitForLaboratoryCompleteCount = async (count) => {
     }
   }
   expect(laboratoryCompleteCalls()).toHaveLength(count);
+};
+const waitForLaboratoryStartCount = async (count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (laboratoryStartCalls().length >= count) {
+      return;
+    }
+  }
+  expect(laboratoryStartCalls()).toHaveLength(count);
 };
 const useHostInterfaceMode = (mode) => {
   window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? mode : null));
@@ -506,6 +517,74 @@ describe("LaboratoryPage runtime", () => {
             experiments: snapshotState[STORAGE_KEYS.experiments],
             schedules: snapshotState[STORAGE_KEYS.schedules],
             experimentRuns: snapshotState[STORAGE_KEYS.experiment_runs],
+          }),
+        };
+      }
+      if (url.includes("/api/laboratory/") && url.includes("/start")) {
+        const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/start/);
+        const taskCode = decodeURIComponent(match?.[1] || "");
+        const experimentCode = decodeURIComponent(match?.[2] || "");
+        const startedAt = "2026-04-02T10:00:03.000Z";
+        const schedule = (snapshotState[STORAGE_KEYS.schedules] || []).find(
+          (entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode,
+        );
+        const trayCodes = (snapshotState[STORAGE_KEYS.experiment_trays] || [])
+          .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
+          .map((entry) => entry.tray_code);
+        const experimentRunTrays = trayCodes.map((trayCode) => ({
+          experiment_code: experimentCode,
+          run_no: "run-hot-humid-2",
+          task_code: taskCode,
+          tray_code: trayCode,
+        }));
+        snapshotState = {
+          ...snapshotState,
+          [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) =>
+            sample.task_code === taskCode
+              ? {
+                  ...sample,
+                  flow_status: "实验进行中",
+                  status: "实验进行中",
+                  trays: (Array.isArray(sample.trays) ? sample.trays : []).map((tray) =>
+                    trayCodes.includes(tray.tray_code) ? { ...tray, status: "实验进行中", updated_at: startedAt } : tray,
+                  ),
+                }
+              : sample,
+          ),
+          [STORAGE_KEYS.experiments]: (snapshotState[STORAGE_KEYS.experiments] || []).map((entry) =>
+            entry.task_code === taskCode && entry.experiment_code === experimentCode ? { ...entry, status: "实验进行中" } : entry,
+          ),
+          [STORAGE_KEYS.schedules]: (snapshotState[STORAGE_KEYS.schedules] || []).map((entry) =>
+            entry.task_code === taskCode && entry.experiment_code === experimentCode ? { ...entry, status: "实验进行中" } : entry,
+          ),
+          [STORAGE_KEYS.experiment_runs]: [
+            ...(snapshotState[STORAGE_KEYS.experiment_runs] || []),
+            {
+              id: "run-hot-humid-2",
+              run_no: "run-hot-humid-2",
+              schedule_id: schedule?.id || "",
+              task_code: taskCode,
+              experiment_code: experimentCode,
+              device: schedule?.device || "高低温湿热二室",
+              tray_codes: trayCodes,
+              status: "实验进行中",
+              started_at: startedAt,
+              planned_end_at: schedule?.end_at || "",
+            },
+          ],
+          [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays,
+        };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            samples: snapshotState[STORAGE_KEYS.samples],
+            tasks: snapshotState[STORAGE_KEYS.tasks],
+            schedules: snapshotState[STORAGE_KEYS.schedules],
+            experiments: snapshotState[STORAGE_KEYS.experiments],
+            experimentRuns: snapshotState[STORAGE_KEYS.experiment_runs],
+            experimentRunTrays: snapshotState[STORAGE_KEYS.experiment_run_trays],
           }),
         };
       }
@@ -2693,6 +2772,155 @@ describe("LaboratoryPage runtime", () => {
     await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     await flushPageUpdates();
     expect(laboratoryMqCalls()).toHaveLength(1);
+  });
+
+  test("uses local hostless MQTT fixture ready and start for hot humid laboratory two", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "高低温湿热二室" };
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-04-601", name: "高低温湿热二室任务", test_type: "高低温湿热试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-04-601", experiment_code: "SYLU-2026-04-601-A", experiment_name: "高低温湿热试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-601", experiment_code: "SYLU-2026-04-601-A", tray_code: "TP-GDW-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-hot-humid-2",
+          task_code: "SYLU-2026-04-601",
+          experiment_code: "SYLU-2026-04-601-A",
+          device: "高低温湿热二室",
+          start_at: "2026-04-02T10:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-601-SP-001",
+          location: "高低温湿热二室",
+          owner: "赵工",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          task_code: "SYLU-2026-04-601",
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-GDW-001" }],
+        },
+      ],
+    };
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("高低温湿热二室操作台");
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-GDW-001");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 2);
+
+    expect(laboratoryMqCalls()).toHaveLength(0);
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
+    expect(laboratoryOperationCalls().map(([, options]) => JSON.parse(String(options.body || "{}")).operationType)).toEqual(["compare", "install"]);
+
+    vi.advanceTimersByTime(2999);
+    await flushPageUpdates();
+    expect(laboratoryOperationCalls().map(([, options]) => JSON.parse(String(options.body || "{}")).operationType)).toEqual(["compare", "install"]);
+
+    vi.advanceTimersByTime(1);
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 3);
+    expect(laboratoryOperationCalls().map(([, options]) => JSON.parse(String(options.body || "{}")).operationType)).toEqual([
+      "compare",
+      "install",
+      "fixtureReady",
+    ]);
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
+    expect(laboratoryStartCalls()).toHaveLength(0);
+
+    vi.advanceTimersByTime(3000);
+    await waitForLaboratoryStartCount(1);
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 5);
+    await flushPageUpdates();
+
+    expect(laboratoryStartCalls()[0][0]).toBe("/api/laboratory/tasks/SYLU-2026-04-601/experiments/SYLU-2026-04-601-A/start");
+    expect(laboratoryMqCalls()).toHaveLength(0);
+    expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
+      run_no: "run-hot-humid-2",
+      status: "实验进行中",
+    }));
+    expect(snapshotState[STORAGE_KEYS.experiment_run_trays]).toContainEqual(expect.objectContaining({
+      run_no: "run-hot-humid-2",
+      tray_code: "TP-GDW-001",
+    }));
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-601");
+  });
+
+  test("clears pending hostless fixture-ready timers when the hot humid laboratory two task is reset", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "高低温湿热二室" };
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-04-602", name: "高低温湿热二室重置任务", test_type: "高低温湿热试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { task_code: "SYLU-2026-04-602", experiment_code: "SYLU-2026-04-602-A", experiment_name: "高低温湿热试验" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-04-602", experiment_code: "SYLU-2026-04-602-A", tray_code: "TP-GDW-002" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-hot-humid-2-reset",
+          task_code: "SYLU-2026-04-602",
+          experiment_code: "SYLU-2026-04-602-A",
+          device: "高低温湿热二室",
+          start_at: "2026-04-02T10:00:00.000Z",
+          end_at: "2026-04-02T12:00:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-04-602-SP-001",
+          location: "高低温湿热二室",
+          owner: "赵工",
+          status: "已到达实验室",
+          flow_status: "已到达实验室",
+          task_code: "SYLU-2026-04-602",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-GDW-002" }],
+        },
+      ],
+    };
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
+    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    vi.advanceTimersByTime(3000);
+    await flushPageUpdates();
+
+    expect(laboratoryOperationCalls().map(([, options]) => JSON.parse(String(options.body || "{}")).operationType)).toEqual(["install"]);
+    expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
+      flow_status: "到货",
+      status: "到货",
+      trays: [expect.objectContaining({ status: "到货", tray_code: "TP-GDW-002" })],
+    }));
   });
 
   test("renders dual flow panels and allows switching trays within the current experiment", async () => {

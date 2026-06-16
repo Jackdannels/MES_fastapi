@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { applyLaboratoryOperation } from "./laboratoryApi.js";
+import { applyLaboratoryOperation, startLaboratoryExperiment } from "./laboratoryApi.js";
 
 describe("laboratoryApi", () => {
   afterEach(() => {
@@ -41,6 +41,30 @@ describe("laboratoryApi", () => {
         taskCode: "TASK-PARALLEL",
         trayCodes: ["TP-B"],
       }),
+    });
+  });
+
+  test("posts laboratory experiment start requests to the task experiment endpoint", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, experimentRuns: [] }),
+    }));
+
+    const result = await startLaboratoryExperiment({
+      experimentCode: "EXP-START",
+      taskCode: "TASK-START",
+    });
+
+    expect(result).toEqual({ ok: true, experimentRuns: [] });
+    expect(fetch).toHaveBeenCalledWith("/api/laboratory/tasks/TASK-START/experiments/EXP-START/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
     });
   });
 });

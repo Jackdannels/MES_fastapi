@@ -8,7 +8,13 @@ import {
   readHostInterfaceMode,
 } from "@/lib/hostInterfaceMode";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
-import { applyLaboratoryOperation, completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "@/lib/laboratoryApi";
+import { getLabHostInterfaceCapabilities } from "@/lib/labHostInterfaceCapabilities";
+import {
+  applyLaboratoryOperation,
+  completeLaboratoryExperiment,
+  startLaboratoryExperiment,
+  withdrawCurrentLaboratoryExperiment,
+} from "@/lib/laboratoryApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
@@ -57,7 +63,6 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 
-const STATIC_LAB_NAMES = LABORATORY_OPTIONS.map((option) => option.label);
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
   "冲击一室": "LAB_IMPACT_1",
   "冲击二室": "LAB_IMPACT_2",
@@ -67,9 +72,14 @@ const STATIC_LAB_CODES_BY_NAME = Object.freeze({
   "温度冲击一室": "LAB_TEMP_SHOCK_1",
   "温度冲击二室": "LAB_TEMP_SHOCK_2",
   "高低温湿热一室": "LAB_HOT_HUMID",
+  "高低温湿热二室": "LAB_HOT_HUMID_2",
   "盐雾试验室": SALT_SPRAY_LAB_CODE,
   "霉菌试验室": "LAB_MOLD",
 });
+const STATIC_LAB_NAMES = Array.from(new Set([
+  ...LABORATORY_OPTIONS.map((option) => option.label),
+  ...Object.keys(STATIC_LAB_CODES_BY_NAME),
+]));
 
 const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
   labCode: STATIC_LAB_CODES_BY_NAME[labName] || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : labName),
@@ -200,6 +210,8 @@ function useLaboratoryPage(options = {}) {
   let runningModalRestoreTimer = null;
   let fixtureConfirmTimer = null;
   let fixtureConfirmSuccessTimer = null;
+  let hostlessFixtureReadyTimer = null;
+  let hostlessStartTimer = null;
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
   const completingRunningExperimentKeys = new Set();
@@ -341,6 +353,22 @@ function useLaboratoryPage(options = {}) {
       fixtureConfirmSuccessTimer = null;
     }
   };
+  const clearHostlessFixtureReadyTimer = () => {
+    if (hostlessFixtureReadyTimer && typeof window !== "undefined") {
+      window.clearTimeout(hostlessFixtureReadyTimer);
+      hostlessFixtureReadyTimer = null;
+    }
+  };
+  const clearHostlessStartTimer = () => {
+    if (hostlessStartTimer && typeof window !== "undefined") {
+      window.clearTimeout(hostlessStartTimer);
+      hostlessStartTimer = null;
+    }
+  };
+  const clearHostlessTimers = () => {
+    clearHostlessFixtureReadyTimer();
+    clearHostlessStartTimer();
+  };
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -368,6 +396,7 @@ function useLaboratoryPage(options = {}) {
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
+    clearHostlessTimers();
     flushPendingRealtimeRefresh();
   };
 
@@ -689,6 +718,7 @@ function useLaboratoryPage(options = {}) {
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
+    clearHostlessTimers();
   });
 
   const openScheduleBoard = () => {
@@ -730,6 +760,12 @@ function useLaboratoryPage(options = {}) {
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
   const isMqttHostInterfaceMode = () => readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt;
+  const getCurrentLabHostInterfaceCapabilities = () =>
+    getLabHostInterfaceCapabilities({
+      hostInterfaceMode: readHostInterfaceMode(),
+      labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+    });
+  const isHostlessMqttLab = () => getCurrentLabHostInterfaceCapabilities().hostless;
   const ensureHostInterfaceModeSynced = async () => {
     if (!isMqttHostInterfaceMode()) {
       return;
@@ -794,6 +830,26 @@ function useLaboratoryPage(options = {}) {
   const applyOperationResponse = (payload = {}) => {
     if (Array.isArray(payload?.samples)) {
       samples.value = payload.samples;
+    }
+  };
+  const applyExperimentStartResponse = (payload = {}) => {
+    if (Array.isArray(payload?.tasks)) {
+      tasks.value = payload.tasks;
+    }
+    if (Array.isArray(payload?.samples)) {
+      samples.value = payload.samples;
+    }
+    if (Array.isArray(payload?.schedules)) {
+      schedules.value = payload.schedules;
+    }
+    if (Array.isArray(payload?.experiments)) {
+      experiments.value = payload.experiments;
+    }
+    if (Array.isArray(payload?.experimentRuns)) {
+      experimentRuns.value = payload.experimentRuns;
+    }
+    if (Array.isArray(payload?.experimentRunTrays)) {
+      experimentRunTrays.value = payload.experimentRunTrays;
     }
   };
   const queueLaboratoryOperation = (operation) => {
@@ -923,6 +979,59 @@ function useLaboratoryPage(options = {}) {
       void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
   };
+  const scheduleHostlessFixtureReady = ({ taskCode, trayCodes }) => {
+    const capabilities = getCurrentLabHostInterfaceCapabilities();
+    clearHostlessFixtureReadyTimer();
+    if (!capabilities.hostless) {
+      return;
+    }
+    const confirmFixtureReady = () => {
+      hostlessFixtureReadyTimer = null;
+      void persistFixtureReadyForTask({ taskCode, trayCodes })
+        .then(() => {
+          openFixtureConfirmSuccess();
+        })
+        .catch((error) => {
+          laboratoryMqError.value = {
+            detail: formatErrorMessage(error),
+            title: "夹具安装确认失败",
+          };
+        });
+    };
+    if (typeof window === "undefined" || capabilities.fixtureReadyDelayMs <= 0) {
+      confirmFixtureReady();
+      return;
+    }
+    hostlessFixtureReadyTimer = window.setTimeout(confirmFixtureReady, capabilities.fixtureReadyDelayMs);
+  };
+  const scheduleHostlessExperimentStart = ({ experimentCode, taskCode }) => {
+    const capabilities = getCurrentLabHostInterfaceCapabilities();
+    clearHostlessStartTimer();
+    if (!capabilities.hostless) {
+      return;
+    }
+    const startExperiment = () => {
+      hostlessStartTimer = null;
+      void startLaboratoryExperiment({ experimentCode, taskCode })
+        .then((payload) => {
+          applyExperimentStartResponse(payload);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+          }
+        })
+        .catch((error) => {
+          laboratoryMqError.value = {
+            detail: formatErrorMessage(error),
+            title: "实验启动失败",
+          };
+        });
+    };
+    if (typeof window === "undefined" || capabilities.startDelayMs <= 0) {
+      startExperiment();
+      return;
+    }
+    hostlessStartTimer = window.setTimeout(startExperiment, capabilities.startDelayMs);
+  };
   watch(
     () => workflow.value.fixtureReadyDone,
     (fixtureReadyDone) => {
@@ -988,6 +1097,21 @@ function useLaboratoryPage(options = {}) {
     const targetTrayCodes = getCurrentTaskTrayCodesByStatus(isResend ? LAB_INSTALL_STATUS : LAB_COMPARE_STATUS);
     const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
+    if (isHostlessMqttLab()) {
+      clearFixtureConfirmTimer();
+      clearFixtureConfirmSuccessTimer();
+      fixtureConfirmModalOpen.value = false;
+      fixtureConfirmSuccessModalOpen.value = false;
+      void persistOperation
+        .then(() => scheduleHostlessFixtureReady({ taskCode: targetTaskCode, trayCodes: targetTrayCodes }))
+        .catch((error) => {
+          laboratoryMqError.value = {
+            detail: formatErrorMessage(error),
+            title: "夹具安装确认失败",
+          };
+        });
+      return;
+    }
     startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
     void persistOperation
       .then(() => publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装"))
@@ -1021,6 +1145,13 @@ function useLaboratoryPage(options = {}) {
     }
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
+    if (isHostlessMqttLab()) {
+      scheduleHostlessExperimentStart({
+        experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
+        taskCode: currentTask.value?.taskCode || payload.task_code,
+      });
+      return;
+    }
     void publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
   };
   const closeConfirmed = () => {
@@ -1054,6 +1185,7 @@ function useLaboratoryPage(options = {}) {
       resetDangerModalOpen.value = false;
       return;
     }
+    clearHostlessTimers();
     const withdrawResult = await withdrawCurrentLaboratoryExperiment({
       experimentCode: currentTask.value?.experimentCode,
       reason: "试验间内撤回当前实验任务",
@@ -1160,6 +1292,9 @@ function useLaboratoryPage(options = {}) {
       pendingRevertTask.value = null;
     } else if (previousSelectionKey && previousSelectionKey !== nextSelectionKey && taskHasSwitchRevertibleTrays(previousTask)) {
       pendingRevertTask.value = previousTask;
+    }
+    if (previousSelectionKey && previousSelectionKey !== nextSelectionKey) {
+      clearHostlessTimers();
     }
     selectedTaskCode.value = pendingTaskCode.value;
     resetCompareState();

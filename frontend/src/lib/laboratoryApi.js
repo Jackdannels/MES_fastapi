@@ -72,6 +72,32 @@ const applyLaboratoryOperation = async ({
   return response.json();
 };
 
+const startLaboratoryExperiment = async ({ experimentCode, taskCode }) => {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  const normalizedExperimentCode = String(experimentCode || "").trim();
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    throw new Error("缺少当前任务或实验信息。");
+  }
+  const response = await fetch(
+    buildApiUrl(
+      `/api/laboratory/tasks/${encodeURIComponent(normalizedTaskCode)}/experiments/${encodeURIComponent(normalizedExperimentCode)}/start`,
+      API_BASE_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
 const completeLaboratoryExperiment = async ({
   completedAt = "",
   experimentCode,
@@ -109,4 +135,4 @@ const completeLaboratoryExperiment = async ({
   return response.json();
 };
 
-export { applyLaboratoryOperation, completeLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };
+export { applyLaboratoryOperation, completeLaboratoryExperiment, startLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };
