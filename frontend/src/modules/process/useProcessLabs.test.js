@@ -2442,6 +2442,99 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test("uses hostless mqtt ready message for high-low temperature humidity room 2 without manual process start", async () => {
+    window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? HOST_INTERFACE_MODES.mqtt : null));
+    const loadSnapshot = vi.fn(async () => ({
+      "mes.schedules": [
+        {
+          id: "schedule-hot-humid-1",
+          device: "高低温湿热一室",
+          end_at: "2026-04-03T11:30:00Z",
+          experiment_code: "TASK-HOT-HUMID-1-A",
+          planned_hours: 3.5,
+          start_at: "2026-04-03T08:00:00Z",
+          task_code: "TASK-HOT-HUMID-1",
+        },
+        {
+          id: "schedule-hot-humid-2",
+          device: "高低温湿热二室",
+          end_at: "2026-04-03T11:30:00Z",
+          experiment_code: "TASK-HOT-HUMID-2-A",
+          planned_hours: 3.5,
+          start_at: "2026-04-03T08:00:00Z",
+          task_code: "TASK-HOT-HUMID-2",
+        },
+      ],
+      "mes.tasks": [
+        { code: "TASK-HOT-HUMID-1", name: "高低温湿热一室任务", status: "已排程", test_type: "高低温湿热试验" },
+        { code: "TASK-HOT-HUMID-2", name: "高低温湿热二室任务", status: "已排程", test_type: "高低温湿热试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-HOT-HUMID-1", experiment_code: "TASK-HOT-HUMID-1-A", experiment_name: "高低温湿热试验" },
+        { task_code: "TASK-HOT-HUMID-2", experiment_code: "TASK-HOT-HUMID-2-A", experiment_name: "高低温湿热试验" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-HOT-HUMID-1", experiment_code: "TASK-HOT-HUMID-1-A", tray_code: "TP-HOT-HUMID-1" },
+        { task_code: "TASK-HOT-HUMID-2", experiment_code: "TASK-HOT-HUMID-2-A", tray_code: "TP-HOT-HUMID-2" },
+      ],
+      "mes.samples": [
+        {
+          code: "SP-HOT-HUMID-1",
+          task_code: "TASK-HOT-HUMID-1",
+          location: "高低温湿热一室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-HOT-HUMID-1", status: "实验准备就绪", quantity: 1 }],
+        },
+        {
+          code: "SP-HOT-HUMID-2",
+          task_code: "TASK-HOT-HUMID-2",
+          location: "高低温湿热二室",
+          status: "实验准备就绪",
+          trays: [{ tray_code: "TP-HOT-HUMID-2", status: "实验准备就绪", quantity: 1 }],
+        },
+      ],
+    }));
+    const persistSnapshot = vi.fn(async () => {});
+    const {
+      labCards,
+      loadLabStatus,
+      openStartExperimentModal,
+      processActionMessage,
+      startExperiment,
+      startExperimentModalOpen,
+    } = useProcessLabs({
+      autoLoad: false,
+      labs: [
+        { code: "LAB_HOT_HUMID_1", name: "高低温湿热一室", testType: "高低温湿热试验" },
+        { code: "LAB_HOT_HUMID_2", name: "高低温湿热二室", testType: "高低温湿热试验" },
+      ],
+      loadSnapshot,
+      now: Date.parse("2026-04-03T08:30:00Z"),
+      persistSnapshot,
+    });
+
+    await loadLabStatus();
+
+    expect(labCards.value.find((lab) => lab.name === "高低温湿热一室")).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 1,
+      startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
+    });
+    const hostlessLab = labCards.value.find((lab) => lab.name === "高低温湿热二室");
+    expect(hostlessLab).toMatchObject({
+      canStartExperiment: false,
+      readyTrayCount: 1,
+      startDisabledReason: "试验间将在准备就绪后自动开始实验",
+    });
+
+    await openStartExperimentModal(hostlessLab);
+    await startExperiment(hostlessLab);
+
+    expect(startExperimentModalOpen.value).toBe(false);
+    expect(processActionMessage.value).toBe("试验间将在准备就绪后自动开始实验");
+    expect(persistSnapshot).not.toHaveBeenCalled();
+  });
+
   test("does not start trays when only the sample is ready but tray-level status is blank", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T08:05:00Z"));

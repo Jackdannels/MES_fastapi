@@ -84,6 +84,17 @@ const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const API_BASE_URL = getFrontendApiBaseUrl();
 const MQTT_START_DISABLED_REASON = "MQTT模式下等待上位机发送实验开始信号";
+const MQTT_HOSTLESS_AUTO_START_REASON = "试验间将在准备就绪后自动开始实验";
+const HOSTLESS_MQTT_LAB_CODES = new Set(["LAB_HOT_HUMID_2"]);
+const HOSTLESS_MQTT_LAB_NAMES = new Set(["高低温湿热二室"]);
+
+const labUsesHostlessMqttAutoStart = (lab) => (
+  HOSTLESS_MQTT_LAB_CODES.has(normalizeText(lab?.code || lab?.labCode || lab?.lab_code))
+  || HOSTLESS_MQTT_LAB_NAMES.has(normalizeText(lab?.name || lab?.lab_name))
+);
+
+const resolveMqttStartDisabledReason = (lab) =>
+  labUsesHostlessMqttAutoStart(lab) ? MQTT_HOSTLESS_AUTO_START_REASON : MQTT_START_DISABLED_REASON;
 
 const normalizeMasterProcessLabs = (rows) =>
   asArray(rows)
@@ -913,7 +924,7 @@ function useProcessLabs(options = {}) {
       readyTrayCount: actionState.readyTrayCount,
       remainingTrayCount: actionState.remainingTrayCount,
       runningTrayCount: actionState.runningTrayCount,
-      startDisabledReason: mqttMode && actionState.canStartExperiment ? MQTT_START_DISABLED_REASON : actionState.startDisabledReason,
+      startDisabledReason: mqttMode && actionState.canStartExperiment ? resolveMqttStartDisabledReason(scopedLab) : actionState.startDisabledReason,
       status,
       statusClass,
       experimentCode: activeExperimentCode,
@@ -1112,7 +1123,7 @@ function useProcessLabs(options = {}) {
       refreshStartExperimentTaskDetail();
     }
     if (readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt) {
-      processActionMessage.value = MQTT_START_DISABLED_REASON;
+      processActionMessage.value = resolveMqttStartDisabledReason(lab);
       return;
     }
     if (!startExperimentTaskDetail.value?.canStartExperiment) {
@@ -1143,7 +1154,7 @@ function useProcessLabs(options = {}) {
       return;
     }
     if (readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt) {
-      processActionMessage.value = MQTT_START_DISABLED_REASON;
+      processActionMessage.value = resolveMqttStartDisabledReason(activeLab);
       return;
     }
     if (!actionState.canStartExperiment) {
