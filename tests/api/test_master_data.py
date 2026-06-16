@@ -88,6 +88,32 @@ def test_labs_endpoint_fallback_keeps_test_type_name(monkeypatch):
     assert salt_lab["testTypeName"] == "盐雾试验"
 
 
+def test_labs_endpoint_fallback_includes_second_hot_humid_lab(monkeypatch):
+    from app.api.routes import master_data as master_data_route
+
+    monkeypatch.setattr(master_data_route, "get_storage_backend", lambda: (_ for _ in ()).throw(RuntimeError("offline")))
+    app = FastAPI()
+    app.include_router(master_data_route.router)
+
+    response = TestClient(app).get("/api/master/labs")
+
+    assert response.status_code == 200
+    hot_humid_lab = next(item for item in response.json() if item["code"] == "LAB_HOT_HUMID_2")
+    assert hot_humid_lab == {
+        "id": None,
+        "code": "LAB_HOT_HUMID_2",
+        "name": "高低温湿热二室",
+        "type": "实验室",
+        "testTypeId": None,
+        "testTypeCode": "GDW",
+        "testTypeName": "高低温湿热试验",
+        "capacity": 4,
+        "locationDesc": "",
+        "status": 1,
+        "remark": "FRONTEND_MASTER_DATA",
+    }
+
+
 def test_test_types_endpoint_hides_legacy_english_seed_rows(monkeypatch):
     from app.api.routes import master_data as master_data_route
 

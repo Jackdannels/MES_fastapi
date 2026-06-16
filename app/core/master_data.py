@@ -22,6 +22,7 @@ DEFAULT_LABS: tuple[dict[str, Any], ...] = (
     {"lab_code": "LAB_TEMP_SHOCK_1", "lab_name": "温度冲击一室", "lab_type": "实验室", "test_type_code": "WDC", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "LAB_TEMP_SHOCK_2", "lab_name": "温度冲击二室", "lab_type": "实验室", "test_type_code": "WDC", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "LAB_HOT_HUMID", "lab_name": "高低温湿热一室", "lab_type": "实验室", "test_type_code": "GDW", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
+    {"lab_code": "LAB_HOT_HUMID_2", "lab_name": "高低温湿热二室", "lab_type": "实验室", "test_type_code": "GDW", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "LAB_SALT", "lab_name": "盐雾试验室", "lab_type": "实验室", "test_type_code": "YW", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "LAB_MOLD", "lab_name": "霉菌试验室", "lab_type": "实验室", "test_type_code": "MJ", "capacity": 4, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},
     {"lab_code": "AREA_STAGING_PRE", "lab_name": "恒温恒湿间（暂存间）", "lab_type": "暂存间", "test_type_code": None, "capacity": 0, "location_desc": "", "status": 1, "remark": "FRONTEND_MASTER_DATA"},

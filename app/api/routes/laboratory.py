@@ -15,10 +15,13 @@ from app.services.laboratory_operations import (
     acquire_laboratory_operation_locks,
     acquire_laboratory_storage_commit_lock,
     apply_laboratory_task_operation,
+    merge_scoped_samples,
     operation_resource_keys,
     resolve_lab_name,
     run_atomic_laboratory_operation,
+    scope_snapshot_samples_for_experiment,
 )
+from app.services.laboratory_start import start_storage_laboratory_experiment
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 
@@ -50,6 +53,14 @@ LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
     "mes.experiment_runs",
     "mes.experiment_run_trays",
 )
+LABORATORY_START_STORAGE_UPDATE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.experiments",
+    "mes.schedules",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+)
 
 
 class LaboratoryWithdrawRequest(BaseModel):
@@ -63,6 +74,19 @@ class LaboratoryCompleteRequest(BaseModel):
     completed_at: str = Field(default="", alias="completedAt")
     run_no: str = Field(default="", alias="runNo")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LaboratoryStartRequest(BaseModel):
+    run_no: str = Field(default="", alias="runNo")
+    lab_code: str = Field(default="", alias="labCode")
+    lab_name: str = Field(default="", alias="labName")
+    schedule_id: str = Field(default="", alias="scheduleId")
+    tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+    started_at: str = Field(default="", alias="startedAt")
+    planned_hours: float | int | None = Field(default=None, alias="plannedHours")
+    planned_end_at: str = Field(default="", alias="plannedEndAt")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -131,6 +155,20 @@ def write_completion_snapshot(result: dict[str, Any]) -> None:
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
+def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], result: dict[str, Any]) -> None:
+    get_storage_backend().write_many(
+        {
+            "mes.tasks": result["tasks"],
+            "mes.samples": merge_scoped_samples(original_snapshot["samples"], result["samples"]),
+            "mes.experiments": result["experiments"],
+            "mes.schedules": result["schedules"],
+            "mes.experiment_runs": result["experimentRuns"],
+            "mes.experiment_run_trays": result["experimentRunTrays"],
+        }
+    )
+    publish_storage_update(list(LABORATORY_START_STORAGE_UPDATE_KEYS))
+
+
 def find_task(snapshot: dict[str, list[dict[str, Any]]], task_code: str) -> dict[str, Any]:
     normalized_code = normalize_text(task_code)
     for task in snapshot["tasks"]:
@@ -187,6 +225,31 @@ def experiment_name(snapshot: dict[str, list[dict[str, Any]]], task_code: str, e
         ):
             return normalize_text(experiment.get("experiment_name") or experiment.get("experiment_type") or experiment_code)
     return experiment_code
+
+
+def start_lab_name(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task_code: str,
+    experiment_code: str,
+    schedule_id: str,
+    fallback: str = "",
+) -> str:
+    normalized_schedule_id = normalize_text(schedule_id)
+    if normalized_schedule_id:
+        for schedule in snapshot["schedules"]:
+            if (
+                normalize_text(schedule.get("task_code") or schedule.get("task_no")) == task_code
+                and normalize_text(schedule.get("experiment_code") or schedule.get("experiment_no")) == experiment_code
+                and normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("schedule_no"))
+                == normalized_schedule_id
+            ):
+                return normalize_text(
+                    schedule.get("device")
+                    or schedule.get("device_name")
+                    or schedule.get("labName")
+                    or schedule.get("lab_name")
+                ) or normalize_text(fallback)
+    return resolve_lab_name(snapshot, task_code, experiment_code, fallback)
 
 
 def experiment_tray_codes(snapshot: dict[str, list[dict[str, Any]]], task_code: str, experiment_code: str) -> list[str]:
@@ -587,6 +650,69 @@ def withdrawable_sample_matches(
         if withdrawable_codes:
             result.append((sample, sorted(set(withdrawable_codes))))
     return result
+
+
+@router.post("/tasks/{task_code}/experiments/{experiment_code}/start")
+def start_current_experiment(
+    task_code: str,
+    experiment_code: str,
+    request: LaboratoryStartRequest = Body(default_factory=LaboratoryStartRequest),
+) -> dict[str, Any]:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    initial_snapshot = read_snapshot()
+    initial_lab_name = start_lab_name(
+        initial_snapshot,
+        normalized_task_code,
+        normalized_experiment_code,
+        request.schedule_id,
+        request.lab_name,
+    )
+    resource_keys = operation_resource_keys(
+        lab_code=request.lab_code,
+        lab_name=initial_lab_name,
+        tray_codes=request.tray_codes,
+    )
+    resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
+    with acquire_laboratory_operation_locks(resource_keys):
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = read_snapshot()
+            find_task(snapshot, normalized_task_code)
+            current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
+            lab_name = start_lab_name(
+                snapshot,
+                normalized_task_code,
+                normalized_experiment_code,
+                request.schedule_id,
+                request.lab_name,
+            )
+            scoped_snapshot = scope_snapshot_samples_for_experiment(
+                snapshot,
+                task_code=normalized_task_code,
+                experiment_code=normalized_experiment_code,
+                tray_codes=request.tray_codes,
+            )
+            try:
+                result = start_storage_laboratory_experiment(
+                    scoped_snapshot,
+                    task_code=normalized_task_code,
+                    experiment_code=normalized_experiment_code,
+                    run_no=request.run_no,
+                    lab_name=lab_name,
+                    schedule_id=request.schedule_id,
+                    tray_codes=request.tray_codes,
+                    started_at=request.started_at,
+                    planned_hours=request.planned_hours,
+                    planned_end_at=request.planned_end_at,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            write_start_snapshot(snapshot, result)
+            return {
+                "ok": True,
+                "message": f"{normalized_task_code} / {current_experiment_name} 已开始",
+                **result,
+            }
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/complete")

@@ -166,6 +166,99 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
     ]
 
 
+def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_common_endpoint(monkeypatch):
+    sample = sample_with_history("实验准备就绪", "高低温湿热二室", [], tray_code="TP-HH2-501")
+    sample["trays"][0]["target_lab"] = "高低温湿热二室"
+    sample["trays"][0]["target_experiment_code"] = "EXP-D"
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-D", "tray_code": "TP-HH2-501"}],
+    )
+    payloads["mes.experiments"].append(
+        {"task_code": "TASK-501", "experiment_code": "EXP-D", "experiment_name": "高低温湿热试验", "status": "实验准备就绪"}
+    )
+    payloads["mes.schedules"].extend(
+        [
+            {"id": "SCH-HH1-501", "task_code": "TASK-501", "experiment_code": "EXP-D", "device": "高低温湿热一室", "status": "实验准备就绪"},
+            {"id": "SCH-HH2-501", "task_code": "TASK-501", "experiment_code": "EXP-D", "device": "高低温湿热二室", "status": "实验准备就绪"},
+        ]
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-D/start",
+        json={
+            "runNo": "RUN-HH2-501",
+            "scheduleId": "SCH-HH2-501",
+            "trayCodes": ["TP-HH2-501"],
+            "startedAt": "2026-06-06T15:00:00",
+            "plannedHours": 2,
+            "plannedEndAt": "2026-06-06 17:00:00",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["affectedTrayCodes"] == ["TP-HH2-501"]
+    assert payload["startedAt"] == "2026-06-06 15:00:00"
+    updated_sample = storage.read("mes.samples")[0]
+    assert updated_sample["location"] == "高低温湿热二室"
+    assert updated_sample["status"] == "实验进行中"
+    assert updated_sample["flow_status"] == "实验进行中"
+    updated_tray = updated_sample["trays"][0]
+    assert updated_tray["status"] == "实验进行中"
+    assert "fixture_ready" not in updated_tray
+    assert "fixtureReady" not in updated_tray
+    assert "target_lab" not in updated_tray
+    assert "target_experiment_code" not in updated_tray
+    assert updated_sample["history"][0] == {
+        "action": "开始实验",
+        "detail": "TASK-501 / 高低温湿热试验 / 实验进行中 / 托盘：TP-HH2-501",
+        "location": "高低温湿热二室",
+        "owner": "",
+        "status": "实验进行中",
+        "time": "2026-06-06 15:00:00",
+    }
+    assert storage.read("mes.tasks")[0]["status"] == "任务进行中"
+    assert storage.read("mes.experiments")[-1]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[-2]["status"] == "实验准备就绪"
+    assert storage.read("mes.schedules")[-1]["status"] == "实验进行中"
+    assert storage.read("mes.experiment_runs") == [
+        {
+            "id": "RUN-HH2-501",
+            "run_no": "RUN-HH2-501",
+            "schedule_id": "SCH-HH2-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-D",
+            "device": "高低温湿热二室",
+            "device_name": "高低温湿热二室",
+            "tray_codes": ["TP-HH2-501"],
+            "status": "实验进行中",
+            "started_at": "2026-06-06 15:00:00",
+            "planned_hours": 2,
+            "planned_end_at": "2026-06-06 17:00:00",
+            "ended_at": "",
+            "created_at": "2026-06-06 15:00:00",
+            "updated_at": "2026-06-06 15:00:00",
+        }
+    ]
+    assert storage.read("mes.experiment_run_trays") == [
+        {
+            "id": "RUN-HH2-501:TP-HH2-501",
+            "run_no": "RUN-HH2-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-D",
+            "tray_code": "TP-HH2-501",
+            "status": "实验进行中",
+            "run_tray_status": "实验进行中",
+            "started_at": "2026-06-06 15:00:00",
+            "ended_at": "",
+            "created_at": "2026-06-06 15:00:00",
+            "updated_at": "2026-06-06 15:00:00",
+        }
+    ]
+
+
 def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):
     sample = sample_with_history(
         "实验进行中",
