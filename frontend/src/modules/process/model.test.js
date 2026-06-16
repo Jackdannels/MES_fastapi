@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { buildProcessLabCards, buildTaskOverviewPath, scheduleExperimentIsCompleted } from "./model";
+import { PROCESS_LABS, buildProcessLabCards, buildTaskOverviewPath, scheduleExperimentIsCompleted } from "./model";
 
 const labs = [
   { name: "Impact Lab 1", testType: "Impact Test" },
@@ -9,6 +9,13 @@ const labs = [
 ];
 
 describe("processLabModel", () => {
+  test("PROCESS_LABS includes both high humid rooms as process fallbacks", () => {
+    expect(PROCESS_LABS.filter((lab) => lab.testType === "高低温湿热试验").map((lab) => lab.name)).toEqual([
+      "高低温湿热一室",
+      "高低温湿热二室",
+    ]);
+  });
+
   test("buildProcessLabCards matches schedules by lab code before display device text", () => {
     const cards = buildProcessLabCards(
       [{ code: "LAB_SALT", name: "Salt Spray Lab", testType: "Salt Spray Test" }],

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { LAB_LOCATIONS, LAB_TEST_MAP } from "@/lib/labs.js";
 import * as scheduleModelPublicApi from "./model";
 import {
   analyzeTaskTrayConflict,
@@ -306,6 +307,23 @@ describe("schedulePageModel", () => {
 
   test("buildLabOptions falls back to static labs when master labs are unavailable", () => {
     expect(buildLabOptions({ masterLabs: [], testType: "盐雾试验" })).toContain("盐雾试验室");
+  });
+
+  test("static lab registry maps both high humid rooms to high humid testing", () => {
+    expect(LAB_LOCATIONS).toEqual(expect.arrayContaining(["高低温湿热一室", "高低温湿热二室"]));
+    expect(LAB_TEST_MAP).toEqual(
+      expect.objectContaining({
+        高低温湿热一室: "高低温湿热试验",
+        高低温湿热二室: "高低温湿热试验",
+      }),
+    );
+  });
+
+  test("buildLabOptions falls back to both high humid rooms when master labs are unavailable", () => {
+    expect(buildLabOptions({ masterLabs: [], testType: "高低温湿热试验" })).toEqual([
+      "高低温湿热一室",
+      "高低温湿热二室",
+    ]);
   });
 
   test("buildLabOptions falls back to static labs when master labs have no matching test type", () => {

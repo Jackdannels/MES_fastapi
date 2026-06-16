@@ -20,6 +20,7 @@ const PROCESS_LABS = [
   { name: "温度冲击一室", testType: "温度冲击试验" },
   { name: "温度冲击二室", testType: "温度冲击试验" },
   { name: "高低温湿热一室", testType: "高低温湿热试验" },
+  { name: "高低温湿热二室", testType: "高低温湿热试验" },
   { name: "盐雾试验室", testType: "盐雾试验" },
   { name: "霉菌试验室", testType: "霉菌试验" },
 ];
