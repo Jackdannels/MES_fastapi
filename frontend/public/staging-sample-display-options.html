@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>暂存间样品显示方案A预览</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      color: #f2ffff;
+      background: #061414;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(29, 255, 219, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(29, 255, 219, 0.06) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    .prototype {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+      width: 100vw;
+      height: 100dvh;
+      padding: 12px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .control {
+      min-height: 44px;
+      color: #9fc6c6;
+      border: 1px solid rgba(35, 215, 208, 0.28);
+      border-radius: 0;
+      background: rgba(2, 14, 18, 0.78);
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .control.is-active {
+      color: #061414;
+      background: #23d7d0;
+    }
+
+    .screen {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+      min-height: 0;
+      padding: 14px;
+      border: 1px solid rgba(31, 220, 205, 0.2);
+      background:
+        linear-gradient(rgba(29, 255, 219, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(29, 255, 219, 0.06) 1px, transparent 1px),
+        rgba(2, 14, 18, 0.76);
+      background-size: 40px 40px, 40px 40px, auto;
+      overflow: hidden;
+    }
+
+    .header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 62px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(35, 215, 208, 0.26);
+    }
+
+    .kicker {
+      color: #23d7d0;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 4px 0 0;
+      font-size: clamp(22px, 1.28vw, 34px);
+      line-height: 1.05;
+    }
+
+    .hint {
+      color: #9fc6c6;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      min-height: 58px;
+      padding: 8px 12px;
+      border: 1px solid rgba(116, 188, 184, 0.28);
+      border-radius: 0;
+      background: linear-gradient(110deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01));
+    }
+
+    .stat span {
+      display: block;
+      color: #9fc6c6;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      color: #f5fffc;
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 300px 340px minmax(0, 1fr) 330px;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      padding: 16px;
+      border: 1px solid rgba(94, 234, 212, 0.22);
+      border-radius: 0;
+      background: rgba(5, 12, 15, 0.72);
+      overflow: hidden;
+    }
+
+    .section-title {
+      color: #9fc6c6;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .task-card,
+    .tray-card {
+      display: grid;
+      gap: 7px;
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid rgba(35, 215, 208, 0.42);
+      border-radius: 0;
+      background: rgba(8, 50, 66, 0.55);
+    }
+
+    .task-card strong,
+    .tray-card strong {
+      min-width: 0;
+      color: #fff;
+      font-size: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .task-card small,
+    .tray-card small {
+      color: #9fc6c6;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .detail {
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    .detail-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .detail-head span {
+      color: #8bc5c2;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .detail-head h2 {
+      margin: 5px 0 0;
+      color: #fff;
+      font-size: 30px;
+      line-height: 1.05;
+      overflow-wrap: anywhere;
+    }
+
+    .badge {
+      align-self: start;
+      padding: 8px 14px;
+      color: #f2ffff;
+      border: 1px solid #2f8cff;
+      border-radius: 0;
+      background: rgba(47, 140, 255, 0.18);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .meta div {
+      padding: 12px;
+      border: 1px solid rgba(60, 135, 132, 0.42);
+      border-radius: 0;
+      background: rgba(2, 14, 18, 0.72);
+    }
+
+    .meta span {
+      display: block;
+      color: #8bc5c2;
+      font-size: 13px;
+    }
+
+    .meta strong {
+      display: block;
+      margin-top: 4px;
+      color: #23d7d0;
+      font-size: 22px;
+    }
+
+    .sample-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 34px;
+      padding: 8px 10px;
+      border: 1px solid rgba(60, 135, 132, 0.42);
+      border-radius: 0;
+      background: rgba(2, 14, 18, 0.72);
+    }
+
+    .sample-head span {
+      color: #9fc6c6;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .scroll-hint {
+      display: none;
+      color: #23d7d0;
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .sample-wrap.is-scrollable .scroll-hint {
+      display: inline;
+    }
+
+    .sample-viewport {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .sample-viewport.is-scrollable::before,
+    .sample-viewport.is-scrollable::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      z-index: 2;
+      height: 24px;
+      pointer-events: none;
+    }
+
+    .sample-viewport.is-scrollable::before {
+      top: 0;
+      background: linear-gradient(rgba(2, 14, 18, 0.95), rgba(2, 14, 18, 0));
+    }
+
+    .sample-viewport.is-scrollable::after {
+      bottom: 0;
+      background: linear-gradient(rgba(2, 14, 18, 0), rgba(2, 14, 18, 0.95));
+    }
+
+    .sample-wrap {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-content: start;
+      gap: 10px;
+      min-height: 0;
+      will-change: transform;
+      transform: translate3d(0, 0, 0);
+    }
+
+    .sample-grid.is-looping {
+      animation-name: sample-list-loop;
+      animation-duration: var(--sample-loop-duration, 24s);
+      animation-iteration-count: infinite;
+      animation-timing-function: linear;
+    }
+
+    .sample-wrap.is-scrollable:hover .sample-grid {
+      animation-play-state: paused;
+    }
+
+    .sample {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      min-height: 42px;
+      padding: 10px;
+      color: #f7ffff;
+      border: 1px solid rgba(70, 151, 149, 0.32);
+      border-radius: 0;
+      background: rgba(7, 28, 34, 0.68);
+      font-size: 15px;
+      font-weight: 900;
+      line-height: 1.18;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+    }
+
+    .capacity {
+      display: grid;
+      gap: 14px;
+    }
+
+    .capacity-card {
+      padding: 14px;
+      border: 1px solid rgba(94, 234, 212, 0.16);
+      border-radius: 0;
+      background: rgba(2, 14, 18, 0.7);
+    }
+
+    .capacity-card span {
+      color: #9fc6c6;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .capacity-card strong {
+      display: block;
+      margin: 8px 0;
+      color: #fff;
+      font-size: 38px;
+      line-height: 1;
+    }
+
+    .ticks {
+      display: grid;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+      gap: 5px;
+    }
+
+    .ticks i {
+      height: 14px;
+      border-radius: 3px;
+      background: #10b981;
+    }
+
+    .ticks i:nth-child(-n + 4) {
+      background: #f59e0b;
+    }
+
+    .ticks i:first-child {
+      background: #ef4444;
+    }
+
+    @keyframes sample-list-loop {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(0, -50%, 0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sample-grid.is-looping {
+        animation: none;
+      }
+
+      .scroll-hint {
+        display: none !important;
+      }
+    }
+
+    @media (max-width: 1700px), (max-height: 950px) {
+      .prototype {
+        padding: 8px;
+      }
+
+      .layout {
+        grid-template-columns: 290px 330px minmax(0, 1fr) 320px;
+        gap: 10px;
+      }
+
+      .screen {
+        padding: 10px;
+        gap: 10px;
+      }
+
+      .panel {
+        padding: 12px;
+      }
+
+      .detail {
+        gap: 10px;
+      }
+
+      .detail-head h2 {
+        font-size: 25px;
+      }
+
+      .sample {
+        min-height: 39px;
+        padding: 8px;
+        font-size: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="prototype">
+    <nav class="controls" aria-label="模拟样品数量切换">
+      <button class="control is-active" data-mode="normal" type="button">普通样品数：12件</button>
+      <button class="control" data-mode="large" type="button">大量样品数：36件，自动滚动</button>
+    </nav>
+
+    <section class="screen">
+      <header class="header">
+        <div>
+          <div class="kicker">STAGING BUFFER · OPTION A</div>
+          <h1>暂存间/外观检测间样品信息屏</h1>
+        </div>
+        <div class="hint">方案A：双列完整换行，超出窗体后自动循环播放</div>
+      </header>
+
+      <div class="stats">
+        <div class="stat"><span>当前任务</span><strong>1</strong></div>
+        <div class="stat"><span>暂存托盘</span><strong>1</strong></div>
+        <div class="stat"><span>样品总数</span><strong data-sample-total>12</strong></div>
+        <div class="stat"><span>暂存间存放/计划暂存/实验后暂存间存放</span><strong>0/1/0</strong></div>
+      </div>
+
+      <div class="layout">
+        <aside class="panel">
+          <div class="section-title">任务切换</div>
+          <div class="task-card">
+            <strong>SYLU-2026-06-026</strong>
+            <small>414</small>
+            <small><span data-tray-count>1</span>托盘 / <span data-sample-count>12</span>样品</small>
+          </div>
+        </aside>
+
+        <aside class="panel">
+          <div class="section-title">托盘切换</div>
+          <div class="tray-card">
+            <strong>SYLU-2026-06-026-TP-001</strong>
+            <small>四综合试验</small>
+            <small>计划暂存 送至暂存间</small>
+          </div>
+        </aside>
+
+        <section class="panel detail">
+          <div class="detail-head">
+            <div>
+              <span>SYLU-2026-06-026</span>
+              <h2>SYLU-2026-06-026-TP-001</h2>
+            </div>
+            <div class="badge">计划暂存</div>
+          </div>
+          <div class="meta">
+            <div><span>实验类型</span><strong>四综合试验</strong></div>
+            <div><span>样品数量</span><strong><span data-sample-count>12</span>件</strong></div>
+          </div>
+          <div class="sample-wrap" data-sample-wrap>
+            <div class="sample-head">
+              <span>当前托盘样品编号</span>
+              <span class="scroll-hint">自动循环播放</span>
+            </div>
+            <div class="sample-viewport" data-sample-viewport>
+              <div class="sample-grid" data-sample-grid></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel capacity">
+          <div class="section-title">剩余容量</div>
+          <div class="capacity-card"><span>托盘剩余</span><strong>5</strong><div class="ticks"></div></div>
+          <div class="capacity-card"><span>盐雾剩余</span><strong>100</strong><div class="ticks"></div></div>
+          <div class="capacity-card"><span>霉菌剩余</span><strong>100</strong><div class="ticks"></div></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const datasets = {
+      normal: Array.from({ length: 12 }, (_, index) => `SYLU-2026-06-026-414-SAMPLE-${String(index + 1).padStart(3, "0")}`),
+      large: Array.from({ length: 36 }, (_, index) => `SYLU-2026-06-026-414-SAMPLE-${String(index + 1).padStart(3, "0")}`),
+    };
+
+    const sampleWrap = document.querySelector("[data-sample-wrap]");
+    const sampleViewport = document.querySelector("[data-sample-viewport]");
+    const sampleGrid = document.querySelector("[data-sample-grid]");
+    const countNodes = document.querySelectorAll("[data-sample-count]");
+    const totalNode = document.querySelector("[data-sample-total]");
+    let activeMode = "normal";
+    let isLooping = false;
+    let refreshQueued = false;
+
+    document.querySelectorAll(".ticks").forEach((ticks) => {
+      ticks.innerHTML = Array.from({ length: 10 }, () => "<i></i>").join("");
+    });
+
+    const renderSamples = () => {
+      const samples = datasets[activeMode];
+      const visibleSamples = isLooping ? [...samples, ...samples] : samples;
+      sampleGrid.innerHTML = visibleSamples.map((code) => `<div class="sample">${code}</div>`).join("");
+      sampleGrid.style.setProperty("--sample-loop-duration", `${Math.max(18, samples.length * 1.35)}s`);
+      sampleGrid.classList.toggle("is-looping", isLooping);
+      sampleWrap.classList.toggle("is-scrollable", isLooping);
+      sampleViewport.classList.toggle("is-scrollable", isLooping);
+      countNodes.forEach((node) => {
+        node.textContent = String(samples.length);
+      });
+      totalNode.textContent = String(samples.length);
+    };
+
+    const refreshSampleLoop = () => {
+      const samples = datasets[activeMode];
+      const singleCycleHeight = sampleGrid.scrollHeight / (isLooping ? 2 : 1);
+      const shouldLoop = samples.length > 0 && singleCycleHeight > sampleViewport.clientHeight + 1;
+      if (shouldLoop !== isLooping) {
+        isLooping = shouldLoop;
+        renderSamples();
+        window.requestAnimationFrame(refreshSampleLoop);
+      }
+    };
+
+    const queueRefreshSampleLoop = () => {
+      if (refreshQueued) {
+        return;
+      }
+      refreshQueued = true;
+      window.requestAnimationFrame(() => {
+        refreshQueued = false;
+        refreshSampleLoop();
+      });
+    };
+
+    const setMode = (mode) => {
+      activeMode = mode;
+      isLooping = false;
+      document.querySelectorAll(".control").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.mode === mode);
+      });
+      renderSamples();
+      queueRefreshSampleLoop();
+    };
+
+    document.querySelectorAll(".control").forEach((button) => {
+      button.addEventListener("click", () => setMode(button.dataset.mode));
+    });
+
+    const resizeObserver = new ResizeObserver(queueRefreshSampleLoop);
+    resizeObserver.observe(document.querySelector(".screen"));
+    resizeObserver.observe(sampleViewport);
+
+    setMode("normal");
+  </script>
+</body>
+</html>

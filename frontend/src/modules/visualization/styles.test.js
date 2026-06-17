@@ -139,6 +139,7 @@ describe("visualization styles", () => {
 
   test("staging sample screen defines full and compact industrial board layouts", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
 
     expect(source).toContain(".visual-staging-board");
     expect(source).toContain(".visual-staging-overview");
@@ -146,14 +147,39 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-staging-main\s*{[^}]*grid-template-columns:\s*minmax\(240px,\s*0\.34fr\) minmax\(0,\s*1fr\);[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
     expect(source).toMatch(/\.visual-staging-tray-switch\s*{[^}]*grid-column:\s*1;[^}]*grid-row:\s*2;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*max-height:\s*none;/s);
     expect(source).toMatch(/\.visual-staging-tray-detail\s*{[^}]*grid-column:\s*2;[^}]*grid-row:\s*2;/s);
-    expect(source).toMatch(/\.visual-staging-sample-grid\s*{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(150px,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-staging-sample-wrap\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
+    expect(source).toMatch(/\.visual-staging-sample-grid\s*{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-staging-sample-grid\.is-looping\s*{[^}]*animation-name:\s*visual-staging-sample-loop;/s);
+    expect(source).toContain("@keyframes visual-staging-sample-loop");
+    expect(source).toMatch(/\.visual-staging-sample-code\s*{[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*normal;[^}]*word-break:\s*break-all;/s);
+    expect(pageSource).toContain("sampleCodes");
+    expect(pageSource).toContain("visual-staging-sample-viewport");
+    expect(pageSource).toContain("自动循环播放");
+    expect(pageSource).toContain("singleCycleHeight > viewport.clientHeight");
     expect(source).toMatch(/\.visual-staging-task-option,\s*\.visual-staging-tray-option\s*{[^}]*min-height:\s*58px;/s);
     expect(source).toContain(".visual-staging-capacity");
     expect(source).toContain(".visual-staging-capacity-ticks");
     expect(source).toContain(".visual-staging-capacity-tick");
     expect(source).toContain(".visual-staging-low-stock");
-    expect(source).toContain(".visual-staging-modal");
+    expect(source).not.toContain(".visual-staging-modal");
+    expect(source).not.toContain(".visual-staging-all-samples");
     expect(source).toMatch(/\.visual-board\.is-compact \.visual-staging-layout\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(120px,\s*0\.38fr\);/s);
+  });
+
+  test("today task plan screen enlarges real-data table text and fills cells", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(pageSource).toContain("实验数量");
+    expect(pageSource).toContain("todayTaskPlanView");
+    expect(pageSource).not.toContain("mockTodayTaskPlans");
+    expect(source).toMatch(/\.visual-task-plan-table\s*{[^}]*grid-auto-rows:\s*minmax\(76px,\s*auto\);/s);
+    expect(source).toMatch(/\.visual-task-plan-table\.is-empty\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
+    expect(pageSource).toContain("taskRows.length ? \"\" : \"is-empty\"");
+    expect(source).toMatch(/\.visual-task-plan-row\.is-flat\s*{[^}]*min-height:\s*76px;/s);
+    expect(source).toMatch(/\.visual-task-plan-row strong\s*{[^}]*width:\s*100%;[^}]*font-size:\s*16px;/s);
+    expect(source).toMatch(/\.visual-task-plan-row span\s*{[^}]*width:\s*100%;[^}]*font-size:\s*15px;/s);
+    expect(source).toMatch(/\.visual-task-plan-table-head span\s*{[^}]*font-size:\s*14px;/s);
   });
 
   test("current lab task screen defines state tones and running-only countdown styles", () => {
@@ -162,35 +188,66 @@ describe("visualization styles", () => {
 
     expect(pageSource).toContain("key: \"current-lab-tasks\"");
     expect(pageSource).toContain("return CurrentLabTasksScreen");
-    expect(pageSource).toContain("data-testid\": \"visual-current-lab-countdown\"");
+    expect(pageSource).toContain("data-testid\": \"lab-matrix-countdown\"");
+    expect(pageSource).toContain("visual-lab-matrix-screen");
+    expect(pageSource).not.toContain("visual-current-lab");
+    expect(pageSource).toContain("LAB TASK MATRIX");
+    expect(pageSource).not.toContain("系统状态同步");
     expect(pageSource).toContain("已排程");
     expect(pageSource).toContain("metric-scheduled");
     expect(pageSource).toContain("计划时间");
-    expect(pageSource).toContain("field-stage");
-    expect(pageSource).toContain("field-plan");
-    expect(pageSource).toContain("field-trays");
-    expect(pageSource).toContain("visual-current-lab-tray-list");
-    expect(source).toContain(".visual-current-lab-board");
-    expect(source).toContain(".visual-current-lab-grid");
-    expect(source).toMatch(/\.visual-current-lab-fields\s*{[^}]*grid-template-areas:\s*"experiment trays"[^}]*"stage trays"[^}]*"plan trays";/s);
-    expect(source).toMatch(/\.visual-current-lab-field\.field-stage\s*{[^}]*grid-area:\s*stage;/s);
-    expect(source).toMatch(/\.visual-current-lab-field\.field-plan\s*{[^}]*grid-area:\s*plan;/s);
-    expect(source).toMatch(/\.visual-current-lab-field\.field-trays\s*{[^}]*grid-area:\s*trays;/s);
-    expect(source).toMatch(/\.visual-current-lab-tray-list span\s*{[^}]*display:\s*block;/s);
-    expect(source).toContain(".visual-current-lab-metrics .metric-scheduled");
-    expect(source).toContain(".visual-current-lab-metrics .metric-repair");
-    expect(source).toContain(".visual-current-lab-metrics .metric-running");
-    expect(source).toContain(".visual-current-lab-metrics .metric-urgent");
-    expect(source).toContain(".visual-current-lab-card.tone-task");
-    expect(source).toContain(".visual-current-lab-card.tone-repair");
-    expect(source).toContain(".visual-current-lab-card.tone-running");
-    expect(source).toContain(".visual-current-lab-card.tone-urgent");
-    expect(source).toContain(".visual-current-lab-card.is-blinking");
-    expect(source).toContain("@keyframes visual-current-lab-pulse");
-    expect(source).toContain(".visual-current-lab-countdown");
-    expect(source).toContain(".visual-current-lab-progress");
-    expect(source).toMatch(/\.visual-current-lab-progress i\s*{[^}]*width:\s*var\(--current-task-progress,\s*0%\);/s);
-    expect(source).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.visual-current-lab-card\.is-blinking\s*{[^}]*animation:\s*none;/s);
+    expect(pageSource).toContain("card-body");
+    expect(pageSource).toContain("tray-panel");
+    expect(pageSource).toContain("tray-row");
+    expect(pageSource).toContain("total");
+    expect(pageSource).toContain("singleCycleHeight > viewport.clientHeight");
+    expect(pageSource).not.toContain("trayItems.length > 8");
+    expect(source).toContain(".visual-lab-matrix-screen");
+    expect(source).not.toContain(".visual-current-lab");
+    expect(source).toMatch(/\.visual-lab-matrix-screen\s*{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\);[^}]*background-size:\s*40px 40px,\s*40px 40px,\s*auto;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.header\s*{[^}]*display:\s*flex;[^}]*align-items:\s*end;[^}]*min-height:\s*clamp\(48px,\s*5vh,\s*74px\);[^}]*border-bottom:\s*1px solid rgba\(35,\s*215,\s*208,\s*0\.26\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.kicker\s*{[^}]*color:\s*var\(--cyan\);[^}]*font-size:\s*var\(--small\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen h1\s*{[^}]*font-size:\s*clamp\(20px,\s*1\.28vw,\s*34px\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.stat strong\s*{[^}]*font-size:\s*clamp\(21px,\s*1\.45vw,\s*38px\);[^}]*line-height:\s*1;/s);
+    expect(source).not.toMatch(/\.visual-lab-matrix-screen \.stat strong\s*{[^}]*font:\s*900/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.stat\s*{[^}]*border-radius:\s*0;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.grid\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.card\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.card\s*{[^}]*border-radius:\s*0;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.card-body\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*0\.96fr\) minmax\(0,\s*1\.08fr\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.left\s*{[^}]*grid-template-rows:\s*minmax\(42px,\s*0\.82fr\) minmax\(38px,\s*0\.78fr\) minmax\(38px,\s*0\.78fr\) minmax\(44px,\s*0\.9fr\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.info\s*{[^}]*display:\s*grid;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);[^}]*gap:\s*5px;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.time strong\s*{[^}]*font-size:\s*var\(--body\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.tray-panel\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.info,\s*\.visual-lab-matrix-screen \.tray-panel\s*{[^}]*border-radius:\s*0;/s);
+    expect(source).toContain("@media (max-width: 1700px),(max-height: 950px)");
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.left\s*{[^}]*grid-template-rows:\s*minmax\(35px,\s*0\.78fr\) minmax\(32px,\s*0\.7fr\) minmax\(32px,\s*0\.7fr\) minmax\(40px,\s*0\.86fr\);/s);
+    expect(source).toContain("@media (min-width: 2300px) and (min-height: 1250px)");
+    expect(source).toContain(".visual-lab-matrix-screen .tray-viewport");
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.tray-row\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.tray-row\s*{[^}]*border-radius:\s*0;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.tray-code,\s*\.visual-lab-matrix-screen \.tray-qty\s*{[^}]*font-size:\s*var\(--body\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.total\s*{[^}]*border-top:\s*2px solid/s);
+    expect(source).toContain("@keyframes lab-matrix-tray-loop");
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.tray-list\.is-looping\s*{[^}]*animation-name:\s*lab-matrix-tray-loop;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.card\s*{[^}]*border:\s*1px solid rgba\(145,\s*196,\s*192,\s*0\.66\);/s);
+    expect(source).not.toContain("inset 4px 0 0 var(--current-task-tone)");
+    expect(source).toContain(".visual-lab-matrix-screen .stat.blue");
+    expect(source).toContain(".visual-lab-matrix-screen .stat.red");
+    expect(source).toContain(".visual-lab-matrix-screen .stat.green");
+    expect(source).toContain(".visual-lab-matrix-screen .stat.orange");
+    expect(source).toContain(".visual-lab-matrix-screen .card.planned");
+    expect(source).toContain(".visual-lab-matrix-screen .card.repair");
+    expect(source).toContain(".visual-lab-matrix-screen .card.running");
+    expect(source).toContain(".visual-lab-matrix-screen .card.near");
+    expect(source).toContain(".visual-lab-matrix-screen .card.is-blinking");
+    expect(source).toContain("@keyframes lab-matrix-pulse");
+    expect(source).toContain(".visual-lab-matrix-screen .countdown");
+    expect(source).toContain(".visual-lab-matrix-screen .progress");
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.progress i\s*{[^}]*width:\s*var\(--current-task-progress,\s*0%\);/s);
+    expect(source).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.visual-lab-matrix-screen \.card\.is-blinking\s*{[^}]*animation:\s*none;/s);
+    expect(pageSource).toMatch(/class="visual-screen-close"[\s\S]*>\s*×\s*<\/button>/);
+    expect(source).toMatch(/\.visual-screen-close\s*{[^}]*width:\s*32px;[^}]*height:\s*32px;[^}]*min-width:\s*32px;[^}]*border-radius:\s*4px;/s);
   });
 
   test("analysis screen keeps custom time filtering in one row and reserves full-screen chart space", () => {

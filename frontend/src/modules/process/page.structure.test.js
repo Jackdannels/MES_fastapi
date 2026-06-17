@@ -30,18 +30,32 @@ describe("ProcessPage structure", () => {
     expect(source).not.toContain("onMounted(loadLabStatus)");
   });
 
-  test("keeps task detail modal fitted while only the flow list scrolls", () => {
+  test("lays out task detail as overview, tray queue, and flow timeline columns", () => {
     const source = readProcessPage();
     const detailModal = cssBlock(source, ".process-task-detail-modal-content");
+    const detailGrid = cssBlock(source, ".process-task-detail-grid");
+    const overviewPanel = cssBlock(source, ".process-task-overview-panel");
+    const trayPanel = cssBlock(source, ".process-task-tray-panel");
     const flowCard = cssBlock(source, ".process-task-flow-card");
     const flowList = cssBlock(source, ".process-task-flow-list");
 
     expect(source).toContain("process-task-modal-content process-task-detail-modal-content");
+    expect(source).toContain("process-task-detail-grid");
+    expect(source).toContain("process-task-overview-panel");
+    expect(source).toContain("process-task-tray-panel");
+    expect(source).toContain("process-task-flow-card");
     expect(detailModal).toContain("height: min(900px, calc(100dvh - 32px))");
     expect(detailModal).toContain("overflow: hidden");
     expect(detailModal).not.toContain("overflow: auto");
     expect(detailModal).not.toContain("overflow: scroll");
 
+    expect(detailGrid).toContain("grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr)");
+    expect(detailGrid).toContain("grid-template-rows: minmax(0, 1fr)");
+    expect(detailGrid).toContain("overflow: hidden");
+    expect(overviewPanel).toContain("display: grid");
+    expect(overviewPanel).toContain("grid-template-rows: auto auto auto minmax(0, 1fr)");
+    expect(trayPanel).toContain("display: grid");
+    expect(trayPanel).toContain("grid-template-rows: auto minmax(112px, 0.62fr) minmax(200px, 1.38fr)");
     expect(flowCard).toContain("display: flex");
     expect(flowCard).toContain("overflow: hidden");
     expect(flowList).toContain("flex: 1 1 auto");
@@ -51,20 +65,16 @@ describe("ProcessPage structure", () => {
 
   test("keeps tray batch lists locally scrollable inside the fitted task detail modal", () => {
     const source = readProcessPage();
-    const drawerMain = cssBlock(source, ".process-task-drawer-main");
-    const batchGrid = cssBlock(source, ".process-task-batch-grid");
-    const batchCard = cssBlock(source, ".process-task-batch-grid > .process-task-summary-card");
+    const trayPanel = cssBlock(source, ".process-task-tray-panel");
+    const trayCard = cssBlock(source, ".process-task-tray-panel > .process-task-summary-card");
     const trayList = cssBlock(source, ".process-task-tray-list--scrollable");
 
     expect(source).toContain("process-task-tray-list process-task-tray-list--scrollable");
-    expect(drawerMain).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
-    expect(drawerMain).toContain("overflow: hidden");
-    expect(batchGrid).toContain("min-height: 0");
-    expect(batchGrid).toContain("grid-auto-rows: minmax(0, 1fr)");
-    expect(batchGrid).toContain("overflow: hidden");
-    expect(batchCard).toContain("display: flex");
-    expect(batchCard).toContain("flex-direction: column");
-    expect(batchCard).toContain("min-height: 0");
+    expect(trayPanel).toContain("min-height: 0");
+    expect(trayPanel).toContain("overflow: hidden");
+    expect(trayCard).toContain("display: flex");
+    expect(trayCard).toContain("flex-direction: column");
+    expect(trayCard).toContain("min-height: 0");
     expect(trayList).toContain("flex: 1 1 auto");
     expect(trayList).toContain("min-height: 0");
     expect(trayList).toContain("max-height: none");

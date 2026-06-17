@@ -25,6 +25,7 @@ const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
+const EXPLICIT_STAGING_INBOUND_STATUSES = new Set(["送至暂存间", POST_EXPERIMENT_STAGING_SENT_STATUS]);
 const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
@@ -607,17 +608,20 @@ const trayTargetsPreExperimentAppearance = ({ row, experiments }) => {
   );
 };
 
-const resolveInboundKind = ({ config, isPostExperimentInbound, status }) => {
+const hasExplicitStagingInboundStatus = (statuses) =>
+  asArray(statuses).some((status) => EXPLICIT_STAGING_INBOUND_STATUSES.has(normalizeText(status)));
+
+const resolveInboundKind = ({ config, isExplicitStagingInbound, status }) => {
   if (normalizeText(status) !== "待入库") {
     return { inboundKind: "", inboundKindLabel: "" };
   }
-  if (config.key === "staging" && isPostExperimentInbound) {
-    return { inboundKind: "post-experiment", inboundKindLabel: "计划暂存" };
+  if (config.key === "staging" && isExplicitStagingInbound) {
+    return { inboundKind: "planned", inboundKindLabel: "计划暂存" };
   }
   if (config.key === "appearance") {
     return { inboundKind: "appearance", inboundKindLabel: "计划入库" };
   }
-  return { inboundKind: "planned", inboundKindLabel: "允许暂存" };
+  return { inboundKind: "allowed", inboundKindLabel: "允许暂存" };
 };
 
 const resolveTrayStatusLabel = ({ config, experiments, experimentRunTrays, isPostExperimentInbound, samples, status, taskCode, trayCode }) => {
@@ -1030,10 +1034,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && !appearancePreInspectionAlreadyDispatched
         && row.statuses.some((statusItem) => normalizeText(statusItem) === "送至实验室")
         && trayTargetsPreExperimentAppearance({ experiments, row });
-      const isPostExperimentAppearanceInbound =
-        config.key === "appearance"
-        && !storedInPostExperimentStaging
-        && hasCompletedExperimentStatus
+      const postExperimentRequiresAppearanceInbound =
+        hasCompletedExperimentStatus
         && trayHasAllowedAppearanceSource({
           experiments,
           experimentRunTrays,
@@ -1041,6 +1043,16 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
+      const isPostExperimentAppearanceInbound =
+        config.key === "appearance"
+        && !storedInPostExperimentStaging
+        && postExperimentRequiresAppearanceInbound;
+      const isExplicitStagingInbound =
+        config.key === "staging"
+        && (
+          latestEventDispatchesToCurrentRoom
+          || hasExplicitStagingInboundStatus(row.statuses)
+        );
       const isPostExperimentInbound =
         !explicitAppearanceInboundStatus
         && !(config.key === "staging" && storedInAppearance)
@@ -1062,6 +1074,15 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       }
       if (latestEventDispatchesToCurrentRoom && !(config.key === "appearance" && hasPreExperimentAppearanceStorageStatus)) {
         status = "待入库";
+      }
+      if (
+        config.key === "staging"
+        && status === "待入库"
+        && isPostExperimentInbound
+        && postExperimentRequiresAppearanceInbound
+        && !isExplicitStagingInbound
+      ) {
+        status = "";
       }
       if (config.key === "appearance" && latestEventDispatchesToPostExperimentStaging) {
         status = "";
@@ -1118,7 +1139,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         || targetDestinations.find((destination) => destination.scheduled)
         || targetDestinations[0]
         || null;
-      const inboundKind = resolveInboundKind({ config, isPostExperimentInbound, status });
+      const inboundKind = resolveInboundKind({ config, isExplicitStagingInbound, status });
       const statusLabel = resolveTrayStatusLabel({
         config,
         experiments,

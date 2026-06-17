@@ -272,9 +272,10 @@ describe("ProcessPage runtime", () => {
     );
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.find(".process-task-modal-content").exists()).toBe(true);
-    expect(wrapper.find(".process-task-drawer-layout").exists()).toBe(true);
-    expect(wrapper.find(".process-task-drawer-main").exists()).toBe(true);
-    expect(wrapper.find(".process-task-drawer-side").exists()).toBe(true);
+    expect(wrapper.find(".process-task-detail-grid").exists()).toBe(true);
+    expect(wrapper.find(".process-task-overview-panel").exists()).toBe(true);
+    expect(wrapper.find(".process-task-tray-panel").exists()).toBe(true);
+    expect(wrapper.find(".process-task-flow-card").exists()).toBe(true);
     expect(wrapper.text()).toContain("任务摘要");
     expect(wrapper.text()).toContain("试验任务详情");
     expect(wrapper.text()).toContain("SYLU-2026-03-001");

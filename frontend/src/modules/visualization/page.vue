@@ -54,6 +54,7 @@
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
+            :today-task-plan-view="todayTaskPlanView"
             compact
           />
         </div>
@@ -71,10 +72,11 @@
       <section class="visual-preview-shell is-screen-only">
         <button
           class="visual-screen-close"
+          aria-label="关闭"
           type="button"
           @click="closeSinglePreview"
         >
-          关闭
+          ×
         </button>
         <div class="visual-expanded-screen is-screen-only" :class="{ 'is-lab-process': selectedScreen.kind === 'lab-process' }">
           <component
@@ -86,6 +88,7 @@
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
+            :today-task-plan-view="todayTaskPlanView"
             :interactive="selectedScreen.kind === 'lab-process' || selectedScreen.kind === 'schedule-three-day' || selectedScreen.kind === 'staging-samples' || selectedScreen.kind === 'analysis'"
             @open-lab-picker="(position) => openLabPicker(position, selectedScreen)"
             @schedule-today="resetScheduleWindow"
@@ -175,6 +178,7 @@
                   :devices="deviceItems"
                   :schedule-view="scheduleView"
                   :staging-view="stagingSamplesView"
+                  :today-task-plan-view="todayTaskPlanView"
                   :interactive="screen.kind === 'lab-process' || screen.kind === 'schedule-three-day' || screen.kind === 'staging-samples' || screen.kind === 'analysis'"
                   @open-lab-picker="(position) => openLabPicker(position, screen)"
                   @schedule-today="resetScheduleWindow"
@@ -225,7 +229,7 @@ defineOptions({
   name: "VisualizationPage",
 });
 
-import { computed, h, onMounted, onUnmounted, ref } from "vue";
+import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
@@ -233,7 +237,7 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { resolveVisualFlowStepTitle, visualFlowStepClass } from "./flowStepState";
-import { buildLabCurrentTaskMatrixView, buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
+import { buildLabCurrentTaskMatrixView, buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, buildTodayTaskPlanView, getVisualizationLabNames } from "./model";
 
 const screenCards = [
   { key: "lab-process", name: "实验室流程监控屏", kind: "lab-process", status: "运行中", tone: "live" },
@@ -250,8 +254,8 @@ const screenCards = [
     key: "today-task-plan-overview",
     name: "今日任务计划总览屏",
     kind: "today-task-plan",
-    status: "模拟数据",
-    metric: "6 项任务",
+    status: "真实数据",
+    metric: "实验数量",
     accent: "cyan",
     tone: "live",
     indicators: [
@@ -456,6 +460,17 @@ const currentLabTaskView = computed(() => {
     schedules: snapshot[STORAGE_KEYS.schedules],
   });
 });
+const todayTaskPlanView = computed(() => {
+  const snapshot = rawSnapshot.value || {};
+  return buildTodayTaskPlanView({
+    now: currentNow.value,
+    tasks: snapshot[STORAGE_KEYS.tasks],
+    samples: snapshot[STORAGE_KEYS.samples],
+    experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+    schedules: snapshot[STORAGE_KEYS.schedules],
+  });
+});
 const operationsSummary = computed(() => [
   { label: "在线屏幕", value: "8/8" },
   { label: "监控试验间", value: labScreens.value.length },
@@ -567,36 +582,6 @@ const stageStyle = {
   "--visual-stage-height": `${SCREEN_STAGE_HEIGHT}px`,
   "--visual-stage-width": `${SCREEN_STAGE_WIDTH}px`,
 };
-const mockTodayTaskPlans = [
-  {
-    taskCode: "SYLU-2026-0524-001",
-    phase: "上午",
-    state: "已分配",
-    experiments: [
-      { experimentType: "冲击试验", time: "09:00-11:30", lab: "冲击一室", trays: ["TP-001", "TP-002"], sampleCount: 8 },
-      { experimentType: "振动试验", time: "13:00-16:00", lab: "振动一室", trays: ["TP-003"], sampleCount: 5 },
-    ],
-  },
-  {
-    taskCode: "SYLU-2026-0524-002",
-    phase: "下午",
-    state: "已分配",
-    experiments: [
-      { experimentType: "高低温湿热试验", time: "10:00-15:30", lab: "高低温湿热一室", trays: [], sampleCount: 12 },
-      { experimentType: "高低温湿热试验", time: "15:40-20:30", lab: "高低温湿热二室", trays: [], sampleCount: 10 },
-      { experimentType: "盐雾试验", time: "15:40-19:00", lab: "盐雾试验室", trays: ["TP-004"], sampleCount: 9 },
-    ],
-  },
-  {
-    taskCode: "SYLU-2026-0524-003",
-    phase: "夜间",
-    state: "待分盘",
-    experiments: [
-      { experimentType: "霉菌试验", time: "16:00-19:30", lab: "霉菌试验室", trays: [], sampleCount: 6 },
-      { experimentType: "四综合试验", time: "19:40-23:00", lab: "四综合实验室", trays: ["TP-005"], sampleCount: 8 },
-    ],
-  },
-];
 
 const openSinglePreview = (screen) => {
   selectedScreen.value = screen;
@@ -756,51 +741,148 @@ const CurrentLabTasksScreen = {
     compact: { type: Boolean, default: false },
   },
   setup(props) {
+    const matrixRoot = ref(null);
+    const scrollingLabs = ref(new Set());
+    let resizeObserver = null;
+    let refreshQueued = false;
+
+    const refreshTrayLoops = () => {
+      const root = matrixRoot.value;
+      if (!root) {
+        return;
+      }
+      const nextScrollingLabs = new Set();
+      root.querySelectorAll(".tray-panel[data-lab-name]").forEach((panel) => {
+        const labName = panel.dataset.labName || "";
+        const realCount = Number(panel.dataset.trayCount || 0);
+        const viewport = panel.querySelector(".tray-viewport");
+        const list = panel.querySelector(".tray-list");
+        if (!labName || !viewport || !list || realCount <= 0) {
+          return;
+        }
+        const isCurrentlyLooping = panel.classList.contains("is-scrollable");
+        const singleCycleHeight = list.scrollHeight / (isCurrentlyLooping ? 2 : 1);
+        if (singleCycleHeight > viewport.clientHeight + 1) {
+          nextScrollingLabs.add(labName);
+        }
+      });
+      const previous = scrollingLabs.value;
+      const unchanged = previous.size === nextScrollingLabs.size && Array.from(previous).every((labName) => nextScrollingLabs.has(labName));
+      if (!unchanged) {
+        scrollingLabs.value = nextScrollingLabs;
+      }
+    };
+
+    const queueRefreshTrayLoops = () => {
+      if (typeof window === "undefined" || refreshQueued) {
+        return;
+      }
+      refreshQueued = true;
+      nextTick(() => {
+        window.requestAnimationFrame(() => {
+          refreshQueued = false;
+          refreshTrayLoops();
+        });
+      });
+    };
+
+    onMounted(() => {
+      queueRefreshTrayLoops();
+      if (typeof ResizeObserver !== "undefined" && matrixRoot.value) {
+        resizeObserver = new ResizeObserver(queueRefreshTrayLoops);
+        resizeObserver.observe(matrixRoot.value);
+      } else if (typeof window !== "undefined") {
+        window.addEventListener("resize", queueRefreshTrayLoops);
+      }
+    });
+
+    onUnmounted(() => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      } else if (typeof window !== "undefined") {
+        window.removeEventListener("resize", queueRefreshTrayLoops);
+      }
+    });
+
+    watch(() => props.currentLabTaskView, queueRefreshTrayLoops, { deep: true, flush: "post" });
+
     const renderLabCard = (lab) => {
-      const toneClass = `tone-${lab.statusTone || "idle"}`;
+      const previewToneClass = lab.statusTone === "running"
+        ? "running"
+        : lab.statusTone === "urgent"
+          ? "near"
+          : lab.statusTone === "repair"
+            ? "repair"
+            : lab.statusTone === "task" || lab.statusTone === "scheduled"
+              ? "planned"
+              : "";
       const trayCodes = Array.isArray(lab.trayCodes) ? lab.trayCodes.filter(Boolean) : [];
-      const sampleText = lab.sampleCount > 0 ? `${lab.sampleCount} 件` : "-";
+      const trayItems = Array.isArray(lab.trayItems) && lab.trayItems.length
+        ? lab.trayItems
+        : trayCodes.map((trayCode) => ({
+          sampleLabel: lab.sampleCount > 0 && trayCodes.length === 1 ? `${lab.sampleCount}件` : "-",
+          trayCode,
+        }));
+      const shouldLoopTrays = scrollingLabs.value.has(lab.labName);
+      const visibleTrayItems = shouldLoopTrays ? [...trayItems, ...trayItems] : trayItems;
       const countdown = lab.countdown || {};
       return h(
         "article",
         {
-          class: ["visual-current-lab-card", toneClass, lab.shouldBlink ? "is-blinking" : ""],
+          class: ["card", previewToneClass, lab.shouldBlink ? "is-blinking" : ""],
           "data-lab-name": lab.labName,
-          "data-testid": "visual-current-lab-card",
+          "data-testid": "lab-matrix-card",
           key: lab.labName,
           style: countdown.active ? { "--current-task-progress": `${countdown.progressPercent || 0}%` } : {},
         },
         [
-          h("div", { class: "visual-current-lab-card-head" }, [
-            h("strong", { class: "visual-current-lab-name" }, lab.labName),
-            h("span", { class: "visual-current-lab-status" }, [
-              h("i"),
-              h("b", lab.statusLabel || "-"),
+          h("div", { class: "card-head" }, [
+            h("h2", lab.labName),
+            h("span", { class: "badge" }, lab.statusLabel || "-"),
+          ]),
+          h("div", { class: "card-body" }, [
+            h("div", { class: "left" }, [
+              h("div", { class: "info" }, [h("label", "当前选择任务"), h("strong", lab.taskCode || "-")]),
+              h("div", { class: "info" }, [h("label", "试验项目"), h("strong", lab.experimentName || "-")]),
+              h("div", { class: "info" }, [h("label", "阶段"), h("strong", lab.stageLabel || "-")]),
+              h("div", { class: "info time" }, [h("label", "计划时间"), h("strong", lab.planTimeLabel || "-")]),
             ]),
-          ]),
-          h("div", { class: "visual-current-lab-task" }, [
-            h("span", "当前选择任务"),
-            h("strong", lab.taskCode || "-"),
-          ]),
-          h("div", { class: "visual-current-lab-fields" }, [
-            h("div", { class: "visual-current-lab-field field-experiment" }, [h("span", "试验项目"), h("strong", lab.experimentName || "-")]),
-            h("div", { class: "visual-current-lab-field field-trays" }, [
-              h("span", "托盘/样品"),
-              trayCodes.length
-                ? h("strong", { class: "visual-current-lab-tray-list" }, trayCodes.map((trayCode) => h("span", { key: trayCode }, trayCode)))
+            h("div", { class: ["tray-panel", shouldLoopTrays ? "is-scrollable" : ""], "data-lab-name": lab.labName, "data-tray-count": String(trayItems.length) }, [
+              h("div", { class: "tray-title-wrap" }, [
+                h("span", { class: "tray-title" }, "托盘/样品"),
+                shouldLoopTrays ? h("span", { class: "scroll-hint" }, "循环播放") : null,
+              ]),
+              trayItems.length
+                ? h("div", { class: ["tray-viewport", shouldLoopTrays ? "is-looping is-scrollable" : ""] }, [
+                  h(
+                    "div",
+                    {
+                      class: ["tray-list", shouldLoopTrays ? "is-looping" : ""],
+                      style: shouldLoopTrays ? { "--current-tray-loop-duration": `${Math.max(14, trayItems.length * 2.4)}s` } : {},
+                    },
+                    visibleTrayItems.map((tray, index) =>
+                      h("div", { class: "tray-row", key: `${tray.trayCode}-${index}` }, [
+                        h("span", { class: "tray-code" }, tray.trayCode),
+                        h("span", { class: "tray-qty" }, tray.sampleLabel || `${tray.sampleCount || 0}件`),
+                      ]),
+                    ),
+                  ),
+                ])
                 : h("strong", "-"),
-              h("small", sampleText),
+              h("div", { class: "total" }, [
+                h("span", "合计"),
+                h("span", lab.traySummaryLabel || `托盘 ${trayItems.length}，样品 ${lab.sampleCount || 0}`),
+              ]),
             ]),
-            h("div", { class: "visual-current-lab-field field-stage" }, [h("span", "阶段"), h("strong", lab.stageLabel || "-")]),
-            h("div", { class: "visual-current-lab-field field-plan" }, [h("span", "计划时间"), h("strong", lab.planTimeLabel || "-")]),
           ]),
           countdown.active
-            ? h("div", { class: "visual-current-lab-countdown", "data-testid": "visual-current-lab-countdown" }, [
-              h("div", { class: "visual-current-lab-countdown-head" }, [
+            ? h("div", { class: "countdown", "data-testid": "lab-matrix-countdown" }, [
+              h("div", { class: "countdown-head" }, [
                 h("span", "实验倒计时"),
                 h("strong", countdown.remainingLabel || "-"),
               ]),
-              h("div", { class: "visual-current-lab-progress" }, [h("i")]),
+              h("div", { class: "progress" }, [h("i")]),
             ])
             : null,
         ],
@@ -810,28 +892,22 @@ const CurrentLabTasksScreen = {
     return () => {
       const labs = Array.isArray(props.currentLabTaskView?.labs) ? props.currentLabTaskView.labs : [];
       const counts = props.currentLabTaskView?.counts || {};
-      return h("div", { class: ["visual-board", "visual-current-lab-board", props.compact ? "is-compact" : ""] }, [
-        h("div", { class: "visual-board-top" }, [
-          h("div", { class: "visual-board-title-group" }, [
-            h("div", { class: "visual-board-kicker" }, "LAB TASK MATRIX"),
-            h("div", { class: "visual-board-title" }, props.screen?.name || "试验间当前任务状态屏"),
-          ]),
-          h("div", { class: "visual-board-state" }, [
-            h("span", { class: "visual-board-live" }, "SYNC"),
-            h("span", { class: "visual-board-time" }, "系统状态同步"),
+      return h("div", { ref: matrixRoot, class: ["visual-lab-matrix-screen", "screen", props.compact ? "is-compact" : ""] }, [
+        h("header", { class: "header" }, [
+          h("div", [
+            h("div", { class: "kicker" }, "LAB TASK MATRIX"),
+            h("h1", props.screen?.name || "试验间当前任务状态屏"),
           ]),
         ]),
-        h("div", { class: "visual-board-main" }, [
-          h("div", { class: "visual-current-lab-metrics" }, [
-            h("div", { class: "metric-scheduled" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
-            h("div", { class: "metric-repair" }, [h("span", "维修/保养"), h("strong", counts.repair || 0)]),
-            h("div", { class: "metric-running" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
-            h("div", { class: "metric-urgent" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
-          ]),
-          labs.length
-            ? h("div", { class: "visual-current-lab-grid" }, labs.map(renderLabCard))
-            : h("div", { class: "visual-current-lab-empty" }, "暂无试验间状态数据"),
+        h("div", { class: "stats" }, [
+          h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
+          h("div", { class: "metric-repair stat red" }, [h("span", "维修/保养"), h("strong", counts.repair || 0)]),
+          h("div", { class: "metric-running stat green" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
+          h("div", { class: "metric-urgent stat orange" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
         ]),
+        labs.length
+          ? h("div", { class: "grid" }, labs.map(renderLabCard))
+          : h("div", { class: "empty" }, "暂无试验间状态数据"),
       ]);
     };
   },
@@ -1172,12 +1248,14 @@ const TodayTaskPlanScreen = {
   props: {
     compact: { type: Boolean, default: false },
     screen: { type: Object, required: false, default: null },
+    todayTaskPlanView: { type: Object, required: false, default: null },
   },
   setup(props) {
     return () => {
-      const tasks = mockTodayTaskPlans;
+      const view = props.todayTaskPlanView || { tasks: [], summary: {} };
+      const tasks = Array.isArray(view.tasks) ? view.tasks : [];
       const taskRows = flattenTaskPlanRows(tasks);
-      const summary = taskPlanSummary(tasks);
+      const summary = { ...taskPlanSummary(tasks), ...(view.summary || {}) };
       const visibleTasks = props.compact ? tasks.slice(0, 3) : tasks;
 
       return h("div", { class: ["visual-board", "visual-task-plan-board", props.compact ? "is-compact" : ""] }, [
@@ -1186,41 +1264,45 @@ const TodayTaskPlanScreen = {
             h("div", { class: "visual-board-kicker" }, "TODAY PLAN"),
             h("div", { class: "visual-board-title" }, props.screen?.name || "今日任务计划总览屏"),
           ]),
-          h("div", { class: ["visual-board-live", "tone-live"] }, props.compact ? "05" : "模拟数据"),
+          h("div", { class: ["visual-board-live", "tone-live"] }, "真实数据"),
         ]),
         h("div", { class: "visual-task-plan-main" }, [
           h("div", { class: "visual-board-metrics visual-task-plan-metrics" }, [
             h("div", [h("span", "今日任务"), h("strong", tasks.length)]),
-            h("div", [h("span", "实验计划"), h("strong", summary.experiments)]),
+            h("div", [h("span", "实验数量"), h("strong", summary.experiments)]),
             h("div", [h("span", "已分配托盘"), h("strong", summary.assigned)]),
             props.compact ? null : h("div", [h("span", "样品总数"), h("strong", `${summary.samples}件`)]),
           ]),
           props.compact
-            ? h("div", { class: "visual-task-plan-compact-list" }, visibleTasks.map((task) =>
-              h("div", { class: "visual-task-plan-compact-row", key: task.taskCode }, [
-                h("strong", task.taskCode),
-                h("span", taskPlanExperimentText(task)),
-                h("small", taskPlanCompactTrayText(task)),
-              ]),
-            ))
+            ? h("div", { class: "visual-task-plan-compact-list" }, visibleTasks.length
+              ? visibleTasks.map((task) =>
+                h("div", { class: "visual-task-plan-compact-row", key: task.taskCode }, [
+                  h("strong", task.taskCode),
+                  h("span", taskPlanExperimentText(task)),
+                  h("small", taskPlanCompactTrayText(task)),
+                ]),
+              )
+              : [h("div", { class: "visual-task-plan-empty" }, view.emptyText || "今日暂无实验排程")])
             : h("div", { class: "visual-task-plan-single" }, [
               h("section", { class: "visual-task-plan-variant is-table is-focused" }, [
                 h("div", { class: "visual-task-plan-variant-head" }, [
-                  h("strong", "方案A"),
-                  h("span", "任务实验一行式总览"),
+                  h("strong", "今日计划"),
+                  h("span", view.date || "实时快照"),
                 ]),
-                h("div", { class: "visual-task-plan-table" }, [
+                h("div", { class: ["visual-task-plan-table", taskRows.length ? "" : "is-empty"] }, [
                   h("div", { class: "visual-task-plan-table-head is-flat" }, ["任务编号", "实验类型", "时间", "试验间", "托盘信息", "样品数"].map((label) => h("span", label))),
-                  ...taskRows.map((row) =>
-                    h("div", { class: "visual-task-plan-row is-flat", key: `${row.taskCode}-${row.experimentType}` }, [
-                      h("strong", row.taskCode),
-                      h("span", row.experimentType),
-                      h("span", row.time),
-                      h("span", row.lab),
-                      h("span", { class: row.trays.length ? "has-tray" : "is-pending" }, taskPlanTrayText(row)),
-                      h("span", `${row.sampleCount}件`),
-                    ]),
-                  ),
+                  ...(taskRows.length
+                    ? taskRows.map((row) =>
+                      h("div", { class: "visual-task-plan-row is-flat", key: `${row.taskCode}-${row.experimentCode || row.experimentType}` }, [
+                        h("strong", row.taskCode),
+                        h("span", row.experimentType),
+                        h("span", row.time),
+                        h("span", row.lab),
+                        h("span", { class: row.trays.length ? "has-tray" : "is-pending" }, taskPlanTrayText(row)),
+                        h("span", `${row.sampleCount}件`),
+                      ]),
+                    )
+                    : [h("div", { class: "visual-task-plan-empty is-table-empty" }, view.emptyText || "今日暂无实验排程")]),
                 ]),
               ]),
             ]),
@@ -1239,24 +1321,84 @@ const StagingSamplesScreen = {
     stagingView: { type: Object, required: false, default: null },
   },
   setup(props) {
+    const stagingRoot = ref(null);
     const selectedTaskCode = ref("");
     const selectedTrayCode = ref("");
-    const modalTray = ref(null);
+    const scrollingSampleKey = ref("");
+    let resizeObserver = null;
+    let refreshQueued = false;
+
+    const refreshSampleLoop = () => {
+      const root = stagingRoot.value;
+      if (!root) {
+        return;
+      }
+      const sampleWrap = root.querySelector(".visual-staging-sample-wrap[data-sample-key]");
+      if (!sampleWrap) {
+        scrollingSampleKey.value = "";
+        return;
+      }
+      const sampleKey = sampleWrap.dataset.sampleKey || "";
+      const sampleCount = Number(sampleWrap.dataset.sampleCount || 0);
+      const viewport = sampleWrap.querySelector(".visual-staging-sample-viewport");
+      const grid = sampleWrap.querySelector(".visual-staging-sample-grid");
+      if (!sampleKey || !viewport || !grid || sampleCount <= 0) {
+        scrollingSampleKey.value = "";
+        return;
+      }
+      const isCurrentlyLooping = sampleWrap.classList.contains("is-scrollable");
+      const singleCycleHeight = grid.scrollHeight / (isCurrentlyLooping ? 2 : 1);
+      const nextSampleKey = singleCycleHeight > viewport.clientHeight + 1 ? sampleKey : "";
+      if (scrollingSampleKey.value !== nextSampleKey) {
+        scrollingSampleKey.value = nextSampleKey;
+      }
+    };
+
+    const queueRefreshSampleLoop = () => {
+      if (typeof window === "undefined" || refreshQueued) {
+        return;
+      }
+      refreshQueued = true;
+      nextTick(() => {
+        window.requestAnimationFrame(() => {
+          refreshQueued = false;
+          refreshSampleLoop();
+        });
+      });
+    };
+
     const selectTask = (taskCode) => {
       selectedTaskCode.value = taskCode;
       selectedTrayCode.value = "";
-      modalTray.value = null;
+      scrollingSampleKey.value = "";
+      queueRefreshSampleLoop();
     };
     const selectTray = (trayCode) => {
       selectedTrayCode.value = trayCode;
-      modalTray.value = null;
+      scrollingSampleKey.value = "";
+      queueRefreshSampleLoop();
     };
-    const openSamplesModal = (tray) => {
-      modalTray.value = tray;
-    };
-    const closeSamplesModal = () => {
-      modalTray.value = null;
-    };
+
+    onMounted(() => {
+      queueRefreshSampleLoop();
+      if (typeof ResizeObserver !== "undefined" && stagingRoot.value) {
+        resizeObserver = new ResizeObserver(queueRefreshSampleLoop);
+        resizeObserver.observe(stagingRoot.value);
+      } else if (typeof window !== "undefined") {
+        window.addEventListener("resize", queueRefreshSampleLoop);
+      }
+    });
+
+    onUnmounted(() => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+        resizeObserver = null;
+      } else if (typeof window !== "undefined") {
+        window.removeEventListener("resize", queueRefreshSampleLoop);
+      }
+    });
+
+    watch(() => props.stagingView, queueRefreshSampleLoop, { deep: true, flush: "post" });
 
     return () => {
       const view = props.stagingView || { summary: {}, tasks: [] };
@@ -1277,7 +1419,12 @@ const StagingSamplesScreen = {
         { capacity: 100, key: "mold", label: "霉菌剩余", shortageLabel: "菌体库存不足", usedLabel: "已用菌体", value: summary.moldRemaining ?? 100, used: summary.moldTrayCount ?? 0 },
       ];
 
-      return h("div", { class: ["visual-board", "visual-staging-board", props.compact ? "is-compact" : ""] }, [
+      const selectedSampleKey = selectedTray ? `${selectedTray.taskCode}::${selectedTray.trayCode}` : "";
+      const sampleCodes = selectedTray ? (Array.isArray(selectedTray.sampleCodes) ? selectedTray.sampleCodes : selectedTray.visibleSampleCodes || []) : [];
+      const shouldLoopSamples = Boolean(selectedSampleKey && scrollingSampleKey.value === selectedSampleKey);
+      const displayedSampleCodes = shouldLoopSamples ? [...sampleCodes, ...sampleCodes] : sampleCodes;
+
+      return h("div", { ref: stagingRoot, class: ["visual-board", "visual-staging-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top" }, [
           h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "STAGING BUFFER"),
@@ -1294,7 +1441,7 @@ const StagingSamplesScreen = {
             h("strong", metric.value),
           ])),
           h("div", { class: ["visual-staging-overview-item", "visual-staging-kind-summary"], "data-testid": "visual-staging-kind-summary" }, [
-            h("span", "暂存间存放/计划暂存/实验后暂存/外观检测间存放"),
+            h("span", "暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放"),
             h("strong", [
               h("b", { class: "kind-current" }, String(summary.currentTrayCount ?? 0)),
               h("i", "/"),
@@ -1381,25 +1528,30 @@ const StagingSamplesScreen = {
                   h("div", [h("span", "实验类型"), h("strong", selectedTray.experimentType)]),
                   h("div", [h("span", "样品数量"), h("strong", `${selectedTray.sampleCount}件`)]),
                 ]),
-                h("div", { class: "visual-staging-sample-grid" }, [
-                  ...(selectedTray.visibleSampleCodes || []).map((sampleCode) =>
-                    h("span", {
-                      class: ["visual-staging-sample-code", selectedTray.stagingKind ? `kind-${selectedTray.stagingKind}` : ""],
-                      key: sampleCode,
-                    }, sampleCode),
-                  ),
-                  selectedTray.overflowSampleCount > 0 && props.interactive && !props.compact
-                    ? h(
-                      "button",
+                h("div", {
+                  class: ["visual-staging-sample-wrap", shouldLoopSamples ? "is-scrollable" : ""],
+                  "data-sample-count": String(sampleCodes.length),
+                  "data-sample-key": selectedSampleKey,
+                }, [
+                  h("div", { class: "visual-staging-sample-head" }, [
+                    h("span", "当前托盘样品编号"),
+                    shouldLoopSamples ? h("span", { class: "visual-staging-scroll-hint" }, "自动循环播放") : null,
+                  ]),
+                  h("div", { class: ["visual-staging-sample-viewport", shouldLoopSamples ? "is-scrollable" : ""] }, [
+                    h(
+                      "div",
                       {
-                        class: "visual-staging-all-samples",
-                        "data-testid": "visual-staging-all-samples",
-                        type: "button",
-                        onClick: () => openSamplesModal(selectedTray),
+                        class: ["visual-staging-sample-grid", shouldLoopSamples ? "is-looping" : ""],
+                        style: shouldLoopSamples ? { "--visual-staging-sample-loop-duration": `${Math.max(18, sampleCodes.length * 1.35)}s` } : {},
                       },
-                      `全部样品 +${selectedTray.overflowSampleCount}`,
-                    )
-                    : null,
+                      displayedSampleCodes.map((sampleCode, index) =>
+                        h("span", {
+                          class: ["visual-staging-sample-code", selectedTray.stagingKind ? `kind-${selectedTray.stagingKind}` : ""],
+                          key: `${sampleCode}-${index}`,
+                        }, sampleCode),
+                      ),
+                    ),
+                  ]),
                 ]),
               ])
               : h("div", { class: "visual-staging-empty is-detail" }, "暂无暂存间样品"),
@@ -1430,22 +1582,6 @@ const StagingSamplesScreen = {
             }),
           ]),
         ]),
-        modalTray.value && props.interactive && !props.compact
-          ? h("div", { class: "visual-staging-modal", "data-testid": "visual-staging-sample-modal", role: "dialog", "aria-modal": "true", onClick: closeSamplesModal }, [
-            h("section", { class: "visual-staging-modal-panel", onClick: (event) => event.stopPropagation() }, [
-              h("div", { class: "visual-staging-modal-head" }, [
-                h("div", [
-                  h("span", modalTray.value.taskCode),
-                  h("strong", modalTray.value.trayCode),
-                ]),
-                h("button", { "data-testid": "visual-staging-modal-close", type: "button", onClick: closeSamplesModal }, "关闭"),
-              ]),
-              h("div", { class: "visual-staging-modal-grid" }, (modalTray.value.sampleCodes || []).map((sampleCode) =>
-                h("span", { key: sampleCode }, sampleCode),
-              )),
-            ]),
-          ])
-          : null,
       ]);
     };
   },

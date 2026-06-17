@@ -27,6 +27,7 @@ const PLANNED_STAGING_STATUSES = new Set(["送至暂存间"]);
 const PLANNED_STAGING_ACTIONS = new Set(["送至暂存间"]);
 const STAGING_KIND_LABELS = {
   "appearance-planned": "计划入库",
+  allowed: "允许暂存",
   current: "暂存间存放",
   planned: "计划暂存",
   "post-test": "实验后暂存间",
@@ -164,7 +165,11 @@ const resolveStorageBackedStagingKind = ({ appearanceRow, stagingRow }) => {
   }
   if (stagingRow) {
     if (normalizeText(stagingRow.status) === "待入库") {
-      return buildStagingKind("planned", "送至暂存间");
+      const inboundKind = normalizeText(stagingRow.inboundKind);
+      if (inboundKind === "planned") {
+        return buildStagingKind("planned", stagingRow.status, stagingRow.inboundKindLabel || "计划暂存");
+      }
+      return buildStagingKind("allowed", stagingRow.status, stagingRow.inboundKindLabel || "允许暂存");
     }
     if (isPostTestStagingStatus(stagingRow.status)) {
       return buildStagingKind("post-test", POST_EXPERIMENT_STAGING_STOCKED_STATUS);
@@ -484,6 +489,7 @@ function buildStagingSamplesView(input = {}) {
     summary: {
       appearancePlannedTrayCount: trays.filter((tray) => tray.stagingKind === "appearance-planned").length,
       appearanceTrayCount: trays.filter((tray) => tray.stagingKind === "appearance").length,
+      allowedTrayCount: trays.filter((tray) => tray.stagingKind === "allowed").length,
       currentTrayCount: trays.filter((tray) => tray.stagingKind === "current").length,
       moldRemaining: clampRemaining(capacity, moldTrayCount),
       moldTrayCount,

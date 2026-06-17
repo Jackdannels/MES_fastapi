@@ -290,36 +290,101 @@ describe("VisualizationPage runtime", () => {
     expect(preview.text()).toContain("TRAY-MOLD-A");
   });
 
-  test("moves the original fifth-screen today task plan board onto the third screen", async () => {
-    const wrapper = mountPage();
-    await Promise.resolve();
-    await wrapper.vm.$nextTick();
+  test("renders the third-screen today task plan from real schedule snapshot data", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-18T10:00:00+08:00"));
+    snapshotState.snapshot = {
+      "mes.tasks": [
+        { code: "TASK-REAL-001", name: "真实任务001", test_type: "冲击试验" },
+        { code: "TASK-REAL-002", name: "真实任务002", test_type: "振动试验" },
+      ],
+      "mes.experiments": [
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", required_device: "冲击一室" },
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-SALT", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { task_code: "TASK-REAL-002", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", tray_code: "REAL-TP-001" },
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", tray_code: "REAL-TP-002" },
+        { task_code: "TASK-REAL-002", experiment_code: "EXP-VIB", tray_code: "REAL-TP-003" },
+      ],
+      "mes.schedules": [
+        {
+          task_code: "TASK-REAL-001",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          start_at: "2026-06-18T09:00:00+08:00",
+          end_at: "2026-06-18T11:30:00+08:00",
+          status: "已排程",
+        },
+        {
+          task_code: "TASK-REAL-001",
+          experiment_code: "EXP-SALT",
+          device: "盐雾试验室",
+          start_at: "2026-06-18T13:00:00+08:00",
+          end_at: "2026-06-18T16:00:00+08:00",
+          status: "已排程",
+        },
+        {
+          task_code: "TASK-REAL-002",
+          experiment_code: "EXP-VIB",
+          device: "振动一室",
+          start_at: "2026-06-18T15:00:00+08:00",
+          end_at: "2026-06-18T17:30:00+08:00",
+          status: "已排程",
+        },
+      ],
+      "mes.samples": [
+        {
+          code: "SAMPLE-REAL-001",
+          task_code: "TASK-REAL-001",
+          trays: [{ tray_code: "REAL-TP-001", quantity: 2 }],
+        },
+        {
+          code: "SAMPLE-REAL-002",
+          task_code: "TASK-REAL-001",
+          trays: [{ tray_code: "REAL-TP-002", quantity: 3 }],
+        },
+        {
+          code: "SAMPLE-REAL-003",
+          task_code: "TASK-REAL-002",
+          trays: [{ tray_code: "REAL-TP-003", quantity: 1 }],
+        },
+      ],
+    };
 
-    const thirdCard = wrapper.findAll('[data-testid="visual-screen-card"]')[2];
+    try {
+      const wrapper = mountPage();
+      await Promise.resolve();
+      await wrapper.vm.$nextTick();
 
-    expect(thirdCard.text()).toContain("今日任务计划总览屏");
-    expect(thirdCard.text()).toContain("SYLU-2026-0524-001");
-    expect(thirdCard.text()).toContain("冲击试验");
-    expect(thirdCard.text()).toContain("振动试验");
-    expect(thirdCard.text()).not.toContain("18 项计划");
+      const thirdCard = wrapper.findAll('[data-testid="visual-screen-card"]')[2];
 
-    await thirdCard.trigger("click");
+      expect(thirdCard.text()).toContain("今日任务计划总览屏");
+      expect(thirdCard.text()).toContain("实验数量");
+      expect(thirdCard.text()).not.toContain("实验计划");
+      expect(thirdCard.text()).toContain("TASK-REAL-001");
+      expect(thirdCard.text()).toContain("冲击试验");
+      expect(thirdCard.text()).not.toContain("SYLU-2026-0524-001");
 
-    const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
-    expect(previewText).toContain("方案A");
-    expect(previewText).not.toContain("方案B");
-    expect(previewText).not.toContain("方案C");
-    expect(previewText).toContain("任务编号");
-    expect(previewText).not.toContain("任务名称");
-    expect(previewText).not.toContain("结构可靠性联合验证");
-    expect(previewText).toContain("SYLU-2026-0524-001");
-    expect(previewText).toContain("09:00-11:30");
-    expect(previewText).toContain("冲击一室");
-    expect(previewText).toContain("13:00-16:00");
-    expect(previewText).toContain("振动一室");
-    expect(previewText).toContain("TP-001");
-    expect(previewText).toContain("TP-003");
-    expect(previewText).toContain("8件");
+      await thirdCard.trigger("click");
+
+      const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
+      expect(previewText).toContain("真实数据");
+      expect(previewText).toContain("任务编号");
+      expect(previewText).toContain("TASK-REAL-001");
+      expect(previewText).toContain("09:00-11:30");
+      expect(previewText).toContain("13:00-16:00");
+      expect(previewText).toContain("冲击一室");
+      expect(previewText).toContain("盐雾试验室");
+      expect(previewText).toContain("REAL-TP-001 / REAL-TP-002");
+      expect(previewText).toContain("待分配托盘");
+      expect(previewText).toContain("5件");
+      expect(previewText).toContain("1件");
+      expect(previewText).not.toContain("TP-001 / TP-002");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("renders screen four as the current laboratory task matrix with running-only countdown bars", async () => {
@@ -346,7 +411,7 @@ describe("VisualizationPage runtime", () => {
       expect(fourthCard.text()).toContain("保养");
       expect(fourthCard.text()).toContain("计划时间");
       expect(fourthCard.text()).toContain("2026-06-17 15:20 - 2026-06-17 16:30");
-      expect(fourthCard.findAll('[data-testid="visual-current-lab-card"]')).toHaveLength(4);
+      expect(fourthCard.findAll('[data-testid="lab-matrix-card"]')).toHaveLength(4);
       expect(fourthCard.text()).toContain("盐雾试验室");
       expect(fourthCard.text()).not.toContain("暂存间");
       expect(fourthCard.text()).not.toContain("外观检测间");
@@ -356,15 +421,96 @@ describe("VisualizationPage runtime", () => {
       const maintenanceCard = fourthCard.find('[data-lab-name="霉菌试验室"]');
       const waitingCard = fourthCard.find('[data-lab-name="冲击一室"]');
 
-      expect(runningCard.classes()).toContain("tone-running");
-      expect(runningCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(true);
+      expect(runningCard.classes()).toContain("running");
+      expect(runningCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(true);
       expect(runningCard.text()).toContain("01:15:00");
-      expect(maintenanceCard.classes()).toContain("tone-repair");
-      expect(maintenanceCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(false);
-      expect(waitingCard.classes()).toContain("tone-task");
-      expect(waitingCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(false);
+      expect(maintenanceCard.classes()).toContain("repair");
+      expect(maintenanceCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(false);
+      expect(waitingCard.classes()).toContain("planned");
+      expect(waitingCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(false);
+      expect(waitingCard.find(".tray-row").text()).toContain("TRAY-WAIT");
+      expect(waitingCard.find(".tray-row").text()).toContain("1件");
+      expect(waitingCard.find(".total").text()).toContain("托盘 1，样品 1");
     } finally {
       vi.useRealTimers();
+    }
+  });
+
+  test("auto-enables tray looping only when the rendered tray list overflows its viewport", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      callback(0);
+      return 1;
+    };
+    window.cancelAnimationFrame = vi.fn();
+
+    try {
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("tray-list") ? 120 : 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("tray-viewport") ? 60 : 0;
+        },
+      });
+
+      snapshotState.snapshot = buildCurrentLabTaskMatrixSnapshot();
+      const overflowingWrapper = mountPage();
+      await Promise.resolve();
+      await overflowingWrapper.vm.$nextTick();
+      await overflowingWrapper.vm.$nextTick();
+
+      const overflowingPanel = overflowingWrapper
+        .findAll('[data-testid="visual-screen-card"]')[3]
+        .find('[data-lab-name="冲击一室"] .tray-panel');
+      expect(overflowingPanel.classes()).toContain("is-scrollable");
+      expect(overflowingPanel.text()).toContain("循环播放");
+      overflowingWrapper.unmount();
+
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("tray-list") ? 40 : 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("tray-viewport") ? 60 : 0;
+        },
+      });
+
+      const fittingWrapper = mountPage();
+      await Promise.resolve();
+      await fittingWrapper.vm.$nextTick();
+      await fittingWrapper.vm.$nextTick();
+
+      const fittingPanel = fittingWrapper
+        .findAll('[data-testid="visual-screen-card"]')[3]
+        .find('[data-lab-name="冲击一室"] .tray-panel');
+      expect(fittingPanel.classes()).not.toContain("is-scrollable");
+      expect(fittingPanel.text()).not.toContain("循环播放");
+      fittingWrapper.unmount();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(HTMLElement.prototype, "scrollHeight", originalScrollHeight);
+      } else {
+        delete HTMLElement.prototype.scrollHeight;
+      }
+      if (originalClientHeight) {
+        Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      } else {
+        delete HTMLElement.prototype.clientHeight;
+      }
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.cancelAnimationFrame = originalCancelAnimationFrame;
     }
   });
 
@@ -854,7 +1000,7 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).toContain("任务编号：TASK-MOLD-A");
   });
 
-  test("renders the sixth screen as a staging sample board with task tray switching and all-samples modal", async () => {
+  test("renders the sixth screen as a staging sample board with task tray switching and full sample codes", async () => {
     snapshotState.snapshot = {
       "mes.tasks": [
         { code: "TASK-STAGING-001", name: "盐雾暂存任务", test_type: "盐雾试验" },
@@ -906,8 +1052,8 @@ describe("VisualizationPage runtime", () => {
     expect(preview.text()).toContain("TASK-STAGING-001");
     expect(preview.text()).toContain("TRAY-SALT-001");
     expect(preview.text()).toContain("SALT-SAMPLE-005");
-    expect(preview.text()).not.toContain("SALT-SAMPLE-006");
-    expect(preview.text()).toContain("全部样品");
+    expect(preview.text()).toContain("SALT-SAMPLE-006");
+    expect(preview.find('[data-testid="visual-staging-all-samples"]').exists()).toBe(false);
     expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("当前任务2");
     expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("暂存托盘2");
     expect(preview.get('[data-testid="visual-staging-overview"]').text()).toContain("样品总数7");
@@ -922,14 +1068,105 @@ describe("VisualizationPage runtime", () => {
     expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick")).toHaveLength(10);
     expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(8);
 
-    await wrapper.get('[data-testid="visual-staging-all-samples"]').trigger("click");
-    expect(wrapper.get('[data-testid="visual-staging-sample-modal"]').text()).toContain("SALT-SAMPLE-006");
-
-    await wrapper.get('[data-testid="visual-staging-modal-close"]').trigger("click");
     await wrapper.findAll('[data-testid="visual-staging-task-option"]')[1].trigger("click");
 
     expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-MOLD-001");
     expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("MOLD-SAMPLE-001");
+  });
+
+  test("auto-enables staging sample looping only when the rendered sample list overflows", async () => {
+    const originalScrollHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      callback(0);
+      return 1;
+    };
+    window.cancelAnimationFrame = vi.fn();
+
+    snapshotState.snapshot = {
+      "mes.tasks": [{ code: "TASK-STAGING-SCROLL", name: "大量样品暂存任务", test_type: "四综合试验" }],
+      "mes.experiments": [{ task_code: "TASK-STAGING-SCROLL", experiment_code: "EXP-COMBO", experiment_name: "四综合试验" }],
+      "mes.experiment_trays": [{ task_code: "TASK-STAGING-SCROLL", experiment_code: "EXP-COMBO", tray_code: "TRAY-SCROLL-001" }],
+      "mes.staging_events": [{ tray_code: "TRAY-SCROLL-001", task_code: "TASK-STAGING-SCROLL", action: "stock_in", time: "2026-05-28T08:00:00+08:00" }],
+      "mes.samples": Array.from({ length: 12 }, (_, index) => ({
+        code: `LONG-STAGING-SAMPLE-${String(index + 1).padStart(3, "0")}`,
+        task_code: "TASK-STAGING-SCROLL",
+        location: "恒温恒湿间（暂存间）",
+        status: "已入库",
+        trays: [{ tray_code: "TRAY-SCROLL-001", status: "已入库", quantity: 1 }],
+      })),
+    };
+
+    try {
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("visual-staging-sample-grid") ? 180 : 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("visual-staging-sample-viewport") ? 80 : 0;
+        },
+      });
+
+      const overflowingWrapper = mountPage();
+      await Promise.resolve();
+      await overflowingWrapper.vm.$nextTick();
+      await overflowingWrapper.findAll('[data-testid="visual-screen-card"]')[5].trigger("click");
+      await overflowingWrapper.vm.$nextTick();
+      await overflowingWrapper.vm.$nextTick();
+
+      const overflowingPreview = overflowingWrapper.find('[data-testid="visual-single-preview"]');
+      expect(overflowingPreview.find(".visual-staging-sample-wrap").classes()).toContain("is-scrollable");
+      expect(overflowingPreview.find(".visual-staging-sample-grid").classes()).toContain("is-looping");
+      expect(overflowingPreview.text()).toContain("自动循环播放");
+      expect(overflowingPreview.findAll(".visual-staging-sample-code")).toHaveLength(24);
+      overflowingWrapper.unmount();
+
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("visual-staging-sample-grid") ? 60 : 0;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+        configurable: true,
+        get() {
+          return this.classList?.contains("visual-staging-sample-viewport") ? 80 : 0;
+        },
+      });
+
+      const fittingWrapper = mountPage();
+      await Promise.resolve();
+      await fittingWrapper.vm.$nextTick();
+      await fittingWrapper.findAll('[data-testid="visual-screen-card"]')[5].trigger("click");
+      await fittingWrapper.vm.$nextTick();
+      await fittingWrapper.vm.$nextTick();
+
+      const fittingPreview = fittingWrapper.find('[data-testid="visual-single-preview"]');
+      expect(fittingPreview.find(".visual-staging-sample-wrap").classes()).not.toContain("is-scrollable");
+      expect(fittingPreview.find(".visual-staging-sample-grid").classes()).not.toContain("is-looping");
+      expect(fittingPreview.text()).not.toContain("自动循环播放");
+      expect(fittingPreview.findAll(".visual-staging-sample-code")).toHaveLength(12);
+      fittingWrapper.unmount();
+    } finally {
+      if (originalScrollHeight) {
+        Object.defineProperty(HTMLElement.prototype, "scrollHeight", originalScrollHeight);
+      } else {
+        delete HTMLElement.prototype.scrollHeight;
+      }
+      if (originalClientHeight) {
+        Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      } else {
+        delete HTMLElement.prototype.clientHeight;
+      }
+      window.requestAnimationFrame = originalRequestAnimationFrame;
+      window.cancelAnimationFrame = originalCancelAnimationFrame;
+    }
   });
 
   test("renders staging legend and distinct staging kind styles", async () => {
@@ -970,9 +1207,10 @@ describe("VisualizationPage runtime", () => {
     const preview = wrapper.find('[data-testid="visual-single-preview"]');
     const overview = preview.get('[data-testid="visual-staging-overview"]');
     const kindSummary = preview.get('[data-testid="visual-staging-kind-summary"]');
-    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存/外观检测间存放");
+    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放");
     expect(kindSummary.text()).toContain("1/1/1/0");
     expect(kindSummary.find(".kind-planned").exists()).toBe(true);
+    expect(kindSummary.find(".kind-allowed").exists()).toBe(false);
     expect(kindSummary.find(".kind-post-test").exists()).toBe(true);
     expect(preview.find('[data-testid="visual-staging-legend"]').exists()).toBe(false);
 
@@ -1263,9 +1501,11 @@ describe("VisualizationPage runtime", () => {
       expect(wrapper.get('[data-testid="visual-combined-shell"]').attributes("style") || "").toContain("--visual-combined-scale");
       expect(wrapper.get('[data-testid="visual-combined-preview-close"]').text()).toContain("关闭");
       expect(wrapper.findAll('[data-testid="visual-combined-screen"]')).toHaveLength(8);
-      wrapper.findAll('[data-testid="visual-combined-screen"]').forEach((screen) => {
-        expect(screen.find(".visual-board").classes()).not.toContain("is-compact");
-        expect(screen.find(".visual-board").classes()).not.toContain("is-merge-preview");
+      wrapper.findAll('[data-testid="visual-combined-screen"]').forEach((screen, index) => {
+        const board = index === 3 ? screen.find(".visual-lab-matrix-screen") : screen.find(".visual-board");
+        expect(board.exists()).toBe(true);
+        expect(board.classes()).not.toContain("is-compact");
+        expect(board.classes()).not.toContain("is-merge-preview");
         expect(screen.find('[data-testid="visual-combined-stage"]').exists()).toBe(true);
         expect(screen.find('[data-testid="visual-combined-stage-scale"]').exists()).toBe(true);
         expect(screen.find('[data-testid="visual-combined-stage-scale"]').attributes("style")).toContain("--visual-stage-width: 1920px");

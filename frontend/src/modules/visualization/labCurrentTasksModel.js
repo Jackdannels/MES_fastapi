@@ -156,10 +156,41 @@ const formatUrgentMinutes = (remainingSeconds) => {
 const trayCodesFromRows = (rows) => asArray(rows)
   .map((row) => normalizeText(row?.trayCode || row?.tray_code))
   .filter(Boolean);
-const sampleCountFromRows = (rows) => asArray(rows).reduce((count, row) => {
+const sampleCountFromTrayRow = (row) => {
   const sampleCodes = asArray(row?.sampleCodes || row?.sample_codes);
-  return count + Math.max(1, sampleCodes.length || Number(row?.quantity) || 0);
+  const quantity = Number(row?.quantity);
+  return Math.max(1, sampleCodes.length || (Number.isFinite(quantity) ? quantity : 0));
+};
+const sampleCountFromRows = (rows) => asArray(rows).reduce((count, row) => {
+  return count + sampleCountFromTrayRow(row);
 }, 0);
+const trayItemsFromRows = (rows) => asArray(rows)
+  .map((row) => {
+    const trayCode = normalizeText(row?.trayCode || row?.tray_code);
+    if (!trayCode) {
+      return null;
+    }
+    const sampleCount = sampleCountFromTrayRow(row);
+    return {
+      sampleCount,
+      sampleLabel: `${sampleCount}件`,
+      trayCode,
+    };
+  })
+  .filter(Boolean);
+const trayItemsFromCodes = (trayCodes, sampleCount) => {
+  const codes = asArray(trayCodes).map(normalizeText).filter(Boolean);
+  const total = Number(sampleCount) || 0;
+  return codes.map((trayCode, index) => {
+    const count = codes.length === 1 ? total : 0;
+    return {
+      sampleCount: count,
+      sampleLabel: count > 0 ? `${count}件` : "-",
+      trayCode,
+      order: index,
+    };
+  });
+};
 
 const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, taskByCode }) => {
   const labRef = labRefFromName(labName);
@@ -194,6 +225,9 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, task
   const displaySampleCount = displayTrayRows.length > 0
     ? sampleCountFromRows(displayTrayRows)
     : Number(displayTask?.sampleCount) || 0;
+  const trayItems = displayTrayRows.length > 0
+    ? trayItemsFromRows(displayTrayRows)
+    : trayItemsFromCodes(displayTrayCodes, displaySampleCount);
   const remainingSeconds = Number(workbench.runningExperiment?.remainingSeconds) || 0;
   const isUrgentRunning = countdown.active && remainingSeconds <= URGENT_REMAINING_SECONDS;
   const isCompleted = Boolean(completedTask) || statusIsCompleted(currentTask?.status);
@@ -236,6 +270,9 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, task
     taskCode: taskCode || "-",
     taskName: normalizeText(displayTask?.taskName) || "-",
     trayCodes: displayTrayCodes,
+    trayCount: trayItems.length || displayTrayCodes.length,
+    trayItems,
+    traySummaryLabel: `托盘 ${trayItems.length || displayTrayCodes.length}，样品 ${displaySampleCount}`,
   };
 };
 

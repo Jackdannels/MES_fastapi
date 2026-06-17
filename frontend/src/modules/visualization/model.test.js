@@ -1,13 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import * as visualizationModelPublicApi from "./model";
-import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
+import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, buildTodayTaskPlanView, getVisualizationLabNames } from "./model";
 import {
   buildLabProcessPanels as buildLabProcessPanelsFromLabProcessModel,
   getVisualizationLabNames as getVisualizationLabNamesFromLabProcessModel,
 } from "./labProcessModel";
 import { buildLabScheduleThreeDayView as buildLabScheduleThreeDayViewFromScheduleThreeDayModel } from "./scheduleThreeDayModel";
 import { buildStagingSamplesView as buildStagingSamplesViewFromStagingSamplesModel } from "./stagingSamplesModel";
+import { buildTodayTaskPlanView as buildTodayTaskPlanViewFromTodayTaskPlanModel } from "./todayTaskPlanModel";
 
 describe("visualization model", () => {
   test("keeps the visualization model public compatibility exports stable", () => {
@@ -16,6 +17,7 @@ describe("visualization model", () => {
       "buildLabProcessPanels",
       "buildLabScheduleThreeDayView",
       "buildStagingSamplesView",
+      "buildTodayTaskPlanView",
       "getVisualizationLabNames",
     ].sort());
     expect(typeof visualizationModelPublicApi.buildLabCurrentTaskMatrixView).toBe("function");
@@ -23,6 +25,75 @@ describe("visualization model", () => {
     expect(visualizationModelPublicApi.getVisualizationLabNames).toBe(getVisualizationLabNamesFromLabProcessModel);
     expect(visualizationModelPublicApi.buildLabScheduleThreeDayView).toBe(buildLabScheduleThreeDayViewFromScheduleThreeDayModel);
     expect(visualizationModelPublicApi.buildStagingSamplesView).toBe(buildStagingSamplesViewFromStagingSamplesModel);
+    expect(visualizationModelPublicApi.buildTodayTaskPlanView).toBe(buildTodayTaskPlanViewFromTodayTaskPlanModel);
+  });
+
+  test("buildTodayTaskPlanView summarizes today's real schedules by experiment count", () => {
+    const view = buildTodayTaskPlanView({
+      now: new Date("2026-06-18T10:00:00+08:00"),
+      tasks: [
+        { code: "TASK-REAL-001", test_type: "结构试验" },
+        { code: "TASK-REAL-002", test_type: "环境试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", experiment_name: "冲击试验", required_device: "冲击一室" },
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-SALT", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { task_code: "TASK-REAL-002", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", tray_code: "REAL-TP-001" },
+        { task_code: "TASK-REAL-001", experiment_code: "EXP-IMPACT", tray_code: "REAL-TP-002" },
+        { task_code: "TASK-REAL-002", experiment_code: "EXP-VIB", tray_code: "REAL-TP-003" },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-REAL-001",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          start_at: "2026-06-18T09:00:00+08:00",
+          end_at: "2026-06-18T11:30:00+08:00",
+        },
+        {
+          task_code: "TASK-REAL-001",
+          experiment_code: "EXP-SALT",
+          device: "盐雾试验室",
+          start_at: "2026-06-18T13:00:00+08:00",
+          end_at: "2026-06-18T16:00:00+08:00",
+        },
+        {
+          task_code: "TASK-REAL-002",
+          experiment_code: "EXP-VIB",
+          device: "振动一室",
+          start_at: "2026-06-18T15:00:00+08:00",
+          end_at: "2026-06-18T17:30:00+08:00",
+        },
+        {
+          task_code: "TASK-OLD",
+          experiment_code: "EXP-OLD",
+          device: "冲击一室",
+          start_at: "2026-06-17T15:00:00+08:00",
+          end_at: "2026-06-17T17:30:00+08:00",
+        },
+      ],
+      samples: [
+        { task_code: "TASK-REAL-001", trays: [{ tray_code: "REAL-TP-001", quantity: 2 }] },
+        { task_code: "TASK-REAL-001", trays: [{ tray_code: "REAL-TP-002", quantity: 3 }] },
+        { task_code: "TASK-REAL-002", trays: [{ tray_code: "REAL-TP-003", quantity: 1 }] },
+      ],
+    });
+
+    expect(view.summary).toMatchObject({
+      assigned: 2,
+      experiments: 3,
+      pending: 1,
+      samples: 6,
+      tasks: 2,
+    });
+    expect(view.tasks.map((task) => task.taskCode)).toEqual(["TASK-REAL-001", "TASK-REAL-002"]);
+    expect(view.tasks[0].experiments.map((experiment) => experiment.time)).toEqual(["09:00-11:30", "13:00-16:00"]);
+    expect(view.tasks[0].experiments[0].trays).toEqual(["REAL-TP-001", "REAL-TP-002"]);
+    expect(view.tasks[0].experiments[0].sampleCount).toBe(5);
+    expect(view.tasks[0].experiments[1].trays).toEqual([]);
   });
 
   test("buildLabCurrentTaskMatrixView syncs current tasks and device statuses from shared system models", () => {
@@ -218,6 +289,74 @@ describe("visualization model", () => {
     expect(runningLab.statusTone).toBe("running");
     expect(runningLab.trayCodes).toEqual(["SYLU-2026-06-001-TP-002"]);
     expect(runningLab.sampleCount).toBe(1);
+  });
+
+  test("buildLabCurrentTaskMatrixView exposes per-tray sample counts and lab totals", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: ["冲击一室"],
+      now: new Date("2026-06-17T14:45:00+08:00"),
+      devices: [
+        { code: "冲击一室", name: "冲击一室", status: "可用" },
+      ],
+      tasks: [
+        { code: "TASK-MULTI-TRAY", name: "多托盘任务" },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-MULTI-TRAY",
+          experiment_code: "EXP-IMPACT",
+          experiment_name: "冲击试验",
+          required_device: "冲击一室",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-MULTI-TRAY", experiment_code: "EXP-IMPACT", tray_code: "TASK-MULTI-TRAY-TP-001" },
+        { task_code: "TASK-MULTI-TRAY", experiment_code: "EXP-IMPACT", tray_code: "TASK-MULTI-TRAY-TP-002" },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-MULTI-TRAY",
+          experiment_code: "EXP-IMPACT",
+          device: "冲击一室",
+          status: "已排程",
+          start_at: "2026-06-17T15:20:00+08:00",
+          end_at: "2026-06-17T16:30:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SP-001",
+          task_code: "TASK-MULTI-TRAY",
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TASK-MULTI-TRAY-TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SP-002",
+          task_code: "TASK-MULTI-TRAY",
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TASK-MULTI-TRAY-TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SP-003",
+          task_code: "TASK-MULTI-TRAY",
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TASK-MULTI-TRAY-TP-002", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+    });
+
+    const lab = view.labs[0];
+
+    expect(lab.trayItems).toEqual([
+      { sampleCount: 2, sampleLabel: "2件", trayCode: "TASK-MULTI-TRAY-TP-001" },
+      { sampleCount: 1, sampleLabel: "1件", trayCode: "TASK-MULTI-TRAY-TP-002" },
+    ]);
+    expect(lab.trayCount).toBe(2);
+    expect(lab.sampleCount).toBe(3);
+    expect(lab.traySummaryLabel).toBe("托盘 2，样品 3");
   });
 
   test("buildLabCurrentTaskMatrixView marks near-finish running labs and completed labs as urgent orange", () => {
@@ -1596,6 +1735,7 @@ describe("visualization model", () => {
     });
 
     expect(view.summary).toEqual({
+      allowedTrayCount: 0,
       appearancePlannedTrayCount: 0,
       appearanceTrayCount: 0,
       currentTrayCount: 1,
@@ -2064,7 +2204,7 @@ describe("visualization model", () => {
     expect(view.summary.appearancePlannedTrayCount).toBe(0);
   });
 
-  test("does not show fully completed neutral trays as planned post-test staging inbound", () => {
+  test("does not show fully completed neutral trays as allowed staging inbound", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "TASK-FINISHED-STAGING", name: "全部完成任务", test_type: "冲击试验 / 振动试验" }],
       experiments: [
@@ -2093,10 +2233,97 @@ describe("visualization model", () => {
     });
 
     expect(JSON.stringify(view)).not.toContain("TP-FINISHED-STAGING");
+    expect(view.summary.allowedTrayCount).toBe(0);
     expect(view.summary.plannedTrayCount).toBe(0);
   });
 
-  test("does not show a fully completed neutral tray in staging when the latest event sent it to a lab", () => {
+  test("hides fully completed non-appearance trays that are only allowed staging", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-FINISHED-ALLOWED", name: "全部完成允许暂存", test_type: "冲击试验 / 振动试验" }],
+      experiments: [
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-SHOCK", experiment_name: "冲击试验" },
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-VIB", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-SHOCK", tray_code: "TP-FINISHED-ALLOWED" },
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-VIB", tray_code: "TP-FINISHED-ALLOWED" },
+      ],
+      experimentRunTrays: [
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-SHOCK", tray_code: "TP-FINISHED-ALLOWED", status: "实验已完成" },
+        { task_code: "TASK-FINISHED-ALLOWED", experiment_code: "EXP-VIB", tray_code: "TP-FINISHED-ALLOWED", status: "实验已完成" },
+      ],
+      samples: [
+        {
+          code: "SP-FINISHED-ALLOWED",
+          task_code: "TASK-FINISHED-ALLOWED",
+          location: "振动一室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: "TP-FINISHED-ALLOWED", status: "实验已完成", quantity: 1 }],
+          history: [
+            { detail: "TASK-FINISHED-ALLOWED / 冲击试验 / 实验已完成", time: "2026-06-05 10:00:00" },
+            { detail: "TASK-FINISHED-ALLOWED / 振动试验 / 实验已完成", time: "2026-06-05 12:00:00" },
+          ],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(JSON.stringify(view)).not.toContain("TP-FINISHED-ALLOWED");
+    expect(view.summary.allowedTrayCount).toBe(0);
+    expect(view.summary.plannedTrayCount).toBe(0);
+  });
+
+  test("does not classify fully completed salt or mold final trays as planned staging", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-FINISHED-SALT", name: "盐雾最后完成", test_type: "冲击试验 / 盐雾试验" }],
+      experiments: [
+        { task_code: "TASK-FINISHED-SALT", experiment_code: "EXP-SHOCK", experiment_name: "冲击试验" },
+        { task_code: "TASK-FINISHED-SALT", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-FINISHED-SALT", experiment_code: "EXP-SHOCK", tray_code: "TP-FINISHED-SALT" },
+        { task_code: "TASK-FINISHED-SALT", experiment_code: "EXP-SALT", tray_code: "TP-FINISHED-SALT" },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: "TASK-FINISHED-SALT",
+          experiment_code: "EXP-SHOCK",
+          tray_code: "TP-FINISHED-SALT",
+          status: "实验已完成",
+          ended_at: "2026-06-05 10:00:00",
+        },
+        {
+          task_code: "TASK-FINISHED-SALT",
+          experiment_code: "EXP-SALT",
+          tray_code: "TP-FINISHED-SALT",
+          status: "实验已完成",
+          ended_at: "2026-06-05 12:00:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SP-FINISHED-SALT",
+          task_code: "TASK-FINISHED-SALT",
+          location: "盐雾试验室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: "TP-FINISHED-SALT", status: "实验已完成", quantity: 1 }],
+          history: [
+            { detail: "TASK-FINISHED-SALT / 冲击试验 / 实验已完成", time: "2026-06-05 10:00:00" },
+            { detail: "TASK-FINISHED-SALT / 盐雾试验 / 实验已完成", time: "2026-06-05 12:00:00" },
+          ],
+        },
+      ],
+      stagingEvents: [],
+    });
+
+    expect(JSON.stringify(view.tasks)).not.toContain("TP-FINISHED-SALT");
+    expect(view.summary.allowedTrayCount).toBe(0);
+    expect(view.summary.plannedTrayCount).toBe(0);
+  });
+
+  test("hides a fully completed neutral tray when no explicit staging dispatch exists", () => {
     const view = buildStagingSamplesView({
       tasks: [{ code: "SYLU-2026-06-022", name: "06-022任务", test_type: "冲击试验 / 霉菌试验 / 盐雾试验 / 振动试验" }],
       experiments: [
@@ -2145,6 +2372,7 @@ describe("visualization model", () => {
       .find((item) => item.trayCode === "SYLU-2026-06-022-TP-002");
 
     expect(tray).toBeUndefined();
+    expect(view.summary.allowedTrayCount).toBe(0);
     expect(view.summary.plannedTrayCount).toBe(0);
   });
 
@@ -2201,6 +2429,7 @@ describe("visualization model", () => {
     });
 
     expect(view.summary.totalTrayCount).toBe(0);
+    expect(view.summary.allowedTrayCount).toBe(0);
     expect(view.summary.usedSystemTrayCount).toBe(2);
     expect(view.summary.trayRemaining).toBe(8);
   });

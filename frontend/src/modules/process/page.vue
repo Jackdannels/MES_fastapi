@@ -98,8 +98,20 @@
         <span class="pill process-task-status">{{ selectedTaskDetail?.status || "-" }}</span>
       </div>
 
-      <div class="process-task-drawer-layout">
-        <div class="process-task-drawer-main">
+      <div class="process-task-detail-grid">
+        <section class="process-task-summary-card process-task-overview-panel">
+          <div v-if="selectedTaskDetail?.availableTasks?.length > 1" class="process-task-select-entry">
+            <button
+              class="process-task-select-button"
+              type="button"
+              data-testid="process-open-task-selector"
+              @click="openTaskSelection"
+            >
+              <span>任务选择</span>
+              <strong>{{ selectedTaskDetail.availableTasks.length }} 个任务</strong>
+            </button>
+          </div>
+          <div class="process-task-summary-title">实验概览</div>
           <div class="process-task-keyfacts">
             <div class="process-task-keyfact">
               <span>试验类型</span>
@@ -114,177 +126,161 @@
               <strong>{{ selectedTaskDetail?.scheduleTime || "-" }}</strong>
             </div>
           </div>
-
-          <div class="process-task-summary-grid">
-            <section class="process-task-summary-card">
-              <div v-if="selectedTaskDetail?.availableTasks?.length > 1" class="process-task-select-entry">
-                <button
-                  class="process-task-select-button"
-                  type="button"
-                  data-testid="process-open-task-selector"
-                  @click="openTaskSelection"
-                >
-                  <span>任务选择</span>
-                  <strong>{{ selectedTaskDetail.availableTasks.length }} 个任务</strong>
-                </button>
-              </div>
-              <div class="process-task-summary-title">执行摘要</div>
-              <div class="process-task-stat-grid">
-                <div class="process-task-stat">
-                  <span>样品数量</span>
-                  <strong>{{ selectedTaskDetail?.sampleCount ?? "-" }}</strong>
-                </div>
-                <div class="process-task-stat">
-                  <span>托盘数量</span>
-                  <strong>{{ selectedTaskDetail?.trayCount ?? 0 }}</strong>
-                </div>
-              </div>
-              <div
-                v-if="selectedTaskDetail?.trayCodes?.length"
-                class="process-task-tray-chip-list"
-                :class="{
-                  'is-dense': selectedTaskDetail.trayCodes.length >= 3,
-                  'is-single-column': true,
-                }"
-              >
-                <button
-                  v-for="trayCode in previewTrayCodes"
-                  :key="trayCode"
-                  class="process-task-tray-chip process-task-tray-chip-emphasis"
-                  :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === trayCode }"
-                  type="button"
-                  :data-testid="`process-tray-chip-${trayCode}`"
-                  @click="selectTaskTray(trayCode)"
-                >
-                  {{ trayCode }}
-                </button>
-                <span v-if="hiddenTrayCodeCount > 0" class="process-task-more-count">+{{ hiddenTrayCodeCount }}</span>
-                <button
-                  v-if="hiddenTrayCodeCount > 0"
-                  class="process-task-more-button"
-                  data-testid="process-show-all-trays"
-                  type="button"
-                  @click="openTaskFullList"
-                >
-                  查看全部
-                </button>
-              </div>
-            </section>
-
-            <section class="process-task-summary-card">
-              <div class="process-task-summary-title">样品编号</div>
-              <div
-                v-if="selectedTaskDetail?.selectedTraySummary?.sampleCodes?.length"
-                class="process-task-sample-code-list"
-                data-testid="process-selected-tray-sample-list"
-              >
-                <div
-                  v-for="sampleCode in previewSelectedSampleCodes"
-                  :key="sampleCode"
-                  class="process-task-sample-code-row"
-                  :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
-                >
-                  {{ sampleCode }}
-                </div>
-                <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
-                  <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
-                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
-                </div>
-              </div>
-              <div v-else class="muted">当前托盘暂无样品编号。</div>
-              <div class="process-task-sample-hint" v-if="selectedTaskDetail?.selectedTraySummary?.trayCode">
-                当前托盘：{{ selectedTaskDetail.selectedTraySummary.trayCode }}
-              </div>
-            </section>
+          <div class="process-task-stat-grid">
+            <div class="process-task-stat">
+              <span>样品数量</span>
+              <strong>{{ selectedTaskDetail?.sampleCount ?? "-" }}</strong>
+            </div>
+            <div class="process-task-stat">
+              <span>托盘数量</span>
+              <strong>{{ selectedTaskDetail?.trayCount ?? 0 }}</strong>
+            </div>
           </div>
-
-          <div class="process-task-batch-grid">
-            <section class="process-task-summary-card">
-              <div class="process-task-summary-title">当前实验托盘</div>
-              <div v-if="selectedTaskDetail?.runningTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
-                <div
-                  v-for="tray in previewRunningTrayRows"
-                  :key="tray.trayCode"
-                  class="process-task-tray-row"
-                  :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
-                >
-                  <button
-                    class="process-task-tray-row__select"
-                    type="button"
-                    :data-testid="`process-tray-button-${tray.trayCode}`"
-                    @click="selectTaskTray(tray.trayCode)"
-                  >
-                    <strong>{{ tray.trayCode }}</strong>
-                    <span>{{ tray.status }}</span>
-                    <span>{{ traySamplePreviewText(tray) }}</span>
-                  </button>
-                  <span v-if="hiddenTraySampleCount(tray) > 0" class="process-task-more-inline">
-                    +{{ hiddenTraySampleCount(tray) }}
-                    <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
-                  </span>
-                </div>
-                <div v-if="hiddenRunningTrayCount > 0" class="process-task-more-line">
-                  <span class="process-task-more-count">+{{ hiddenRunningTrayCount }}</span>
-                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
-                </div>
+          <div class="process-task-selected-samples">
+            <div class="process-task-summary-title">样品编号</div>
+            <div
+              v-if="selectedTaskDetail?.selectedTraySummary?.sampleCodes?.length"
+              class="process-task-sample-code-list"
+              data-testid="process-selected-tray-sample-list"
+            >
+              <div
+                v-for="sampleCode in previewSelectedSampleCodes"
+                :key="sampleCode"
+                class="process-task-sample-code-row"
+                :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
+              >
+                {{ sampleCode }}
               </div>
-              <div v-else class="muted">当前无实验进行中托盘。</div>
-            </section>
-
-            <section class="process-task-summary-card">
-              <div class="process-task-summary-title">待下一轮托盘</div>
-              <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
-                <div
-                  v-for="tray in previewRemainingTrayRows"
-                  :key="tray.trayCode"
-                  class="process-task-tray-row"
-                  :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
-                >
-                  <button
-                    class="process-task-tray-row__select"
-                    type="button"
-                    :data-testid="`process-tray-button-${tray.trayCode}`"
-                    @click="selectTaskTray(tray.trayCode)"
-                  >
-                    <strong>{{ tray.trayCode }}</strong>
-                    <span>{{ tray.status }}</span>
-                    <span>{{ traySamplePreviewText(tray) }}</span>
-                  </button>
-                  <span v-if="hiddenTraySampleCount(tray) > 0" class="process-task-more-inline">
-                    +{{ hiddenTraySampleCount(tray) }}
-                    <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
-                  </span>
-                </div>
-                <div v-if="hiddenRemainingTrayCount > 0" class="process-task-more-line">
-                  <span class="process-task-more-count">+{{ hiddenRemainingTrayCount }}</span>
-                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
-                </div>
-              </div>
-              <div v-else class="muted">当前无待下一轮托盘。</div>
-            </section>
-          </div>
-        </div>
-
-        <aside class="process-task-drawer-side">
-          <section class="process-task-summary-card process-task-flow-card" data-testid="process-tray-flow-card">
-            <div class="process-task-flow-head">
-              <div>
-                <div class="process-task-summary-title">统一托盘流程图</div>
+              <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
+                <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
+                <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
               </div>
             </div>
-            <ol class="process-task-flow-list process-task-flow-list--timed">
-              <li
-                v-for="(step, index) in selectedTaskDetail?.selectedTrayFlow?.steps || []"
-                :key="step.key"
-                :data-flow-step="index"
-                :class="{ current: step.active, reached: step.reached }"
+            <div v-else class="muted">当前托盘暂无样品编号。</div>
+            <div class="process-task-sample-hint" v-if="selectedTaskDetail?.selectedTraySummary?.trayCode">
+              当前托盘：{{ selectedTaskDetail.selectedTraySummary.trayCode }}
+            </div>
+          </div>
+        </section>
+
+        <section class="process-task-tray-panel">
+          <section class="process-task-summary-card process-task-selected-tray-card">
+            <div class="process-task-summary-title">托盘总览</div>
+            <div
+              v-if="selectedTaskDetail?.trayCodes?.length"
+              class="process-task-tray-chip-list"
+              :class="{
+                'is-dense': selectedTaskDetail.trayCodes.length >= 3,
+                'is-single-column': true,
+              }"
+            >
+              <button
+                v-for="trayCode in previewTrayCodes"
+                :key="trayCode"
+                class="process-task-tray-chip process-task-tray-chip-emphasis"
+                :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === trayCode }"
+                type="button"
+                :data-testid="`process-tray-chip-${trayCode}`"
+                @click="selectTaskTray(trayCode)"
               >
-                <span class="process-task-flow-label">{{ step.label }}</span>
-                <span class="process-task-flow-time">{{ formatFlowTime(step.time) }}</span>
-              </li>
-            </ol>
+                {{ trayCode }}
+              </button>
+              <span v-if="hiddenTrayCodeCount > 0" class="process-task-more-count">+{{ hiddenTrayCodeCount }}</span>
+              <button
+                v-if="hiddenTrayCodeCount > 0"
+                class="process-task-more-button"
+                data-testid="process-show-all-trays"
+                type="button"
+                @click="openTaskFullList"
+              >
+                查看全部
+              </button>
+            </div>
           </section>
-        </aside>
+
+          <section class="process-task-summary-card">
+            <div class="process-task-summary-title">当前实验托盘</div>
+            <div v-if="selectedTaskDetail?.runningTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
+              <div
+                v-for="tray in previewRunningTrayRows"
+                :key="tray.trayCode"
+                class="process-task-tray-row"
+                :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
+              >
+                <button
+                  class="process-task-tray-row__select"
+                  type="button"
+                  :data-testid="`process-tray-button-${tray.trayCode}`"
+                  @click="selectTaskTray(tray.trayCode)"
+                >
+                  <strong>{{ tray.trayCode }}</strong>
+                  <span>{{ tray.status }}</span>
+                  <span>{{ traySamplePreviewText(tray) }}</span>
+                </button>
+                <span v-if="hiddenTraySampleCount(tray) > 0" class="process-task-more-inline">
+                  +{{ hiddenTraySampleCount(tray) }}
+                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+                </span>
+              </div>
+              <div v-if="hiddenRunningTrayCount > 0" class="process-task-more-line">
+                <span class="process-task-more-count">+{{ hiddenRunningTrayCount }}</span>
+                <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+              </div>
+            </div>
+            <div v-else class="muted">当前无实验进行中托盘。</div>
+          </section>
+
+          <section class="process-task-summary-card">
+            <div class="process-task-summary-title">待下一轮托盘</div>
+            <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
+              <div
+                v-for="tray in previewRemainingTrayRows"
+                :key="tray.trayCode"
+                class="process-task-tray-row"
+                :class="{ 'is-selected': selectedTaskDetail?.selectedTrayCode === tray.trayCode }"
+              >
+                <button
+                  class="process-task-tray-row__select"
+                  type="button"
+                  :data-testid="`process-tray-button-${tray.trayCode}`"
+                  @click="selectTaskTray(tray.trayCode)"
+                >
+                  <strong>{{ tray.trayCode }}</strong>
+                  <span>{{ tray.status }}</span>
+                  <span>{{ traySamplePreviewText(tray) }}</span>
+                </button>
+                <span v-if="hiddenTraySampleCount(tray) > 0" class="process-task-more-inline">
+                  +{{ hiddenTraySampleCount(tray) }}
+                  <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+                </span>
+              </div>
+              <div v-if="hiddenRemainingTrayCount > 0" class="process-task-more-line">
+                <span class="process-task-more-count">+{{ hiddenRemainingTrayCount }}</span>
+                <button class="process-task-more-button" type="button" @click="openTaskFullList">查看全部</button>
+              </div>
+            </div>
+            <div v-else class="muted">当前无待下一轮托盘。</div>
+          </section>
+        </section>
+
+        <section class="process-task-summary-card process-task-flow-card" data-testid="process-tray-flow-card">
+          <div class="process-task-flow-head">
+            <div>
+              <div class="process-task-summary-title">统一托盘流程图</div>
+            </div>
+          </div>
+          <ol class="process-task-flow-list process-task-flow-list--timed">
+            <li
+              v-for="(step, index) in selectedTaskDetail?.selectedTrayFlow?.steps || []"
+              :key="step.key"
+              :data-flow-step="index"
+              :class="{ current: step.active, reached: step.reached }"
+            >
+              <span class="process-task-flow-label">{{ step.label }}</span>
+              <span class="process-task-flow-time">{{ formatFlowTime(step.time) }}</span>
+            </li>
+          </ol>
+        </section>
       </div>
     </div>
   </div>
@@ -579,7 +575,7 @@ const formatFlowTime = (value) => {
   gap: 16px;
   padding: 18px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96));
 }
 
@@ -605,14 +601,14 @@ const formatFlowTime = (value) => {
 
 .process-task-keyfacts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
 }
 
 .process-task-keyfact,
 .process-task-summary-card {
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--bg-panel-strong);
   color: var(--text);
   min-width: 0;
@@ -664,7 +660,7 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-stat {
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-panel-strong);
   padding: 12px;
   border: 1px solid var(--border);
@@ -672,7 +668,7 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-inline-field {
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-panel-strong);
   padding: 12px;
   border: 1px solid var(--border);
@@ -755,7 +751,7 @@ const formatFlowTime = (value) => {
 
 .process-task-sample-code-row {
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
   font-size: 14px;
@@ -826,7 +822,7 @@ const formatFlowTime = (value) => {
 
 .process-control-feedback {
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid rgba(var(--industrial-accent-rgb), 0.45);
   background: rgba(var(--industrial-accent-rgb), 0.14);
   color: var(--accent);
@@ -842,19 +838,49 @@ const formatFlowTime = (value) => {
   color: var(--muted);
 }
 
-.process-task-batch-grid {
+.process-task-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.process-task-overview-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.process-task-overview-panel .process-task-summary-title {
+  margin-bottom: 0;
+}
+
+.process-task-tray-panel {
+  display: grid;
+  grid-template-rows: auto minmax(112px, 0.62fr) minmax(200px, 1.38fr);
   gap: 14px;
   min-height: 0;
   overflow: hidden;
 }
 
-.process-task-batch-grid > .process-task-summary-card {
+.process-task-tray-panel > .process-task-summary-card {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.process-task-selected-samples {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
 }
 
 .process-task-tray-list {
@@ -878,7 +904,7 @@ const formatFlowTime = (value) => {
   display: grid;
   gap: 4px;
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
   color: var(--text);
@@ -950,7 +976,7 @@ const formatFlowTime = (value) => {
 }
 
 .process-task-full-summary span {
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
   padding: 6px 12px;
@@ -973,7 +999,7 @@ const formatFlowTime = (value) => {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-panel-strong);
   color: var(--text);
   text-align: left;
@@ -1025,32 +1051,6 @@ const formatFlowTime = (value) => {
   overflow: hidden;
 }
 
-.process-task-drawer-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.8fr);
-  gap: 16px;
-  align-items: stretch;
-  flex: 1 1 auto;
-  min-height: 0;
-  margin-top: 16px;
-}
-
-.process-task-drawer-main,
-.process-task-drawer-side {
-  display: grid;
-  gap: 16px;
-  min-height: 0;
-}
-
-.process-task-drawer-main {
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.process-task-drawer-side {
-  grid-template-rows: minmax(0, 1fr);
-}
-
 .process-task-flow-head {
   display: flex;
   justify-content: space-between;
@@ -1088,7 +1088,7 @@ const formatFlowTime = (value) => {
 .process-task-flow-list li {
   position: relative;
   padding: 12px 14px 12px 38px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.24);
   background: rgba(15, 23, 42, 0.34);
   color: var(--muted);
@@ -1218,12 +1218,17 @@ const formatFlowTime = (value) => {
     align-items: flex-start;
   }
 
-  .process-task-drawer-layout,
+  .process-task-detail-grid,
   .process-task-keyfacts,
   .process-task-summary-grid,
   .process-task-stat-grid,
-  .process-task-batch-grid {
+  .process-task-tray-panel {
     grid-template-columns: 1fr;
+  }
+
+  .process-task-detail-grid {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    overflow: auto;
   }
 
   .process-task-tray-meta {
@@ -1255,10 +1260,9 @@ const formatFlowTime = (value) => {
 
   .process-task-keyfacts,
   .process-task-summary-grid,
-  .process-task-batch-grid,
-  .process-task-drawer-layout,
-  .process-task-drawer-main,
-  .process-task-drawer-side {
+  .process-task-detail-grid,
+  .process-task-overview-panel,
+  .process-task-tray-panel {
     gap: 10px;
   }
 
