@@ -9,6 +9,7 @@ import {
   buildTaskSampleCodes,
   createTaskIntakeForm,
   createTaskRecord,
+  deleteTaskSnapshot,
   validateSampleCodeDraft,
   updateTaskRecord,
   validateTaskTextFields,
@@ -91,6 +92,30 @@ describe("tasks model", () => {
     );
 
     expect(rows[0].displayStatus).toBe("任务进行中");
+  });
+
+  test("deleteTaskSnapshot blocks deleting a task while one of its experiments is running", () => {
+    const result = deleteTaskSnapshot(
+      {
+        experimentRuns: [
+          {
+            task_code: "SYLU-2026-03-001",
+            experiment_code: "SYLU-2026-03-001-A",
+            status: "实验进行中",
+          },
+        ],
+        samples: [],
+        schedules: [],
+        streams: [],
+        tasks: [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "任务进行中" }],
+      },
+      "task-1",
+    );
+
+    expect(result.error).toBe("任务存在进行中的实验，不能删除任务");
+    expect(result.tasks).toEqual([
+      expect.objectContaining({ id: "task-1" }),
+    ]);
   });
 
   test("does not derive task status from sample-level status when no tray is assigned", () => {

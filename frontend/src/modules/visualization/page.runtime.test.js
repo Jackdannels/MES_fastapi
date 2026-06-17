@@ -7,6 +7,7 @@ const { REAL_DEVICE_LEDGER, snapshotState } = vi.hoisted(() => ({
   REAL_DEVICE_LEDGER: [
     { code: "振动一室", status: "可用" },
     { code: "高低温湿热一室", status: "可用" },
+    { code: "高低温湿热二室", status: "可用" },
     { code: "盐雾试验室", status: "可用" },
     { code: "冲击一室", status: "可用" },
     { code: "霉菌试验室", status: "可用" },
@@ -102,6 +103,85 @@ const buildSingleRunningLabSnapshot = () => ({
         { status: "到货", time: "2026-05-22T09:00:00+08:00" },
         { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00+08:00" },
       ],
+    },
+  ],
+});
+
+const buildCurrentLabTaskMatrixSnapshot = () => ({
+  "mes.devices": [
+    { code: "振动一室", name: "振动一室", status: "可用" },
+    { code: "霉菌试验室", name: "霉菌试验室", status: "保养" },
+    { code: "冲击一室", name: "冲击一室", status: "可用" },
+    { code: "盐雾试验室", name: "盐雾试验室", status: "可用" },
+    { code: "STAGING", name: "恒温恒湿间（暂存间）", status: "可用" },
+    { code: "APPEARANCE", name: "外观检测间", status: "可用" },
+    { code: "HANDOVER", name: "室外接驳区", status: "可用" },
+  ],
+  "mes.tasks": [
+    { code: "TASK-RUN", name: "振动运行任务" },
+    { code: "TASK-WAIT", name: "冲击待启动任务" },
+  ],
+  "mes.experiments": [
+    { task_code: "TASK-RUN", experiment_code: "EXP-RUN", experiment_name: "振动试验", required_device: "振动一室" },
+    { task_code: "TASK-WAIT", experiment_code: "EXP-WAIT", experiment_name: "冲击试验", required_device: "冲击一室" },
+  ],
+  "mes.experiment_runs": [
+    {
+      run_no: "RUN-001",
+      task_code: "TASK-RUN",
+      experiment_code: "EXP-RUN",
+      device: "振动一室",
+      status: "实验进行中",
+      started_at: "2026-06-17T14:00:00+08:00",
+      planned_hours: 2,
+    },
+  ],
+  "mes.experiment_run_trays": [
+    {
+      run_no: "RUN-001",
+      task_code: "TASK-RUN",
+      experiment_code: "EXP-RUN",
+      tray_code: "TRAY-RUN",
+      run_tray_status: "实验进行中",
+      started_at: "2026-06-17T14:00:00+08:00",
+    },
+  ],
+  "mes.experiment_trays": [
+    { task_code: "TASK-RUN", experiment_code: "EXP-RUN", tray_code: "TRAY-RUN" },
+    { task_code: "TASK-WAIT", experiment_code: "EXP-WAIT", tray_code: "TRAY-WAIT" },
+  ],
+  "mes.schedules": [
+    {
+      task_code: "TASK-RUN",
+      experiment_code: "EXP-RUN",
+      device: "振动一室",
+      status: "实验进行中",
+      start_at: "2026-06-17T14:00:00+08:00",
+      end_at: "2026-06-17T16:00:00+08:00",
+    },
+    {
+      task_code: "TASK-WAIT",
+      experiment_code: "EXP-WAIT",
+      device: "冲击一室",
+      status: "已排程",
+      start_at: "2026-06-17T15:20:00+08:00",
+      end_at: "2026-06-17T16:30:00+08:00",
+    },
+  ],
+  "mes.samples": [
+    {
+      code: "SAMPLE-RUN",
+      task_code: "TASK-RUN",
+      location: "振动一室",
+      status: "实验进行中",
+      trays: [{ tray_code: "TRAY-RUN", status: "实验进行中", quantity: 2 }],
+    },
+    {
+      code: "SAMPLE-WAIT",
+      task_code: "TASK-WAIT",
+      location: "冲击一室",
+      status: "已到达实验室",
+      trays: [{ tray_code: "TRAY-WAIT", status: "已到达实验室", quantity: 1 }],
     },
   ],
 });
@@ -242,6 +322,52 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).toContain("8件");
   });
 
+  test("renders screen four as the current laboratory task matrix with running-only countdown bars", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-17T14:45:00+08:00"));
+    snapshotState.snapshot = buildCurrentLabTaskMatrixSnapshot();
+
+    try {
+      const wrapper = mountPage();
+      await Promise.resolve();
+      await wrapper.vm.$nextTick();
+
+      const fourthCard = wrapper.findAll('[data-testid="visual-screen-card"]')[3];
+
+      expect(fourthCard.text()).toContain("试验间当前任务状态屏");
+      expect(fourthCard.text()).toContain("已排程");
+      expect(fourthCard.text()).not.toContain("有任务");
+      expect(fourthCard.find(".metric-scheduled").text()).toContain("1");
+      expect(fourthCard.find(".metric-repair").text()).toContain("1");
+      expect(fourthCard.find(".metric-running").text()).toContain("1");
+      expect(fourthCard.find(".metric-urgent").text()).toContain("0");
+      expect(fourthCard.text()).toContain("TASK-RUN");
+      expect(fourthCard.text()).toContain("TASK-WAIT");
+      expect(fourthCard.text()).toContain("保养");
+      expect(fourthCard.text()).toContain("计划时间");
+      expect(fourthCard.text()).toContain("2026-06-17 15:20 - 2026-06-17 16:30");
+      expect(fourthCard.findAll('[data-testid="visual-current-lab-card"]')).toHaveLength(4);
+      expect(fourthCard.text()).toContain("盐雾试验室");
+      expect(fourthCard.text()).not.toContain("暂存间");
+      expect(fourthCard.text()).not.toContain("外观检测间");
+      expect(fourthCard.text()).not.toContain("接驳");
+
+      const runningCard = fourthCard.find('[data-lab-name="振动一室"]');
+      const maintenanceCard = fourthCard.find('[data-lab-name="霉菌试验室"]');
+      const waitingCard = fourthCard.find('[data-lab-name="冲击一室"]');
+
+      expect(runningCard.classes()).toContain("tone-running");
+      expect(runningCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(true);
+      expect(runningCard.text()).toContain("01:15:00");
+      expect(maintenanceCard.classes()).toContain("tone-repair");
+      expect(maintenanceCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(false);
+      expect(waitingCard.classes()).toContain("tone-task");
+      expect(waitingCard.find('[data-testid="visual-current-lab-countdown"]').exists()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("compresses laboratory process flow steps in thumbnails", async () => {
     snapshotState.snapshot = buildSingleRunningLabSnapshot();
     const wrapper = mountPage();
@@ -272,6 +398,7 @@ describe("VisualizationPage runtime", () => {
     const optionText = picker.text();
     expect(optionText).toContain("冲击一室");
     expect(optionText).toContain("高低温湿热一室");
+    expect(optionText).toContain("高低温湿热二室");
     expect(optionText).not.toContain("振动一室");
     expect(optionText).not.toContain("盐雾试验室");
     expect(optionText).not.toContain("霉菌试验室");
@@ -968,6 +1095,7 @@ describe("VisualizationPage runtime", () => {
     [
       "振动一室",
       "高低温湿热一室",
+      "高低温湿热二室",
       "盐雾试验室",
       "冲击一室",
       "霉菌试验室",
@@ -979,6 +1107,8 @@ describe("VisualizationPage runtime", () => {
     ].forEach((labName) => {
       expect(eighthCard.text()).toContain(labName);
     });
+    expect(eighthCard.text()).toContain("试验间");
+    expect(eighthCard.text()).toContain("11");
 
     await eighthCard.trigger("click");
 
@@ -1004,14 +1134,14 @@ describe("VisualizationPage runtime", () => {
 
     const preview = wrapper.find('[data-testid="visual-single-preview"]');
     expect(preview.text()).toContain("年初至今 · 2026-01-01 至 2026-05-28");
-    expect(preview.get(".visual-analysis-pie-total").text()).toBe("449");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("487");
 
     const monthButton = preview.findAll(".visual-analysis-time-chip").find((button) => button.text() === "本月");
     expect(monthButton).toBeTruthy();
     await monthButton.trigger("click");
 
     expect(preview.text()).toContain("本月 · 2026-05-01 至 2026-05-28");
-    expect(preview.get(".visual-analysis-pie-total").text()).toBe("305");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("331");
     expect(monthButton.classes()).toContain("is-active");
 
     await preview.get('[data-testid="visual-analysis-custom-trigger"]').trigger("click");
@@ -1020,7 +1150,7 @@ describe("VisualizationPage runtime", () => {
     await customMonth.trigger("click");
 
     expect(preview.text()).toContain("自定义 · 按月 · 2026-05");
-    expect(preview.get(".visual-analysis-pie-total").text()).toBe("305");
+    expect(preview.get(".visual-analysis-pie-total").text()).toBe("331");
     expect(preview.get('[data-testid="visual-analysis-custom-trigger"]').classes()).toContain("is-active");
   });
 

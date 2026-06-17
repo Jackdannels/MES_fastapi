@@ -532,6 +532,71 @@ def has_saved_allocation(task_samples: list[dict[str, Any]]) -> bool:
     return bool(task_samples) and all(as_list(sample.get("trays")) for sample in task_samples)
 
 
+def task_experiment_code_set(task: dict[str, Any], experiments: list[dict[str, Any]]) -> set[str]:
+    return {
+        normalize_text(experiment.get("experiment_code"))
+        for experiment in experiments
+        if normalize_text(experiment.get("task_code")) == task_code(task)
+        and normalize_text(experiment.get("experiment_code"))
+    }
+
+
+def validate_complete_experiment_tray_refs(
+    task_experiment_codes: set[str],
+    loaded_tray_refs: set[Any],
+    experiment_tray_refs_by_code: dict[str, set[Any]],
+) -> None:
+    if not task_experiment_codes:
+        return
+    selected_experiment_codes = {
+        experiment_code
+        for experiment_code, tray_refs in experiment_tray_refs_by_code.items()
+        if tray_refs
+    }
+    if selected_experiment_codes - task_experiment_codes:
+        raise HTTPException(status_code=400, detail="实验托盘分配信息不完整")
+    if selected_experiment_codes != task_experiment_codes:
+        raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
+    selected_loaded_tray_refs = {
+        tray_ref
+        for tray_refs in experiment_tray_refs_by_code.values()
+        for tray_ref in tray_refs
+    }
+    if not selected_loaded_tray_refs.issubset(loaded_tray_refs):
+        raise HTTPException(status_code=400, detail="实验托盘分配引用了无效托盘")
+    if loaded_tray_refs and selected_loaded_tray_refs != loaded_tray_refs:
+        raise HTTPException(status_code=400, detail="有样品的托盘必须至少分配一个实验")
+
+
+def validate_saved_experiment_tray_allocation(
+    task: dict[str, Any],
+    task_samples: list[dict[str, Any]],
+    experiments: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+) -> None:
+    loaded_tray_codes = {
+        normalize_text(tray.get("tray_code"))
+        for sample in task_samples
+        for tray in as_list(sample.get("trays"))
+        if normalize_text(tray.get("tray_code"))
+    }
+    experiment_tray_refs_by_code: dict[str, set[str]] = {}
+    task_code_value = task_code(task)
+    for entry in experiment_trays:
+        if normalize_text(entry.get("task_code")) != task_code_value:
+            continue
+        experiment_code = normalize_text(entry.get("experiment_code"))
+        tray_code = normalize_text(entry.get("tray_code"))
+        if not experiment_code or not tray_code:
+            continue
+        experiment_tray_refs_by_code.setdefault(experiment_code, set()).add(tray_code)
+    validate_complete_experiment_tray_refs(
+        task_experiment_code_set(task, experiments),
+        loaded_tray_codes,
+        experiment_tray_refs_by_code,
+    )
+
+
 def encode_task_tray_id(serial: int) -> int:
     return TASK_TRAY_ID_BASE + serial
 
@@ -1655,32 +1720,23 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
             detail=f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。",
         )
     loaded_tray_ids = {tray.tray_id for tray in request.trays if tray.sample_ids}
-    task_experiment_codes = {
-        normalize_text(experiment.get("experiment_code"))
-        for experiment in snapshot["experiments"]
-        if normalize_text(experiment.get("task_code")) == task_code(task)
-        and normalize_text(experiment.get("experiment_code"))
-    }
+    task_experiment_codes = task_experiment_code_set(task, snapshot["experiments"])
     if task_experiment_codes:
         seen_experiment_codes: set[str] = set()
-        selected_loaded_tray_ids: set[int] = set()
+        experiment_tray_refs_by_code: dict[str, set[int]] = {}
         for selection in request.experiment_trays:
             experiment_code = normalize_text(selection.experiment_code)
             if not experiment_code:
                 continue
-            if experiment_code not in task_experiment_codes or experiment_code in seen_experiment_codes:
+            if experiment_code in seen_experiment_codes:
                 raise HTTPException(status_code=400, detail="实验托盘分配信息不完整")
             seen_experiment_codes.add(experiment_code)
-            selected_tray_ids = set(selection.tray_ids)
-            if not selected_tray_ids:
-                raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
-            if not selected_tray_ids.issubset(loaded_tray_ids):
-                raise HTTPException(status_code=400, detail="实验托盘分配引用了无效托盘")
-            selected_loaded_tray_ids.update(selected_tray_ids)
-        if seen_experiment_codes != task_experiment_codes:
-            raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
-        if loaded_tray_ids and selected_loaded_tray_ids != loaded_tray_ids:
-            raise HTTPException(status_code=400, detail="有样品的托盘必须至少分配一个实验")
+            experiment_tray_refs_by_code[experiment_code] = set(selection.tray_ids)
+        validate_complete_experiment_tray_refs(
+            task_experiment_codes,
+            loaded_tray_ids,
+            experiment_tray_refs_by_code,
+        )
 
     for sample in task_samples:
         clear_transfer_history(sample)
@@ -1854,6 +1910,12 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="当前任务没有待入库托盘")
     if not has_saved_allocation(task_samples):
         raise HTTPException(status_code=400, detail="请先保存托盘，再确认入库")
+    validate_saved_experiment_tray_allocation(
+        task,
+        task_samples,
+        snapshot["experiments"],
+        snapshot["experiment_trays"],
+    )
 
     task["transfer_status"] = TASK_STATUS_STORED
     now_iso = now_business_text()

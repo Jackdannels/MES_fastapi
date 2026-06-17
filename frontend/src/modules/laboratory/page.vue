@@ -374,7 +374,7 @@
     <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="夹具安装确认中" @close="() => {}">
       <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-status-card">
         <div class="laboratory-fixture-status-card__head">
-          <span class="laboratory-fixture-status-card__eyebrow">等待上位机确认</span>
+          <span class="laboratory-fixture-status-card__eyebrow">{{ fixtureConfirmCopy.eyebrow }}</span>
           <strong>{{ currentTask?.taskCode || "-" }}</strong>
           <span>{{ labName }}</span>
         </div>
@@ -382,15 +382,15 @@
           <strong data-testid="laboratory-fixture-confirm-countdown">{{ fixtureConfirmCountdown }}</strong>
           <span>秒</span>
         </div>
-        <p>夹具安装信号已发送，正在等待上位机返回安装完成确认。</p>
+        <p>{{ fixtureConfirmCopy.body }}</p>
       </div>
     </AppModal>
 
     <AppModal :open="fixtureConfirmSuccessModalOpen" data-testid="laboratory-fixture-success-modal" title="夹具安装完成" @close="() => {}">
       <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-success-card">
         <div class="laboratory-fixture-success-card__mark">OK</div>
-        <strong>上位机已确认夹具安装完成</strong>
-        <p>准备就绪按钮已解锁，可继续确认实验准备状态。</p>
+        <strong>{{ fixtureConfirmCopy.successTitle }}</strong>
+        <p>{{ fixtureConfirmCopy.successBody }}</p>
       </div>
     </AppModal>
 
@@ -570,6 +570,7 @@ const {
   confirmReady,
   confirmedModalOpen,
   fixtureConfirmCountdown,
+  fixtureConfirmCopy,
   fixtureConfirmModalOpen,
   fixtureConfirmSuccessModalOpen,
   currentExperimentTrayRows,

@@ -152,6 +152,34 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert len(remaining.json()[0]["experiment_codes"]) == 2
 
 
+def test_delete_task_rejects_running_experiment(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "TASK-RUNNING",
+                "code": "TASK-RUNNING",
+                "name": "进行中任务",
+                "status": "任务进行中",
+            }
+        ],
+        experiment_runs=[
+            {
+                "task_code": "TASK-RUNNING",
+                "experiment_code": "TASK-RUNNING-A",
+                "status": "实验进行中",
+            }
+        ],
+    )
+
+    response = client.delete("/api/tasks/TASK-RUNNING")
+    remaining = client.get("/api/tasks?includeArchived=true")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "任务存在进行中的实验，不能删除任务"
+    assert [item["code"] for item in remaining.json()] == ["TASK-RUNNING"]
+
+
 def test_tasks_router_publishes_storage_updates_for_mutations(monkeypatch):
     from app.api.routes import tasks as tasks_route
 

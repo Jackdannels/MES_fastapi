@@ -33,6 +33,9 @@ SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFI
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
 SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量"
+RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
+RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中"}
+RUNNING_TASK_STATUSES = {"任务进行中", "实验进行中", "实验中"}
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
 TASK_TEXT_FIELD_LABELS = {
@@ -116,6 +119,37 @@ def filter_related_rows(rows: Any, task_code: str) -> list[dict[str, Any]]:
     if not isinstance(rows, list):
         return []
     return [dict(row) for row in rows if normalize_text(row.get("task_code")) != task_code]
+
+
+def row_task_code(row: dict[str, Any]) -> str:
+    return normalize_text(row.get("task_code") or row.get("taskCode") or row.get("taskNo") or row.get("task_no"))
+
+
+def row_has_running_experiment_status(row: dict[str, Any], fields: tuple[str, ...] = ("status",)) -> bool:
+    return any(normalize_text(row.get(field)) in RUNNING_EXPERIMENT_STATUSES for field in fields)
+
+
+def task_has_running_experiment(snapshot: dict[str, Any], task: dict[str, Any]) -> bool:
+    normalized_task_code = task_code(task)
+    if not normalized_task_code:
+        return False
+    if normalize_text(task.get("status")) in RUNNING_TASK_STATUSES:
+        return True
+    for key in ("mes.schedules", "mes.experiments", "mes.experiment_runs"):
+        if any(row_task_code(row) == normalized_task_code and row_has_running_experiment_status(row) for row in as_list(snapshot.get(key))):
+            return True
+    if any(
+        row_task_code(row) == normalized_task_code
+        and row_has_running_experiment_status(row, ("run_tray_status", "status", "experiment_status"))
+        for row in as_list(snapshot.get("mes.experiment_run_trays"))
+    ):
+        return True
+    for sample in as_list(snapshot.get("mes.samples")):
+        if row_task_code(sample) != normalized_task_code:
+            continue
+        if any(row_has_running_experiment_status(tray) for tray in as_list(sample.get("trays"))):
+            return True
+    return False
 
 
 def is_retention_schedule(row: dict[str, Any]) -> bool:
@@ -693,6 +727,9 @@ def delete_task(task_id: str) -> None:
     task_index = find_task_index(tasks, task_id)
     if task_index < 0:
         raise HTTPException(status_code=404, detail="Task not found")
+    removed_task = tasks[task_index]
+    if task_has_running_experiment(snapshot, removed_task):
+        raise HTTPException(status_code=409, detail=RUNNING_TASK_DELETE_MESSAGE)
     removed_task = tasks.pop(task_index)
     task_code = normalize_text(removed_task.get("code")) or normalize_text(removed_task.get("id"))
     snapshot["mes.tasks"] = tasks

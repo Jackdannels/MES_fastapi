@@ -2165,6 +2165,37 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
     assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "到货"
 
 
+def test_transfer_area_confirm_storage_rejects_saved_trays_without_experiment_matching(monkeypatch):
+    client, storage = build_client(monkeypatch)
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(
+            workspace["assignedTrays"][0]["trayId"],
+            workspace["assignedTrays"][0]["trayId"],
+        ),
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    storage.write("mes.experiment_trays", [])
+    storage.write("mes.experiment_samples", [])
+
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert allocated.status_code == 200
+    assert confirmed.status_code == 400
+    assert confirmed.json()["detail"] == "每个实验都必须至少分配一个托盘"
+    assert storage.read("mes.tasks")[0]["transfer_status"] == "未入库"
+
+
 def test_transfer_area_confirm_storage_sets_unscheduled_since_only_for_experiments_without_formal_schedule(monkeypatch):
     client, storage = build_client(monkeypatch)
     storage.write(
@@ -2843,6 +2874,45 @@ def test_transfer_area_confirm_storage_backfills_arrival_time_for_preallocated_t
         ]
     )
     storage.write("mes.samples", samples)
+    experiments = storage.read("mes.experiments")
+    experiments.append(
+        {
+            "id": "experiment-201-a",
+            "task_code": "SYLU-2026-04-201",
+            "experiment_code": "SYLU-2026-04-201-A",
+            "experiment_name": "盐雾试验",
+            "required_device": "盐雾试验",
+            "status": "待排程",
+        }
+    )
+    storage.write("mes.experiments", experiments)
+    storage.write(
+        "mes.experiment_trays",
+        [
+            *storage.read("mes.experiment_trays"),
+            {
+                "task_code": "SYLU-2026-04-201",
+                "experiment_code": "SYLU-2026-04-201-A",
+                "tray_code": "SYLU-2026-04-201-TP-001",
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_samples",
+        [
+            *storage.read("mes.experiment_samples"),
+            {
+                "task_code": "SYLU-2026-04-201",
+                "experiment_code": "SYLU-2026-04-201-A",
+                "sample_code": "SYLU-2026-04-201-SP-001",
+            },
+            {
+                "task_code": "SYLU-2026-04-201",
+                "experiment_code": "SYLU-2026-04-201-A",
+                "sample_code": "SYLU-2026-04-201-SP-002",
+            },
+        ],
+    )
 
     response = client.post("/api/transfer-area/tasks/task-201/confirm-storage")
 

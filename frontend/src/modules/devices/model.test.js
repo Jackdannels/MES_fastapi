@@ -204,12 +204,33 @@ describe("devices model", () => {
     const rows = buildDeviceRows(
       [
         { code: "高低温湿热一室", name: "高低温湿热一室", status: "维修" },
+        { code: "高低温湿热二室", name: "高低温湿热二室", status: "维修" },
       ],
       [],
     );
 
-    expect(rows.map((row) => row.status)).toEqual(["维修"]);
-    expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ idleCount: 0, maintenanceCount: 1 }));
+    expect(rows.map((row) => row.status)).toEqual(["维修", "维修"]);
+    expect(rows.map((row) => row.name)).toEqual(["高低温湿热一室", "高低温湿热二室"]);
+    expect(buildDeviceMetrics(rows)).toEqual(expect.objectContaining({ idleCount: 0, maintenanceCount: 2 }));
+  });
+
+  test("backfills the second hot-humid room when legacy device ledgers only contain the first room", () => {
+    const rows = buildDeviceRows(
+      [
+        { code: "高低温湿热一室", name: "高低温湿热系统", status: "可用", location: "高低温湿热一室" },
+      ],
+      [],
+    );
+
+    expect(rows.map((row) => row.code)).toEqual(["高低温湿热一室", "高低温湿热二室"]);
+    expect(rows.find((row) => row.code === "高低温湿热二室")).toEqual(
+      expect.objectContaining({
+        location: "高低温湿热二室",
+        name: "高低温湿热系统-2",
+        status: "空闲",
+        type: "高低温湿热试验",
+      }),
+    );
   });
 
   test("marks a device as maintenance during its planned maintenance window", () => {

@@ -2028,6 +2028,46 @@ describe("schedulePageModel", () => {
     expect(result.experiments[0].status).toBe(STATUS_WAITING);
   });
 
+  test("deleteScheduleRecord blocks deleting a schedule after the experiment has started", () => {
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "A实验",
+        },
+      ],
+      experimentRuns: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          status: "实验进行中",
+        },
+      ],
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      scheduleId: "schedule-running",
+      schedules: [
+        {
+          id: "schedule-running",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "Lab-A",
+          planned_hours: 1.5,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:30:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: "任务进行中", test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBe("实验已开始，不能删除排程");
+    expect(result.schedules).toEqual([
+      expect.objectContaining({ id: "schedule-running" }),
+    ]);
+  });
+
   test("buildGanttRows keeps cross-day schedules inside the fixed three-day window", () => {
     // 超过默认 3 天窗口的长排程必须继续可见，并折叠成连续段。
     const gantt = buildGanttRows({

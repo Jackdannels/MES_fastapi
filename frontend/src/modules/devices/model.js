@@ -1,4 +1,5 @@
 // 提供设备页所需的行数据、表单和点位管理工厂与映射函数。
+import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { LAB_LOCATIONS, LAB_TEST_MAP, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
 import { isExperimentRunningStatus } from "@/lib/statusNormalization";
@@ -175,7 +176,7 @@ function resolveStatusClass(status) {
 // 将存储中的设备记录转换成设备页表格行。
 function buildDeviceRows(devices, schedules, now = new Date(), samples = [], experimentTrays = [], experimentRuns = []) {
   void now;
-  const deviceList = Array.isArray(devices) ? devices : [];
+  const deviceList = withRequiredLabDevices(devices);
   return deviceList.map((device, index) => {
     // 设备状态优先以实际运行托盘推导结果为准，再回退到设备自身状态。
     const status = resolveDeviceStatus(device, schedules, samples, experimentTrays, now, experimentRuns);

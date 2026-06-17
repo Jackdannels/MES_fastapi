@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } from "./model";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
+import { getLabHostInterfaceCapabilities } from "@/lib/labHostInterfaceCapabilities";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
@@ -85,16 +86,15 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 const API_BASE_URL = getFrontendApiBaseUrl();
 const MQTT_START_DISABLED_REASON = "MQTT模式下等待上位机发送实验开始信号";
 const MQTT_HOSTLESS_AUTO_START_REASON = "试验间将在准备就绪后自动开始实验";
-const HOSTLESS_MQTT_LAB_CODES = new Set(["LAB_HOT_HUMID_2"]);
-const HOSTLESS_MQTT_LAB_NAMES = new Set(["高低温湿热二室"]);
 
-const labUsesHostlessMqttAutoStart = (lab) => (
-  HOSTLESS_MQTT_LAB_CODES.has(normalizeText(lab?.code || lab?.labCode || lab?.lab_code))
-  || HOSTLESS_MQTT_LAB_NAMES.has(normalizeText(lab?.name || lab?.lab_name))
-);
-
-const resolveMqttStartDisabledReason = (lab) =>
-  labUsesHostlessMqttAutoStart(lab) ? MQTT_HOSTLESS_AUTO_START_REASON : MQTT_START_DISABLED_REASON;
+const resolveMqttStartDisabledReason = (lab) => {
+  const capabilities = getLabHostInterfaceCapabilities({
+    hostInterfaceMode: HOST_INTERFACE_MODES.mqtt,
+    labCode: lab?.code || lab?.labCode || lab?.lab_code,
+    labName: lab?.name || lab?.lab_name,
+  });
+  return capabilities.hostless ? MQTT_HOSTLESS_AUTO_START_REASON : MQTT_START_DISABLED_REASON;
+};
 
 const normalizeMasterProcessLabs = (rows) =>
   asArray(rows)

@@ -931,6 +931,22 @@
       "owner": "",
       "model": "",
       "acquisition_enabled": "启用"
+    },
+    {
+      "id": "高低温湿热二室",
+      "code": "高低温湿热二室",
+      "name": "高低温湿热系统-2",
+      "type": "高低温湿热试验",
+      "status": "可用",
+      "maintenance_start_at": "",
+      "maintenance_end_at": "",
+      "maintenance_type": "",
+      "maintenance_note": "",
+      "location": "高低温湿热二室",
+      "next_cal": "2024-06-30",
+      "owner": "",
+      "model": "",
+      "acquisition_enabled": "启用"
     }
   ],
   "mes.streams": [

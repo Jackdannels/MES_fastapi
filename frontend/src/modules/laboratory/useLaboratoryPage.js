@@ -62,6 +62,7 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
+const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
 
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
   "冲击一室": "LAB_IMPACT_1",
@@ -196,6 +197,7 @@ function useLaboratoryPage(options = {}) {
   const fixtureConfirmModalOpen = ref(false);
   const fixtureConfirmSuccessModalOpen = ref(false);
   const fixtureConfirmCountdown = ref(0);
+  const fixtureConfirmHostless = ref(false);
   const readyModalOpen = ref(false);
   const confirmedModalOpen = ref(false);
   const laboratoryMqError = ref(null);
@@ -317,7 +319,27 @@ function useLaboratoryPage(options = {}) {
   );
   const canRequestReady = computed(() => actionState.value.canMarkReady || canResendReady.value);
   const installActionLabel = computed(() => (canResendFixtureInstall.value ? "重新下发安装" : "安装样品"));
-  const readyActionLabel = computed(() => (canResendReady.value ? "重新下发准备" : "确认准备就绪"));
+  const readyActionLabel = computed(() => {
+    if (canResendReady.value && isHostlessMqttLab()) {
+      return "重试启动实验";
+    }
+    return canResendReady.value ? "重新下发准备" : "确认准备就绪";
+  });
+  const fixtureConfirmCopy = computed(() => (
+    fixtureConfirmHostless.value
+      ? {
+          body: "该试验间无上位机通信，系统将在倒计时结束后本地自动确认夹具安装完成。",
+          eyebrow: "本地自动确认",
+          successBody: "准备就绪按钮已解锁，可继续确认实验准备状态。",
+          successTitle: "夹具安装已自动确认完成",
+        }
+      : {
+          body: "夹具安装信号已发送，正在等待上位机返回安装完成确认。",
+          eyebrow: "等待上位机确认",
+          successBody: "准备就绪按钮已解锁，可继续确认实验准备状态。",
+          successTitle: "上位机已确认夹具安装完成",
+        }
+  ));
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
   const runningModalExperiment = computed(() =>
@@ -384,6 +406,7 @@ function useLaboratoryPage(options = {}) {
     installModalOpen.value = false;
     fixtureConfirmModalOpen.value = false;
     fixtureConfirmSuccessModalOpen.value = false;
+    fixtureConfirmHostless.value = false;
     laboratoryMqError.value = null;
     readyPublishRetryAvailable.value = false;
     readyModalOpen.value = false;
@@ -764,6 +787,7 @@ function useLaboratoryPage(options = {}) {
     getLabHostInterfaceCapabilities({
       hostInterfaceMode: readHostInterfaceMode(),
       labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+      labName: laboratoryConfig.value.labName,
     });
   const isHostlessMqttLab = () => getCurrentLabHostInterfaceCapabilities().hostless;
   const ensureHostInterfaceModeSynced = async () => {
@@ -958,6 +982,7 @@ function useLaboratoryPage(options = {}) {
   const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
+    fixtureConfirmHostless.value = false;
     fixtureConfirmSuccessModalOpen.value = false;
     fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
     fixtureConfirmModalOpen.value = true;
@@ -982,11 +1007,14 @@ function useLaboratoryPage(options = {}) {
   const scheduleHostlessFixtureReady = ({ taskCode, trayCodes }) => {
     const capabilities = getCurrentLabHostInterfaceCapabilities();
     clearHostlessFixtureReadyTimer();
+    clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
     if (!capabilities.hostless) {
       return;
     }
     const confirmFixtureReady = () => {
       hostlessFixtureReadyTimer = null;
+      clearFixtureConfirmTimer();
       void persistFixtureReadyForTask({ taskCode, trayCodes })
         .then(() => {
           openFixtureConfirmSuccess();
@@ -1002,9 +1030,27 @@ function useLaboratoryPage(options = {}) {
       confirmFixtureReady();
       return;
     }
+    fixtureConfirmHostless.value = true;
+    fixtureConfirmSuccessModalOpen.value = false;
+    fixtureConfirmCountdown.value = Math.ceil(capabilities.fixtureReadyDelayMs / 1000);
+    fixtureConfirmModalOpen.value = true;
+    fixtureConfirmTimer = window.setInterval(() => {
+      fixtureConfirmCountdown.value = Math.max(0, fixtureConfirmCountdown.value - 1);
+      if (fixtureConfirmCountdown.value <= 0) {
+        clearFixtureConfirmTimer();
+      }
+    }, 1000);
     hostlessFixtureReadyTimer = window.setTimeout(confirmFixtureReady, capabilities.fixtureReadyDelayMs);
   };
-  const scheduleHostlessExperimentStart = ({ experimentCode, taskCode }) => {
+  const scheduleHostlessExperimentStart = ({
+    experimentCode,
+    plannedEndAt = "",
+    plannedHours = null,
+    runNo = "",
+    scheduleId = "",
+    taskCode,
+    trayCodes = [],
+  }) => {
     const capabilities = getCurrentLabHostInterfaceCapabilities();
     clearHostlessStartTimer();
     if (!capabilities.hostless) {
@@ -1012,7 +1058,18 @@ function useLaboratoryPage(options = {}) {
     }
     const startExperiment = () => {
       hostlessStartTimer = null;
-      void startLaboratoryExperiment({ experimentCode, taskCode })
+      void startLaboratoryExperiment({
+        experimentCode,
+        labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+        labName: laboratoryConfig.value.labName,
+        plannedEndAt,
+        plannedHours,
+        runNo,
+        scheduleId,
+        startedAt: formatLocalDateTime(),
+        taskCode,
+        trayCodes,
+      })
         .then((payload) => {
           applyExperimentStartResponse(payload);
           if (typeof window !== "undefined") {
@@ -1148,7 +1205,11 @@ function useLaboratoryPage(options = {}) {
     if (isHostlessMqttLab()) {
       scheduleHostlessExperimentStart({
         experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
+        plannedEndAt: currentTask.value?.endAt || "",
+        runNo: generateExperimentRunNo(),
+        scheduleId: currentTask.value?.id || "",
         taskCode: currentTask.value?.taskCode || payload.task_code,
+        trayCodes: getCurrentTaskTrayCodesByStatus(LAB_READY_STATUS),
       });
       return;
     }
@@ -1315,6 +1376,7 @@ function useLaboratoryPage(options = {}) {
     closeConfirmed,
     closeInstall,
     fixtureConfirmCountdown,
+    fixtureConfirmCopy,
     fixtureConfirmModalOpen,
     fixtureConfirmSuccessModalOpen,
     closeReady,

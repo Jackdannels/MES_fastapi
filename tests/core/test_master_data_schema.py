@@ -33,3 +33,4 @@ def test_schema_alignment_seeds_current_experiment_types_and_labs():
     assert "'YW', '盐雾试验'" in sql
     assert "'LAB_SALT', '盐雾试验室'" in sql
     assert "'LAB_IMPACT_1', '冲击一室'" in sql
+    assert "'LAB_HOT_HUMID_2', '高低温湿热二室'" in sql

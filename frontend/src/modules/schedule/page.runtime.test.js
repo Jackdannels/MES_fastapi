@@ -11,6 +11,8 @@ const SAMPLES_KEY = "mes.samples";
 const SCHEDULES_KEY = "mes.schedules";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
+const EXPERIMENT_RUNS_KEY = "mes.experiment_runs";
+const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const CONFLICTS_KEY = "mes.conflicts";
 
@@ -187,6 +189,58 @@ describe("SchedulePage runtime", () => {
     const actions = wrapper.get(".form-actions");
     expect(actions.text()).toContain("重置");
     expect(actions.text()).not.toContain("清空");
+  });
+
+  test("shows a warning and keeps storage unchanged when deleting a running schedule from task detail", async () => {
+    const today = buildDateParts(0);
+    setStorage(TASKS_KEY, [
+      { id: "task-running", code: "TASK-RUNNING", name: "进行中任务", test_type: "冲击试验", status: "任务进行中" },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(EXPERIMENTS_KEY, [
+      { task_code: "TASK-RUNNING", experiment_code: "TASK-RUNNING-A", experiment_name: "冲击试验", status: "实验进行中" },
+    ]);
+    setStorage(EXPERIMENT_TRAYS_KEY, [
+      { task_code: "TASK-RUNNING", experiment_code: "TASK-RUNNING-A", tray_code: "TASK-RUNNING-TP-001" },
+    ]);
+    setStorage(SAMPLES_KEY, [
+      {
+        code: "TASK-RUNNING-SP-001",
+        task_code: "TASK-RUNNING",
+        status: "实验进行中",
+        trays: [{ tray_code: "TASK-RUNNING-TP-001", status: "实验进行中", quantity: 1 }],
+      },
+    ]);
+    setStorage(EXPERIMENT_RUNS_KEY, [
+      { task_code: "TASK-RUNNING", experiment_code: "TASK-RUNNING-A", status: "实验进行中" },
+    ]);
+    setStorage(EXPERIMENT_RUN_TRAYS_KEY, []);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-running",
+        task_code: "TASK-RUNNING",
+        experiment_code: "TASK-RUNNING-A",
+        device: PRIMARY_LAB,
+        start_at: today.isoMorningStart,
+        end_at: today.isoMorningEnd,
+        status: "已排程",
+      },
+    ]);
+
+    const wrapper = mount(SchedulePage, { attachTo: document.body });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="gantt-segment-schedule-running"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-detail-delete"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-detail-warning"]').text()).toContain("实验已开始，不能删除排程");
+    expect(getStorage(SCHEDULES_KEY)).toEqual([
+      expect.objectContaining({ id: "schedule-running" }),
+    ]);
+
+    wrapper.unmount();
   });
 
   test("teleports an exception action into the schedule header", async () => {

@@ -40,6 +40,7 @@ import {
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
+import { RUNNING_SCHEDULE_RESCHEDULE_MESSAGE } from "@/lib/runningExperimentGuards";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
@@ -50,6 +51,8 @@ function useSchedulePage() {
     STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
@@ -60,6 +63,8 @@ function useSchedulePage() {
   const rawDevices = ref([]);
   const rawConflicts = ref([]);
   const rawExperiments = ref([]);
+  const rawExperimentRuns = ref([]);
+  const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
@@ -778,6 +783,8 @@ function useSchedulePage() {
 
   const removeSchedule = async () => {
     const result = deleteScheduleRecord({
+      experimentRuns: rawExperimentRuns.value,
+      experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
@@ -787,6 +794,10 @@ function useSchedulePage() {
       streams: rawStreams.value,
       tasks: rawTasks.value,
     });
+    if (result.error) {
+      editWarning.value = result.error;
+      return;
+    }
     await persistAll({
       [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
@@ -803,6 +814,8 @@ function useSchedulePage() {
       return;
     }
     const result = deleteScheduleRecord({
+      experimentRuns: rawExperimentRuns.value,
+      experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
@@ -812,6 +825,10 @@ function useSchedulePage() {
       streams: rawStreams.value,
       tasks: rawTasks.value,
     });
+    if (result.error) {
+      editWarning.value = result.error;
+      return;
+    }
     await persistAll({
       [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
@@ -830,6 +847,8 @@ function useSchedulePage() {
     }
 
     const result = deleteScheduleRecord({
+      experimentRuns: rawExperimentRuns.value,
+      experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
       now: now.value,
@@ -839,6 +858,10 @@ function useSchedulePage() {
       streams: rawStreams.value,
       tasks: rawTasks.value,
     });
+    if (result.error) {
+      editWarning.value = RUNNING_SCHEDULE_RESCHEDULE_MESSAGE;
+      return;
+    }
     await persistAll({
       [STORAGE_KEYS.experiments]: result.experiments,
       [STORAGE_KEYS.schedules]: result.schedules,
@@ -860,6 +883,8 @@ function useSchedulePage() {
       applySnapshotArray(snapshot, STORAGE_KEYS.conflicts, rawConflicts);
       applySnapshotArray(snapshot, STORAGE_KEYS.devices, rawDevices);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, rawExperimentRuns);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
       applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
@@ -911,6 +936,8 @@ function useSchedulePage() {
       STORAGE_KEYS.conflicts,
       STORAGE_KEYS.devices,
       STORAGE_KEYS.experiments,
+      STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.schedules,

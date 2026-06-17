@@ -592,13 +592,13 @@ const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
     allowReset: true,
-    detailHelper: "默认上限为 4，保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
+    detailHelper: "默认上限为 4，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
     detailHint: "支持触控先点托盘再点样品，也支持样品换位",
     detailTitle: "托盘分装与入库",
     eyebrow: "接驳区系统",
     headerSubtitle: "处理接驳区到样确认、托盘分装与交接。",
     headerTitle: "接驳区工作台",
-    overviewHint: "样品送达后可调整托盘分装，保存托盘后即可确认入库，打印条码为可选操作。",
+    overviewHint: "样品送达后可调整托盘分装，完成实验匹配并保存托盘后即可确认入库，打印条码为可选操作。",
     overviewTitle: "接驳任务总览",
     printTitle: "接驳区条码打印",
     resetActionLabel: "重新入库",
@@ -968,7 +968,7 @@ const canPrint = computed(() => (
 const loadedTrayNos = computed(() => assignedTrays.value
   .filter((tray) => Array.isArray(tray.samples) && tray.samples.length > 0)
   .map((tray) => tray.trayNo));
-const requiresExperimentTrayAllocation = computed(() => props.mode === "pre-allocation" && experiments.value.length > 0);
+const requiresExperimentTrayAllocation = computed(() => experiments.value.length > 0);
 const everyExperimentHasTray = computed(() => experiments.value.every((experiment) => (
   (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0
 )));
@@ -980,7 +980,7 @@ const hasCompleteExperimentTrayAllocation = computed(() => (
   && (!requiresExperimentTrayAllocation.value || (everyExperimentHasTray.value && everyLoadedTrayHasExperiment.value))
 ));
 const allocationValidationMessage = computed(() => {
-  if (!selectedTaskId.value || isStoredTask.value || allocationSaved.value) {
+  if (!selectedTaskId.value || isStoredTask.value) {
     return "";
   }
   if (trayCapacityExceeded.value) {
@@ -1005,12 +1005,20 @@ const canSaveAllocation = computed(() => (
   && (props.mode === "pre-allocation" || !isExperimentMode.value)
   && hasCompleteExperimentTrayAllocation.value
 ));
+const canPersistAllocationDraft = computed(() => (
+  Boolean(selectedTaskId.value)
+  && !isStoredTask.value
+  && !allocationSaved.value
+  && !trayCapacityExceeded.value
+  && hasCompleteExperimentTrayAllocation.value
+));
 const canConfirm = computed(() => (
   Boolean(selectedTaskId.value)
   && loadedTrayCount.value > 0
-  && allocationSaved.value
+  && (allocationSaved.value || (requiresExperimentTrayAllocation.value && canPersistAllocationDraft.value))
   && !isStoredTask.value
   && !trayCapacityExceeded.value
+  && hasCompleteExperimentTrayAllocation.value
 ));
 const reloadBlockedReason = computed(() => {
   if (!currentTask.value?.reloadBlocked) {
@@ -1717,16 +1725,18 @@ const resolveBarcodeDisplayNo = (barcode, tray) => String(
   || resolveBarcodeValue(barcode, tray),
 ).trim() || "--";
 
-const persistAllocation = async (showMessage = true) => {
+const persistAllocation = async (showMessage = true, { allowExperimentMode = false } = {}) => {
   if (!selectedTaskId.value || isStoredTask.value) return false;
-  if (!canSaveAllocation.value) {
+  const canPersist = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
+  if (!canPersist) {
     const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
     if (showMessage) showWorkbenchFeedback(message, "warning");
     return false;
   }
   try {
     await refreshWorkspaceSaveGuards();
-    if (!canSaveAllocation.value) {
+    const canPersistAfterRefresh = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
+    if (!canPersistAfterRefresh) {
       const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
       if (showMessage) showWorkbenchFeedback(message, "warning");
       return false;
@@ -1919,6 +1929,10 @@ const printAllTrayBarcodes = async () => {
 
 const confirmStorage = async () => {
   if (!canConfirm.value) return;
+  if (!allocationSaved.value) {
+    const saved = await persistAllocation(false, { allowExperimentMode: true });
+    if (!saved) return;
+  }
   const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/confirm-storage`, { method: "POST" });
   const confirmedTaskId = selectedTaskId.value;
   const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";

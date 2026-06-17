@@ -67,4 +67,45 @@ describe("laboratoryApi", () => {
       credentials: "include",
     });
   });
+
+  test("posts scoped laboratory experiment start payload when provided", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, experimentRuns: [] }),
+    }));
+
+    await startLaboratoryExperiment({
+      experimentCode: "EXP-START",
+      labCode: "LAB_HOT_HUMID_2",
+      labName: "高低温湿热二室",
+      plannedEndAt: "2026-04-02 12:00:00",
+      plannedHours: 2,
+      runNo: "run-hot-humid-2",
+      scheduleId: "schedule-hot-humid-2",
+      startedAt: "2026-04-02 10:00:03",
+      taskCode: "TASK-START",
+      trayCodes: ["TP-GDW-001"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/laboratory/tasks/TASK-START/experiments/EXP-START/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        labCode: "LAB_HOT_HUMID_2",
+        labName: "高低温湿热二室",
+        plannedEndAt: "2026-04-02 12:00:00",
+        plannedHours: 2,
+        runNo: "run-hot-humid-2",
+        scheduleId: "schedule-hot-humid-2",
+        startedAt: "2026-04-02 10:00:03",
+        trayCodes: ["TP-GDW-001"],
+      }),
+    });
+  });
 });

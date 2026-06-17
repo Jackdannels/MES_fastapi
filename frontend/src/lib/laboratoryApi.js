@@ -72,12 +72,38 @@ const applyLaboratoryOperation = async ({
   return response.json();
 };
 
-const startLaboratoryExperiment = async ({ experimentCode, taskCode }) => {
+const startLaboratoryExperiment = async ({
+  experimentCode,
+  labCode = "",
+  labName = "",
+  plannedEndAt = "",
+  plannedHours = null,
+  runNo = "",
+  scheduleId = "",
+  startedAt = "",
+  taskCode,
+  trayCodes = [],
+}) => {
   const normalizedTaskCode = String(taskCode || "").trim();
   const normalizedExperimentCode = String(experimentCode || "").trim();
   if (!normalizedTaskCode || !normalizedExperimentCode) {
     throw new Error("缺少当前任务或实验信息。");
   }
+  const body = {
+    labCode: String(labCode || "").trim(),
+    labName: String(labName || "").trim(),
+    plannedEndAt: String(plannedEndAt || "").trim(),
+    plannedHours,
+    runNo: String(runNo || "").trim(),
+    scheduleId: String(scheduleId || "").trim(),
+    startedAt: String(startedAt || "").trim(),
+    trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
+  };
+  const scopedBody = Object.fromEntries(
+    Object.entries(body).filter(([, value]) => (
+      Array.isArray(value) ? value.length > 0 : value !== "" && value !== null && value !== undefined
+    )),
+  );
   const response = await fetch(
     buildApiUrl(
       `/api/laboratory/tasks/${encodeURIComponent(normalizedTaskCode)}/experiments/${encodeURIComponent(normalizedExperimentCode)}/start`,
@@ -90,6 +116,7 @@ const startLaboratoryExperiment = async ({ experimentCode, taskCode }) => {
         Accept: "application/json",
       },
       credentials: "include",
+      ...(Object.keys(scopedBody).length ? { body: JSON.stringify(scopedBody) } : {}),
     },
   );
   if (!response.ok) {

@@ -156,6 +156,43 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-compact \.visual-staging-layout\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\) minmax\(120px,\s*0\.38fr\);/s);
   });
 
+  test("current lab task screen defines state tones and running-only countdown styles", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(pageSource).toContain("key: \"current-lab-tasks\"");
+    expect(pageSource).toContain("return CurrentLabTasksScreen");
+    expect(pageSource).toContain("data-testid\": \"visual-current-lab-countdown\"");
+    expect(pageSource).toContain("已排程");
+    expect(pageSource).toContain("metric-scheduled");
+    expect(pageSource).toContain("计划时间");
+    expect(pageSource).toContain("field-stage");
+    expect(pageSource).toContain("field-plan");
+    expect(pageSource).toContain("field-trays");
+    expect(pageSource).toContain("visual-current-lab-tray-list");
+    expect(source).toContain(".visual-current-lab-board");
+    expect(source).toContain(".visual-current-lab-grid");
+    expect(source).toMatch(/\.visual-current-lab-fields\s*{[^}]*grid-template-areas:\s*"experiment trays"[^}]*"stage trays"[^}]*"plan trays";/s);
+    expect(source).toMatch(/\.visual-current-lab-field\.field-stage\s*{[^}]*grid-area:\s*stage;/s);
+    expect(source).toMatch(/\.visual-current-lab-field\.field-plan\s*{[^}]*grid-area:\s*plan;/s);
+    expect(source).toMatch(/\.visual-current-lab-field\.field-trays\s*{[^}]*grid-area:\s*trays;/s);
+    expect(source).toMatch(/\.visual-current-lab-tray-list span\s*{[^}]*display:\s*block;/s);
+    expect(source).toContain(".visual-current-lab-metrics .metric-scheduled");
+    expect(source).toContain(".visual-current-lab-metrics .metric-repair");
+    expect(source).toContain(".visual-current-lab-metrics .metric-running");
+    expect(source).toContain(".visual-current-lab-metrics .metric-urgent");
+    expect(source).toContain(".visual-current-lab-card.tone-task");
+    expect(source).toContain(".visual-current-lab-card.tone-repair");
+    expect(source).toContain(".visual-current-lab-card.tone-running");
+    expect(source).toContain(".visual-current-lab-card.tone-urgent");
+    expect(source).toContain(".visual-current-lab-card.is-blinking");
+    expect(source).toContain("@keyframes visual-current-lab-pulse");
+    expect(source).toContain(".visual-current-lab-countdown");
+    expect(source).toContain(".visual-current-lab-progress");
+    expect(source).toMatch(/\.visual-current-lab-progress i\s*{[^}]*width:\s*var\(--current-task-progress,\s*0%\);/s);
+    expect(source).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.visual-current-lab-card\.is-blinking\s*{[^}]*animation:\s*none;/s);
+  });
+
   test("analysis screen keeps custom time filtering in one row and reserves full-screen chart space", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 

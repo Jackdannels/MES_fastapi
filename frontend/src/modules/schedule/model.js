@@ -4,6 +4,7 @@ import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab } from "@/lib/labIdentity";
+import { RUNNING_SCHEDULE_DELETE_MESSAGE, scheduleExperimentHasStarted } from "@/lib/runningExperimentGuards";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
 const STATUS_WAITING = "待排程";
@@ -1725,10 +1726,38 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
   return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function deleteScheduleRecord({ experimentTrays = [], experiments, samples = [], scheduleId, tasks, schedules, streams, now = new Date() }) {
+function deleteScheduleRecord({
+  experimentRuns = [],
+  experimentRunTrays = [],
+  experimentTrays = [],
+  experiments,
+  samples = [],
+  scheduleId,
+  tasks,
+  schedules,
+  streams,
+  now = new Date(),
+}) {
   const removedSchedule = (Array.isArray(schedules) ? schedules : []).find(
     (schedule) => normalizeText(schedule?.id) === normalizeText(scheduleId),
   );
+  if (
+    scheduleExperimentHasStarted({
+      experimentRuns,
+      experimentRunTrays,
+      experimentTrays,
+      samples,
+      schedule: removedSchedule,
+    })
+  ) {
+    return {
+      error: RUNNING_SCHEDULE_DELETE_MESSAGE,
+      experiments: Array.isArray(experiments) ? experiments.map((experiment) => ({ ...experiment })) : [],
+      schedules: Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [],
+      streams: Array.isArray(streams) ? streams.map((stream) => ({ ...stream })) : [],
+      tasks: Array.isArray(tasks) ? tasks.map((task) => ({ ...task })) : [],
+    };
+  }
   const nextSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (schedule) => normalizeText(schedule?.id) !== normalizeText(scheduleId),
   );

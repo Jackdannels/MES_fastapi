@@ -73,6 +73,8 @@ const buildSnapshot = () => ({
   [STORAGE_KEYS.experiments]: [],
   [STORAGE_KEYS.experiment_trays]: [],
   [STORAGE_KEYS.experiment_samples]: [],
+  [STORAGE_KEYS.experiment_runs]: [],
+  [STORAGE_KEYS.experiment_run_trays]: [],
 });
 
 const settle = async (wrapper) => {
@@ -174,6 +176,35 @@ describe("useTasksPage", () => {
 
       expect(mocks.updateTask).not.toHaveBeenCalled();
       expect(wrapper.vm.editWarning).toBe("该任务样品已在接驳区确认到货，不允许更改样品数量");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  test("blocks deleting a task while one of its experiments is running", async () => {
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          task_code: task.code,
+          experiment_code: `${task.code}-A`,
+          status: "实验进行中",
+        },
+      ],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openTaskDrawer(wrapper.vm.taskRows[0]);
+      await settle(wrapper);
+
+      await wrapper.vm.deleteTask();
+      await settle(wrapper);
+
+      expect(wrapper.vm.editWarning).toBe("任务存在进行中的实验，不能删除任务");
+      expect(mocks.deleteTask).not.toHaveBeenCalled();
+      expect(mocks.persistSnapshot).not.toHaveBeenCalled();
     } finally {
       wrapper.unmount();
     }

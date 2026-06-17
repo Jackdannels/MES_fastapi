@@ -259,6 +259,14 @@ WHERE test_type_code = 'GDW'
 INSERT INTO md_lab (
   lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
 )
+SELECT 'LAB_HOT_HUMID_2', '高低温湿热二室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
+FROM md_test_type
+WHERE test_type_code = 'GDW'
+  AND NOT EXISTS (SELECT 1 FROM md_lab WHERE lab_code = 'LAB_HOT_HUMID_2');
+
+INSERT INTO md_lab (
+  lab_code, lab_name, lab_type, test_type_id, capacity, location_desc, status, remark
+)
 SELECT 'LAB_SALT', '盐雾试验室', '实验室', test_type_id, 4, '', 1, 'FRONTEND_MASTER_DATA'
 FROM md_test_type
 WHERE test_type_code = 'YW'

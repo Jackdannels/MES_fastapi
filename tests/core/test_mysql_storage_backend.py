@@ -14,6 +14,7 @@ from app.core import mysql_storage_schema as mysql_storage_schema_module
 from app.core import mysql_storage_snapshot as mysql_storage_snapshot_module
 from app.core import mysql_storage_status as mysql_storage_status_module
 from app.core import mysql_storage_status_sql as mysql_storage_status_sql_module
+from app.core.master_data import DEFAULT_LABS
 from app.core.mysql_storage_backend import (
     STORAGE_MARKER,
     MySQLConnectionSettings,
@@ -339,6 +340,7 @@ def test_ensure_schema_extensions_expands_task_type_for_all_experiment_summary(m
     class _CaptureCursor:
         def __init__(self) -> None:
             self.statements = []
+            self.params = []
             self._result = None
 
         def __enter__(self):
@@ -398,6 +400,7 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     class _CaptureCursor:
         def __init__(self) -> None:
             self.statements = []
+            self.params = []
             self._result = None
 
         def __enter__(self):
@@ -409,6 +412,7 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
         def execute(self, sql, params=None):
             statement = " ".join(str(sql).split())
             self.statements.append(statement)
+            self.params.append(params)
             if "SHOW COLUMNS FROM biz_experiment LIKE 'actual_start_time'" in statement:
                 self._result = None
             elif "SHOW COLUMNS FROM biz_experiment LIKE 'actual_end_time'" in statement:
@@ -449,7 +453,11 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     assert any("CREATE TABLE IF NOT EXISTS md_test_type" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS md_lab" in statement for statement in statements)
     assert sum(1 for statement in statements if "INSERT INTO md_test_type" in statement and "WHERE NOT EXISTS" in statement) == 7
-    assert sum(1 for statement in statements if "INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement) == 15
+    assert sum(1 for statement in statements if "INSERT INTO md_lab" in statement and "WHERE NOT EXISTS" in statement) == len(DEFAULT_LABS)
+    assert any(
+        params and params.get("lab_code") == "LAB_HOT_HUMID_2" and params.get("lab_name") == "高低温湿热二室"
+        for params in connection.cursor_instance.params
+    )
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_experiment ADD COLUMN actual_end_time DATETIME NULL" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_mq_message_log" in statement for statement in statements)

@@ -1,4 +1,5 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
+import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { isScheduleExperimentRunning } from "@/modules/devices/model";
 import { labIdentityMatches, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
@@ -313,7 +314,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
   );
   const taskList = (Array.isArray(tasks) ? tasks : []).filter((task) => !returnedTaskCodes.has(normalizeText(task?.code)));
   const scheduleList = Array.isArray(schedules) ? schedules : [];
-  const deviceList = Array.isArray(devices) ? devices : [];
+  const deviceList = withRequiredLabDevices(devices);
   const streamList = Array.isArray(streams) ? streams : [];
   const experimentList = Array.isArray(experiments) ? experiments : [];
   const activeExperimentList = experimentList.filter((experiment) => !returnedTaskCodes.has(normalizeText(experiment?.task_code)));

@@ -2341,6 +2341,382 @@
   font-size: 10px;
 }
 
+.visual-current-lab-board {
+  --current-task-blue: #2f7df6;
+  --current-task-red: #e24a3d;
+  --current-task-green: #2fbf71;
+  --current-task-orange: #f29f24;
+  --current-task-muted: #8da9aa;
+}
+
+.visual-current-lab-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.visual-current-lab-metrics div {
+  --current-task-metric-color: rgba(94, 234, 212, 0.18);
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--current-task-metric-color);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--current-task-metric-color), transparent 88%), transparent),
+    rgba(7, 18, 21, 0.72);
+}
+
+.visual-current-lab-metrics .metric-scheduled {
+  --current-task-metric-color: var(--current-task-blue);
+}
+
+.visual-current-lab-metrics .metric-repair {
+  --current-task-metric-color: var(--current-task-red);
+}
+
+.visual-current-lab-metrics .metric-running {
+  --current-task-metric-color: var(--current-task-green);
+}
+
+.visual-current-lab-metrics .metric-urgent {
+  --current-task-metric-color: var(--current-task-orange);
+}
+
+.visual-current-lab-metrics span,
+.visual-current-lab-metrics strong {
+  display: block;
+  min-width: 0;
+}
+
+.visual-current-lab-metrics span {
+  color: rgba(214, 252, 246, 0.62);
+  font-size: 12px;
+}
+
+.visual-current-lab-metrics strong {
+  margin-top: 3px;
+  color: #f5fffc;
+  font: 900 24px "Cascadia Mono", "Consolas", monospace;
+}
+
+.visual-current-lab-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.visual-current-lab-card {
+  --current-task-tone: var(--current-task-muted);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--current-task-tone), white 18%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--current-task-tone), transparent 84%), rgba(6, 16, 18, 0.9)),
+    rgba(8, 18, 21, 0.82);
+  box-shadow: inset 4px 0 0 var(--current-task-tone), 0 0 24px color-mix(in srgb, var(--current-task-tone), transparent 86%);
+}
+
+.visual-current-lab-card.tone-task {
+  --current-task-tone: var(--current-task-blue);
+}
+
+.visual-current-lab-card.tone-repair {
+  --current-task-tone: var(--current-task-red);
+}
+
+.visual-current-lab-card.tone-running {
+  --current-task-tone: var(--current-task-green);
+}
+
+.visual-current-lab-card.tone-urgent {
+  --current-task-tone: var(--current-task-orange);
+}
+
+.visual-current-lab-card.is-blinking {
+  animation: visual-current-lab-pulse 1.25s ease-in-out infinite;
+}
+
+.visual-current-lab-card-head,
+.visual-current-lab-countdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.visual-current-lab-name {
+  min-width: 0;
+  color: #ffffff;
+  font-size: 16px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.visual-current-lab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--current-task-tone), white 18%);
+  color: #f7fffd;
+  background: color-mix(in srgb, var(--current-task-tone), transparent 78%);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.visual-current-lab-status i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--current-task-tone);
+  box-shadow: 0 0 12px var(--current-task-tone);
+}
+
+.visual-current-lab-status b {
+  font-weight: 900;
+}
+
+.visual-current-lab-task {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.visual-current-lab-task span,
+.visual-current-lab-fields span,
+.visual-current-lab-countdown-head span {
+  color: rgba(214, 252, 246, 0.62);
+  font-size: 11px;
+}
+
+.visual-current-lab-task strong {
+  color: #f5fffc;
+  font: 900 14px "Cascadia Mono", "Consolas", monospace;
+  overflow-wrap: anywhere;
+}
+
+.visual-current-lab-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 0.48fr) minmax(0, 0.52fr);
+  grid-template-areas:
+    "experiment trays"
+    "stage trays"
+    "plan trays";
+  gap: 8px;
+  min-width: 0;
+  align-content: start;
+}
+
+.visual-current-lab-field {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgba(94, 234, 212, 0.14);
+  background: rgba(5, 12, 15, 0.62);
+}
+
+.visual-current-lab-field.field-experiment {
+  grid-area: experiment;
+}
+
+.visual-current-lab-field.field-stage {
+  grid-area: stage;
+}
+
+.visual-current-lab-field.field-plan {
+  grid-area: plan;
+}
+
+.visual-current-lab-field.field-trays {
+  display: flex;
+  flex-direction: column;
+  grid-area: trays;
+  min-height: 0;
+}
+
+.visual-current-lab-fields strong {
+  display: block;
+  min-width: 0;
+  margin-top: 3px;
+  color: #f7fffd;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.visual-current-lab-tray-list {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+}
+
+.visual-current-lab-tray-list span {
+  display: block;
+  color: #f7fffd;
+  font-size: inherit;
+  line-height: 1.24;
+}
+
+.visual-current-lab-field small {
+  display: block;
+  margin-top: auto;
+  padding-top: 5px;
+  color: rgba(214, 252, 246, 0.72);
+  font-size: 11px;
+}
+
+.visual-current-lab-countdown {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.visual-current-lab-countdown-head strong {
+  color: #ffffff;
+  font: 900 15px "Cascadia Mono", "Consolas", monospace;
+}
+
+.visual-current-lab-progress {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.visual-current-lab-progress i {
+  display: block;
+  width: var(--current-task-progress, 0%);
+  height: 100%;
+  background: var(--current-task-tone);
+  box-shadow: 0 0 16px var(--current-task-tone);
+}
+
+.visual-current-lab-empty {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  border: 1px dashed rgba(94, 234, 212, 0.22);
+  color: rgba(214, 252, 246, 0.7);
+  background: rgba(7, 18, 21, 0.48);
+}
+
+@keyframes visual-current-lab-pulse {
+  0%,
+  100% {
+    filter: saturate(1);
+    opacity: 1;
+  }
+
+  50% {
+    filter: saturate(1.45);
+    opacity: 0.62;
+  }
+}
+
+.visual-board.is-compact .visual-current-lab-metrics {
+  gap: 4px;
+}
+
+.visual-board.is-compact .visual-current-lab-metrics div {
+  padding: 4px 5px;
+}
+
+.visual-board.is-compact .visual-current-lab-metrics span {
+  font-size: 7px;
+}
+
+.visual-board.is-compact .visual-current-lab-metrics strong {
+  font-size: 12px;
+}
+
+.visual-board.is-compact .visual-current-lab-grid {
+  gap: 4px;
+}
+
+.visual-board.is-compact .visual-current-lab-card {
+  gap: 4px;
+  padding: 6px;
+}
+
+.visual-board.is-compact .visual-current-lab-name {
+  font-size: 9px;
+}
+
+.visual-board.is-compact .visual-current-lab-status {
+  min-height: 16px;
+  padding: 1px 4px;
+  font-size: 7px;
+}
+
+.visual-board.is-compact .visual-current-lab-status i {
+  width: 5px;
+  height: 5px;
+}
+
+.visual-board.is-compact .visual-current-lab-task {
+  padding: 4px;
+}
+
+.visual-board.is-compact .visual-current-lab-task span,
+.visual-board.is-compact .visual-current-lab-fields span,
+.visual-board.is-compact .visual-current-lab-countdown-head span {
+  font-size: 6px;
+}
+
+.visual-board.is-compact .visual-current-lab-task strong {
+  font-size: 8px;
+}
+
+.visual-board.is-compact .visual-current-lab-fields {
+  gap: 4px;
+}
+
+.visual-board.is-compact .visual-current-lab-field {
+  padding: 4px;
+}
+
+.visual-board.is-compact .visual-current-lab-fields strong {
+  font-size: 7px;
+}
+
+.visual-board.is-compact .visual-current-lab-tray-list {
+  gap: 1px;
+}
+
+.visual-board.is-compact .visual-current-lab-field small {
+  padding-top: 2px;
+  font-size: 6px;
+}
+
+.visual-board.is-compact .visual-current-lab-countdown {
+  gap: 3px;
+}
+
+.visual-board.is-compact .visual-current-lab-countdown-head strong {
+  font-size: 8px;
+}
+
+.visual-board.is-compact .visual-current-lab-progress {
+  height: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual-current-lab-card.is-blinking {
+    animation: none;
+  }
+}
+
 .visual-staging-board {
   --staging-panel: rgba(9, 18, 18, 0.82);
   --staging-panel-strong: rgba(12, 28, 27, 0.92);

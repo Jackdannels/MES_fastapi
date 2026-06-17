@@ -1,3 +1,4 @@
+import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { labIdentityMatches, resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import { buildTrayFlowView, normalizeLifecycleStatus, SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 import {
@@ -35,7 +36,7 @@ const resolveLabHealth = (device) => {
 
 const getVisualizationLabNames = (devices = []) => {
   const names = [];
-  asArray(devices).forEach((device) => {
+  withRequiredLabDevices(asArray(devices)).forEach((device) => {
     const name = resolveDeviceName(device);
     if (name && !names.includes(name)) {
       names.push(name);

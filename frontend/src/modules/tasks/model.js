@@ -1,6 +1,7 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { RUNNING_TASK_DELETE_MESSAGE, taskHasRunningExperiment } from "@/lib/runningExperimentGuards";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -631,6 +632,24 @@ function deleteTaskSnapshot(snapshot, taskId) {
   }
 
   const taskCode = normalizeText(targetTask.code);
+  if (
+    taskHasRunningExperiment({
+      experimentRuns: snapshot?.experimentRuns,
+      experimentRunTrays: snapshot?.experimentRunTrays,
+      experiments: snapshot?.experiments,
+      samples: snapshot?.samples,
+      schedules: snapshot?.schedules,
+      task: targetTask,
+    })
+  ) {
+    return {
+      error: RUNNING_TASK_DELETE_MESSAGE,
+      samples: Array.isArray(snapshot?.samples) ? snapshot.samples : [],
+      schedules: Array.isArray(snapshot?.schedules) ? snapshot.schedules : [],
+      streams: Array.isArray(snapshot?.streams) ? snapshot.streams : [],
+      tasks: taskList,
+    };
+  }
   return {
     // 任务删除后，样品、排程和数据流中同任务号的记录一并移除。
     samples: (Array.isArray(snapshot?.samples) ? snapshot.samples : []).filter(

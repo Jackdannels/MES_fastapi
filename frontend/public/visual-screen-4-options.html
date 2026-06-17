@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>第四号可视化屏幕三版设计</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #05080b;
+      --panel: rgba(9, 20, 24, 0.86);
+      --panel-2: rgba(13, 30, 34, 0.78);
+      --line: rgba(124, 232, 218, 0.24);
+      --line-strong: rgba(124, 232, 218, 0.54);
+      --text: #edfdf9;
+      --muted: #91adaf;
+      --blue: #2f7df6;
+      --red: #e24a3d;
+      --green: #2fbf71;
+      --orange: #f29f24;
+      --cyan: #29d0d6;
+      --steel: #8aa0a8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(105, 135, 145, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(105, 135, 145, 0.08) 1px, transparent 1px),
+        linear-gradient(135deg, #111820, #070b10 45%, #101513);
+      background-size: 30px 30px, 30px 30px, auto;
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    }
+
+    .page {
+      width: min(1720px, calc(100vw - 28px));
+      margin: 0 auto;
+      padding: 18px 0 28px;
+    }
+
+    .header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      min-width: 0;
+      padding: 8px 4px 16px;
+      color: #dffaf4;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(4, max-content);
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--line);
+      background: rgba(9, 18, 24, 0.68);
+    }
+
+    .legend span,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 26px;
+      padding: 3px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #f4fffd;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--steel);
+      box-shadow: 0 0 12px currentColor;
+    }
+
+    .state-task { --state: var(--blue); }
+    .state-repair { --state: var(--red); }
+    .state-running { --state: var(--green); }
+    .state-urgent { --state: var(--orange); }
+    .state-task,
+    .state-repair,
+    .state-running,
+    .state-urgent {
+      color: var(--state);
+    }
+
+    .state-task .dot,
+    .state-repair .dot,
+    .state-running .dot,
+    .state-urgent .dot {
+      background: var(--state);
+    }
+
+    .pulse {
+      animation: pulse 1.15s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        opacity: 1;
+        filter: saturate(1);
+      }
+      50% {
+        opacity: 0.5;
+        filter: saturate(1.5);
+      }
+    }
+
+    .variant {
+      margin-top: 20px;
+      border: 1px solid rgba(124, 232, 218, 0.18);
+      background: rgba(3, 8, 12, 0.52);
+      box-shadow: 0 20px 54px rgba(0, 0, 0, 0.28);
+    }
+
+    .variant-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(124, 232, 218, 0.18);
+      color: #e8fffb;
+      background: linear-gradient(90deg, rgba(41, 208, 214, 0.12), rgba(242, 159, 36, 0.06), transparent);
+    }
+
+    .variant-title h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .variant-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .screen {
+      aspect-ratio: 16 / 9;
+      min-height: 680px;
+      padding: 18px;
+      overflow: hidden;
+      background:
+        linear-gradient(rgba(82, 222, 210, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(82, 222, 210, 0.04) 1px, transparent 1px),
+        radial-gradient(circle at 12% 14%, rgba(41, 208, 214, 0.18), transparent 30%),
+        radial-gradient(circle at 82% 28%, rgba(242, 159, 36, 0.12), transparent 28%),
+        linear-gradient(135deg, #05080b, #081317 55%, #0d1415);
+      background-size: 42px 42px, 42px 42px, auto, auto, auto;
+    }
+
+    .board {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      background: rgba(2, 8, 10, 0.58);
+      position: relative;
+    }
+
+    .board::before {
+      position: absolute;
+      inset: 8px;
+      border: 1px solid rgba(124, 232, 218, 0.12);
+      content: "";
+      pointer-events: none;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      min-width: 0;
+      position: relative;
+      z-index: 1;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(124, 232, 218, 0.22);
+    }
+
+    .kicker {
+      color: var(--cyan);
+      font: 800 11px "Cascadia Mono", Consolas, monospace;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .topbar h3 {
+      margin: 3px 0 0;
+      font-size: 25px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(92px, 1fr));
+      gap: 8px;
+      min-width: 440px;
+    }
+
+    .metric {
+      padding: 8px 10px;
+      border: 1px solid rgba(124, 232, 218, 0.18);
+      background: rgba(13, 30, 34, 0.72);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 2px;
+      font: 800 22px "Cascadia Mono", Consolas, monospace;
+      color: #f3fffc;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 27px;
+      padding: 3px 8px;
+      border: 1px solid color-mix(in srgb, var(--state), white 18%);
+      color: #f7fffd;
+      background: color-mix(in srgb, var(--state), transparent 78%);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .status-chip strong {
+      color: inherit;
+      font-weight: 800;
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .lab-tile {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      gap: 10px;
+      min-width: 0;
+      min-height: 0;
+      padding: 13px;
+      border: 1px solid color-mix(in srgb, var(--state), white 16%);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--state), transparent 82%), rgba(7, 15, 18, 0.88)),
+        var(--panel);
+      box-shadow: inset 4px 0 0 var(--state), 0 0 22px color-mix(in srgb, var(--state), transparent 82%);
+    }
+
+    .tile-head,
+    .lane-head,
+    .map-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .lab-name {
+      min-width: 0;
+      color: #ffffff;
+      font-size: 18px;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .task-line {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 8px 9px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .task-line span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .task-line strong {
+      color: #f4fffd;
+      font: 800 16px "Cascadia Mono", Consolas, monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .tile-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      min-width: 0;
+      align-content: start;
+    }
+
+    .field {
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid rgba(124, 232, 218, 0.14);
+      background: rgba(5, 12, 15, 0.62);
+    }
+
+    .field span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .field strong {
+      display: block;
+      margin-top: 3px;
+      color: #f7fffd;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .progress-track {
+      height: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .progress-track i {
+      display: block;
+      height: 100%;
+      width: var(--progress);
+      background: var(--state);
+      box-shadow: 0 0 16px var(--state);
+    }
+
+    .lane-layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .lanes {
+      display: grid;
+      grid-template-rows: repeat(8, minmax(0, 1fr));
+      gap: 8px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .lane {
+      display: grid;
+      grid-template-columns: 210px minmax(0, 1fr) 128px;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      padding: 9px 10px;
+      border: 1px solid color-mix(in srgb, var(--state), white 12%);
+      background: linear-gradient(90deg, color-mix(in srgb, var(--state), transparent 86%), rgba(7, 15, 18, 0.72));
+    }
+
+    .lane-task {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+
+    .lane-task strong,
+    .lane-task span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .lane-task strong {
+      color: #fff;
+      font-size: 15px;
+    }
+
+    .lane-task span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .timeline {
+      position: relative;
+      min-width: 0;
+      height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background:
+        linear-gradient(90deg, transparent 0 24%, rgba(255,255,255,0.10) 24% 25%, transparent 25% 49%, rgba(255,255,255,0.10) 49% 50%, transparent 50% 74%, rgba(255,255,255,0.10) 74% 75%, transparent 75%),
+        rgba(255, 255, 255, 0.035);
+    }
+
+    .timeline i {
+      position: absolute;
+      inset: 6px auto 6px var(--start);
+      width: var(--width);
+      min-width: 7%;
+      background: var(--state);
+      box-shadow: 0 0 18px color-mix(in srgb, var(--state), transparent 35%);
+    }
+
+    .time-scale {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      color: var(--muted);
+      font: 700 11px "Cascadia Mono", Consolas, monospace;
+    }
+
+    .side-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+      min-width: 0;
+      min-height: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: rgba(8, 18, 20, 0.82);
+    }
+
+    .side-panel h4 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 17px;
+    }
+
+    .side-list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      min-height: 0;
+    }
+
+    .side-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .side-row strong,
+    .side-row span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .map-layout {
+      display: grid;
+      grid-template-columns: 1fr 365px;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      z-index: 1;
+    }
+
+    .map-zone {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(rgba(124, 232, 218, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124, 232, 218, 0.05) 1px, transparent 1px),
+        rgba(3, 11, 14, 0.72);
+      background-size: 40px 40px;
+      overflow: hidden;
+    }
+
+    .map-zone::before {
+      position: absolute;
+      inset: 7% 6%;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      content: "";
+    }
+
+    .map-title {
+      position: absolute;
+      left: 18px;
+      top: 14px;
+      color: var(--muted);
+      font: 800 12px "Cascadia Mono", Consolas, monospace;
+    }
+
+    .lab-node {
+      position: absolute;
+      left: var(--x);
+      top: var(--y);
+      width: 22%;
+      min-width: 168px;
+      padding: 10px;
+      border: 1px solid color-mix(in srgb, var(--state), white 18%);
+      background: color-mix(in srgb, var(--state), rgba(5, 13, 15, 0.92) 80%);
+      box-shadow: 0 0 24px color-mix(in srgb, var(--state), transparent 78%);
+    }
+
+    .lab-node::after {
+      position: absolute;
+      right: 8px;
+      top: 8px;
+      width: 9px;
+      height: 9px;
+      background: var(--state);
+      border-radius: 50%;
+      box-shadow: 0 0 12px var(--state);
+      content: "";
+    }
+
+    .lab-node strong {
+      display: block;
+      padding-right: 16px;
+      color: #fff;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .lab-node span,
+    .lab-node small {
+      display: block;
+      margin-top: 4px;
+      color: #d9f3ef;
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .connection {
+      position: absolute;
+      height: 1px;
+      transform-origin: left center;
+      background: linear-gradient(90deg, rgba(124, 232, 218, 0.1), rgba(124, 232, 218, 0.5), rgba(124, 232, 218, 0.1));
+    }
+
+    .map-detail {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 10px;
+      min-width: 0;
+      min-height: 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: rgba(8, 18, 20, 0.82);
+    }
+
+    .focus-card {
+      padding: 13px;
+      border: 1px solid rgba(242, 159, 36, 0.58);
+      background: linear-gradient(135deg, rgba(242, 159, 36, 0.18), rgba(10, 20, 22, 0.84));
+    }
+
+    .focus-card strong {
+      display: block;
+      font-size: 19px;
+      color: #fff;
+    }
+
+    .focus-card span {
+      display: block;
+      margin-top: 5px;
+      color: #ffe9c2;
+      font-size: 13px;
+    }
+
+    .compact-table {
+      display: grid;
+      gap: 7px;
+      align-content: start;
+      min-height: 0;
+    }
+
+    .compact-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      min-width: 0;
+      padding: 8px;
+      border-left: 4px solid var(--state);
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .compact-row strong,
+    .compact-row span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .compact-row strong {
+      color: #ffffff;
+      font-size: 13px;
+    }
+
+    .compact-row span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1100px) {
+      .header,
+      .variant-title,
+      .topbar {
+        grid-template-columns: 1fr;
+        flex-direction: column;
+        align-items: start;
+      }
+
+      .legend,
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        min-width: 0;
+        width: 100%;
+      }
+
+      .screen {
+        min-height: auto;
+        aspect-ratio: auto;
+      }
+
+      .tile-grid,
+      .lane-layout,
+      .map-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .tile-grid {
+        grid-template-rows: auto;
+      }
+
+      .lane {
+        grid-template-columns: 1fr;
+      }
+
+      .map-zone {
+        min-height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <h1>第四号可视化屏幕三版设计</h1>
+        <p>定位：试验间当前任务总屏，任务选择与各试验间系统保持一致。蓝色为有任务待处理，红色为故障/维修/保养，绿色为正在运行/实验进行中，橙色为小于 30 分钟完成或已完成。</p>
+      </div>
+      <div class="legend" aria-label="状态颜色规则">
+        <span class="state-task"><i class="dot"></i>有任务</span>
+        <span class="state-repair"><i class="dot"></i>故障维修/保养</span>
+        <span class="state-running"><i class="dot"></i>运行/实验中</span>
+        <span class="state-urgent"><i class="dot pulse"></i>临近完成/已完成</span>
+      </div>
+    </header>
+
+    <section class="variant">
+      <div class="variant-title">
+        <div>
+          <h2>A 版：试验间状态矩阵</h2>
+          <p>最适合值班巡检，8 个试验间一眼看完，异常和临近完成优先跳出。</p>
+        </div>
+        <span class="badge state-task"><i class="dot"></i>推荐用于第四屏首版落地</span>
+      </div>
+      <div class="screen">
+        <div class="board">
+          <div class="topbar">
+            <div>
+              <div class="kicker">SCREEN 04 / LAB CURRENT TASKS</div>
+              <h3>试验间当前任务状态总览</h3>
+            </div>
+            <div class="metrics">
+              <div class="metric"><span>有任务</span><strong>2</strong></div>
+              <div class="metric"><span>维修/保养</span><strong>2</strong></div>
+              <div class="metric"><span>实验进行中</span><strong>2</strong></div>
+              <div class="metric"><span>临近/完成</span><strong>2</strong></div>
+            </div>
+          </div>
+          <div class="tile-grid">
+            <article class="lab-tile state-task" style="--progress: 18%">
+              <div class="tile-head"><strong class="lab-name">高低温湿热一室</strong><span class="status-chip"><i class="dot"></i><strong>有任务</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-017</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>高低温湿热试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-017 / 12 件</strong></div>
+                <div class="field"><span>计划开始</span><strong>14:30</strong></div>
+                <div class="field"><span>当前阶段</span><strong>待比对确认</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-running" style="--progress: 66%">
+              <div class="tile-head"><strong class="lab-name">盐雾试验室</strong><span class="status-chip"><i class="dot"></i><strong>实验中</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-021</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>盐雾试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-021 / 20 件</strong></div>
+                <div class="field"><span>预计完成</span><strong>16:20</strong></div>
+                <div class="field"><span>当前阶段</span><strong>实验进行中</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-repair" style="--progress: 0%">
+              <div class="tile-head"><strong class="lab-name">霉菌试验室</strong><span class="status-chip"><i class="dot"></i><strong>保养</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>无可执行任务</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>设备状态</span><strong>周期保养中</strong></div>
+                <div class="field"><span>维护单号</span><strong>MT-0617-03</strong></div>
+                <div class="field"><span>恢复预计</span><strong>17:00</strong></div>
+                <div class="field"><span>当前阶段</span><strong>禁止启动实验</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-urgent" style="--progress: 94%">
+              <div class="tile-head"><strong class="lab-name">温度冲击二室</strong><span class="status-chip pulse"><i class="dot"></i><strong>28 分钟</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-026</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>温度冲击试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-026 / 8 件</strong></div>
+                <div class="field"><span>预计完成</span><strong>15:18</strong></div>
+                <div class="field"><span>当前阶段</span><strong>等待完成确认</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-running" style="--progress: 43%">
+              <div class="tile-head"><strong class="lab-name">振动一室</strong><span class="status-chip"><i class="dot"></i><strong>运行中</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-029</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>振动试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-029 / 6 件</strong></div>
+                <div class="field"><span>预计完成</span><strong>18:10</strong></div>
+                <div class="field"><span>当前阶段</span><strong>实验进行中</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-task" style="--progress: 25%">
+              <div class="tile-head"><strong class="lab-name">冲击一室</strong><span class="status-chip"><i class="dot"></i><strong>有任务</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-031</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>冲击试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-031 / 10 件</strong></div>
+                <div class="field"><span>计划开始</span><strong>15:10</strong></div>
+                <div class="field"><span>当前阶段</span><strong>工装夹具安装</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-urgent" style="--progress: 100%">
+              <div class="tile-head"><strong class="lab-name">四综合实验室</strong><span class="status-chip pulse"><i class="dot"></i><strong>已完成</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>TASK-260617-033</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>试验项目</span><strong>四综合试验</strong></div>
+                <div class="field"><span>托盘/样品</span><strong>TP-033 / 16 件</strong></div>
+                <div class="field"><span>完成时间</span><strong>14:46</strong></div>
+                <div class="field"><span>当前阶段</span><strong>待送外观检测</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+            <article class="lab-tile state-repair" style="--progress: 0%">
+              <div class="tile-head"><strong class="lab-name">高低温湿热二室</strong><span class="status-chip"><i class="dot"></i><strong>故障</strong></span></div>
+              <div class="task-line"><span>当前选择任务</span><strong>无可执行任务</strong></div>
+              <div class="tile-body">
+                <div class="field"><span>设备状态</span><strong>传感器故障</strong></div>
+                <div class="field"><span>维护单号</span><strong>MT-0617-08</strong></div>
+                <div class="field"><span>恢复预计</span><strong>待确认</strong></div>
+                <div class="field"><span>当前阶段</span><strong>维修锁定</strong></div>
+              </div>
+              <div class="progress-track"><i></i></div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="variant">
+      <div class="variant-title">
+        <div>
+          <h2>B 版：试验间跑道与时间窗</h2>
+          <p>突出每个试验间在今天时间轴上的位置，便于调度人员判断谁快完成、谁可接续。</p>
+        </div>
+        <span class="badge state-running"><i class="dot"></i>适合排程联动场景</span>
+      </div>
+      <div class="screen">
+        <div class="board">
+          <div class="topbar">
+            <div>
+              <div class="kicker">SCREEN 04 / CURRENT TASK LANES</div>
+              <h3>试验间当前任务跑道</h3>
+            </div>
+            <div class="metrics">
+              <div class="metric"><span>今日占用率</span><strong>73%</strong></div>
+              <div class="metric"><span>30 分钟内</span><strong>2</strong></div>
+              <div class="metric"><span>维修锁定</span><strong>2</strong></div>
+              <div class="metric"><span>待启动</span><strong>2</strong></div>
+            </div>
+          </div>
+          <div class="lane-layout">
+            <div>
+              <div class="time-scale"><span>12:00</span><span>15:00</span><span>18:00</span><span>21:00</span></div>
+              <div class="lanes">
+                <div class="lane state-task"><div class="lane-task"><strong>高低温湿热一室</strong><span>TASK-260617-017 / 待比对确认</span></div><div class="timeline" style="--start: 18%; --width: 22%"><i></i></div><span class="status-chip"><i class="dot"></i>有任务</span></div>
+                <div class="lane state-running"><div class="lane-task"><strong>盐雾试验室</strong><span>TASK-260617-021 / 实验进行中</span></div><div class="timeline" style="--start: 6%; --width: 47%"><i></i></div><span class="status-chip"><i class="dot"></i>实验中</span></div>
+                <div class="lane state-repair"><div class="lane-task"><strong>霉菌试验室</strong><span>MT-0617-03 / 周期保养</span></div><div class="timeline" style="--start: 0%; --width: 38%"><i></i></div><span class="status-chip"><i class="dot"></i>保养</span></div>
+                <div class="lane state-urgent"><div class="lane-task"><strong>温度冲击二室</strong><span>TASK-260617-026 / 距完成 28 分钟</span></div><div class="timeline" style="--start: 2%; --width: 64%"><i class="pulse"></i></div><span class="status-chip pulse"><i class="dot"></i>临近</span></div>
+                <div class="lane state-running"><div class="lane-task"><strong>振动一室</strong><span>TASK-260617-029 / 实验进行中</span></div><div class="timeline" style="--start: 24%; --width: 46%"><i></i></div><span class="status-chip"><i class="dot"></i>运行中</span></div>
+                <div class="lane state-task"><div class="lane-task"><strong>冲击一室</strong><span>TASK-260617-031 / 工装夹具安装</span></div><div class="timeline" style="--start: 36%; --width: 26%"><i></i></div><span class="status-chip"><i class="dot"></i>有任务</span></div>
+                <div class="lane state-urgent"><div class="lane-task"><strong>四综合实验室</strong><span>TASK-260617-033 / 已完成</span></div><div class="timeline" style="--start: 0%; --width: 55%"><i class="pulse"></i></div><span class="status-chip pulse"><i class="dot"></i>已完成</span></div>
+                <div class="lane state-repair"><div class="lane-task"><strong>高低温湿热二室</strong><span>MT-0617-08 / 传感器故障</span></div><div class="timeline" style="--start: 0%; --width: 100%"><i></i></div><span class="status-chip"><i class="dot"></i>故障</span></div>
+              </div>
+            </div>
+            <aside class="side-panel">
+              <h4>调度关注</h4>
+              <div class="side-list">
+                <div class="side-row state-urgent"><i class="dot pulse"></i><strong>温度冲击二室</strong><span>28 分钟</span></div>
+                <div class="side-row state-urgent"><i class="dot pulse"></i><strong>四综合实验室</strong><span>已完成</span></div>
+                <div class="side-row state-repair"><i class="dot"></i><strong>高低温湿热二室</strong><span>故障</span></div>
+                <div class="side-row state-repair"><i class="dot"></i><strong>霉菌试验室</strong><span>保养</span></div>
+                <div class="side-row state-task"><i class="dot"></i><strong>冲击一室</strong><span>可启动</span></div>
+              </div>
+              <p class="note">优势：更贴近排程视角；代价：单个试验间详情不如矩阵清楚，需要右侧关注列表辅助。</p>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="variant">
+      <div class="variant-title">
+        <div>
+          <h2>C 版：中控态势地图</h2>
+          <p>用平面化机房地图表达状态分布，右侧锁定最需要处理的试验间。</p>
+        </div>
+        <span class="badge state-urgent"><i class="dot pulse"></i>适合领导巡屏/展厅展示</span>
+      </div>
+      <div class="screen">
+        <div class="board">
+          <div class="topbar">
+            <div>
+              <div class="kicker">SCREEN 04 / CENTRAL LAB SITUATION</div>
+              <h3>试验间任务态势地图</h3>
+            </div>
+            <div class="metrics">
+              <div class="metric"><span>同步源</span><strong>LAB</strong></div>
+              <div class="metric"><span>任务同步</span><strong>8/8</strong></div>
+              <div class="metric"><span>需处理</span><strong>4</strong></div>
+              <div class="metric"><span>刷新</span><strong>5s</strong></div>
+            </div>
+          </div>
+          <div class="map-layout">
+            <div class="map-zone">
+              <div class="map-title">CENTRAL CONTROL ROOM / LAB TOPOLOGY</div>
+              <i class="connection" style="left: 23%; top: 27%; width: 42%; transform: rotate(7deg);"></i>
+              <i class="connection" style="left: 25%; top: 56%; width: 38%; transform: rotate(-9deg);"></i>
+              <i class="connection" style="left: 48%; top: 28%; width: 29%; transform: rotate(29deg);"></i>
+              <i class="connection" style="left: 49%; top: 64%; width: 30%; transform: rotate(-25deg);"></i>
+              <div class="lab-node state-task" style="--x: 9%; --y: 15%;"><strong>高低温湿热一室</strong><span>TASK-260617-017</span><small>有任务 / 待比对确认</small></div>
+              <div class="lab-node state-running" style="--x: 39%; --y: 12%;"><strong>盐雾试验室</strong><span>TASK-260617-021</span><small>实验进行中 / 16:20</small></div>
+              <div class="lab-node state-repair" style="--x: 70%; --y: 20%;"><strong>霉菌试验室</strong><span>MT-0617-03</span><small>周期保养 / 禁止启动</small></div>
+              <div class="lab-node state-urgent" style="--x: 12%; --y: 48%;"><strong>温度冲击二室</strong><span>TASK-260617-026</span><small>28 分钟完成</small></div>
+              <div class="lab-node state-running" style="--x: 42%; --y: 44%;"><strong>振动一室</strong><span>TASK-260617-029</span><small>实验进行中 / 18:10</small></div>
+              <div class="lab-node state-task" style="--x: 71%; --y: 54%;"><strong>冲击一室</strong><span>TASK-260617-031</span><small>有任务 / 工装安装</small></div>
+              <div class="lab-node state-urgent" style="--x: 23%; --y: 75%;"><strong>四综合实验室</strong><span>TASK-260617-033</span><small>已完成 / 待送检</small></div>
+              <div class="lab-node state-repair" style="--x: 58%; --y: 77%;"><strong>高低温湿热二室</strong><span>MT-0617-08</span><small>传感器故障 / 待确认</small></div>
+            </div>
+            <aside class="map-detail">
+              <div class="focus-card pulse">
+                <strong>温度冲击二室</strong>
+                <span>TASK-260617-026 距计划完成 28 分钟，需要准备完成确认与后续流转。</span>
+              </div>
+              <div class="focus-card">
+                <strong>高低温湿热二室</strong>
+                <span>故障维修锁定，当前试验间系统不可启动实验任务。</span>
+              </div>
+              <div class="compact-table">
+                <div class="compact-row state-task"><div><strong>高低温湿热一室</strong><span>TASK-260617-017 / 有任务</span></div><span>蓝</span></div>
+                <div class="compact-row state-running"><div><strong>盐雾试验室</strong><span>TASK-260617-021 / 实验中</span></div><span>绿</span></div>
+                <div class="compact-row state-repair"><div><strong>霉菌试验室</strong><span>MT-0617-03 / 保养</span></div><span>红</span></div>
+                <div class="compact-row state-urgent"><div><strong>四综合实验室</strong><span>TASK-260617-033 / 已完成</span></div><span>橙</span></div>
+              </div>
+              <p class="note">优势：视觉冲击强，适合远距离观看；代价：具体任务信息需要依赖右侧摘要，不如 A 版信息密度稳定。</p>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -782,6 +782,69 @@ describe("TransferAreaPage runtime", () => {
     expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
   });
 
+  test("saved handover trays without experiment matching cannot be confirmed into storage", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithUnmatchedExperiments = {
+      ...createWorkspacePayload(),
+      allocationSaved: true,
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "盐雾试验",
+          assignedTrayNos: [],
+          assignedTrayCount: 0,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "振动试验",
+          assignedTrayNos: [],
+          assignedTrayCount: 0,
+        },
+      ],
+      assignedTrays: createWorkspacePayload().assignedTrays.map((tray) => ({
+        ...tray,
+        experimentLabels: [],
+        experimentCodes: [],
+      })),
+    };
+    const confirmStorageMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, message: "任务已确认入库", workspace: workspaceWithUnmatchedExperiments }),
+    }));
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceWithUnmatchedExperiments };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/confirm-storage")) {
+          return confirmStorageMock(input, options);
+        }
+        throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-allocation-validation"]').text()).toBe("每个实验都必须至少分配一个托盘。");
+    const confirmButton = wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)");
+    expect(confirmButton.attributes("disabled")).toBeDefined();
+
+    await confirmButton.trigger("click");
+    await settle(wrapper);
+
+    expect(confirmStorageMock).not.toHaveBeenCalled();
+  });
+
   test("shows experiment types under the task number and returns to default edit mode from the task code or blank area", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspaceWithExperiments = {
@@ -1095,7 +1158,8 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(2);
-    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-allocation-validation"]').text()).toBe("有样品的托盘必须至少分配一个实验。");
 
     await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
     await settle(wrapper);
@@ -1177,8 +1241,104 @@ describe("TransferAreaPage runtime", () => {
     expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(0);
     expect(wrapper.findAll(".transfer-tray-card.is-active")).toHaveLength(0);
     expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).not.toContain("当前托盘方案已保存");
+    expect(wrapper.get('[data-testid="transfer-allocation-validation"]').text()).toBe("每个实验都必须至少分配一个托盘。");
     expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-SP-001");
     expect(wrapper.text()).toContain("任务已重新入库，已回到未入库列表");
+  });
+
+  test("confirm storage after re-entry saves the reselected experiment allocation first", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const baseWorkspace = createWorkspacePayload();
+    const assignedWorkspace = {
+      ...baseWorkspace,
+      allocationSaved: true,
+      experiments: [
+        {
+          experimentCode: "SYLU-2026-03-101-A",
+          experimentName: "温度冲击",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-001"],
+          assignedTrayCount: 1,
+        },
+        {
+          experimentCode: "SYLU-2026-03-101-B",
+          experimentName: "振动",
+          assignedTrayNos: ["SYLU-2026-03-101-TP-002"],
+          assignedTrayCount: 1,
+        },
+      ],
+      assignedTrays: baseWorkspace.assignedTrays.map((tray, index) => ({
+        ...tray,
+        experimentLabels: index === 0 ? ["温度冲击"] : ["振动"],
+        experimentCodes: index === 0 ? ["SYLU-2026-03-101-A"] : ["SYLU-2026-03-101-B"],
+      })),
+    };
+    const reloadedWorkspace = createReloadedWorkspace(assignedWorkspace);
+    const resavedWorkspace = {
+      ...assignedWorkspace,
+      allocationSaved: true,
+    };
+    const storedWorkspace = createStoredWorkspace(resavedWorkspace);
+    const requestLog = [];
+    let workspaceState = assignedWorkspace;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, options = {}) => {
+        const url = String(input);
+        if (url.includes("/api/transfer-area/bootstrap")) {
+          return { ok: true, status: 200, json: async () => bootstrapPayload };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+          return { ok: true, status: 200, json: async () => workspaceState };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/reload")) {
+          requestLog.push("reload");
+          workspaceState = reloadedWorkspace;
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新入库", workspace: reloadedWorkspace }) };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+          requestLog.push("allocate");
+          workspaceState = resavedWorkspace;
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: resavedWorkspace }) };
+        }
+        if (url.includes("/api/transfer-area/tasks/101/confirm-storage")) {
+          requestLog.push("confirm");
+          workspaceState = storedWorkspace;
+          return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已确认入库", workspace: storedWorkspace }) };
+        }
+        throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+      }),
+    );
+
+    const wrapper = mount(TransferAreaPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-tray-card-0"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-B"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("click");
+    await settle(wrapper);
+
+    const confirmButton = wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)");
+    expect(confirmButton.attributes("disabled")).toBeUndefined();
+
+    await confirmButton.trigger("click");
+    await settle(wrapper);
+    await settle(wrapper);
+
+    expect(requestLog).toEqual(["reload", "allocate", "confirm"]);
+    expect(wrapper.text()).toContain("任务已确认入库");
   });
 
   test("stored tasks still allow printing while tray editing remains disabled", async () => {

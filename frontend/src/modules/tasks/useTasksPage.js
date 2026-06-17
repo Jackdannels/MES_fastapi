@@ -52,6 +52,8 @@ function useTasksPage() {
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.experiment_samples,
+    STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_trays,
   ]);
 
   const rawTasks = ref([]);
@@ -61,6 +63,8 @@ function useTasksPage() {
   const rawExperiments = ref([]);
   const rawExperimentTrays = ref([]);
   const rawExperimentSamples = ref([]);
+  const rawExperimentRuns = ref([]);
+  const rawExperimentRunTrays = ref([]);
   const masterTestTypes = ref([]);
   const loadError = ref("");
   const resetFeedback = ref("");
@@ -524,6 +528,8 @@ function useTasksPage() {
     [STORAGE_KEYS.experiments]: rawExperiments.value,
     [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
     [STORAGE_KEYS.experiment_samples]: rawExperimentSamples.value,
+    [STORAGE_KEYS.experiment_runs]: rawExperimentRuns.value,
+    [STORAGE_KEYS.experiment_run_trays]: rawExperimentRunTrays.value,
   });
 
   const applySnapshotArray = (snapshot, key, target) => {
@@ -840,6 +846,9 @@ function useTasksPage() {
     // 删除动作会连带清理该任务关联的排程、样品和数据流快照。
     const nextSnapshot = deleteTaskSnapshot(
       {
+        experimentRuns: rawExperimentRuns.value,
+        experimentRunTrays: rawExperimentRunTrays.value,
+        experiments: rawExperiments.value,
         samples: rawSamples.value,
         schedules: rawSchedules.value,
         streams: rawStreams.value,
@@ -847,6 +856,10 @@ function useTasksPage() {
       },
       editForm.value.id,
     );
+    if (nextSnapshot.error) {
+      editWarning.value = nextSnapshot.error;
+      return;
+    }
 
     try {
       await deleteTaskByApi(editForm.value.id);
@@ -916,6 +929,8 @@ function useTasksPage() {
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_samples, rawExperimentSamples);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, rawExperimentRuns);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays);
       masterTestTypes.value = Array.isArray(testTypes) ? testTypes : [];
       loadError.value = "";
       if (taskDrawer.open.value) {
@@ -996,6 +1011,8 @@ function useTasksPage() {
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.experiment_samples,
+      STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_trays,
     ],
     refresh: loadTasksPage,
     paused: isRealtimeRefreshPaused,

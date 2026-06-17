@@ -53,6 +53,8 @@ const buildSnapshot = () => ({
     { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-001" },
     { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", tray_code: "SYLU-2026-03-006-TP-002" },
   ],
+  "mes.experiment_runs": [],
+  "mes.experiment_run_trays": [],
   "mes.samples": [],
   "mes.schedules": [
     {
@@ -261,6 +263,40 @@ describe("useSchedulePage", () => {
         "mes.schedules": expect.not.arrayContaining([expect.objectContaining({ id: "schedule-1" })]),
       }),
     );
+  });
+
+  test("blocks deleting or rescheduling a task detail schedule after the experiment has started", async () => {
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      "mes.experiment_runs": [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          status: "实验进行中",
+        },
+      ],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openTaskDetailModal("schedule-1");
+    await settle(wrapper);
+
+    await wrapper.vm.removeTaskDetailSchedule();
+    await settle(wrapper);
+    expect(wrapper.vm.taskDetailModalOpen).toBe(true);
+    expect(wrapper.vm.editWarning).toBe("实验已开始，不能删除排程");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+
+    wrapper.vm.editWarning = "";
+    await wrapper.vm.rescheduleFromTaskDetail();
+    await settle(wrapper);
+
+    expect(wrapper.vm.taskDetailModalOpen).toBe(true);
+    expect(wrapper.vm.editWarning).toBe("实验已开始，不能删除后重新排程");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+
+    wrapper.unmount();
   });
 
   test("persists experiment timers when creating and deleting formal schedules", async () => {

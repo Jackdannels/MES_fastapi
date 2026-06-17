@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第四屏托盘数量演示</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: #f7fffd;
+      background:
+        linear-gradient(rgba(94, 234, 212, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(94, 234, 212, 0.06) 1px, transparent 1px),
+        #061112;
+      background-size: 64px 64px;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    .visual-current-lab-board {
+      --current-task-blue: #2f7df6;
+      --current-task-red: #e24a3d;
+      --current-task-green: #2fbf71;
+      --current-task-orange: #f29f24;
+      --current-task-muted: #8da9aa;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 16px;
+      width: min(100vw, 1920px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .visual-board-top {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .visual-board-kicker {
+      color: #5eead4;
+      font: 900 13px "Cascadia Mono", "Consolas", monospace;
+      letter-spacing: 0;
+    }
+
+    .visual-board-title {
+      margin-top: 6px;
+      color: #fff;
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .visual-board-time {
+      color: rgba(214, 252, 246, 0.72);
+      font-size: 13px;
+    }
+
+    .visual-current-lab-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .visual-current-lab-metrics div {
+      min-width: 0;
+      padding: 10px 12px;
+      border: 1px solid var(--metric-color);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--metric-color), transparent 88%), transparent),
+        rgba(7, 18, 21, 0.72);
+    }
+
+    .metric-scheduled { --metric-color: var(--current-task-blue); }
+    .metric-repair { --metric-color: var(--current-task-red); }
+    .metric-running { --metric-color: var(--current-task-green); }
+    .metric-urgent { --metric-color: var(--current-task-orange); }
+
+    .visual-current-lab-metrics span,
+    .visual-current-lab-metrics strong {
+      display: block;
+    }
+
+    .visual-current-lab-metrics span {
+      color: rgba(214, 252, 246, 0.62);
+      font-size: 12px;
+    }
+
+    .visual-current-lab-metrics strong {
+      margin-top: 3px;
+      color: #fff;
+      font: 900 24px "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .visual-current-lab-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .visual-current-lab-card {
+      --current-task-tone: var(--current-task-blue);
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 8px;
+      min-width: 0;
+      min-height: 430px;
+      padding: 11px;
+      border: 1px solid color-mix(in srgb, var(--current-task-tone), white 18%);
+      background:
+        linear-gradient(135deg, color-mix(in srgb, var(--current-task-tone), transparent 84%), rgba(6, 16, 18, 0.9)),
+        rgba(8, 18, 21, 0.82);
+      box-shadow: inset 4px 0 0 var(--current-task-tone), 0 0 24px color-mix(in srgb, var(--current-task-tone), transparent 86%);
+    }
+
+    .visual-current-lab-card.tone-running {
+      --current-task-tone: var(--current-task-green);
+    }
+
+    .visual-current-lab-card.tone-urgent {
+      --current-task-tone: var(--current-task-orange);
+    }
+
+    .visual-current-lab-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .visual-current-lab-name {
+      min-width: 0;
+      color: #fff;
+      font-size: 17px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .visual-current-lab-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 26px;
+      padding: 3px 8px;
+      border: 1px solid color-mix(in srgb, var(--current-task-tone), white 18%);
+      background: color-mix(in srgb, var(--current-task-tone), transparent 78%);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .visual-current-lab-status i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--current-task-tone);
+      box-shadow: 0 0 12px var(--current-task-tone);
+    }
+
+    .visual-current-lab-task {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 7px 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.045);
+    }
+
+    .visual-current-lab-task span,
+    .visual-current-lab-fields span {
+      color: rgba(214, 252, 246, 0.62);
+      font-size: 11px;
+    }
+
+    .visual-current-lab-task strong {
+      color: #f5fffc;
+      font: 900 14px "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .visual-current-lab-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 0.48fr) minmax(0, 0.52fr);
+      grid-template-areas:
+        "experiment trays"
+        "stage trays"
+        "plan trays";
+      gap: 8px;
+      min-width: 0;
+      align-content: start;
+    }
+
+    .visual-current-lab-field {
+      min-width: 0;
+      padding: 7px;
+      border: 1px solid rgba(94, 234, 212, 0.14);
+      background: rgba(5, 12, 15, 0.62);
+    }
+
+    .field-experiment { grid-area: experiment; }
+    .field-stage { grid-area: stage; }
+    .field-plan { grid-area: plan; }
+
+    .field-trays {
+      display: flex;
+      flex-direction: column;
+      grid-area: trays;
+      min-height: 0;
+    }
+
+    .visual-current-lab-fields strong {
+      display: block;
+      min-width: 0;
+      margin-top: 3px;
+      color: #f7fffd;
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .visual-current-lab-tray-list {
+      display: grid;
+      gap: 2px;
+      align-content: start;
+    }
+
+    .visual-current-lab-tray-list span {
+      display: block;
+      color: #f7fffd;
+      font-size: inherit;
+      line-height: 1.24;
+    }
+
+    .visual-current-lab-field small {
+      display: block;
+      margin-top: auto;
+      padding-top: 5px;
+      color: rgba(214, 252, 246, 0.72);
+      font-size: 11px;
+    }
+
+    @media (max-width: 1180px) {
+      .visual-current-lab-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="visual-current-lab-board">
+    <header class="visual-board-top">
+      <div>
+        <div class="visual-board-kicker">LAB TASK MATRIX / TRAY DENSITY DEMO</div>
+        <div class="visual-board-title">第四屏托盘数量显示演示</div>
+      </div>
+      <div class="visual-board-time">1 / 3 / 6 / 9 个托盘，计划时间位于阶段下方</div>
+    </header>
+
+    <section class="visual-current-lab-metrics">
+      <div class="metric-scheduled"><span>已排程</span><strong>2</strong></div>
+      <div class="metric-repair"><span>维修/保养</span><strong>0</strong></div>
+      <div class="metric-running"><span>实验进行中</span><strong>1</strong></div>
+      <div class="metric-urgent"><span>临近/完成</span><strong>1</strong></div>
+    </section>
+
+    <section class="visual-current-lab-grid">
+      <article class="visual-current-lab-card">
+        <div class="visual-current-lab-card-head">
+          <strong class="visual-current-lab-name">高低温湿热一室</strong>
+          <span class="visual-current-lab-status"><i></i>已排程</span>
+        </div>
+        <div class="visual-current-lab-task"><span>当前选择任务</span><strong>SYLU-2026-06-021</strong></div>
+        <div class="visual-current-lab-fields">
+          <div class="visual-current-lab-field field-experiment"><span>试验项目</span><strong>高低温湿热试验</strong></div>
+          <div class="visual-current-lab-field field-trays"><span>托盘/样品</span><strong class="visual-current-lab-tray-list"><span>SYLU-2026-06-021-TP-001</span></strong><small>1 件</small></div>
+          <div class="visual-current-lab-field field-stage"><span>阶段</span><strong>已排程</strong></div>
+          <div class="visual-current-lab-field field-plan"><span>计划时间</span><strong>2026-06-18 08:00 - 2026-06-18 11:30</strong></div>
+        </div>
+      </article>
+
+      <article class="visual-current-lab-card tone-running">
+        <div class="visual-current-lab-card-head">
+          <strong class="visual-current-lab-name">振动一室</strong>
+          <span class="visual-current-lab-status"><i></i>实验进行中</span>
+        </div>
+        <div class="visual-current-lab-task"><span>当前选择任务</span><strong>SYLU-2026-06-022</strong></div>
+        <div class="visual-current-lab-fields">
+          <div class="visual-current-lab-field field-experiment"><span>试验项目</span><strong>振动试验</strong></div>
+          <div class="visual-current-lab-field field-trays"><span>托盘/样品</span><strong class="visual-current-lab-tray-list"><span>SYLU-2026-06-022-TP-001</span><span>SYLU-2026-06-022-TP-002</span><span>SYLU-2026-06-022-TP-003</span></strong><small>3 件</small></div>
+          <div class="visual-current-lab-field field-stage"><span>阶段</span><strong>实验进行中</strong></div>
+          <div class="visual-current-lab-field field-plan"><span>计划时间</span><strong>2026-06-18 09:00 - 2026-06-18 12:00</strong></div>
+        </div>
+      </article>
+
+      <article class="visual-current-lab-card">
+        <div class="visual-current-lab-card-head">
+          <strong class="visual-current-lab-name">冲击一室</strong>
+          <span class="visual-current-lab-status"><i></i>已排程</span>
+        </div>
+        <div class="visual-current-lab-task"><span>当前选择任务</span><strong>SYLU-2026-06-023</strong></div>
+        <div class="visual-current-lab-fields">
+          <div class="visual-current-lab-field field-experiment"><span>试验项目</span><strong>冲击试验</strong></div>
+          <div class="visual-current-lab-field field-trays"><span>托盘/样品</span><strong class="visual-current-lab-tray-list"><span>SYLU-2026-06-023-TP-001</span><span>SYLU-2026-06-023-TP-002</span><span>SYLU-2026-06-023-TP-003</span><span>SYLU-2026-06-023-TP-004</span><span>SYLU-2026-06-023-TP-005</span><span>SYLU-2026-06-023-TP-006</span></strong><small>6 件</small></div>
+          <div class="visual-current-lab-field field-stage"><span>阶段</span><strong>待比对</strong></div>
+          <div class="visual-current-lab-field field-plan"><span>计划时间</span><strong>2026-06-18 10:00 - 2026-06-18 14:00</strong></div>
+        </div>
+      </article>
+
+      <article class="visual-current-lab-card tone-urgent">
+        <div class="visual-current-lab-card-head">
+          <strong class="visual-current-lab-name">温度冲击二室</strong>
+          <span class="visual-current-lab-status"><i></i>临近完成</span>
+        </div>
+        <div class="visual-current-lab-task"><span>当前选择任务</span><strong>SYLU-2026-06-024</strong></div>
+        <div class="visual-current-lab-fields">
+          <div class="visual-current-lab-field field-experiment"><span>试验项目</span><strong>温度冲击试验</strong></div>
+          <div class="visual-current-lab-field field-trays"><span>托盘/样品</span><strong class="visual-current-lab-tray-list"><span>SYLU-2026-06-024-TP-001</span><span>SYLU-2026-06-024-TP-002</span><span>SYLU-2026-06-024-TP-003</span><span>SYLU-2026-06-024-TP-004</span><span>SYLU-2026-06-024-TP-005</span><span>SYLU-2026-06-024-TP-006</span><span>SYLU-2026-06-024-TP-007</span><span>SYLU-2026-06-024-TP-008</span><span>SYLU-2026-06-024-TP-009</span></strong><small>9 件</small></div>
+          <div class="visual-current-lab-field field-stage"><span>阶段</span><strong>临近完成</strong></div>
+          <div class="visual-current-lab-field field-plan"><span>计划时间</span><strong>2026-06-18 13:00 - 2026-06-18 16:30</strong></div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

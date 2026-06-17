@@ -40,7 +40,7 @@
       "experiment_samples": 48,
       "samples": 182,
       "staging_events": 24,
-      "devices": 10,
+      "devices": 11,
       "streams": 2,
       "conflicts": 0
     }

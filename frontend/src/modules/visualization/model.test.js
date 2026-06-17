@@ -12,15 +12,354 @@ import { buildStagingSamplesView as buildStagingSamplesViewFromStagingSamplesMod
 describe("visualization model", () => {
   test("keeps the visualization model public compatibility exports stable", () => {
     expect(Object.keys(visualizationModelPublicApi).sort()).toEqual([
+      "buildLabCurrentTaskMatrixView",
       "buildLabProcessPanels",
       "buildLabScheduleThreeDayView",
       "buildStagingSamplesView",
       "getVisualizationLabNames",
     ].sort());
+    expect(typeof visualizationModelPublicApi.buildLabCurrentTaskMatrixView).toBe("function");
     expect(visualizationModelPublicApi.buildLabProcessPanels).toBe(buildLabProcessPanelsFromLabProcessModel);
     expect(visualizationModelPublicApi.getVisualizationLabNames).toBe(getVisualizationLabNamesFromLabProcessModel);
     expect(visualizationModelPublicApi.buildLabScheduleThreeDayView).toBe(buildLabScheduleThreeDayViewFromScheduleThreeDayModel);
     expect(visualizationModelPublicApi.buildStagingSamplesView).toBe(buildStagingSamplesViewFromStagingSamplesModel);
+  });
+
+  test("buildLabCurrentTaskMatrixView syncs current tasks and device statuses from shared system models", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: ["振动一室", "霉菌试验室", "冲击一室"],
+      now: new Date("2026-06-17T14:45:00+08:00"),
+      devices: [
+        { code: "振动一室", name: "振动一室", status: "可用" },
+        { code: "霉菌试验室", name: "霉菌试验室", status: "保养" },
+        { code: "冲击一室", name: "冲击一室", status: "可用" },
+      ],
+      tasks: [
+        { code: "TASK-RUN", name: "振动运行任务" },
+        { code: "TASK-WAIT", name: "冲击待启动任务" },
+      ],
+      experiments: [
+        { task_code: "TASK-RUN", experiment_code: "EXP-RUN", experiment_name: "振动试验", required_device: "振动一室" },
+        { task_code: "TASK-WAIT", experiment_code: "EXP-WAIT", experiment_name: "冲击试验", required_device: "冲击一室" },
+      ],
+      experimentRuns: [
+        {
+          run_no: "RUN-001",
+          task_code: "TASK-RUN",
+          experiment_code: "EXP-RUN",
+          device: "振动一室",
+          status: "实验进行中",
+          started_at: "2026-06-17T14:00:00+08:00",
+          planned_hours: 2,
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-001",
+          task_code: "TASK-RUN",
+          experiment_code: "EXP-RUN",
+          tray_code: "TRAY-RUN",
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-17T14:00:00+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-RUN", experiment_code: "EXP-RUN", tray_code: "TRAY-RUN" },
+        { task_code: "TASK-WAIT", experiment_code: "EXP-WAIT", tray_code: "TRAY-WAIT" },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-RUN",
+          experiment_code: "EXP-RUN",
+          device: "振动一室",
+          status: "实验进行中",
+          start_at: "2026-06-17T14:00:00+08:00",
+          end_at: "2026-06-17T16:00:00+08:00",
+        },
+        {
+          task_code: "TASK-WAIT",
+          experiment_code: "EXP-WAIT",
+          device: "冲击一室",
+          status: "已排程",
+          start_at: "2026-06-17T15:20:00+08:00",
+          end_at: "2026-06-17T16:30:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SAMPLE-RUN",
+          task_code: "TASK-RUN",
+          location: "振动一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-RUN", status: "实验进行中", quantity: 2 }],
+        },
+        {
+          code: "SAMPLE-WAIT",
+          task_code: "TASK-WAIT",
+          location: "冲击一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TRAY-WAIT", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+    });
+
+    const runningLab = view.labs.find((lab) => lab.labName === "振动一室");
+    const maintenanceLab = view.labs.find((lab) => lab.labName === "霉菌试验室");
+    const waitingLab = view.labs.find((lab) => lab.labName === "冲击一室");
+
+    expect(runningLab).toEqual(expect.objectContaining({
+      countdown: expect.objectContaining({
+        active: true,
+        progressPercent: 38,
+        remainingLabel: "01:15:00",
+      }),
+      statusLabel: "实验进行中",
+      statusTone: "running",
+      taskCode: "TASK-RUN",
+    }));
+    expect(maintenanceLab).toEqual(expect.objectContaining({
+      countdown: expect.objectContaining({ active: false }),
+      statusLabel: "保养",
+      statusTone: "repair",
+      taskCode: "-",
+    }));
+    expect(waitingLab).toEqual(expect.objectContaining({
+      countdown: expect.objectContaining({ active: false }),
+      planTimeLabel: "2026-06-17 15:20 - 2026-06-17 16:30",
+      startAt: "2026-06-17 15:20",
+      endAt: "2026-06-17 16:30",
+      statusLabel: "已排程",
+      statusTone: "task",
+      taskCode: "TASK-WAIT",
+    }));
+  });
+
+  test("buildLabCurrentTaskMatrixView scopes running lab trays to the active experiment run", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: ["振动一室"],
+      now: new Date("2026-06-17T13:10:00+08:00"),
+      devices: [
+        { code: "振动一室", name: "振动一室", status: "工作中" },
+      ],
+      tasks: [
+        { code: "SYLU-2026-06-001", name: "演示任务001" },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-VIB",
+          experiment_name: "振动试验",
+          required_device: "振动一室",
+        },
+      ],
+      experimentRuns: [
+        {
+          run_no: "RUN-VIB-001",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-VIB",
+          device: "振动一室",
+          status: "实验进行中",
+          started_at: "2026-06-17T12:56:00+08:00",
+          planned_hours: 1,
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-VIB-001",
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-VIB",
+          tray_code: "SYLU-2026-06-001-TP-002",
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-17T12:56:00+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-VIB", tray_code: "SYLU-2026-06-001-TP-001" },
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-VIB", tray_code: "SYLU-2026-06-001-TP-002" },
+        { task_code: "SYLU-2026-06-001", experiment_code: "SYLU-2026-06-001-VIB", tray_code: "SYLU-2026-06-001-TP-003" },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-001",
+          experiment_code: "SYLU-2026-06-001-VIB",
+          device: "振动一室",
+          status: "实验进行中",
+          start_at: "2026-06-17T12:56:00+08:00",
+          end_at: "2026-06-17T13:56:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SYLU-2026-06-001-SP-001",
+          task_code: "SYLU-2026-06-001",
+          location: "振动一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "SYLU-2026-06-001-TP-001", status: "已到达实验室", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-06-001-SP-005",
+          task_code: "SYLU-2026-06-001",
+          location: "振动一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "SYLU-2026-06-001-TP-002", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SYLU-2026-06-001-SP-009",
+          task_code: "SYLU-2026-06-001",
+          location: "振动一室",
+          status: "已到达实验室",
+          trays: [{ tray_code: "SYLU-2026-06-001-TP-003", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+    });
+
+    const runningLab = view.labs[0];
+
+    expect(runningLab.statusTone).toBe("running");
+    expect(runningLab.trayCodes).toEqual(["SYLU-2026-06-001-TP-002"]);
+    expect(runningLab.sampleCount).toBe(1);
+  });
+
+  test("buildLabCurrentTaskMatrixView marks near-finish running labs and completed labs as urgent orange", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: ["盐雾试验室", "四综合实验室"],
+      now: new Date("2026-06-17T14:45:00+08:00"),
+      devices: [
+        { code: "盐雾试验室", name: "盐雾试验室", status: "可用" },
+        { code: "四综合实验室", name: "四综合实验室", status: "可用" },
+      ],
+      tasks: [
+        { code: "TASK-NEAR", name: "盐雾临近完成任务" },
+        { code: "TASK-DONE", name: "四综合完成任务" },
+      ],
+      experiments: [
+        { task_code: "TASK-NEAR", experiment_code: "EXP-NEAR", experiment_name: "盐雾试验", required_device: "盐雾试验室" },
+        { task_code: "TASK-DONE", experiment_code: "EXP-DONE", experiment_name: "四综合试验", required_device: "四综合实验室", status: "实验已完成" },
+      ],
+      experimentRuns: [
+        {
+          run_no: "RUN-NEAR",
+          task_code: "TASK-NEAR",
+          experiment_code: "EXP-NEAR",
+          device: "盐雾试验室",
+          status: "实验进行中",
+          started_at: "2026-06-17T13:55:00+08:00",
+          planned_hours: 1.25,
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-NEAR",
+          task_code: "TASK-NEAR",
+          experiment_code: "EXP-NEAR",
+          tray_code: "TRAY-NEAR",
+          run_tray_status: "实验进行中",
+          started_at: "2026-06-17T13:55:00+08:00",
+        },
+        {
+          run_no: "RUN-DONE",
+          task_code: "TASK-DONE",
+          experiment_code: "EXP-DONE",
+          tray_code: "TRAY-DONE",
+          run_tray_status: "实验已完成",
+          updated_at: "2026-06-17T14:30:00+08:00",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-NEAR", experiment_code: "EXP-NEAR", tray_code: "TRAY-NEAR" },
+        { task_code: "TASK-DONE", experiment_code: "EXP-DONE", tray_code: "TRAY-DONE" },
+      ],
+      schedules: [
+        {
+          task_code: "TASK-NEAR",
+          experiment_code: "EXP-NEAR",
+          device: "盐雾试验室",
+          status: "实验进行中",
+          start_at: "2026-06-17T13:55:00+08:00",
+          end_at: "2026-06-17T15:10:00+08:00",
+        },
+        {
+          task_code: "TASK-DONE",
+          experiment_code: "EXP-DONE",
+          device: "四综合实验室",
+          status: "实验已完成",
+          start_at: "2026-06-17T12:00:00+08:00",
+          end_at: "2026-06-17T14:30:00+08:00",
+        },
+      ],
+      samples: [
+        {
+          code: "SAMPLE-NEAR",
+          task_code: "TASK-NEAR",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-NEAR", status: "实验进行中", quantity: 1 }],
+        },
+        {
+          code: "SAMPLE-DONE",
+          task_code: "TASK-DONE",
+          location: "四综合实验室",
+          status: "实验已完成",
+          trays: [{ tray_code: "TRAY-DONE", status: "实验已完成", quantity: 1 }],
+        },
+      ],
+    });
+
+    expect(view.labs.find((lab) => lab.labName === "盐雾试验室")).toEqual(expect.objectContaining({
+      countdown: expect.objectContaining({
+        active: true,
+        remainingLabel: "00:25:00",
+      }),
+      shouldBlink: true,
+      statusLabel: "25 分钟",
+      statusTone: "urgent",
+    }));
+    expect(view.labs.find((lab) => lab.labName === "四综合实验室")).toEqual(expect.objectContaining({
+      countdown: expect.objectContaining({ active: false }),
+      shouldBlink: true,
+      statusLabel: "实验已完成",
+      statusTone: "urgent",
+      taskCode: "TASK-DONE",
+    }));
+  });
+
+  test("buildLabCurrentTaskMatrixView includes all experiment rooms and excludes staging appearance and handover rooms", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: [
+        "振动一室",
+        "盐雾试验室",
+        "霉菌试验室",
+        "冲击一室",
+        "高低温湿热一室",
+        "高低温湿热二室",
+        "恒温恒湿间（暂存间）",
+        "外观检测间",
+        "室外接驳区",
+      ],
+      devices: [
+        { code: "振动一室", name: "振动一室", status: "可用" },
+        { code: "盐雾试验室", name: "盐雾试验室", status: "可用" },
+        { code: "霉菌试验室", name: "霉菌试验室", status: "可用" },
+        { code: "冲击一室", name: "冲击一室", status: "可用" },
+        { code: "高低温湿热一室", name: "高低温湿热一室", status: "可用" },
+        { code: "高低温湿热二室", name: "高低温湿热二室", status: "可用" },
+        { code: "STAGING", name: "恒温恒湿间（暂存间）", status: "可用" },
+        { code: "APPEARANCE", name: "外观检测间", status: "可用" },
+        { code: "HANDOVER", name: "室外接驳区", status: "可用" },
+      ],
+    });
+
+    expect(view.labs.map((lab) => lab.labName)).toEqual([
+      "振动一室",
+      "盐雾试验室",
+      "霉菌试验室",
+      "冲击一室",
+      "高低温湿热一室",
+      "高低温湿热二室",
+    ]);
+    expect(JSON.stringify(view)).not.toContain("暂存间");
+    expect(JSON.stringify(view)).not.toContain("外观检测间");
+    expect(JSON.stringify(view)).not.toContain("接驳");
   });
 
   test("uses only real device ledger entries as visualization laboratories", () => {
@@ -33,24 +372,34 @@ describe("visualization model", () => {
     expect(buildLabProcessPanels({ samples: [] })).toEqual([]);
   });
 
+  test("backfills the second hot-humid room for visualization lab names from legacy device ledgers", () => {
+    expect(getVisualizationLabNames([
+      { code: "高低温湿热一室", name: "高低温湿热系统" },
+    ])).toEqual(["高低温湿热一室", "高低温湿热二室"]);
+  });
+
   test("builds lab panels from real tray flow data grouped by laboratory", () => {
     const panels = buildLabProcessPanels({
-      labNames: ["振动一室", "高低温湿热一室"],
+      labNames: ["振动一室", "高低温湿热一室", "高低温湿热二室"],
       tasks: [
         { code: "TASK-001", name: "真实流程任务" },
         { code: "TASK-002", name: "温湿热任务" },
+        { code: "TASK-003", name: "温湿热二室任务" },
       ],
       experiments: [
         { task_code: "TASK-001", experiment_code: "EXP-VIB", experiment_name: "振动试验", required_device: "振动一室" },
         { task_code: "TASK-002", experiment_code: "EXP-HUM", experiment_name: "高低温湿热试验", required_device: "高低温湿热一室" },
+        { task_code: "TASK-003", experiment_code: "EXP-HUM-2", experiment_name: "高低温湿热试验", required_device: "高低温湿热二室" },
       ],
       experimentTrays: [
         { task_code: "TASK-001", experiment_code: "EXP-VIB", tray_code: "TRAY-VIB-001" },
         { task_code: "TASK-002", experiment_code: "EXP-HUM", tray_code: "TRAY-HUM-001" },
+        { task_code: "TASK-003", experiment_code: "EXP-HUM-2", tray_code: "TRAY-HUM-002" },
       ],
       schedules: [
         { task_code: "TASK-001", experiment_code: "EXP-VIB", device: "振动一室", status: "实验进行中" },
         { task_code: "TASK-002", experiment_code: "EXP-HUM", device: "高低温湿热一室", status: "实验已完成" },
+        { task_code: "TASK-003", experiment_code: "EXP-HUM-2", device: "高低温湿热二室", status: "实验进行中" },
       ],
       samples: [
         {
@@ -75,10 +424,21 @@ describe("visualization model", () => {
             { detail: "TASK-002 / 高低温湿热试验 / 实验已完成", time: "2026-05-22T12:00:00" },
           ],
         },
+        {
+          code: "SAMPLE-003",
+          task_code: "TASK-003",
+          location: "高低温湿热二室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TRAY-HUM-002", status: "实验进行中", quantity: 1 }],
+          history: [
+            { status: "到货", time: "2026-05-22T09:45:00" },
+            { detail: "TASK-003 / 高低温湿热试验 / 实验进行中", time: "2026-05-22T13:00:00" },
+          ],
+        },
       ],
     });
 
-    expect(panels).toHaveLength(2);
+    expect(panels).toHaveLength(3);
     expect(panels[0]).toMatchObject({
       name: "振动一室",
       sampleCount: 1,
@@ -96,6 +456,13 @@ describe("visualization model", () => {
       taskCount: 0,
       trayCount: 0,
     });
+    expect(panels[2]).toMatchObject({
+      name: "高低温湿热二室",
+      sampleCount: 1,
+      taskCount: 1,
+      trayCount: 1,
+    });
+    expect(panels[2].trays[0].trayCode).toBe("TRAY-HUM-002");
   });
 
   test("buildLabProcessPanels builds one flow per task tray even when many samples share it", () => {

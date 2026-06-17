@@ -360,6 +360,24 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("backfills the second hot-humid room in dashboard device status for legacy ledgers", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      experiments: [],
+      streams: [],
+      devices: [
+        { code: "高低温湿热一室", name: "高低温湿热系统", status: "可用", location: "高低温湿热一室" },
+      ],
+      schedules: [],
+      now: Date.parse("2026-03-17T10:00:00.000Z"),
+    });
+
+    expect(viewModel.deviceItems.map((device) => device.code)).toEqual(["高低温湿热一室", "高低温湿热二室"]);
+    expect(viewModel.deviceItems.find((device) => device.code === "高低温湿热二室")).toEqual(
+      expect.objectContaining({ status: "可用", dotClass: "timeline-dot--available" }),
+    );
+  });
+
   test("marks devices running only when the scheduled experiment has really started", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [],

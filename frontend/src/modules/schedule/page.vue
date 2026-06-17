@@ -344,6 +344,7 @@
         <input :value="selectedTaskDetail.estimatedEndAt" type="text" readonly />
       </div>
     </div>
+    <AppFeedback :message="editWarning" tone="warning" data-testid="task-detail-warning" @close="editWarning = ''" />
     <template #footer>
       <button
         v-if="selectedTaskDetail"

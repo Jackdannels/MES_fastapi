@@ -524,6 +524,10 @@ describe("LaboratoryPage runtime", () => {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/start/);
         const taskCode = decodeURIComponent(match?.[1] || "");
         const experimentCode = decodeURIComponent(match?.[2] || "");
+        const body = JSON.parse(String(options.body || "{}"));
+        if (!String(body.runNo || "").trim()) {
+          return { ok: false, status: 400, json: async () => ({ detail: "task_code, experiment_code and run_no are required" }) };
+        }
         const startedAt = "2026-04-02T10:00:03.000Z";
         const schedule = (snapshotState[STORAGE_KEYS.schedules] || []).find(
           (entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode,
@@ -2825,7 +2829,9 @@ describe("LaboratoryPage runtime", () => {
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 2);
 
     expect(laboratoryMqCalls()).toHaveLength(0);
-    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("3");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-modal"]').text()).toContain("本地自动确认");
     expect(laboratoryOperationCalls().map(([, options]) => JSON.parse(String(options.body || "{}")).operationType)).toEqual(["compare", "install"]);
 
     vi.advanceTimersByTime(2999);
@@ -2846,6 +2852,9 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
     expect(laboratoryStartCalls()).toHaveLength(0);
+    expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
 
     vi.advanceTimersByTime(3000);
     await waitForLaboratoryStartCount(1);
@@ -2853,6 +2862,14 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(laboratoryStartCalls()[0][0]).toBe("/api/laboratory/tasks/SYLU-2026-04-601/experiments/SYLU-2026-04-601-A/start");
+    expect(JSON.parse(String(laboratoryStartCalls()[0][1].body || "{}"))).toEqual(expect.objectContaining({
+      labCode: "LAB_HOT_HUMID_2",
+      labName: "高低温湿热二室",
+      runNo: expect.stringMatching(/^run-\d+-\d{3}$/),
+      scheduleId: "schedule-hot-humid-2",
+      startedAt: `${toDisplayedDateTime("2026-04-02T10:00:06.000Z")}:06`,
+      trayCodes: ["TP-GDW-001"],
+    }));
     expect(laboratoryMqCalls()).toHaveLength(0);
     expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
       run_no: "run-hot-humid-2",
@@ -2862,6 +2879,7 @@ describe("LaboratoryPage runtime", () => {
       run_no: "run-hot-humid-2",
       tray_code: "TP-GDW-001",
     }));
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-601");
   });
 

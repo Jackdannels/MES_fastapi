@@ -50,6 +50,7 @@
             :screen="screen"
             :labs="labsForScreen(screen)"
             :lab-names="labNames"
+            :current-lab-task-view="currentLabTaskView"
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
@@ -81,6 +82,7 @@
             :screen="selectedScreen"
             :labs="labsForScreen(selectedScreen)"
             :lab-names="labNames"
+            :current-lab-task-view="currentLabTaskView"
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
@@ -169,6 +171,7 @@
                   :screen="screen"
                   :labs="labsForScreen(screen)"
                   :lab-names="labNames"
+                  :current-lab-task-view="currentLabTaskView"
                   :devices="deviceItems"
                   :schedule-view="scheduleView"
                   :staging-view="stagingSamplesView"
@@ -230,7 +233,7 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { resolveVisualFlowStepTitle, visualFlowStepClass } from "./flowStepState";
-import { buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
+import { buildLabCurrentTaskMatrixView, buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, getVisualizationLabNames } from "./model";
 
 const screenCards = [
   { key: "lab-process", name: "实验室流程监控屏", kind: "lab-process", status: "运行中", tone: "live" },
@@ -258,17 +261,18 @@ const screenCards = [
     ],
   },
   {
-    key: "sample-stat",
-    name: "样品与托盘统计屏",
-    kind: "placeholder",
-    status: "同步中",
-    metric: "96 件样品",
-    accent: "amber",
+    key: "current-lab-tasks",
+    name: "试验间当前任务状态屏",
+    kind: "current-lab-tasks",
+    status: "实时同步",
+    metric: "当前任务",
+    accent: "cyan",
     tone: "sync",
     indicators: [
-      ["到货", "32"],
-      ["试验", "48"],
-      ["暂存", "16"],
+      ["已排程", "蓝"],
+      ["维修", "红"],
+      ["运行", "绿"],
+      ["临近", "橙"],
     ],
   },
   {
@@ -324,8 +328,8 @@ const screenCards = [
     tone: "live",
     indicators: [
       ["正常率", "78.2%"],
-      ["产品数", "449"],
-      ["试验间", "10"],
+      ["产品数", "487"],
+      ["试验间", "11"],
     ],
   },
 ];
@@ -387,6 +391,8 @@ const labPickerGroup = ref("");
 const manualLabSelection = ref(false);
 const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
+const currentNow = ref(new Date());
+let clockTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
 const SCREEN_STAGE_HEIGHT = 1080;
 const COMBINED_COLUMNS = 4;
@@ -433,6 +439,21 @@ const stagingSamplesView = computed(() => {
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
     stagingEvents: snapshot[STORAGE_KEYS.staging_events],
+  });
+});
+const currentLabTaskView = computed(() => {
+  const snapshot = rawSnapshot.value || {};
+  return buildLabCurrentTaskMatrixView({
+    labNames: labNames.value,
+    now: currentNow.value,
+    tasks: snapshot[STORAGE_KEYS.tasks],
+    samples: snapshot[STORAGE_KEYS.samples],
+    devices: snapshot[STORAGE_KEYS.devices],
+    experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentRuns: snapshot[STORAGE_KEYS.experiment_runs],
+    experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+    experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
+    schedules: snapshot[STORAGE_KEYS.schedules],
   });
 });
 const operationsSummary = computed(() => [
@@ -562,6 +583,7 @@ const mockTodayTaskPlans = [
     state: "已分配",
     experiments: [
       { experimentType: "高低温湿热试验", time: "10:00-15:30", lab: "高低温湿热一室", trays: [], sampleCount: 12 },
+      { experimentType: "高低温湿热试验", time: "15:40-20:30", lab: "高低温湿热二室", trays: [], sampleCount: 10 },
       { experimentType: "盐雾试验", time: "15:40-19:00", lab: "盐雾试验室", trays: ["TP-004"], sampleCount: 9 },
     ],
   },
@@ -642,6 +664,9 @@ const resolveScreenComponent = (screen) => {
   if (screen?.kind === "today-task-plan") {
     return TodayTaskPlanScreen;
   }
+  if (screen?.kind === "current-lab-tasks") {
+    return CurrentLabTasksScreen;
+  }
   if (screen?.kind === "staging-samples") {
     return StagingSamplesScreen;
   }
@@ -673,6 +698,9 @@ const refreshViewportSize = () => {
     height: window.innerHeight || SCREEN_STAGE_HEIGHT,
     width: window.innerWidth || SCREEN_STAGE_WIDTH,
   };
+};
+const refreshVisualizationClock = () => {
+  currentNow.value = new Date();
 };
 
 const buildLabTaskOptions = (lab) => {
@@ -720,14 +748,109 @@ const formatBeijingFlowTime = (value) => {
   return formatted.length >= 19 ? formatted.slice(5, 19) : formatted;
 };
 
+const CurrentLabTasksScreen = {
+  name: "CurrentLabTasksScreen",
+  props: {
+    screen: { type: Object, required: false, default: null },
+    currentLabTaskView: { type: Object, required: false, default: null },
+    compact: { type: Boolean, default: false },
+  },
+  setup(props) {
+    const renderLabCard = (lab) => {
+      const toneClass = `tone-${lab.statusTone || "idle"}`;
+      const trayCodes = Array.isArray(lab.trayCodes) ? lab.trayCodes.filter(Boolean) : [];
+      const sampleText = lab.sampleCount > 0 ? `${lab.sampleCount} 件` : "-";
+      const countdown = lab.countdown || {};
+      return h(
+        "article",
+        {
+          class: ["visual-current-lab-card", toneClass, lab.shouldBlink ? "is-blinking" : ""],
+          "data-lab-name": lab.labName,
+          "data-testid": "visual-current-lab-card",
+          key: lab.labName,
+          style: countdown.active ? { "--current-task-progress": `${countdown.progressPercent || 0}%` } : {},
+        },
+        [
+          h("div", { class: "visual-current-lab-card-head" }, [
+            h("strong", { class: "visual-current-lab-name" }, lab.labName),
+            h("span", { class: "visual-current-lab-status" }, [
+              h("i"),
+              h("b", lab.statusLabel || "-"),
+            ]),
+          ]),
+          h("div", { class: "visual-current-lab-task" }, [
+            h("span", "当前选择任务"),
+            h("strong", lab.taskCode || "-"),
+          ]),
+          h("div", { class: "visual-current-lab-fields" }, [
+            h("div", { class: "visual-current-lab-field field-experiment" }, [h("span", "试验项目"), h("strong", lab.experimentName || "-")]),
+            h("div", { class: "visual-current-lab-field field-trays" }, [
+              h("span", "托盘/样品"),
+              trayCodes.length
+                ? h("strong", { class: "visual-current-lab-tray-list" }, trayCodes.map((trayCode) => h("span", { key: trayCode }, trayCode)))
+                : h("strong", "-"),
+              h("small", sampleText),
+            ]),
+            h("div", { class: "visual-current-lab-field field-stage" }, [h("span", "阶段"), h("strong", lab.stageLabel || "-")]),
+            h("div", { class: "visual-current-lab-field field-plan" }, [h("span", "计划时间"), h("strong", lab.planTimeLabel || "-")]),
+          ]),
+          countdown.active
+            ? h("div", { class: "visual-current-lab-countdown", "data-testid": "visual-current-lab-countdown" }, [
+              h("div", { class: "visual-current-lab-countdown-head" }, [
+                h("span", "实验倒计时"),
+                h("strong", countdown.remainingLabel || "-"),
+              ]),
+              h("div", { class: "visual-current-lab-progress" }, [h("i")]),
+            ])
+            : null,
+        ],
+      );
+    };
+
+    return () => {
+      const labs = Array.isArray(props.currentLabTaskView?.labs) ? props.currentLabTaskView.labs : [];
+      const counts = props.currentLabTaskView?.counts || {};
+      return h("div", { class: ["visual-board", "visual-current-lab-board", props.compact ? "is-compact" : ""] }, [
+        h("div", { class: "visual-board-top" }, [
+          h("div", { class: "visual-board-title-group" }, [
+            h("div", { class: "visual-board-kicker" }, "LAB TASK MATRIX"),
+            h("div", { class: "visual-board-title" }, props.screen?.name || "试验间当前任务状态屏"),
+          ]),
+          h("div", { class: "visual-board-state" }, [
+            h("span", { class: "visual-board-live" }, "SYNC"),
+            h("span", { class: "visual-board-time" }, "系统状态同步"),
+          ]),
+        ]),
+        h("div", { class: "visual-board-main" }, [
+          h("div", { class: "visual-current-lab-metrics" }, [
+            h("div", { class: "metric-scheduled" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
+            h("div", { class: "metric-repair" }, [h("span", "维修/保养"), h("strong", counts.repair || 0)]),
+            h("div", { class: "metric-running" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
+            h("div", { class: "metric-urgent" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
+          ]),
+          labs.length
+            ? h("div", { class: "visual-current-lab-grid" }, labs.map(renderLabCard))
+            : h("div", { class: "visual-current-lab-empty" }, "暂无试验间状态数据"),
+        ]),
+      ]);
+    };
+  },
+};
+
 onMounted(() => {
   refreshViewportSize();
+  refreshVisualizationClock();
   initializeSnapshot();
   window.addEventListener("resize", refreshViewportSize);
+  clockTimer = window.setInterval(refreshVisualizationClock, 1000);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", refreshViewportSize);
+  if (clockTimer) {
+    window.clearInterval(clockTimer);
+    clockTimer = null;
+  }
 });
 
 const LabProcessScreen = {
@@ -1331,6 +1454,7 @@ const StagingSamplesScreen = {
 const ANALYSIS_PRODUCT_COUNTS = {
   "振动一室": 72,
   "高低温湿热一室": 46,
+  "高低温湿热二室": 38,
   "盐雾试验室": 58,
   "冲击一室": 34,
   "霉菌试验室": 63,

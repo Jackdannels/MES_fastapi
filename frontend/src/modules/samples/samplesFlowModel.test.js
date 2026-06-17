@@ -4,6 +4,7 @@ import * as samplesFlowModelPublicApi from "./samplesFlowModel";
 import {
   DETAIL_STATUS_OPTIONS as DETAIL_STATUS_OPTIONS_FROM_CONSTANTS,
   SAMPLE_FLOW_STEPS as SAMPLE_FLOW_STEPS_FROM_CONSTANTS,
+  TEST_LAB_OPTIONS,
   TRAY_STATUS_OPTIONS as TRAY_STATUS_OPTIONS_FROM_CONSTANTS,
 } from "./sampleFlow.constants";
 import {
@@ -139,6 +140,10 @@ describe("samplesFlowModel", () => {
       "厂家收回",
     ]);
     expect(view.steps.find((step) => step.key === "sent_to_lab")).toEqual(expect.objectContaining({ active: true }));
+  });
+
+  test("sample flow lab options include both high humid rooms", () => {
+    expect(TEST_LAB_OPTIONS).toEqual(expect.arrayContaining(["高低温湿热一室", "高低温湿热二室"]));
   });
 
   test("buildTrayFlowView keeps post-experiment staging dispatch separate from pre-experiment staging arrival", () => {
