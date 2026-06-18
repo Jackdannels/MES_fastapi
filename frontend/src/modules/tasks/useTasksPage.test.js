@@ -181,6 +181,68 @@ describe("useTasksPage", () => {
     }
   });
 
+  test("updates only the task name after a task is completed", async () => {
+    const completedTask = {
+      ...task,
+      name: "完成任务旧名称",
+      sample_count: "2",
+      sample_type: "金属件",
+      test_types: ["冲击试验"],
+      test_type: "冲击试验",
+      status: "任务已完成",
+    };
+    mocks.readTasks.mockResolvedValue([completedTask]);
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.experiments]: [
+        {
+          id: "EXP-COMPLETED-A",
+          task_code: completedTask.code,
+          experiment_code: "EXP-COMPLETED-A",
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        { id: "sample-1", code: `${completedTask.code}-SP-001`, task_code: completedTask.code, status: "实验已完成" },
+        { id: "sample-2", code: `${completedTask.code}-SP-002`, task_code: completedTask.code, status: "实验已完成" },
+      ],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openTaskDrawer(wrapper.vm.taskRows[0]);
+      await settle(wrapper);
+      wrapper.vm.editForm.name = "完成任务新名称";
+      wrapper.vm.editForm.sample_count = "3";
+      wrapper.vm.editForm.sample_type = "复合材料";
+      wrapper.vm.editForm.test_types = ["盐雾试验"];
+      wrapper.vm.editForm.remark = "不应保存的备注";
+
+      await wrapper.vm.updateTask();
+      await settle(wrapper);
+
+      expect(mocks.updateTask).toHaveBeenCalledWith(
+        completedTask.id,
+        expect.objectContaining({
+          name: "完成任务新名称",
+          sample_count: "2",
+          sample_type: "金属件",
+          test_types: ["冲击试验"],
+          test_type: "冲击试验",
+        }),
+      );
+      expect(mocks.updateTask.mock.calls[0][1]).not.toMatchObject({
+        remark: "不应保存的备注",
+      });
+      expect(mocks.updateTask.mock.calls[0][1]).not.toHaveProperty("updated_at");
+      expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   test("blocks deleting a task while one of its experiments is running", async () => {
     mocks.loadSnapshot.mockResolvedValue({
       ...buildSnapshot(),

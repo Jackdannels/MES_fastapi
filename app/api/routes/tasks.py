@@ -33,9 +33,13 @@ SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFI
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
 SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量"
+COMPLETED_TASK_EDIT_LOCKED_MESSAGE = "任务已完成，仅允许修改任务名称"
 RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
 RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中"}
 RUNNING_TASK_STATUSES = {"任务进行中", "实验进行中", "实验中"}
+COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+COMPLETED_TASK_STATUSES = {"任务已完成", "任务完成", *COMPLETED_EXPERIMENT_STATUSES}
+COMPLETED_TASK_EDITABLE_FIELDS = {"name"}
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
 TASK_TEXT_FIELD_LABELS = {
@@ -150,6 +154,33 @@ def task_has_running_experiment(snapshot: dict[str, Any], task: dict[str, Any]) 
         if any(row_has_running_experiment_status(tray) for tray in as_list(sample.get("trays"))):
             return True
     return False
+
+
+def task_is_completed(task: dict[str, Any], existing_experiments: list[dict[str, Any]]) -> bool:
+    if normalize_text(task.get("status")) in COMPLETED_TASK_STATUSES:
+        return True
+    task_experiments = [dict(experiment) for experiment in existing_experiments if normalize_text(experiment.get("status"))]
+    return bool(task_experiments) and all(
+        normalize_text(experiment.get("status")) in COMPLETED_EXPERIMENT_STATUSES
+        for experiment in task_experiments
+    )
+
+
+def comparable_task_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: comparable_task_value(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [comparable_task_value(item) for item in value]
+    return normalize_text(value)
+
+
+def task_update_changes_only_completed_editable_fields(previous_task: dict[str, Any], payload: dict[str, Any]) -> bool:
+    for field, value in payload.items():
+        if field in COMPLETED_TASK_EDITABLE_FIELDS:
+            continue
+        if comparable_task_value(previous_task.get(field)) != comparable_task_value(value):
+            return False
+    return True
 
 
 def is_retention_schedule(row: dict[str, Any]) -> bool:
@@ -614,6 +645,20 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
     previous_task_code = task_code(previous_task)
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == previous_task_code]
+    if task_is_completed(previous_task, existing_experiments):
+        if not task_update_changes_only_completed_editable_fields(previous_task, payload_dict):
+            raise HTTPException(status_code=400, detail=COMPLETED_TASK_EDIT_LOCKED_MESSAGE)
+        completed_task = dict(previous_task)
+        if "name" in payload_dict:
+            completed_task["name"] = payload_dict.get("name")
+        if not normalize_text(completed_task.get("name")):
+            completed_task["name"] = build_default_task_name(task_code(completed_task), tasks)
+        validate_task_text_fields(completed_task)
+        tasks[task_index] = completed_task
+        snapshot["mes.tasks"] = tasks
+        storage.write_many(snapshot)
+        publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+        return completed_task
     previous_test_types = extract_task_test_types(previous_task, existing_experiments)
     experiment_types_changed = False
     if "test_types" in payload_dict:

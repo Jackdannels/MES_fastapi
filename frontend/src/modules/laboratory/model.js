@@ -1058,10 +1058,12 @@ const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null, lab =
   const hasLabScope = Boolean(normalizeText(labRef?.name) || normalizeText(labRef?.code) || normalizeText(labRef?.id));
   const lockedRow = asArray(scheduleRows).find((row) => {
     const rowKey = laboratoryOperationKey(row);
+    const sameLaboratory = hasLabScope && scheduleMatchesLab(row, labRef);
+    const sharedTray = laboratoryRowsShareTray(row, currentTask);
     const matchesOperationScope =
       (!hasLabScope && !currentTask)
-      || (hasLabScope && scheduleMatchesLab(row, labRef))
-      || laboratoryRowsShareTray(row, currentTask);
+      || sameLaboratory
+      || sharedTray;
     return (!currentKey || rowKey !== currentKey)
       && matchesOperationScope
       && laboratoryRowHasStartedOperation(row);
@@ -1069,10 +1071,14 @@ const getLaboratoryOperationLock = (scheduleRows = [], currentTask = null, lab =
   if (!lockedRow) {
     return { active: false };
   }
+  const sameLaboratory = hasLabScope && scheduleMatchesLab(lockedRow, labRef);
+  const sharedTray = laboratoryRowsShareTray(lockedRow, currentTask);
   return {
     active: true,
     experimentKey: laboratoryOperationKey(lockedRow),
     experimentName: normalizeText(lockedRow?.experimentName),
+    sameLaboratory,
+    sharedTray,
     taskCode: normalizeText(lockedRow?.taskCode),
   };
 };

@@ -1476,6 +1476,111 @@ def test_update_task_rejects_sample_count_change_after_storage_confirmed_with_ex
     assert len(client.app.state.storage.read("mes.samples")) == 2
 
 
+def test_update_completed_task_allows_name_only(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-completed-rename",
+                "code": "SYLU-2026-06-210",
+                "name": "完成任务旧名称",
+                "sample_count": "2",
+                "sample_type": "金属件",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "status": "任务已完成",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-06-210-A",
+                "task_code": "SYLU-2026-06-210",
+                "experiment_code": "SYLU-2026-06-210-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验已完成",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-completed-rename",
+        json={
+            "id": "task-completed-rename",
+            "code": "SYLU-2026-06-210",
+            "name": "完成任务新名称",
+            "sample_count": "2",
+            "sample_type": "金属件",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "status": "任务已完成",
+        },
+    )
+
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "完成任务新名称"
+    assert stored_task["name"] == "完成任务新名称"
+    assert stored_task["sample_count"] == "2"
+    assert stored_task["sample_type"] == "金属件"
+    assert client.app.state.storage.read("mes.experiments")[0]["experiment_name"] == "冲击试验"
+
+
+def test_update_completed_task_rejects_non_name_changes_from_completed_experiments(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-completed-locked",
+                "code": "SYLU-2026-06-211",
+                "name": "完成任务",
+                "sample_count": "2",
+                "sample_type": "金属件",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "status": "任务进行中",
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-06-211-A",
+                "task_code": "SYLU-2026-06-211",
+                "experiment_code": "SYLU-2026-06-211-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验已完成",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-completed-locked",
+        json={
+            "id": "task-completed-locked",
+            "code": "SYLU-2026-06-211",
+            "name": "完成任务改名",
+            "sample_count": "3",
+            "sample_type": "复合材料",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "required_device": "冲击试验",
+            "status": "任务进行中",
+        },
+    )
+
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "任务已完成，仅允许修改任务名称"}
+    assert stored_task["name"] == "完成任务"
+    assert stored_task["sample_count"] == "2"
+    assert stored_task["sample_type"] == "金属件"
+
+
 def test_create_task_preserves_existing_experiments_for_other_tasks(monkeypatch):
     client = build_client(
         monkeypatch,

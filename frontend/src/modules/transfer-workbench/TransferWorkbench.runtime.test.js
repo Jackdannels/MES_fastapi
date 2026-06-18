@@ -834,6 +834,56 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find(".transfer-overview-pagination [data-testid='pagination-jump-input']").exists()).toBe(true);
   });
 
+  test("pre-allocation overview returns to the first page when searching from the last page", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    bootstrapPayload.taskOverview = Array.from({ length: 12 }, (_, index) => ({
+      ...bootstrapPayload.taskOverview[0],
+      taskId: 300 + index,
+      seq: index + 1,
+      taskNo: `SYLU-2026-03-${String(index + 1).padStart(3, "0")}`,
+      taskType: index < 8 ? "目标筛选试验" : "普通试验",
+      experimentTypeText: index < 8 ? "目标筛选试验" : "普通试验",
+      taskStatus: "未入库",
+      taskProgress: "样品已送达，待打印条形码",
+    }));
+    bootstrapPayload.pendingTaskCount = 12;
+    bootstrapPayload.storedTaskCount = 0;
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('.transfer-overview-pagination [data-page="next"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('.transfer-overview-pagination [data-page="next"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('.transfer-overview-pagination [data-page="next"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('.transfer-overview-pagination [data-testid="pagination-status"]').text()).toBe("第 4 / 4 页");
+    expect(wrapper.find('[data-testid="transfer-task-row-309"]').exists()).toBe(true);
+
+    await wrapper.get(".search-input").setValue("目标筛选");
+    await settle(wrapper);
+
+    expect(wrapper.get('.transfer-overview-pagination [data-testid="pagination-status"]').text()).toBe("第 1 / 3 页");
+    expect(wrapper.find('[data-testid="transfer-task-row-300"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="transfer-task-row-306"]').exists()).toBe(false);
+  });
+
   test("pre-allocation overview pads the last page to keep pagination fixed", async () => {
     const bootstrapPayload = createBootstrapPayload();
     bootstrapPayload.taskOverview = Array.from({ length: 5 }, (_, index) => ({
@@ -933,6 +983,49 @@ describe("TransferWorkbench runtime", () => {
         { experimentCode: "SYLU-2026-03-101-B", trayIds: [1001] },
       ],
     }));
+  });
+
+  test("keeps the current tray layout when reducing tray limit would exceed assignable trays", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    workspacePayload.task = {
+      ...workspacePayload.task,
+      maxAssignableTrayCount: 2,
+      remainingTrayCount: 0,
+    };
+    workspacePayload.trayInventory = [];
+
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(2);
+
+    await wrapper.get('[data-testid="transfer-tray-limit-input"]').setValue("1");
+    await wrapper.get('[data-testid="transfer-tray-limit-input"]').trigger("change");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(2);
+    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').element.value).toBe("2");
+    expect(wrapper.get('[data-testid="transfer-detail-feedback"]').text()).toContain("系统剩余托盘不足，当前最多可分配 2 个托盘。");
   });
 
   test("blocks saving when a loaded tray has no assigned experiment", async () => {
@@ -1785,6 +1878,73 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.text()).toContain("内容：任务编号：SYLU-2026-03-101 | 样品数量：2");
     expect(wrapper.text()).toContain("样品编号：SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002");
     expect(wrapper.text()).not.toContain("TRAY|TASK:");
+  });
+
+  test("barcode preview uses themed preview structure", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    const printedWorkspace = {
+      ...workspacePayload,
+      allocationSaved: true,
+      assignedTrays: workspacePayload.assignedTrays.map((tray) => ({
+        ...tray,
+        barcode: {
+          barcodeId: 9100 + tray.trayId,
+          objectId: tray.trayId,
+          barcodeNo: tray.trayNo,
+          barcodeContent: tray.trayNo,
+        },
+      })),
+    };
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: { ...workspacePayload, allocationSaved: true } }) };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/print-barcodes")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            message: "条形码已生成",
+            barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
+            workspace: printedWorkspace,
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-print-barcodes"]').trigger("click");
+    await settle(wrapper);
+
+    const modal = wrapper.get('[data-testid="barcode-modal"]');
+    expect(modal.classes()).toContain("transfer-barcode-preview-modal");
+    expect(modal.find(".transfer-barcode-preview-summary").exists()).toBe(true);
+    expect(modal.find(".transfer-barcode-preview-card").exists()).toBe(true);
+    expect(modal.find(".transfer-barcode-preview-meta").exists()).toBe(true);
+    expect(modal.find(".transfer-barcode-preview-samples").exists()).toBe(true);
   });
 
   test("barcode preview truncates long sample code lists after eight codes", async () => {

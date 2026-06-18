@@ -5566,6 +5566,135 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("keeps impact comparison available when another tray in the same task is running salt spray", () => {
+    const taskCode = "SYLU-2026-07-001";
+    const saltTrayCode = `${taskCode}-TP-001`;
+    const impactTrayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          run_no: "run-salt-001",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          device: "盐雾试验室",
+          status: "实验进行中",
+          started_at: "2026-06-18 16:52:13",
+          tray_codes: [saltTrayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-salt-001",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-A`,
+          tray_code: saltTrayCode,
+          run_tray_status: "实验进行中",
+          status: "实验进行中",
+          started_at: "2026-06-18 16:52:13",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: saltTrayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: impactTrayCode },
+      ],
+      experiments: [
+        {
+          experiment_code: `${taskCode}-A`,
+          experiment_name: "盐雾试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-B`,
+          experiment_name: "冲击试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      labName: "冲击二室",
+      now: new Date("2026-06-18T16:53:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "实验进行中",
+          location: "盐雾试验室",
+          status: "实验进行中",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "实验进行中",
+              target_experiment_code: `${taskCode}-A`,
+              target_lab: "盐雾试验室",
+              tray_code: saltTrayCode,
+            },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          flow_status: "送至实验室",
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${impactTrayCode} 送至 冲击二室`,
+              location: "冲击二室",
+              status: "送至实验室",
+              time: "2026-06-18 16:52:30",
+            },
+          ],
+          location: "冲击二室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: `${taskCode}-B`,
+              target_lab: "冲击二室",
+              tray_code: impactTrayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "冲击二室",
+          experiment_code: `${taskCode}-B`,
+          start_at: "2026-06-18 16:30:00",
+          task_code: taskCode,
+        },
+        {
+          device: "盐雾试验室",
+          experiment_code: `${taskCode}-A`,
+          start_at: "2026-06-18 16:30:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: impactTrayCode,
+      tasks: [{ code: taskCode, name: "冲击盐雾任务", test_type: "盐雾试验 / 冲击试验" }],
+    });
+
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask.experimentCode).toBe(`${taskCode}-B`);
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${impactTrayCode} | 当前状态：送至冲击二室`);
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: true,
+      canInstallSample: false,
+      canMarkReady: false,
+    });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: impactTrayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      trayCode: impactTrayCode,
+    }));
+  });
+
   test("shows staging arrival after a shared tray completes another experiment before the next lab dispatch", () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-002`;

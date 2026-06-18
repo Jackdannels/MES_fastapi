@@ -278,7 +278,7 @@
                 <div class="transfer-tray-limit-toolbar">
                   <span class="transfer-tray-limit-toolbar__label">统一上限</span>
                   <div class="transfer-tray-limit-stepper">
-                    <AppNumberInput data-testid="transfer-tray-limit-input" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :model-value="trayLimit" @change="setTrayLimit" />
+                    <AppNumberInput :key="trayLimitInputKey" data-testid="transfer-tray-limit-input" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :model-value="trayLimit" @change="setTrayLimit" />
                   </div>
                 </div>
 
@@ -425,7 +425,7 @@
 
     <div v-if="barcodeModalVisible" class="transfer-modal">
       <div class="transfer-modal__backdrop" @click="closeBarcodeModal"></div>
-      <div class="transfer-modal__panel" data-testid="barcode-modal">
+      <div class="transfer-modal__panel transfer-barcode-preview-modal" data-testid="barcode-modal">
         <div class="transfer-modal__head">
           <div>
             <h3>条形码信息</h3>
@@ -433,14 +433,40 @@
           </div>
           <button class="action-btn secondary" type="button" @click="closeBarcodeModal">关闭</button>
         </div>
-        <div class="transfer-modal__list">
-          <article v-for="item in barcodePreviewItems" :key="item.barcodeId" class="transfer-modal__item">
-            <strong>{{ item.barcodeDisplayNo }}</strong>
-            <div v-if="item.barcodeSvg" class="transfer-modal__barcode" v-html="item.barcodeSvg"></div>
-            <div>托盘：{{ item.trayNo }}</div>
-            <div>样品数：{{ item.samples.length }}</div>
-            <div>内容：{{ item.summaryText || "-" }}</div>
-            <div>样品编号：{{ item.sampleText || "-" }}</div>
+        <div class="transfer-barcode-preview-summary">
+          <span>待打印托盘</span>
+          <strong>{{ barcodePreviewItems.length }}</strong>
+          <span>当前任务</span>
+          <strong>{{ currentTask?.taskNo || "--" }}</strong>
+        </div>
+        <div class="transfer-modal__list transfer-barcode-preview-list">
+          <article v-for="item in barcodePreviewItems" :key="item.barcodeId" class="transfer-modal__item transfer-barcode-preview-card">
+            <div class="transfer-barcode-preview-card__top">
+              <div>
+                <span class="transfer-barcode-preview-card__eyebrow">托盘条码</span>
+                <strong>{{ item.barcodeDisplayNo }}</strong>
+              </div>
+              <span class="transfer-barcode-preview-count">{{ item.samples.length }} 件样品</span>
+            </div>
+            <div v-if="item.barcodeSvg" class="transfer-modal__barcode transfer-barcode-preview-code" v-html="item.barcodeSvg"></div>
+            <div class="transfer-barcode-preview-meta">
+              <div>
+                <span>托盘</span>
+                <strong>{{ item.trayNo }}</strong>
+              </div>
+              <div>
+                <span>样品数：</span>
+                <strong>{{ item.samples.length }}</strong>
+              </div>
+            </div>
+            <div class="transfer-barcode-preview-detail">
+              <span>内容：</span>
+              <strong>{{ item.summaryText || "-" }}</strong>
+            </div>
+            <div class="transfer-barcode-preview-samples">
+              <span>样品编号：</span>
+              <strong>{{ item.sampleText || "-" }}</strong>
+            </div>
             <div v-if="item.experimentLabels?.length" class="transfer-modal__experiment-tags">
               <span
                 v-for="(label, labelIndex) in item.experimentLabels"
@@ -496,7 +522,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
@@ -550,6 +576,8 @@ const activeAssignmentMode = ref("task");
 const draftExperimentTraySelections = ref({});
 const availableInventory = ref([]);
 const trayLimit = ref(4);
+const trayLimitInputVersion = ref(0);
+const trayLimitInputKey = computed(() => `tray-limit-${trayLimit.value}-${trayLimitInputVersion.value}`);
 const overviewTaskNoSortDirection = ref("");
 const activeTrayIndex = ref(-1);
 const armedTrayIndex = ref(-1);
@@ -581,6 +609,11 @@ const exitDialogOpen = ref(false);
 const transferDispatch = useTransferDispatch();
 let flushPendingStorageRefresh = () => false;
 let hasPendingSamplesRefresh = false;
+
+watch([searchText, taskTypeFilter], () => {
+  taskPage.value = 1;
+});
+
 const errorSample = useTrayErrorSampleHandling({
   onChanged: () => refreshTransferWorkspaceAfterTrayChange(),
   onClose: async () => {
@@ -1550,6 +1583,13 @@ const setActiveTray = (index) => {
 const setTrayLimit = (value) => {
   if (taskEditingLocked.value) return;
   const nextLimit = normalizeTrayLimit(value);
+  if (nextLimit === trayLimit.value) return;
+  const requiredTrayCount = Math.max(1, Math.ceil(totalAssignedSampleCount.value / nextLimit));
+  if (nextLimit < trayLimit.value && requiredTrayCount > maxAssignableTrayCount.value) {
+    trayLimitInputVersion.value += 1;
+    showWorkbenchFeedback(trayCapacityWarning.value, "warning");
+    return;
+  }
   rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
 };
 

@@ -20,6 +20,7 @@ import {
   buildTaskMetrics,
   buildTaskRows,
   buildTaskSampleCodes,
+  STATUS_COMPLETED,
   createTaskEditForm,
   createTaskIntakeForm,
   createTaskRecord,
@@ -141,6 +142,7 @@ function useTasksPage() {
     return codes.concat(generatedCodes).slice(0, plannedCount);
   });
   const taskDetailSampleCodePreview = computed(() => taskDetailSampleCodes.value.slice(0, 5));
+  const isCompletedTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_COMPLETED);
 
   const typeFilteredRows = computed(() =>
     allRows.value.filter((row) => {
@@ -284,6 +286,9 @@ function useTasksPage() {
   };
 
   const openEditExperimentPicker = () => {
+    if (isCompletedTaskDetail.value) {
+      return;
+    }
     editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
     editExperimentModal.openWith({ id: "task-edit-test-types-modal" });
   };
@@ -338,6 +343,9 @@ function useTasksPage() {
   };
 
   const openSampleCodesEditor = () => {
+    if (isCompletedTaskDetail.value) {
+      return;
+    }
     const taskCode = normalizeText(editForm.value.code);
     if (!taskCode) {
       return;
@@ -687,7 +695,46 @@ function useTasksPage() {
     }
   };
 
+  const updateCompletedTaskName = async (originalTask) => {
+    const updatedTask = {
+      ...originalTask,
+      name: normalizeText(editForm.value.name),
+    };
+    const textWarning = validateTaskTextFields(updatedTask);
+    if (textWarning) {
+      editWarning.value = textWarning;
+      return;
+    }
+
+    try {
+      const savedTask = await updateTaskByApi(editForm.value.id, updatedTask);
+      const nextTask = savedTask && typeof savedTask === "object" ? savedTask : updatedTask;
+      rawTasks.value = rawTasks.value.map((task) =>
+        normalizeText(task?.id) === normalizeText(editForm.value.id) ? nextTask : task
+      );
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
+      return;
+    }
+
+    closeTaskDrawer();
+    try {
+      await loadTasksPage();
+      loadError.value = "";
+    } catch (error) {
+      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
+    }
+  };
+
   const updateTask = async () => {
+    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
+    if (!originalTask) {
+      return;
+    }
+    if (isCompletedTaskDetail.value) {
+      await updateCompletedTaskName(originalTask);
+      return;
+    }
     if (Array.isArray(editForm.value.test_types)) {
       editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
     }
@@ -705,7 +752,6 @@ function useTasksPage() {
     if (!updatedTask) {
       return;
     }
-    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
     const originalTypes = collectExperimentTypes(originalTask?.test_types, originalTask?.test_type);
     const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
     const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);
@@ -1098,6 +1144,7 @@ function useTasksPage() {
     intakeExperimentModalOpen: intakeExperimentModal.open,
     intakeExperimentSummary,
     intakeExperimentTypeOptions,
+    isCompletedTaskDetail,
     intakeModalOpen: intakeModal.open,
     intakeSampleCodePreview,
     intakeWarning,

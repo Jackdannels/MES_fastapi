@@ -890,6 +890,153 @@
   justify-content: flex-end;
 }
 
+.transfer-barcode-preview-modal {
+  width: min(820px, calc(100vw - 32px));
+  padding: 18px;
+  border-color: rgba(20, 184, 166, 0.34);
+  background:
+    linear-gradient(180deg, rgba(20, 184, 166, 0.08), transparent 190px),
+    var(--bg-card-raised);
+}
+
+.transfer-barcode-preview-modal .transfer-modal__head {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -18px 0;
+  padding: 18px;
+  border-bottom: 1px solid rgba(20, 184, 166, 0.2);
+  background: rgba(11, 20, 30, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.transfer-barcode-preview-summary {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1.4fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(20, 184, 166, 0.24);
+  border-radius: var(--radius-panel);
+  background: rgba(20, 184, 166, 0.08);
+  color: var(--muted);
+}
+
+.transfer-barcode-preview-summary strong {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.transfer-barcode-preview-list {
+  gap: 12px;
+}
+
+.transfer-barcode-preview-card {
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(20, 184, 166, 0.28);
+  background:
+    linear-gradient(135deg, rgba(20, 184, 166, 0.14), rgba(15, 23, 42, 0.06) 44%),
+    rgba(15, 23, 42, 0.72);
+  box-shadow: 0 16px 36px rgba(2, 8, 23, 0.26);
+}
+
+.transfer-barcode-preview-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: linear-gradient(180deg, #2dd4bf, #38bdf8);
+}
+
+.transfer-barcode-preview-card__top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.transfer-barcode-preview-card__top strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.transfer-barcode-preview-card__eyebrow,
+.transfer-barcode-preview-meta span,
+.transfer-barcode-preview-detail span,
+.transfer-barcode-preview-samples span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.transfer-barcode-preview-count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 184, 166, 0.34);
+  background: rgba(20, 184, 166, 0.12);
+  color: #7dd3fc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.transfer-barcode-preview-code {
+  margin: 12px 0;
+  padding: 14px;
+  border-color: rgba(45, 212, 191, 0.24);
+  background: #f8fafc;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.transfer-barcode-preview-code svg {
+  margin-inline: auto;
+}
+
+.transfer-barcode-preview-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.transfer-barcode-preview-meta div,
+.transfer-barcode-preview-detail,
+.transfer-barcode-preview-samples {
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: var(--radius-control);
+  background: rgba(15, 23, 42, 0.44);
+}
+
+.transfer-barcode-preview-meta strong,
+.transfer-barcode-preview-detail strong,
+.transfer-barcode-preview-samples strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.transfer-barcode-preview-detail,
+.transfer-barcode-preview-samples,
+.transfer-barcode-preview-card .transfer-modal__experiment-tags {
+  margin-top: 8px;
+}
+
+.transfer-barcode-preview-modal .transfer-modal__actions {
+  position: sticky;
+  bottom: -18px;
+  margin: 14px -18px -18px;
+  padding: 14px 18px;
+  border-top: 1px solid rgba(20, 184, 166, 0.2);
+  background: rgba(11, 20, 30, 0.94);
+  backdrop-filter: blur(12px);
+}
+
 .transfer-modal--compact .transfer-modal__panel {
   width: min(680px, calc(100vw - 32px));
 }
@@ -957,6 +1104,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 12px 16px;
   }
+
+  .transfer-barcode-preview-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 720px) {
@@ -997,5 +1148,14 @@
 
   .transfer-table__row {
     grid-template-columns: 1fr;
+  }
+
+  .transfer-barcode-preview-summary,
+  .transfer-barcode-preview-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .transfer-barcode-preview-card__top {
+    flex-direction: column;
   }
 }

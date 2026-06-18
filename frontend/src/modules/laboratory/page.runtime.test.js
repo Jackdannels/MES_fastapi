@@ -1214,6 +1214,137 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
   });
 
+  test("allows impact comparison for another tray in the same task while salt spray is running", async () => {
+    reactiveRoute.query = { lab: "冲击二室" };
+    masterLabsState = [
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+      { code: "LAB_IMPACT_2", name: "冲击二室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-07-001", name: "冲击盐雾任务", test_type: "盐雾试验 / 冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          experiment_name: "盐雾试验",
+          status: "实验进行中",
+        },
+        {
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-B",
+          experiment_name: "冲击试验",
+          status: "已排程",
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-salt-001",
+          run_no: "run-salt-001",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          device: "盐雾试验室",
+          tray_codes: ["SYLU-2026-07-001-TP-001"],
+          status: "实验进行中",
+          started_at: "2026-06-18 16:52:13",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          run_no: "run-salt-001",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          tray_code: "SYLU-2026-07-001-TP-001",
+          run_tray_status: "实验进行中",
+          status: "实验进行中",
+          started_at: "2026-06-18 16:52:13",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-07-001", experiment_code: "SYLU-2026-07-001-A", tray_code: "SYLU-2026-07-001-TP-001" },
+        { task_code: "SYLU-2026-07-001", experiment_code: "SYLU-2026-07-001-B", tray_code: "SYLU-2026-07-001-TP-001" },
+        { task_code: "SYLU-2026-07-001", experiment_code: "SYLU-2026-07-001-B", tray_code: "SYLU-2026-07-001-TP-002" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-07-001-SP-001",
+          flow_status: "实验进行中",
+          location: "盐雾试验室",
+          owner: "王工",
+          status: "实验进行中",
+          task_code: "SYLU-2026-07-001",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验进行中",
+              target_experiment_code: "SYLU-2026-07-001-A",
+              target_lab: "盐雾试验室",
+              tray_code: "SYLU-2026-07-001-TP-001",
+            },
+          ],
+        },
+        {
+          code: "SYLU-2026-07-001-SP-002",
+          flow_status: "送至实验室",
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: "SYLU-2026-07-001-TP-002 送至 冲击二室",
+              location: "冲击二室",
+              status: "送至实验室",
+              time: "2026-06-18 16:52:30",
+            },
+          ],
+          location: "冲击二室",
+          owner: "王工",
+          status: "送至实验室",
+          task_code: "SYLU-2026-07-001",
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: "SYLU-2026-07-001-B",
+              target_lab: "冲击二室",
+              tray_code: "SYLU-2026-07-001-TP-002",
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-001",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-B",
+          device: "冲击二室",
+          start_at: "2026-06-18 16:30:00",
+          end_at: "2026-06-18 23:40:00",
+        },
+        {
+          id: "schedule-salt-001",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          device: "盐雾试验室",
+          start_at: "2026-06-18 16:30:00",
+          end_at: "2026-06-18 23:40:00",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.text()).toContain("SYLU-2026-07-001 / 冲击试验");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("SYLU-2026-07-001-TP-002");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+
+    expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
+    expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+  });
+
   test("does not overwrite another laboratory tray state when persisting comparison from a stale snapshot", async () => {
     masterLabsState = [
       { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },

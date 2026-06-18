@@ -291,8 +291,13 @@ function useLaboratoryPage(options = {}) {
       };
     }
     if (operationLock.value.active) {
+      const canCompareThroughSharedTrayLock =
+        operationLock.value.sharedTray
+        && !operationLock.value.sameLaboratory
+        && state.canCompare
+        && workflow.value.hasComparableTrayWithoutActiveOtherExperiment;
       return {
-        canCompare: false,
+        canCompare: Boolean(canCompareThroughSharedTrayLock),
         canInstallSample: false,
         canMarkReady: false,
       };
