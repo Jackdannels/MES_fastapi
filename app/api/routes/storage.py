@@ -58,6 +58,24 @@ LAB_MAINTENANCE_BLOCKED_STATUSES = {
     "实验进行中",
     "实验中",
 }
+SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES = {
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+    *COMPLETED_EXPERIMENT_STATUSES,
+}
+SCHEDULE_FIXTURE_LOCKED_DETAIL = "夹具安装后排程不可删除或重新排程。"
+SCHEDULE_LOCKED_FIELDS = {
+    "device",
+    "end_at",
+    "experiment_code",
+    "lab_code",
+    "lab_id",
+    "planned_hours",
+    "start_at",
+    "task_code",
+}
 _STORAGE_UPDATE_SUBSCRIBERS: set[queue.Queue[dict[str, Any]]] = set()
 _STORAGE_UPDATE_SUBSCRIBERS_LOCK = threading.Lock()
 
@@ -82,10 +100,80 @@ def _tray_code(tray: Any) -> str:
     return _normalize_text(tray.get("tray_code")) if isinstance(tray, dict) else ""
 
 
+def _task_code(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    return _normalize_text(row.get("task_code") or row.get("taskCode") or row.get("code"))
+
+
+def _experiment_code(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    return _normalize_text(row.get("experiment_code") or row.get("experimentCode"))
+
+
 def _status(value: Any) -> str:
     if not isinstance(value, dict):
         return ""
     return _normalize_text(value.get("status")) or _normalize_text(value.get("flow_status"))
+
+
+def _schedule_id(schedule: Any) -> str:
+    return _normalize_text(schedule.get("id")) if isinstance(schedule, dict) else ""
+
+
+def _experiment_tray_codes(experiment_trays: Any, task_code: str, experiment_code: str) -> set[str]:
+    codes: set[str] = set()
+    for entry in _as_list(experiment_trays):
+        if not isinstance(entry, dict):
+            continue
+        if _task_code(entry) != task_code or _experiment_code(entry) != experiment_code:
+            continue
+        tray_code = _tray_code(entry)
+        if tray_code:
+            codes.add(tray_code)
+    return codes
+
+
+def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str]) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    sample_statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    for tray in _as_list(sample.get("trays")):
+        if not isinstance(tray, dict) or _tray_code(tray) not in tray_codes:
+            continue
+        tray_statuses = {_normalize_text(tray.get("status")), _normalize_text(tray.get("flow_status"))}
+        if (sample_statuses | tray_statuses) & SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES:
+            return True
+    return False
+
+
+def _schedule_is_fixture_locked(schedule: Any, samples: Any, experiment_trays: Any) -> bool:
+    if not isinstance(schedule, dict):
+        return False
+    task_code = _task_code(schedule)
+    experiment_code = _experiment_code(schedule)
+    if not task_code or not experiment_code:
+        return False
+    tray_codes = _experiment_tray_codes(experiment_trays, task_code, experiment_code)
+    if not tray_codes:
+        return False
+    return any(
+        _task_code(sample) == task_code and _sample_has_fixture_locked_tray(sample, tray_codes)
+        for sample in _as_list(samples)
+    )
+
+
+def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:
+    if not isinstance(current_schedule, dict) or not isinstance(next_schedule, dict):
+        return True
+    return any(
+        _normalize_text(current_schedule.get(field)) != _normalize_text(next_schedule.get(field))
+        for field in SCHEDULE_LOCKED_FIELDS
+    )
 
 
 def _appearance_experiment_name_is_allowed(value: Any) -> bool:
@@ -801,7 +889,31 @@ def _validate_samples_maintenance_lock(current_samples: Any, next_samples: Any, 
             raise HTTPException(status_code=400, detail=f"{device_name}设备维护中，禁止实验室操作")
 
 
+def _validate_fixture_locked_schedules(current_schedules: Any, next_schedules: Any, samples: Any, experiment_trays: Any) -> None:
+    if not isinstance(next_schedules, list):
+        return
+    next_by_id = {
+        _schedule_id(schedule): schedule
+        for schedule in _as_list(next_schedules)
+        if isinstance(schedule, dict) and _schedule_id(schedule)
+    }
+    for current_schedule in _as_list(current_schedules):
+        if not isinstance(current_schedule, dict) or not _schedule_is_fixture_locked(current_schedule, samples, experiment_trays):
+            continue
+        schedule_id = _schedule_id(current_schedule)
+        next_schedule = next_by_id.get(schedule_id)
+        if not schedule_id or next_schedule is None or _locked_schedule_fields_changed(current_schedule, next_schedule):
+            raise HTTPException(status_code=400, detail=SCHEDULE_FIXTURE_LOCKED_DETAIL)
+
+
 def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
+    if "mes.schedules" in updates:
+        _validate_fixture_locked_schedules(
+            storage.read("mes.schedules"),
+            updates["mes.schedules"],
+            storage.read("mes.samples"),
+            storage.read("mes.experiment_trays"),
+        )
     if "mes.samples" not in updates:
         return
     current_samples = storage.read("mes.samples")

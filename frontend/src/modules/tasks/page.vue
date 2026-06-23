@@ -145,7 +145,7 @@
         </div>
         <div class="form-field">
           <label>到样日期</label>
-          <PickerOnlyInput v-model="intakeForm.arrival_at" type="date" name="arrival_at" placeholder="确认入库后自动回写" readonly />
+          <PickerOnlyInput v-model="intakeForm.arrival_at" type="date" name="arrival_at" empty-hint="确认入库后自动回写" readonly />
           <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
@@ -246,14 +246,14 @@
       </div>
       <div class="form-field">
         <label>来源</label>
-        <select v-model="editForm.source" name="source" :disabled="isCompletedTaskDetail">
+        <select v-model="editForm.source" name="source" :disabled="isTaskDetailLocked">
           <option>外部委托</option>
           <option>内部新增</option>
         </select>
       </div>
       <div class="form-field">
         <label>优先级</label>
-        <select v-model="editForm.priority" name="priority" :disabled="isCompletedTaskDetail">
+        <select v-model="editForm.priority" name="priority" :disabled="isTaskDetailLocked">
           <option>高</option>
           <option>中</option>
           <option>低</option>
@@ -261,7 +261,7 @@
       </div>
       <div class="form-field">
         <label>样品数量</label>
-        <AppNumberInput v-model="editForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" :readonly="isCompletedTaskDetail" />
+        <AppNumberInput v-model="editForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" :readonly="isTaskDetailLocked" />
       </div>
       <div class="form-field tasks-sample-preview">
         <label>样品编号</label>
@@ -269,7 +269,7 @@
           <span class="muted">
             共 {{ taskDetailSampleCodes.length }} 个<span v-if="taskDetailSampleCodes.length > taskDetailSampleCodePreview.length">，显示前 5 个</span>
           </span>
-          <button class="action-link" data-testid="open-sample-codes-editor" type="button" :disabled="isCompletedTaskDetail" @click="openSampleCodesEditor">
+          <button class="action-link" data-testid="open-sample-codes-editor" type="button" :disabled="isTaskDetailLocked" @click="openSampleCodesEditor">
             编辑样品编号
           </button>
         </div>
@@ -280,7 +280,7 @@
       </div>
       <div class="form-field">
         <label>样品类型</label>
-        <input v-model="editForm.sample_type" type="text" name="sample_type" placeholder="例如：固体/液体/粉末" :readonly="isCompletedTaskDetail" />
+        <input v-model="editForm.sample_type" type="text" name="sample_type" placeholder="例如：固体/液体/粉末" :readonly="isTaskDetailLocked" />
       </div>
       <div class="form-field">
         <label>试验类型</label>
@@ -289,7 +289,7 @@
             class="search-input tasks-intake-test-types__trigger"
             data-testid="task-edit-test-types-trigger"
             type="button"
-            :disabled="isCompletedTaskDetail"
+            :disabled="isTaskDetailLocked"
             @click="openEditExperimentPicker"
           >
             <span>{{ editExperimentSummary || "请选择试验类型" }}</span>
@@ -298,11 +298,11 @@
       </div>
       <div class="form-field">
         <label>期望完成时间</label>
-        <PickerOnlyInput v-model="editForm.due_at" type="datetime-local" name="due_at" :disabled="isCompletedTaskDetail" :readonly="isCompletedTaskDetail" />
+        <PickerOnlyInput v-model="editForm.due_at" type="datetime-local" name="due_at" :disabled="isTaskDetailLocked" :readonly="isTaskDetailLocked" />
       </div>
       <div class="form-field">
         <label>到样时间</label>
-        <PickerOnlyInput v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" placeholder="确认入库后自动回写" step="1" readonly />
+        <PickerOnlyInput v-model="editForm.arrival_at" type="datetime-local" name="arrival_at" empty-hint="确认入库后自动回写" step="1" readonly />
         <div class="helper">以样品管理确认入库时间为准，重新入库会覆盖</div>
       </div>
       <div class="form-field">
@@ -311,7 +311,7 @@
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
         <label>备注</label>
-        <textarea v-model="editForm.remark" name="remark" placeholder="更新说明" :readonly="isCompletedTaskDetail"></textarea>
+        <textarea v-model="editForm.remark" name="remark" placeholder="更新说明" :readonly="isTaskDetailLocked"></textarea>
       </div>
     </form>
     <div class="form-actions">
@@ -445,6 +445,7 @@ const {
   intakeExperimentSummary,
   intakeExperimentTypeOptions,
   isCompletedTaskDetail,
+  isTaskDetailLocked,
   intakeModalOpen,
   intakeSampleCodePreview,
   intakeWarning,

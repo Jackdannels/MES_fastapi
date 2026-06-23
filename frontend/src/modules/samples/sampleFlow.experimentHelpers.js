@@ -204,7 +204,7 @@ const parseWithdrawalRestoreTarget = (detail, taskCode) => {
     };
   }
   return {
-    experimentName: "",
+    experimentName: normalizeText(parsed?.experimentName),
     status: target,
   };
 };

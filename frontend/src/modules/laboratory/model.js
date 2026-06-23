@@ -917,12 +917,43 @@ const laboratoryOperationTrayCodeSet = (row) =>
       .map((tray) => normalizeText(tray?.trayCode))
       .filter(Boolean),
   );
+const trayHasExplicitLaboratoryWorkflowScope = (row) =>
+  Boolean(
+    normalizeText(row?.targetExperimentCode || row?.target_experiment_code)
+    || normalizeText(row?.targetLab || row?.target_lab)
+    || asArray(row?.experimentCodes).length === 1,
+  );
+const trayLaboratoryLocation = (row) => normalizeText(
+  row?.currentLocation
+  || row?.lifecycleLocation
+  || row?.location,
+);
+const trayLocationMatchesCurrentLaboratory = (row, currentTask) => {
+  const currentLab = normalizeText(currentTask?.device);
+  const currentLocation = trayLaboratoryLocation(row);
+  return !currentLab || !currentLocation || currentLocation === currentLab;
+};
+const trayCanUseImplicitLaboratoryWorkflowScope = (row, currentTask) =>
+  trayHasExplicitLaboratoryWorkflowScope(row)
+  || (
+    row?.completedForOtherExperiment === true
+    && row?.completedForCurrentExperiment !== true
+    && currentExperimentIsNextUnfinishedForTray(row, currentTask)
+  )
+  || !trayLaboratoryLocation(row)
+  || trayLocationMatchesCurrentLaboratory(row, currentTask);
+const trayCanParticipateInSharedOperationLock = (row, currentTask) =>
+  trayBelongsToCurrentLaboratoryWorkflow(row, currentTask)
+  || (!trayHasExplicitLaboratoryWorkflowScope(row) && !trayLaboratoryLocation(row));
 const laboratoryRowsShareTray = (left, right) => {
   const leftTrayCodes = laboratoryOperationTrayCodeSet(left);
   if (!leftTrayCodes.size) {
     return false;
   }
-  return asArray(right?.trayRows).some((tray) => leftTrayCodes.has(normalizeText(tray?.trayCode)));
+  return asArray(right?.trayRows).some((tray) =>
+    trayCanParticipateInSharedOperationLock(tray, right)
+    && leftTrayCodes.has(normalizeText(tray?.trayCode)),
+  );
 };
 const rowCompletedExperimentCodeSet = (row) =>
   new Set(asArray(row?.completedExperimentCodes).map((code) => normalizeText(code)).filter(Boolean));
@@ -1036,7 +1067,11 @@ const taskHasWrongLaboratoryDispatch = (task) =>
   taskHasDispatchValidationScope(task)
   && asArray(task?.trayRows).some((row) => !trayIsDispatchedToCurrentLaboratory(row, task));
 const trayBelongsToCurrentLaboratoryWorkflow = (row, currentTask) =>
-  !taskHasDispatchValidationScope(currentTask) || trayIsDispatchedToCurrentLaboratory(row, currentTask);
+  !taskHasDispatchValidationScope(currentTask)
+  || (
+    trayIsDispatchedToCurrentLaboratory(row, currentTask)
+    && trayCanUseImplicitLaboratoryWorkflowScope(row, currentTask)
+  );
 const taskHasCurrentLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
 const resolveLaboratoryOperationLabRef = (currentTask = null, lab = null) => {

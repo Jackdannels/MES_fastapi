@@ -9,7 +9,7 @@
           </div>
           <label class="tray-management-filter tray-management-filter-emphasis">
             <span>按任务号筛选</span>
-            <select data-testid="samples-trays-task-filter" :value="selectedTaskCode" @change="setTaskFilter($event.target.value)">
+            <select class="search-input" data-testid="samples-trays-task-filter" :value="selectedTaskCode" @change="setTaskFilter($event.target.value)">
               <option value="">全部任务</option>
               <option v-for="taskCode in taskCodeOptions" :key="taskCode" :value="taskCode">
                 {{ taskCode }}

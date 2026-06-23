@@ -222,6 +222,16 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.text()).not.toContain("SYLU-2026-04-102-SP-001");
   });
 
+  test("tray task filter uses the themed search input style", async () => {
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="samples-trays-task-filter"]').classes()).toContain("search-input");
+  });
+
   test("tray flow receives experiment runs from the page and shows the active running experiment", async () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = "SYLU-2026-06-021-TP-001";

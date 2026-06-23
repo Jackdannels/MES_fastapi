@@ -3,7 +3,7 @@
     <input
       v-bind="inputAttrs"
       :class="[{ 'format-hint-empty': !modelValue }, inputClass]"
-      :data-format-hint="formatHint"
+      :data-format-hint="emptyDisplayHint"
       :readonly="isCustomDate || inputAttrs.readonly"
       :type="inputType"
       :value="displayValue"
@@ -16,7 +16,7 @@
       @paste.prevent
       @click="openPicker"
     />
-    <span v-if="!modelValue" class="picker-only-input__hint" aria-hidden="true">{{ formatHint }}</span>
+    <span v-if="!modelValue" class="picker-only-input__hint" aria-hidden="true">{{ emptyDisplayHint }}</span>
     <div v-if="isCustomDate && calendarOpen" class="picker-only-calendar" role="dialog" aria-label="选择日期" @click.stop>
       <div class="picker-only-calendar__header">
         <button class="picker-only-calendar__nav picker-only-calendar__nav--prev" type="button" aria-label="上一月" @click="shiftMonth(-1)"></button>
@@ -67,6 +67,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  emptyHint: {
+    type: String,
+    default: "",
+  },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -81,6 +85,7 @@ const inputAttrs = computed(() => {
   return rest;
 });
 const isCustomDate = computed(() => props.type === "date");
+const isExternallyReadonly = computed(() => Boolean(inputAttrs.value.readonly || inputAttrs.value.disabled));
 const inputType = computed(() => (isCustomDate.value ? "text" : props.type));
 const displayValue = computed(() => props.modelValue);
 const calendarYear = computed(() => calendarCursor.value.getFullYear());
@@ -96,6 +101,7 @@ const formatHint = computed(() => {
   }
   return "年 / 月 / 日";
 });
+const emptyDisplayHint = computed(() => String(props.emptyHint || "").trim() || formatHint.value);
 
 const navigationKeys = new Set(["Tab", "Escape"]);
 
@@ -156,6 +162,9 @@ const handleKeydown = (event) => {
 };
 
 const openPicker = (event) => {
+  if (isExternallyReadonly.value) {
+    return;
+  }
   if (isCustomDate.value) {
     calendarCursor.value = resolveCalendarCursor();
     calendarOpen.value = true;
@@ -169,11 +178,17 @@ const shiftMonth = (delta) => {
 };
 
 const selectDate = (value) => {
+  if (isExternallyReadonly.value) {
+    return;
+  }
   emit("update:modelValue", value);
   calendarOpen.value = false;
 };
 
 const clearDate = () => {
+  if (isExternallyReadonly.value) {
+    return;
+  }
   emit("update:modelValue", "");
   calendarOpen.value = false;
 };

@@ -735,12 +735,30 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     const dueInput = wrapper.get('input[name="due_at"]');
-    const arrivalInput = wrapper.get('input[name="arrival_at"]');
 
     expect(dueInput.attributes("type")).toBe("text");
-    expect(arrivalInput.attributes("type")).toBe("text");
     expect(dueInput.attributes("data-format-hint")).toBe("年 / 月 / 日");
-    expect(arrivalInput.attributes("data-format-hint")).toBe("年 / 月 / 日");
+  });
+
+  test("shows only the auto-writeback text for empty arrival fields before storage confirmation", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ arrival_at: "" })],
+    });
+    window.location.hash = "#task-intake-modal";
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    const intakeArrivalField = wrapper.get('.tasks-intake-modal input[name="arrival_at"]').element.closest(".picker-only-input");
+    expect(intakeArrivalField.textContent).toContain("确认入库后自动回写");
+    expect(intakeArrivalField.textContent).not.toContain("年 / 月 / 日");
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    const detailArrivalField = wrapper.get('[data-testid="task-detail-modal"] input[name="arrival_at"]').element.closest(".picker-only-input");
+    expect(detailArrivalField.textContent).toContain("确认入库后自动回写");
+    expect(detailArrivalField.textContent).not.toContain("年 / 月 / 日");
   });
 
   test("opens the intake modal from the route hash, supports multi-select experiments, and submits a task", async () => {
@@ -848,12 +866,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("联系方式必须为 1-15 位数字");
-
-    await wrapper.get('input[name="contact_info"]').setValue("138000012345678");
-    await wrapper.get('[data-testid="task-submit"]').trigger("click");
-    await settle(wrapper);
-
-    expect(wrapper.text()).toContain("样品数量最多为 99");
+    expect(wrapper.get('input[name="sample_count"]').element.value).toBe("99");
     expect(state.tasks).toHaveLength(0);
     expect(fetchMock.mock.calls.some(([url, options]) => url === TASKS_ENDPOINT && options?.method === "POST")).toBe(false);
   });
@@ -1186,6 +1199,59 @@ describe("TasksPage runtime", () => {
         required_device: "盐雾试验 / 霉菌试验",
         test_type: "盐雾试验 / 霉菌试验",
         test_types: ["盐雾试验", "霉菌试验"],
+      }),
+    );
+  });
+
+  test("locks non-name task detail fields while the task is running", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-running-lock",
+          code: "SYLU-2026-06-310",
+          name: "进行中任务",
+          source: "外部委托",
+          priority: "中",
+          sample_type: "金属件",
+          due_at: "2026-06-20 18:00",
+          test_type: "盐雾试验",
+          test_types: ["盐雾试验"],
+          status: "任务进行中",
+        }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    const detailModal = wrapper.get('[data-testid="task-detail-modal"]');
+    expect(detailModal.get('input[name="name"]').attributes("readonly")).toBeUndefined();
+    expect(detailModal.get('select[name="source"]').attributes("disabled")).toBeDefined();
+    expect(detailModal.get('select[name="priority"]').attributes("disabled")).toBeDefined();
+    expect(detailModal.get('input[name="sample_type"]').attributes("readonly")).toBeDefined();
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="open-sample-codes-editor"]').attributes("disabled")).toBeDefined();
+    expect(detailModal.get('textarea[name="remark"]').attributes("readonly")).toBeDefined();
+    expect(wrapper.get('[data-testid="task-update"]').attributes("disabled")).toBeUndefined();
+
+    await detailModal.get('input[name="name"]').setValue("进行中任务-修改");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-running-lock") && options?.method === "PUT",
+    );
+    expect(JSON.parse(updateCall[1].body)).toEqual(
+      expect.objectContaining({
+        name: "进行中任务-修改",
+        source: "外部委托",
+        priority: "中",
+        sample_type: "金属件",
+        due_at: "2026-06-20 18:00",
+        test_types: ["盐雾试验"],
       }),
     );
   });
@@ -1739,7 +1805,7 @@ describe("TasksPage runtime", () => {
           test_type: "盐雾试验",
           test_types: ["盐雾试验"],
           required_device: "盐雾试验",
-          status: "任务进行中",
+          status: "待排程",
         }),
       ],
       samples: [],

@@ -243,6 +243,67 @@ describe("useTasksPage", () => {
     }
   });
 
+  test("updates only the task name while a task is running", async () => {
+    const runningTask = {
+      ...task,
+      name: "进行中任务",
+      source: "外部委托",
+      priority: "中",
+      sample_type: "金属件",
+      due_at: "2026-06-20 18:00",
+      test_types: ["盐雾试验"],
+      test_type: "盐雾试验",
+      status: "任务进行中",
+    };
+    mocks.readTasks.mockResolvedValue([runningTask]);
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          task_code: runningTask.code,
+          experiment_code: `${runningTask.code}-A`,
+          status: "实验进行中",
+        },
+      ],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openTaskDrawer(wrapper.vm.taskRows[0]);
+      await settle(wrapper);
+      wrapper.vm.editForm.name = "进行中任务-修改";
+      wrapper.vm.editForm.source = "内部新增";
+      wrapper.vm.editForm.priority = "高";
+      wrapper.vm.editForm.sample_type = "复合材料";
+      wrapper.vm.editForm.due_at = "2026-06-21 18:00";
+      wrapper.vm.editForm.test_types = ["冲击试验"];
+
+      await wrapper.vm.updateTask();
+      await settle(wrapper);
+
+      expect(wrapper.vm.isRunningTaskDetail).toBe(true);
+      expect(wrapper.vm.isTaskDetailLocked).toBe(true);
+      expect(mocks.updateTask).toHaveBeenCalledWith(
+        runningTask.id,
+        expect.objectContaining({
+          name: "进行中任务-修改",
+          source: "外部委托",
+          priority: "中",
+          sample_type: "金属件",
+          due_at: "2026-06-20 18:00",
+          test_types: ["盐雾试验"],
+          test_type: "盐雾试验",
+        }),
+      );
+      expect(mocks.updateTask.mock.calls[0][1]).not.toHaveProperty("updated_at");
+      expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+      expect(wrapper.vm.editWarning).toBe("");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
   test("blocks deleting a task while one of its experiments is running", async () => {
     mocks.loadSnapshot.mockResolvedValue({
       ...buildSnapshot(),

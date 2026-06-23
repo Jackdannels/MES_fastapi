@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
-from app.api.routes.storage import publish_storage_update
+from app.api.routes.storage import publish_storage_update, _validate_fixture_locked_schedules
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 SNAPSHOT_KEYS = (
@@ -34,6 +34,7 @@ SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
 SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量"
 COMPLETED_TASK_EDIT_LOCKED_MESSAGE = "任务已完成，仅允许修改任务名称"
+RUNNING_TASK_EDIT_LOCKED_MESSAGE = "任务进行中，仅允许修改任务名称"
 RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
 RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中"}
 RUNNING_TASK_STATUSES = {"任务进行中", "实验进行中", "实验中"}
@@ -659,6 +660,20 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return completed_task
+    if task_has_running_experiment(snapshot, previous_task):
+        if not task_update_changes_only_completed_editable_fields(previous_task, payload_dict):
+            raise HTTPException(status_code=400, detail=RUNNING_TASK_EDIT_LOCKED_MESSAGE)
+        running_task = dict(previous_task)
+        if "name" in payload_dict:
+            running_task["name"] = payload_dict.get("name")
+        if not normalize_text(running_task.get("name")):
+            running_task["name"] = build_default_task_name(task_code(running_task), tasks)
+        validate_task_text_fields(running_task)
+        tasks[task_index] = running_task
+        snapshot["mes.tasks"] = tasks
+        storage.write_many(snapshot)
+        publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+        return running_task
     previous_test_types = extract_task_test_types(previous_task, existing_experiments)
     experiment_types_changed = False
     if "test_types" in payload_dict:
@@ -682,6 +697,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     next_experiments = persist_task_experiments(updated_task, existing_experiments)
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
+    current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
+    current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
     affected_schedules = (
         task_formal_schedule_rows(schedules, previous_task_code)
         if experiment_types_changed
@@ -759,6 +776,12 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             for row in snapshot.get("mes.experiment_run_trays", [])
             if keep_row_outside_removed_experiments(dict(row), previous_task_code, removed_or_changed_codes)
         ]
+    _validate_fixture_locked_schedules(
+        schedules,
+        snapshot.get("mes.schedules", []),
+        current_samples,
+        current_experiment_trays,
+    )
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return updated_task
@@ -777,6 +800,9 @@ def delete_task(task_id: str) -> None:
         raise HTTPException(status_code=409, detail=RUNNING_TASK_DELETE_MESSAGE)
     removed_task = tasks.pop(task_index)
     task_code = normalize_text(removed_task.get("code")) or normalize_text(removed_task.get("id"))
+    current_schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
+    current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
+    current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
     snapshot["mes.tasks"] = tasks
     snapshot["mes.schedules"] = filter_related_rows(snapshot.get("mes.schedules"), task_code)
     snapshot["mes.samples"] = filter_related_rows(snapshot.get("mes.samples"), task_code)
@@ -786,6 +812,12 @@ def delete_task(task_id: str) -> None:
     snapshot["mes.experiment_samples"] = filter_related_rows(snapshot.get("mes.experiment_samples"), task_code)
     snapshot["mes.experiment_runs"] = filter_related_rows(snapshot.get("mes.experiment_runs"), task_code)
     snapshot["mes.experiment_run_trays"] = filter_related_rows(snapshot.get("mes.experiment_run_trays"), task_code)
+    _validate_fixture_locked_schedules(
+        current_schedules,
+        snapshot.get("mes.schedules", []),
+        current_samples,
+        current_experiment_trays,
+    )
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return None

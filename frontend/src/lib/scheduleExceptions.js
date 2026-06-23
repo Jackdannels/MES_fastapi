@@ -14,10 +14,18 @@ import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, ST
 const STARTED_STATUSES = new Set([
   EXPERIMENT_STATUS_RUNNING,
   EXPERIMENT_STATUS_COMPLETED,
+  "工装夹具安装",
+  "实验准备就绪",
   "实验后暂存间存放",
   "送至外观检测间",
   "外观检测间存放",
   RETURNED_STATUS,
+]);
+const ACTIVE_LAB_PROGRESS_STATUSES = new Set([
+  EXPERIMENT_STATUS_RUNNING,
+  "工装夹具安装",
+  "实验准备就绪",
+  "实验中",
 ]);
 const COMPLETED_STATUSES = new Set([
   EXPERIMENT_STATUS_COMPLETED,
@@ -129,6 +137,7 @@ const resolveScheduleLifecycle = ({
   const experimentCode = normalizeText(schedule?.experiment_code);
   const scopedTrayCodes = experimentTrayMap.get(`${taskCode}::${experimentCode}`) || new Set();
   const trayStatuses = [];
+  const scopedTraySnapshots = [];
   const experimentName = normalizeText(experimentNameByCode.get(experimentCode));
   const latestHistoryBySample = new Map();
 
@@ -169,6 +178,11 @@ const resolveScheduleLifecycle = ({
       const trayStatus = normalizeText(tray?.status) || normalizeText(sample?.status);
       if (trayStatus) {
         trayStatuses.push(trayStatus);
+        scopedTraySnapshots.push({
+          location: normalizeText(tray?.target_lab || tray?.targetLab || sample?.location),
+          status: trayStatus,
+          targetExperimentCode: normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode),
+        });
       }
     });
   });
@@ -184,9 +198,22 @@ const resolveScheduleLifecycle = ({
 
   const hasSharedScopedTray = Array.from(scopedTrayCodes).some((trayCode) => (trayExperimentCodeMap.get(trayCode)?.size || 0) > 1);
   if (hasSharedScopedTray) {
+    const scheduleDevice = normalizeText(schedule?.device);
+    const startedByScopedTarget = scopedTraySnapshots.some(
+      (tray) =>
+        tray.targetExperimentCode === experimentCode
+        && (STARTED_STATUSES.has(normalizeExperimentStatusLabel(tray.status)) || isExperimentRunningStatus(tray.status)),
+    );
+    const startedByLegacyLabLocation = scopedTraySnapshots.some(
+      (tray) =>
+        !tray.targetExperimentCode
+        && scheduleDevice
+        && tray.location === scheduleDevice
+        && (ACTIVE_LAB_PROGRESS_STATUSES.has(normalizeExperimentStatusLabel(tray.status)) || isExperimentRunningStatus(tray.status)),
+    );
     return {
       completed: false,
-      started: false,
+      started: startedByScopedTarget || startedByLegacyLabLocation,
       trayStatuses,
     };
   }

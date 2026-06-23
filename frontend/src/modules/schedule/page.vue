@@ -208,30 +208,41 @@
               "
               @click="segment.displayMode !== 'stacked' && segment.displayMode !== 'split' && segment.scheduleId && openTaskDetailModal(segment.scheduleId)"
             >
-              <button
-                :class="segment.className"
-                type="button"
-                :disabled="segment.displayMode === 'stacked' || segment.displayMode === 'split' ? true : !segment.scheduleId"
-                :title="segment.title"
-                :style="segment.taskColor ? { '--gantt-task-color': segment.taskColor } : null"
-              >
-                <template v-if="segment.displayMode === 'split' || segment.displayMode === 'stacked'">
+              <template v-if="segment.displayMode === 'split' || segment.displayMode === 'stacked'">
+                <div
+                  :class="segment.className"
+                  role="group"
+                  :aria-label="segment.title"
+                  :title="segment.title"
+                  :style="segment.taskColor ? { '--gantt-task-color': segment.taskColor } : null"
+                >
                   <span class="gantt-slot-content">
-                    <span
+                    <button
                       v-for="item in segment.items"
                       :key="`${segment.key}-${item.taskCode}`"
                       class="gantt-task-item"
+                      type="button"
+                      :data-testid="item.scheduleId ? `gantt-task-item-${item.scheduleId}` : null"
+                      :disabled="!item.scheduleId"
                       :style="{ '--gantt-task-color': item.color }"
+                      :title="item.title"
+                      @click.stop="item.scheduleId && openTaskDetailModal(item.scheduleId)"
                     >
                       {{ item.taskCode }}
-                    </span>
+                    </button>
                     <span v-if="segment.displayMode === 'stacked' && segment.overflowCount > 0" class="gantt-task-overflow">+{{ segment.overflowCount }}</span>
                   </span>
-                </template>
-                <template v-else-if="segment.displayMode === 'single'">{{ segment.label }}</template>
-                <template v-else>
-                  {{ segment.label }}
-                </template>
+                </div>
+              </template>
+              <button
+                v-else
+                :class="segment.className"
+                type="button"
+                :disabled="!segment.scheduleId"
+                :title="segment.title"
+                :style="segment.taskColor ? { '--gantt-task-color': segment.taskColor } : null"
+              >
+                {{ segment.label }}
               </button>
             </td>
           </tr>

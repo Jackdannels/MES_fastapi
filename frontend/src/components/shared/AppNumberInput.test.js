@@ -44,4 +44,19 @@ describe("AppNumberInput", () => {
 
     expect(wrapper.emitted("update:modelValue")).toEqual([["1"]]);
   });
+
+  test("clamps typed values to the configured maximum", async () => {
+    const wrapper = mount(AppNumberInput, {
+      props: {
+        modelValue: "",
+        min: 1,
+        max: 99,
+        step: 1,
+      },
+    });
+
+    await wrapper.get("input").setValue("100");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["99"]]);
+  });
 });

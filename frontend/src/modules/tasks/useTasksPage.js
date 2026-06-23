@@ -21,6 +21,7 @@ import {
   buildTaskRows,
   buildTaskSampleCodes,
   STATUS_COMPLETED,
+  STATUS_RUNNING,
   createTaskEditForm,
   createTaskIntakeForm,
   createTaskRecord,
@@ -143,6 +144,8 @@ function useTasksPage() {
   });
   const taskDetailSampleCodePreview = computed(() => taskDetailSampleCodes.value.slice(0, 5));
   const isCompletedTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_COMPLETED);
+  const isRunningTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_RUNNING);
+  const isTaskDetailLocked = computed(() => isCompletedTaskDetail.value || isRunningTaskDetail.value);
 
   const typeFilteredRows = computed(() =>
     allRows.value.filter((row) => {
@@ -286,7 +289,7 @@ function useTasksPage() {
   };
 
   const openEditExperimentPicker = () => {
-    if (isCompletedTaskDetail.value) {
+    if (isTaskDetailLocked.value) {
       return;
     }
     editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
@@ -343,7 +346,7 @@ function useTasksPage() {
   };
 
   const openSampleCodesEditor = () => {
-    if (isCompletedTaskDetail.value) {
+    if (isTaskDetailLocked.value) {
       return;
     }
     const taskCode = normalizeText(editForm.value.code);
@@ -731,7 +734,7 @@ function useTasksPage() {
     if (!originalTask) {
       return;
     }
-    if (isCompletedTaskDetail.value) {
+    if (isTaskDetailLocked.value) {
       await updateCompletedTaskName(originalTask);
       return;
     }
@@ -1145,6 +1148,8 @@ function useTasksPage() {
     intakeExperimentSummary,
     intakeExperimentTypeOptions,
     isCompletedTaskDetail,
+    isRunningTaskDetail,
+    isTaskDetailLocked,
     intakeModalOpen: intakeModal.open,
     intakeSampleCodePreview,
     intakeWarning,

@@ -1024,6 +1024,87 @@ def test_storage_key_update_publishes_changed_key(monkeypatch):
     assert published == [["mes.tasks"]]
 
 
+def test_storage_rejects_deleting_schedule_after_fixture_install(monkeypatch):
+    schedules = [
+        {
+            "id": "schedule-installed",
+            "task_code": "TASK-INSTALLED",
+            "experiment_code": "EXP-INSTALLED",
+            "device": "冲击一室",
+            "start_at": "2026-06-23 08:00",
+            "end_at": "2026-06-23 10:00",
+        }
+    ]
+    samples = [
+        {
+            "code": "SP-INSTALLED",
+            "task_code": "TASK-INSTALLED",
+            "status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装", "quantity": 1}],
+        }
+    ]
+    experiment_trays = [
+        {"task_code": "TASK-INSTALLED", "experiment_code": "EXP-INSTALLED", "tray_code": "TP-INSTALLED"}
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.experiment_trays": experiment_trays,
+            "mes.samples": samples,
+            "mes.schedules": schedules,
+        },
+    )
+
+    response = client.put("/api/storage", json={"mes.schedules": []})
+
+    assert response.status_code == 400
+    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert storage.read("mes.schedules") == schedules
+
+
+def test_storage_rejects_rescheduling_after_fixture_install(monkeypatch):
+    schedules = [
+        {
+            "id": "schedule-installed",
+            "task_code": "TASK-INSTALLED",
+            "experiment_code": "EXP-INSTALLED",
+            "device": "冲击一室",
+            "start_at": "2026-06-23 08:00",
+            "end_at": "2026-06-23 10:00",
+        }
+    ]
+    samples = [
+        {
+            "code": "SP-INSTALLED",
+            "task_code": "TASK-INSTALLED",
+            "status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装", "quantity": 1}],
+        }
+    ]
+    experiment_trays = [
+        {"task_code": "TASK-INSTALLED", "experiment_code": "EXP-INSTALLED", "tray_code": "TP-INSTALLED"}
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.experiment_trays": experiment_trays,
+            "mes.samples": samples,
+            "mes.schedules": schedules,
+        },
+    )
+    attempted = deepcopy(schedules)
+    attempted[0]["start_at"] = "2026-06-23 09:00"
+    attempted[0]["end_at"] = "2026-06-23 11:00"
+
+    response = client.put("/api/storage/mes.schedules", json=attempted)
+
+    assert response.status_code == 400
+    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert storage.read("mes.schedules") == schedules
+
+
 def test_storage_update_event_stream_yields_published_keys():
     from app.api.routes import storage as storage_route
 

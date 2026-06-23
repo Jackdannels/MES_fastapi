@@ -4,7 +4,11 @@ import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab } from "@/lib/labIdentity";
-import { RUNNING_SCHEDULE_DELETE_MESSAGE, scheduleExperimentHasStarted } from "@/lib/runningExperimentGuards";
+import {
+  RUNNING_SCHEDULE_DELETE_MESSAGE,
+  RUNNING_SCHEDULE_RESCHEDULE_MESSAGE,
+  scheduleExperimentHasStarted,
+} from "@/lib/runningExperimentGuards";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
 const STATUS_WAITING = "待排程";
@@ -492,6 +496,7 @@ const buildSlotTaskItems = ({ matchedSchedules, now, experimentNameByCode }) => 
       const nextItem = {
         color: resolveTaskColor(taskCode),
         experimentLabel,
+        scheduleId: normalizeText(schedule?.id),
         scheduleIds: [normalizeText(schedule?.id)].filter(Boolean),
         state: stateMeta.state,
         taskCode,
@@ -1663,6 +1668,15 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
   const target = nextSchedules.find((schedule) => normalizeText(schedule?.id) === scheduleId);
   if (!target) {
     return { error: "未找到排程记录" };
+  }
+  if (
+    scheduleExperimentHasStarted({
+      experimentTrays,
+      samples,
+      schedule: target,
+    })
+  ) {
+    return { error: RUNNING_SCHEDULE_RESCHEDULE_MESSAGE };
   }
 
   const resolved = resolveScheduleTimes(form, now, schedules);

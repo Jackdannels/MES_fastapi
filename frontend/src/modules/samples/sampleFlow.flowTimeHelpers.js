@@ -1,4 +1,5 @@
 import {
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   APPEARANCE_STOCKED_STATUS,
   FLOW_STEP_KEY_BY_LABEL,
   POST_EXPERIMENT_STAGING_SENT_STATUS,
@@ -76,10 +77,16 @@ const setLatestFlowTime = (timeMap, label, time, sourceMap = new Map(), source =
   if (!normalizedLabel || !normalizedTime) {
     return;
   }
-  appendFlowTimeHistory(timeHistoryMap, normalizedLabel, normalizedTime);
   const existing = timeMap.get(normalizedLabel);
   const existingSource = sourceMap.get(normalizedLabel) || "";
-  const historyPreferredLabel = normalizedLabel === "到货" || normalizedLabel === "厂家收回";
+  const historyPreferredLabel =
+    normalizedLabel === "到货"
+    || normalizedLabel === "厂家收回"
+    || normalizedLabel === APPEARANCE_STOCKED_STATUS
+    || normalizedLabel === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+  if (!(historyPreferredLabel && source === "withdrawal")) {
+    appendFlowTimeHistory(timeHistoryMap, normalizedLabel, normalizedTime);
+  }
   if (historyPreferredLabel && existingSource === "history" && source !== "history") {
     return;
   }

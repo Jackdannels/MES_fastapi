@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { applyLaboratoryOperation, startLaboratoryExperiment } from "./laboratoryApi.js";
+import { applyLaboratoryOperation, startLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "./laboratoryApi.js";
 
 describe("laboratoryApi", () => {
   afterEach(() => {
@@ -65,6 +65,35 @@ describe("laboratoryApi", () => {
         Accept: "application/json",
       },
       credentials: "include",
+    });
+  });
+
+  test("posts scoped tray codes when withdrawing the current laboratory experiment", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, affectedTrayCodes: ["TP-001"] }),
+    }));
+
+    await withdrawCurrentLaboratoryExperiment({
+      experimentCode: "EXP-A",
+      reason: "试验间内撤回当前实验任务",
+      taskCode: "TASK-001",
+      trayCodes: ["TP-001"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/laboratory/tasks/TASK-001/experiments/EXP-A/withdraw-current", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        reason: "试验间内撤回当前实验任务",
+        trayCodes: ["TP-001"],
+      }),
     });
   });
 

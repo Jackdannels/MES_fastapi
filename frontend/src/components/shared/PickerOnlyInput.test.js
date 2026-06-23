@@ -24,6 +24,19 @@ describe("PickerOnlyInput", () => {
     expect(dateTimeInput.get("input").attributes("data-format-hint")).toBe("年 / 月 / 日 --:--");
   });
 
+  test("uses a custom empty hint instead of the date format hint when provided", () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        emptyHint: "确认入库后自动回写",
+        modelValue: "",
+        type: "date",
+      },
+    });
+
+    expect(wrapper.get(".picker-only-input__hint").text()).toBe("确认入库后自动回写");
+    expect(wrapper.get("input").attributes("data-format-hint")).toBe("确认入库后自动回写");
+  });
+
   test("opens a themed calendar for date values and emits the selected day", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {
@@ -78,5 +91,22 @@ describe("PickerOnlyInput", () => {
     await input.trigger("click");
 
     expect(input.element.showPicker).toHaveBeenCalledOnce();
+  });
+
+  test("does not open or emit when the field is externally readonly", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      attrs: {
+        readonly: true,
+      },
+      props: {
+        modelValue: "",
+        type: "date",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 });

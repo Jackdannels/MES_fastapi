@@ -27,8 +27,8 @@ describe("scheduleExceptions", () => {
             task_code: "TASK-001",
             history: [{ action: "任务已确认入库", time: "2099-03-19T07:15:00.000Z" }],
             location: "冲击一室",
-            status: "实验准备就绪",
-            trays: [{ tray_code: "TASK-001-TP-001", status: "实验准备就绪", quantity: 1 }],
+            status: "已到达实验室",
+            trays: [{ tray_code: "TASK-001-TP-001", status: "已到达实验室", quantity: 1 }],
           },
         ],
         [STORAGE_KEYS.schedules]: [
@@ -71,6 +71,189 @@ describe("scheduleExceptions", () => {
         reason: SCHEDULE_EXCEPTION_REASON,
       }),
     ]);
+  });
+
+  test("keeps an expired schedule after fixture installation", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          {
+            task_code: "TASK-INSTALLED",
+            experiment_code: "TASK-INSTALLED-A",
+            experiment_name: "冲击试验",
+            status: "已排程",
+            unscheduled_since: "",
+          },
+        ],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: "TASK-INSTALLED", experiment_code: "TASK-INSTALLED-A", tray_code: "TASK-INSTALLED-TP-001" },
+        ],
+        [STORAGE_KEYS.samples]: [
+          {
+            code: "TASK-INSTALLED-SP-001",
+            task_code: "TASK-INSTALLED",
+            location: "冲击一室",
+            status: "工装夹具安装",
+            trays: [{ tray_code: "TASK-INSTALLED-TP-001", status: "工装夹具安装", quantity: 1 }],
+          },
+        ],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: "schedule-installed",
+            task_code: "TASK-INSTALLED",
+            experiment_code: "TASK-INSTALLED-A",
+            device: "冲击一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "已排程",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [
+          { code: "TASK-INSTALLED", status: "已排程", test_type: "冲击试验" },
+        ],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: "schedule-installed" }),
+    ]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
+  });
+
+  test("keeps an expired shared-tray schedule when the current experiment installed the fixture", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          {
+            task_code: "TASK-SHARED-INSTALLED",
+            experiment_code: "TASK-SHARED-INSTALLED-A",
+            experiment_name: "冲击试验",
+            status: "已排程",
+            unscheduled_since: "",
+          },
+          {
+            task_code: "TASK-SHARED-INSTALLED",
+            experiment_code: "TASK-SHARED-INSTALLED-B",
+            experiment_name: "盐雾试验",
+            status: "已排程",
+            unscheduled_since: "",
+          },
+        ],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: "TASK-SHARED-INSTALLED", experiment_code: "TASK-SHARED-INSTALLED-A", tray_code: "TASK-SHARED-INSTALLED-TP-001" },
+          { task_code: "TASK-SHARED-INSTALLED", experiment_code: "TASK-SHARED-INSTALLED-B", tray_code: "TASK-SHARED-INSTALLED-TP-001" },
+        ],
+        [STORAGE_KEYS.samples]: [
+          {
+            code: "TASK-SHARED-INSTALLED-SP-001",
+            task_code: "TASK-SHARED-INSTALLED",
+            location: "冲击一室",
+            status: "工装夹具安装",
+            trays: [
+              {
+                quantity: 1,
+                status: "工装夹具安装",
+                target_experiment_code: "TASK-SHARED-INSTALLED-A",
+                target_lab: "冲击一室",
+                tray_code: "TASK-SHARED-INSTALLED-TP-001",
+              },
+            ],
+          },
+        ],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: "schedule-shared-installed",
+            task_code: "TASK-SHARED-INSTALLED",
+            experiment_code: "TASK-SHARED-INSTALLED-A",
+            device: "冲击一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "已排程",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [
+          { code: "TASK-SHARED-INSTALLED", status: "已排程", test_type: "冲击试验 / 盐雾试验" },
+        ],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: "schedule-shared-installed" }),
+    ]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
+  });
+
+  test("keeps an expired shared-tray schedule after fixture installation when legacy trays lack target fields", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          {
+            task_code: "TASK-SHARED-LEGACY",
+            experiment_code: "TASK-SHARED-LEGACY-A",
+            experiment_name: "冲击试验",
+            status: "已排程",
+            unscheduled_since: "",
+          },
+          {
+            task_code: "TASK-SHARED-LEGACY",
+            experiment_code: "TASK-SHARED-LEGACY-B",
+            experiment_name: "盐雾试验",
+            status: "已排程",
+            unscheduled_since: "",
+          },
+        ],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: "TASK-SHARED-LEGACY", experiment_code: "TASK-SHARED-LEGACY-A", tray_code: "TASK-SHARED-LEGACY-TP-001" },
+          { task_code: "TASK-SHARED-LEGACY", experiment_code: "TASK-SHARED-LEGACY-B", tray_code: "TASK-SHARED-LEGACY-TP-001" },
+        ],
+        [STORAGE_KEYS.samples]: [
+          {
+            code: "TASK-SHARED-LEGACY-SP-001",
+            task_code: "TASK-SHARED-LEGACY",
+            location: "冲击一室",
+            status: "工装夹具安装",
+            trays: [
+              {
+                quantity: 1,
+                status: "工装夹具安装",
+                tray_code: "TASK-SHARED-LEGACY-TP-001",
+              },
+            ],
+          },
+        ],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: "schedule-shared-legacy-installed",
+            task_code: "TASK-SHARED-LEGACY",
+            experiment_code: "TASK-SHARED-LEGACY-A",
+            device: "冲击一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "已排程",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [
+          { code: "TASK-SHARED-LEGACY", status: "已排程", test_type: "冲击试验 / 盐雾试验" },
+        ],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: "schedule-shared-legacy-installed" }),
+    ]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
   });
 
   test("keeps expired staging schedules when their lab code is a storage area", () => {

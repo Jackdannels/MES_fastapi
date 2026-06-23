@@ -301,8 +301,8 @@ describe("SchedulePage runtime", () => {
         code: "TASK-001-SP-001",
         task_code: "TASK-001",
         location: PRIMARY_LAB,
-        status: "实验准备就绪",
-        trays: [{ tray_code: "TASK-001-TP-001", status: "实验准备就绪", quantity: 1 }],
+        status: "已到达实验室",
+        trays: [{ tray_code: "TASK-001-TP-001", status: "已到达实验室", quantity: 1 }],
         history: [],
       },
     ]);
@@ -977,11 +977,60 @@ describe("SchedulePage runtime", () => {
     expect(splitCell.text()).toContain("TASK-001");
     expect(splitCell.text()).toContain("TASK-002");
     expect(splitCell.find(".gantt-slot--split").exists()).toBe(true);
-    const title = splitCell.get("button").attributes("title");
+    const title = splitCell.get(".gantt-slot--split").attributes("title");
     expect(title).toContain("TASK-001 / A实验");
     expect(title).toContain("TASK-002 / B实验");
     expect(title).toContain("08:00");
     expect(title).toContain("11:00");
+  });
+
+  test("opens the selected task detail from a split gantt cell task code", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "TASK-001", name: "Task 1", test_type: "冲击试验", source: "内部新增", priority: "中", status: STATUS_SCHEDULED },
+      { id: "task-2", code: "TASK-002", name: "Task 2", test_type: "冲击试验", source: "外部委托", priority: "高", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "TASK-001-A", task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "A实验", required_device: PRIMARY_LAB },
+      { id: "TASK-002-B", task_code: "TASK-002", experiment_code: "TASK-002-B", experiment_name: "B实验", required_device: PRIMARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: PRIMARY_LAB,
+        planned_hours: 1,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T01:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-2",
+        task_code: "TASK-002",
+        experiment_code: "TASK-002-B",
+        device: PRIMARY_LAB,
+        planned_hours: 1.5,
+        start_at: `${future.isoDate}T01:30:00.000Z`,
+        end_at: `${future.isoDate}T03:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="gantt-task-item-schedule-2"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.text()).toContain("任务详情");
+    expect(wrapper.text()).toContain("TASK-002");
+    expect(wrapper.text()).toContain("B实验");
   });
 
   test("keeps unstarted gantt schedules visible after their planned end time has passed", async () => {

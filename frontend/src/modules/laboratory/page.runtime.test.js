@@ -596,11 +596,20 @@ describe("LaboratoryPage runtime", () => {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/withdraw-current/);
         const taskCode = decodeURIComponent(match?.[1] || "");
         const experimentCode = decodeURIComponent(match?.[2] || "");
-        const trayCodes = new Set(
+        const body = JSON.parse(String(options.body || "{}"));
+        const requestedTrayCodes = new Set(
+          (Array.isArray(body.trayCodes) ? body.trayCodes : [])
+            .map((trayCode) => String(trayCode || "").trim())
+            .filter(Boolean),
+        );
+        const experimentTrayCodes = new Set(
           (snapshotState[STORAGE_KEYS.experiment_trays] || [])
             .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
             .map((entry) => entry.tray_code),
         );
+        const trayCodes = requestedTrayCodes.size > 0
+          ? new Set(Array.from(experimentTrayCodes).filter((trayCode) => requestedTrayCodes.has(trayCode)))
+          : experimentTrayCodes;
         snapshotState = {
           ...snapshotState,
           [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
@@ -1343,6 +1352,33 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.get('[data-testid="laboratory-compare-feedback"]').text()).toContain("比对正确");
     expect(mounted.get('[data-testid="laboratory-compare-complete"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const installCall = laboratoryOperationCalls().find(([, options = {}]) => {
+      const body = JSON.parse(String(options.body || "{}"));
+      return body.operationType === "install";
+    });
+    expect(JSON.parse(String(installCall[1].body))).toEqual(expect.objectContaining({
+      experimentCode: "SYLU-2026-07-001-B",
+      operationType: "install",
+      trayCodes: ["SYLU-2026-07-001-TP-002"],
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][0].trays[0]).toEqual(expect.objectContaining({
+      status: "实验进行中",
+      tray_code: "SYLU-2026-07-001-TP-001",
+    }));
+    expect(snapshotState[STORAGE_KEYS.samples][1].trays[0]).toEqual(expect.objectContaining({
+      status: "工装夹具安装",
+      tray_code: "SYLU-2026-07-001-TP-002",
+    }));
   });
 
   test("does not overwrite another laboratory tray state when persisting comparison from a stale snapshot", async () => {
@@ -2178,6 +2214,7 @@ describe("LaboratoryPage runtime", () => {
     );
     const withdrawCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/laboratory/tasks/SYLU-2026-04-301/experiments/SYLU-2026-04-301-B/withdraw-current"));
     expect(withdrawCall).toBeDefined();
+    expect(JSON.parse(withdrawCall[1]?.body || "{}").trayCodes).toEqual(["TP-301-B"]);
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();

@@ -26,9 +26,13 @@ describe("gantt styles", () => {
     expect(moduleCssSource).toContain(".gantt-slot--stacked");
     expect(moduleCssSource).toContain(".gantt-slot--split");
     expect(moduleCssSource).toContain(".gantt-slot.busy:not(.gantt-slot--stacked):not(.gantt-slot--split) {");
+    expect(moduleCssSource).toContain(".gantt-slot.busy.gantt-slot--stacked,");
+    expect(moduleCssSource).toContain(".gantt-slot.busy.gantt-slot--split {");
+    expect(moduleCssSource).toContain("background: transparent;");
     expect(moduleCssSource).toContain(".gantt-task-item");
     expect(moduleCssSource).toContain(".gantt-task-overflow");
     expect(moduleCssSource).toContain("height: 100%;");
+    expect(moduleCssSource).toContain("overflow: hidden;");
     expect(moduleCssSource).toContain("border-radius: 0;");
     expect(sharedComponentsCssSource).not.toContain(".gantt-task-item");
   });

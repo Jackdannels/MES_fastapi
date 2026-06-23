@@ -1,4 +1,11 @@
-import { DEFAULT_LABELS, FLOW_STEP_INDEX_BY_KEY, FLOW_STEP_KEY_BY_LABEL } from "./sampleFlow.constants";
+import {
+  APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+  APPEARANCE_SENT_STATUS,
+  APPEARANCE_STOCKED_STATUS,
+  DEFAULT_LABELS,
+  FLOW_STEP_INDEX_BY_KEY,
+  FLOW_STEP_KEY_BY_LABEL,
+} from "./sampleFlow.constants";
 import { normalizeText } from "./sampleFlow.shared";
 import { normalizeLifecycleStatus } from "./sampleFlow.status";
 
@@ -58,6 +65,16 @@ const entryTimeValue = (entry) => parseTimeValue(entry?.time || entry?.updated_a
 
 const resolveFlowStatusRank = (location, status, labels = DEFAULT_LABELS) => {
   const normalizedStatus = normalizeLifecycleStatus(location, status, labels);
+  const stagingArrivalIndex = FLOW_STEP_INDEX_BY_KEY.get("arrived_staging") ?? 3;
+  if (normalizedStatus === APPEARANCE_SENT_STATUS) {
+    return stagingArrivalIndex + 0.1;
+  }
+  if (
+    normalizedStatus === APPEARANCE_STOCKED_STATUS
+    || normalizedStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+  ) {
+    return stagingArrivalIndex + 0.2;
+  }
   const key = FLOW_STEP_KEY_BY_LABEL.get(normalizedStatus);
   return FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
 };

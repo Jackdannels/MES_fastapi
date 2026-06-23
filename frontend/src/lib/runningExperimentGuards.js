@@ -8,6 +8,7 @@ import {
 const RUNNING_SCHEDULE_DELETE_MESSAGE = "实验已开始，不能删除排程";
 const RUNNING_SCHEDULE_RESCHEDULE_MESSAGE = "实验已开始，不能删除后重新排程";
 const RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务";
+const SCHEDULE_LOCKED_TRAY_STATUSES = new Set(["工装夹具安装", "实验准备就绪", "实验进行中", "实验中", "实验已完成", "实验完成", "实验已经完成"]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -20,6 +21,8 @@ const rowTrayCode = (row) => normalizeText(row?.tray_code ?? row?.trayCode ?? ro
 
 const rowHasRunningExperimentStatus = (row, fields = ["status"]) =>
   fields.some((field) => isExperimentRunningStatus(row?.[field]));
+const rowHasScheduleLockedStatus = (row, fields = ["status"]) =>
+  fields.some((field) => SCHEDULE_LOCKED_TRAY_STATUSES.has(normalizeText(row?.[field])) || isExperimentRunningStatus(row?.[field]));
 
 const taskHasRunningStatus = (task) => normalizeTaskStatusLabel(task?.status) === TASK_STATUS_RUNNING;
 
@@ -68,6 +71,21 @@ function samplesHaveRunningTrayForExperiment({ experimentCode, experimentTrays =
   });
 }
 
+function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], taskCode }) {
+  const trayCodes = buildExperimentTrayCodeSet({ experimentCode, experimentTrays, taskCode });
+  if (trayCodes.size === 0) {
+    return false;
+  }
+  return asList(samples).some((sample) => {
+    if (!rowMatchesTask(sample, taskCode)) {
+      return false;
+    }
+    return asList(sample?.trays).some(
+      (tray) => trayCodes.has(rowTrayCode(tray)) && rowHasScheduleLockedStatus(tray),
+    );
+  });
+}
+
 function scheduleExperimentHasStarted({
   experimentRuns = [],
   experimentRunTrays = [],
@@ -95,7 +113,7 @@ function scheduleExperimentHasStarted({
   ) {
     return true;
   }
-  return samplesHaveRunningTrayForExperiment({ experimentCode, experimentTrays, samples, taskCode });
+  return samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays, samples, taskCode });
 }
 
 function taskHasRunningExperiment({

@@ -48,6 +48,27 @@ def load_samples(
     )
     tray_rows = cursor.fetchall()
     task_nos = sorted({normalize_text(row.get("task_no")) for row in sample_rows if normalize_text(row.get("task_no"))})
+    tray_experiment_codes_by_task_tray: Dict[tuple[str, str], set[str]] = {}
+    for relation in experiment_trays or []:
+        task_no = normalize_text(
+            relation.get("task_code")
+            or relation.get("task_no")
+            or relation.get("taskNo")
+        )
+        tray_code = normalize_text(
+            relation.get("tray_code")
+            or relation.get("trayCode")
+            or relation.get("tray_no")
+            or relation.get("trayNo")
+        )
+        experiment_no = normalize_text(
+            relation.get("experiment_code")
+            or relation.get("experiment_no")
+            or relation.get("experimentCode")
+            or relation.get("experimentNo")
+        )
+        if task_no and tray_code and experiment_no:
+            tray_experiment_codes_by_task_tray.setdefault((task_no, tray_code), set()).add(experiment_no)
     fixture_ready_events_by_task: Dict[str, list[dict[str, Any]]] = {}
     if task_nos:
         task_placeholders = ", ".join(["%s"] * len(task_nos))
@@ -92,7 +113,14 @@ def load_samples(
             (
                 event["event_time"]
                 for event in fixture_ready_events_by_task.get(task_no, [])
-                if not event["tray_code"] or event["tray_code"] == tray_code
+                if (
+                    (not event["tray_code"] or event["tray_code"] == tray_code)
+                    and (
+                        not event["experiment_no"]
+                        or not tray_experiment_codes_by_task_tray.get((task_no, tray_code))
+                        or event["experiment_no"] in tray_experiment_codes_by_task_tray.get((task_no, tray_code), set())
+                    )
+                )
             ),
             None,
         )

@@ -620,6 +620,14 @@
   color: #fff;
 }
 
+.gantt-slot.busy.gantt-slot--stacked,
+.gantt-slot.busy.gantt-slot--split {
+  border-color: transparent;
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
+}
+
 .gantt-slot.busy.running {
   border-color: rgba(var(--industrial-accent-rgb), 0.5);
   background: rgba(var(--industrial-accent-rgb), 0.18);
@@ -659,19 +667,24 @@
 
 .gantt-slot--stacked {
   padding: 0;
+  cursor: default;
 }
 
 .gantt-slot--split {
   padding: 0;
+  cursor: default;
 }
 
 .gantt-slot-content {
   width: 100%;
   height: 100%;
+  min-height: 40px;
   display: grid;
   gap: 0;
   justify-items: stretch;
   align-items: stretch;
+  overflow: hidden;
+  border-radius: 10px;
 }
 
 .gantt-slot--split .gantt-slot-content {
@@ -712,9 +725,26 @@
   border: 1px solid var(--gantt-task-color, rgba(37, 99, 235, 0.4));
   background: var(--gantt-task-color, #2563eb);
   color: #fff;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 700;
   line-height: 1.15;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.gantt-task-item:hover,
+.gantt-task-item:focus-visible {
+  filter: brightness(1.16);
+  outline: 2px solid rgba(255, 255, 255, 0.72);
+  outline-offset: -2px;
+}
+
+.gantt-task-item:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+  opacity: 0.7;
 }
 
 .gantt-task-overflow {
@@ -781,6 +811,13 @@
 .gantt tbody tr:hover td .gantt-slot.busy:not(.gantt-slot--stacked):not(.gantt-slot--split) {
   background: var(--gantt-task-color, #2563eb);
   color: #fff;
+}
+
+.gantt tbody tr:hover td .gantt-slot.busy.gantt-slot--stacked,
+.gantt tbody tr:hover td .gantt-slot.busy.gantt-slot--split {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 
 .gantt tbody tr:hover td .gantt-slot.busy.running {

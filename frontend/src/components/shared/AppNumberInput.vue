@@ -126,6 +126,18 @@ const clamp = (value) => {
   return next;
 };
 
+const normalizeInputValue = (value) => {
+  const text = String(value ?? "");
+  if (!text) {
+    return "";
+  }
+  const parsed = toFiniteNumber(text);
+  if (parsed === null) {
+    return text;
+  }
+  return formatNumber(clamp(parsed));
+};
+
 const stepBy = (direction) => {
   const step = toFiniteNumber(props.step) || 1;
   const min = toFiniteNumber(props.min);
@@ -137,10 +149,14 @@ const stepBy = (direction) => {
 };
 
 const handleInput = (event) => {
-  emit("update:modelValue", event.target.value);
+  const nextValue = normalizeInputValue(event.target.value);
+  event.target.value = nextValue;
+  emit("update:modelValue", nextValue);
 };
 
 const handleChange = (event) => {
-  emit("change", event.target.value);
+  const nextValue = normalizeInputValue(event.target.value);
+  event.target.value = nextValue;
+  emit("change", nextValue);
 };
 </script>

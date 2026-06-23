@@ -784,6 +784,13 @@ function useLaboratoryPage(options = {}) {
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim())
       .map((row) => String(row?.trayCode || "").trim())
       .filter(Boolean);
+  const getCurrentResettableTrayCodes = () =>
+    Array.from(new Set(
+      (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
+        .filter((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+        .map((row) => String(row?.trayCode || "").trim())
+        .filter(Boolean),
+    ));
   const getCurrentTaskTrayRowsByStatus = (status) =>
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
@@ -1256,6 +1263,7 @@ function useLaboratoryPage(options = {}) {
       experimentCode: currentTask.value?.experimentCode,
       reason: "试验间内撤回当前实验任务",
       taskCode: currentTask.value?.taskCode,
+      trayCodes: getCurrentResettableTrayCodes(),
     });
     resetDangerModalOpen.value = false;
     resetCompareState();

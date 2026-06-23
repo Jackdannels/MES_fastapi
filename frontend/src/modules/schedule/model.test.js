@@ -1987,6 +1987,61 @@ describe("schedulePageModel", () => {
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
   });
 
+  test("updateScheduleRecord blocks rescheduling after fixture installation", () => {
+    const result = updateScheduleRecord({
+      devices: [{ code: "Lab-A" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          experiment_name: "A实验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          tray_code: "SYLU-2026-03-012-TP-001",
+        },
+      ],
+      form: {
+        id: "schedule-installed-edit",
+        device: "Lab-A",
+        experiment_code: "SYLU-2026-03-012-A",
+        planned_hours: "1.5",
+        schedule_date: "2099-03-21",
+        task_code: "SYLU-2026-03-012",
+        time_slot: "morning",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      samples: [
+        {
+          task_code: "SYLU-2026-03-012",
+          status: "工装夹具安装",
+          trays: [
+            { tray_code: "SYLU-2026-03-012-TP-001", status: "工装夹具安装" },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-installed-edit",
+          task_code: "SYLU-2026-03-012",
+          experiment_code: "SYLU-2026-03-012-A",
+          device: "Lab-A",
+          planned_hours: 1.5,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:30:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-012", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBe("实验已开始，不能删除后重新排程");
+  });
+
   test("deleteScheduleRecord restores unscheduled_since from transfer confirmation when removing the last formal schedule", () => {
     const result = deleteScheduleRecord({
       experiments: [
@@ -2065,6 +2120,55 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("实验已开始，不能删除排程");
     expect(result.schedules).toEqual([
       expect.objectContaining({ id: "schedule-running" }),
+    ]);
+  });
+
+  test("deleteScheduleRecord blocks deleting a schedule after fixture installation", () => {
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          experiment_name: "A实验",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          tray_code: "SYLU-2026-03-011-TP-001",
+        },
+      ],
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      samples: [
+        {
+          task_code: "SYLU-2026-03-011",
+          status: "工装夹具安装",
+          trays: [
+            { tray_code: "SYLU-2026-03-011-TP-001", status: "工装夹具安装" },
+          ],
+        },
+      ],
+      scheduleId: "schedule-installed",
+      schedules: [
+        {
+          id: "schedule-installed",
+          task_code: "SYLU-2026-03-011",
+          experiment_code: "SYLU-2026-03-011-A",
+          device: "Lab-A",
+          planned_hours: 1.5,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:30:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-011", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBe("实验已开始，不能删除排程");
+    expect(result.schedules).toEqual([
+      expect.objectContaining({ id: "schedule-installed" }),
     ]);
   });
 

@@ -180,6 +180,116 @@ def test_delete_task_rejects_running_experiment(monkeypatch):
     assert [item["code"] for item in remaining.json()] == ["TASK-RUNNING"]
 
 
+def test_update_running_task_allows_name_only(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "TASK-RUNNING-EDIT",
+                "code": "TASK-RUNNING-EDIT",
+                "name": "进行中任务",
+                "source": "外部委托",
+                "priority": "中",
+                "sample_count": "2",
+                "sample_type": "金属件",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "due_at": "2026-06-20 18:00",
+                "status": "任务进行中",
+            }
+        ],
+        experiment_runs=[
+            {
+                "task_code": "TASK-RUNNING-EDIT",
+                "experiment_code": "TASK-RUNNING-EDIT-A",
+                "status": "实验进行中",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/TASK-RUNNING-EDIT",
+        json={
+            "id": "TASK-RUNNING-EDIT",
+            "code": "TASK-RUNNING-EDIT",
+            "name": "进行中任务-修改",
+            "source": "外部委托",
+            "priority": "中",
+            "sample_count": "2",
+            "sample_type": "金属件",
+            "test_type": "盐雾试验",
+            "test_types": ["盐雾试验"],
+            "due_at": "2026-06-20 18:00",
+            "status": "任务进行中",
+        },
+    )
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "进行中任务-修改"
+    assert stored_task["name"] == "进行中任务-修改"
+    assert stored_task["source"] == "外部委托"
+    assert stored_task["priority"] == "中"
+    assert stored_task["sample_type"] == "金属件"
+    assert stored_task["test_types"] == ["盐雾试验"]
+    assert stored_task["due_at"] == "2026-06-20 18:00"
+
+
+def test_update_running_task_rejects_non_name_changes(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "TASK-RUNNING-EDIT-LOCKED",
+                "code": "TASK-RUNNING-EDIT-LOCKED",
+                "name": "进行中任务",
+                "source": "外部委托",
+                "priority": "中",
+                "sample_count": "2",
+                "sample_type": "金属件",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "due_at": "2026-06-20 18:00",
+                "status": "任务进行中",
+            }
+        ],
+        experiment_runs=[
+            {
+                "task_code": "TASK-RUNNING-EDIT-LOCKED",
+                "experiment_code": "TASK-RUNNING-EDIT-LOCKED-A",
+                "status": "实验进行中",
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/TASK-RUNNING-EDIT-LOCKED",
+        json={
+            "id": "TASK-RUNNING-EDIT-LOCKED",
+            "code": "TASK-RUNNING-EDIT-LOCKED",
+            "name": "进行中任务-修改",
+            "source": "内部新增",
+            "priority": "高",
+            "sample_count": "2",
+            "sample_type": "复合材料",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "due_at": "2026-06-21 18:00",
+            "status": "任务进行中",
+        },
+    )
+    stored_task = client.app.state.storage.read("mes.tasks")[0]
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "任务进行中，仅允许修改任务名称"
+    assert stored_task["name"] == "进行中任务"
+    assert stored_task["source"] == "外部委托"
+    assert stored_task["priority"] == "中"
+    assert stored_task["sample_type"] == "金属件"
+    assert stored_task["test_types"] == ["盐雾试验"]
+    assert stored_task["due_at"] == "2026-06-20 18:00"
+
+
 def test_tasks_router_publishes_storage_updates_for_mutations(monkeypatch):
     from app.api.routes import tasks as tasks_route
 
@@ -635,9 +745,122 @@ def test_update_task_rejects_empty_test_types_without_falling_back_to_task_name(
     stored_task = client.app.state.storage.read("mes.tasks")[0]
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "test_types must contain at least one experiment type"}
+    assert response.json() == {"detail": "任务进行中，仅允许修改任务名称"}
     assert stored_task["test_types"] == ["盐雾试验", "霉菌试验", "高低温湿热试验"]
     assert "演示任务002" not in stored_task["test_type"]
+
+
+def test_update_task_rejects_removing_schedule_after_fixture_install(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-installed",
+                "code": "TASK-INSTALLED",
+                "name": "已安装任务",
+                "sample_count": "1",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "status": "待排程",
+            }
+        ],
+        schedules=[
+            {
+                "id": "schedule-installed",
+                "task_code": "TASK-INSTALLED",
+                "experiment_code": "TASK-INSTALLED-A",
+                "device": "冲击一室",
+                "start_at": "2026-06-23 08:00",
+                "end_at": "2026-06-23 10:00",
+            }
+        ],
+        experiments=[
+            {
+                "task_code": "TASK-INSTALLED",
+                "experiment_code": "TASK-INSTALLED-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+            }
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-INSTALLED", "experiment_code": "TASK-INSTALLED-A", "tray_code": "TP-INSTALLED"}
+        ],
+        samples=[
+            {
+                "code": "SP-INSTALLED",
+                "task_code": "TASK-INSTALLED",
+                "status": "工装夹具安装",
+                "flow_status": "工装夹具安装",
+                "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装"}],
+            }
+        ],
+    )
+
+    response = client.put(
+        "/api/tasks/task-installed",
+        json={
+            "id": "task-installed",
+            "code": "TASK-INSTALLED",
+            "name": "已安装任务",
+            "sample_count": "1",
+            "test_type": "盐雾试验",
+            "test_types": ["盐雾试验"],
+            "required_device": "盐雾试验",
+            "confirm_remove_scheduled_experiments": True,
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert client.app.state.storage.read("mes.schedules")[0]["id"] == "schedule-installed"
+
+
+def test_delete_task_rejects_schedule_removal_after_fixture_install(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "task-installed",
+                "code": "TASK-INSTALLED",
+                "name": "已安装任务",
+                "sample_count": "1",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "required_device": "冲击试验",
+                "status": "待排程",
+            }
+        ],
+        schedules=[
+            {
+                "id": "schedule-installed",
+                "task_code": "TASK-INSTALLED",
+                "experiment_code": "TASK-INSTALLED-A",
+                "device": "冲击一室",
+                "start_at": "2026-06-23 08:00",
+                "end_at": "2026-06-23 10:00",
+            }
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-INSTALLED", "experiment_code": "TASK-INSTALLED-A", "tray_code": "TP-INSTALLED"}
+        ],
+        samples=[
+            {
+                "code": "SP-INSTALLED",
+                "task_code": "TASK-INSTALLED",
+                "status": "工装夹具安装",
+                "flow_status": "工装夹具安装",
+                "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装"}],
+            }
+        ],
+    )
+
+    response = client.delete("/api/tasks/task-installed")
+
+    assert response.status_code == 400
+    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert client.app.state.storage.read("mes.tasks")[0]["id"] == "task-installed"
 
 
 def test_update_task_name_does_not_become_an_experiment_type(monkeypatch):
