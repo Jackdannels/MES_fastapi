@@ -150,8 +150,8 @@ describe("useSamplesFlow", () => {
           code: "SP-OLD",
           task_code: "TASK-OLD",
           location: "外观检测间",
-          status: "实验前外观检测存放",
-          trays: [{ tray_code: "TP-001", status: "实验前外观检测存放", quantity: 1 }],
+          status: "实验前外观检测间存放",
+          trays: [{ tray_code: "TP-001", status: "实验前外观检测间存放", quantity: 1 }],
         },
         {
           code: "SP-CURRENT",

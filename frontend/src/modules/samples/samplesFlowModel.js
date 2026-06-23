@@ -747,12 +747,6 @@ function buildTrayFlowView(input = {}) {
       trayCode,
       samples: effectiveInput.samples,
     });
-    const latestWithdrawalRestoresToAppearanceStorage =
-      normalizeLifecycleStatus("", latestWithdrawalRestoreTarget?.status) === APPEARANCE_STOCKED_STATUS;
-    const latestWithdrawalRestoreExperimentRequiresAppearance =
-      experimentRequiresAppearanceInspection({ name: latestWithdrawalRestoreTarget?.experimentName });
-    const latestWithdrawalBlocksPreExperimentAppearance =
-      latestWithdrawalRestoresToAppearanceStorage && !latestWithdrawalRestoreExperimentRequiresAppearance;
     const suppressInferredAppearanceReached =
       latestWithdrawalRestoreTarget
       && normalizeLifecycleStatus("", latestWithdrawalRestoreTarget.status) !== "实验已完成";
@@ -897,16 +891,8 @@ function buildTrayFlowView(input = {}) {
       if (normalizedRouteStatus === APPEARANCE_SENT_STATUS_LABEL) {
         normalizedRouteStatus = completedStepIndexes.length > 0 ? "实验已完成" : "";
       }
-      const activeExperimentRequiresAppearance = experimentRequiresAppearanceInspection(activeExperiment);
       const shouldPlaceAppearanceBeforeLab =
-        (
-          normalizedRouteStatus === APPEARANCE_STOCKED_STATUS
-          && !latestWithdrawalBlocksPreExperimentAppearance
-          && activeExperimentRequiresAppearance
-          && activeExperiment?.unstarted
-          && parseTimeValue(stepTimeMap.get(APPEARANCE_STOCKED_STATUS)) >= latestCompletedTimeBeforeCurrent
-        )
-        || normalizedRouteStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+        normalizedRouteStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
       if (shouldPlaceAppearanceBeforeLab) {
         normalizedRouteStatus = APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
       }
@@ -973,9 +959,8 @@ function buildTrayFlowView(input = {}) {
         !activeExperiment?.unstarted || inputCurrentExperimentCode === normalizeText(activeExperiment?.code);
       const shouldShowActiveAppearance =
         isPostCompletionAppearanceStatus
-        && activeExperimentRequiresAppearance
+        && !activeExperiment?.unstarted
         && activeExperimentCanOwnCompletedRoute;
-      const activeAppearanceBelongsToCurrentExperiment = activeExperimentRequiresAppearance;
       const activeAppearanceIndexes = shouldShowActiveAppearance
         ? {
             stocked: pushStep({ key: `route-appearance-stocked-${currentExperimentIndex}`, label: APPEARANCE_STOCKED_STATUS }),
@@ -1131,9 +1116,7 @@ function buildTrayFlowView(input = {}) {
         routeIndexes.forEach((stepIndex) => {
           steps[stepIndex].reached = true;
         });
-        if (activeAppearanceBelongsToCurrentExperiment) {
-          steps[currentExperimentIndexInSteps].reached = true;
-        }
+        steps[currentExperimentIndexInSteps].reached = true;
         markCompletedAppearanceReached();
       } else if (normalizedRouteStatus === "厂家收回") {
         currentStatus = normalizedRouteStatus;
@@ -1331,21 +1314,12 @@ function buildTrayFlowView(input = {}) {
   ) {
     status = singleExperimentRuntimeStatus;
   }
-  const singleExperimentRequiresAppearance = singleExperiment && experimentRequiresAppearanceInspection(singleExperiment);
   const singleExperimentRuntimeLifecycleStatus = normalizeLifecycleStatus("", singleExperimentRuntimeStatus);
   const singleExperimentCompleted =
     singleExperimentEventStatus === "实验已完成" || singleExperimentRuntimeLifecycleStatus === "实验已完成";
-  if (status === APPEARANCE_STOCKED_STATUS && singleExperimentRequiresAppearance && !singleExperimentCompleted) {
-    status = APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
-  }
   const isPreExperimentAppearanceStatus = status === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
   const shouldPlaceSingleAppearanceBeforeLab =
-    isPreExperimentAppearanceStatus
-    || (
-      status === APPEARANCE_STOCKED_STATUS
-      && singleExperimentRequiresAppearance
-      && !singleExperimentCompleted
-    );
+    isPreExperimentAppearanceStatus;
   const shouldShowSingleAppearance =
     status === APPEARANCE_STOCKED_STATUS
     || status === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;

@@ -35,7 +35,7 @@ STAGING_INBOUND_STATUSES = {
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
 }
 APPEARANCE_LOCATION_KEYWORD = "外观检测间"
-APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "外观检测间存放", "已到达外观检测间", PRE_EXPERIMENT_APPEARANCE_STATUS}
+APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "实验后外观检测间存放", PRE_EXPERIMENT_APPEARANCE_STATUS}
 APPEARANCE_SOURCE_REQUIRED_DETAIL = "只有盐雾、霉菌实验完成后才能进入外观检测间。"
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
@@ -507,7 +507,7 @@ def _is_appearance_inbound(sample: Any, tray: Any | None = None) -> bool:
         _normalize_text(sample.get("status")),
         _normalize_text(sample.get("flow_status")),
     }
-    return bool(statuses & APPEARANCE_INBOUND_STATUSES) or APPEARANCE_LOCATION_KEYWORD in _normalize_text(sample.get("location"))
+    return bool(statuses & APPEARANCE_INBOUND_STATUSES)
 
 
 def _is_storage_room_inbound(sample: Any, tray: Any | None = None) -> bool:
@@ -570,7 +570,7 @@ def _is_appearance_stored(sample: Any, tray: Any | None = None) -> bool:
     }
     if isinstance(tray, dict):
         statuses.add(_status(tray))
-    return bool(statuses & {"外观检测间存放", "已到达外观检测间", PRE_EXPERIMENT_APPEARANCE_STATUS})
+    return bool(statuses & {"实验后外观检测间存放", PRE_EXPERIMENT_APPEARANCE_STATUS})
 
 
 def _latest_storage_event_for_tray(staging_events: Any, tray_code: str) -> dict[str, Any] | None:

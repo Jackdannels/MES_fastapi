@@ -1441,7 +1441,7 @@ const StagingSamplesScreen = {
             h("strong", metric.value),
           ])),
           h("div", { class: ["visual-staging-overview-item", "visual-staging-kind-summary"], "data-testid": "visual-staging-kind-summary" }, [
-            h("span", "暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放"),
+            h("span", "暂存间存放/计划暂存/实验后暂存间存放/实验后外观检测间存放"),
             h("strong", [
               h("b", { class: "kind-current" }, String(summary.currentTrayCount ?? 0)),
               h("i", "/"),

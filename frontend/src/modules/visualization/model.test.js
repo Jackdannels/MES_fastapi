@@ -1902,9 +1902,9 @@ describe("visualization model", () => {
           code: `${taskCode}-SP-001`,
           task_code: taskCode,
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
-          trays: [{ tray_code: `${taskCode}-TP-001`, status: "外观检测间存放", quantity: 1 }],
+          status: "实验后外观检测间存放",
+          flow_status: "实验后外观检测间存放",
+          trays: [{ tray_code: `${taskCode}-TP-001`, status: "实验后外观检测间存放", quantity: 1 }],
           history: [
             { detail: `${taskCode} / 冲击试验 / 实验已完成`, status: "实验已完成" },
             { detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成" },
@@ -2122,8 +2122,8 @@ describe("visualization model", () => {
           code: "SP-APPEARANCE",
           task_code: "TASK-APPEARANCE",
           location: "外观检测间",
-          status: "外观检测间存放",
-          trays: [{ tray_code: "TP-APPEARANCE", status: "外观检测间存放", quantity: 1 }],
+          status: "实验后外观检测间存放",
+          trays: [{ tray_code: "TP-APPEARANCE", status: "实验后外观检测间存放", quantity: 1 }],
         },
       ],
       stagingEvents: [
@@ -2139,8 +2139,8 @@ describe("visualization model", () => {
 
     expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
       stagingKind: "appearance",
-      stagingKindLabel: "外观检测间存放",
-      status: "外观检测间存放",
+      stagingKindLabel: "实验后外观检测间存放",
+      status: "实验后外观检测间存放",
       trayCode: "TP-APPEARANCE",
     }));
     expect(view.summary.appearanceTrayCount).toBe(1);

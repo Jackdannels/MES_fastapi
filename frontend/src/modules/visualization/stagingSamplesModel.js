@@ -19,7 +19,7 @@ import {
 import { COMPLETED_EXPERIMENT_STATUSES, resolveRelationStatus, sampleHasCompletedExperiment } from "./experimentCompletionModel";
 
 const STAGING_CURRENT_STATUSES = new Set(["暂存间存放", "已到达暂存间"]);
-const APPEARANCE_CURRENT_STATUSES = new Set(["外观检测间存放", APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
+const APPEARANCE_CURRENT_STATUSES = new Set(["实验后外观检测间存放", APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]);
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
 const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
 const PLANNED_APPEARANCE_STATUSES = new Set(["送至外观检测间"]);
@@ -31,7 +31,7 @@ const STAGING_KIND_LABELS = {
   current: "暂存间存放",
   planned: "计划暂存",
   "post-test": "实验后暂存间",
-  appearance: "外观检测间存放",
+  appearance: "实验后外观检测间存放",
 };
 const VISIBLE_STAGING_KINDS = new Set(["current", "planned", "post-test", "appearance"]);
 const STORAGE_SNAPSHOT_KEYS = {
@@ -262,7 +262,7 @@ const resolveStagingTrayKind = (row, latestEvent) => {
     row.statuses.some((status) => isAppearanceStatus(status))
     || isAppearanceStockInEvent(latestEvent)
   ) {
-    const appearanceStatus = row.statuses.find((status) => isAppearanceStatus(status)) || "外观检测间存放";
+    const appearanceStatus = row.statuses.find((status) => isAppearanceStatus(status)) || "实验后外观检测间存放";
     return buildStagingKind("appearance", appearanceStatus);
   }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {

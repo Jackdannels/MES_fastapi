@@ -32,7 +32,7 @@ const STARTED_EXPERIMENT_STATUSES = new Set([
   EXPERIMENT_COMPLETED_STATUS,
   "实验完成",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   "实验后暂存间存放",
   STATUS_RETENTION,
 ]);
@@ -40,7 +40,7 @@ const COMPLETED_EXPERIMENT_STATUSES = new Set([
   EXPERIMENT_COMPLETED_STATUS,
   "实验完成",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   "实验后暂存间存放",
   STATUS_RETENTION,
 ]);

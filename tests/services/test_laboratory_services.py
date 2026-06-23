@@ -288,7 +288,7 @@ def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handove
     )
     assert not should_route_pre_experiment_appearance(
         source_location="外观检测间",
-        source_status="实验前外观检测存放",
+        source_status="实验前外观检测间存放",
         target_lab="盐雾试验室",
         target_experiment_code="EXP-SALT",
         experiments=experiments,

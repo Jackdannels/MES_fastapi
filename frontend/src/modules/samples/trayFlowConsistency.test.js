@@ -521,13 +521,13 @@ describe("tray flow consistency", () => {
           task_code: taskCode,
           code: "SYLU-2026-06-022-SP-001",
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
-          trays: [{ tray_code: trayCode, quantity: 1, status: "外观检测间存放" }],
+          status: "实验后外观检测间存放",
+          flow_status: "实验后外观检测间存放",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "实验后外观检测间存放" }],
           history: [
-            { action: "任务切换撤回", detail: `${taskCode} / 高低温湿热试验 / 撤回至外观检测间存放`, status: "外观检测间存放", location: "外观检测间", time: "2026-06-06 22:10:00" },
+            { action: "任务切换撤回", detail: `${taskCode} / 高低温湿热试验 / 撤回至实验后外观检测间存放`, status: "实验后外观检测间存放", location: "外观检测间", time: "2026-06-06 22:10:00" },
             { detail: `${taskCode} / 霉菌试验 / 实验已完成`, status: "实验已完成", location: "霉菌试验室", time: "2026-06-06 21:49:03" },
-            { detail: `${trayCode} 外观检测间存放`, status: "外观检测间存放", location: "外观检测间", time: "2026-06-06 21:49:30" },
+            { detail: `${trayCode} 实验后外观检测间存放`, status: "实验后外观检测间存放", location: "外观检测间", time: "2026-06-06 21:49:30" },
           ],
         },
       ],
@@ -541,7 +541,7 @@ describe("tray flow consistency", () => {
       ...snapshot,
       currentExperimentCode: `${taskCode}-B`,
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验后外观检测间存放",
       taskCode,
       trayCode,
     });
@@ -560,25 +560,25 @@ describe("tray flow consistency", () => {
       labNames: ["高低温湿热一室"],
     });
 
-    expect(directFlow.status).toBe("外观检测间存放");
-    expect(activeLabel(directFlow)).toBe("外观检测间存放");
+    expect(directFlow.status).toBe("实验后外观检测间存放");
+    expect(activeLabel(directFlow)).toBe("实验后外观检测间存放");
     expect(overviewRows[0]).toEqual(expect.objectContaining({
-      canonicalStatus: "外观检测间存放",
+      canonicalStatus: "实验后外观检测间存放",
       currentLocation: "外观检测间",
-      currentStatus: "外观检测间存放",
+      currentStatus: "实验后外观检测间存放",
       taskCode,
       trayCode,
     }));
-    expect(laboratoryView.selectedTrayFlow.status).toBe("外观检测间存放");
-    expect(activeLabel(laboratoryView.selectedTrayFlow)).toBe("外观检测间存放");
+    expect(laboratoryView.selectedTrayFlow.status).toBe("实验后外观检测间存放");
+    expect(activeLabel(laboratoryView.selectedTrayFlow)).toBe("实验后外观检测间存放");
     const visualTray = visualizationPanels[0]?.trays.find((tray) => tray.trayCode === trayCode);
     expect(visualTray).toEqual(expect.objectContaining({
-      canonicalStatus: "外观检测间存放",
-      status: "外观检测间存放",
+      canonicalStatus: "实验后外观检测间存放",
+      status: "实验后外观检测间存放",
       taskCode,
       trayCode,
     }));
-    expect(activeLabel(visualTray)).toBe("外观检测间存放");
+    expect(activeLabel(visualTray)).toBe("实验后外观检测间存放");
   });
 
   test("uses central tray state after appearance to staging restore instead of stale sibling sample status", () => {
@@ -626,7 +626,7 @@ describe("tray flow consistency", () => {
             { action: "实验任务撤回", detail: `${taskCode} / 振动试验 / 撤回至已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-08 10:45:00", tray_code: trayCode },
             { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-08 10:20:00", tray_code: trayCode },
             { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-06-08 10:15:00", tray_code: trayCode },
-            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-08 10:10:00", tray_code: trayCode },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-08 10:10:00", tray_code: trayCode },
             { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-06-08 10:00:00", tray_code: trayCode },
           ],
         },
@@ -756,7 +756,7 @@ describe("tray flow consistency", () => {
             { action: "暂存间扫码出库", detail: `${trayCode} 送至 盐雾试验室`, location: "盐雾试验室", status: "送至实验室", time: "2026-06-11 16:45:34" },
             { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-11 16:45:30" },
             { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-06-11 16:45:24" },
-            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-11 16:44:48" },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-11 16:44:48" },
             { action: "实验完成", detail: `${taskCode} / 霉菌试验 / 实验已完成`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:30:35", tray_code: trayCode },
           ],
         },
@@ -771,7 +771,7 @@ describe("tray flow consistency", () => {
           history: [
             { action: "实验任务撤回", detail: `${taskCode} / 盐雾试验 / 撤回至霉菌试验已完成（试验间内撤回当前实验任务）`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:45:53", tray_code: trayCode },
             { action: "暂存间扫码出库", detail: `${trayCode} 送至 盐雾试验室`, location: "盐雾试验室", status: "送至实验室", time: "2026-06-11 16:45:34" },
-            { action: "外观检测间扫码入库", detail: `${trayCode} 外观检测间存放`, location: "外观检测间", status: "外观检测间存放", time: "2026-06-11 16:44:48" },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-11 16:44:48" },
             { action: "实验完成", detail: `${taskCode} / 霉菌试验 / 实验已完成`, location: "霉菌试验室", status: "实验已完成", time: "2026-06-11 16:30:35", tray_code: trayCode },
           ],
         },

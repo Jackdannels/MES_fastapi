@@ -35,7 +35,7 @@ TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT = 12
 SYSTEM_TRAY_TOTAL = 10
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
-APPEARANCE_STORED_STATUS = "外观检测间存放"
+APPEARANCE_STORED_STATUS = "实验后外观检测间存放"
 POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 WITHDRAW_BLOCKED_TRAY_STATUSES = {
@@ -49,7 +49,7 @@ WITHDRAW_BLOCKED_TRAY_STATUSES = {
     "实验已经完成",
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
     "厂家收回",
 }
 TRANSFER_STORAGE_UPDATE_KEYS = (
@@ -91,7 +91,7 @@ TRAY_OUTBOUND_STATUSES = {
     "实验已完成",
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
     PRE_EXPERIMENT_APPEARANCE_STATUS,
     "厂家收回",
 }
@@ -99,7 +99,7 @@ TRAY_LAB_REDISPATCH_STATUSES = {
     "已到达暂存间",
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
     PRE_EXPERIMENT_APPEARANCE_STATUS,
     "实验完成",
     "实验已经完成",
@@ -113,7 +113,7 @@ STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验已经完成",
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
     "厂家收回",
 )
 RELOAD_BLOCKED_OUTBOUND_TRAY_STATUSES = {
@@ -1377,17 +1377,16 @@ def latest_appearance_storage_status_for_tray(
         for history_entry in as_list(sample.get("history")):
             action = normalize_text(history_entry.get("action"))
             status = normalize_text(history_entry.get("status"))
-            location = normalize_text(history_entry.get("location"))
             if action != "外观检测间扫码入库":
                 continue
-            if status not in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"} and location != APPEARANCE_LOCATION:
+            if status not in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}:
                 continue
             entry_time = parse_datetime_value(history_entry.get("time")) or datetime.min
             if entry_time > dispatch_time:
                 continue
             candidates.append(
                 {
-                    "status": status if status in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS} else APPEARANCE_STORED_STATUS,
+                    "status": status,
                     "time": entry_time,
                 }
             )

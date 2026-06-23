@@ -1207,7 +1207,7 @@ describe("VisualizationPage runtime", () => {
     const preview = wrapper.find('[data-testid="visual-single-preview"]');
     const overview = preview.get('[data-testid="visual-staging-overview"]');
     const kindSummary = preview.get('[data-testid="visual-staging-kind-summary"]');
-    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放");
+    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存间存放/实验后外观检测间存放");
     expect(kindSummary.text()).toContain("1/1/1/0");
     expect(kindSummary.find(".kind-planned").exists()).toBe(true);
     expect(kindSummary.find(".kind-allowed").exists()).toBe(false);

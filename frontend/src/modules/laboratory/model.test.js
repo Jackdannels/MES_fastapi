@@ -1941,13 +1941,13 @@ describe("laboratory model", () => {
       samples: [
         {
           code: `${taskCode}-SP-001`,
-          flow_status: "实验前外观检测存放",
+          flow_status: "实验前外观检测间存放",
           history: [
             {
               action: "实验任务撤回",
-              detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测存放（试验间内撤回当前实验任务）`,
+              detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测间存放（试验间内撤回当前实验任务）`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 14:50:00",
             },
             {
@@ -1966,9 +1966,9 @@ describe("laboratory model", () => {
             },
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 实验前外观检测存放`,
+              detail: `${trayCode} 实验前外观检测间存放`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 14:43:56",
             },
             {
@@ -1981,9 +1981,9 @@ describe("laboratory model", () => {
           ],
           location: "外观检测间",
           owner: "赵工",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           task_code: taskCode,
-          trays: [{ quantity: 1, status: "实验前外观检测存放", target_experiment_code: `${taskCode}-B`, target_lab: "霉菌试验室", tray_code: trayCode }],
+          trays: [{ quantity: 1, status: "实验前外观检测间存放", target_experiment_code: `${taskCode}-B`, target_lab: "霉菌试验室", tray_code: trayCode }],
         },
       ],
       schedules: [
@@ -2000,7 +2000,7 @@ describe("laboratory model", () => {
       tasks: [{ code: taskCode, name: "霉菌重置回外观检测任务", test_type: "霉菌试验" }],
     });
 
-    expect(view.selectedTrayFlow.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(
       expect.objectContaining({ active: true, time: "2026-06-23 14:43:56" }),
     );
   });
@@ -4481,9 +4481,9 @@ describe("laboratory model", () => {
           code: "SP-APPEARANCE",
           location: "外观检测间",
           owner: "王工",
-          status: "外观检测间存放",
+          status: "实验后外观检测间存放",
           task_code: "SYLU-2026-05-704",
-          trays: [{ tray_code: "TP-APPEARANCE", quantity: 1, status: "外观检测间存放" }],
+          trays: [{ tray_code: "TP-APPEARANCE", quantity: 1, status: "实验后外观检测间存放" }],
         },
       ],
       schedules: [
@@ -5458,7 +5458,7 @@ describe("laboratory model", () => {
           history: [
             { action: "任务比对", detail: "TASK-702 / 高低温湿热试验 / 已到达实验室", location: "高低温湿热一室", status: "已到达实验室", time: "2026-06-06T22:00:00.000Z" },
             { action: "外观检测间扫码出库", detail: "TP-702 送至 高低温湿热一室", location: "高低温湿热一室", status: "送至实验室", time: "2026-06-06T21:50:00.000Z" },
-            { action: "外观检测间扫码入库", detail: "TP-702 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-06T21:40:00.000Z" },
+            { action: "外观检测间扫码入库", detail: "TP-702 实验后外观检测间存放", location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-06T21:40:00.000Z" },
             { action: "实验完成", detail: "TASK-702 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-06T21:30:00.000Z" },
           ],
           location: "高低温湿热一室",
@@ -5471,16 +5471,16 @@ describe("laboratory model", () => {
     });
 
     expect(updatedSamples[0]).toEqual(expect.objectContaining({
-      flow_status: "外观检测间存放",
+      flow_status: "实验后外观检测间存放",
       location: "外观检测间",
-      status: "外观检测间存放",
-      trays: [expect.objectContaining({ status: "外观检测间存放", tray_code: "TP-702" })],
+      status: "实验后外观检测间存放",
+      trays: [expect.objectContaining({ status: "实验后外观检测间存放", tray_code: "TP-702" })],
     }));
     expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
       action: "任务切换撤回",
-      detail: "TASK-702 / 高低温湿热试验 / 撤回至外观检测间存放",
+      detail: "TASK-702 / 高低温湿热试验 / 撤回至实验后外观检测间存放",
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验后外观检测间存放",
     }));
   });
 
@@ -5501,7 +5501,7 @@ describe("laboratory model", () => {
           history: [
             { action: "任务比对", detail: "TASK-703 / 盐雾试验 / 已到达实验室", location: "盐雾试验室", status: "已到达实验室", time: "2026-06-06T22:00:00.000Z" },
             { action: "外观检测间扫码出库", detail: "TP-703 送至 盐雾试验室", location: "盐雾试验室", status: "送至实验室", time: "2026-06-06T21:50:00.000Z" },
-            { action: "外观检测间扫码入库", detail: "TP-703 实验前外观检测存放", location: "外观检测间", status: "实验前外观检测存放", time: "2026-06-06T21:40:00.000Z" },
+            { action: "外观检测间扫码入库", detail: "TP-703 实验前外观检测间存放", location: "外观检测间", status: "实验前外观检测间存放", time: "2026-06-06T21:40:00.000Z" },
           ],
           location: "盐雾试验室",
           owner: "王工",
@@ -5513,16 +5513,16 @@ describe("laboratory model", () => {
     });
 
     expect(updatedSamples[0]).toEqual(expect.objectContaining({
-      flow_status: "实验前外观检测存放",
+      flow_status: "实验前外观检测间存放",
       location: "外观检测间",
-      status: "实验前外观检测存放",
-      trays: [expect.objectContaining({ status: "实验前外观检测存放", tray_code: "TP-703" })],
+      status: "实验前外观检测间存放",
+      trays: [expect.objectContaining({ status: "实验前外观检测间存放", tray_code: "TP-703" })],
     }));
     expect(updatedSamples[0].history[0]).toEqual(expect.objectContaining({
       action: "任务切换撤回",
-      detail: "TASK-703 / 盐雾试验 / 撤回至实验前外观检测存放",
+      detail: "TASK-703 / 盐雾试验 / 撤回至实验前外观检测间存放",
       location: "外观检测间",
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
     }));
   });
 

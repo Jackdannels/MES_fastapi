@@ -99,16 +99,16 @@ def test_storage_allows_pre_experiment_appearance_stock_for_salt_target_from_han
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "实验前外观检测存放"
-    attempted[0]["flow_status"] = "实验前外观检测存放"
-    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
     attempted[0]["trays"][0]["target_lab"] = "盐雾试验室"
     attempted[0]["trays"][0]["target_experiment_code"] = "EXP-SALT"
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测存放"
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
     assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "盐雾试验室"
 
 
@@ -147,14 +147,14 @@ def test_storage_allows_pre_experiment_appearance_stock_for_mold_target_after_la
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "实验前外观检测存放"
-    attempted[0]["flow_status"] = "实验前外观检测存放"
-    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测存放"
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
     assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "霉菌试验室"
     assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-MOLD"
 
@@ -186,9 +186,9 @@ def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance
                 },
                 {
                     "action": "外观检测间扫码入库",
-                    "detail": "TP-PRE-APPEARANCE-REPEAT 实验前外观检测存放",
+                    "detail": "TP-PRE-APPEARANCE-REPEAT 实验前外观检测间存放",
                     "location": "外观检测间",
-                    "status": "实验前外观检测存放",
+                    "status": "实验前外观检测间存放",
                     "time": "2026-06-06T21:40:00",
                 },
             ],
@@ -231,9 +231,9 @@ def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "实验前外观检测存放"
-    attempted[0]["flow_status"] = "实验前外观检测存放"
-    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
@@ -308,15 +308,15 @@ def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatc
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "实验前外观检测存放"
-    attempted[0]["flow_status"] = "实验前外观检测存放"
-    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
     assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测存放"
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验前外观检测存放"
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验前外观检测间存放"
 
 
 def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_or_staging(monkeypatch):
@@ -353,9 +353,9 @@ def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "实验前外观检测存放"
-    attempted[0]["flow_status"] = "实验前外观检测存放"
-    attempted[0]["trays"][0]["status"] = "实验前外观检测存放"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
     attempted[0]["trays"][0]["target_lab"] = "盐雾试验室"
     attempted[0]["trays"][0]["target_experiment_code"] = "EXP-SALT"
 
@@ -663,9 +663,9 @@ def test_storage_rejects_appearance_stock_in_when_tray_is_in_post_staging(monkey
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "外观检测间存放"
-    attempted[0]["flow_status"] = "外观检测间存放"
-    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
@@ -679,13 +679,13 @@ def test_storage_rejects_post_staging_stock_in_when_tray_is_in_appearance_room(m
         {
             "code": "SP-APPEARANCE-STAGING-BLOCKED",
             "location": "外观检测间",
-            "status": "外观检测间存放",
-            "flow_status": "外观检测间存放",
+            "status": "实验后外观检测间存放",
+            "flow_status": "实验后外观检测间存放",
             "task_code": "TASK-APPEARANCE-STAGING-BLOCKED",
             "trays": [
                 {
                     "tray_code": "TP-APPEARANCE-STAGING-BLOCKED",
-                    "status": "外观检测间存放",
+                    "status": "实验后外观检测间存放",
                     "quantity": 1,
                 }
             ],
@@ -731,13 +731,13 @@ def test_storage_allows_completed_appearance_dispatch_to_post_staging(monkeypatc
         {
             "code": "SYLU-2026-06-025-SP-001",
             "location": "外观检测间",
-            "status": "外观检测间存放",
-            "flow_status": "外观检测间存放",
+            "status": "实验后外观检测间存放",
+            "flow_status": "实验后外观检测间存放",
             "task_code": "SYLU-2026-06-025",
             "trays": [
                 {
                     "tray_code": "SYLU-2026-06-025-TP-001",
-                    "status": "外观检测间存放",
+                    "status": "实验后外观检测间存放",
                     "quantity": 1,
                     "target_lab": "盐雾试验室",
                     "target_experiment_code": "SYLU-2026-06-025-B",
@@ -1164,9 +1164,9 @@ def test_storage_rejects_appearance_stock_in_after_laboratory_progress(monkeypat
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "外观检测间存放"
-    attempted[0]["flow_status"] = "外观检测间存放"
-    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
@@ -1245,9 +1245,9 @@ def test_storage_allows_appearance_stock_in_for_other_tray_when_sample_has_labor
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "外观检测间"
-    attempted[0]["status"] = "外观检测间存放"
-    attempted[0]["flow_status"] = "外观检测间存放"
-    attempted[0]["trays"][1]["status"] = "外观检测间存放"
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][1]["status"] = "实验后外观检测间存放"
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
@@ -1293,9 +1293,9 @@ def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatc
     )
 
     attempted = deepcopy(samples)
-    attempted[0]["status"] = "外观检测间存放"
-    attempted[0]["flow_status"] = "外观检测间存放"
-    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
@@ -1325,9 +1325,9 @@ def test_storage_rejects_appearance_stock_in_after_non_salt_mold_experiment(monk
     client, storage = build_client(monkeypatch, {"mes.samples": samples})
 
     attempted = deepcopy(samples)
-    attempted[0]["status"] = "外观检测间存放"
-    attempted[0]["flow_status"] = "外观检测间存放"
-    attempted[0]["trays"][0]["status"] = "外观检测间存放"
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 

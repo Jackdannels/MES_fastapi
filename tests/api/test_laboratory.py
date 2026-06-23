@@ -1475,7 +1475,7 @@ def test_laboratory_withdraw_current_restores_appearance_storage_before_current_
                 [
                     {"action": "任务比对", "detail": "TASK-501 / 高低温湿热试验 / 已到达实验室", "status": "已到达实验室", "location": "高低温湿热一室", "time": "2026-06-06T22:00:00"},
                     {"action": "外观检测间扫码出库", "detail": "TP-501 送至 高低温湿热一室", "status": "送至实验室", "location": "高低温湿热一室", "time": "2026-06-06T21:50:00"},
-                    {"action": "外观检测间扫码入库", "detail": "TP-501 外观检测间存放", "status": "外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验后外观检测间存放", "status": "实验后外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
                     {"action": "实验完成", "detail": "TASK-501 / 霉菌试验 / 实验已完成", "status": "实验已完成", "location": "霉菌试验室", "time": "2026-06-06T21:30:00"},
                 ],
             )
@@ -1504,14 +1504,14 @@ def test_laboratory_withdraw_current_restores_appearance_storage_before_current_
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredStatus"] == "实验后外观检测间存放"
     assert payload["restoredExperimentName"] == ""
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "外观检测间存放"
-    assert updated["flow_status"] == "外观检测间存放"
+    assert updated["status"] == "实验后外观检测间存放"
+    assert updated["flow_status"] == "实验后外观检测间存放"
     assert updated["location"] == "外观检测间"
-    assert updated["trays"][0]["status"] == "外观检测间存放"
-    assert "撤回至外观检测间存放" in updated["history"][0]["detail"]
+    assert updated["trays"][0]["status"] == "实验后外观检测间存放"
+    assert "撤回至实验后外观检测间存放" in updated["history"][0]["detail"]
     staging_events = storage.read("mes.staging_events")
     assert staging_events[-1]["action"] == "stock_out_withdraw"
     assert staging_events[-1]["room"] == "appearance"
@@ -1527,7 +1527,7 @@ def test_laboratory_withdraw_current_restores_pre_experiment_appearance_storage(
                 [
                     {"action": "任务比对", "detail": "TASK-501 / 盐雾试验 / 已到达实验室", "status": "已到达实验室", "location": "盐雾试验室", "time": "2026-06-06T22:00:00"},
                     {"action": "外观检测间扫码出库", "detail": "TP-501 送至 盐雾试验室", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-06-06T21:50:00"},
-                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测存放", "status": "实验前外观检测存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测间存放", "status": "实验前外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
                 ],
             )
         ],
@@ -1554,13 +1554,13 @@ def test_laboratory_withdraw_current_restores_pre_experiment_appearance_storage(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "实验前外观检测存放"
+    assert payload["restoredStatus"] == "实验前外观检测间存放"
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "实验前外观检测存放"
-    assert updated["flow_status"] == "实验前外观检测存放"
+    assert updated["status"] == "实验前外观检测间存放"
+    assert updated["flow_status"] == "实验前外观检测间存放"
     assert updated["location"] == "外观检测间"
-    assert updated["trays"][0]["status"] == "实验前外观检测存放"
-    assert "撤回至实验前外观检测存放" in updated["history"][0]["detail"]
+    assert updated["trays"][0]["status"] == "实验前外观检测间存放"
+    assert "撤回至实验前外观检测间存放" in updated["history"][0]["detail"]
 
 
 def test_laboratory_withdraw_current_keeps_pre_appearance_after_repeated_appearance_dispatch(monkeypatch):
@@ -1572,9 +1572,9 @@ def test_laboratory_withdraw_current_keeps_pre_appearance_after_repeated_appeara
                 [
                     {"action": "任务比对", "detail": "TASK-501 / 盐雾试验 / 已到达实验室", "status": "已到达实验室", "location": "盐雾试验室", "time": "2026-06-06T22:20:00"},
                     {"action": "外观检测间扫码出库", "detail": "TP-501 送至 盐雾试验室", "status": "送至实验室", "location": "盐雾试验室", "time": "2026-06-06T22:10:00"},
-                    {"action": "实验任务撤回", "detail": "TASK-501 / 霉菌试验 / 撤回至实验前外观检测存放", "status": "实验前外观检测存放", "location": "外观检测间", "time": "2026-06-06T22:00:00"},
+                    {"action": "实验任务撤回", "detail": "TASK-501 / 霉菌试验 / 撤回至实验前外观检测间存放", "status": "实验前外观检测间存放", "location": "外观检测间", "time": "2026-06-06T22:00:00"},
                     {"action": "外观检测间扫码出库", "detail": "TP-501 送至 霉菌试验室", "status": "送至实验室", "location": "霉菌试验室", "time": "2026-06-06T21:50:00"},
-                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测存放", "status": "实验前外观检测存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                    {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测间存放", "status": "实验前外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
                 ],
             )
         ],
@@ -1622,13 +1622,13 @@ def test_laboratory_withdraw_current_keeps_pre_appearance_after_repeated_appeara
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "实验前外观检测存放"
+    assert payload["restoredStatus"] == "实验前外观检测间存放"
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "实验前外观检测存放"
-    assert updated["flow_status"] == "实验前外观检测存放"
+    assert updated["status"] == "实验前外观检测间存放"
+    assert updated["flow_status"] == "实验前外观检测间存放"
     assert updated["location"] == "外观检测间"
-    assert updated["trays"][0]["status"] == "实验前外观检测存放"
-    assert "撤回至实验前外观检测存放" in updated["history"][0]["detail"]
+    assert updated["trays"][0]["status"] == "实验前外观检测间存放"
+    assert "撤回至实验前外观检测间存放" in updated["history"][0]["detail"]
 
 
 def test_laboratory_withdraw_current_restores_pre_appearance_for_all_samples_on_same_tray(monkeypatch):
@@ -1639,7 +1639,7 @@ def test_laboratory_withdraw_current_restores_pre_appearance_for_all_samples_on_
             [
                 {"action": "任务比对", "detail": "TASK-501 / 霉菌试验 / 已到达实验室", "status": "已到达实验室", "location": "霉菌试验室", "time": "2026-06-06T22:10:00"},
                 {"action": "外观检测间扫码出库", "detail": "TP-501 送至 霉菌试验室", "status": "送至实验室", "location": "霉菌试验室", "time": "2026-06-06T22:00:00"},
-                {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测存放", "status": "实验前外观检测存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
+                {"action": "外观检测间扫码入库", "detail": "TP-501 实验前外观检测间存放", "status": "实验前外观检测间存放", "location": "外观检测间", "time": "2026-06-06T21:40:00"},
                 {"action": "暂存间扫码出库", "detail": "TP-501 送至 霉菌试验室", "status": "送至实验室", "location": "霉菌试验室", "time": "2026-06-06T21:30:00"},
                 {"action": "实验完成", "detail": "TASK-501 / 四综合试验 / 实验已完成", "status": "实验已完成", "location": "四综合实验室", "time": "2026-06-06T21:00:00"},
             ],
@@ -1675,11 +1675,11 @@ def test_laboratory_withdraw_current_restores_pre_appearance_for_all_samples_on_
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-B/withdraw-current", json={})
 
     assert response.status_code == 200
-    assert response.json()["restoredStatus"] == "实验前外观检测存放"
+    assert response.json()["restoredStatus"] == "实验前外观检测间存放"
     updated_samples = storage.read("mes.samples")
-    assert [sample["status"] for sample in updated_samples] == ["实验前外观检测存放", "实验前外观检测存放"]
-    assert [sample["trays"][0]["status"] for sample in updated_samples] == ["实验前外观检测存放", "实验前外观检测存放"]
-    assert all("撤回至实验前外观检测存放" in sample["history"][0]["detail"] for sample in updated_samples)
+    assert [sample["status"] for sample in updated_samples] == ["实验前外观检测间存放", "实验前外观检测间存放"]
+    assert [sample["trays"][0]["status"] for sample in updated_samples] == ["实验前外观检测间存放", "实验前外观检测间存放"]
+    assert all("撤回至实验前外观检测间存放" in sample["history"][0]["detail"] for sample in updated_samples)
 
 
 def test_laboratory_withdraw_current_restores_previous_completed_experiment(monkeypatch):

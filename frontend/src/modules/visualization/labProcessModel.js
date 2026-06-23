@@ -127,7 +127,7 @@ const visualizationFlowStatusRank = (status) => {
   if (normalized === "送至外观检测间") {
     return completedIndex + 0.1;
   }
-  if (normalized === "外观检测间存放" || normalized === "已到达外观检测间") {
+  if (normalized === "实验后外观检测间存放") {
     return completedIndex + 0.2;
   }
   return FLOW_STEP_RANK_BY_LABEL.get(normalized) ?? -1;

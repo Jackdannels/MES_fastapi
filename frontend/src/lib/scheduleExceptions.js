@@ -18,7 +18,7 @@ const STARTED_STATUSES = new Set([
   "实验准备就绪",
   "实验后暂存间存放",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   RETURNED_STATUS,
 ]);
 const ACTIVE_LAB_PROGRESS_STATUSES = new Set([
@@ -31,7 +31,7 @@ const COMPLETED_STATUSES = new Set([
   EXPERIMENT_STATUS_COMPLETED,
   "实验后暂存间存放",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   RETURNED_STATUS,
 ]);
 

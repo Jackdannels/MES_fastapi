@@ -25,7 +25,7 @@ const STARTED_TRAY_STATUSES = new Set([
   STATUS_COMPLETED,
   "实验完成",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   "实验后暂存间存放",
   "厂家收回",
 ]);
@@ -33,7 +33,7 @@ const COMPLETED_TRAY_STATUSES = new Set([
   STATUS_COMPLETED,
   "实验完成",
   "送至外观检测间",
-  "外观检测间存放",
+  "实验后外观检测间存放",
   "实验后暂存间存放",
   "厂家收回",
 ]);

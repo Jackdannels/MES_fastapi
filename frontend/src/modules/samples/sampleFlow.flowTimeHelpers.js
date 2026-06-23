@@ -24,7 +24,7 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
     return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
   if (isAppearanceInspectionStatus(text)) {
-    return text === "已到达外观检测间" ? APPEARANCE_STOCKED_STATUS : text;
+    return text;
   }
   if (FLOW_STEP_KEY_BY_LABEL.has(text)) {
     return text;

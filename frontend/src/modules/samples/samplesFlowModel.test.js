@@ -192,9 +192,9 @@ describe("samplesFlowModel", () => {
             },
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 外观检测间存放`,
+              detail: `${trayCode} 实验后外观检测间存放`,
               location: "外观检测间",
-              status: "外观检测间存放",
+              status: "实验后外观检测间存放",
               time: "2026-06-14 18:16:00",
               tray_code: trayCode,
             },
@@ -225,7 +225,7 @@ describe("samplesFlowModel", () => {
       trayCode: "SYLU-2026-03-001-TP-004",
       taskCode: "SYLU-2026-03-001",
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验后外观检测间存放",
       experiments: [
         {
           task_code: "SYLU-2026-03-001",
@@ -251,9 +251,9 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-004 | 当前状态：外观检测间存放");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-001-TP-004 | 当前状态：实验后外观检测间存放");
     expect(view.steps.map((step) => step.label)).not.toContain("送至外观检测间");
-    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ reached: true }));
   });
 
@@ -291,7 +291,7 @@ describe("samplesFlowModel", () => {
     expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-011-TP-001 | 当前状态：盐雾试验已完成");
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ active: true, reached: false }));
     expect(view.steps.map((step) => step.label)).not.toContain("送至外观检测间");
-    expect(view.steps.map((step) => step.label)).not.toContain("外观检测间存放");
+    expect(view.steps.map((step) => step.label)).not.toContain("实验后外观检测间存放");
   });
 
   test("buildTrayFlowView shows pre-experiment appearance storage before dispatching to the salt lab", () => {
@@ -299,16 +299,16 @@ describe("samplesFlowModel", () => {
       trayCode: "SYLU-2026-03-013-TP-001",
       taskCode: "SYLU-2026-03-013",
       location: "外观检测间",
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       samples: [
         {
           task_code: "SYLU-2026-03-013",
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           trays: [
             {
               tray_code: "SYLU-2026-03-013-TP-001",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               target_experiment_code: "SYLU-2026-03-013-A",
               target_lab: "盐雾试验室",
             },
@@ -327,11 +327,11 @@ describe("samplesFlowModel", () => {
     });
 
     const labels = view.steps.map((step) => step.label);
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-013-TP-001 | 当前状态：实验前外观检测存放");
-    expect(labels.indexOf("实验前外观检测存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
-    expect(labels.indexOf("实验前外观检测存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
-    expect(view.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(expect.objectContaining({ active: true }));
-    expect(labels).not.toContain("外观检测间存放");
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-013-TP-001 | 当前状态：实验前外观检测间存放");
+    expect(labels.indexOf("实验前外观检测间存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
+    expect(labels.indexOf("实验前外观检测间存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
+    expect(view.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(labels).not.toContain("实验后外观检测间存放");
   });
 
   test("buildTrayFlowView shows pre-experiment appearance storage in multi-experiment tray flow", () => {
@@ -339,16 +339,16 @@ describe("samplesFlowModel", () => {
       trayCode: "SYLU-2026-08-001-TP-001",
       taskCode: "SYLU-2026-08-001",
       location: "外观检测间",
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       samples: [
         {
           task_code: "SYLU-2026-08-001",
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           trays: [
             {
               tray_code: "SYLU-2026-08-001-TP-001",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               target_experiment_code: "SYLU-2026-08-001-A",
               target_lab: "盐雾试验室",
             },
@@ -370,20 +370,20 @@ describe("samplesFlowModel", () => {
     });
 
     const labels = view.steps.map((step) => step.label);
-    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-08-001-TP-001 | 当前状态：实验前外观检测存放");
-    expect(labels.indexOf("实验前外观检测存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
-    expect(labels.indexOf("实验前外观检测存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
-    expect(view.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(view.currentStatus).toBe("当前托盘：SYLU-2026-08-001-TP-001 | 当前状态：实验前外观检测间存放");
+    expect(labels.indexOf("实验前外观检测间存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
+    expect(labels.indexOf("实验前外观检测间存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
+    expect(view.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
   });
 
-  test("buildTrayFlowView shows direct appearance storage as pre-experiment storage before dispatching to a salt lab", () => {
+  test("buildTrayFlowView shows explicit pre-experiment appearance storage before dispatching to a salt lab", () => {
     const taskCode = "SYLU-2026-06-031";
     const trayCode = `${taskCode}-TP-001`;
     const view = buildTrayFlowView({
       trayCode,
       taskCode,
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验前外观检测间存放",
       experiments: [
         {
           task_code: taskCode,
@@ -404,12 +404,12 @@ describe("samplesFlowModel", () => {
           code: `${taskCode}-SP-001`,
           task_code: taskCode,
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
+          status: "实验前外观检测间存放",
+          flow_status: "实验前外观检测间存放",
           trays: [
             {
               tray_code: trayCode,
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               target_lab: "盐雾试验室",
               target_experiment_code: `${taskCode}-A`,
               quantity: 1,
@@ -418,9 +418,9 @@ describe("samplesFlowModel", () => {
           history: [
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 外观检测间存放`,
+              detail: `${trayCode} 实验前外观检测间存放`,
               location: "外观检测间",
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 15:20:08",
             },
             {
@@ -443,29 +443,29 @@ describe("samplesFlowModel", () => {
     });
 
     const labels = view.steps.map((step) => step.label);
-    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测存放`);
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测间存放`);
     expect(labels).not.toContain("送至外观检测间");
-    expect(labels.indexOf("实验前外观检测存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
-    expect(labels.indexOf("实验前外观检测存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
+    expect(labels.indexOf("实验前外观检测间存放")).toBeGreaterThan(labels.indexOf("已到达暂存间"));
+    expect(labels.indexOf("实验前外观检测间存放")).toBeLessThan(labels.indexOf("送至盐雾试验室"));
     expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(
       expect.objectContaining({ reached: true, time: "" }),
     );
     expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
       expect.objectContaining({ reached: true, time: "" }),
     );
-    expect(view.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(
+    expect(view.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(
       expect.objectContaining({ active: true, time: "2026-06-23 15:20:08" }),
     );
   });
 
-  test("buildTrayFlowView places appearance storage before the next appearance-required lab when an earlier experiment is unstarted", () => {
+  test("buildTrayFlowView places explicit pre-experiment appearance storage before the next appearance-required lab", () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-001`;
     const view = buildTrayFlowView({
       trayCode,
       taskCode,
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验前外观检测间存放",
       experiments: [
         {
           task_code: taskCode,
@@ -489,21 +489,21 @@ describe("samplesFlowModel", () => {
           code: `${taskCode}-SP-001`,
           task_code: taskCode,
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
+          status: "实验前外观检测间存放",
+          flow_status: "实验前外观检测间存放",
           trays: [
             {
               tray_code: trayCode,
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               quantity: 1,
             },
           ],
           history: [
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 外观检测间存放`,
+              detail: `${trayCode} 实验前外观检测间存放`,
               location: "外观检测间",
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 15:55:59",
             },
             {
@@ -521,10 +521,10 @@ describe("samplesFlowModel", () => {
     const labels = view.steps.map((step) => step.label);
     const sentToStaging = view.steps.find((step) => step.label === "送至暂存间");
     const arrivedStaging = view.steps.find((step) => step.label === "已到达暂存间");
-    const appearanceIndex = labels.indexOf("实验前外观检测存放");
+    const appearanceIndex = labels.indexOf("实验前外观检测间存放");
     const labDispatchIndex = labels.indexOf("送至霉菌试验室");
 
-    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测存放`);
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测间存放`);
     expect(labels).not.toContain("送至外观检测间");
     expect(labels).not.toContain("送至四综合实验室");
     expect(sentToStaging).toEqual(expect.objectContaining({ reached: true, time: "" }));
@@ -537,14 +537,14 @@ describe("samplesFlowModel", () => {
     }));
   });
 
-  test("buildTrayFlowView treats a withdrawn salt tray in appearance storage as pre-experiment storage", () => {
+  test("buildTrayFlowView keeps explicit pre-experiment appearance storage after a salt withdrawal", () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-001`;
     const view = buildTrayFlowView({
       trayCode,
       taskCode,
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验前外观检测间存放",
       experiments: [
         { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "四综合试验", required_device: "四综合试验" },
         { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "霉菌试验", required_device: "霉菌试验" },
@@ -565,12 +565,12 @@ describe("samplesFlowModel", () => {
           code: `${taskCode}-SP-001`,
           task_code: taskCode,
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
+          status: "实验前外观检测间存放",
+          flow_status: "实验前外观检测间存放",
           trays: [
             {
               tray_code: trayCode,
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               target_lab: "盐雾试验室",
               target_experiment_code: `${taskCode}-C`,
               quantity: 1,
@@ -579,9 +579,9 @@ describe("samplesFlowModel", () => {
           history: [
             {
               action: "实验任务撤回",
-              detail: `${taskCode} / 盐雾试验 / 撤回至外观检测间存放（试验间内撤回当前实验任务）`,
+              detail: `${taskCode} / 盐雾试验 / 撤回至实验前外观检测间存放（试验间内撤回当前实验任务）`,
               location: "外观检测间",
-              status: "外观检测间存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 15:55:59",
             },
             {
@@ -604,11 +604,11 @@ describe("samplesFlowModel", () => {
     });
 
     const labels = view.steps.map((step) => step.label);
-    const appearanceIndex = labels.indexOf("实验前外观检测存放");
+    const appearanceIndex = labels.indexOf("实验前外观检测间存放");
 
-    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测存放`);
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测间存放`);
     expect(labels).not.toContain("送至四综合实验室");
-    expect(labels).not.toContain("外观检测间存放");
+    expect(labels).not.toContain("实验后外观检测间存放");
     expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(
       expect.objectContaining({ reached: true, time: "" }),
     );
@@ -628,7 +628,7 @@ describe("samplesFlowModel", () => {
       trayCode: "SYLU-2026-03-010-TP-002",
       taskCode: "SYLU-2026-03-010",
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验后外观检测间存放",
       experiments: [
         {
           task_code: "SYLU-2026-03-010",
@@ -668,9 +668,9 @@ describe("samplesFlowModel", () => {
 
     const labels = view.steps.map((step) => step.label);
     expect(labels).not.toContain("送至外观检测间");
-    expect(labels.indexOf("盐雾试验已完成")).toBeLessThan(labels.indexOf("外观检测间存放"));
-    expect(labels.indexOf("外观检测间存放")).toBeLessThan(labels.indexOf("送至暂存间"));
-    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
+    expect(labels.indexOf("盐雾试验已完成")).toBeLessThan(labels.indexOf("实验后外观检测间存放"));
+    expect(labels.indexOf("实验后外观检测间存放")).toBeLessThan(labels.indexOf("送至暂存间"));
+    expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(expect.objectContaining({ active: true }));
     expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(expect.objectContaining({ active: false, reached: false }));
   });
 
@@ -720,7 +720,7 @@ describe("samplesFlowModel", () => {
     const labels = view.steps.map((step) => step.label);
     expect(labels).toContain("盐雾试验已完成");
     expect(labels).not.toContain("送至外观检测间");
-    expect(labels).not.toContain("外观检测间存放");
+    expect(labels).not.toContain("实验后外观检测间存放");
     expect(view.currentStatus).toBe("当前托盘：SYLU-2026-03-012-TP-002 | 当前状态：盐雾试验已完成");
     expect(view.steps.find((step) => step.label === "盐雾试验已完成")).toEqual(expect.objectContaining({ active: true }));
   });
@@ -813,9 +813,9 @@ describe("samplesFlowModel", () => {
             },
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 外观检测间存放`,
+              detail: `${trayCode} 实验后外观检测间存放`,
               location: "外观检测间",
-              status: "外观检测间存放",
+              status: "实验后外观检测间存放",
               time: "2026-06-11T15:14:54+08:00",
             },
             {
@@ -837,7 +837,7 @@ describe("samplesFlowModel", () => {
 
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：已到达暂存间`);
     expect(view.steps.find((step) => step.label === "送至外观检测间")).toBeUndefined();
-    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(
+    expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(
       expect.objectContaining({ active: false, reached: true, time: "2026-06-11T15:14:54+08:00" }),
     );
   });
@@ -859,13 +859,13 @@ describe("samplesFlowModel", () => {
       samples: [
         {
           code: `${taskCode}-SP-001`,
-          flow_status: "实验前外观检测存放",
+          flow_status: "实验前外观检测间存放",
           history: [
             {
               action: "实验任务撤回",
-              detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测存放（试验间内撤回当前实验任务）`,
+              detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测间存放（试验间内撤回当前实验任务）`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 14:50:00",
             },
             {
@@ -884,9 +884,9 @@ describe("samplesFlowModel", () => {
             },
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 实验前外观检测存放`,
+              detail: `${trayCode} 实验前外观检测间存放`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 14:43:56",
             },
             {
@@ -926,12 +926,12 @@ describe("samplesFlowModel", () => {
             },
           ],
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           task_code: taskCode,
-          trays: [{ quantity: 1, status: "实验前外观检测存放", tray_code: trayCode }],
+          trays: [{ quantity: 1, status: "实验前外观检测间存放", tray_code: trayCode }],
         },
       ],
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       taskCode,
       trayCode,
     });
@@ -945,7 +945,7 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
       expect.objectContaining({ reached: true, time: "2026-06-23 14:42:56" }),
     );
-    expect(view.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(
+    expect(view.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(
       expect.objectContaining({ active: true, time: "2026-06-23 14:43:56" }),
     );
   });
@@ -960,7 +960,7 @@ describe("samplesFlowModel", () => {
           code: `${taskCode}-D`,
           name: "盐雾试验",
           destinationLab: "盐雾试验室",
-          routeStatus: "实验前外观检测存放",
+          routeStatus: "实验前外观检测间存放",
           state: "current",
           unstarted: true,
         },
@@ -991,13 +991,13 @@ describe("samplesFlowModel", () => {
       samples: [
         {
           code: `${taskCode}-SP-001`,
-          flow_status: "实验前外观检测存放",
+          flow_status: "实验前外观检测间存放",
           history: [
             {
               action: "实验任务撤回",
-              detail: `${taskCode} / 盐雾试验 / 撤回至实验前外观检测存放（试验间内撤回当前实验任务）`,
+              detail: `${taskCode} / 盐雾试验 / 撤回至实验前外观检测间存放（试验间内撤回当前实验任务）`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 15:02:58",
             },
             {
@@ -1016,9 +1016,9 @@ describe("samplesFlowModel", () => {
             },
             {
               action: "外观检测间扫码入库",
-              detail: `${trayCode} 实验前外观检测存放`,
+              detail: `${trayCode} 实验前外观检测间存放`,
               location: "外观检测间",
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               time: "2026-06-23 15:02:27",
             },
             {
@@ -1051,12 +1051,12 @@ describe("samplesFlowModel", () => {
             },
           ],
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           task_code: taskCode,
           trays: [
             {
               quantity: 1,
-              status: "实验前外观检测存放",
+              status: "实验前外观检测间存放",
               target_experiment_code: `${taskCode}-D`,
               target_lab: "盐雾试验室",
               tray_code: trayCode,
@@ -1064,13 +1064,13 @@ describe("samplesFlowModel", () => {
           ],
         },
       ],
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       taskCode,
       trayCode,
     });
 
-    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测存放`);
-    expect(view.steps.find((step) => step.label === "实验前外观检测存放")).toEqual(
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验前外观检测间存放`);
+    expect(view.steps.find((step) => step.label === "实验前外观检测间存放")).toEqual(
       expect.objectContaining({ active: true, time: "2026-06-23 15:02:27" }),
     );
     expect(view.steps.find((step) => step.label === "四综合试验已完成")).toEqual(
@@ -1109,7 +1109,7 @@ describe("samplesFlowModel", () => {
     });
 
     expect(view.steps.map((step) => step.label)).not.toContain("送至外观检测间");
-    expect(view.steps.map((step) => step.label)).not.toContain("外观检测间存放");
+    expect(view.steps.map((step) => step.label)).not.toContain("实验后外观检测间存放");
   });
 
   test("buildTrayFlowView displays the concrete laboratory for lab dispatch steps", () => {
@@ -2907,7 +2907,7 @@ describe("samplesFlowModel", () => {
           history: [
             { action: "实验完成", detail: "SYLU-2026-06-021 / 冲击试验 / 实验已完成", location: "冲击一室", status: "实验已完成", time: "2026-06-07 15:23:04" },
             { action: "实验完成", detail: "SYLU-2026-06-021 / 盐雾试验 / 实验已完成", location: "盐雾试验室", status: "实验已完成", time: "2026-06-07 15:21:43" },
-            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-021-TP-001 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-07 15:22:27" },
+            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-021-TP-001 实验后外观检测间存放", location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-07 15:22:27" },
             { action: "外观检测间扫码出库", detail: "SYLU-2026-06-021-TP-001 送至 恒温恒湿间（暂存间）", location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-06-07 15:22:34" },
             { action: "暂存间扫码入库", detail: "SYLU-2026-06-021-TP-001 已到达暂存间", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-07 15:22:41" },
             { action: "暂存间扫码出库", detail: "SYLU-2026-06-021-TP-001 送至 冲击一室", location: "冲击一室", status: "送至实验室", time: "2026-06-07 15:22:43" },
@@ -2921,7 +2921,7 @@ describe("samplesFlowModel", () => {
       "样品运输中",
       "到货",
       "盐雾试验已完成",
-      "外观检测间存放",
+      "实验后外观检测间存放",
       "冲击试验已完成",
       "送至暂存间",
       "已到达暂存间",
@@ -2933,7 +2933,7 @@ describe("samplesFlowModel", () => {
       "厂家收回",
     ]);
     expect(view.steps.find((step) => step.label === "送至外观检测间")).toBeUndefined();
-    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({
+    expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(expect.objectContaining({
       active: false,
       reached: true,
       time: "2026-06-07 15:22:27",
@@ -2951,7 +2951,7 @@ describe("samplesFlowModel", () => {
       currentExperimentCode: "SYLU-2026-06-022-D",
       dispatchTargetLab: "盐雾试验室",
       location: "外观检测间",
-      status: "外观检测间存放",
+      status: "实验后外观检测间存放",
       experiments: [
         {
           task_code: "SYLU-2026-06-022",
@@ -2985,18 +2985,18 @@ describe("samplesFlowModel", () => {
           code: "SYLU-2026-06-022-SP-001",
           task_code: "SYLU-2026-06-022",
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
+          status: "实验后外观检测间存放",
+          flow_status: "实验后外观检测间存放",
           trays: [
             {
               tray_code: "SYLU-2026-06-022-TP-001",
-              status: "外观检测间存放",
+              status: "实验后外观检测间存放",
               quantity: 1,
             },
           ],
           history: [
             { action: "实验完成", detail: "SYLU-2026-06-022 / 振动试验 / 实验已完成", location: "振动一室", status: "实验已完成", time: "2026-06-07 16:55:03" },
-            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-07 16:54:55" },
+            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 实验后外观检测间存放", location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-07 16:54:55" },
             { action: "实验完成", detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-07 16:54:03" },
             { action: "实验完成", detail: "SYLU-2026-06-022 / 冲击试验 / 实验已完成", location: "冲击一室", status: "实验已完成", time: "2026-06-07 16:53:07" },
           ],
@@ -3005,7 +3005,7 @@ describe("samplesFlowModel", () => {
     });
 
     expect(view.currentStatus).toBe("当前托盘：SYLU-2026-06-022-TP-001 | 当前状态：振动试验已完成");
-    expect(view.steps.find((step) => step.label === "外观检测间存放")).toEqual(expect.objectContaining({
+    expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(expect.objectContaining({
       active: false,
       reached: true,
       time: "2026-06-07 16:54:55",
@@ -3062,7 +3062,7 @@ describe("samplesFlowModel", () => {
           ],
           history: [
             { action: "实验完成", detail: "SYLU-2026-06-022 / 盐雾试验 / 实验已完成", location: "盐雾试验室", status: "实验已完成", time: "2026-06-07 15:38:17" },
-            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 外观检测间存放", location: "外观检测间", status: "外观检测间存放", time: "2026-06-07 15:35:57" },
+            { action: "外观检测间扫码入库", detail: "SYLU-2026-06-022-TP-001 实验后外观检测间存放", location: "外观检测间", status: "实验后外观检测间存放", time: "2026-06-07 15:35:57" },
             { action: "实验完成", detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", location: "霉菌试验室", status: "实验已完成", time: "2026-06-07 15:33:27" },
           ],
         },
@@ -3071,7 +3071,7 @@ describe("samplesFlowModel", () => {
 
     const labels = view.steps.map((step) => step.label);
     const appearanceStockedIndexes = labels
-      .map((label, index) => (label === "外观检测间存放" ? index : -1))
+      .map((label, index) => (label === "实验后外观检测间存放" ? index : -1))
       .filter((index) => index >= 0);
     const temperatureIndex = labels.indexOf("温度冲击试验未完成");
 
@@ -4576,7 +4576,7 @@ describe("samplesFlowModel", () => {
       "到货",
       "送至暂存间",
       "已到达暂存间",
-      "实验前外观检测存放",
+      "实验前外观检测间存放",
       "送至实验室",
       "已到达实验室",
       "工装夹具安装",

@@ -33,7 +33,6 @@ const isAppearanceInspectionStatus = (value) => {
     text === "送至外观检测间"
     || text === APPEARANCE_STOCKED_STATUS
     || text === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
-    || text === "已到达外观检测间"
   );
 };
 
@@ -59,9 +58,6 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   }
   if (currentStatus === "厂家收回" || currentStatus === "已处置") {
     return "厂家收回";
-  }
-  if (currentStatus === "已到达外观检测间") {
-    return APPEARANCE_STOCKED_STATUS;
   }
   if (isAppearanceInspectionStatus(currentStatus)) {
     return currentStatus;
@@ -89,8 +85,8 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
       ? POST_EXPERIMENT_STAGING_SENT_STATUS
       : POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
-  if (normalizedLocation.includes(APPEARANCE_INSPECTION_LOCATION)) {
-    return currentStatus || APPEARANCE_STOCKED_STATUS;
+  if (normalizedLocation.includes(APPEARANCE_INSPECTION_LOCATION) && currentStatus) {
+    return currentStatus;
   }
   if (isPreRetention) {
     return "已到达暂存间";

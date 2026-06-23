@@ -749,11 +749,11 @@ describe("StagingManagementPage runtime", () => {
     });
     expect(updatedSample).toMatchObject({
       location: "外观检测间",
-      status: "实验前外观检测存放",
-      flow_status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
+      flow_status: "实验前外观检测间存放",
     });
     expect(updatedSample.trays[0]).toMatchObject({
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       target_experiment_code: experimentCode,
       target_lab: "盐雾试验室",
     });
@@ -998,9 +998,9 @@ describe("StagingManagementPage runtime", () => {
           task_code: "SYLU-2026-04-130",
           owner: "周工",
           location: "外观检测间",
-          status: "外观检测间存放",
-          flow_status: "外观检测间存放",
-          trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "外观检测间存放", quantity: 1 }],
+          status: "实验后外观检测间存放",
+          flow_status: "实验后外观检测间存放",
+          trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "实验后外观检测间存放", quantity: 1 }],
           history: [{ detail: "SYLU-2026-04-130 / 盐雾试验 / 实验已完成", time: "2026-04-01T10:00:00" }],
         },
       ],

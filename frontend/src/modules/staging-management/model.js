@@ -22,12 +22,12 @@ const POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间";
 const POST_EXPERIMENT_STAGING_STATUS = "实验后暂存间存放";
 const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
-const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
+const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const EXPLICIT_STAGING_INBOUND_STATUSES = new Set(["送至暂存间", POST_EXPERIMENT_STAGING_SENT_STATUS]);
-const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
+const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]);
 const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
@@ -90,7 +90,7 @@ const STORAGE_ROOM_CONFIGS = {
   },
   appearance: {
     currentLocation: APPEARANCE_LOCATION,
-    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]),
+    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]),
     duplicateStockInError: "该托盘已完成外观检测间扫码入库。",
     eventRoom: "appearance",
     historyStockInAction: "外观检测间扫码入库",
@@ -204,7 +204,7 @@ const contextIndicatesStorageRoomInbound = (context = {}, config = STORAGE_ROOM_
   const statuses = asArray(context.statuses).map((status) => normalizeText(status));
   const location = normalizeText(context.location);
   if (config.key === "appearance") {
-    return location === APPEARANCE_LOCATION || statuses.some((status) => PRE_APPEARANCE_STATUSES.has(status));
+    return statuses.some((status) => PRE_APPEARANCE_STATUSES.has(status));
   }
   return location === STAGING_LOCATION || statuses.some((status) => PRE_STAGING_STATUSES.has(status));
 };

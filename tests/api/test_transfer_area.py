@@ -463,9 +463,9 @@ def test_transfer_area_dispatch_from_completed_appearance_to_post_experiment_sta
             "code": sample_code,
             "task_code": task_code,
             "location": "外观检测间",
-            "status": "外观检测间存放",
-            "flow_status": "外观检测间存放",
-            "trays": [{"tray_code": tray_code, "status": "外观检测间存放", "quantity": 1}],
+            "status": "实验后外观检测间存放",
+            "flow_status": "实验后外观检测间存放",
+            "trays": [{"tray_code": tray_code, "status": "实验后外观检测间存放", "quantity": 1}],
         }
     ])
     storage.write("mes.experiment_trays", [
@@ -547,9 +547,9 @@ def test_transfer_area_dispatch_from_partial_appearance_to_regular_staging(monke
             "code": sample_code,
             "task_code": task_code,
             "location": "外观检测间",
-            "status": "外观检测间存放",
-            "flow_status": "外观检测间存放",
-            "trays": [{"tray_code": tray_code, "status": "外观检测间存放", "quantity": 1}],
+            "status": "实验后外观检测间存放",
+            "flow_status": "实验后外观检测间存放",
+            "trays": [{"tray_code": tray_code, "status": "实验后外观检测间存放", "quantity": 1}],
         }
     ])
     storage.write("mes.experiment_trays", [
@@ -703,9 +703,9 @@ def test_transfer_area_dispatch_from_pre_experiment_appearance_goes_to_real_targ
         if sample["task_code"] != "SYLU-2026-03-102":
             continue
         sample["location"] = "外观检测间"
-        sample["status"] = "实验前外观检测存放"
-        sample["flow_status"] = "实验前外观检测存放"
-        sample["trays"][0]["status"] = "实验前外观检测存放"
+        sample["status"] = "实验前外观检测间存放"
+        sample["flow_status"] = "实验前外观检测间存放"
+        sample["trays"][0]["status"] = "实验前外观检测间存放"
         sample["trays"][0]["target_lab"] = "盐雾试验室"
         sample["trays"][0]["target_experiment_code"] = "SYLU-2026-03-102-B"
     storage.write("mes.samples", samples)
@@ -1065,9 +1065,9 @@ def test_transfer_area_withdraw_appearance_dispatch_restores_tray_to_appearance_
             },
             {
                 "action": "外观检测间扫码入库",
-                "detail": "SYLU-2026-03-102-TP-001 外观检测间存放",
+                "detail": "SYLU-2026-03-102-TP-001 实验后外观检测间存放",
                 "location": "外观检测间",
-                "status": "外观检测间存放",
+                "status": "实验后外观检测间存放",
                 "time": "2026-05-19T09:50:00",
             },
         ]
@@ -1102,14 +1102,14 @@ def test_transfer_area_withdraw_appearance_dispatch_restores_tray_to_appearance_
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredStatus"] == "实验后外观检测间存放"
     assert payload["restoredLocation"] == "外观检测间"
-    assert payload["tray"]["trayStatus"] == "外观检测间存放"
+    assert payload["tray"]["trayStatus"] == "实验后外观检测间存放"
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
-    assert all(sample["status"] == "外观检测间存放" for sample in updated_samples)
-    assert all(sample["flow_status"] == "外观检测间存放" for sample in updated_samples)
+    assert all(sample["status"] == "实验后外观检测间存放" for sample in updated_samples)
+    assert all(sample["flow_status"] == "实验后外观检测间存放" for sample in updated_samples)
     assert all(sample["location"] == "外观检测间" for sample in updated_samples)
-    assert all(sample["trays"][0]["status"] == "外观检测间存放" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "实验后外观检测间存放" for sample in updated_samples)
     staging_events = storage.read("mes.staging_events")
     assert staging_events[-1]["action"] == "stock_out_withdraw"
     assert staging_events[-1]["room"] == "appearance"
@@ -1136,9 +1136,9 @@ def test_transfer_area_withdraw_pre_experiment_appearance_dispatch_restores_pre_
             },
             {
                 "action": "外观检测间扫码入库",
-                "detail": "SYLU-2026-03-102-TP-001 实验前外观检测存放",
+                "detail": "SYLU-2026-03-102-TP-001 实验前外观检测间存放",
                 "location": "外观检测间",
-                "status": "实验前外观检测存放",
+                "status": "实验前外观检测间存放",
                 "time": "2026-05-19T09:50:00",
             },
         ]
@@ -1173,14 +1173,14 @@ def test_transfer_area_withdraw_pre_experiment_appearance_dispatch_restores_pre_
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "实验前外观检测存放"
+    assert payload["restoredStatus"] == "实验前外观检测间存放"
     assert payload["restoredLocation"] == "外观检测间"
-    assert payload["tray"]["trayStatus"] == "实验前外观检测存放"
+    assert payload["tray"]["trayStatus"] == "实验前外观检测间存放"
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
-    assert all(sample["status"] == "实验前外观检测存放" for sample in updated_samples)
-    assert all(sample["flow_status"] == "实验前外观检测存放" for sample in updated_samples)
+    assert all(sample["status"] == "实验前外观检测间存放" for sample in updated_samples)
+    assert all(sample["flow_status"] == "实验前外观检测间存放" for sample in updated_samples)
     assert all(sample["location"] == "外观检测间" for sample in updated_samples)
-    assert all(sample["trays"][0]["status"] == "实验前外观检测存放" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "实验前外观检测间存放" for sample in updated_samples)
 
 
 def test_transfer_area_withdraw_appearance_dispatch_ignores_staging_room_events(monkeypatch):
@@ -1225,7 +1225,7 @@ def test_transfer_area_withdraw_appearance_dispatch_ignores_staging_room_events(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "外观检测间存放"
+    assert payload["restoredStatus"] == "实验后外观检测间存放"
     assert payload["restoredLocation"] == "外观检测间"
     staging_events = storage.read("mes.staging_events")
     assert staging_events[-1]["action"] == "stock_out_withdraw"

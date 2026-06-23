@@ -868,8 +868,8 @@ describe("staging-management model", () => {
     });
     expect(stockInResult.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-appearance")).toMatchObject({
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
     });
   });
 
@@ -930,12 +930,12 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-06-021",
       owner: "周工",
       location: "外观检测间",
-      status: "实验前外观检测存放",
-      flow_status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
+      flow_status: "实验前外观检测间存放",
       trays: [
         {
           tray_code: "SYLU-2026-06-021-TP-001",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           quantity: 1,
           target_experiment_code: "",
           target_lab: "",
@@ -1010,7 +1010,7 @@ describe("staging-management model", () => {
       history: [
         { detail: "SYLU-2026-06-022 / 盐雾试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T16:06:28" },
         { detail: "SYLU-2026-06-022-TP-003 送至 盐雾试验室", status: "送至实验室", time: "2026-06-07T16:05:58" },
-        { detail: "SYLU-2026-06-022-TP-003 外观检测间存放", status: "外观检测间存放", time: "2026-06-07T16:05:51" },
+        { detail: "SYLU-2026-06-022-TP-003 实验后外观检测间存放", status: "实验后外观检测间存放", time: "2026-06-07T16:05:51" },
         { detail: "SYLU-2026-06-022 / 霉菌试验 / 实验已完成", status: "实验已完成", time: "2026-06-07T15:48:09" },
       ],
     });
@@ -1176,8 +1176,8 @@ describe("staging-management model", () => {
     expect(stockInResult.error).toBe("");
     expect(stockInResult.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === `sample-appearance-single-${_caseName}`)).toMatchObject({
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
     });
   });
 
@@ -1235,8 +1235,8 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-04-122",
       owner: "周工",
       location: "外观检测间",
-      status: "外观检测间存放",
-      trays: [{ tray_code: "SYLU-2026-04-122-TP-001", status: "外观检测间存放", quantity: 1 }],
+      status: "实验后外观检测间存放",
+      trays: [{ tray_code: "SYLU-2026-04-122-TP-001", status: "实验后外观检测间存放", quantity: 1 }],
       history: [
         { detail: "SYLU-2026-04-122 / 霉菌试验 / 实验已完成", time: "2026-04-01T09:20:00" },
       ],
@@ -1350,8 +1350,8 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-04-124",
       owner: "周工",
       location: "外观检测间",
-      status: "外观检测间存放",
-      trays: [{ tray_code: trayCode, status: "外观检测间存放", quantity: 1 }],
+      status: "实验后外观检测间存放",
+      trays: [{ tray_code: trayCode, status: "实验后外观检测间存放", quantity: 1 }],
       history: [
         { detail: "SYLU-2026-04-124 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
       ],
@@ -1430,8 +1430,8 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-04-125",
       owner: "周工",
       location: "外观检测间",
-      status: "外观检测间存放",
-      trays: [{ tray_code: trayCode, status: "外观检测间存放", quantity: 1 }],
+      status: "实验后外观检测间存放",
+      trays: [{ tray_code: trayCode, status: "实验后外观检测间存放", quantity: 1 }],
       history: [
         { detail: "SYLU-2026-04-125 / 霉菌试验 / 实验已完成", time: "2026-04-01T09:20:00" },
       ],
@@ -1567,8 +1567,8 @@ describe("staging-management model", () => {
         task_code: "SYLU-2026-04-123",
         owner: "周工",
         location: "外观检测间",
-        status: "外观检测间存放",
-        trays: [{ tray_code: "SYLU-2026-04-123-TP-001", status: "外观检测间存放", quantity: 1 }],
+        status: "实验后外观检测间存放",
+        trays: [{ tray_code: "SYLU-2026-04-123-TP-001", status: "实验后外观检测间存放", quantity: 1 }],
         history: [
           { detail: "SYLU-2026-04-123 / 盐雾试验 / 实验已完成", time: "2026-04-01T09:20:00" },
         ],
@@ -1931,11 +1931,11 @@ describe("staging-management model", () => {
     });
     expect(updatedSample).toMatchObject({
       location: "外观检测间",
-      status: "实验前外观检测存放",
-      flow_status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
+      flow_status: "实验前外观检测间存放",
     });
     expect(updatedSample?.trays[0]).toMatchObject({
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       target_experiment_code: "SYLU-2026-06-021-A",
       target_lab: "霉菌试验室",
     });
@@ -2007,12 +2007,12 @@ describe("staging-management model", () => {
 
     expect(row).toEqual(expect.objectContaining({ status: "待入库" }));
     expect(result.error).toBe("");
-    expect(result.row).toEqual(expect.objectContaining({ status: "外观检测间存放" }));
+    expect(result.row).toEqual(expect.objectContaining({ status: "实验后外观检测间存放" }));
     expect(result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`)).toMatchObject({
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
-      trays: [expect.objectContaining({ status: "外观检测间存放" })],
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
+      trays: [expect.objectContaining({ status: "实验后外观检测间存放" })],
     });
   });
 
@@ -2135,35 +2135,35 @@ describe("staging-management model", () => {
       task_code: taskCode,
       owner: "扫码登记",
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
       history: [
         {
           action: "实验任务撤回",
-          detail: `${taskCode} / 盐雾试验 / 撤回至外观检测间存放（试验间内撤回当前实验任务）`,
+          detail: `${taskCode} / 盐雾试验 / 撤回至实验后外观检测间存放（试验间内撤回当前实验任务）`,
           location: "外观检测间",
-          status: "外观检测间存放",
+          status: "实验后外观检测间存放",
           time: "2026-06-23 16:27:27",
         },
         {
           action: "实验任务撤回",
-          detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测存放（试验间内撤回当前实验任务）`,
+          detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测间存放（试验间内撤回当前实验任务）`,
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           time: "2026-06-23 16:27:05",
         },
         {
           action: "外观检测间扫码入库",
-          detail: `${trayCode} 实验前外观检测存放`,
+          detail: `${trayCode} 实验前外观检测间存放`,
           location: "外观检测间",
-          status: "实验前外观检测存放",
+          status: "实验前外观检测间存放",
           time: "2026-06-23 16:26:51",
         },
       ],
       trays: [
         {
           tray_code: trayCode,
-          status: "外观检测间存放",
+          status: "实验后外观检测间存放",
           quantity: 1,
           target_experiment_code: `${taskCode}-C`,
           target_lab: "盐雾试验室",
@@ -2227,8 +2227,8 @@ describe("staging-management model", () => {
     const sections = buildZancunInventorySections(rows, { room: "appearance" });
 
     expect(rows.find((row) => row.trayCode === trayCode)).toEqual(expect.objectContaining({
-      status: "实验前外观检测存放",
-      statusLabel: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
+      statusLabel: "实验前外观检测间存放",
       trayCode,
     }));
     expect(sections.currentStagingRows.map((row) => row.trayCode)).toContain(trayCode);
@@ -2337,12 +2337,12 @@ describe("staging-management model", () => {
 
     expect(result.error).toBe("");
     expect(updatedSample?.trays[0]).toMatchObject({
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       target_experiment_code: "SYLU-2026-06-031-A",
       target_lab: "霉菌试验室",
     });
     expect(sectionsAfterStockIn.currentStagingRows).toContainEqual(expect.objectContaining({
-      status: "实验前外观检测存放",
+      status: "实验前外观检测间存放",
       trayCode: "SYLU-2026-06-031-TP-001",
     }));
   });
@@ -2432,9 +2432,9 @@ describe("staging-management model", () => {
       task_code: "SYLU-2026-04-130",
       owner: "周工",
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
-      trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "外观检测间存放", quantity: 1 }],
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
+      trays: [{ tray_code: "SYLU-2026-04-130-TP-001", status: "实验后外观检测间存放", quantity: 1 }],
     });
     snapshot[STORAGE_KEYS.staging_events].push({
       id: "evt-appearance-return-in",
@@ -3153,8 +3153,8 @@ describe("staging-management model", () => {
     expect(result.error).toBe("");
     expect(result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-post-staging-appearance-after-out")).toMatchObject({
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
     });
   });
 
@@ -3193,9 +3193,9 @@ describe("staging-management model", () => {
       task_code: "TASK-APPEARANCE-STAGING-BLOCKED",
       owner: "周工",
       location: "外观检测间",
-      status: "外观检测间存放",
-      flow_status: "外观检测间存放",
-      trays: [{ tray_code: "TP-APPEARANCE-STAGING-BLOCKED", status: "外观检测间存放", quantity: 1 }],
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
+      trays: [{ tray_code: "TP-APPEARANCE-STAGING-BLOCKED", status: "实验后外观检测间存放", quantity: 1 }],
     });
 
     const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });

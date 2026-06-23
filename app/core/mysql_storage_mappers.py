@@ -33,7 +33,7 @@ from app.core.mysql_storage_codecs import (
 )
 
 APPEARANCE_INSPECTION_LOCATION = "外观检测间"
-PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测存放"
+PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测间存放"
 
 def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
     now_beijing = current_beijing_datetime()

@@ -1820,8 +1820,8 @@ def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_i
             "storage_condition": "",
             "barcode_no": "",
             "location_desc": "外观检测间",
-            "sample_status": "实验前外观检测存放",
-            "flow_status": "实验前外观检测存放",
+            "sample_status": "实验前外观检测间存放",
+            "flow_status": "实验前外观检测间存放",
             "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"扫码登记\",\"remark\":\"\"}}",
             "created_at": "2026-06-12 17:20:29",
             "updated_at": "2026-06-12 21:19:08",
@@ -1832,7 +1832,7 @@ def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_i
                 "tray_code": "SYLU-2026-06-021-TP-001",
                 "sample_code": "SYLU-2026-06-021-SP-001",
                 "quantity": 1,
-                "status": "实验前外观检测存放",
+                "status": "实验前外观检测间存放",
                 "target_lab": "外观检测间",
                 "target_experiment_code": "",
                 "created_at": "2026-06-12 17:20:37",
@@ -1845,8 +1845,8 @@ def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_i
                 "event_time": "2026-06-12 21:19:08",
                 "action_type": "外观检测间扫码入库",
                 "location_desc": "外观检测间",
-                "sample_status": "实验前外观检测存放",
-                "detail": "SYLU-2026-06-021-TP-001 实验前外观检测存放",
+                "sample_status": "实验前外观检测间存放",
+                "detail": "SYLU-2026-06-021-TP-001 实验前外观检测间存放",
             },
             {
                 "event_id": 1165655,
@@ -1882,7 +1882,7 @@ def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_i
         ],
     )
 
-    assert storage_item["trays"][0]["status"] == "实验前外观检测存放"
+    assert storage_item["trays"][0]["status"] == "实验前外观检测间存放"
     assert storage_item["trays"][0]["target_lab"] == "霉菌试验室"
     assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-06-021-A"
 
@@ -1900,8 +1900,8 @@ def test_build_storage_sample_item_restores_pre_appearance_half_state_without_st
             "storage_condition": "",
             "barcode_no": "",
             "location_desc": "外观检测间",
-            "sample_status": "实验前外观检测存放",
-            "flow_status": "实验前外观检测存放",
+            "sample_status": "实验前外观检测间存放",
+            "flow_status": "实验前外观检测间存放",
             "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
             "created_at": "2026-06-12 17:20:55",
             "updated_at": "2026-06-12 17:22:14",
@@ -1912,7 +1912,7 @@ def test_build_storage_sample_item_restores_pre_appearance_half_state_without_st
                 "tray_code": "SYLU-2026-06-022-TP-001",
                 "sample_code": "SYLU-2026-06-022-SP-001",
                 "quantity": 1,
-                "status": "实验前外观检测存放",
+                "status": "实验前外观检测间存放",
                 "created_at": "2026-06-12 17:20:55",
                 "updated_at": "2026-06-12 17:22:13",
             }
@@ -1921,9 +1921,9 @@ def test_build_storage_sample_item_restores_pre_appearance_half_state_without_st
             {
                 "event_id": 1165638,
                 "event_time": "2026-06-12 17:22:13",
-                "action_type": "实验前外观检测存放",
+                "action_type": "实验前外观检测间存放",
                 "location_desc": "外观检测间",
-                "sample_status": "实验前外观检测存放",
+                "sample_status": "实验前外观检测间存放",
                 "detail": "SYLU-2026-06-022-TP-001 -> 霉菌试验室",
             },
             {

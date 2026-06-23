@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
-APPEARANCE_STOCKED_STATUS = "外观检测间存放"
+APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放"
 POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 HANDOVER_LOCATION = "接驳区"
@@ -44,7 +44,7 @@ BLOCK_WITHDRAW_TRAY_STATUSES = {
     POST_EXPERIMENT_STAGING_SENT_STATUS,
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
     "厂家收回",
 }
 LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
@@ -545,17 +545,15 @@ def latest_appearance_origin_snapshot(
     for entry in as_list(sample.get("history")):
         action = normalize_text(entry.get("action"))
         status = normalize_text(entry.get("status"))
-        location = normalize_text(entry.get("location"))
         entry_time = parse_datetime_value(entry.get("time")) or datetime.min
         marks_appearance_storage = (
-            status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"}
+            status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}
             or action == "外观检测间扫码入库"
-            and (status in {"", APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"} or location == APPEARANCE_LOCATION)
+            and status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}
         )
         is_prior_withdrawal_restore = action in WITHDRAWAL_HISTORY_ACTIONS and entry_time == latest_withdrawal_time
         if marks_appearance_storage and (latest_withdrawal_time < entry_time <= dispatch_time or is_prior_withdrawal_restore):
-            stable_status = status if status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS} else APPEARANCE_STOCKED_STATUS
-            stable_entries.append({"status": stable_status, "time": entry_time})
+            stable_entries.append({"status": status, "time": entry_time})
 
     stable_entries.sort(key=lambda entry: entry["time"])
     stable_entry = stable_entries[-1] if stable_entries else {"status": APPEARANCE_STOCKED_STATUS, "time": dispatch_time}

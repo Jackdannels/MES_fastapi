@@ -25,14 +25,13 @@ const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
 const PRE_DISPATCH_STAGING_LOCATION = "恒温恒湿间（暂存间）";
 const PRE_DISPATCH_STAGING_STATUS = "已到达暂存间";
 const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
-const APPEARANCE_INSPECTION_STOCKED_STATUS = "外观检测间存放";
-const PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS = "实验前外观检测存放";
+const APPEARANCE_INSPECTION_STOCKED_STATUS = "实验后外观检测间存放";
+const PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS = "实验前外观检测间存放";
 const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
 const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
 const APPEARANCE_STORAGE_STATUSES = new Set([
   APPEARANCE_INSPECTION_STOCKED_STATUS,
   PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS,
-  "已到达外观检测间",
 ]);
 const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
 const LAB_DISPATCH_HISTORY_ACTIONS = new Set(["暂存间扫码出库", "外观检测间扫码出库", "接驳区扫码出库", "送至实验室"]);

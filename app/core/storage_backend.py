@@ -22,7 +22,7 @@ EXPERIMENT_TERMINAL_STATUSES = {
     "实验已经完成",
     "实验后暂存间存放",
     "送至外观检测间",
-    "外观检测间存放",
+    "实验后外观检测间存放",
 }
 
 STORAGE_KEYS: Iterable[str] = (
