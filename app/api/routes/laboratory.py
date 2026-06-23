@@ -33,6 +33,7 @@ POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
+WITHDRAWAL_HISTORY_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 BLOCK_WITHDRAW_TRAY_STATUSES = {
     "实验进行中",
@@ -413,7 +414,7 @@ def latest_staging_origin_snapshot(
     withdrawal_times.extend(
         parse_datetime_value(entry.get("time")) or datetime.min
         for entry in as_list(sample.get("history"))
-        if normalize_text(entry.get("action")) in {"撤回出库", "实验任务撤回", "任务切换撤回"}
+        if normalize_text(entry.get("action")) in WITHDRAWAL_HISTORY_ACTIONS
     )
     latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
 
@@ -468,7 +469,7 @@ def latest_staging_origin_snapshot(
         entry_time = parse_datetime_value(entry.get("time")) or datetime.min
         marks_staging_arrival = (
             status == "已到达暂存间"
-            or action in {"暂存间扫码入库", "送至暂存间", "撤回出库", "实验任务撤回", "任务切换撤回"}
+            or action in {"暂存间扫码入库", "送至暂存间", *WITHDRAWAL_HISTORY_ACTIONS}
             and (status in {"已到达暂存间", "送至暂存间"} or location == STAGING_LOCATION)
         )
         if marks_staging_arrival and latest_withdrawal_time < entry_time <= dispatch_time:
@@ -500,7 +501,7 @@ def latest_appearance_origin_snapshot(
     withdrawal_times.extend(
         parse_datetime_value(entry.get("time")) or datetime.min
         for entry in as_list(sample.get("history"))
-        if normalize_text(entry.get("action")) in {"撤回出库", "实验任务撤回", "任务切换撤回"}
+        if normalize_text(entry.get("action")) in WITHDRAWAL_HISTORY_ACTIONS
     )
     latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
 
@@ -551,7 +552,8 @@ def latest_appearance_origin_snapshot(
             or action == "外观检测间扫码入库"
             and (status in {"", APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS, "已到达外观检测间"} or location == APPEARANCE_LOCATION)
         )
-        if marks_appearance_storage and latest_withdrawal_time < entry_time <= dispatch_time:
+        is_prior_withdrawal_restore = action in WITHDRAWAL_HISTORY_ACTIONS and entry_time == latest_withdrawal_time
+        if marks_appearance_storage and (latest_withdrawal_time < entry_time <= dispatch_time or is_prior_withdrawal_restore):
             stable_status = status if status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS} else APPEARANCE_STOCKED_STATUS
             stable_entries.append({"status": stable_status, "time": entry_time})
 

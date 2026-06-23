@@ -2098,6 +2098,142 @@ describe("staging-management model", () => {
     expect(result.error).toBe("该托盘未送至外观检测间，不能外观检测间入库。");
   });
 
+  test("appearance room shows a tray returned from multiple lab withdrawals as current inventory", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-06-021";
+    const trayCode = `${taskCode}-TP-001`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-withdrawn-appearance",
+      code: taskCode,
+      test_type: "四综合试验 / 霉菌试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-withdrawn-mold",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-B`,
+        experiment_name: "霉菌试验",
+        required_device: "霉菌试验室",
+      },
+      {
+        id: "exp-withdrawn-salt",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-C`,
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-withdrawn-mold", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      { id: "rel-withdrawn-salt", task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: trayCode },
+    );
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-withdrawn-appearance",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "扫码登记",
+      location: "外观检测间",
+      status: "外观检测间存放",
+      flow_status: "外观检测间存放",
+      history: [
+        {
+          action: "实验任务撤回",
+          detail: `${taskCode} / 盐雾试验 / 撤回至外观检测间存放（试验间内撤回当前实验任务）`,
+          location: "外观检测间",
+          status: "外观检测间存放",
+          time: "2026-06-23 16:27:27",
+        },
+        {
+          action: "实验任务撤回",
+          detail: `${taskCode} / 霉菌试验 / 撤回至实验前外观检测存放（试验间内撤回当前实验任务）`,
+          location: "外观检测间",
+          status: "实验前外观检测存放",
+          time: "2026-06-23 16:27:05",
+        },
+        {
+          action: "外观检测间扫码入库",
+          detail: `${trayCode} 实验前外观检测存放`,
+          location: "外观检测间",
+          status: "实验前外观检测存放",
+          time: "2026-06-23 16:26:51",
+        },
+      ],
+      trays: [
+        {
+          tray_code: trayCode,
+          status: "外观检测间存放",
+          quantity: 1,
+          target_experiment_code: `${taskCode}-C`,
+          target_lab: "盐雾试验室",
+        },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "withdrawn-appearance-in",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_in",
+        time: "2026-06-23 16:26:51",
+      },
+      {
+        id: "withdrawn-appearance-out-mold",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out",
+        target_experiment_code: `${taskCode}-B`,
+        target_lab: "霉菌试验室",
+        target_type: "lab",
+        time: "2026-06-23 16:26:54",
+      },
+      {
+        id: "withdrawn-appearance-return-mold",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out_withdraw",
+        target_experiment_code: `${taskCode}-B`,
+        target_lab: "霉菌试验室",
+        time: "2026-06-23 16:27:05",
+      },
+      {
+        id: "withdrawn-appearance-out-salt",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out",
+        target_experiment_code: `${taskCode}-C`,
+        target_lab: "盐雾试验室",
+        target_type: "lab",
+        time: "2026-06-23 16:27:12",
+      },
+      {
+        id: "withdrawn-appearance-return-salt",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out_withdraw",
+        target_experiment_code: `${taskCode}-C`,
+        target_lab: "盐雾试验室",
+        time: "2026-06-23 16:27:27",
+      },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-23 16:28:00", room: "appearance" });
+    const sections = buildZancunInventorySections(rows, { room: "appearance" });
+
+    expect(rows.find((row) => row.trayCode === trayCode)).toEqual(expect.objectContaining({
+      status: "实验前外观检测存放",
+      statusLabel: "实验前外观检测存放",
+      trayCode,
+    }));
+    expect(sections.currentStagingRows.map((row) => row.trayCode)).toContain(trayCode);
+  });
+
   test("appearance room does not use sample status when tray status is missing", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.tasks].push({

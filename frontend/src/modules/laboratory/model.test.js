@@ -3071,6 +3071,162 @@ describe("laboratory model", () => {
     });
   });
 
+  test("keeps compare available for a remaining tray after a withdrawn tray is redispatched to the same lab", () => {
+    const taskCode = "SYLU-2026-08-001";
+    const impactExperimentCode = `${taskCode}-A`;
+    const vibrationExperimentCode = `${taskCode}-B`;
+    const firstTrayCode = `${taskCode}-TP-001`;
+    const secondTrayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: impactExperimentCode, tray_code: firstTrayCode },
+        { task_code: taskCode, experiment_code: impactExperimentCode, tray_code: secondTrayCode },
+        { task_code: taskCode, experiment_code: vibrationExperimentCode, tray_code: firstTrayCode },
+        { task_code: taskCode, experiment_code: vibrationExperimentCode, tray_code: secondTrayCode },
+      ],
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          status: "已排程",
+        },
+        {
+          task_code: taskCode,
+          experiment_code: vibrationExperimentCode,
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          status: "已排程",
+        },
+      ],
+      labCode: "LAB_IMPACT_2",
+      labName: "冲击二室",
+      now: NOW,
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${firstTrayCode} 送至 冲击二室`,
+              location: "冲击二室",
+              status: "送至实验室",
+              time: "2026-06-23 16:09:21",
+            },
+            {
+              action: "实验任务撤回",
+              detail: `${taskCode} / 冲击试验 / 撤回至已到达暂存间（试验间内撤回当前实验任务）`,
+              location: "恒温恒湿间（暂存间）",
+              status: "已到达暂存间",
+              time: "2026-06-23 16:08:55",
+            },
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 冲击试验 / 已到达实验室`,
+              location: "冲击二室",
+              status: "已到达实验室",
+              time: "2026-06-23 16:08:54",
+            },
+          ],
+          location: "冲击二室",
+          owner: "扫码登记",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: impactExperimentCode,
+              target_lab: "冲击二室",
+              tray_code: firstTrayCode,
+            },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          history: [
+            {
+              action: "任务比对",
+              detail: `${taskCode} / 冲击试验 / 已到达实验室`,
+              location: "冲击二室",
+              status: "已到达实验室",
+              time: "2026-06-23 16:09:36",
+            },
+            {
+              action: "暂存间扫码出库",
+              detail: `${secondTrayCode} 送至 冲击二室`,
+              location: "冲击二室",
+              status: "送至实验室",
+              time: "2026-06-23 16:09:26",
+            },
+            {
+              action: "实验任务撤回",
+              detail: `${taskCode} / 冲击试验 / 撤回至已到达暂存间（试验间内撤回当前实验任务）`,
+              location: "恒温恒湿间（暂存间）",
+              status: "已到达暂存间",
+              time: "2026-06-23 16:08:55",
+            },
+          ],
+          location: "冲击二室",
+          owner: "扫码登记",
+          status: "已到达实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "已到达实验室",
+              target_experiment_code: impactExperimentCode,
+              target_lab: "冲击二室",
+              tray_code: secondTrayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-impact",
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          device: "冲击二室",
+          lab_code: "LAB_IMPACT_2",
+          start_at: "2026-06-23 16:08:00",
+          end_at: "2026-06-23 19:38:00",
+        },
+        {
+          id: "schedule-vibration",
+          task_code: taskCode,
+          experiment_code: vibrationExperimentCode,
+          device: "振动二室",
+          lab_code: "LAB_VIBRATION_2",
+          start_at: "2026-06-23 16:08:00",
+          end_at: "2026-06-23 19:38:00",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "123", test_type: "冲击试验 / 振动试验" }],
+    });
+
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.currentTask.trayRows.map((row) => row.trayCode)).toEqual([firstTrayCode, secondTrayCode]);
+    expect(getLaboratoryActionState(workflow)).toEqual({
+      canCompare: true,
+      canInstallSample: true,
+      canMarkReady: false,
+    });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: firstTrayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      tone: "success",
+      trayCode: firstTrayCode,
+    }));
+  });
+
   test("keeps other labs locked when a shared tray is dispatched to a specific lab before any experiment completes", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [

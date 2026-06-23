@@ -24,6 +24,7 @@ const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "外观检测间存放";
 const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
+const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const EXPLICIT_STAGING_INBOUND_STATUSES = new Set(["送至暂存间", POST_EXPERIMENT_STAGING_SENT_STATUS]);
 const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, "已到达外观检测间"]);
@@ -228,6 +229,41 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
   };
 };
 
+const normalizeWithdrawalRestoreStatus = (value) => {
+  let text = normalizeText(value);
+  if (text.startsWith("撤回至")) {
+    text = text.slice("撤回至".length);
+  }
+  const reasonIndex = text.indexOf("（");
+  if (reasonIndex >= 0) {
+    text = text.slice(0, reasonIndex);
+  }
+  return normalizeText(text);
+};
+
+const resolveLatestAppearanceWithdrawalRestoreStatus = ({ sample, taskCode }) => {
+  let latestStatus = "";
+  let latestTime = -Infinity;
+  asArray(sample?.history).forEach((entry) => {
+    if (!WITHDRAWAL_HISTORY_ACTIONS.has(normalizeText(entry?.action))) {
+      return;
+    }
+    const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
+    const status =
+      normalizeText(entry?.status)
+      || normalizeWithdrawalRestoreStatus(parsed?.status);
+    if (!STORAGE_ROOM_CONFIGS.appearance.currentStatuses.has(status)) {
+      return;
+    }
+    const entryTime = parseCompletedEventTimeValue(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp);
+    if (entryTime >= latestTime) {
+      latestStatus = status;
+      latestTime = entryTime;
+    }
+  });
+  return latestStatus;
+};
+
 const buildTaskMap = (tasks) => {
   const map = new Map();
   asArray(tasks).forEach((task) => {
@@ -393,6 +429,12 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
     return "已出库";
   }
   if (normalizeText(latestEvent?.action) === "stock_out_withdraw") {
+    if (
+      config.key === "appearance"
+      && statuses.some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS)
+    ) {
+      return APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+    }
     const restoredStatus = statuses
       .map((status) => normalizeText(status))
       .find((status) => status === config.stockInStatus)
@@ -450,6 +492,39 @@ const buildExperimentMap = (experiments) => {
     }
   });
   return map;
+};
+
+const latestAppearanceLabDispatchRequiresPreExperiment = ({ events, experiments }) => {
+  const withdrawalIndex = asArray(events)
+    .map((event, index) => ({ action: normalizeText(event?.action), index }))
+    .filter((item) => item.action === "stock_out_withdraw")
+    .at(-1)?.index;
+  if (withdrawalIndex === undefined) {
+    return false;
+  }
+  const latestDispatch = asArray(events)
+    .slice(0, withdrawalIndex)
+    .reverse()
+    .find((event) => {
+      if (normalizeText(event?.action) !== "stock_out") {
+        return false;
+      }
+      const targetType = normalizeText(event?.target_type || event?.targetType);
+      return targetType !== "staging" && targetType !== "appearance";
+    });
+  if (!latestDispatch) {
+    return false;
+  }
+  const targetExperimentCode = normalizeText(latestDispatch?.target_experiment_code || latestDispatch?.targetExperimentCode);
+  const targetExperiment = buildExperimentMap(experiments).get(targetExperimentCode);
+  return requiresPreExperimentAppearanceStorage(
+    latestDispatch?.target_lab,
+    latestDispatch?.targetLab,
+    latestDispatch?.target_experiment_name,
+    latestDispatch?.targetExperimentName,
+    targetExperimentCode,
+    resolveExperimentName(targetExperiment),
+  );
 };
 
 const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => {
@@ -583,7 +658,11 @@ const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experimen
         return false;
       }
       const status = normalizeText(tray?.status);
-      if (status !== APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS && status !== "送至实验室") {
+      if (
+        status !== APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        && status !== APPEARANCE_STOCKED_STATUS
+        && status !== "送至实验室"
+      ) {
         return false;
       }
       const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
@@ -931,6 +1010,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: normalizeText(task?.source) || "待确认来源",
         originalTargetExperimentCode: "",
         originalTargetLab: "",
+        withdrawalRestoreStatuses: [],
         statuses: [],
         taskCode,
         targetExperimentCode: "",
@@ -957,6 +1037,10 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         normalizeText(sample?.status),
         normalizeText(sample?.flow_status),
       ].filter(Boolean);
+      const withdrawalRestoreStatus = resolveLatestAppearanceWithdrawalRestoreStatus({ sample, taskCode });
+      if (withdrawalRestoreStatus && !current.withdrawalRestoreStatuses.includes(withdrawalRestoreStatus)) {
+        current.withdrawalRestoreStatuses.push(withdrawalRestoreStatus);
+      }
       current.statuses.push(...(rowStatuses.length > 0 ? rowStatuses : [`${taskCode}-tray-${trayIndex + 1}`]));
       trayMap.set(trayCode, current);
     });
@@ -976,6 +1060,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         taskCode: normalizeText(latestEvent?.task_code),
         originalTargetExperimentCode: "",
         originalTargetLab: "",
+        withdrawalRestoreStatuses: [],
         testType: "",
         trayCode,
       });
@@ -995,6 +1080,16 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const inboundSourceLabel = resolveStorageInboundSourceLabel(trayStorageEvents, config, storageEventContext);
       const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config, storageEventContext);
       const latestAction = normalizeText(latestStorageEvent?.action);
+      const eventDerivedWithdrawalRestoreStatus =
+        config.key === "appearance"
+        && latestAction === "stock_out_withdraw"
+        && latestAppearanceLabDispatchRequiresPreExperiment({ events, experiments })
+          ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+          : "";
+      const effectiveStatuses =
+        latestAction === "stock_out_withdraw"
+          ? [...row.statuses, ...asArray(row.withdrawalRestoreStatuses), eventDerivedWithdrawalRestoreStatus].filter(Boolean)
+          : row.statuses;
       const storedInPostExperimentStaging =
         hasPostExperimentStagingStorageStatus(row)
         && !(config.key === "appearance" && latestEventDispatchesToCurrentRoom);
@@ -1024,9 +1119,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         trayCode: normalizeText(row.trayCode),
       });
       const explicitAppearanceInboundStatus =
-        hasPreAppearanceInboundStatus(row.statuses)
+        hasPreAppearanceInboundStatus(effectiveStatuses)
         && (config.key === "appearance" || !latestEventDispatchesToCurrentRoom);
-      const hasPreExperimentAppearanceStorageStatus = row.statuses.some(
+      const hasPreExperimentAppearanceStorageStatus = effectiveStatuses.some(
         (statusItem) => normalizeText(statusItem) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
       );
       const isPreExperimentAppearanceLabDispatch =
@@ -1065,7 +1160,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
-      let status = resolveTrayStatus(row.statuses, events, { isPostExperimentInbound, room: config.key });
+      let status = resolveTrayStatus(effectiveStatuses, events, { isPostExperimentInbound, room: config.key });
       if (isPreExperimentAppearanceLabDispatch) {
         status = "待入库";
       }

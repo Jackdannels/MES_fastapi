@@ -500,13 +500,13 @@ const resolvePreviousStableSnapshot = (sample, taskCode, currentExperimentName) 
   return candidates[candidates.length - 1];
 };
 
-const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode, trayCode = "" }) => {
+const resolveLatestExperimentHistorySnapshot = ({ experimentName, sample, taskCode, trayCode = "" }) => {
   const normalizedExperimentName = normalizeText(experimentName);
   if (!normalizedExperimentName) {
     return null;
   }
   const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
-  let latestStatus = null;
+  let latestSnapshot = null;
   let latestTime = -Infinity;
   asArray(sample?.history).forEach((entry) => {
     const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
@@ -518,12 +518,18 @@ const resolveLatestExperimentHistoryStatus = ({ experimentName, sample, taskCode
     }
     const eventTime = toTime(entry?.time) || 0;
     if (eventTime > latestTime) {
-      latestStatus = parsed.status;
+      latestSnapshot = {
+        status: parsed.status,
+        time: eventTime,
+      };
       latestTime = eventTime;
     }
   });
-  return latestStatus;
+  return latestSnapshot;
 };
+
+const resolveLatestExperimentHistoryStatus = (input) =>
+  resolveLatestExperimentHistorySnapshot(input)?.status || null;
 
 const resolveLatestLaboratoryDispatchSnapshot = ({
   currentExperimentCode = "",
@@ -1598,7 +1604,7 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
       const targetLab = normalizeText(tray?.target_lab || tray?.targetLab);
       const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
       const physicalTrayStatus = normalizeText(tray?.status);
-      const restoredDispatch = physicalTrayStatus === LAB_RESET_STATUS && (!targetLab || !targetExperimentCode)
+      const latestDispatch = physicalTrayStatus === LAB_RESET_STATUS
         ? resolveLatestLaboratoryDispatchSnapshot({
             currentExperimentCode,
             currentLab: device,
@@ -1606,18 +1612,33 @@ const collectTrayRows = ({ device, experimentName, experimentRecordMap, experime
             trayCode,
           })
         : null;
+      const restoredDispatch = physicalTrayStatus === LAB_RESET_STATUS && (!targetLab || !targetExperimentCode)
+        ? latestDispatch
+        : null;
+      const currentExperimentHistorySnapshot = resolveLatestExperimentHistorySnapshot({
+        experimentName,
+        sample,
+        taskCode,
+        trayCode,
+      });
+      const dispatchRestoresWithdrawnCurrentExperiment =
+        experimentHistoryStatusIsWithdrawal(currentExperimentHistorySnapshot?.status)
+        && latestDispatch
+        && latestDispatch.time > (currentExperimentHistorySnapshot?.time || -Infinity)
+        && normalizeText(latestDispatch.targetLab) === normalizeText(device)
+        && (
+          !normalizeText(currentExperimentCode)
+          || normalizeText(latestDispatch.targetExperimentCode) === normalizeText(currentExperimentCode)
+        );
+      const currentExperimentHistoryStatus = dispatchRestoresWithdrawnCurrentExperiment
+        ? ""
+        : normalizeText(currentExperimentHistorySnapshot?.status);
       const restoredTargetLab = targetLab || normalizeText(restoredDispatch?.targetLab);
       const restoredTargetExperimentCode =
         targetExperimentCode
         || (restoredTargetLab === normalizeText(restoredDispatch?.targetLab)
           ? normalizeText(restoredDispatch?.targetExperimentCode)
           : "");
-      const currentExperimentHistoryStatus = resolveLatestExperimentHistoryStatus({
-        experimentName,
-        sample,
-        taskCode,
-        trayCode,
-      });
       const sampleHasCurrentExperimentHistory = Boolean(currentExperimentHistoryStatus);
       const currentExperimentHistoryRank = resolveLaboratoryStatusRank(currentExperimentHistoryStatus);
       const currentExperimentProgressIsAuthoritative = sampleHasCurrentExperimentHistory && currentExperimentHistoryRank > 0;
