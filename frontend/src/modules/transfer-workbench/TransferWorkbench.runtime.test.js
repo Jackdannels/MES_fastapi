@@ -247,6 +247,7 @@ const createDispatchPostedPayload = () => ({
   tray: {
     trayNo: "SYLU-2026-03-102-TP-001",
     trayStatus: "送至实验室",
+    trayDisplayStatus: "振动一室",
     taskNo: "SYLU-2026-03-102",
     taskName: "连接器批次 B",
     sampleCount: 2,
@@ -263,6 +264,7 @@ const createStagingDispatchPostedPayload = () => ({
   tray: {
     trayNo: "SYLU-2026-03-102-TP-001",
     trayStatus: "送至暂存间",
+    trayDisplayStatus: "送至暂存间",
     taskNo: "SYLU-2026-03-102",
     taskName: "连接器批次 B",
     sampleCount: 2,
@@ -538,6 +540,15 @@ describe("TransferWorkbench runtime", () => {
     const summaryTaskNo = summary.get('[data-testid="transfer-dispatch-summary-task-no"]');
     expect(summaryTaskNo.get("span").text()).toBe("任务编号");
     expect(summaryTaskNo.get("strong").text()).toBe("SYLU-2026-03-102");
+    const experimentTags = summary.findAll(".transfer-dispatch-summary-card__experiment-tag");
+    expect(experimentTags.map((tag) => tag.text())).toEqual(["通电试验", "耐久试验"]);
+    const experimentToneClasses = experimentTags.map((tag) =>
+      tag.classes().find((className) => className.startsWith("transfer-dispatch-summary-card__experiment-tag--tone-")),
+    );
+    expect(new Set(experimentToneClasses).size).toBe(2);
+    expect(summary.findAll(".transfer-dispatch-summary-card__stat strong").map((stat) => stat.text())).toEqual(["2", "2"]);
+    expect(summary.text()).not.toContain("托盘摘要");
+    expect(summary.text()).not.toContain("待出库");
     expect(summary.text()).not.toContain("任务名称");
     expect(summary.text()).not.toContain("连接器批次 B");
     expect(summary.text()).not.toContain("关联实验");
@@ -554,7 +565,7 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
-    expect(wrapper.text()).toContain("当前状态：送至实验室");
+    expect(wrapper.text()).toContain("当前状态：振动一室");
     expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("");
     expect(document.activeElement).toBe(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element);
     expect(fetch).toHaveBeenCalledWith(
@@ -620,7 +631,7 @@ describe("TransferWorkbench runtime", () => {
     await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("送至实验室");
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("振动一室");
     expect(wrapper.get('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(true);
 
     await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");

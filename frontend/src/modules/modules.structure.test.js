@@ -55,4 +55,11 @@ describe("frontend module registry structure", () => {
       expect(source).not.toContain("分界面");
     }
   });
+
+  test("appearance inspection subtitle reflects all eligible experiment families", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/appearance-inspection/index.js"), "utf8");
+
+    expect(source).toContain("高低温湿热");
+    expect(source).not.toContain("盐雾、霉菌实验后");
+  });
 });

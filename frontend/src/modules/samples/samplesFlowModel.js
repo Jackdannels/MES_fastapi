@@ -78,6 +78,7 @@ import {
 } from "./sampleFlow.commands";
 
 const APPEARANCE_SENT_STATUS_LABEL = "送至外观检测间";
+const POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS = POST_EXPERIMENT_STAGING_SENT_STATUS === "送至暂存间";
 
 const resolveSingleTrayExperiment = (input = {}) => {
   const orderedExperiments = buildOrderedTrayExperiments({
@@ -863,7 +864,7 @@ function buildTrayFlowView(input = {}) {
           hasActualAppearanceMilestone
           && !appearanceTime
           && index === experimentsBeforeCurrent.length - 1
-          && [APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS].includes(currentLifecycleStatus);
+          && currentLifecycleStatus === APPEARANCE_STOCKED_STATUS;
         if (
           experimentRequiresAppearanceInspection(experiment)
           && (appearanceTime || currentAppearanceStatusBelongsToLatestCompleted)
@@ -979,8 +980,11 @@ function buildTrayFlowView(input = {}) {
         pushExperimentStep(experiment, index + experimentsBeforeCurrent.length + 1);
       });
       const shouldShowPostTestStagingSent =
-        normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
-        || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+        !POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS
+        && (
+          normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+          || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS))
+        );
       const postTestStagingSentIndex = shouldShowPostTestStagingSent
         ? pushStep({
             key: `route-post-staging-sent-${currentExperimentIndex}`,
@@ -1093,7 +1097,10 @@ function buildTrayFlowView(input = {}) {
             steps[stepIndex].reached = true;
           });
         }
-      } else if (normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS) {
+      } else if (
+        !POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS
+        && normalizedRouteStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+      ) {
         currentStatus = normalizedRouteStatus;
         activeIndex = postTestStagingSentIndex;
         markCompletedAppearanceReached();
@@ -1202,8 +1209,11 @@ function buildTrayFlowView(input = {}) {
           }
         : null;
       const shouldShowPostTestStagingSent =
-        normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
-        || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+        !POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS
+        && (
+          normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+          || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS))
+        );
       const postTestStagingSentIndex = shouldShowPostTestStagingSent
         ? pushStep({
             key: "route-final-post-staging-sent",
@@ -1223,7 +1233,10 @@ function buildTrayFlowView(input = {}) {
         key: "route-final-returned",
         label: "厂家收回",
       });
-      if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS) {
+      if (
+        !POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS
+        && normalizedFinalStatus === POST_EXPERIMENT_STAGING_SENT_STATUS
+      ) {
         activeIndex = postTestStagingSentIndex;
         steps[completedIndex].reached = true;
         currentStatus = POST_EXPERIMENT_STAGING_SENT_STATUS;
@@ -1346,8 +1359,11 @@ function buildTrayFlowView(input = {}) {
       )
     : SAMPLE_FLOW_STEPS;
   const shouldShowSinglePostTestStagingSent =
-    status === POST_EXPERIMENT_STAGING_SENT_STATUS
-    || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS));
+    !POST_EXPERIMENT_STAGING_SENT_IS_REGULAR_STAGING_STATUS
+    && (
+      status === POST_EXPERIMENT_STAGING_SENT_STATUS
+      || Boolean(stepTimeMap.get(POST_EXPERIMENT_STAGING_SENT_STATUS))
+    );
   const singleFlowSteps = shouldShowSinglePostTestStagingSent
     ? baseSingleFlowSteps.flatMap((step) =>
         step.key === "post_test_staging"

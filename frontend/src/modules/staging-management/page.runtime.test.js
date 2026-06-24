@@ -1054,7 +1054,7 @@ describe("StagingManagementPage runtime", () => {
     const updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-001");
 
     expect(updatedSample).toMatchObject({
-      location: "恒温恒湿间（暂存间）",
+      location: "恒温恒湿间（实验后暂存间）",
       status: "实验后暂存间存放",
       flow_status: "实验后暂存间存放",
     });

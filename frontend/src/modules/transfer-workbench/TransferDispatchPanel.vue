@@ -43,34 +43,51 @@
 
     <section v-if="dispatchState.state.tray" class="transfer-dispatch-result" data-testid="transfer-dispatch-result">
       <article class="transfer-dispatch-summary-card" data-testid="transfer-dispatch-tray-summary">
-        <div class="transfer-dispatch-summary-card__top">
-          <div>
-            <h3>{{ dispatchState.state.tray.trayNo }}</h3>
+        <div class="transfer-dispatch-summary-card__ticket-main">
+          <div class="transfer-dispatch-summary-card__title-row">
+            <h3 class="transfer-dispatch-summary-card__tray-no">{{ dispatchState.state.tray.trayNo }}</h3>
+          </div>
+
+          <div class="transfer-dispatch-summary-card__fields">
             <div
-              class="transfer-dispatch-summary-card__task-no"
+              class="transfer-dispatch-summary-card__field transfer-dispatch-summary-card__task-no"
               data-testid="transfer-dispatch-summary-task-no"
             >
               <span>任务编号</span>
               <strong>{{ dispatchState.state.tray.taskNo }}</strong>
             </div>
-            <div class="muted">当前状态：{{ dispatchState.state.tray.trayStatus || "未知" }}</div>
-          </div>
-          <div class="transfer-dispatch-summary-card__meta">
-            <span class="transfer-dispatch-summary-card__type">托盘摘要</span>
-            <span class="transfer-dispatch-summary-card__count">样品数 {{ dispatchState.state.tray.sampleCount }}</span>
-          </div>
-        </div>
 
-        <div v-if="dispatchState.state.tray.experimentLabels?.length" class="transfer-tray-experiment-tags">
-          <span
-            v-for="(label, index) in dispatchState.state.tray.experimentLabels"
-            :key="`${dispatchState.state.tray.trayNo}-${label}-${index}`"
-            class="transfer-tray-experiment-tag transfer-tray-experiment-tag--tone-1"
+            <div class="transfer-dispatch-summary-card__field">
+              <span>当前状态：</span>
+              <strong>{{ currentTrayDisplayStatus }}</strong>
+            </div>
+          </div>
+
+          <div
+            v-if="dispatchState.state.tray.experimentLabels?.length"
+            class="transfer-dispatch-summary-card__experiment-tags"
           >
-            {{ label }}
-          </span>
+            <span
+              v-for="(label, index) in dispatchState.state.tray.experimentLabels"
+              :key="`${dispatchState.state.tray.trayNo}-${label}-${index}`"
+              class="transfer-dispatch-summary-card__experiment-tag"
+              :class="resolveDispatchExperimentTagTone(label)"
+            >
+              {{ label }}
+            </span>
+          </div>
         </div>
 
+        <div class="transfer-dispatch-summary-card__ticket-stats">
+          <div class="transfer-dispatch-summary-card__stat">
+            <span>样品</span>
+            <strong>{{ dispatchState.state.tray.sampleCount }}</strong>
+          </div>
+          <div class="transfer-dispatch-summary-card__stat">
+            <span>实验</span>
+            <strong>{{ dispatchState.state.tray.experimentLabels?.length || 0 }}</strong>
+          </div>
+        </div>
       </article>
 
       <div class="transfer-dispatch-destination-grid" data-testid="transfer-dispatch-destination-grid">
@@ -130,7 +147,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
@@ -145,6 +162,32 @@ const dispatchState = props.dispatchState;
 
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
+const currentTrayDisplayStatus = computed(
+  () => dispatchState.state.tray?.trayDisplayStatus || dispatchState.state.tray?.trayStatus || "未知",
+);
+
+const DISPATCH_EXPERIMENT_TAG_TONES = [
+  { keys: ["盐雾"], className: "transfer-dispatch-summary-card__experiment-tag--tone-1" },
+  { keys: ["霉菌"], className: "transfer-dispatch-summary-card__experiment-tag--tone-2" },
+  { keys: ["高低温", "湿热"], className: "transfer-dispatch-summary-card__experiment-tag--tone-3" },
+  { keys: ["冲击"], className: "transfer-dispatch-summary-card__experiment-tag--tone-4" },
+  { keys: ["温度"], className: "transfer-dispatch-summary-card__experiment-tag--tone-5" },
+  { keys: ["振动"], className: "transfer-dispatch-summary-card__experiment-tag--tone-6" },
+  { keys: ["通电"], className: "transfer-dispatch-summary-card__experiment-tag--tone-2" },
+  { keys: ["耐久"], className: "transfer-dispatch-summary-card__experiment-tag--tone-5" },
+];
+
+const resolveDispatchExperimentTagTone = (value) => {
+  const text = String(value || "").trim();
+  const matchedTone = DISPATCH_EXPERIMENT_TAG_TONES.find((tone) =>
+    tone.keys.some((key) => text.includes(key)),
+  );
+  if (matchedTone) {
+    return matchedTone.className;
+  }
+  const hash = Array.from(text).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  return `transfer-dispatch-summary-card__experiment-tag--tone-${(hash % 6) + 1}`;
+};
 
 onMounted(() => {
   void focusScanInput();
@@ -241,6 +284,11 @@ const resolveDestinationHint = (destination) => {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
 }
 
+.transfer-dispatch-result {
+  gap: 8px;
+  align-content: start;
+}
+
 .transfer-dispatch-summary-card,
 .transfer-dispatch-destination-card {
   border-radius: 18px;
@@ -251,13 +299,18 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-summary-card {
-  padding: 16px 18px;
+  height: 190px;
+  min-height: 190px;
+  max-height: 190px;
+  padding: 0;
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, transparent calc(100% - 241px), rgba(255, 255, 255, 0.08) calc(100% - 241px), rgba(255, 255, 255, 0.08) calc(100% - 240px), transparent calc(100% - 240px)),
+    var(--bg-card-raised);
 }
 
-.transfer-dispatch-summary-card__top,
-.transfer-dispatch-summary-card__meta,
 .transfer-dispatch-destination-card__top,
 .transfer-dispatch-destination-card__row {
   display: flex;
@@ -266,37 +319,178 @@ const resolveDestinationHint = (destination) => {
   gap: 12px;
 }
 
-.transfer-dispatch-summary-card__top h3 {
+.transfer-dispatch-summary-card__ticket-main {
+  min-width: 0;
+  padding: 16px 18px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 10px;
+}
+
+.transfer-dispatch-summary-card__title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.transfer-dispatch-summary-card__tray-no {
+  min-width: 0;
   margin: 0;
   font-size: 22px;
+  line-height: 1.1;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transfer-dispatch-summary-card__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.transfer-dispatch-summary-card__field {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: rgba(8, 24, 28, 0.86);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.transfer-dispatch-summary-card__field span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.transfer-dispatch-summary-card__field strong {
+  display: block;
+  min-width: 0;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.15;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .transfer-dispatch-summary-card__task-no {
+  display: block;
+}
+
+.transfer-dispatch-summary-card__experiment-tags {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 58px;
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
-  margin-top: 2px;
-  font-size: 13px;
-  line-height: 1.25;
+  gap: 8px;
+  align-content: flex-start;
+  overflow: auto;
+  scrollbar-width: thin;
 }
 
-.transfer-dispatch-summary-card__task-no span {
+.transfer-dispatch-summary-card__experiment-tag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  aspect-ratio: auto;
+  border-radius: 999px;
+  border: 1px solid var(--dispatch-experiment-border, rgba(14, 165, 233, 0.45));
+  background: var(--dispatch-experiment-bg, rgba(14, 165, 233, 0.14));
+  color: var(--dispatch-experiment-color, #7dd3fc);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-1 {
+  --dispatch-experiment-bg: rgba(14, 165, 233, 0.14);
+  --dispatch-experiment-border: rgba(14, 165, 233, 0.45);
+  --dispatch-experiment-color: #7dd3fc;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-2 {
+  --dispatch-experiment-bg: rgba(16, 185, 129, 0.14);
+  --dispatch-experiment-border: rgba(16, 185, 129, 0.4);
+  --dispatch-experiment-color: #86efac;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-3 {
+  --dispatch-experiment-bg: rgba(245, 158, 11, 0.16);
+  --dispatch-experiment-border: rgba(245, 158, 11, 0.44);
+  --dispatch-experiment-color: #facc15;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-4 {
+  --dispatch-experiment-bg: rgba(244, 114, 182, 0.15);
+  --dispatch-experiment-border: rgba(236, 72, 153, 0.42);
+  --dispatch-experiment-color: #f9a8d4;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-5 {
+  --dispatch-experiment-bg: rgba(168, 85, 247, 0.16);
+  --dispatch-experiment-border: rgba(147, 51, 234, 0.44);
+  --dispatch-experiment-color: #c4b5fd;
+}
+
+.transfer-dispatch-summary-card__experiment-tag--tone-6 {
+  --dispatch-experiment-bg: rgba(239, 68, 68, 0.13);
+  --dispatch-experiment-border: rgba(239, 68, 68, 0.38);
+  --dispatch-experiment-color: #fca5a5;
+}
+
+.transfer-dispatch-summary-card__ticket-stats {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(var(--industrial-accent-rgb), 0.08);
+}
+
+.transfer-dispatch-summary-card__stat {
+  width: 100%;
+  min-height: 58px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(7, 17, 20, 0.6);
+}
+
+.transfer-dispatch-summary-card__stat span {
   color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.transfer-dispatch-summary-card__task-no strong {
-  color: var(--text);
+.transfer-dispatch-summary-card__stat strong {
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 24px;
+  line-height: 1;
 }
 
-.transfer-dispatch-summary-card__meta {
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.transfer-dispatch-summary-card__type,
-.transfer-dispatch-summary-card__count,
 .transfer-dispatch-destination-card__status {
   display: inline-flex;
   align-items: center;
@@ -307,12 +501,6 @@ const resolveDestinationHint = (destination) => {
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
   color: var(--text);
-}
-
-.transfer-dispatch-summary-card__count {
-  border-color: rgba(var(--industrial-accent-rgb), 0.34);
-  background: rgba(var(--industrial-accent-rgb), 0.14);
-  color: var(--accent);
 }
 
 .transfer-dispatch-summary-card__body,
@@ -434,15 +622,28 @@ const resolveDestinationHint = (destination) => {
 }
 
 @media (max-width: 720px) {
-  .transfer-dispatch-summary-card__top,
   .transfer-dispatch-destination-card__top,
   .transfer-dispatch-destination-card__row {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .transfer-dispatch-summary-card__meta {
-    align-items: flex-start;
+  .transfer-dispatch-summary-card {
+    height: 228px;
+    min-height: 228px;
+    max-height: 228px;
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+    background: var(--bg-card-raised);
+  }
+
+  .transfer-dispatch-summary-card__ticket-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 18px 14px;
+  }
+
+  .transfer-dispatch-summary-card__stat {
+    min-height: 42px;
   }
 
   .transfer-dispatch-destination-grid {

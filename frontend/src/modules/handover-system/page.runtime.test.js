@@ -66,7 +66,7 @@ const createBootstrapPayload = () => ({
       taskType: "耐久试验 / 通电试验",
       experimentTypeText: "耐久试验 / 通电试验",
       receivedTime: "2026-03-19 09:10",
-      taskStatus: "已入库",
+      taskStatus: "到货",
       taskProgress: "已确认入库",
       sampleCodes: ["JB-2026-102-SP-001", "JB-2026-102-SP-002"],
       sampleCodesText: "JB-2026-102-SP-001 / JB-2026-102-SP-002",
@@ -140,11 +140,11 @@ const createPrintedWorkspace = (workspacePayload) => ({
 const createStoredWorkspace = (printedWorkspace) => ({
   ...printedWorkspace,
   allocationSaved: true,
-  task: { ...printedWorkspace.task, taskStatus: "已入库", taskProgress: "已确认入库" },
+  task: { ...printedWorkspace.task, taskStatus: "到货", taskProgress: "已确认入库" },
   assignedTrays: printedWorkspace.assignedTrays.map((tray) => ({
     ...tray,
-    trayStatus: "已入库",
-    samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "已入库" })),
+    trayStatus: "到货",
+    samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "到货" })),
   })),
 });
 
@@ -214,7 +214,7 @@ describe("TransferAreaPage runtime", () => {
         };
       }
       if (url.includes("/api/transfer-area/tasks/101/confirm-storage")) {
-        bootstrapPayload.taskOverview[0] = { ...bootstrapPayload.taskOverview[0], taskStatus: "已入库", taskProgress: "已确认入库" };
+        bootstrapPayload.taskOverview[0] = { ...bootstrapPayload.taskOverview[0], taskStatus: "到货", taskProgress: "已确认入库" };
         bootstrapPayload.pendingTaskCount = 0;
         bootstrapPayload.storedTaskCount = 2;
         workspaceState = storedWorkspace;

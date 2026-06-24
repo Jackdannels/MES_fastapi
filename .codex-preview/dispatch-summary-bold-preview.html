@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>接驳出库摘要卡大胆方案</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071112;
+      --panel: #0b1519;
+      --panel-2: #101b22;
+      --panel-3: #0d2024;
+      --line: rgba(91, 185, 178, 0.28);
+      --line-strong: rgba(91, 185, 178, 0.5);
+      --text: #eefcff;
+      --muted: #9bc4c8;
+      --accent: #57e5ce;
+      --accent-rgb: 87, 229, 206;
+      --blue: #7dd3fc;
+      --green: #86efac;
+      --amber: #fde68a;
+      --danger: #fca5a5;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(rgba(50, 116, 108, 0.15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(50, 116, 108, 0.15) 1px, transparent 1px),
+        radial-gradient(circle at 18% 8%, rgba(var(--accent-rgb), 0.13), transparent 34%),
+        var(--bg);
+      background-size: 28px 28px, 28px 28px, auto, auto;
+      color: var(--text);
+      font-family: "Inter", "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+
+    .page {
+      width: min(1760px, calc(100vw - 64px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 34px;
+      line-height: 1.1;
+    }
+
+    .sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .control {
+      display: grid;
+      gap: 6px;
+      width: 172px;
+    }
+
+    .control label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .control input {
+      width: 100%;
+      min-height: 38px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(9, 20, 24, 0.94);
+      color: var(--text);
+      font: inherit;
+    }
+
+    .stage {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: rgba(7, 17, 20, 0.86);
+      box-shadow: var(--shadow);
+    }
+
+    .variants {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .variant {
+      min-width: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .variant-head {
+      height: 76px;
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .variant-title {
+      font-size: 18px;
+      line-height: 1.2;
+    }
+
+    .variant-desc {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .pick {
+      flex: 0 0 auto;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: rgba(var(--accent-rgb), 0.12);
+      color: var(--accent);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .workbench {
+      height: 520px;
+      display: grid;
+      grid-template-rows: 190px 1fr;
+      gap: 14px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(8, 18, 22, 0.9);
+      overflow: hidden;
+    }
+
+    .summary {
+      height: 190px;
+      min-height: 190px;
+      max-height: 190px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel-2);
+      box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.05);
+    }
+
+    .destinations {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .dest {
+      min-height: 0;
+      padding: 14px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 12px;
+      border: 1px solid rgba(var(--accent-rgb), 0.26);
+      border-radius: 14px;
+      background: rgba(15, 26, 33, 0.92);
+    }
+
+    .dest:first-child {
+      border-color: rgba(245, 158, 11, 0.36);
+    }
+
+    .dest h4 {
+      font-size: 16px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dest-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed rgba(148, 163, 184, 0.28);
+      font-size: 12px;
+    }
+
+    .dest-line span {
+      color: var(--muted);
+    }
+
+    .dest-line strong {
+      text-align: right;
+    }
+
+    .action {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: transparent;
+      color: #c5f8f1;
+      font-weight: 900;
+    }
+
+    .pill,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      height: 28px;
+      min-height: 28px;
+      width: auto;
+      min-width: 0;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(12, 32, 36, 0.9);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      white-space: nowrap;
+      aspect-ratio: auto;
+    }
+
+    .tag {
+      border-color: rgba(14, 165, 233, 0.45);
+      background: rgba(14, 165, 233, 0.14);
+      color: var(--blue);
+    }
+
+    .tag:nth-child(2n) {
+      border-color: rgba(16, 185, 129, 0.42);
+      background: rgba(16, 185, 129, 0.14);
+      color: var(--green);
+    }
+
+    .tag:nth-child(3n) {
+      border-color: rgba(245, 158, 11, 0.42);
+      background: rgba(245, 158, 11, 0.16);
+      color: var(--amber);
+    }
+
+    .tag-list {
+      min-width: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      overflow: auto;
+      scrollbar-width: thin;
+    }
+
+    .mono {
+      font-family: "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .tower {
+      display: grid;
+      grid-template-columns: 118px minmax(0, 1fr);
+      gap: 0;
+    }
+
+    .tower-side {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      border-right: 1px solid var(--line);
+      background: rgba(var(--accent-rgb), 0.08);
+    }
+
+    .tower-cell {
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 6px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .tower-cell:last-child {
+      border-bottom: 0;
+    }
+
+    .tower-cell span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .tower-cell strong {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .tower-main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .tower-top {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .tray-no {
+      min-width: 0;
+      font-size: 22px;
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .small-line {
+      margin-top: 7px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .small-line strong {
+      color: var(--text);
+    }
+
+    .tower .tag-list {
+      max-height: 74px;
+      align-content: start;
+    }
+
+    .ticket {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 158px;
+      background:
+        linear-gradient(90deg, transparent calc(100% - 159px), rgba(255,255,255,0.08) calc(100% - 159px), rgba(255,255,255,0.08) calc(100% - 158px), transparent calc(100% - 158px)),
+        var(--panel-2);
+    }
+
+    .ticket-main {
+      min-width: 0;
+      padding: 16px 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 10px;
+    }
+
+    .ticket-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .ticket-title h3 {
+      min-width: 0;
+      font-size: 22px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ticket-meta {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .ticket-meta div {
+      min-height: 34px;
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: rgba(8, 24, 28, 0.86);
+      overflow: hidden;
+    }
+
+    .ticket-meta span {
+      color: var(--muted);
+    }
+
+    .ticket-meta strong {
+      display: block;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ticket .tag-list {
+      max-height: 58px;
+      align-content: start;
+    }
+
+    .ticket-stub {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      gap: 12px;
+      padding: 16px;
+      background: rgba(var(--accent-rgb), 0.08);
+    }
+
+    .stub-box {
+      width: 100%;
+      min-height: 58px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(7, 17, 20, 0.6);
+    }
+
+    .stub-box span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .stub-box strong {
+      font-size: 24px;
+      color: var(--accent);
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: 76px 1fr;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .matrix-cell {
+      min-width: 0;
+      padding: 12px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      background: var(--panel-2);
+      overflow: hidden;
+    }
+
+    .matrix-cell.large {
+      grid-column: span 2;
+    }
+
+    .matrix-cell.tags {
+      grid-column: span 2;
+      align-content: start;
+    }
+
+    .matrix-cell span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .matrix-cell strong {
+      min-width: 0;
+      font-size: 19px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .matrix-cell.count strong {
+      font-size: 32px;
+      color: var(--accent);
+    }
+
+    .matrix .tag-list {
+      max-height: 82px;
+      align-content: start;
+    }
+
+    @media (max-width: 1280px) {
+      .variants {
+        grid-template-columns: 1fr;
+      }
+
+      .workbench {
+        height: 520px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="head">
+      <div>
+        <h1>接驳出库摘要卡大胆三版</h1>
+        <p class="sub">每张摘要卡固定 190px 高。增加样品或实验时，只更新内部数字和标签滚动区，不改变卡片尺寸。</p>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="sampleCount">样品数量</label>
+          <input id="sampleCount" type="number" min="1" max="999" value="2" />
+        </div>
+        <div class="control">
+          <label for="experimentCount">实验数量</label>
+          <input id="experimentCount" type="number" min="1" max="12" value="2" />
+        </div>
+      </div>
+    </header>
+
+    <section class="stage">
+      <div class="variants">
+        <article class="variant">
+          <div class="variant-head">
+            <div>
+              <h2 class="variant-title">方案 A：控制塔</h2>
+              <p class="variant-desc">左侧数字固定占位，右侧只展示当前托盘和可送实验。最有中控感。</p>
+            </div>
+            <button class="pick" type="button">选择 A</button>
+          </div>
+          <div class="workbench">
+            <section class="summary tower" data-kind="tower"></section>
+            <section class="destinations"></section>
+          </div>
+        </article>
+
+        <article class="variant">
+          <div class="variant-head">
+            <div>
+              <h2 class="variant-title">方案 B：出库作业票</h2>
+              <p class="variant-desc">像一张固定尺寸作业单，托盘、任务、状态、数量各在固定栏位。</p>
+            </div>
+            <button class="pick" type="button">选择 B</button>
+          </div>
+          <div class="workbench">
+            <section class="summary ticket" data-kind="ticket"></section>
+            <section class="destinations"></section>
+          </div>
+        </article>
+
+        <article class="variant">
+          <div class="variant-head">
+            <div>
+              <h2 class="variant-title">方案 C：任务矩阵</h2>
+              <p class="variant-desc">全部信息进入固定网格，扫描和比对最快，视觉最克制。</p>
+            </div>
+            <button class="pick" type="button">选择 C</button>
+          </div>
+          <div class="workbench">
+            <section class="summary matrix" data-kind="matrix"></section>
+            <section class="destinations"></section>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const labels = [
+      "冲击试验",
+      "高低温湿热试验",
+      "温度冲击试验",
+      "盐雾试验",
+      "霉菌试验",
+      "振动试验",
+      "四综合试验",
+      "低气压试验",
+      "淋雨试验",
+      "砂尘试验",
+      "耐久试验",
+      "通电试验",
+    ];
+
+    const tray = {
+      trayNo: "SYLU-2026-07-001-TP-001",
+      taskNo: "SYLU-2026-07-001",
+      status: "实验前外观检测间存放",
+    };
+
+    const sampleInput = document.querySelector("#sampleCount");
+    const experimentInput = document.querySelector("#experimentCount");
+
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || min));
+    const tags = (count) => labels.slice(0, count).map((label) => `<span class="tag">${label}</span>`).join("");
+
+    const renderTower = (sampleCount, experimentCount) => `
+      <div class="tower-side">
+        <div class="tower-cell"><span>样品</span><strong>${sampleCount}</strong></div>
+        <div class="tower-cell"><span>实验</span><strong>${experimentCount}</strong></div>
+      </div>
+      <div class="tower-main">
+        <div class="tower-top">
+          <div>
+            <h3 class="tray-no mono">${tray.trayNo}</h3>
+            <div class="small-line"><span>任务编号</span><strong class="mono">${tray.taskNo}</strong></div>
+            <div class="small-line"><span>当前状态</span><strong>${tray.status}</strong></div>
+          </div>
+          <span class="pill">托盘摘要</span>
+        </div>
+        <div class="tag-list">${tags(experimentCount)}</div>
+      </div>
+    `;
+
+    const renderTicket = (sampleCount, experimentCount) => `
+      <div class="ticket-main">
+        <div class="ticket-title">
+          <h3 class="mono">${tray.trayNo}</h3>
+          <span class="pill">待出库</span>
+        </div>
+        <div class="ticket-meta">
+          <div><span>任务编号</span><strong class="mono">${tray.taskNo}</strong></div>
+          <div><span>当前状态</span><strong>${tray.status}</strong></div>
+        </div>
+        <div class="tag-list">${tags(experimentCount)}</div>
+      </div>
+      <div class="ticket-stub">
+        <div class="stub-box"><span>样品</span><strong>${sampleCount}</strong></div>
+        <div class="stub-box"><span>实验</span><strong>${experimentCount}</strong></div>
+      </div>
+    `;
+
+    const renderMatrix = (sampleCount, experimentCount) => `
+      <div class="matrix-cell large"><span>托盘编号</span><strong class="mono">${tray.trayNo}</strong></div>
+      <div class="matrix-cell count"><span>样品</span><strong>${sampleCount}</strong></div>
+      <div class="matrix-cell count"><span>实验</span><strong>${experimentCount}</strong></div>
+      <div class="matrix-cell large"><span>任务编号</span><strong class="mono">${tray.taskNo}</strong></div>
+      <div class="matrix-cell"><span>当前状态</span><strong>${tray.status}</strong></div>
+      <div class="matrix-cell tags"><span>实验标签</span><div class="tag-list">${tags(experimentCount)}</div></div>
+    `;
+
+    const renderDestinations = () => `
+      <article class="dest">
+        <h4>恒温恒湿间（暂存间）</h4>
+        <div>
+          <div class="dest-line"><span>对应实验</span><strong>暂存间</strong></div>
+          <div class="dest-line"><span>任务编号</span><strong class="mono">${tray.taskNo}</strong></div>
+        </div>
+        <button class="action" type="button">送往此处</button>
+      </article>
+      <article class="dest">
+        <h4>高低温湿热一室</h4>
+        <div>
+          <div class="dest-line"><span>对应实验</span><strong>高低温湿热试验</strong></div>
+          <div class="dest-line"><span>排程</span><strong>06/24 08:00 - 11:30</strong></div>
+        </div>
+        <button class="action" type="button">送往此处</button>
+      </article>
+    `;
+
+    const render = () => {
+      const sampleCount = clamp(sampleInput.value, 1, 999);
+      const experimentCount = clamp(experimentInput.value, 1, labels.length);
+      sampleInput.value = sampleCount;
+      experimentInput.value = experimentCount;
+
+      document.querySelector('[data-kind="tower"]').innerHTML = renderTower(sampleCount, experimentCount);
+      document.querySelector('[data-kind="ticket"]').innerHTML = renderTicket(sampleCount, experimentCount);
+      document.querySelector('[data-kind="matrix"]').innerHTML = renderMatrix(sampleCount, experimentCount);
+      document.querySelectorAll(".destinations").forEach((target) => {
+        target.innerHTML = renderDestinations();
+      });
+    };
+
+    sampleInput.addEventListener("input", render);
+    experimentInput.addEventListener("input", render);
+    render();
+  </script>
+</body>
+</html>

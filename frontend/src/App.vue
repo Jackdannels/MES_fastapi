@@ -97,7 +97,7 @@
         <div class="header-actions">
           <span class="header-actions-before-logout"></span>
           <button
-            v-if="isStagingModule"
+            v-if="isStorageRoomModule"
             class="action-btn tray-error-sample-trigger"
             data-testid="staging-error-sample"
             type="button"
@@ -122,7 +122,7 @@
     @switch-module="switchModule"
   />
   <TrayErrorSampleDialog
-    v-if="!isAuthLayout && !isBareModule && isStagingModule"
+    v-if="!isAuthLayout && !isBareModule && isStorageRoomModule"
     :model="errorSample"
   />
 </template>

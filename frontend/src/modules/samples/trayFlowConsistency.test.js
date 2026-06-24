@@ -581,6 +581,55 @@ describe("tray flow consistency", () => {
     expect(activeLabel(visualTray)).toBe("实验后外观检测间存放");
   });
 
+  test("treats high-low temperature humidity as requiring pre-experiment appearance inspection in tray flow", () => {
+    const taskCode = "SYLU-2026-06-023";
+    const trayCode = "SYLU-2026-06-023-TP-001";
+    const snapshot = {
+      tasks: [{ code: taskCode, test_type: "振动试验 / 高低温湿热试验", status: "任务进行中" }],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "振动试验", required_device: "振动一室", status: "已排程" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "高低温湿热试验", required_device: "高低温湿热一室", status: "已排程" },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+      ],
+      samples: [
+        {
+          task_code: taskCode,
+          code: "SYLU-2026-06-023-SP-001",
+          location: "外观检测间",
+          status: "实验前外观检测间存放",
+          flow_status: "实验前外观检测间存放",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "实验前外观检测间存放" }],
+          history: [
+            { detail: `${trayCode} 实验前外观检测间存放`, status: "实验前外观检测间存放", location: "外观检测间", time: "2026-06-07 10:00:00" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, device: "振动一室", status: "已排程", start_at: "2026-06-08 08:00:00" },
+        { task_code: taskCode, experiment_code: `${taskCode}-B`, device: "高低温湿热一室", status: "已排程", start_at: "2026-06-08 10:00:00" },
+      ],
+    };
+
+    const directFlow = buildTrayFlowView({
+      ...snapshot,
+      location: "外观检测间",
+      status: "实验前外观检测间存放",
+      taskCode,
+      trayCode,
+    });
+
+    expect(activeLabel(directFlow)).toBe("实验前外观检测间存放");
+    expect(directFlow.steps).toContainEqual(expect.objectContaining({
+      label: "送至高低温湿热一室",
+    }));
+    expect(directFlow.steps).not.toContainEqual(expect.objectContaining({
+      label: "送至振动一室",
+    }));
+  });
+
   test("uses central tray state after appearance to staging restore instead of stale sibling sample status", () => {
     const taskCode = "SYLU-2026-06-099";
     const trayCode = "SYLU-2026-06-099-TP-001";

@@ -11,6 +11,7 @@ from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
     PRE_EXPERIMENT_APPEARANCE_STATUS,
+    experiment_requires_appearance_inspection,
     pre_experiment_appearance_already_dispatched,
     should_route_pre_experiment_appearance,
     target_requires_appearance_inspection,
@@ -28,7 +29,6 @@ STAGING_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能暂
 APPEARANCE_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能外观检测间入库。"
 RETURNED_REARRIVAL_BLOCKED_DETAIL = "该托盘已厂家收回，不能再次到货。"
 STAGING_LOCATION_KEYWORD = "暂存间"
-POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 STAGING_INBOUND_STATUSES = {
     "已到达暂存间",
@@ -36,9 +36,9 @@ STAGING_INBOUND_STATUSES = {
 }
 APPEARANCE_LOCATION_KEYWORD = "外观检测间"
 APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "实验后外观检测间存放", PRE_EXPERIMENT_APPEARANCE_STATUS}
-APPEARANCE_SOURCE_REQUIRED_DETAIL = "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+APPEARANCE_SOURCE_REQUIRED_DETAIL = "当前试验类型不支持进入外观检测间。"
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
-APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌")
+APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
 RETURNED_STATUS = "厂家收回"
 HANDOVER_ARRIVAL_STATUSES = {"到货"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -176,11 +176,6 @@ def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -
     )
 
 
-def _appearance_experiment_name_is_allowed(value: Any) -> bool:
-    text = _normalize_text(value)
-    return any(keyword in text for keyword in APPEARANCE_REQUIRED_KEYWORDS)
-
-
 def _experiment_name_by_code(experiments: Any) -> dict[str, str]:
     names: dict[str, str] = {}
     for experiment in _as_list(experiments):
@@ -224,7 +219,7 @@ def _run_trays_have_allowed_appearance_source(
             or _normalize_text(entry.get("experiment_name"))
             or experiment_code
         )
-        if _appearance_experiment_name_is_allowed(experiment_name):
+        if experiment_requires_appearance_inspection(experiment_name):
             return True
     return False
 
@@ -544,7 +539,6 @@ def _is_post_experiment_staging_inbound(sample: Any, tray: Any | None = None) ->
     location = _normalize_text(sample.get("location"))
     return (
         POST_EXPERIMENT_STAGING_STOCKED_STATUS in statuses
-        or POST_EXPERIMENT_STAGING_SENT_STATUS in statuses
         or "实验后暂存间" in location
     )
 
@@ -613,6 +607,71 @@ def _has_latest_appearance_dispatch_to_staging(staging_events: Any, tray_code: s
         and _normalize_text(latest_event.get("action")) == "stock_out"
         and _event_targets_staging(latest_event)
     )
+
+
+def _is_lab_dispatch_outbound(sample: Any, tray: Any) -> bool:
+    if not isinstance(sample, dict):
+        return False
+    statuses = {
+        _normalize_text(sample.get("status")),
+        _normalize_text(sample.get("flow_status")),
+    }
+    if isinstance(tray, dict):
+        statuses.add(_status(tray))
+    return LAB_DISPATCHED_STATUS in statuses
+
+
+def _appearance_dispatch_target_is_allowed(next_sample: Any, next_tray: Any, experiments: Any) -> bool:
+    if not isinstance(next_sample, dict) or not isinstance(next_tray, dict):
+        return True
+    target_type = _normalize_text(next_tray.get("target_type") or next_tray.get("targetType"))
+    if target_type == "staging":
+        return True
+    target_lab = (
+        _normalize_text(next_tray.get("target_lab") or next_tray.get("targetLab"))
+        or _normalize_text(next_sample.get("location"))
+    )
+    target_experiment_code = _normalize_text(
+        next_tray.get("target_experiment_code")
+        or next_tray.get("targetExperimentCode")
+    )
+    return target_requires_appearance_inspection(
+        target_lab=target_lab,
+        target_experiment_code=target_experiment_code,
+        experiments=experiments,
+    )
+
+
+def _validate_samples_appearance_dispatch_transition(
+    current_samples: Any,
+    next_samples: Any,
+    experiments: Any,
+) -> None:
+    if not isinstance(next_samples, list):
+        return
+
+    current_by_code = _index_samples(current_samples)
+    if not current_by_code:
+        return
+
+    for next_sample in next_samples:
+        if not isinstance(next_sample, dict):
+            continue
+        current_sample = current_by_code.get(_sample_code(next_sample))
+        if not current_sample:
+            continue
+
+        current_trays = _index_trays(current_sample)
+        for next_tray in _as_list(next_sample.get("trays")):
+            if not isinstance(next_tray, dict):
+                continue
+            current_tray = current_trays.get(_tray_code(next_tray))
+            if not _is_appearance_stored(current_sample, current_tray):
+                continue
+            if not _is_lab_dispatch_outbound(next_sample, next_tray):
+                continue
+            if not _appearance_dispatch_target_is_allowed(next_sample, next_tray, experiments):
+                raise HTTPException(status_code=400, detail=APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL)
 
 
 def _post_staging_reentry_is_completed(
@@ -934,6 +993,11 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         storage.read("mes.experiments"),
         storage.read("mes.experiment_run_trays"),
         current_staging_events,
+    )
+    _validate_samples_appearance_dispatch_transition(
+        current_samples,
+        updates["mes.samples"],
+        storage.read("mes.experiments"),
     )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))

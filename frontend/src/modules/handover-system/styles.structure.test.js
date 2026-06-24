@@ -83,6 +83,22 @@ describe("handover system styles", () => {
     expect(source).toMatch(/@media\s*\(\s*max-height:\s*900px\s*\)\s*\{[\s\S]*\.transfer-sample-code-chip\s*\{[\s\S]*min-height:\s*34px/i);
   });
 
+  test("tray experiment tags use the same compact pill style as dispatch badges", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(styleSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*min-height:\s*28px/i);
+    expect(styleSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*padding:\s*4px\s+10px/i);
+    expect(styleSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*border-radius:\s*999px/i);
+    expect(styleSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*font-size:\s*12px/i);
+    expect(componentSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*min-height:\s*28px/i);
+    expect(componentSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*padding:\s*4px\s+10px/i);
+    expect(componentSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*border-radius:\s*999px/i);
+    expect(componentSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*font-size:\s*12px/i);
+  });
+
   test("dispatch result cards use globally loaded dark handover surfaces", () => {
     const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferDispatchPanel.vue");
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");

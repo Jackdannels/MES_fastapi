@@ -44,7 +44,7 @@
           </div>
           <div class="tray-error-sample-summary__meta">
             <span class="pill">样品 {{ model.state.tray.sampleCount }}</span>
-            <span class="pill">{{ model.state.tray.trayStatus || "未知" }}</span>
+            <span class="pill">{{ trayDisplayStatus }}</span>
           </div>
         </div>
 
@@ -61,7 +61,7 @@
         <div class="tray-error-sample-detail-grid">
           <div class="tray-error-sample-detail-row">
             <span>当前状态</span>
-            <strong>{{ model.state.tray.trayStatus || "未知" }}</strong>
+            <strong>{{ trayDisplayStatus }}</strong>
           </div>
           <div class="tray-error-sample-detail-row">
             <span>任务名称</span>
@@ -105,11 +105,7 @@
         <p>是否确认撤回出库？撤回后流程图会回到上一站。</p>
       </div>
       <div class="tray-error-sample-confirm__reason muted">
-        {{
-          model.state.tray?.trayStatus === "送至暂存间"
-            ? "撤回后将恢复到到货状态。"
-            : "撤回后将恢复到原出库前状态。"
-        }}
+        {{ withdrawalRestoreHint }}
       </div>
     </div>
     <template #footer>
@@ -150,6 +146,14 @@ const normalizeText = (value) => String(value || "").trim();
 const canWithdraw = computed(() => {
   const status = normalizeText(model.state.tray?.trayStatus);
   return status === "送至实验室" || status === "送至暂存间";
+});
+const trayDisplayStatus = computed(() => model.state.tray?.trayDisplayStatus || model.state.tray?.trayStatus || "未知");
+const withdrawalRestoreHint = computed(() => {
+  const status = normalizeText(model.state.tray?.trayStatus);
+  if (status === "送至实验室" || status === "送至暂存间") {
+    return "撤回后将恢复到本次出库前状态。";
+  }
+  return "撤回后将恢复到原出库前状态。";
 });
 const feedbackMessage = computed(() => model.feedbackMessage?.value || "");
 const feedbackTone = computed(() => model.feedbackTone?.value || "info");

@@ -112,6 +112,46 @@ def test_storage_allows_pre_experiment_appearance_stock_for_salt_target_from_han
     assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "盐雾试验室"
 
 
+def test_storage_allows_pre_experiment_appearance_stock_for_hot_humid_target_from_handover(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-HOT-HUMID",
+            "location": "接驳区",
+            "status": "到货",
+            "flow_status": "到货",
+            "task_code": "TASK-PRE-APPEARANCE-HOT-HUMID",
+            "trays": [{"tray_code": "TP-PRE-APPEARANCE-HOT-HUMID", "status": "到货", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-HOT-HUMID",
+                    "experiment_code": "EXP-HOT-HUMID",
+                    "experiment_name": "高低温湿热试验",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["target_lab"] = "高低温湿热一室"
+    attempted[0]["trays"][0]["target_experiment_code"] = "EXP-HOT-HUMID"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "高低温湿热一室"
+
+
 def test_storage_allows_pre_experiment_appearance_stock_for_mold_target_after_lab_dispatch(monkeypatch):
     samples = [
         {
@@ -157,6 +197,53 @@ def test_storage_allows_pre_experiment_appearance_stock_for_mold_target_after_la
     assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
     assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "霉菌试验室"
     assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-MOLD"
+
+
+def test_storage_allows_pre_experiment_appearance_stock_for_hot_humid_target_after_lab_dispatch(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-HOT-HUMID-DISPATCHED",
+            "location": "高低温湿热二室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "TASK-PRE-APPEARANCE-HOT-HUMID-DISPATCHED",
+            "trays": [
+                {
+                    "tray_code": "TP-PRE-APPEARANCE-HOT-HUMID-DISPATCHED",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "高低温湿热二室",
+                    "target_experiment_code": "EXP-HOT-HUMID",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-HOT-HUMID-DISPATCHED",
+                    "experiment_code": "EXP-HOT-HUMID",
+                    "experiment_name": "高低温湿热试验",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_lab"] == "高低温湿热二室"
+    assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-HOT-HUMID"
 
 
 def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance_dispatch(monkeypatch):
@@ -362,7 +449,7 @@ def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_
     response = client.put("/api/storage/mes.samples", json=attempted)
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+    assert response.json()["detail"] == "当前试验类型不支持进入外观检测间。"
     assert storage.read("mes.samples") == samples
 
 
@@ -790,10 +877,10 @@ def test_storage_allows_completed_appearance_dispatch_to_post_staging(monkeypatc
     )
 
     attempted = deepcopy(samples)
-    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
-    attempted[0]["status"] = "送至实验后暂存间"
-    attempted[0]["flow_status"] = "送至实验后暂存间"
-    attempted[0]["trays"][0]["status"] = "送至实验后暂存间"
+    attempted[0]["location"] = "恒温恒湿间（暂存间）"
+    attempted[0]["status"] = "送至暂存间"
+    attempted[0]["flow_status"] = "送至暂存间"
+    attempted[0]["trays"][0]["status"] = "送至暂存间"
     attempted[0]["trays"][0]["target_lab"] = "恒温恒湿间（暂存间）"
     attempted[0]["trays"][0]["target_experiment_code"] = ""
     attempted[0]["trays"][0]["target_type"] = "staging"
@@ -816,6 +903,78 @@ def test_storage_allows_completed_appearance_dispatch_to_post_staging(monkeypatc
     assert response.status_code == 200
     assert storage.read("mes.samples") == attempted
     assert storage.read("mes.staging_events")[-1]["id"] == "appearance-stock-out-to-staging"
+
+
+def test_storage_rejects_appearance_dispatch_to_non_whitelist_lab(monkeypatch):
+    samples = [
+        {
+            "code": "SYLU-2026-06-026-SP-001",
+            "location": "外观检测间",
+            "status": "实验后外观检测间存放",
+            "flow_status": "实验后外观检测间存放",
+            "task_code": "SYLU-2026-06-026",
+            "trays": [
+                {
+                    "tray_code": "SYLU-2026-06-026-TP-001",
+                    "status": "实验后外观检测间存放",
+                    "quantity": 1,
+                }
+            ],
+        }
+    ]
+    staging_events = [
+        {
+            "id": "appearance-stock-in",
+            "tray_code": "SYLU-2026-06-026-TP-001",
+            "task_code": "SYLU-2026-06-026",
+            "room": "appearance",
+            "action": "stock_in",
+            "time": "2026-06-15 15:40:18",
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.staging_events": staging_events,
+            "mes.experiments": [
+                {
+                    "task_code": "SYLU-2026-06-026",
+                    "experiment_code": "SYLU-2026-06-026-A",
+                    "experiment_name": "振动试验",
+                    "required_device": "振动一室",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "振动一室"
+    attempted[0]["status"] = "送至实验室"
+    attempted[0]["flow_status"] = "送至实验室"
+    attempted[0]["trays"][0]["status"] = "送至实验室"
+    attempted[0]["trays"][0]["target_lab"] = "振动一室"
+    attempted[0]["trays"][0]["target_experiment_code"] = "SYLU-2026-06-026-A"
+    next_events = [
+        *staging_events,
+        {
+            "id": "appearance-stock-out-to-vibration",
+            "tray_code": "SYLU-2026-06-026-TP-001",
+            "task_code": "SYLU-2026-06-026",
+            "room": "appearance",
+            "action": "stock_out",
+            "target_lab": "振动一室",
+            "target_experiment_code": "SYLU-2026-06-026-A",
+            "target_type": "lab",
+            "time": "2026-06-15 16:05:00",
+        },
+    ]
+
+    response = client.put("/api/storage", json={"mes.samples": attempted, "mes.staging_events": next_events})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "目标实验室与当前托盘不匹配"
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(monkeypatch):
@@ -1303,7 +1462,59 @@ def test_storage_allows_appearance_stock_in_after_appearance_dispatch(monkeypatc
     assert storage.read("mes.samples") == attempted
 
 
-def test_storage_rejects_appearance_stock_in_after_non_salt_mold_experiment(monkeypatch):
+def test_storage_allows_appearance_stock_in_after_completed_hot_humid_experiment(monkeypatch):
+    samples = [
+        {
+            "code": "SP-APPEARANCE-HOT-HUMID",
+            "location": "外观检测间",
+            "status": "送至外观检测间",
+            "flow_status": "送至外观检测间",
+            "task_code": "SYLU-2026-05-708",
+            "trays": [{"tray_code": "TP-APPEARANCE-HOT-HUMID", "status": "送至外观检测间", "quantity": 1}],
+            "history": [
+                {
+                    "detail": "SYLU-2026-05-708 / 高低温湿热试验 / 实验已完成",
+                    "location": "高低温湿热二室",
+                    "status": "实验已完成",
+                    "time": "2026-06-07T10:00:00",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "SYLU-2026-05-708",
+                    "experiment_code": "EXP-HOT-HUMID",
+                    "experiment_name": "高低温湿热试验",
+                }
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "task_code": "SYLU-2026-05-708",
+                    "experiment_code": "EXP-HOT-HUMID",
+                    "tray_code": "TP-APPEARANCE-HOT-HUMID",
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["status"] = "实验后外观检测间存放"
+    attempted[0]["flow_status"] = "实验后外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+
+
+def test_storage_rejects_appearance_stock_in_after_non_appearance_experiment(monkeypatch):
     samples = [
         {
             "code": "SP-APPEARANCE-NON-SALT",
@@ -1332,7 +1543,7 @@ def test_storage_rejects_appearance_stock_in_after_non_salt_mold_experiment(monk
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "只有盐雾、霉菌实验完成后才能进入外观检测间。"
+    assert response.json()["detail"] == "当前试验类型不支持进入外观检测间。"
     assert storage.read("mes.samples") == samples
 
 

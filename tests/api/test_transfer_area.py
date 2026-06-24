@@ -442,6 +442,7 @@ def test_transfer_area_dispatch_to_staging_updates_tray_samples_and_history(monk
     payload = response.json()
     assert payload["tray"]["trayNo"] == "SYLU-2026-03-102-TP-001"
     assert payload["tray"]["trayStatus"] == "送至暂存间"
+    assert payload["tray"]["trayDisplayStatus"] == "送至暂存间"
     assert payload["affectedSampleCount"] == 2
 
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
@@ -452,7 +453,7 @@ def test_transfer_area_dispatch_to_staging_updates_tray_samples_and_history(monk
     assert all(sample["history"][0]["action"] == "送至暂存间" for sample in updated_samples)
 
 
-def test_transfer_area_dispatch_from_completed_appearance_to_post_experiment_staging(monkeypatch):
+def test_transfer_area_dispatch_from_completed_appearance_to_staging_uses_regular_staging_sent_status(monkeypatch):
     client, storage = build_client(monkeypatch)
     task_code = "SYLU-2026-06-029"
     tray_code = f"{task_code}-TP-001"
@@ -487,14 +488,14 @@ def test_transfer_area_dispatch_from_completed_appearance_to_post_experiment_sta
 
     assert response.status_code == 200
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "送至实验后暂存间"
-    assert updated["flow_status"] == "送至实验后暂存间"
+    assert updated["status"] == "送至暂存间"
+    assert updated["flow_status"] == "送至暂存间"
     assert updated["location"] == "恒温恒湿间（暂存间）"
-    assert updated["trays"][0]["status"] == "送至实验后暂存间"
-    assert updated["history"][0]["action"] == "送至实验后暂存间"
+    assert updated["trays"][0]["status"] == "送至暂存间"
+    assert updated["history"][0]["action"] == "送至暂存间"
 
 
-def test_transfer_area_dispatch_from_neutral_completed_to_post_experiment_staging(monkeypatch):
+def test_transfer_area_dispatch_from_neutral_completed_to_staging_uses_regular_staging_sent_status(monkeypatch):
     client, storage = build_client(monkeypatch)
     task_code = "SYLU-2026-06-032"
     tray_code = f"{task_code}-TP-001"
@@ -529,11 +530,11 @@ def test_transfer_area_dispatch_from_neutral_completed_to_post_experiment_stagin
 
     assert response.status_code == 200
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "送至实验后暂存间"
-    assert updated["flow_status"] == "送至实验后暂存间"
+    assert updated["status"] == "送至暂存间"
+    assert updated["flow_status"] == "送至暂存间"
     assert updated["location"] == "恒温恒湿间（暂存间）"
-    assert updated["trays"][0]["status"] == "送至实验后暂存间"
-    assert updated["history"][0]["action"] == "送至实验后暂存间"
+    assert updated["trays"][0]["status"] == "送至暂存间"
+    assert updated["history"][0]["action"] == "送至暂存间"
 
 
 def test_transfer_area_dispatch_from_partial_appearance_to_regular_staging(monkeypatch):
@@ -631,6 +632,7 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
     assert response.status_code == 200
     payload = response.json()
     assert payload["tray"]["trayStatus"] == "送至实验室"
+    assert payload["tray"]["trayDisplayStatus"] == "振动一室"
     assert payload["affectedSampleCount"] == 2
 
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
@@ -731,6 +733,56 @@ def test_transfer_area_dispatch_from_pre_experiment_appearance_goes_to_real_targ
     assert appearance_events[-1]["action"] == "stock_out"
     assert appearance_events[-1]["target_lab"] == "盐雾试验室"
     assert appearance_events[-1]["target_experiment_code"] == "SYLU-2026-03-102-B"
+
+
+def test_transfer_area_dispatch_from_appearance_rejects_non_whitelist_lab(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "盐雾试验室",
+                "start_at": "2026-03-20T10:00:00",
+                "end_at": "2026-03-20T13:00:00",
+            },
+        ],
+    )
+    experiments = storage.read("mes.experiments")
+    experiments[0]["experiment_name"] = "振动试验"
+    experiments[0]["required_device"] = "振动一室"
+    experiments[1]["experiment_name"] = "盐雾试验"
+    experiments[1]["required_device"] = "盐雾试验室"
+    storage.write("mes.experiments", experiments)
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "外观检测间"
+        sample["status"] = "实验后外观检测间存放"
+        sample["flow_status"] = "实验后外观检测间存放"
+        sample["trays"][0]["status"] = "实验后外观检测间存放"
+    storage.write("mes.samples", samples)
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-A"},
+    )
+    payload = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch").json()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "目标实验室与当前托盘不匹配"
+    assert [item["targetName"] for item in payload["destinations"]] == ["恒温恒湿间（暂存间）", "盐雾试验室"]
 
 
 def test_transfer_area_dispatch_to_lab_clears_stale_fixture_ready(monkeypatch):
@@ -1113,6 +1165,79 @@ def test_transfer_area_withdraw_appearance_dispatch_restores_tray_to_appearance_
     staging_events = storage.read("mes.staging_events")
     assert staging_events[-1]["action"] == "stock_out_withdraw"
     assert staging_events[-1]["room"] == "appearance"
+
+
+def test_transfer_area_withdraw_appearance_dispatch_to_post_staging_restores_appearance_storage(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "恒温恒湿间（暂存间）"
+        sample["status"] = "送至暂存间"
+        sample["flow_status"] = "送至暂存间"
+        sample["trays"] = [{**sample["trays"][0], "status": "送至暂存间"}]
+        sample["history"] = [
+            {
+                "action": "外观检测间扫码出库",
+                "detail": "SYLU-2026-03-102-TP-001 送至 恒温恒湿间（暂存间）",
+                "location": "恒温恒湿间（暂存间）",
+                "status": "送至暂存间",
+                "time": "2026-05-19T10:00:00",
+            },
+            {
+                "action": "外观检测间扫码入库",
+                "detail": "SYLU-2026-03-102-TP-001 实验后外观检测间存放",
+                "location": "外观检测间",
+                "status": "实验后外观检测间存放",
+                "time": "2026-05-19T09:50:00",
+            },
+        ]
+    storage.write("mes.samples", samples)
+    storage.write(
+        "mes.staging_events",
+        [
+            {
+                "id": "appearance-event-in",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "room": "appearance",
+                "action": "stock_in",
+                "time": "2026-05-19T09:50:00",
+            },
+            {
+                "id": "appearance-event-out",
+                "tray_code": "SYLU-2026-03-102-TP-001",
+                "task_code": "SYLU-2026-03-102",
+                "room": "appearance",
+                "action": "stock_out",
+                "target_type": "staging",
+                "target_lab": "恒温恒湿间（暂存间）",
+                "time": "2026-05-19T10:00:00",
+            },
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch",
+        json={"reason": "外观出库到暂存间撤回"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "实验后外观检测间存放"
+    assert payload["restoredLocation"] == "外观检测间"
+    assert payload["tray"]["trayStatus"] == "实验后外观检测间存放"
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "实验后外观检测间存放" for sample in updated_samples)
+    assert all(sample["flow_status"] == "实验后外观检测间存放" for sample in updated_samples)
+    assert all(sample["location"] == "外观检测间" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "实验后外观检测间存放" for sample in updated_samples)
+    staging_events = storage.read("mes.staging_events")
+    assert staging_events[-1]["action"] == "stock_out_withdraw"
+    assert staging_events[-1]["room"] == "appearance"
+    assert staging_events[-1]["target_lab"] == "恒温恒湿间（暂存间）"
 
 
 def test_transfer_area_withdraw_pre_experiment_appearance_dispatch_restores_pre_appearance_status(monkeypatch):

@@ -257,11 +257,12 @@ def test_install_after_current_recompare_overwrites_stale_experiment_target():
     assert current["trays"][0]["target_lab"] == "振动一室"
 
 
-def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handover_or_staging_origin():
+def test_pre_experiment_appearance_routing_requires_appearance_target_and_handover_or_staging_origin():
     from app.services.appearance_inspection import should_route_pre_experiment_appearance
 
     experiments = [
         {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"},
+        {"task_code": "TASK-1", "experiment_code": "EXP-HOT-HUMID", "experiment_name": "高低温湿热试验"},
         {"task_code": "TASK-1", "experiment_code": "EXP-VIB", "experiment_name": "振动试验"},
     ]
 
@@ -277,6 +278,27 @@ def test_pre_experiment_appearance_routing_requires_salt_mold_target_and_handove
         source_status="已到达暂存间",
         target_lab="霉菌试验室",
         target_experiment_code="EXP-MISSING",
+        experiments=experiments,
+    )
+    assert should_route_pre_experiment_appearance(
+        source_location="接驳区",
+        source_status="到货",
+        target_lab="高低温湿热一室",
+        target_experiment_code="EXP-MISSING",
+        experiments=experiments,
+    )
+    assert should_route_pre_experiment_appearance(
+        source_location="接驳区",
+        source_status="到货",
+        target_lab="振动一室",
+        target_experiment_code="EXP-HOT-HUMID",
+        experiments=experiments,
+    )
+    assert should_route_pre_experiment_appearance(
+        source_location="恒温恒湿间（暂存间）",
+        source_status="已到达暂存间",
+        target_lab="高低温湿热二室",
+        target_experiment_code="EXP-HOT-HUMID",
         experiments=experiments,
     )
     assert not should_route_pre_experiment_appearance(

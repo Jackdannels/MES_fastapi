@@ -16,14 +16,14 @@ const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const POST_EXPERIMENT_STAGING_LOCATION = "恒温恒湿间（实验后暂存间）";
 const APPEARANCE_LOCATION = "外观检测间";
 const STAGING_STOCKED_STATUS = "到货";
-const POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间";
+const POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间";
 const POST_EXPERIMENT_STAGING_STATUS = "实验后暂存间存放";
 const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
-const APPEARANCE_REQUIRED_KEYWORDS = ["盐雾", "霉菌"];
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const EXPLICIT_STAGING_INBOUND_STATUSES = new Set(["送至暂存间", POST_EXPERIMENT_STAGING_SENT_STATUS]);
@@ -608,7 +608,7 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
 };
 
 const appearanceExperimentIsAllowed = (experimentName) =>
-  APPEARANCE_REQUIRED_KEYWORDS.some((keyword) => normalizeText(experimentName).includes(keyword));
+  requiresPreExperimentAppearanceStorage(experimentName);
 
 const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
   const completedEvents = collectCompletedExperimentEvents({ samples, taskCode, trayCode });
@@ -751,6 +751,15 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
+  const appearanceAcceptsExperiment = (experiment, fallbackName = "") =>
+    config.key !== "appearance"
+    || requiresPreExperimentAppearanceStorage(
+      resolveExperimentName(experiment, fallbackName),
+      experiment?.required_device,
+      experiment?.experiment_name,
+      experiment?.experiment_type,
+      experiment?.test_type,
+    );
   const isUnfinishedExperiment = (experimentCode, fallbackName = "") => {
     if (trayExperimentRunIsCompleted({ experimentCode: normalizeText(experimentCode), experimentRunTrays, taskCode, trayCode })) {
       return false;
@@ -765,6 +774,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     return (
       normalizeText(experiment?.task_code) === taskCode
       && acceptsExperimentCode(experimentCode)
+      && appearanceAcceptsExperiment(experiment)
       && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
     );
   });
@@ -827,6 +837,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           && device
           && !isStagingDestination(device)
           && acceptsExperimentCode(experimentCode)
+          && appearanceAcceptsExperiment(experimentMap.get(experimentCode), schedule?.experiment_name)
           && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
         );
       })
@@ -1169,15 +1180,6 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       }
       if (latestEventDispatchesToCurrentRoom && !(config.key === "appearance" && hasPreExperimentAppearanceStorageStatus)) {
         status = "待入库";
-      }
-      if (
-        config.key === "staging"
-        && status === "待入库"
-        && isPostExperimentInbound
-        && postExperimentRequiresAppearanceInbound
-        && !isExplicitStagingInbound
-      ) {
-        status = "";
       }
       if (config.key === "appearance" && latestEventDispatchesToPostExperimentStaging) {
         status = "";
@@ -1705,10 +1707,14 @@ function applyZancunInventoryAction(input = {}) {
         : matchedRow.isPostExperimentInbound && config.key === "staging"
           ? POST_EXPERIMENT_STAGING_STATUS
           : config.stockInStatus;
+    const nextStockInLocation =
+      matchedRow.isPostExperimentInbound && config.key === "staging"
+        ? POST_EXPERIMENT_STAGING_LOCATION
+        : config.currentLocation;
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockInAction,
       historyDetail: `${matchedRow.trayCode} ${nextStockInStatus}`,
-      location: config.currentLocation,
+      location: nextStockInLocation,
       now: actionTime,
       owner: normalizeText(payload.operator) || "扫码登记",
       samples: nextSnapshot[SAMPLES_KEY],
@@ -1732,12 +1738,7 @@ function applyZancunInventoryAction(input = {}) {
     const targetExperimentCode =
       normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
     const outboundLocation = isStagingTarget ? STAGING_LOCATION : resolvedTargetLab;
-    const outboundStatus =
-      isStagingTarget
-        ? matchedRow.isPostExperimentInbound
-          ? POST_EXPERIMENT_STAGING_SENT_STATUS
-          : "送至暂存间"
-        : "送至实验室";
+    const outboundStatus = isStagingTarget ? "送至暂存间" : "送至实验室";
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockOutAction,
       historyDetail: `${matchedRow.trayCode} 送至 ${outboundLocation}`,

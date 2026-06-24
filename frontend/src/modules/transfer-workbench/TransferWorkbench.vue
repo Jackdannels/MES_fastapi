@@ -1840,11 +1840,12 @@ const buildPrintDocument = () => {
           .transfer-tray-experiment-tag {
             display: inline-flex;
             align-items: center;
-            min-height: 30px;
-            padding: 0 12px;
+            min-height: 28px;
+            padding: 4px 10px;
             border-radius: 999px;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
+            line-height: 1;
             background: var(--tray-experiment-bg, rgba(14, 165, 233, 0.14));
             border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
             color: var(--tray-experiment-color, #7dd3fc);

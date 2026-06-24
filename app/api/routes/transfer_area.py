@@ -15,6 +15,7 @@ from app.services.appearance_inspection import (
     APPEARANCE_EVENT_ROOM,
     APPEARANCE_STOCK_OUT_ACTION,
     PRE_EXPERIMENT_APPEARANCE_STATUS,
+    experiment_requires_appearance_inspection,
 )
 from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock, clear_fixture_ready_marker
@@ -36,7 +37,7 @@ SYSTEM_TRAY_TOTAL = 10
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
 APPEARANCE_STORED_STATUS = "实验后外观检测间存放"
-POST_EXPERIMENT_STAGING_SENT_STATUS = "送至实验后暂存间"
+POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 WITHDRAW_BLOCKED_TRAY_STATUSES = {
     "已到达实验室",
@@ -1188,6 +1189,7 @@ def build_tray_dispatch_destinations(
     experiments: list[dict[str, Any]],
     experiment_trays: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
+    current_tray_status: str = "",
 ) -> list[dict[str, Any]]:
     task_experiments = [
         row for row in build_task_experiment_rows(task, experiments, experiment_trays)
@@ -1195,8 +1197,20 @@ def build_tray_dispatch_destinations(
     ]
     scheduled_candidates = []
     unscheduled_candidates = []
+    restrict_to_appearance_destinations = normalize_text(current_tray_status) in {
+        APPEARANCE_STORED_STATUS,
+        PRE_EXPERIMENT_APPEARANCE_STATUS,
+    }
 
     for experiment in task_experiments:
+        if restrict_to_appearance_destinations and not experiment_requires_appearance_inspection(
+            experiment.get("experimentName"),
+            {
+                "experiment_name": experiment.get("experimentName"),
+                "required_device": experiment.get("requiredDevice"),
+            },
+        ):
+            continue
         matching_schedules = [
             entry for entry in schedules
             if normalize_text(entry.get("task_code")) == task_code(task)
@@ -1291,18 +1305,27 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
         raise HTTPException(status_code=404, detail="未找到托盘")
 
     actual_tray_status = normalize_text(tray.get("trayStatus"))
+    actual_tray_target_lab = ""
+    actual_tray_location = ""
     for sample in task_samples:
         for entry in as_list(sample.get("trays")):
             if normalize_text(entry.get("tray_code")) == normalize_text(tray_code):
                 actual_tray_status = normalize_text(entry.get("status")) or actual_tray_status
+                actual_tray_target_lab = normalize_text(entry.get("target_lab") or entry.get("targetLab")) or actual_tray_target_lab
+                actual_tray_location = normalize_text(sample.get("location")) or actual_tray_location
                 break
         if actual_tray_status and actual_tray_status != normalize_text(tray.get("trayStatus")):
             break
+    tray_display_status = actual_tray_status
+    if actual_tray_status == "送至实验室":
+        tray_display_status = actual_tray_target_lab or actual_tray_location or actual_tray_status
 
     return {
         "tray": {
             "trayNo": tray["trayNo"],
             "trayStatus": actual_tray_status,
+            "trayDisplayStatus": tray_display_status,
+            "targetLab": actual_tray_target_lab,
             "taskNo": task_code(task),
             "taskName": normalize_text(task.get("name")),
             "sampleCount": len(tray.get("samples") or []),
@@ -1315,6 +1338,7 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
             snapshot["experiments"],
             snapshot["experiment_trays"],
             snapshot["schedules"],
+            actual_tray_status,
         ),
     }
 
@@ -1603,7 +1627,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         appearance_to_staging_dispatch = current_tray_status == APPEARANCE_STORED_STATUS
         if current_tray_status in TRAY_OUTBOUND_STATUSES and not (post_experiment_staging_dispatch or appearance_to_staging_dispatch):
             raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
-        next_status = POST_EXPERIMENT_STAGING_SENT_STATUS if post_experiment_staging_dispatch else "送至暂存间"
+        next_status = "送至暂存间"
         next_location = STAGING_LOCATION
         detail = normalize_text(tray_code)
     elif target_type == "lab":

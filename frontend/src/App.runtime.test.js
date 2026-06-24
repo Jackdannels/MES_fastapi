@@ -160,6 +160,22 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).not.toContain("查看排程");
   });
 
+  test("renders appearance routes with the shared error sample handling action", async () => {
+    reactiveRoute.meta = { module: "appearance", title: "外观检测间系统", subtitle: "管理外观检测间入库、出库与总览。" };
+    reactiveRoute.name = "appearance-inspection";
+    reactiveRoute.path = "/appearance-inspection";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.text()).toContain("外观检测间系统");
+    expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="staging-error-sample"]').trigger("click");
+    await nextTick();
+    expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(true);
+    expect(wrapper.find(".sidebar").exists()).toBe(false);
+  });
+
   test("renders laboratory routes in the standalone module shell", async () => {
     reactiveRoute.meta = { module: "laboratory", title: "试验室操作台", subtitle: "查看当前试验室任务与实验准备流程。" };
     reactiveRoute.name = "laboratory";

@@ -250,10 +250,21 @@ describe("SamplesPage runtime", () => {
           json: async () => ({
             "mes.experiment_runs": [
               {
+                run_no: "RUN-IMPACT-001",
                 task_code: taskCode,
                 experiment_code: `${taskCode}-A`,
                 tray_codes: [trayCode],
                 status: "实验进行中",
+                started_at: "2026-06-04T19:33:56+08:00",
+              },
+            ],
+            "mes.experiment_run_trays": [
+              {
+                run_no: "RUN-IMPACT-001",
+                task_code: taskCode,
+                experiment_code: `${taskCode}-A`,
+                tray_code: trayCode,
+                run_tray_status: "实验进行中",
                 started_at: "2026-06-04T19:33:56+08:00",
               },
             ],
