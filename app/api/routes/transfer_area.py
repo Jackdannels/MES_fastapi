@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.api.routes.storage import publish_storage_update
+from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
@@ -60,6 +60,7 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.experiments",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.staging_events",
@@ -188,6 +189,19 @@ def as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def normalize_axis_codes(value: Any) -> list[str]:
+    raw_values = value if isinstance(value, list) else str(value or "").replace("，", ",").split(",") if isinstance(value, str) else []
+    axis_codes: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        axis_code = normalize_text(item)
+        if not axis_code or axis_code in seen:
+            continue
+        seen.add(axis_code)
+        axis_codes.append(axis_code)
+    return axis_codes
+
+
 def now_text() -> str:
     return now_business_text(include_seconds=False)
 
@@ -234,6 +248,10 @@ def has_formal_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_val
     )
 
 
+def schedule_is_completed(schedule: dict[str, Any]) -> bool:
+    return normalize_experiment_status_text(schedule.get("status")) in {"实验已完成", "实验完成", "实验已经完成"}
+
+
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
     payload = normalize_storage_payload(storage.read_all())
@@ -244,6 +262,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
         "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
+        "experiment_run_steps": [dict(item) for item in as_list(payload.get("mes.experiment_run_steps")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -260,6 +279,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], *, replace_task_co
         "mes.experiments": snapshot["experiments"],
         "mes.experiment_runs": snapshot["experiment_runs"],
         "mes.experiment_run_trays": snapshot["experiment_run_trays"],
+        "mes.experiment_run_steps": snapshot["experiment_run_steps"],
         "mes.experiment_trays": snapshot["experiment_trays"],
         "mes.experiment_samples": snapshot["experiment_samples"],
         "mes.staging_events": snapshot["staging_events"],
@@ -1197,10 +1217,7 @@ def build_tray_dispatch_destinations(
     ]
     scheduled_candidates = []
     unscheduled_candidates = []
-    restrict_to_appearance_destinations = normalize_text(current_tray_status) in {
-        APPEARANCE_STORED_STATUS,
-        PRE_EXPERIMENT_APPEARANCE_STATUS,
-    }
+    restrict_to_appearance_destinations = normalize_text(current_tray_status) == PRE_EXPERIMENT_APPEARANCE_STATUS
 
     for experiment in task_experiments:
         if restrict_to_appearance_destinations and not experiment_requires_appearance_inspection(
@@ -1217,6 +1234,7 @@ def build_tray_dispatch_destinations(
             and normalize_text(entry.get("experiment_code")) == experiment["experimentCode"]
             and normalize_text(entry.get("device"))
         ]
+        matching_schedules = [entry for entry in matching_schedules if not schedule_is_completed(entry)]
         matching_schedules.sort(
             key=lambda item: (
                 parse_datetime_value(item.get("start_at")) or datetime.max,
@@ -1607,23 +1625,67 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         raise HTTPException(status_code=400, detail="该托盘尚未确认入库，不能出库")
 
     current_tray_status = ""
+    current_target_sub_experiment_code = ""
     for sample in tray_samples:
         for entry in as_list(sample.get("trays")):
             if normalize_text(entry.get("tray_code")) == normalize_text(tray_code):
                 current_tray_status = normalize_text(entry.get("status"))
+                current_target_sub_experiment_code = normalize_text(entry.get("target_sub_experiment_code") or entry.get("targetSubExperimentCode"))
                 break
         if current_tray_status:
             break
 
     target_type = normalize_text(request.target_type)
     target_name = normalize_text(request.target_name)
+    partial_axis_batch_completed = tray_has_scoped_partial_axis_batch_completion(
+        task_code=task_code(task),
+        tray_code=tray_code,
+        experiments=snapshot["experiments"],
+        experiment_runs=snapshot["experiment_runs"],
+        experiment_run_steps=snapshot["experiment_run_steps"],
+        experiment_run_trays=snapshot["experiment_run_trays"],
+        experiment_trays=snapshot["experiment_trays"],
+        schedules=snapshot["schedules"],
+    )
+    assigned_experiment_codes = {
+        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+        for item in as_list(snapshot["experiment_trays"])
+        if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
+        and normalize_text(item.get("tray_code") or item.get("tray_no")) == normalize_text(tray_code)
+        and normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+    }
+    axis_aware_experiment_codes: set[str] = set()
+    if current_target_sub_experiment_code or partial_axis_batch_completed:
+        axis_aware_experiment_codes.update(
+            normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+            for item in as_list(snapshot["experiments"])
+            if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
+            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in assigned_experiment_codes
+            and normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
+        )
+        axis_aware_experiment_codes.update(
+            normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+            for item in as_list(snapshot["schedules"])
+            if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
+            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in assigned_experiment_codes
+            and normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
+        )
+    completed_axis_experiment_codes = {
+        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
+        for item in as_list(snapshot["experiments"])
+        if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
+        and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in axis_aware_experiment_codes
+        and normalize_experiment_status_text(item.get("status") or item.get("experiment_status")) in {"实验已完成", "实验完成", "实验已经完成"}
+    }
     if target_type == "staging":
-        post_experiment_staging_dispatch = tray_assigned_experiments_are_completed(
+        axis_experiments_completed = bool(axis_aware_experiment_codes) and axis_aware_experiment_codes.issubset(completed_axis_experiment_codes)
+        non_axis_experiments_completed = not axis_aware_experiment_codes and tray_assigned_experiments_are_completed(
             task_code=task_code(task),
             tray_code=tray_code,
             experiment_trays=snapshot["experiment_trays"],
             experiment_run_trays=snapshot["experiment_run_trays"],
         )
+        post_experiment_staging_dispatch = partial_axis_batch_completed or axis_experiments_completed or non_axis_experiments_completed
         appearance_to_staging_dispatch = current_tray_status == APPEARANCE_STORED_STATUS
         if current_tray_status in TRAY_OUTBOUND_STATUSES and not (post_experiment_staging_dispatch or appearance_to_staging_dispatch):
             raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
@@ -1651,6 +1713,7 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
         if (
             current_tray_status in TRAY_OUTBOUND_STATUSES
             and current_tray_status not in TRAY_LAB_REDISPATCH_STATUSES
+            and not partial_axis_batch_completed
         ):
             raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
         next_status = "送至实验室"

@@ -261,6 +261,80 @@ describe("useSamplesFlow", () => {
     );
   });
 
+  test("uses completed experiment run steps to keep an axis experiment tray flow completed in detail view", async () => {
+    mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-AXIS", name: "轴向任务" }]);
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.samples": [
+        {
+          code: "SP-AXIS-001",
+          task_code: "TASK-AXIS",
+          location: "冲击一室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-AXIS-001", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      "mes.experiments": [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          experiment_name: "冲击试验",
+          axis_codes: ["X", "Y"],
+          status: "实验进行中",
+        },
+      ],
+      "mes.experiment_runs": [
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_codes: ["TP-AXIS-001"],
+          status: "实验已完成",
+          ended_at: "2026-06-24T10:12:09+08:00",
+        },
+      ],
+      "mes.experiment_run_steps": [
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          axis_code: "X",
+          status: "实验已完成",
+        },
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          axis_code: "Y",
+          status: "实验已完成",
+        },
+      ],
+      "mes.experiment_run_trays": [
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_code: "TP-AXIS-001",
+          run_tray_status: "实验已完成",
+          ended_at: "2026-06-24T10:12:09+08:00",
+        },
+      ],
+      "mes.experiment_trays": [
+        { task_code: "TASK-AXIS", experiment_code: "EXP-AXIS", tray_code: "TP-AXIS-001" },
+      ],
+      "mes.schedules": [],
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openDetailDrawer("SP-AXIS-001");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).toBe("当前托盘：TP-AXIS-001 | 当前状态：冲击试验已完成");
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).not.toContain("部分完成");
+    expect(wrapper.vm.detailSampleTrayFlow.currentStatus).not.toContain("实验进行中");
+  });
+
   test("keeps sample rows visible without blocking loading while realtime refresh is pending", async () => {
     let resolveRefresh = null;
     mocks.readTasks.mockResolvedValue([{ code: "TASK-LIVE", name: "实时任务" }]);

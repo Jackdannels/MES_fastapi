@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>冲击/振动轴向接续预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --text: #0f172a;
+      --muted: #475569;
+      --line: #d9e2ef;
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --amber: #d97706;
+      --amber-soft: #fef3c7;
+      --red: #dc2626;
+      --red-soft: #fee2e2;
+      --slate: #334155;
+      --shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    button {
+      min-height: 44px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      padding: 0 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    button:focus-visible,
+    select:focus-visible {
+      outline: 3px solid rgba(37, 99, 235, 0.32);
+      outline-offset: 2px;
+    }
+
+    button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.48;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .shell {
+      max-width: 1720px;
+      margin: 0 auto;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(280px, 1fr) auto;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      letter-spacing: 0;
+      line-height: 1.25;
+    }
+
+    .subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+    }
+
+    .scenario-switch {
+      display: inline-flex;
+      gap: 8px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .scenario-switch button {
+      min-width: 152px;
+      background: transparent;
+      color: var(--slate);
+    }
+
+    .scenario-switch button.is-active {
+      background: var(--blue);
+      color: #ffffff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 0.95fr) minmax(520px, 1.25fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .panel-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 2px;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: var(--surface);
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .readonly,
+    select {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 9px 10px;
+      font: inherit;
+    }
+
+    .axis-pool,
+    .axis-order {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .axis-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 48px;
+      min-height: 34px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      color: var(--slate);
+      font-weight: 800;
+    }
+
+    .axis-chip.done {
+      border-color: #86efac;
+      background: var(--green-soft);
+      color: #065f46;
+    }
+
+    .axis-chip.active {
+      border-color: #93c5fd;
+      background: var(--blue-soft);
+      color: #1d4ed8;
+    }
+
+    .axis-chip.pending {
+      border-color: #fed7aa;
+      background: #fff7ed;
+      color: #9a3412;
+    }
+
+    .batch-table,
+    .status-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .batch-table th,
+    .batch-table td,
+    .status-table th,
+    .status-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .batch-table th,
+    .status-table th {
+      color: var(--muted);
+      font-size: 12px;
+      background: #fbfdff;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .tag.blue {
+      background: var(--blue-soft);
+      color: #1e40af;
+    }
+
+    .tag.green {
+      background: var(--green-soft);
+      color: #065f46;
+    }
+
+    .tag.amber {
+      background: var(--amber-soft);
+      color: #92400e;
+    }
+
+    .tag.red {
+      background: var(--red-soft);
+      color: #991b1b;
+    }
+
+    .gantt {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .gantt-grid {
+      min-width: 860px;
+      display: grid;
+      grid-template-columns: 150px repeat(8, minmax(88px, 1fr));
+      background: var(--line);
+      gap: 1px;
+    }
+
+    .gantt-cell {
+      min-height: 54px;
+      background: var(--surface);
+      padding: 8px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .gantt-head {
+      min-height: 42px;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      background: #f8fbff;
+    }
+
+    .lab-name {
+      color: var(--text);
+      font-weight: 800;
+      background: #f8fbff;
+    }
+
+    .bar {
+      width: 100%;
+      min-height: 38px;
+      border-radius: 6px;
+      padding: 6px 8px;
+      display: grid;
+      align-content: center;
+      gap: 2px;
+      border: 1px solid transparent;
+      overflow: hidden;
+    }
+
+    .bar strong,
+    .bar span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bar strong {
+      font-size: 12px;
+      line-height: 1.15;
+    }
+
+    .bar span {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .bar.current {
+      background: var(--blue-soft);
+      border-color: #93c5fd;
+      color: #1e3a8a;
+    }
+
+    .bar.next {
+      background: var(--green-soft);
+      border-color: #86efac;
+      color: #064e3b;
+    }
+
+    .bar.other {
+      background: var(--amber-soft);
+      border-color: #fcd34d;
+      color: #78350f;
+    }
+
+    .bar.idle {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+      color: #64748b;
+    }
+
+    .lab-board {
+      display: grid;
+      gap: 14px;
+    }
+
+    .board-main {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+
+    .board-main h3 {
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .board-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .ring {
+      width: 104px;
+      height: 104px;
+      border-radius: 50%;
+      background: conic-gradient(var(--green) var(--progress), #e2e8f0 0);
+      display: grid;
+      place-items: center;
+      flex: none;
+    }
+
+    .ring-inner {
+      width: 74px;
+      height: 74px;
+      border-radius: 50%;
+      background: var(--surface);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-weight: 900;
+      color: var(--green);
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .primary-green {
+      background: var(--green);
+      color: #ffffff;
+    }
+
+    .secondary {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+      color: #3730a3;
+    }
+
+    .danger {
+      background: var(--red-soft);
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    .flow {
+      display: grid;
+      gap: 10px;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: 132px 1fr;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .flow-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      padding-top: 8px;
+    }
+
+    .flow-steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .flow-step {
+      min-height: 34px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 6px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      background: var(--surface-2);
+      color: var(--slate);
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .flow-step.done {
+      border-color: #86efac;
+      background: var(--green-soft);
+      color: #065f46;
+    }
+
+    .flow-step.current {
+      border-color: #93c5fd;
+      background: var(--blue-soft);
+      color: #1e40af;
+    }
+
+    .flow-step.blocked {
+      border-color: #fecaca;
+      background: var(--red-soft);
+      color: #991b1b;
+    }
+
+    .notice {
+      border-left: 4px solid var(--blue);
+      background: #eff6ff;
+      color: #1e3a8a;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+    }
+
+    .notice.warn {
+      border-left-color: var(--amber);
+      background: #fffbeb;
+      color: #78350f;
+    }
+
+    .toast {
+      min-height: 40px;
+      border-radius: 6px;
+      padding: 9px 12px;
+      background: #ecfdf5;
+      color: #065f46;
+      border: 1px solid #bbf7d0;
+      font-weight: 700;
+    }
+
+    @media (max-width: 1160px) {
+      .grid,
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        padding: 12px;
+      }
+
+      .scenario-switch,
+      .actions,
+      .form-grid,
+      .board-main {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .scenario-switch button {
+        width: 100%;
+      }
+
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .flow-row {
+        grid-template-columns: 1fr;
+      }
+
+      .ring {
+        width: 92px;
+        height: 92px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <h1>冲击/振动轴向接续预览</h1>
+          <p class="subtitle">假数据模拟：轴向顺序由排程批次决定，试验间完成当前轴向后仅在同任务同实验紧接时允许接续。</p>
+        </div>
+        <div class="scenario-switch" aria-label="预览场景">
+          <button id="scenarioA" class="is-active" type="button">同任务紧接</button>
+          <button id="scenarioB" type="button">后续被占用</button>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="状态摘要">
+        <div class="metric">
+          <span>当前任务</span>
+          <strong id="metricTask">SYLU-2026-06-018</strong>
+        </div>
+        <div class="metric">
+          <span>当前实验</span>
+          <strong id="metricExperiment">冲击试验</strong>
+        </div>
+        <div class="metric">
+          <span>轴向进度</span>
+          <strong id="metricAxis">1/4</strong>
+        </div>
+        <div class="metric">
+          <span>接续判定</span>
+          <strong id="metricContinue">可接续</strong>
+        </div>
+      </section>
+
+      <div class="grid">
+        <div class="stack">
+          <section class="panel" aria-labelledby="schedule-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="schedule-title" class="panel-title">排程界面</h2>
+                <p class="panel-subtitle">冲击/振动实验显示轴向批次，不按固定 x+ 到 z- 顺序排序。</p>
+              </div>
+              <span id="scheduleMode" class="tag blue">分次进行</span>
+            </div>
+            <div class="panel-body stack">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="taskSelect">任务编号</label>
+                  <select id="taskSelect">
+                    <option>SYLU-2026-06-018</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="experimentSelect">实验类型</label>
+                  <select id="experimentSelect">
+                    <option>冲击试验</option>
+                    <option>振动试验</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>可选轴向</label>
+                  <div class="axis-pool" id="axisPool"></div>
+                </div>
+                <div class="field">
+                  <label>当前排程顺序</label>
+                  <div class="axis-order" id="axisOrder"></div>
+                </div>
+              </div>
+
+              <table class="batch-table" aria-label="轴向批次排程">
+                <thead>
+                  <tr>
+                    <th style="width: 80px;">批次</th>
+                    <th>轴向顺序</th>
+                    <th style="width: 132px;">试验间</th>
+                    <th style="width: 132px;">状态</th>
+                  </tr>
+                </thead>
+                <tbody id="batchRows"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="flow-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="flow-title" class="panel-title">流程图界面</h2>
+                <p class="panel-subtitle">主流程保持实验级，轴向进度嵌入“实验进行中”节点。</p>
+              </div>
+              <span class="tag green">托盘无需推出</span>
+            </div>
+            <div class="panel-body">
+              <div class="flow" id="flowView"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="panel" aria-labelledby="gantt-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="gantt-title" class="panel-title">甘特图界面</h2>
+                <p class="panel-subtitle">同任务同实验紧邻时输出绿色接续段；其他任务占用时不可接续。</p>
+              </div>
+              <span id="ganttHint" class="tag green">下一段同任务</span>
+            </div>
+            <div class="panel-body">
+              <div class="gantt" aria-label="三日排程甘特图">
+                <div class="gantt-grid" id="ganttGrid"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="lab-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="lab-title" class="panel-title">试验间看板</h2>
+                <p class="panel-subtitle">保留“实验已完成”，新增“当前轴向完成，继续进行下一实验 xx”。</p>
+              </div>
+              <span id="labStatus" class="tag blue">实验进行中</span>
+            </div>
+            <div class="panel-body lab-board">
+              <div class="board-main">
+                <div>
+                  <h3 id="runningTitle">冲击一室 · y+ 进行中</h3>
+                  <div class="board-meta" id="boardMeta"></div>
+                </div>
+                <div class="ring" id="progressRing" aria-label="轴向完成进度">
+                  <div class="ring-inner" id="ringText">1/4</div>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button id="completeExperiment" class="secondary" type="button">实验已完成</button>
+                <button id="continueAxis" class="primary-green" type="button">当前轴向完成，继续进行下一实验 x-</button>
+              </div>
+
+              <div id="continueNotice" class="notice"></div>
+              <div id="toast" class="toast" aria-live="polite">当前轴向 y+ 正在执行，下一接续为 x-。</div>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="status-title">
+            <div class="panel-header">
+              <div>
+                <h2 id="status-title" class="panel-title">状态显示</h2>
+                <p class="panel-subtitle">任务、实验、批次、轴向四级状态分离。</p>
+              </div>
+              <span id="statusSummary" class="tag amber">实验进行中 1/4轴</span>
+            </div>
+            <div class="panel-body">
+              <table class="status-table" aria-label="状态派生表">
+                <thead>
+                  <tr>
+                    <th>层级</th>
+                    <th>显示值</th>
+                    <th>派生依据</th>
+                  </tr>
+                </thead>
+                <tbody id="statusRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const AXES = ["x+", "x-", "y+", "y-", "z+", "z-"];
+
+    const scenarios = {
+      A: {
+        task: "SYLU-2026-06-018",
+        experiment: "冲击试验",
+        lab: "冲击一室",
+        completedAxes: ["z-"],
+        currentAxis: "y+",
+        plannedAxes: ["z-", "y+", "x-", "x+"],
+        batches: [
+          { no: 1, axes: ["z-", "y+"], lab: "冲击一室", status: "实验进行中" },
+          { no: 2, axes: ["x-", "x+"], lab: "冲击一室", status: "已排程" },
+        ],
+        next: { task: "SYLU-2026-06-018", experiment: "冲击试验", axis: "x-", lab: "冲击一室", contiguous: true },
+      },
+      B: {
+        task: "SYLU-2026-06-018",
+        experiment: "冲击试验",
+        lab: "冲击一室",
+        completedAxes: ["z-"],
+        currentAxis: "y+",
+        plannedAxes: ["z-", "y+", "x-", "x+"],
+        batches: [
+          { no: 1, axes: ["z-", "y+"], lab: "冲击一室", status: "实验进行中" },
+          { no: 2, axes: ["x-", "x+"], lab: "冲击二室", status: "已排程" },
+        ],
+        next: { task: "SYLU-2026-06-099", experiment: "振动试验", axis: "x+", lab: "冲击一室", contiguous: false },
+      },
+    };
+
+    let scenarioKey = "A";
+
+    function axisState(axis, data) {
+      if (data.completedAxes.includes(axis)) return "done";
+      if (axis === data.currentAxis) return "active";
+      if (data.plannedAxes.includes(axis)) return "pending";
+      return "";
+    }
+
+    function makeAxisChip(axis, state = "") {
+      const span = document.createElement("span");
+      span.className = `axis-chip ${state}`.trim();
+      span.textContent = axis;
+      return span;
+    }
+
+    function renderAxisPools(data) {
+      const pool = document.getElementById("axisPool");
+      const order = document.getElementById("axisOrder");
+      pool.replaceChildren(...AXES.map((axis) => makeAxisChip(axis, data.plannedAxes.includes(axis) ? "pending" : "")));
+      order.replaceChildren(...data.plannedAxes.map((axis) => makeAxisChip(axis, axisState(axis, data))));
+    }
+
+    function renderBatches(data) {
+      const rows = data.batches.map((batch) => {
+        const tr = document.createElement("tr");
+        const tagClass = batch.status === "实验进行中" ? "blue" : "amber";
+        tr.innerHTML = `
+          <td>第${batch.no}次</td>
+          <td>${batch.axes.map((axis) => `<span class="axis-chip ${axisState(axis, data)}">${axis}</span>`).join(" ")}</td>
+          <td>${batch.lab}</td>
+          <td><span class="tag ${tagClass}">${batch.status}</span></td>
+        `;
+        return tr;
+      });
+      document.getElementById("batchRows").replaceChildren(...rows);
+    }
+
+    function ganttBar(kind, title, sub) {
+      return `<div class="bar ${kind}"><strong>${title}</strong><span>${sub}</span></div>`;
+    }
+
+    function renderGantt(data) {
+      const headers = ["试验间", "今天 09:00", "10:00", "11:00", "13:00", "14:00", "明天 09:00", "10:00", "11:00"];
+      const labs = ["冲击一室", "冲击二室", "振动一室"];
+      const cells = headers.map((head) => `<div class="gantt-cell gantt-head">${head}</div>`);
+
+      labs.forEach((lab) => {
+        cells.push(`<div class="gantt-cell lab-name">${lab}</div>`);
+        for (let index = 0; index < 8; index += 1) {
+          let content = ganttBar("idle", "空闲", "可排程");
+          if (lab === "冲击一室" && index === 1) {
+            content = ganttBar("current", `${data.task}`, `${data.experiment} · y+`);
+          }
+          if (lab === "冲击一室" && index === 2) {
+            content = data.next.contiguous
+              ? ganttBar("next", `${data.task}`, `${data.experiment} · x-`)
+              : ganttBar("other", `${data.next.task}`, `${data.next.experiment} · ${data.next.axis}`);
+          }
+          if (lab === "冲击二室" && index === 5) {
+            content = ganttBar("next", `${data.task}`, `${data.experiment} · x- x+`);
+          }
+          if (lab === "振动一室" && index === 3) {
+            content = ganttBar("other", "SYLU-2026-06-021", "振动试验 · y- z+");
+          }
+          cells.push(`<div class="gantt-cell">${content}</div>`);
+        }
+      });
+      document.getElementById("ganttGrid").innerHTML = cells.join("");
+      document.getElementById("ganttHint").className = data.next.contiguous ? "tag green" : "tag red";
+      document.getElementById("ganttHint").textContent = data.next.contiguous ? "下一段同任务" : "下一段其他任务";
+    }
+
+    function renderLabBoard(data) {
+      const completedCount = data.completedAxes.length;
+      const total = data.plannedAxes.length;
+      const canContinue = data.next.contiguous && data.next.task === data.task && data.next.experiment === data.experiment && data.next.lab === data.lab;
+      const nextAxis = data.next.axis || "";
+      const continueButton = document.getElementById("continueAxis");
+      const notice = document.getElementById("continueNotice");
+      const progress = Math.round((completedCount / total) * 360);
+
+      document.getElementById("runningTitle").textContent = `${data.lab} · ${data.currentAxis} 进行中`;
+      document.getElementById("progressRing").style.setProperty("--progress", `${progress}deg`);
+      document.getElementById("ringText").textContent = `${completedCount}/${total}`;
+      document.getElementById("metricAxis").textContent = `${completedCount}/${total}`;
+      document.getElementById("metricContinue").textContent = canContinue ? "可接续" : "不可接续";
+      document.getElementById("metricContinue").style.color = canContinue ? "var(--green)" : "var(--red)";
+
+      const tags = [
+        `<span class="tag blue">run-AXIS-240624-001</span>`,
+        `<span class="tag green">托盘 TP-CJ-001</span>`,
+        `<span class="tag amber">当前 ${data.currentAxis}</span>`,
+      ];
+      document.getElementById("boardMeta").innerHTML = tags.join("");
+
+      continueButton.disabled = !canContinue;
+      continueButton.textContent = canContinue
+        ? `当前轴向完成，继续进行下一实验 ${nextAxis}`
+        : `当前轴向完成，继续进行下一实验 ${nextAxis}`;
+      notice.className = canContinue ? "notice" : "notice warn";
+      notice.textContent = canContinue
+        ? `当前排程后紧接 ${data.task} / ${data.experiment} / ${nextAxis}，可在本试验间接续，无需推出重新扫码。`
+        : `当前排程后紧接 ${data.next.task} / ${data.next.experiment}，不是当前任务同实验接续，绿色按钮不可点击。`;
+
+      continueButton.onclick = () => {
+        if (!canContinue) return;
+        data.completedAxes = [...new Set([...data.completedAxes, data.currentAxis])];
+        data.currentAxis = nextAxis;
+        data.next = { task: data.task, experiment: data.experiment, axis: "x+", lab: data.lab, contiguous: true };
+        document.getElementById("toast").textContent = `已完成上一轴向，当前接续 ${nextAxis}。`;
+        render(data);
+      };
+
+      document.getElementById("completeExperiment").onclick = () => {
+        document.getElementById("toast").textContent = "已保留原有“实验已完成”动作；实际业务中仅在全部必选轴向完成后推进实验完成。";
+      };
+    }
+
+    function renderFlow(data) {
+      const steps = [
+        ["托盘入室", "done"],
+        ["扫码比对", "done"],
+        ["工装夹具安装", "done"],
+        ["实验准备就绪", "done"],
+        ["实验进行中", "current"],
+        ["实验已完成", data.completedAxes.length === data.plannedAxes.length ? "done" : ""],
+      ];
+      const axisSteps = data.plannedAxes.map((axis) => {
+        if (data.completedAxes.includes(axis)) return [axis, "done"];
+        if (axis === data.currentAxis) return [axis, "current"];
+        return [axis, ""];
+      });
+      const flow = document.getElementById("flowView");
+      flow.innerHTML = `
+        <div class="flow-row">
+          <div class="flow-label">实验主流程</div>
+          <div class="flow-steps">
+            ${steps.map(([label, state]) => `<span class="flow-step ${state}">${label}</span>`).join("")}
+          </div>
+        </div>
+        <div class="flow-row">
+          <div class="flow-label">轴向步骤</div>
+          <div class="flow-steps">
+            ${axisSteps.map(([label, state]) => `<span class="flow-step ${state}">${label}</span>`).join("")}
+          </div>
+        </div>
+        <div class="flow-row">
+          <div class="flow-label">接续判断</div>
+          <div class="flow-steps">
+            <span class="flow-step done">读取当前排程</span>
+            <span class="flow-step done">完成 ${data.currentAxis}</span>
+            <span class="flow-step ${data.next.contiguous ? "current" : "blocked"}">${data.next.contiguous ? `接续 ${data.next.axis}` : "停止接续"}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderStatus(data) {
+      const completedCount = data.completedAxes.length;
+      const total = data.plannedAxes.length;
+      const rows = [
+        ["任务", "任务进行中", "冲击试验仍有未完成轴向"],
+        ["实验", `实验进行中 ${completedCount}/${total}轴`, "按 experiment_run_steps 汇总"],
+        ["批次", data.next.contiguous ? "第1次接续中" : "第1次执行中", "按 schedule axis_batch_no 派生"],
+        ["轴向", `${data.currentAxis} 进行中`, "当前 step.status = 进行中"],
+      ].map(([level, value, reason]) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${level}</td><td><strong>${value}</strong></td><td>${reason}</td>`;
+        return tr;
+      });
+      document.getElementById("statusRows").replaceChildren(...rows);
+      document.getElementById("statusSummary").textContent = `实验进行中 ${completedCount}/${total}轴`;
+    }
+
+    function render(data) {
+      document.getElementById("metricTask").textContent = data.task;
+      document.getElementById("metricExperiment").textContent = data.experiment;
+      renderAxisPools(data);
+      renderBatches(data);
+      renderGantt(data);
+      renderLabBoard(data);
+      renderFlow(data);
+      renderStatus(data);
+    }
+
+    function setScenario(key) {
+      scenarioKey = key;
+      document.getElementById("scenarioA").classList.toggle("is-active", key === "A");
+      document.getElementById("scenarioB").classList.toggle("is-active", key === "B");
+      const source = scenarios[key];
+      const data = JSON.parse(JSON.stringify(source));
+      document.getElementById("toast").textContent = key === "A"
+        ? "当前轴向 y+ 正在执行，下一接续为 x-。"
+        : "当前轴向 y+ 正在执行，下一排程为其他任务。";
+      render(data);
+      window.currentPreviewData = data;
+    }
+
+    document.getElementById("scenarioA").addEventListener("click", () => setScenario("A"));
+    document.getElementById("scenarioB").addEventListener("click", () => setScenario("B"));
+    setScenario(scenarioKey);
+  </script>
+</body>
+</html>

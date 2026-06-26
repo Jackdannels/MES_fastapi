@@ -699,6 +699,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
     current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
+    current_experiment_run_steps = [dict(row) for row in snapshot.get("mes.experiment_run_steps", [])]
     affected_schedules = (
         task_formal_schedule_rows(schedules, previous_task_code)
         if experiment_types_changed
@@ -781,6 +782,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         snapshot.get("mes.schedules", []),
         current_samples,
         current_experiment_trays,
+        current_experiment_run_steps,
     )
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
@@ -803,6 +805,7 @@ def delete_task(task_id: str) -> None:
     current_schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
     current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
+    current_experiment_run_steps = [dict(row) for row in snapshot.get("mes.experiment_run_steps", [])]
     snapshot["mes.tasks"] = tasks
     snapshot["mes.schedules"] = filter_related_rows(snapshot.get("mes.schedules"), task_code)
     snapshot["mes.samples"] = filter_related_rows(snapshot.get("mes.samples"), task_code)
@@ -817,6 +820,7 @@ def delete_task(task_id: str) -> None:
         snapshot.get("mes.schedules", []),
         current_samples,
         current_experiment_trays,
+        current_experiment_run_steps,
     )
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))

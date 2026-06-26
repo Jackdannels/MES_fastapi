@@ -6,6 +6,8 @@ from typing import Any, Protocol
 
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
+from app.services.experiment_segments import record_sub_experiment_code
+from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
 )
@@ -54,13 +56,25 @@ class MqEventRepository(Protocol):
 
     def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
-    def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None: ...
+    def find_current_context_by_lab(
+        self,
+        lab_code: str,
+        candidate_statuses: list[str],
+        context_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None: ...
 
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]: ...
 
     def mark_run_started(self, run_no: str, occurred_at: str) -> None: ...
 
-    def mark_run_ended(self, run_no: str, occurred_at: str) -> None: ...
+    def mark_run_ended(
+        self,
+        run_no: str,
+        occurred_at: str,
+        axis_code: str = "",
+        next_axis_code: str = "",
+        sub_experiment_code: str = "",
+    ) -> None: ...
 
 
 def normalize_text(value: Any) -> str:
@@ -181,6 +195,7 @@ def storage_completion_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[
         "experiments": [dict(item) for item in normalized.get("mes.experiments", []) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in normalized.get("mes.experiment_runs", []) if isinstance(item, dict)],
         "experiment_run_trays": [dict(item) for item in normalized.get("mes.experiment_run_trays", []) if isinstance(item, dict)],
+        "experiment_run_steps": [dict(item) for item in normalized.get("mes.experiment_run_steps", []) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in normalized.get("mes.experiment_trays", []) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in normalized.get("mes.experiment_samples", []) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in normalized.get("mes.staging_events", []) if isinstance(item, dict)],
@@ -222,11 +237,12 @@ def publish_realtime_update() -> None:
     except Exception:
         return
     publish_storage_update([
-        "mes.experiments",
-        "mes.experiment_runs",
-        "mes.experiment_run_trays",
-        "mes.samples",
-        "mes.schedules",
+            "mes.experiments",
+            "mes.experiment_runs",
+            "mes.experiment_run_trays",
+            "mes.experiment_run_steps",
+            "mes.samples",
+            "mes.schedules",
     ])
 
 
@@ -244,10 +260,10 @@ class MySQLMqEventRepository:
                     """
                     INSERT INTO biz_mq_message_log (
                       message_id, direction, topic, message_type, correlation_id, lab_code,
-                      task_no, experiment_no, qos, retain_flag, payload_json, process_status,
+                      task_no, experiment_no, sub_experiment_code, qos, retain_flag, payload_json, process_status,
                       error_code, error_message, received_at, processed_at
                     ) VALUES (
-                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
+                      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW()
                     )
                     """,
                     (
@@ -259,6 +275,7 @@ class MySQLMqEventRepository:
                         message.get("lab_code"),
                         message.get("task_no"),
                         message.get("experiment_no"),
+                        message.get("sub_experiment_code") or None,
                         message.get("qos"),
                         1 if message.get("retain_flag") else 0,
                         json.dumps(message.get("payload") or {}, ensure_ascii=False),
@@ -277,14 +294,15 @@ class MySQLMqEventRepository:
                 cursor.execute(
                     """
                     INSERT INTO biz_experiment_event (
-                      event_type, task_no, experiment_no, lab_code, success_id,
+                      event_type, task_no, experiment_no, sub_experiment_code, lab_code, success_id,
                       event_time, message_id, message_log_id, payload_json
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         event.get("event_type"),
                         event.get("task_no"),
                         event.get("experiment_no") or None,
+                        event.get("sub_experiment_code") or None,
                         event.get("lab_code") or None,
                         event.get("success_id") or None,
                         event.get("event_time") or None,
@@ -301,13 +319,14 @@ class MySQLMqEventRepository:
                 cursor.execute(
                     """
                     INSERT INTO biz_experiment_result (
-                      task_no, experiment_no, lab_code, result_time, conclusion, summary,
+                      task_no, experiment_no, sub_experiment_code, lab_code, result_time, conclusion, summary,
                       result_payload_json, message_id, message_log_id, status
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         result.get("task_no"),
                         result.get("experiment_no"),
+                        result.get("sub_experiment_code") or None,
                         result.get("lab_code") or None,
                         result.get("result_time"),
                         result.get("conclusion") or None,
@@ -332,6 +351,7 @@ class MySQLMqEventRepository:
                       er.run_no,
                       er.task_no,
                       er.experiment_no,
+                      er.sub_experiment_code,
                       er.device_name,
                       er.run_status
                     FROM biz_experiment_run er
@@ -367,6 +387,7 @@ class MySQLMqEventRepository:
                       er.run_no,
                       er.task_no,
                       er.experiment_no,
+                      er.sub_experiment_code,
                       er.device_name,
                       er.run_status
                     FROM biz_experiment_run er
@@ -378,11 +399,17 @@ class MySQLMqEventRepository:
                 row = cursor_row_as_dict(cursor)
         return row
 
-    def find_current_context_by_lab(self, lab_code: str, candidate_statuses: list[str]) -> dict[str, Any] | None:
+    def find_current_context_by_lab(
+        self,
+        lab_code: str,
+        candidate_statuses: list[str],
+        context_payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         normalized_lab_code = normalize_text(lab_code)
         statuses = [normalize_text(status) for status in candidate_statuses if normalize_text(status)]
         if not normalized_lab_code or not statuses:
             return None
+        preferred_payload = context_payload if isinstance(context_payload, dict) else {}
         with get_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -401,12 +428,32 @@ class MySQLMqEventRepository:
                 command_row = command_rows[0] if command_rows else {}
                 task_no = normalize_text(command_row.get("task_no"))
                 command_experiment_no = normalize_text(command_row.get("experiment_no"))
+                payload_json = command_row.get("payload_json")
+                try:
+                    command_payload = json.loads(payload_json) if isinstance(payload_json, str) else payload_json if isinstance(payload_json, dict) else {}
+                except json.JSONDecodeError:
+                    command_payload = {}
+                command_schedule_no = first_text(preferred_payload, "schedule_id", "scheduleId", "schedule_no", "scheduleNo") or first_text(
+                    command_payload,
+                    "schedule_id",
+                    "scheduleId",
+                    "schedule_no",
+                    "scheduleNo",
+                )
+                command_sub_experiment_code = first_text(
+                    preferred_payload,
+                    "sub_experiment_code",
+                    "subExperimentCode",
+                    "sub_experiment_no",
+                    "subExperimentNo",
+                ) or first_text(
+                    command_payload,
+                    "sub_experiment_code",
+                    "subExperimentCode",
+                    "sub_experiment_no",
+                    "subExperimentNo",
+                )
                 if not task_no:
-                    payload_json = command_row.get("payload_json")
-                    try:
-                        command_payload = json.loads(payload_json) if isinstance(payload_json, str) else payload_json if isinstance(payload_json, dict) else {}
-                    except json.JSONDecodeError:
-                        command_payload = {}
                     task_no = normalize_text(command_payload.get("task_code"))
                     command_experiment_no = command_experiment_no or normalize_text(command_payload.get("experiment_code"))
                 if not task_no:
@@ -462,8 +509,33 @@ class MySQLMqEventRepository:
                 if not tray_nos:
                     return None
 
+                completed_schedule_statuses = ["实验已完成", "实验完成", "实验已经完成"]
+                completed_status_placeholders = ", ".join(["%s"] * len(completed_schedule_statuses))
+                tray_placeholders = ", ".join(["%s"] * len(tray_nos))
                 schedule_params = [task_no]
-                schedule_filters = ["s.task_no = %s", "COALESCE(s.schedule_status, '') NOT IN ('实验已完成', '实验完成', '实验已经完成')"]
+                schedule_filters = [
+                    "s.task_no = %s",
+                    f"""
+                    (
+                      COALESCE(s.schedule_status, '') NOT IN ({completed_status_placeholders})
+                      OR (
+                        COALESCE(s.sub_experiment_code, '') <> ''
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM biz_experiment_run_tray completed_rt
+                          WHERE completed_rt.task_no = s.task_no
+                            AND completed_rt.experiment_no = s.experiment_no
+                            AND COALESCE(completed_rt.sub_experiment_code, '') = COALESCE(s.sub_experiment_code, '')
+                            AND completed_rt.tray_no IN ({tray_placeholders})
+                            AND COALESCE(completed_rt.run_tray_status, '') IN ({completed_status_placeholders})
+                        )
+                      )
+                    )
+                    """,
+                ]
+                schedule_params.extend(completed_schedule_statuses)
+                schedule_params.extend(tray_nos)
+                schedule_params.extend(completed_schedule_statuses)
                 if command_experiment_no:
                     schedule_filters.append("s.experiment_no = %s")
                     schedule_params.append(command_experiment_no)
@@ -471,7 +543,12 @@ class MySQLMqEventRepository:
                 else:
                     schedule_filters.append("schedule_lab.lab_code = %s")
                 schedule_params.append(normalized_lab_code)
-                tray_placeholders = ", ".join(["%s"] * len(tray_nos))
+                if command_schedule_no:
+                    schedule_filters.append("s.schedule_no = %s")
+                    schedule_params.append(command_schedule_no)
+                if command_sub_experiment_code:
+                    schedule_filters.append("COALESCE(s.sub_experiment_code, '') = %s")
+                    schedule_params.append(command_sub_experiment_code)
                 cursor.execute(
                     f"""
                     SELECT
@@ -519,6 +596,8 @@ class MySQLMqEventRepository:
                     "sample_nos": [],
                 },
             )
+            if command_sub_experiment_code:
+                context["sub_experiment_code"] = command_sub_experiment_code
             scoped_tray_no = normalize_text(row.get("scoped_tray_no"))
             if scoped_tray_no and scoped_tray_no not in context["tray_nos"]:
                 context["tray_nos"].append(scoped_tray_no)
@@ -535,6 +614,7 @@ class MySQLMqEventRepository:
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]:
         task_no = normalize_text(context.get("task_no"))
         experiment_no = normalize_text(context.get("experiment_no"))
+        sub_experiment_code = record_sub_experiment_code(context)
         device_name = normalize_text(context.get("device_name"))
         schedule_no = normalize_text(context.get("schedule_no"))
         tray_nos = [normalize_text(tray_no) for tray_no in context.get("tray_nos") or [] if normalize_text(tray_no)]
@@ -563,6 +643,7 @@ class MySQLMqEventRepository:
                 scoped_snapshot,
                 task_code=task_no,
                 experiment_code=experiment_no,
+                sub_experiment_code=sub_experiment_code,
                 run_no=run_no,
                 lab_name=device_name,
                 schedule_id=schedule_no,
@@ -579,12 +660,14 @@ class MySQLMqEventRepository:
                     "mes.experiments": result["experiments"],
                     "mes.experiment_runs": result["experimentRuns"],
                     "mes.experiment_run_trays": result["experimentRunTrays"],
+                    "mes.experiment_run_steps": result.get("experimentRunSteps", []),
                 }
             )
         return {
             "run_no": run_no,
             "task_no": task_no,
             "experiment_no": experiment_no,
+            "sub_experiment_code": sub_experiment_code,
             "device_name": device_name,
             "run_status": "实验进行中",
         }
@@ -596,6 +679,7 @@ class MySQLMqEventRepository:
             run = run_context_from_snapshot(snapshot, run_no)
             task_no = normalize_text(run.get("task_code") or run.get("task_no"))
             experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            sub_experiment_code = record_sub_experiment_code(run)
             tray_codes = [
                 normalize_text(item.get("tray_code") or item.get("tray_no"))
                 for item in snapshot.get("experiment_run_trays", [])
@@ -614,6 +698,7 @@ class MySQLMqEventRepository:
                 scoped_snapshot,
                 task_code=task_no,
                 experiment_code=experiment_no,
+                sub_experiment_code=sub_experiment_code,
                 run_no=run_no,
                 lab_name=normalize_text(run.get("device") or run.get("device_name")),
                 schedule_id=normalize_text(run.get("schedule_id") or run.get("schedule_no")),
@@ -630,16 +715,25 @@ class MySQLMqEventRepository:
                     "mes.experiments": result["experiments"],
                     "mes.experiment_runs": result["experimentRuns"],
                     "mes.experiment_run_trays": result["experimentRunTrays"],
+                    "mes.experiment_run_steps": result.get("experimentRunSteps", snapshot.get("experiment_run_steps", [])),
                 }
             )
 
-    def mark_run_ended(self, run_no: str, occurred_at: str) -> None:
+    def mark_run_ended(
+        self,
+        run_no: str,
+        occurred_at: str,
+        axis_code: str = "",
+        next_axis_code: str = "",
+        sub_experiment_code: str = "",
+    ) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage_completion_snapshot(storage.read_all())
             run = run_context_from_snapshot(snapshot, run_no)
             task_no = normalize_text(run.get("task_code") or run.get("task_no"))
             experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            sub_experiment_code = normalize_text(sub_experiment_code) or record_sub_experiment_code(run)
             tray_codes = [
                 normalize_text(item.get("tray_code") or item.get("tray_no"))
                 for item in snapshot.get("experiment_run_trays", [])
@@ -656,14 +750,28 @@ class MySQLMqEventRepository:
                 experiment_code=experiment_no,
                 tray_codes=tray_codes,
             )
-            result = complete_storage_laboratory_experiment(
-                scoped_snapshot,
-                task_code=task_no,
-                experiment_code=experiment_no,
-                run_no=run_no,
-                tray_codes=tray_codes,
-                completed_at=occurred_at,
-            )
+            normalized_axis_code = normalize_text(axis_code)
+            if normalized_axis_code:
+                result = complete_storage_laboratory_axis_step(
+                    scoped_snapshot,
+                    task_code=task_no,
+                    experiment_code=experiment_no,
+                    sub_experiment_code=sub_experiment_code,
+                    run_no=run_no,
+                    axis_code=normalized_axis_code,
+                    next_axis_code=next_axis_code,
+                    completed_at=occurred_at,
+                )
+            else:
+                result = complete_storage_laboratory_experiment(
+                    scoped_snapshot,
+                    task_code=task_no,
+                    experiment_code=experiment_no,
+                    sub_experiment_code=sub_experiment_code,
+                    run_no=run_no,
+                    tray_codes=tray_codes,
+                    completed_at=occurred_at,
+                )
             storage.write_many(
                 {
                     "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
@@ -671,6 +779,7 @@ class MySQLMqEventRepository:
                     "mes.schedules": result["schedules"],
                     "mes.experiment_runs": result["experimentRuns"],
                     "mes.experiment_run_trays": result["experimentRunTrays"],
+                    "mes.experiment_run_steps": result.get("experimentRunSteps", snapshot.get("experiment_run_steps", [])),
                 }
             )
 
@@ -695,6 +804,9 @@ def process_laboratory_event(
 
     context = None
     payload_run_no = first_text(payload, "run_no", "runNo")
+    payload_sub_experiment_code = first_text(payload, "sub_experiment_code", "subExperimentCode", "sub_experiment_no", "subExperimentNo")
+    payload_axis_code = first_text(payload, "axis_code", "axisCode")
+    payload_next_axis_code = first_text(payload, "next_axis_code", "nextAxisCode")
     if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
         raise ValueError("run_no is required for experiment result")
     run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
@@ -706,7 +818,7 @@ def process_laboratory_event(
         if not context:
             raise ValueError(f"fixture install context is required for lab_code: {lab_code}")
     if message_type == "EXPERIMENT_STARTED":
-        context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"])
+        context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"], payload)
         if context:
             run = repo.start_run_for_context(context, occurred_at, payload_run_no)
             created_run_from_context = True
@@ -734,6 +846,8 @@ def process_laboratory_event(
         experiment_no = context_experiment_no or first_text(payload, "experiment_code")
     else:
         experiment_no = first_text(payload, "experiment_code") or context_experiment_no
+    context_sub_experiment_code = record_sub_experiment_code(run or {}) or record_sub_experiment_code(context or {})
+    sub_experiment_code = context_sub_experiment_code or payload_sub_experiment_code
     run_no = normalize_text((run or {}).get("run_no"))
     correlation_id = first_text(payload, "correlation_id", "correlationId")
     message_log_id = repo.record_message(
@@ -746,6 +860,7 @@ def process_laboratory_event(
             "lab_code": lab_code,
             "task_no": task_no,
             "experiment_no": experiment_no,
+            "sub_experiment_code": sub_experiment_code,
             "qos": None,
             "retain_flag": False,
             "payload": payload,
@@ -760,6 +875,7 @@ def process_laboratory_event(
             "event_type": message_type,
             "task_no": task_no,
             "experiment_no": experiment_no,
+            "sub_experiment_code": sub_experiment_code,
             "lab_code": lab_code,
             "success_id": first_text(payload, "success_id", "success_sig", "successSig"),
             "event_time": occurred_at,
@@ -775,7 +891,7 @@ def process_laboratory_event(
         if not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
     elif message_type == "EXPERIMENT_ENDED":
-        repo.mark_run_ended(run_no, occurred_at)
+        repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
     elif message_type == "EXPERIMENT_RESULT":
         result_package = payload.get("result_package")
         if not isinstance(result_package, dict):
@@ -784,6 +900,7 @@ def process_laboratory_event(
             {
                 "task_no": task_no,
                 "experiment_no": experiment_no,
+                "sub_experiment_code": sub_experiment_code,
                 "lab_code": lab_code,
                 "result_time": occurred_at,
                 "conclusion": normalize_text(result_package.get("conclusion")),

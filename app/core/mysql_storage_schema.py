@@ -156,6 +156,15 @@ def ensure_schema_extensions(backend: Any) -> None:
             cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'lab_id'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_schedule ADD COLUMN lab_id BIGINT NULL AFTER schedule_type")
+            cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'axis_codes_json'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_schedule ADD COLUMN axis_codes_json JSON NULL AFTER device_name")
+            cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'axis_batch_no'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_schedule ADD COLUMN axis_batch_no VARCHAR(50) NULL AFTER axis_codes_json")
+            cursor.execute("SHOW COLUMNS FROM biz_schedule LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_schedule ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS biz_experiment (
@@ -168,6 +177,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                   priority TINYINT NULL,
                   planned_hours DECIMAL(10,2) NULL,
                   experiment_status VARCHAR(30) NULL,
+                  axis_codes_json JSON NULL,
                   unscheduled_since DATETIME NULL,
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -180,6 +190,9 @@ def ensure_schema_extensions(backend: Any) -> None:
             cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'unscheduled_since'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_experiment ADD COLUMN unscheduled_since DATETIME NULL AFTER experiment_status")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'axis_codes_json'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment ADD COLUMN axis_codes_json JSON NULL AFTER experiment_status")
             cursor.execute("SHOW COLUMNS FROM biz_experiment LIKE 'actual_start_time'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_experiment ADD COLUMN actual_start_time DATETIME NULL AFTER unscheduled_since")
@@ -226,7 +239,10 @@ def ensure_schema_extensions(backend: Any) -> None:
                   schedule_no VARCHAR(80) NULL,
                   task_no VARCHAR(50) NOT NULL,
                   experiment_no VARCHAR(50) NOT NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
                   device_name VARCHAR(100) NULL,
+                  axis_codes_json JSON NULL,
+                  axis_batch_no VARCHAR(50) NULL,
                   planned_hours DECIMAL(10,2) NULL,
                   run_status VARCHAR(30) NULL,
                   started_at DATETIME NULL,
@@ -242,6 +258,38 @@ def ensure_schema_extensions(backend: Any) -> None:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
             )
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_run LIKE 'axis_codes_json'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_run ADD COLUMN axis_codes_json JSON NULL AFTER device_name")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_run LIKE 'axis_batch_no'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_run ADD COLUMN axis_batch_no VARCHAR(50) NULL AFTER axis_codes_json")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_run LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_run ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS biz_experiment_run_step (
+                  step_id BIGINT NOT NULL AUTO_INCREMENT,
+                  run_no VARCHAR(80) NOT NULL,
+                  task_no VARCHAR(50) NOT NULL,
+                  experiment_no VARCHAR(50) NOT NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
+                  axis_code VARCHAR(20) NOT NULL,
+                  step_no INT NOT NULL,
+                  step_status VARCHAR(30) NULL,
+                  started_at DATETIME NULL,
+                  ended_at DATETIME NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (step_id),
+                  UNIQUE KEY uk_biz_experiment_run_step_axis (run_no, axis_code),
+                  KEY idx_biz_experiment_run_step_run (run_no),
+                  KEY idx_biz_experiment_run_step_task_exp (task_no, experiment_no),
+                  KEY idx_biz_experiment_run_step_status (step_status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """
+            )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS biz_experiment_run_tray (
@@ -249,6 +297,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                   run_no VARCHAR(80) NOT NULL,
                   task_no VARCHAR(50) NOT NULL,
                   experiment_no VARCHAR(50) NOT NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
                   tray_no VARCHAR(80) NOT NULL,
                   run_tray_status VARCHAR(30) NULL,
                   started_at DATETIME NULL,
@@ -262,6 +311,12 @@ def ensure_schema_extensions(backend: Any) -> None:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
             )
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_run_step LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_run_step ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_run_tray LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_run_tray ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS biz_mq_message_log (
@@ -274,6 +329,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                   lab_code VARCHAR(50) NULL,
                   task_no VARCHAR(50) NULL,
                   experiment_no VARCHAR(50) NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
                   qos TINYINT NULL,
                   retain_flag TINYINT NOT NULL DEFAULT 0,
                   payload_json JSON NULL,
@@ -298,6 +354,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                   event_type VARCHAR(50) NOT NULL,
                   task_no VARCHAR(50) NOT NULL,
                   experiment_no VARCHAR(50) NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
                   lab_code VARCHAR(50) NULL,
                   success_id VARCHAR(100) NULL,
                   event_time DATETIME NULL,
@@ -318,6 +375,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                   experiment_result_id BIGINT NOT NULL AUTO_INCREMENT,
                   task_no VARCHAR(50) NOT NULL,
                   experiment_no VARCHAR(50) NOT NULL,
+                  sub_experiment_code VARCHAR(80) NULL,
                   lab_code VARCHAR(50) NULL,
                   result_time DATETIME NOT NULL,
                   conclusion VARCHAR(50) NULL,
@@ -335,5 +393,14 @@ def ensure_schema_extensions(backend: Any) -> None:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
             )
+            cursor.execute("SHOW COLUMNS FROM biz_mq_message_log LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_mq_message_log ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_event LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_event ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
+            cursor.execute("SHOW COLUMNS FROM biz_experiment_result LIKE 'sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_experiment_result ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
         connection.commit()
     backend._schema_initialized = True

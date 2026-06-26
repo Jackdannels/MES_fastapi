@@ -49,6 +49,100 @@ const createSnapshot = () => ({
   [STORAGE_KEYS.devices]: [],
 });
 
+const createTwoTaskSnapshot = () => {
+  const snapshot = createSnapshot();
+  snapshot[STORAGE_KEYS.tasks] = [
+    ...snapshot[STORAGE_KEYS.tasks],
+    { code: "TASK-LAB-002", name: "盐雾任务二", test_type: "盐雾试验" },
+  ];
+  snapshot[STORAGE_KEYS.schedules] = [
+    ...snapshot[STORAGE_KEYS.schedules],
+    {
+      id: "schedule-lab-002",
+      task_code: "TASK-LAB-002",
+      experiment_code: "EXP-LAB-002",
+      device: "盐雾试验室",
+      start_at: "2026-04-02T12:00:00.000Z",
+      end_at: "2026-04-02T13:00:00.000Z",
+    },
+  ];
+  snapshot[STORAGE_KEYS.experiments] = [
+    ...snapshot[STORAGE_KEYS.experiments],
+    { task_code: "TASK-LAB-002", experiment_code: "EXP-LAB-002", experiment_name: "盐雾试验二" },
+  ];
+  snapshot[STORAGE_KEYS.experiment_trays] = [
+    ...snapshot[STORAGE_KEYS.experiment_trays],
+    { task_code: "TASK-LAB-002", experiment_code: "EXP-LAB-002", tray_code: "TRAY-LAB-002" },
+  ];
+  snapshot[STORAGE_KEYS.samples] = [
+    {
+      code: "SAMPLE-LAB-001",
+      location: "盐雾试验室",
+      status: "工装夹具安装",
+      flow_status: "工装夹具安装",
+      task_code: "TASK-LAB-001",
+      trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TRAY-LAB-001" }],
+    },
+    {
+      code: "SAMPLE-LAB-002",
+      location: "盐雾试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      task_code: "TASK-LAB-002",
+      trays: [{ quantity: 1, status: "送至实验室", tray_code: "TRAY-LAB-002" }],
+    },
+  ];
+  return snapshot;
+};
+
+const createSameTaskAxisScheduleSnapshot = () => {
+  const snapshot = createSnapshot();
+  snapshot[STORAGE_KEYS.tasks] = [
+    { code: "TASK-LAB-001", name: "冲击任务", test_type: "冲击试验" },
+  ];
+  snapshot[STORAGE_KEYS.schedules] = [
+    {
+      id: "schedule-lab-axis-x",
+      task_code: "TASK-LAB-001",
+      experiment_code: "EXP-LAB-001",
+      sub_experiment_code: "EXP-LAB-001-A",
+      axis_codes: ["X"],
+      device: "盐雾试验室",
+      start_at: "2026-04-02T09:30:00.000Z",
+      end_at: "2026-04-02T11:00:00.000Z",
+    },
+    {
+      id: "schedule-lab-axis-y",
+      task_code: "TASK-LAB-001",
+      experiment_code: "EXP-LAB-001",
+      sub_experiment_code: "EXP-LAB-001-B",
+      axis_codes: ["Y"],
+      device: "盐雾试验室",
+      start_at: "2026-04-02T12:00:00.000Z",
+      end_at: "2026-04-02T13:00:00.000Z",
+    },
+  ];
+  snapshot[STORAGE_KEYS.experiments] = [
+    {
+      task_code: "TASK-LAB-001",
+      experiment_code: "EXP-LAB-001",
+      experiment_name: "冲击试验",
+      axis_codes: ["X", "Y"],
+    },
+  ];
+  snapshot[STORAGE_KEYS.samples] = [
+    {
+      code: "SAMPLE-LAB-001",
+      location: "盐雾试验室",
+      status: "已到达实验室",
+      flow_status: "已到达实验室",
+      task_code: "TASK-LAB-001",
+      trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TRAY-LAB-001" }],
+    },
+  ];
+  return snapshot;
+};
+
 const mountLaboratoryHook = async ({ loadSnapshot }) => {
   let exposed;
   const TestHost = defineComponent({
@@ -143,6 +237,45 @@ describe("useLaboratoryPage realtime refresh", () => {
     await flushPromises();
 
     expect(exposed.recentTasks.value).toEqual([]);
+    wrapper.unmount();
+  });
+
+  test("blocks switching viewed tasks after the current task reaches fixture installation", async () => {
+    const loadSnapshot = vi.fn().mockResolvedValueOnce(createTwoTaskSnapshot());
+    const { exposed, wrapper } = await mountLaboratoryHook({ loadSnapshot });
+
+    expect(exposed.currentTask.value.taskCode).toBe("TASK-LAB-001");
+
+    exposed.openTaskList();
+    expect(exposed.pendingTaskCode.value).toBe("schedule-lab-001");
+
+    exposed.setPendingTaskCode("schedule-lab-002");
+    expect(exposed.pendingTaskCode.value).toBe("schedule-lab-001");
+
+    exposed.confirmCurrentTask();
+    await flushPromises();
+
+    expect(exposed.currentTask.value.taskCode).toBe("TASK-LAB-001");
+    wrapper.unmount();
+  });
+
+  test("blocks switching schedules within the same task after a tray is compared", async () => {
+    const loadSnapshot = vi.fn().mockResolvedValueOnce(createSameTaskAxisScheduleSnapshot());
+    const { exposed, wrapper } = await mountLaboratoryHook({ loadSnapshot });
+
+    expect(exposed.currentTask.value.taskCode).toBe("TASK-LAB-001");
+    expect(exposed.currentTask.value.id).toBe("schedule-lab-axis-x");
+
+    exposed.openTaskList();
+    expect(exposed.pendingTaskCode.value).toBe("schedule-lab-axis-x");
+
+    exposed.setPendingTaskCode("schedule-lab-axis-y");
+    expect(exposed.pendingTaskCode.value).toBe("schedule-lab-axis-x");
+
+    exposed.confirmCurrentTask();
+    await flushPromises();
+
+    expect(exposed.currentTask.value.id).toBe("schedule-lab-axis-x");
     wrapper.unmount();
   });
 });

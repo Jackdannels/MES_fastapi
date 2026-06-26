@@ -155,6 +155,7 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
             "run_no": "RUN-501",
             "task_code": "TASK-501",
             "experiment_code": "EXP-A",
+            "sub_experiment_code": "",
             "tray_code": "TP-501",
             "status": "实验已完成",
             "run_tray_status": "实验已完成",
@@ -164,6 +165,54 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
             "updated_at": "2026-05-19 10:00:00",
         }
     ]
+
+
+def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    sample = sample_with_history("实验进行中", "冲击一室", [], tray_code="TP-AXIS-501")
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-C", "tray_code": "TP-AXIS-501"}],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-AXIS-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-C",
+            "status": "实验进行中",
+        }
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+    captured = {}
+
+    def fake_complete_axis(snapshot, **kwargs):
+        captured.update(kwargs)
+        return {
+            "samples": snapshot["samples"],
+            "experiments": snapshot["experiments"],
+            "schedules": snapshot["schedules"],
+            "experimentRuns": snapshot["experiment_runs"],
+            "experimentRunTrays": snapshot["experiment_run_trays"],
+            "experimentRunSteps": snapshot.get("experiment_run_steps", []),
+        }
+
+    monkeypatch.setattr(laboratory_route, "complete_storage_laboratory_axis_step", fake_complete_axis)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-C/complete",
+        json={
+            "runNo": "RUN-AXIS-501",
+            "axisCode": "z+",
+            "subExperimentCode": "EXP-C-AXIS-Z",
+            "completedAt": "2026-06-24T10:00:00",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["sub_experiment_code"] == "EXP-C-AXIS-Z"
+    assert captured["axis_code"] == "z+"
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验进行中"
 
 
 def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_common_endpoint(monkeypatch):
@@ -191,6 +240,7 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
             "runNo": "RUN-HH2-501",
             "scheduleId": "SCH-HH2-501",
             "trayCodes": ["TP-HH2-501"],
+            "subExperimentCode": "EXP-D-AXIS-X",
             "startedAt": "2026-06-06T15:00:00",
             "plannedHours": 2,
             "plannedEndAt": "2026-06-06 17:00:00",
@@ -230,6 +280,7 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
             "schedule_id": "SCH-HH2-501",
             "task_code": "TASK-501",
             "experiment_code": "EXP-D",
+            "sub_experiment_code": "EXP-D-AXIS-X",
             "device": "高低温湿热二室",
             "device_name": "高低温湿热二室",
             "tray_codes": ["TP-HH2-501"],
@@ -248,6 +299,7 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
             "run_no": "RUN-HH2-501",
             "task_code": "TASK-501",
             "experiment_code": "EXP-D",
+            "sub_experiment_code": "EXP-D-AXIS-X",
             "tray_code": "TP-HH2-501",
             "status": "实验进行中",
             "run_tray_status": "实验进行中",
@@ -335,7 +387,7 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
     assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
-    assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_runs")[1]["status"] == "实验准备就绪"
 
@@ -398,7 +450,7 @@ def test_laboratory_complete_experiment_infers_batch_trays_from_run_tray_relatio
     assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验准备就绪"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
-    assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[0]["status"] == "实验已完成"
     assert storage.read("mes.experiment_run_trays") == [
         {
             "run_no": "RUN-501-A",
@@ -522,7 +574,7 @@ def test_laboratory_complete_experiment_ignores_other_experiment_completion_when
     assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.samples")[1]["trays"][0]["status"] == "实验已完成"
     assert storage.read("mes.experiments")[0]["status"] == "实验进行中"
-    assert storage.read("mes.schedules")[0]["status"] == "实验进行中"
+    assert storage.read("mes.schedules")[0]["status"] == "实验已完成"
 
 
 def test_laboratory_start_does_not_treat_multi_tray_sample_returned_status_as_all_trays_returned():

@@ -103,6 +103,80 @@
   outline: none;
 }
 
+.schedule-axis-selector {
+  grid-column: 1 / -1;
+}
+
+.schedule-axis-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.schedule-axis-block + .schedule-axis-block {
+  margin-top: 10px;
+}
+
+.schedule-axis-caption {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-axis-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.schedule-axis-chip:not(.is-readonly):hover,
+.schedule-axis-chip:not(.is-readonly):focus-visible {
+  border-color: rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  color: var(--accent);
+  outline: none;
+}
+
+.schedule-axis-chip.is-active {
+  border-color: rgba(34, 197, 94, 0.58);
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.2), var(--shadow);
+}
+
+.schedule-axis-chip.is-completed {
+  border-color: rgba(34, 197, 94, 0.72);
+  background: rgba(34, 197, 94, 0.22);
+  color: #bbf7d0;
+}
+
+.schedule-axis-chip.is-readonly {
+  cursor: default;
+}
+
+.schedule-axis-order {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* 留样内部汇总头部显示数量和老化级别。 */
 .retention-internal-header {
   display: flex;
@@ -754,6 +828,57 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 1.15;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.gantt-task-overflow:hover,
+.gantt-task-overflow:focus-visible {
+  filter: brightness(1.16);
+  outline: 2px solid rgba(255, 255, 255, 0.72);
+  outline-offset: -2px;
+}
+
+.gantt-overflow-list {
+  display: grid;
+  gap: 10px;
+}
+
+.gantt-overflow-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(160px, 1fr) minmax(180px, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-shadow: var(--shadow);
+}
+
+.gantt-overflow-row:hover,
+.gantt-overflow-row:focus-visible {
+  border-color: rgba(var(--industrial-accent-rgb), 0.48);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  outline: none;
+}
+
+.gantt-overflow-row__main {
+  font-weight: 800;
+}
+
+.gantt-overflow-row__meta,
+.gantt-overflow-row__time {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* 聚焦与 hover 态用于辅助当前排程定位。 */

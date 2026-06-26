@@ -11,6 +11,7 @@ from app.api.routes.storage import publish_storage_update
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
+from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import (
     acquire_laboratory_operation_locks,
@@ -53,6 +54,7 @@ LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
     "mes.schedules",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
 )
 LABORATORY_START_STORAGE_UPDATE_KEYS = (
     "mes.tasks",
@@ -61,6 +63,7 @@ LABORATORY_START_STORAGE_UPDATE_KEYS = (
     "mes.schedules",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
 )
 
 
@@ -75,7 +78,10 @@ class LaboratoryWithdrawRequest(BaseModel):
 class LaboratoryCompleteRequest(BaseModel):
     completed_at: str = Field(default="", alias="completedAt")
     run_no: str = Field(default="", alias="runNo")
+    sub_experiment_code: str = Field(default="", alias="subExperimentCode")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+    axis_code: str = Field(default="", alias="axisCode")
+    next_axis_code: str = Field(default="", alias="nextAxisCode")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -85,10 +91,14 @@ class LaboratoryStartRequest(BaseModel):
     lab_code: str = Field(default="", alias="labCode")
     lab_name: str = Field(default="", alias="labName")
     schedule_id: str = Field(default="", alias="scheduleId")
+    sub_experiment_code: str = Field(default="", alias="subExperimentCode")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
     started_at: str = Field(default="", alias="startedAt")
     planned_hours: float | int | None = Field(default=None, alias="plannedHours")
     planned_end_at: str = Field(default="", alias="plannedEndAt")
+    axis_codes: list[str] = Field(default_factory=list, alias="axisCodes")
+    axis_batch_no: int | str | None = Field(default=None, alias="axisBatchNo")
+    current_axis_code: str = Field(default="", alias="currentAxisCode")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -97,6 +107,7 @@ class LaboratoryOperationRequest(BaseModel):
     operation_type: str = Field(default="", alias="operationType")
     task_code: str = Field(default="", alias="taskCode")
     experiment_code: str = Field(default="", alias="experimentCode")
+    sub_experiment_code: str = Field(default="", alias="subExperimentCode")
     lab_code: str = Field(default="", alias="labCode")
     lab_name: str = Field(default="", alias="labName")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
@@ -128,6 +139,7 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
         "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
         "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
+        "experiment_run_steps": [dict(item) for item in as_list(payload.get("mes.experiment_run_steps")) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
         "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
@@ -145,28 +157,34 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
 
 
 def write_completion_snapshot(result: dict[str, Any]) -> None:
+    payload = {
+        "mes.samples": result["samples"],
+        "mes.experiments": result["experiments"],
+        "mes.schedules": result["schedules"],
+        "mes.experiment_runs": result["experimentRuns"],
+        "mes.experiment_run_trays": result["experimentRunTrays"],
+    }
+    if "experimentRunSteps" in result:
+        payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
     get_storage_backend().write_many(
-        {
-            "mes.samples": result["samples"],
-            "mes.experiments": result["experiments"],
-            "mes.schedules": result["schedules"],
-            "mes.experiment_runs": result["experimentRuns"],
-            "mes.experiment_run_trays": result["experimentRunTrays"],
-        }
+        payload
     )
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
 def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], result: dict[str, Any]) -> None:
+    payload = {
+        "mes.tasks": result["tasks"],
+        "mes.samples": merge_scoped_samples(original_snapshot["samples"], result["samples"]),
+        "mes.experiments": result["experiments"],
+        "mes.schedules": result["schedules"],
+        "mes.experiment_runs": result["experimentRuns"],
+        "mes.experiment_run_trays": result["experimentRunTrays"],
+    }
+    if "experimentRunSteps" in result:
+        payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
     get_storage_backend().write_many(
-        {
-            "mes.tasks": result["tasks"],
-            "mes.samples": merge_scoped_samples(original_snapshot["samples"], result["samples"]),
-            "mes.experiments": result["experiments"],
-            "mes.schedules": result["schedules"],
-            "mes.experiment_runs": result["experimentRuns"],
-            "mes.experiment_run_trays": result["experimentRunTrays"],
-        }
+        payload
     )
     publish_storage_update(list(LABORATORY_START_STORAGE_UPDATE_KEYS))
 
@@ -198,6 +216,7 @@ def apply_laboratory_operation(
                 operation_type=request.operation_type,
                 task_code=request.task_code,
                 experiment_code=request.experiment_code,
+                sub_experiment_code=request.sub_experiment_code,
                 lab_name=request.lab_name,
                 tray_codes=request.tray_codes,
                 occurred_at=request.occurred_at,
@@ -752,6 +771,7 @@ def start_current_experiment(
                     scoped_snapshot,
                     task_code=normalized_task_code,
                     experiment_code=normalized_experiment_code,
+                    sub_experiment_code=request.sub_experiment_code,
                     run_no=request.run_no,
                     lab_name=lab_name,
                     schedule_id=request.schedule_id,
@@ -759,6 +779,9 @@ def start_current_experiment(
                     started_at=request.started_at,
                     planned_hours=request.planned_hours,
                     planned_end_at=request.planned_end_at,
+                    axis_codes=request.axis_codes,
+                    axis_batch_no=request.axis_batch_no,
+                    current_axis_code=request.current_axis_code,
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -791,14 +814,27 @@ def complete_current_experiment(
             find_task(snapshot, normalized_task_code)
             current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
             try:
-                result = complete_storage_laboratory_experiment(
-                    snapshot,
-                    task_code=normalized_task_code,
-                    experiment_code=normalized_experiment_code,
-                    run_no=request.run_no,
-                    tray_codes=request.tray_codes,
-                    completed_at=request.completed_at,
-                )
+                if normalize_text(request.axis_code):
+                    result = complete_storage_laboratory_axis_step(
+                        snapshot,
+                        task_code=normalized_task_code,
+                        experiment_code=normalized_experiment_code,
+                        sub_experiment_code=request.sub_experiment_code,
+                        run_no=request.run_no,
+                        axis_code=request.axis_code,
+                        next_axis_code=request.next_axis_code,
+                        completed_at=request.completed_at,
+                    )
+                else:
+                    result = complete_storage_laboratory_experiment(
+                        snapshot,
+                        task_code=normalized_task_code,
+                        experiment_code=normalized_experiment_code,
+                        sub_experiment_code=request.sub_experiment_code,
+                        run_no=request.run_no,
+                        tray_codes=request.tray_codes,
+                        completed_at=request.completed_at,
+                    )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             write_completion_snapshot(result)

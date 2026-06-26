@@ -1114,6 +1114,73 @@ describe("taskOverviewModel", () => {
       }),
     );
   });
+
+  test("buildTrayOverviewRows keeps axis experiments partial when only some required axes are completed", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-AXIS", test_type: "振动试验 / 冲击试验" }],
+      experiments: [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-VIB",
+          experiment_name: "振动试验",
+          required_device: "振动二室",
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-IMPACT",
+          experiment_name: "冲击试验",
+          required_device: "冲击二室",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-AXIS", experiment_code: "EXP-VIB", tray_code: "TP-AXIS" },
+        { task_code: "TASK-AXIS", experiment_code: "EXP-IMPACT", tray_code: "TP-AXIS" },
+      ],
+      experimentRuns: [
+        {
+          run_no: "RUN-VIB-Z",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-VIB",
+          tray_codes: ["TP-AXIS"],
+          axis_codes: ["z+", "z-"],
+          status: "实验已完成",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-VIB-Z",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-VIB",
+          tray_code: "TP-AXIS",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      experimentRunSteps: [
+        { run_no: "RUN-VIB-Z", task_code: "TASK-AXIS", experiment_code: "EXP-VIB", axis_code: "z+", status: "实验已完成" },
+        { run_no: "RUN-VIB-Z", task_code: "TASK-AXIS", experiment_code: "EXP-VIB", axis_code: "z-", status: "实验已完成" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-AXIS",
+          code: "SP-AXIS",
+          location: "振动二室",
+          status: "实验进行中",
+          trays: [{ tray_code: "TP-AXIS", status: "实验进行中", quantity: 1 }],
+        },
+      ],
+      schedules: [
+        { task_code: "TASK-AXIS", experiment_code: "EXP-VIB", device: "振动二室", start_at: "2026-06-21T08:00:00" },
+        { task_code: "TASK-AXIS", experiment_code: "EXP-IMPACT", device: "冲击二室", start_at: "2026-06-22T08:00:00" },
+      ],
+      totalSlots: 1,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0]).toEqual(expect.objectContaining({
+      currentStatus: "振动试验部分完成 2/6轴",
+    }));
+  });
 });
 
 

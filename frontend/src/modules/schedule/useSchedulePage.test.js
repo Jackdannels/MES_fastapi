@@ -42,7 +42,7 @@ const buildSnapshot = () => ({
   "mes.devices": [{ code: "冲击一室" }, { code: "振动一室" }],
   "mes.experiments": [
     { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "冲击试验", required_device: "冲击一室", unscheduled_since: "" },
-    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验", required_device: "振动一室", unscheduled_since: "2099-03-18T09:00:00.000Z" },
+    { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "振动试验", required_device: "振动一室", axis_codes: ["y+"], unscheduled_since: "2099-03-18T09:00:00.000Z" },
     { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-C", experiment_name: "温度冲击试验", required_device: "振动一室", unscheduled_since: "2099-03-18T10:00:00.000Z" },
   ],
   "mes.experiment_trays": [
@@ -106,6 +106,7 @@ describe("useSchedulePage", () => {
     wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
     await settle(wrapper);
     wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.axis_codes = ["y+"];
     wrapper.vm.scheduleForm.device = "振动一室";
     wrapper.vm.scheduleForm.schedule_date = "2099-03-20";
     wrapper.vm.scheduleForm.time_slot = "morning";
@@ -173,6 +174,7 @@ describe("useSchedulePage", () => {
     wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
     await settle(wrapper);
     wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.axis_codes = ["y+"];
     wrapper.vm.scheduleForm.device = "振动一室";
     wrapper.vm.scheduleForm.schedule_date = "2099-03-21";
     wrapper.vm.scheduleForm.time_slot = "afternoon";
@@ -182,6 +184,31 @@ describe("useSchedulePage", () => {
 
     expect(wrapper.vm.scheduleConflictOpen).toBe(false);
     expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not keep an optimistic schedule when persistence fails", async () => {
+    mocks.persistSnapshot.mockRejectedValueOnce(new Error("Failed to write storage updates: 400 Bad Request，夹具安装后排程不可删除或重新排程。"));
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.axis_codes = ["y+"];
+    wrapper.vm.scheduleForm.device = "振动一室";
+    wrapper.vm.scheduleForm.schedule_date = "2099-03-21";
+    wrapper.vm.scheduleForm.time_slot = "afternoon";
+
+    await wrapper.vm.submitSchedule();
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.scheduleWarning).toContain("排程保存失败");
+    expect(wrapper.vm.scheduleWarning).toContain("夹具安装后排程不可删除或重新排程");
+    expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["schedule-1", "schedule-retention-1"]),
+    );
+    expect(wrapper.vm.scheduleRows).toHaveLength(2);
   });
 
   test("shows maintenance labs as disabled manual choices with a maintenance hint", async () => {
@@ -224,6 +251,7 @@ describe("useSchedulePage", () => {
     wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
     await settle(wrapper);
     wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.axis_codes = ["y+"];
     wrapper.vm.scheduleForm.device = "振动一室";
     wrapper.vm.scheduleForm.schedule_date = "2099-03-21";
     wrapper.vm.scheduleForm.time_slot = "afternoon";
@@ -268,6 +296,26 @@ describe("useSchedulePage", () => {
   test("blocks deleting or rescheduling a task detail schedule after the experiment has started", async () => {
     mocks.loadSnapshot.mockResolvedValue({
       ...buildSnapshot(),
+      "mes.schedules": [
+        ...buildSnapshot()["mes.schedules"],
+        {
+          id: "schedule-2",
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          device: "冲击二室",
+          start_at: "2099-03-21T00:00:00.000Z",
+          end_at: "2099-03-21T04:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      "mes.experiment_run_steps": [
+        {
+          task_code: "SYLU-2026-03-006",
+          experiment_code: "SYLU-2026-03-006-A",
+          axis_code: "z+",
+          status: "实验已完成",
+        },
+      ],
       "mes.experiment_runs": [
         {
           task_code: "SYLU-2026-03-006",
@@ -296,6 +344,12 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.editWarning).toBe("实验已开始，不能删除后重新排程");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
 
+    await wrapper.vm.openTaskDetailModal("schedule-2");
+    await settle(wrapper);
+
+    expect(wrapper.vm.taskDetailModalOpen).toBe(true);
+    expect(wrapper.vm.editWarning).toBe("");
+
     wrapper.unmount();
   });
 
@@ -306,6 +360,7 @@ describe("useSchedulePage", () => {
     wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
     await settle(wrapper);
     wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    wrapper.vm.scheduleForm.axis_codes = ["y+"];
     wrapper.vm.scheduleForm.device = "振动一室";
     wrapper.vm.scheduleForm.schedule_date = "2099-03-21";
     wrapper.vm.scheduleForm.time_slot = "afternoon";
@@ -459,6 +514,84 @@ describe("useSchedulePage", () => {
 
     expect(wrapper.vm.manualLabOptions).toEqual(["振动一室", "振动二室"]);
     expect(wrapper.vm.scheduleForm.device).toBe("");
+  });
+
+  test("locks later vibration axis scheduling to the first scheduled vibration lab", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.devices"] = [{ code: "振动一室" }, { code: "振动二室" }];
+    snapshot["mes.experiments"][1] = {
+      ...snapshot["mes.experiments"][1],
+      axis_codes: ["y+", "x-"],
+      required_device: "振动试验",
+    };
+    snapshot["mes.schedules"] = [
+      ...snapshot["mes.schedules"],
+      {
+        id: "schedule-vibration-axis",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-B",
+        device: "振动一室",
+        start_at: "2099-03-20T08:00:00.000Z",
+        end_at: "2099-03-20T09:00:00.000Z",
+        status: STATUS_SCHEDULED,
+        axis_codes: ["y+"],
+      },
+    ];
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { code: "LAB_VIB_1", name: "振动一室", type: "实验室", testTypeName: "振动试验" },
+      { code: "LAB_VIB_2", name: "振动二室", type: "实验室", testTypeName: "振动试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual(["振动一室"]);
+    expect(wrapper.vm.scheduleForm.device).toBe("振动一室");
+  });
+
+  test("locks later impact axis scheduling to the first scheduled impact lab", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.devices"] = [{ code: "冲击一室" }, { code: "冲击二室" }];
+    snapshot["mes.experiments"][0] = {
+      ...snapshot["mes.experiments"][0],
+      axis_codes: ["y+", "x-"],
+      required_device: "冲击试验",
+    };
+    snapshot["mes.schedules"] = [
+      ...snapshot["mes.schedules"],
+      {
+        id: "schedule-impact-axis",
+        task_code: "SYLU-2026-03-006",
+        experiment_code: "SYLU-2026-03-006-A",
+        device: "冲击一室",
+        start_at: "2099-03-21T08:00:00.000Z",
+        end_at: "2099-03-21T09:00:00.000Z",
+        status: STATUS_SCHEDULED,
+        axis_codes: ["y+"],
+      },
+    ];
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验" },
+      { code: "LAB_IMPACT_2", name: "冲击二室", type: "实验室", testTypeName: "冲击试验" },
+    ]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-A";
+    await settle(wrapper);
+
+    expect(wrapper.vm.manualLabOptions).toEqual(["冲击一室"]);
+    expect(wrapper.vm.scheduleForm.device).toBe("冲击一室");
   });
 
   test("does not auto-select the only matching lab when it is unavailable", async () => {

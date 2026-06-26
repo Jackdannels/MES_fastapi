@@ -63,7 +63,7 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
     return currentStatus;
   }
   if (currentStatus === "放置暂存间") {
-    return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
+    return currentStatus;
   }
   if (
     currentStatus === normalizedLabels.sampleStored

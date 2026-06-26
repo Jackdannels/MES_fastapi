@@ -391,7 +391,9 @@ const snapshot = ref({
   [STORAGE_KEYS.schedules]: [],
   [STORAGE_KEYS.experiments]: [],
   [STORAGE_KEYS.experiment_trays]: [],
+  [STORAGE_KEYS.experiment_runs]: [],
   [STORAGE_KEYS.experiment_run_trays]: [],
+  [STORAGE_KEYS.experiment_run_steps]: [],
   [STORAGE_KEYS.samples]: [],
   [STORAGE_KEYS.staging_events]: [],
 });
@@ -408,7 +410,9 @@ const STAGING_SNAPSHOT_KEYS = [
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_trays,
+  STORAGE_KEYS.experiment_run_steps,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.staging_events,
 ];

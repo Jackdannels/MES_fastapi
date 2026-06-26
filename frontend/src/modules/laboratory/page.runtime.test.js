@@ -832,6 +832,283 @@ describe("LaboratoryPage runtime", () => {
     expect(window.localStorage.setItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1", "冲击一室");
   });
 
+  test("publishes ready command with current schedule and axis context for an axis experiment", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "冲击二室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_2", name: "冲击二室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-021", name: "冲击轴向任务", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "z-"],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "TP-AXIS-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-axis-x-plus",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "冲击二室",
+          axis_codes: ["x+", "x-"],
+          axis_batch_no: "axis-batch-20260621",
+          sub_experiment_code: "axis-batch-20260621",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "已排程",
+        },
+        {
+          id: "schedule-impact-axis-z-minus",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "冲击二室",
+          axis_codes: ["z-"],
+          start_at: "2026-04-02T11:00:00.000Z",
+          end_at: "2026-04-02T11:30:00.000Z",
+          status: "已排程",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          location: "冲击二室",
+          owner: "周工",
+          status: "工装夹具安装",
+          flow_status: "工装夹具安装",
+          task_code: "SYLU-2026-06-021",
+          trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "工装夹具安装", tray_code: "TP-AXIS-001" }],
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const readyOperation = laboratoryOperationCalls()
+      .map(([, options]) => JSON.parse(String(options.body || "{}")))
+      .find((body) => body.operationType === "ready");
+    expect(readyOperation).toEqual(expect.objectContaining({
+      experimentCode: "SYLU-2026-06-021-A",
+      subExperimentCode: "axis-batch-20260621",
+      taskCode: "SYLU-2026-06-021",
+    }));
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    expect(JSON.parse(String(readyCall[1].body))).toEqual(expect.objectContaining({
+      axis_batch_no: "axis-batch-20260621",
+      axis_codes: ["x+", "x-"],
+      current_axis_code: "x+",
+      experiment_code: "SYLU-2026-06-021-A",
+      lab_code: "LAB_IMPACT_2",
+      schedule_id: "schedule-impact-axis-x-plus",
+      sub_experiment_code: "axis-batch-20260621",
+      task_code: "SYLU-2026-06-021",
+    }));
+  });
+
+  test("resends ready for the selected remaining axis schedule without persisting ready again", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+    ];
+    const taskCode = "SYLU-2026-07-001";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const completedAxisCodes = ["x+", "x-", "y+"];
+    const remainingAxisCodes = ["y-", "z+", "z-"];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: taskCode, name: "13652", status: "任务已完成", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+          axis_codes: [...completedAxisCodes, ...remainingAxisCodes],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-impact-completed",
+          run_no: "run-impact-completed",
+          schedule_id: "schedule-impact-completed",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "冲击一室",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+          tray_codes: [trayCode],
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: completedAxisCodes.map((axisCode, index) => ({
+        id: `step-${axisCode}`,
+        run_no: "run-impact-completed",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          run_no: "run-impact-completed",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: trayCode,
+          status: "实验已完成",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "实验准备就绪",
+          location: "冲击一室",
+          status: "实验准备就绪",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_experiment_code: experimentCode,
+              target_lab: "冲击一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-completed",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-06-26 08:00:00",
+          end_at: "2026-06-26 11:30:00",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+        },
+        {
+          id: "schedule-impact-remaining",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-06-26 12:00:00",
+          end_at: "2026-06-26 15:30:00",
+          status: "实验已完成",
+          axis_codes: remainingAxisCodes,
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-ready"]').text()).toContain("重新下发准备");
+    const operationCountBefore = laboratoryOperationCalls().length;
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    expect(laboratoryOperationCalls()).toHaveLength(operationCountBefore);
+    expect(JSON.parse(String(readyCall[1].body))).toEqual(expect.objectContaining({
+      axis_codes: remainingAxisCodes,
+      current_axis_code: "y-",
+      experiment_code: experimentCode,
+      lab_code: "LAB_IMPACT_1",
+      schedule_id: "schedule-impact-remaining",
+      task_code: taskCode,
+    }));
+  });
+
+  test("resends ready without an operation write when axis progress is unavailable", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-07-001", name: "13652", status: "任务已完成", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-07-001", experiment_code: "SYLU-2026-07-001-A", tray_code: "SYLU-2026-07-001-TP-001" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-07-001-SP-001",
+          flow_status: "实验准备就绪",
+          location: "冲击一室",
+          status: "实验准备就绪",
+          task_code: "SYLU-2026-07-001",
+          trays: [
+            {
+              quantity: 1,
+              status: "实验准备就绪",
+              target_experiment_code: "SYLU-2026-07-001-A",
+              target_lab: "冲击一室",
+              tray_code: "SYLU-2026-07-001-TP-001",
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-ready",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-06-26 12:00:00",
+          end_at: "2026-06-26 15:30:00",
+          status: "实验已完成",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-ready"]').text()).toContain("重新下发准备");
+    const operationCountBefore = laboratoryOperationCalls().length;
+    await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    expect(laboratoryOperationCalls()).toHaveLength(operationCountBefore);
+    expect(readyCall).toBeDefined();
+  });
+
   test("falls back to the known lab code for a non-salt workbench when master labs are unavailable", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     reactiveRoute.query = { lab: "冲击一室" };
@@ -1117,7 +1394,218 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-current");
   });
 
-  test("locks task actions after switching away from a task that has completed comparison", async () => {
+  test("blocks switching schedules of the same experiment after comparison", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-021", name: "振动多轴任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          experiment_name: "振动试验",
+          status: "已排程",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-021", experiment_code: "SYLU-2026-06-021-A", tray_code: "SYLU-2026-06-021-TP-001" },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-021-SP-001",
+          flow_status: "已到达实验室",
+          location: "振动一室",
+          owner: "周工",
+          status: "已到达实验室",
+          task_code: "SYLU-2026-06-021",
+          trays: [{ quantity: 1, status: "已到达实验室", tray_code: "SYLU-2026-06-021-TP-001" }],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-axis-1",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "振动一室",
+          axis_codes: ["y+", "z+"],
+          start_at: "2026-06-24T18:35:00",
+          end_at: "2026-06-24T20:35:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-axis-2",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "振动一室",
+          axis_codes: ["x+"],
+          start_at: "2026-06-25T08:00:00",
+          end_at: "2026-06-25T12:00:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-axis-3",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "SYLU-2026-06-021-A",
+          device: "振动一室",
+          axis_codes: ["x-", "y-", "z-"],
+          start_at: "2026-06-25T12:00:00",
+          end_at: "2026-06-25T18:00:00",
+          status: "已排程",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    expect(mounted.findAll(".laboratory-recent-task")).toHaveLength(3);
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    const taskRows = mounted.findAll(".laboratory-task-list-row");
+    expect(taskRows).toHaveLength(3);
+    expect(mounted.findAll(".laboratory-task-list-row.is-current")).toHaveLength(1);
+    expect(taskRows.map((row) => row.find("button").text()).filter((text) => text.includes("已选中"))).toHaveLength(1);
+
+    const nextScheduleButton = taskRows[1].find("button");
+    expect(nextScheduleButton.attributes("disabled")).toBeDefined();
+    await nextScheduleButton.trigger("click");
+    expect(mounted.findAll(".laboratory-task-list-row.is-pending")).toHaveLength(0);
+    expect(taskRows.map((row) => row.find("button").text()).filter((text) => text.includes("已选中"))).toHaveLength(1);
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    expect(mounted.findAll(".laboratory-task-list-row.is-current")).toHaveLength(1);
+  });
+
+  test("does not keep a completed axis batch as the current laboratory task", async () => {
+    vi.setSystemTime(new Date("2026-06-25T15:30:00+08:00"));
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+    ];
+    const taskCode = "SYLU-2026-07-001";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const completedAxisCodes = ["x+", "x-", "y+", "y-"];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: taskCode, name: "13652", status: "任务已完成", test_type: "冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          status: "实验已完成",
+          axis_codes: [...completedAxisCodes, "z+", "z-"],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-impact-xy",
+          run_no: "run-impact-xy",
+          schedule_id: "schedule-impact-xy",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "冲击一室",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+          tray_codes: [trayCode],
+          started_at: "2026-06-25 15:09:29",
+          ended_at: "2026-06-25 15:14:11",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: completedAxisCodes.map((axisCode, index) => ({
+        id: String(332 + index),
+        run_no: "run-impact-xy",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          run_no: "run-impact-xy",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: trayCode,
+          status: "实验已完成",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "实验进行中",
+          location: "冲击一室",
+          status: "实验进行中",
+          task_code: taskCode,
+          trays: [
+            {
+              fixtureReady: false,
+              fixture_ready: false,
+              quantity: 1,
+              status: "实验进行中",
+              target_experiment_code: experimentCode,
+              target_lab: "冲击一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-xy",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-06-25 15:08:00",
+          end_at: "2026-06-25 18:38:00",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+        },
+        {
+          id: "schedule-impact-z",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-06-26 08:00:00",
+          end_at: "2026-06-26 11:30:00",
+          status: "实验已完成",
+          axis_codes: ["z+", "z-"],
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    const recentTasks = mounted.findAll(".laboratory-recent-task");
+
+    expect(recentTasks).toHaveLength(1);
+    expect(recentTasks[0].text()).toContain("轴向：z+、z-");
+    expect(recentTasks[0].text()).not.toContain("轴向：x+、x-、y+、y-");
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
+    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toBe("已排程");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain(`当前托盘：${trayCode}`);
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("冲击试验部分完成 4/6轴");
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
+  });
+
+  test("blocks switching away from a task that has completed comparison", async () => {
     snapshotState[STORAGE_KEYS.samples][0] = {
       ...snapshotState[STORAGE_KEYS.samples][0],
       flow_status: "送至实验室",
@@ -1144,18 +1632,18 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    const nextTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]');
+    expect(nextTaskButton.attributes("disabled")).toBeDefined();
+    await nextTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await flushPageUpdates();
 
-    expect(mounted.text()).toContain("SYLU-2026-04-201 / 盐雾试验-B");
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await flushPageUpdates();
-    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(true);
   });
 
   test("allows another main laboratory to compare a different tray while a different laboratory is operating", async () => {
@@ -1677,7 +2165,7 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
   });
 
-  test("keeps the prepared task in place and blocks next-task operations after switching", async () => {
+  test("keeps the compared task in place and blocks selecting the next task", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
@@ -1727,18 +2215,18 @@ describe("LaboratoryPage runtime", () => {
     );
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    const nextTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]');
+    expect(nextTaskButton.attributes("disabled")).toBeDefined();
+    await nextTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
 
-    expect(mounted.text()).toContain("SYLU-2026-04-201 / 盐雾试验-B");
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
+    expect(mounted.text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await nextTick();
-    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(true);
 
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "已到达实验室",
@@ -1756,7 +2244,7 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  test("keeps the first prepared task locked when switching through unprepared tasks", async () => {
+  test("keeps the first compared task locked when selecting through unprepared tasks", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.tasks] = [
@@ -1832,20 +2320,21 @@ describe("LaboratoryPage runtime", () => {
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    const secondTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]');
+    expect(secondTaskButton.attributes("disabled")).toBeDefined();
+    await secondTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]').trigger("click");
+    const thirdTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]');
+    expect(thirdTaskButton.attributes("disabled")).toBeDefined();
+    await thirdTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
 
-    expect(mounted.text()).toContain("SYLU-2026-04-401 / 盐雾试验-C");
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
-    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
-    await nextTick();
-    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    expect(mounted.text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "已到达实验室",
@@ -1942,19 +2431,24 @@ describe("LaboratoryPage runtime", () => {
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    const secondTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]');
+    expect(secondTaskButton.attributes("disabled")).toBeDefined();
+    await secondTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
 
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]').trigger("click");
+    const thirdTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-401"]');
+    expect(thirdTaskButton.attributes("disabled")).toBeDefined();
+    await thirdTaskButton.trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
 
-    expect(mounted.text()).toContain("SYLU-2026-04-401 / 盐雾试验-C");
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+    expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
 
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "已到达实验室",
@@ -2551,6 +3045,7 @@ describe("LaboratoryPage runtime", () => {
     expect(JSON.parse(String(readyCall[1].body))).toEqual({
       experiment_code: "SYLU-2026-04-101-A",
       lab_code: "LAB_SALT",
+      schedule_id: "schedule-1",
       task_code: "SYLU-2026-04-101",
     });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
@@ -2968,6 +3463,7 @@ describe("LaboratoryPage runtime", () => {
           device: "高低温湿热二室",
           start_at: "2026-04-02T10:00:00.000Z",
           end_at: "2026-04-02T12:00:00.000Z",
+          sub_experiment_code: "hot-humid-segment-1",
         },
       ],
       [STORAGE_KEYS.samples]: [
@@ -3036,6 +3532,7 @@ describe("LaboratoryPage runtime", () => {
       runNo: expect.stringMatching(/^run-\d+-\d{3}$/),
       scheduleId: "schedule-hot-humid-2",
       startedAt: `${toDisplayedDateTime("2026-04-02T10:00:06.000Z")}:06`,
+      subExperimentCode: "hot-humid-segment-1",
       trayCodes: ["TP-GDW-001"],
     }));
     expect(laboratoryMqCalls()).toHaveLength(0);
@@ -3113,7 +3610,7 @@ describe("LaboratoryPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.get('[data-testid="laboratory-task-flow"]').text()).toContain("任务流程图");
-    expect(mounted.find('[data-testid="laboratory-task-flow-status"]').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toContain("已排程");
     expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("托盘流程图");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-001");
     expect(mounted.get('[data-testid="laboratory-tray-flow-list"]').classes()).toContain("laboratory-flow-steps--tray");
@@ -3867,5 +4364,481 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()?.textContent || "").toContain("TP-301-B");
     expect(findRunningModal()?.textContent || "").not.toContain("TP-301-A");
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
+  });
+
+  test("keeps axis continuation disabled across adjacent single-axis schedules", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+      { code: "LAB_SALT", name: "盐雾试验室", type: "实验室", testTypeName: "盐雾试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-201", name: "振动轴向任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-201", experiment_code: "SYLU-2026-06-201-A", tray_code: "TP-VIB-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-y-plus",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          device: "振动一室",
+          axis_codes: ["y+"],
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:00:00.000Z",
+          status: "实验进行中",
+        },
+        {
+          id: "schedule-vib-x-minus",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          device: "振动一室",
+          axis_codes: ["x-"],
+          start_at: "2026-04-02T10:00:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "已排程",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-201-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-201",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-001" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-AXIS",
+          run_no: "RUN-VIB-AXIS",
+          schedule_id: "schedule-vib-y-plus",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-001"],
+          status: "实验进行中",
+          axis_codes: ["z-", "y+", "x-"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:00:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-AXIS",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          axis_code: "z-",
+          step_no: 1,
+          status: "实验已完成",
+        },
+        {
+          run_no: "RUN-VIB-AXIS",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          axis_code: "y+",
+          step_no: 2,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-AXIS",
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          axis_code: "x-",
+          step_no: 3,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中 1/3轴");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("已完成：z-");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("未完成：y+、x-");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 x-");
+    expect(axisButton?.hasAttribute("disabled")).toBe(true);
+    expect(laboratoryCompleteCalls()).toHaveLength(0);
+  });
+
+  test("allows continuing the next axis within the same multi-axis schedule without an adjacent schedule", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-202", name: "振动同排程多轴任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-202", experiment_code: "SYLU-2026-06-202-A", tray_code: "TP-VIB-202" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-y-plus-x-minus",
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          device: "振动一室",
+          axis_codes: ["y+", "x-"],
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-202-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-202",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-202" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-SAME-SCHEDULE",
+          run_no: "RUN-VIB-SAME-SCHEDULE",
+          schedule_id: "schedule-vib-y-plus-x-minus",
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-202"],
+          status: "实验进行中",
+          axis_codes: ["y+", "x-"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-SAME-SCHEDULE",
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          axis_code: "y+",
+          step_no: 1,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-SAME-SCHEDULE",
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          axis_code: "x-",
+          step_no: 2,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+
+    expect(document.body.querySelector(".laboratory-recent-task")?.textContent || "").toContain("轴向：y+、x-");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 x-");
+    expect(axisButton?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("allows continuing axes from the active run schedule when the selected schedule row has different axes", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-205", name: "振动排程选择错位任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-205", experiment_code: "SYLU-2026-06-205-A", tray_code: "TP-VIB-205" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-other-axis",
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          device: "振动一室",
+          axis_codes: ["z-"],
+          start_at: "2026-04-02T09:00:00.000Z",
+          end_at: "2026-04-02T09:30:00.000Z",
+          status: "已排程",
+        },
+        {
+          id: "schedule-vib-active-multi-axis",
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          device: "振动一室",
+          axis_codes: ["x+", "y-"],
+          sub_experiment_code: "vib-current-axis-segment",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-205-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-205",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-205" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-ACTIVE-SCHEDULE",
+          run_no: "RUN-VIB-ACTIVE-SCHEDULE",
+          schedule_id: "schedule-vib-active-multi-axis",
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-205"],
+          status: "实验进行中",
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-ACTIVE-SCHEDULE",
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          axis_code: "x+",
+          step_no: 1,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-ACTIVE-SCHEDULE",
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          axis_code: "y-",
+          step_no: 2,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y-");
+    expect(axisButton?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("keeps axis continuation disabled when the active schedule has no multi-axis requirement", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-203", name: "振动轴向兼容任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-203", experiment_code: "SYLU-2026-06-203-A", tray_code: "TP-VIB-203" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-no-axis-field",
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          device: "振动一室",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-203-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-203",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-203" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-FALLBACK",
+          run_no: "RUN-VIB-FALLBACK",
+          schedule_id: "schedule-vib-no-axis-field",
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-203"],
+          status: "实验进行中",
+          axis_codes: ["x+", "y-"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-FALLBACK",
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          axis_code: "x+",
+          step_no: 1,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-FALLBACK",
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          axis_code: "y-",
+          step_no: 2,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y-");
+    expect(axisButton?.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("treats the main completion action as current-axis completion for a running multi-axis experiment", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-204", name: "振动当前轴完成任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-204", experiment_code: "SYLU-2026-06-204-A", tray_code: "TP-VIB-204" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-current-axis",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          device: "振动一室",
+          axis_codes: ["x+", "y-"],
+          sub_experiment_code: "vib-current-axis-segment",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-204-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-204",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-204" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-CURRENT-AXIS",
+          run_no: "RUN-VIB-CURRENT-AXIS",
+          schedule_id: "schedule-vib-current-axis",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-204"],
+          status: "实验进行中",
+          axis_codes: ["x+", "y-"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-CURRENT-AXIS",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          axis_code: "x+",
+          step_no: 1,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-CURRENT-AXIS",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          axis_code: "y-",
+          step_no: 2,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    const completeButton = document.body.querySelector('[data-testid="laboratory-complete-experiment"]');
+
+    expect(completeButton?.textContent || "").toContain("当前轴完成");
+    completeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitForLaboratoryCompleteCount(1);
+
+    const completeBody = JSON.parse(String(laboratoryCompleteCalls().at(-1)?.[1]?.body || "{}"));
+    expect(completeBody).toEqual(expect.objectContaining({
+      axisCode: "x+",
+      runNo: "RUN-VIB-CURRENT-AXIS",
+      subExperimentCode: "vib-current-axis-segment",
+      trayCodes: ["TP-VIB-204"],
+    }));
+    expect(completeBody.nextAxisCode).toBe("");
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import {
+  buildAxisPartialProgressStatus,
+  resolveAxisProgress,
+} from "./axisProgress";
 import { experimentScopeIsTerminal } from "./model";
 
 describe("experiment progress model", () => {
@@ -96,5 +100,95 @@ describe("experiment progress model", () => {
       taskCode: "TASK-HISTORY-TEXT",
       experimentCode: "EXP-SALT",
     })).toBe(false);
+  });
+
+  test("does not treat a completed axis run as terminal when required axes remain", () => {
+    expect(experimentScopeIsTerminal({
+      experimentRunTrays: [
+        {
+          run_no: "RUN-VIB-Z",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-VIB",
+          tray_code: "TP-001",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      experimentRunSteps: [
+        { run_no: "RUN-VIB-Z", task_code: "TASK-AXIS", experiment_code: "EXP-VIB", axis_code: "z+", status: "实验已完成" },
+        { run_no: "RUN-VIB-Z", task_code: "TASK-AXIS", experiment_code: "EXP-VIB", axis_code: "z-", status: "实验已完成" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-AXIS", experiment_code: "EXP-VIB", tray_code: "TP-001" },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-VIB",
+          experiment_name: "振动试验",
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+      ],
+      samples: [],
+      taskCode: "TASK-AXIS",
+      experimentCode: "EXP-VIB",
+    })).toBe(false);
+  });
+
+  test("uses completed run axis codes when axis step rows are unavailable", () => {
+    const progress = resolveAxisProgress({
+      experimentRuns: [
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_codes: ["TP-AXIS-001"],
+          axis_codes: ["x+", "x-", "y+"],
+          status: "实验已完成",
+        },
+      ],
+      experimentRunSteps: [],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-AXIS-001",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_code: "TP-AXIS-001",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+      ],
+      taskCode: "TASK-AXIS",
+      experimentCode: "EXP-AXIS",
+      trayCode: "TP-AXIS-001",
+    });
+
+    expect(progress.completedAxisCodes).toEqual(["x+", "x-", "y+"]);
+    expect(buildAxisPartialProgressStatus("冲击试验", progress)).toBe("冲击试验部分完成 3/6轴");
+  });
+
+  test("does not build a partial axis label when no axis has completed", () => {
+    const progress = resolveAxisProgress({
+      experiments: [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+      ],
+      taskCode: "TASK-AXIS",
+      experimentCode: "EXP-AXIS",
+      trayCode: "TP-AXIS-001",
+    });
+
+    expect(progress.completedCount).toBe(0);
+    expect(buildAxisPartialProgressStatus("冲击试验", progress)).toBe("");
   });
 });

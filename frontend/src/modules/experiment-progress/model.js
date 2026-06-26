@@ -1,4 +1,5 @@
 import { RETURNED_STATUS, isExperimentCompletedStatus } from "@/lib/statusNormalization";
+import { isAxisProgressIncomplete, resolveAxisProgress } from "./axisProgress";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -34,8 +35,30 @@ const buildTrayExperimentCountMap = (experimentTrays) => {
   return countMap;
 };
 
-const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays = [], taskCode, trayCode }) =>
-  asArray(experimentRunTrays).some((entry) =>
+const trayExperimentRunIsCompleted = ({
+  experimentCode,
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays = [],
+  experiments = [],
+  schedules = [],
+  taskCode,
+  trayCode,
+}) => {
+  const axisProgress = resolveAxisProgress({
+    experimentCode,
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    schedules,
+    taskCode,
+    trayCode,
+  });
+  if (isAxisProgressIncomplete(axisProgress)) {
+    return false;
+  }
+  return asArray(experimentRunTrays).some((entry) =>
     resolveTaskCode(entry) === taskCode
     && resolveTrayCode(entry) === trayCode
     && resolveExperimentCode(entry) === experimentCode
@@ -46,6 +69,7 @@ const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays = [],
       || resolveRunStatus(entry) === RETURNED_STATUS
     ),
   );
+};
 
 const sampleTouchesTray = (sample, trayCode) =>
   asArray(sample?.trays).some((tray) => resolveTrayCode(tray) === trayCode);
@@ -92,22 +116,38 @@ const trayHasUnsharedCompletedStatus = ({ experimentTrays, samples = [], taskCod
 
 const experimentScopedTrayIsTerminal = ({
   experimentCode,
+  experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
+  experiments = [],
   samples = [],
+  schedules = [],
   taskCode,
   trayCode,
 }) =>
-  trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode })
+  trayExperimentRunIsCompleted({
+    experimentCode,
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    schedules,
+    taskCode,
+    trayCode,
+  })
   || trayHasReturnedStatus({ samples, taskCode, trayCode })
   || trayHasUnsharedCompletedStatus({ experimentTrays, samples, taskCode, trayCode });
 
 const experimentScopeIsTerminal = ({
   experiments = [],
   experimentCode,
+  experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
   samples = [],
+  schedules = [],
   taskCode,
 }) => {
   const normalizedTaskCode = normalizeText(taskCode);
@@ -129,9 +169,13 @@ const experimentScopeIsTerminal = ({
   return Array.from(trayCodes).every((trayCode) =>
     experimentScopedTrayIsTerminal({
       experimentCode: normalizedExperimentCode,
+      experimentRuns,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
+      experiments,
       samples,
+      schedules,
       taskCode: normalizedTaskCode,
       trayCode,
     }),

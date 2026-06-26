@@ -7,6 +7,7 @@ from app.core.mysql_storage_mappers import (
     build_device_insert_row,
     build_experiment_insert_row,
     build_experiment_run_insert_row,
+    build_experiment_run_step_insert_row,
     build_experiment_run_tray_insert_row,
     build_experiment_sample_insert_row,
     build_experiment_tray_insert_row,
@@ -62,16 +63,50 @@ def replace_experiment_run_trays(cursor, experiment_run_trays: list[dict[str, An
     cursor.executemany(
         """
         INSERT INTO biz_experiment_run_tray (
-          run_no, task_no, experiment_no, tray_no, run_tray_status,
+          run_no, task_no, experiment_no, sub_experiment_code, tray_no, run_tray_status,
           started_at, ended_at, created_at, updated_at
         ) VALUES (
-          %(run_no)s, %(task_no)s, %(experiment_no)s, %(tray_no)s, %(run_tray_status)s,
+          %(run_no)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(tray_no)s, %(run_tray_status)s,
           %(started_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
         )
         ON DUPLICATE KEY UPDATE
           task_no = VALUES(task_no),
           experiment_no = VALUES(experiment_no),
+          sub_experiment_code = VALUES(sub_experiment_code),
           run_tray_status = VALUES(run_tray_status),
+          started_at = VALUES(started_at),
+          ended_at = VALUES(ended_at),
+          updated_at = VALUES(updated_at)
+        """,
+        rows,
+    )
+
+
+def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, Any]]) -> None:
+    rows = [
+        build_experiment_run_step_insert_row(step)
+        for step in experiment_run_steps
+        if normalize_text(step.get("run_no") or step.get("runNo"))
+        and normalize_text(step.get("axis_code") or step.get("axisCode"))
+    ]
+    cursor.execute("DELETE FROM biz_experiment_run_step")
+    if not rows:
+        return
+    cursor.executemany(
+        """
+        INSERT INTO biz_experiment_run_step (
+          run_no, task_no, experiment_no, sub_experiment_code, axis_code, step_no, step_status,
+          started_at, ended_at, created_at, updated_at
+        ) VALUES (
+          %(run_no)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(axis_code)s, %(step_no)s, %(step_status)s,
+          %(started_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
+        )
+        ON DUPLICATE KEY UPDATE
+          task_no = VALUES(task_no),
+          experiment_no = VALUES(experiment_no),
+          sub_experiment_code = VALUES(sub_experiment_code),
+          step_no = VALUES(step_no),
+          step_status = VALUES(step_status),
           started_at = VALUES(started_at),
           ended_at = VALUES(ended_at),
           updated_at = VALUES(updated_at)
@@ -98,10 +133,10 @@ def replace_experiments(cursor, experiments: list[dict[str, Any]]) -> None:
         """
         INSERT INTO biz_experiment (
           experiment_no, task_id, task_no, experiment_name, required_device, priority,
-          planned_hours, experiment_status, unscheduled_since, created_at, updated_at
+          planned_hours, experiment_status, axis_codes_json, unscheduled_since, created_at, updated_at
         ) VALUES (
           %(experiment_no)s, %(task_id)s, %(task_no)s, %(experiment_name)s, %(required_device)s, %(priority)s,
-          %(planned_hours)s, %(experiment_status)s, %(unscheduled_since)s, %(created_at)s, %(updated_at)s
+          %(planned_hours)s, %(experiment_status)s, %(axis_codes_json)s, %(unscheduled_since)s, %(created_at)s, %(updated_at)s
         )
         ON DUPLICATE KEY UPDATE
           task_id = VALUES(task_id),
@@ -111,6 +146,7 @@ def replace_experiments(cursor, experiments: list[dict[str, Any]]) -> None:
           priority = VALUES(priority),
           planned_hours = VALUES(planned_hours),
           experiment_status = VALUES(experiment_status),
+          axis_codes_json = VALUES(axis_codes_json),
           unscheduled_since = VALUES(unscheduled_since),
           updated_at = VALUES(updated_at)
         """,
@@ -220,21 +256,24 @@ def replace_schedules(cursor, schedules: list[dict[str, Any]]) -> None:
     cursor.executemany(
         """
         INSERT INTO biz_schedule (
-          schedule_no, task_id, task_no, experiment_no, schedule_type, lab_id, equipment_id, temp_room_id,
-          device_name, schedule_start_time, schedule_end_time, planned_hours, schedule_status,
+          schedule_no, task_id, task_no, experiment_no, sub_experiment_code, schedule_type, lab_id, equipment_id, temp_room_id,
+          device_name, axis_codes_json, axis_batch_no, schedule_start_time, schedule_end_time, planned_hours, schedule_status,
           is_retention, created_by, remark
         ) VALUES (
-          %(schedule_no)s, %(task_id)s, %(task_no)s, %(experiment_no)s, %(schedule_type)s, %(lab_id)s, NULL, NULL,
-          %(device_name)s, %(schedule_start_time)s, %(schedule_end_time)s, %(planned_hours)s, %(schedule_status)s,
+          %(schedule_no)s, %(task_id)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(schedule_type)s, %(lab_id)s, NULL, NULL,
+          %(device_name)s, %(axis_codes_json)s, %(axis_batch_no)s, %(schedule_start_time)s, %(schedule_end_time)s, %(planned_hours)s, %(schedule_status)s,
           %(is_retention)s, NULL, %(remark)s
         )
         ON DUPLICATE KEY UPDATE
           task_id = VALUES(task_id),
           task_no = VALUES(task_no),
           experiment_no = VALUES(experiment_no),
+          sub_experiment_code = VALUES(sub_experiment_code),
           schedule_type = VALUES(schedule_type),
           lab_id = VALUES(lab_id),
           device_name = VALUES(device_name),
+          axis_codes_json = VALUES(axis_codes_json),
+          axis_batch_no = VALUES(axis_batch_no),
           schedule_start_time = VALUES(schedule_start_time),
           schedule_end_time = VALUES(schedule_end_time),
           planned_hours = VALUES(planned_hours),
@@ -264,17 +303,20 @@ def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, re
         cursor.executemany(
             """
             INSERT INTO biz_experiment_run (
-              run_no, schedule_no, task_no, experiment_no, device_name, planned_hours,
+              run_no, schedule_no, task_no, experiment_no, sub_experiment_code, device_name, axis_codes_json, axis_batch_no, planned_hours,
               run_status, started_at, planned_end_at, ended_at, created_at, updated_at
             ) VALUES (
-              %(run_no)s, %(schedule_no)s, %(task_no)s, %(experiment_no)s, %(device_name)s, %(planned_hours)s,
+              %(run_no)s, %(schedule_no)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(device_name)s, %(axis_codes_json)s, %(axis_batch_no)s, %(planned_hours)s,
               %(run_status)s, %(started_at)s, %(planned_end_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
             )
             ON DUPLICATE KEY UPDATE
               schedule_no = VALUES(schedule_no),
               task_no = VALUES(task_no),
               experiment_no = VALUES(experiment_no),
+              sub_experiment_code = VALUES(sub_experiment_code),
               device_name = VALUES(device_name),
+              axis_codes_json = VALUES(axis_codes_json),
+              axis_batch_no = VALUES(axis_batch_no),
               planned_hours = VALUES(planned_hours),
               run_status = VALUES(run_status),
               started_at = VALUES(started_at),

@@ -66,6 +66,7 @@ function useSamplesFlow() {
     STORAGE_KEYS.samples,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_steps,
     STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.schedules,
@@ -75,6 +76,7 @@ function useSamplesFlow() {
   const rawSamples = ref([]);
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
+  const rawExperimentRunSteps = ref([]);
   const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSchedules = ref([]);
@@ -190,6 +192,7 @@ function useSamplesFlow() {
     const status = String(trayRow?.status || detailSampleTray.value?.status || "").trim();
     return buildTrayFlowView({
       experimentRuns: rawExperimentRuns.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
@@ -249,6 +252,11 @@ function useSamplesFlow() {
       );
       rawExperiments.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiments], rawExperiments.value, preserveExisting);
       rawExperimentRuns.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiment_runs], rawExperimentRuns.value, preserveExisting);
+      rawExperimentRunSteps.value = selectArraySnapshot(
+        snapshot?.[STORAGE_KEYS.experiment_run_steps],
+        rawExperimentRunSteps.value,
+        preserveExisting,
+      );
       rawExperimentRunTrays.value = selectArraySnapshot(
         snapshot?.[STORAGE_KEYS.experiment_run_trays],
         rawExperimentRunTrays.value,
@@ -576,6 +584,7 @@ function useSamplesFlow() {
       STORAGE_KEYS.samples,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_steps,
       STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.schedules,
@@ -617,6 +626,7 @@ function useSamplesFlow() {
     rawSamples,
     rawExperiments,
     rawExperimentRuns,
+    rawExperimentRunSteps,
     rawExperimentRunTrays,
     rawExperimentTrays,
     rawSchedules,

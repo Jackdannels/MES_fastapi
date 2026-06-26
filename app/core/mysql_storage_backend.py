@@ -43,6 +43,7 @@ from app.core.mysql_storage_snapshot import (
 from app.core.mysql_storage_loaders import (
     load_devices,
     load_experiment_run_trays,
+    load_experiment_run_steps,
     load_experiment_runs,
     load_experiment_samples,
     load_experiment_trays,
@@ -56,6 +57,7 @@ from app.core.mysql_storage_replacers import (
     replace_experiments,
     replace_experiment_runs,
     replace_experiment_run_trays,
+    replace_experiment_run_steps,
     replace_experiment_samples,
     replace_experiment_trays,
     replace_schedules,
@@ -88,6 +90,7 @@ from app.core.mysql_storage_sample_load import load_samples
 from app.core.mysql_storage_mappers import (
     build_experiment_insert_row,
     build_experiment_run_insert_row,
+    build_experiment_run_step_insert_row,
     build_experiment_run_tray_insert_row,
     build_experiment_run_tray_insert_rows,
     build_experiment_sample_insert_row,
@@ -96,6 +99,7 @@ from app.core.mysql_storage_mappers import (
     build_schedule_insert_row,
     build_storage_experiment_item,
     build_storage_experiment_run_item,
+    build_storage_experiment_run_step_item,
     build_storage_experiment_run_tray_item,
     build_storage_experiment_sample_item,
     build_storage_experiment_tray_item,
@@ -154,6 +158,7 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.experiments",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
@@ -241,6 +246,9 @@ class MySQLMesStorageBackend(StorageBackend):
     def _replace_experiment_run_trays(self, cursor, experiment_run_trays: list[dict[str, Any]]) -> None:
         replace_experiment_run_trays(cursor, experiment_run_trays)
 
+    def _replace_experiment_run_steps(self, cursor, experiment_run_steps: list[dict[str, Any]]) -> None:
+        replace_experiment_run_steps(cursor, experiment_run_steps)
+
     def _replace_experiment_runs(self, cursor, experiment_runs: list[dict[str, Any]], *, replace_trays: bool = True) -> None:
         replace_experiment_runs(cursor, experiment_runs, replace_trays=replace_trays)
 
@@ -282,6 +290,9 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def _load_experiment_run_trays(self, cursor) -> list[dict[str, Any]]:
         return load_experiment_run_trays(cursor)
+
+    def _load_experiment_run_steps(self, cursor) -> list[dict[str, Any]]:
+        return load_experiment_run_steps(cursor)
 
     def _load_devices(self, cursor) -> list[dict[str, Any]]:
         return load_devices(cursor)
@@ -358,6 +369,8 @@ class MySQLMesStorageBackend(StorageBackend):
                     )
                 if "mes.experiment_run_trays" in relational_updates:
                     self._replace_experiment_run_trays(cursor, relational_updates["mes.experiment_run_trays"] or [])
+                if "mes.experiment_run_steps" in relational_updates:
+                    self._replace_experiment_run_steps(cursor, relational_updates["mes.experiment_run_steps"] or [])
                 if "mes.experiment_trays" in relational_updates:
                     self._replace_experiment_trays(cursor, relational_updates["mes.experiment_trays"] or [])
                 if "mes.experiment_samples" in relational_updates:
@@ -385,6 +398,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     experiments = self._load_experiments(cursor)
                     experiment_runs = self._load_experiment_runs(cursor)
                     experiment_run_trays = self._load_experiment_run_trays(cursor)
+                    experiment_run_steps = self._load_experiment_run_steps(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
                     samples = self._load_samples(
@@ -413,6 +427,7 @@ class MySQLMesStorageBackend(StorageBackend):
                         "mes.experiments": experiments,
                         "mes.experiment_runs": experiment_runs,
                         "mes.experiment_run_trays": experiment_run_trays,
+                        "mes.experiment_run_steps": experiment_run_steps,
                         "mes.experiment_trays": experiment_trays,
                         "mes.experiment_samples": experiment_samples,
                     }
@@ -440,6 +455,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     experiments = self._load_experiments(cursor)
                     experiment_runs = self._load_experiment_runs(cursor)
                     experiment_run_trays = self._load_experiment_run_trays(cursor)
+                    experiment_run_steps = self._load_experiment_run_steps(cursor)
                     experiment_trays = self._load_experiment_trays(cursor)
                     experiment_samples = self._load_experiment_samples(cursor)
                     samples = self._load_samples(
@@ -475,6 +491,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         return experiment_runs
                     if key == "mes.experiment_run_trays":
                         return experiment_run_trays
+                    if key == "mes.experiment_run_steps":
+                        return experiment_run_steps
                     if key == "mes.experiment_trays":
                         return experiment_trays
                     if key == "mes.experiment_samples":

@@ -7,6 +7,7 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { formatLocalDateTime } from "@/lib/dateTime";
 import {
   analyzeTaskTrayConflict,
+  AXIS_CODE_OPTIONS,
   buildConflictRows,
   buildExperimentOptions,
   buildGanttRows,
@@ -31,6 +32,7 @@ import {
   PLANNED_DURATION_MAX_DAYS,
   PLANNED_DURATION_MAX_HOURS,
   resolveLegalManualScheduleState,
+  resolveAxisScheduleDeviceLock,
   resolveScheduleTimes,
   STATUS_SCHEDULED,
   toLocalDateValue,
@@ -52,6 +54,7 @@ function useSchedulePage() {
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_runs,
+    STORAGE_KEYS.experiment_run_steps,
     STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.samples,
@@ -64,6 +67,7 @@ function useSchedulePage() {
   const rawConflicts = ref([]);
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
+  const rawExperimentRunSteps = ref([]);
   const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSamples = ref([]);
@@ -82,6 +86,7 @@ function useSchedulePage() {
 
   const scheduleDrawer = useDialogState();
   const taskDetailModal = useDialogState();
+  const ganttOverflowModal = useDialogState();
   const scheduleConflictModal = useDialogState();
   const exceptionModal = useDialogState();
   const pendingScheduleDraft = ref(null);
@@ -100,6 +105,7 @@ function useSchedulePage() {
     [STORAGE_KEYS.devices]: rawDevices.value,
     [STORAGE_KEYS.experiments]: rawExperiments.value,
     [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
+    [STORAGE_KEYS.experiment_run_steps]: rawExperimentRunSteps.value,
     [STORAGE_KEYS.samples]: rawSamples.value,
     [STORAGE_KEYS.schedules]: rawSchedules.value,
     [STORAGE_KEYS.streams]: rawStreams.value,
@@ -139,6 +145,7 @@ function useSchedulePage() {
     buildExperimentOptions({
       taskCode: scheduleForm.value.task_code,
       experiments: rawExperiments.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,
       tasks: rawTasks.value,
@@ -152,6 +159,87 @@ function useSchedulePage() {
     () =>
       experimentOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.experiment_code)) || null,
   );
+  const axisOptionByCode = new Map(AXIS_CODE_OPTIONS.map((option) => [option.code, option]));
+  const buildScheduleAxisOption = (axisCode) => {
+    const normalizedAxisCode = normalizeText(axisCode).toLowerCase();
+    return axisOptionByCode.get(normalizedAxisCode) || {
+      code: normalizedAxisCode,
+      label: normalizedAxisCode.toUpperCase(),
+      testId: normalizedAxisCode.replace("+", "plus").replace("-", "minus"),
+    };
+  };
+  const scheduleAxisRequirementOptions = computed(() => {
+    const axisCodes = Array.isArray(selectedExperimentOption.value?.axisCodes)
+      ? selectedExperimentOption.value.axisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
+      : [];
+    return axisCodes.map(buildScheduleAxisOption);
+  });
+  const scheduleCompletedAxisOptions = computed(() => {
+    const completedAxisCodes = Array.isArray(selectedExperimentOption.value?.completedAxisCodes)
+      ? selectedExperimentOption.value.completedAxisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
+      : [];
+    return completedAxisCodes.map(buildScheduleAxisOption);
+  });
+  const scheduleAxisOptions = computed(() => {
+    const remainingAxisCodes = Array.isArray(selectedExperimentOption.value?.remainingAxisCodes)
+      ? selectedExperimentOption.value.remainingAxisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
+      : [];
+    return remainingAxisCodes.map(buildScheduleAxisOption);
+  });
+  const scheduleAxisCodes = computed(() => {
+    const formAxisCodes = Array.isArray(scheduleForm.value.axis_codes)
+      ? scheduleForm.value.axis_codes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
+      : [];
+    return formAxisCodes;
+  });
+  const scheduleAxisDisplayOptions = computed(() => scheduleAxisCodes.value.map(buildScheduleAxisOption));
+  const showAxisSelector = computed(() =>
+    Boolean(
+      selectedExperimentOption.value?.supportsAxisScheduling &&
+      (scheduleAxisRequirementOptions.value.length > 0 || scheduleAxisOptions.value.length > 0),
+    ),
+  );
+  const lockedAxisScheduleDevice = computed(() =>
+    resolveAxisScheduleDeviceLock({
+      experimentCode: scheduleForm.value.experiment_code,
+      experiments: rawExperiments.value,
+      form: scheduleForm.value,
+      schedules: activeSchedules.value,
+    }),
+  );
+  const selectedAxisLabel = computed(() =>
+    scheduleAxisCodes.value
+      .map((code) => normalizeText(code).toUpperCase())
+      .filter(Boolean)
+      .join(" / "),
+  );
+  const normalizeScheduleAxisCodes = (schedule) =>
+    (Array.isArray(schedule?.axis_codes ?? schedule?.axisCodes) ? schedule?.axis_codes ?? schedule?.axisCodes : [])
+      .map((code) => normalizeText(code).toLowerCase())
+      .filter(Boolean);
+  const uniqueTextList = (values) => {
+    const seen = new Set();
+    return (Array.isArray(values) ? values : [])
+      .map(normalizeText)
+      .filter((value) => {
+        if (!value || seen.has(value)) {
+          return false;
+        }
+        seen.add(value);
+        return true;
+      });
+  };
+  const formatMergedPlannedHours = (schedules) => {
+    const values = (Array.isArray(schedules) ? schedules : []).map((schedule) => Number.parseFloat(schedule?.planned_hours));
+    if (values.length > 0 && values.every((value) => Number.isFinite(value))) {
+      return String(Math.round(values.reduce((sum, value) => sum + value, 0) * 100) / 100);
+    }
+    return uniqueTextList((Array.isArray(schedules) ? schedules : []).map((schedule) => schedule?.planned_hours)).join(" / ") || "-";
+  };
+  const findExperimentLabel = (experimentCode) =>
+    normalizeText(
+      rawExperiments.value.find((entry) => normalizeText(entry?.experiment_code) === normalizeText(experimentCode))?.experiment_name,
+    );
 
   const findDevice = (deviceCode) =>
     rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(deviceCode));
@@ -261,10 +349,10 @@ function useSchedulePage() {
   const manualLabOptionItems = computed(() =>
     buildLabOptionItems({
       options: buildLabOptions({
-      masterLabs: masterLabs.value,
-      selectedDevice: normalizeText(scheduleForm.value.device),
-      testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
-    }),
+        masterLabs: masterLabs.value,
+        selectedDevice: normalizeText(scheduleForm.value.device),
+        testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
+      }).filter((option) => !lockedAxisScheduleDevice.value || normalizeText(option) === lockedAxisScheduleDevice.value),
       selectedDevice: normalizeText(scheduleForm.value.device),
     }),
   );
@@ -276,6 +364,7 @@ function useSchedulePage() {
   );
   const manualTimeSlotOptions = computed(() =>
     buildManualTimeSlotOptions({
+      device: scheduleForm.value.device,
       now: now.value,
       scheduleDate: scheduleForm.value.schedule_date,
       schedules: activeSchedules.value,
@@ -397,33 +486,55 @@ function useSchedulePage() {
     }),
   );
   const selectedTaskDetail = computed(() => {
-    const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
+    const payload = taskDetailModal.payload.value || {};
+    const scheduleId = normalizeText(payload?.id);
+    const scheduleIds = uniqueTextList([
+      ...(Array.isArray(payload?.ids) ? payload.ids : []),
+      ...(Array.isArray(payload?.scheduleIds) ? payload.scheduleIds : []),
+      scheduleId,
+    ]);
     if (!scheduleId) {
       return null;
     }
 
-    const schedule = rawSchedules.value.find((entry) => normalizeText(entry?.id) === scheduleId);
-    if (!schedule) {
+    const schedules = rawSchedules.value
+      .filter((entry) => scheduleIds.includes(normalizeText(entry?.id)))
+      .sort((left, right) => String(left?.start_at || "").localeCompare(String(right?.start_at || "")));
+    const schedule = schedules[0];
+    if (!schedule || schedules.length === 0) {
       return null;
     }
 
     const task = rawTasks.value.find((entry) => normalizeText(entry?.code) === normalizeText(schedule?.task_code));
+    const axisLabel = uniqueTextList(schedules.flatMap(normalizeScheduleAxisCodes))
+      .map((code) => code.toUpperCase())
+      .join(" / ");
+    const startAt = schedules
+      .map((entry) => normalizeText(entry?.start_at))
+      .filter(Boolean)
+      .sort()[0] || schedule?.start_at;
+    const endAt = schedules
+      .map((entry) => normalizeText(entry?.end_at))
+      .filter(Boolean)
+      .sort()
+      .at(-1) || schedule?.end_at;
+    const experimentCodes = uniqueTextList(schedules.map((entry) => entry?.experiment_code));
+    const experimentLabels = uniqueTextList(experimentCodes.map(findExperimentLabel));
     // 详情弹窗只取排程与任务交集字段，避免把整条记录暴露给视图层。
     return {
+      axisLabel: axisLabel || "-",
       code: normalizeText(schedule?.task_code),
-      device: normalizeText(schedule?.device),
-      estimatedEndAt: formatDateTime(schedule?.end_at),
-      experimentCode: normalizeText(schedule?.experiment_code),
-      experimentLabel:
-        normalizeText(
-          rawExperiments.value.find((entry) => normalizeText(entry?.experiment_code) === normalizeText(schedule?.experiment_code))?.experiment_name,
-        ) || "-",
+      device: uniqueTextList(schedules.map((entry) => entry?.device)).join(" / ") || "-",
+      estimatedEndAt: formatDateTime(endAt),
+      experimentCode: experimentCodes.join(" / ") || "-",
+      experimentLabel: experimentLabels.join(" / ") || "-",
       name: normalizeText(task?.name) || "-",
-      plannedHours: normalizeText(schedule?.planned_hours) || "-",
+      plannedHours: formatMergedPlannedHours(schedules),
       priority: normalizeText(task?.priority) || "-",
       source: normalizeText(task?.source) || "-",
       scheduleId: normalizeText(schedule?.id),
-      startAt: formatDateTime(schedule?.start_at),
+      scheduleIds,
+      startAt: formatDateTime(startAt),
       status: normalizeText(task?.status) || normalizeText(schedule?.status) || "-",
       testType: normalizeText(task?.test_type) || "-",
     };
@@ -436,7 +547,7 @@ function useSchedulePage() {
     }
     return scheduleRows.value.filter((row) =>
       // 排程表搜索覆盖任务号、实验号、实验室、时间段和状态文本。
-      [row.taskCode, row.experimentCode, row.experimentLabel, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
+      [row.taskCode, row.experimentCode, row.experimentLabel, row.axisLabel, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
         normalizeText(value).includes(query),
       ),
     );
@@ -459,6 +570,8 @@ function useSchedulePage() {
   );
 
   const persistAll = async (updates) => {
+    await persistSnapshot(updates);
+
     // 只同步本页关心的任务、排程和数据流，设备/样品保持原样。
     if (Array.isArray(updates[STORAGE_KEYS.experiments])) {
       rawExperiments.value = updates[STORAGE_KEYS.experiments];
@@ -475,13 +588,40 @@ function useSchedulePage() {
     if (Array.isArray(updates[STORAGE_KEYS.streams])) {
       rawStreams.value = updates[STORAGE_KEYS.streams];
     }
-    await persistSnapshot(updates);
   };
 
   const resetScheduleForm = () => {
     scheduleForm.value = createManualScheduleForm(now.value);
     scheduleWarning.value = "";
   };
+
+  const clearScheduleAxes = () => {
+    scheduleForm.value.axis_codes = [];
+    scheduleForm.value.axis_batch_no = "";
+  };
+
+  const toggleScheduleAxis = (axisCode) => {
+    const normalizedAxisCode = normalizeText(axisCode).toLowerCase();
+    if (!normalizedAxisCode) {
+      return;
+    }
+    const selectableAxisCodes = new Set(scheduleAxisOptions.value.map((option) => option.code));
+    if (!selectableAxisCodes.has(normalizedAxisCode)) {
+      return;
+    }
+    const selected = new Set(scheduleAxisCodes.value);
+    if (selected.has(normalizedAxisCode)) {
+      selected.delete(normalizedAxisCode);
+    } else {
+      selected.add(normalizedAxisCode);
+    }
+    scheduleForm.value.axis_codes = scheduleAxisOptions.value
+      .map((option) => option.code)
+      .filter((code) => selected.has(code));
+    scheduleWarning.value = "";
+  };
+
+  const isScheduleAxisSelected = (axisCode) => scheduleAxisCodes.value.includes(normalizeText(axisCode).toLowerCase());
 
   const openExceptionModal = () => {
     exceptionModal.openWith();
@@ -554,6 +694,7 @@ function useSchedulePage() {
       buildExperimentOptions({
         taskCode,
         experiments: rawExperiments.value,
+        experimentRunSteps: rawExperimentRunSteps.value,
         samples: rawSamples.value,
         schedules,
         tasks: rawTasks.value,
@@ -564,6 +705,7 @@ function useSchedulePage() {
       experiment_code: nextExperimentCode,
       task_code: taskCode,
     });
+    clearScheduleAxes();
     scheduleWarning.value = "";
   };
 
@@ -588,6 +730,10 @@ function useSchedulePage() {
 
   const submitSchedule = async () => {
     syncLabIdentityToForm(scheduleForm.value, manualLabOptionItems.value);
+    if (showAxisSelector.value && scheduleAxisCodes.value.length === 0) {
+      scheduleWarning.value = "请选择轴向";
+      return;
+    }
     const candidate = {
       device: normalizeText(scheduleForm.value.device),
       experiment_code: normalizeText(scheduleForm.value.experiment_code),
@@ -618,6 +764,7 @@ function useSchedulePage() {
     const result = createScheduleRecord({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentTrays: rawExperimentTrays.value,
       form: scheduleForm.value,
       now: now.value,
@@ -633,12 +780,17 @@ function useSchedulePage() {
 
     // 新建排程后同时同步任务状态和流记录，并重置手动排程表单。
     scheduleWarning.value = "";
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
-    });
+    try {
+      await persistAll({
+        [STORAGE_KEYS.experiments]: result.experiments,
+        [STORAGE_KEYS.schedules]: result.schedules,
+        [STORAGE_KEYS.streams]: result.streams,
+        [STORAGE_KEYS.tasks]: result.tasks,
+      });
+    } catch (error) {
+      scheduleWarning.value = buildFailureMessage("排程保存失败，请稍后重试", error);
+      return;
+    }
     await resetScheduleFormForTask({
       schedules: result.schedules,
       taskCode: normalizeText(scheduleForm.value.task_code),
@@ -663,8 +815,11 @@ function useSchedulePage() {
     const result = createScheduleRecord({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
+      experimentTrays: rawExperimentTrays.value,
       form: draft,
       now: now.value,
+      samples: rawSamples.value,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
       tasks: rawTasks.value,
@@ -677,12 +832,17 @@ function useSchedulePage() {
     }
 
     scheduleWarning.value = "";
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
-    });
+    try {
+      await persistAll({
+        [STORAGE_KEYS.experiments]: result.experiments,
+        [STORAGE_KEYS.schedules]: result.schedules,
+        [STORAGE_KEYS.streams]: result.streams,
+        [STORAGE_KEYS.tasks]: result.tasks,
+      });
+    } catch (error) {
+      scheduleWarning.value = buildFailureMessage("排程保存失败，请稍后重试", error);
+      return;
+    }
     pendingScheduleDraft.value = null;
     scheduleConflictModal.close();
     await resetScheduleFormForTask({
@@ -739,12 +899,37 @@ function useSchedulePage() {
     flushPendingRealtimeRefresh();
   };
 
-  const openTaskDetailModal = (scheduleId) => {
-    const schedule = rawSchedules.value.find((entry) => normalizeText(entry?.id) === normalizeText(scheduleId));
+  const openTaskDetailModal = (scheduleId, scheduleIds = []) => {
+    const normalizedScheduleIds = uniqueTextList([
+      ...(Array.isArray(scheduleIds) ? scheduleIds : []),
+      scheduleId,
+    ]);
+    const schedule = rawSchedules.value.find((entry) => normalizedScheduleIds.includes(normalizeText(entry?.id)));
     if (!schedule) {
       return;
     }
-    taskDetailModal.openWith({ id: scheduleId });
+    editWarning.value = "";
+    taskDetailModal.openWith({ id: normalizeText(scheduleId) || normalizedScheduleIds[0], ids: normalizedScheduleIds });
+  };
+
+  const openGanttOverflowModal = (segment) => {
+    const items = Array.isArray(segment?.allItems) ? segment.allItems : Array.isArray(segment?.items) ? segment.items : [];
+    if (items.length === 0) {
+      return;
+    }
+    ganttOverflowModal.openWith({
+      items,
+      title: normalizeText(segment?.title),
+    });
+  };
+
+  const closeGanttOverflowModal = () => {
+    ganttOverflowModal.close();
+  };
+
+  const openGanttOverflowTask = (scheduleId, scheduleIds = []) => {
+    closeGanttOverflowModal();
+    openTaskDetailModal(scheduleId, scheduleIds);
   };
 
   const closeTaskDetailModal = () => {
@@ -784,6 +969,7 @@ function useSchedulePage() {
   const removeSchedule = async () => {
     const result = deleteScheduleRecord({
       experimentRuns: rawExperimentRuns.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
@@ -815,6 +1001,7 @@ function useSchedulePage() {
     }
     const result = deleteScheduleRecord({
       experimentRuns: rawExperimentRuns.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
@@ -848,6 +1035,7 @@ function useSchedulePage() {
 
     const result = deleteScheduleRecord({
       experimentRuns: rawExperimentRuns.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
@@ -884,6 +1072,7 @@ function useSchedulePage() {
       applySnapshotArray(snapshot, STORAGE_KEYS.devices, rawDevices);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, rawExperimentRuns);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_steps, rawExperimentRunSteps);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
@@ -937,6 +1126,7 @@ function useSchedulePage() {
       STORAGE_KEYS.devices,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_steps,
       STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
@@ -981,6 +1171,7 @@ function useSchedulePage() {
       scheduleForm.value.device = "";
       scheduleForm.value.lab_code = "";
       scheduleForm.value.lab_id = "";
+      clearScheduleAxes();
       scheduleWarning.value = "";
     },
   );
@@ -994,20 +1185,42 @@ function useSchedulePage() {
       scheduleForm.value.device = "";
       scheduleForm.value.lab_code = "";
       scheduleForm.value.lab_id = "";
+      clearScheduleAxes();
       scheduleWarning.value = "";
     },
   );
 
+  watch(
+    () => scheduleAxisOptions.value.map((option) => option.code).join("\u0001"),
+    () => {
+      if (scheduleFormWatchSuspended.value) {
+        return;
+      }
+      clearScheduleAxes();
+    },
+    { immediate: true },
+  );
+
   const syncAutoSelectedScheduleDevice = () => {
-    if (scheduleFormWatchSuspended.value || normalizeText(scheduleForm.value.device)) {
+    if (scheduleFormWatchSuspended.value) {
       return;
     }
     const availableLabs = manualLabOptionItems.value
       .filter((option) => !option.disabled)
       .filter((option) => normalizeText(option?.value));
+    const currentDevice = normalizeText(scheduleForm.value.device);
+    if (currentDevice && availableLabs.some((option) => normalizeText(option.value) === currentDevice)) {
+      return;
+    }
     if (availableLabs.length === 1) {
       scheduleForm.value.device = normalizeText(availableLabs[0].value);
       syncLabIdentityToForm(scheduleForm.value, availableLabs);
+      return;
+    }
+    if (currentDevice) {
+      scheduleForm.value.device = "";
+      scheduleForm.value.lab_code = "";
+      scheduleForm.value.lab_id = "";
     }
   };
 
@@ -1125,6 +1338,8 @@ function useSchedulePage() {
     exceptionModalOpen: exceptionModal.open,
     experimentOptions,
     ganttView,
+    ganttOverflowDetail: ganttOverflowModal.payload,
+    ganttOverflowOpen: ganttOverflowModal.open,
     getDeviceScheduleNavigation,
     jumpDeviceSchedule,
     resetGanttWindow,
@@ -1135,6 +1350,8 @@ function useSchedulePage() {
     manualTimeSlotOptions,
     openTaskDetailModal,
     openExceptionModal,
+    openGanttOverflowModal,
+    openGanttOverflowTask,
     openScheduleDrawer,
     pendingExceptionCount,
     pendingExceptionRows,
@@ -1157,11 +1374,20 @@ function useSchedulePage() {
     scheduleRows: filteredScheduleRows,
     scheduleSearch,
     scheduleWarning,
+    scheduleAxisRequirementOptions,
+    scheduleCompletedAxisOptions,
+    scheduleAxisOptions,
+    scheduleAxisDisplayOptions,
+    isScheduleAxisSelected,
     maintenanceLabNotice,
     selectedSchedule: scheduleDrawer.payload,
     submitSchedule,
     summaryCards,
     taskOptions,
+    selectedAxisLabel,
+    showAxisSelector,
+    toggleScheduleAxis,
+    closeGanttOverflowModal,
     resetScheduleForm,
   };
 }

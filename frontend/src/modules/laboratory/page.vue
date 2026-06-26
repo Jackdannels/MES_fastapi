@@ -121,13 +121,16 @@
             v-for="row in recentTasks"
             :key="`recent-${row.id}`"
             class="laboratory-recent-task"
-            :class="{ 'is-current': currentTask && currentTask.experimentKey === row.experimentKey }"
+            :class="{ 'is-current': currentTask && currentTask.id === row.id }"
           >
             <div class="laboratory-recent-task__head">
               <strong class="laboratory-recent-task__code">{{ row.taskCode }}</strong>
-              <span v-if="currentTask && currentTask.experimentKey === row.experimentKey" class="pill">当前任务</span>
+              <span v-if="currentTask && currentTask.id === row.id" class="pill">当前任务</span>
             </div>
             <div class="laboratory-recent-task__experiment muted">{{ row.experimentName }}</div>
+            <div v-if="row.axisCodes?.length" class="laboratory-recent-task__axes" data-testid="laboratory-recent-task-axes">
+              轴向：{{ row.axisCodes.join("、") }}
+            </div>
             <div class="laboratory-recent-task__time">{{ row.dateTimeRange }}</div>
           </article>
         </div>
@@ -154,6 +157,7 @@
                 {{ step.label }}
               </li>
             </ol>
+            <div class="laboratory-flow-status" data-testid="laboratory-task-flow-status">{{ currentTaskFlow.currentStatus }}</div>
             <div class="muted laboratory-flow-note">{{ progressMessage }}</div>
           </section>
 
@@ -222,8 +226,8 @@
               :key="`${row.id}-task`"
               class="laboratory-task-list-row"
               :class="{
-                'is-current': currentTask && currentTask.experimentKey === row.experimentKey,
-                'is-pending': pendingTaskCode === row.experimentKey && (!currentTask || currentTask.experimentKey !== row.experimentKey),
+                'is-current': currentTask && currentTask.id === row.id,
+                'is-pending': pendingTaskCode === row.id && (!currentTask || currentTask.id !== row.id),
               }"
               :data-testid="`laboratory-task-row-${row.taskCode}`"
             >
@@ -256,10 +260,10 @@
                   class="action-btn secondary"
                   :data-testid="`laboratory-select-task-${row.taskCode}`"
                   type="button"
-                  :disabled="runningInteractionLocked"
-                  @click="setPendingTaskCode(row.experimentKey)"
+                  :disabled="!canSelectTaskKey(row.id)"
+                  @click="setPendingTaskCode(row.id)"
                 >
-                  {{ pendingTaskCode === row.experimentKey ? "已选中" : "选择任务" }}
+                  {{ pendingTaskCode === row.id ? "已选中" : "选择任务" }}
                 </button>
               </td>
             </tr>
@@ -448,6 +452,11 @@
             <span class="pill">{{ runningModalExperiment.completed ? "实验已完成" : "实验进行中" }}</span>
           </div>
           <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningModalExperiment.countdownLabel }}</div>
+          <div v-if="runningModalExperiment.axisStatusLabel" class="laboratory-running-axis-status" data-testid="laboratory-running-axis-status">
+            <strong>{{ runningModalExperiment.axisStatusLabel }}</strong>
+            <span>{{ runningModalExperiment.axisCompletedLabel }}</span>
+            <span>{{ runningModalExperiment.axisUnfinishedLabel }}</span>
+          </div>
           <div class="laboratory-running-times muted">
             <span>开始：{{ runningModalExperiment.startDateTimeLabel }}</span>
             <span>{{ runningModalExperiment.completed ? "完成" : "预计完成" }}：{{ runningModalExperiment.endDateTimeLabel }}</span>
@@ -505,14 +514,34 @@
             <p><strong>托盘</strong> {{ runningModalExperiment.trayCodes.length }} 个</p>
             <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
             <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
-            <p>确认后将把当前{{ runningModalExperiment.experimentName || labName }}更新为实验已完成。</p>
+            <p>
+              {{
+                currentAxisCompletion.enabled
+                  ? `确认后将把当前轴向 ${currentAxisCompletion.axisCode} 更新为已完成。`
+                  : `确认后将把当前${runningModalExperiment.experimentName || labName}更新为实验已完成。`
+              }}
+            </p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
-              <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">确认实验完成</button>
+              <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">
+                {{ currentAxisCompletion.enabled ? "确认当前轴完成" : "确认实验完成" }}
+              </button>
             </div>
           </div>
           <div class="laboratory-running-actions">
-            <button v-if="!completePromptVisible && !runningModalExperiment.completed" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">实验完成</button>
+            <button v-if="!completePromptVisible && !runningModalExperiment.completed" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
+              {{ currentAxisCompletion.enabled ? "当前轴完成" : "实验完成" }}
+            </button>
+            <button
+              v-if="!completePromptVisible && !runningModalExperiment.completed && runningModalExperiment.axisContinuation?.nextAxisCode"
+              class="action-btn success"
+              data-testid="laboratory-complete-axis-continue"
+              type="button"
+              :disabled="!runningModalExperiment.axisContinuation?.canContinue"
+              @click="confirmCompleteAxisAndContinue"
+            >
+              当前轴向完成，继续进行下一实验 {{ runningModalExperiment.axisContinuation.nextAxisCode }}
+            </button>
           </div>
         </div>
       </div>
@@ -547,6 +576,7 @@ const {
   canTeleportScheduleAction,
   canCompleteCompare,
   canResetCurrentTask,
+  canSelectTaskKey,
   checklist,
   closeCompleteConfirm,
   compareFeedback,
@@ -565,6 +595,7 @@ const {
   confirmCompare,
   confirmResetPrompt,
   confirmResetTask,
+  confirmCompleteAxisAndContinue,
   confirmCompleteExperiment,
   confirmInstall,
   confirmReady,
@@ -573,6 +604,7 @@ const {
   fixtureConfirmCopy,
   fixtureConfirmModalOpen,
   fixtureConfirmSuccessModalOpen,
+  currentAxisCompletion,
   currentExperimentTrayRows,
   currentTask,
   currentTaskFlow,

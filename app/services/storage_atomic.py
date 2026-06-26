@@ -181,6 +181,13 @@ def generic_item_key(key: str, item: Any) -> str:
             normalize_text(item.get("experiment_code") or item.get("experimentCode")),
             normalize_text(item.get("tray_code") or item.get("trayCode")),
         ])
+    if key == "mes.experiment_run_steps":
+        return "::".join([
+            normalize_text(item.get("run_no") or item.get("runNo")),
+            normalize_text(item.get("task_code") or item.get("taskCode")),
+            normalize_text(item.get("experiment_code") or item.get("experimentCode")),
+            normalize_text(item.get("axis_code") or item.get("axisCode")),
+        ])
     if key == "mes.experiment_trays":
         return "::".join([
             normalize_text(item.get("task_code") or item.get("taskCode")),
@@ -247,6 +254,7 @@ def merge_concurrent_storage_updates(
         "mes.experiments",
         "mes.experiment_runs",
         "mes.experiment_run_trays",
+        "mes.experiment_run_steps",
         "mes.experiment_trays",
         "mes.experiment_samples",
     ):

@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { applyLaboratoryOperation, startLaboratoryExperiment, withdrawCurrentLaboratoryExperiment } from "./laboratoryApi.js";
+import {
+  applyLaboratoryOperation,
+  completeLaboratoryExperiment,
+  startLaboratoryExperiment,
+  withdrawCurrentLaboratoryExperiment,
+} from "./laboratoryApi.js";
 
 describe("laboratoryApi", () => {
   afterEach(() => {
@@ -21,6 +26,7 @@ describe("laboratoryApi", () => {
       labName: "霉菌试验室",
       occurredAt: "2026-06-11 10:02:00",
       operationType: "install",
+      subExperimentCode: "axis-batch-01",
       taskCode: "TASK-PARALLEL",
       trayCodes: ["TP-B"],
     });
@@ -38,6 +44,7 @@ describe("laboratoryApi", () => {
         labName: "霉菌试验室",
         occurredAt: "2026-06-11 10:02:00",
         operationType: "install",
+        subExperimentCode: "axis-batch-01",
         taskCode: "TASK-PARALLEL",
         trayCodes: ["TP-B"],
       }),
@@ -106,6 +113,9 @@ describe("laboratoryApi", () => {
     }));
 
     await startLaboratoryExperiment({
+      axisBatchNo: "batch-2",
+      axisCodes: ["z-", "y+", "x-"],
+      currentAxisCode: "y+",
       experimentCode: "EXP-START",
       labCode: "LAB_HOT_HUMID_2",
       labName: "高低温湿热二室",
@@ -114,6 +124,7 @@ describe("laboratoryApi", () => {
       runNo: "run-hot-humid-2",
       scheduleId: "schedule-hot-humid-2",
       startedAt: "2026-04-02 10:00:03",
+      subExperimentCode: "axis-batch-2",
       taskCode: "TASK-START",
       trayCodes: ["TP-GDW-001"],
     });
@@ -126,6 +137,9 @@ describe("laboratoryApi", () => {
       },
       credentials: "include",
       body: JSON.stringify({
+        axisBatchNo: "batch-2",
+        axisCodes: ["z-", "y+", "x-"],
+        currentAxisCode: "y+",
         labCode: "LAB_HOT_HUMID_2",
         labName: "高低温湿热二室",
         plannedEndAt: "2026-04-02 12:00:00",
@@ -133,6 +147,43 @@ describe("laboratoryApi", () => {
         runNo: "run-hot-humid-2",
         scheduleId: "schedule-hot-humid-2",
         startedAt: "2026-04-02 10:00:03",
+        subExperimentCode: "axis-batch-2",
+        trayCodes: ["TP-GDW-001"],
+      }),
+    });
+  });
+
+  test("posts scoped laboratory experiment completion payload with sub experiment code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, experimentRuns: [] }),
+    }));
+
+    await completeLaboratoryExperiment({
+      axisCode: "z-",
+      completedAt: "2026-04-02 11:00:00",
+      experimentCode: "EXP-START",
+      runNo: "run-hot-humid-2",
+      subExperimentCode: "axis-batch-2",
+      taskCode: "TASK-START",
+      trayCodes: ["TP-GDW-001"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/laboratory/tasks/TASK-START/experiments/EXP-START/complete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        axisCode: "z-",
+        completedAt: "2026-04-02 11:00:00",
+        nextAxisCode: "",
+        runNo: "run-hot-humid-2",
+        subExperimentCode: "axis-batch-2",
         trayCodes: ["TP-GDW-001"],
       }),
     });

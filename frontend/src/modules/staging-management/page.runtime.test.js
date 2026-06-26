@@ -312,6 +312,127 @@ describe("StagingManagementPage runtime", () => {
     expect(currentColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
   });
 
+  test("renders partial-axis completed trays as planned inbound from runtime snapshot keys", async () => {
+    const taskCode = "SYLU-2026-06-001";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-C`;
+    const firstSubExperimentCode = `${experimentCode}-AXIS-001`;
+    const secondSubExperimentCode = `${experimentCode}-AXIS-002`;
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        ...createSnapshot()[STORAGE_KEYS.tasks],
+        { id: taskCode, code: taskCode, test_type: "振动试验", sample_type: "组件", source: "外部委托" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        ...createSnapshot()[STORAGE_KEYS.experiments],
+        {
+          id: experimentCode,
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          status: "实验进行中",
+          axis_codes: ["x+", "y+"],
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        ...createSnapshot()[STORAGE_KEYS.experiment_trays],
+        { id: "rel-live-axis", task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        ...createSnapshot()[STORAGE_KEYS.schedules],
+        {
+          id: "schedule-live-axis-x",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          device: "振动一室",
+          start_at: "2026-06-26 11:53:00",
+          end_at: "2026-06-26 15:23:00",
+          status: "实验进行中",
+          axis_codes: ["x+"],
+          sub_experiment_code: firstSubExperimentCode,
+        },
+        {
+          id: "schedule-live-axis-y",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          device: "振动一室",
+          start_at: "2026-06-26 15:33:00",
+          end_at: "2026-06-26 19:03:00",
+          status: "实验进行中",
+          axis_codes: ["y+"],
+          sub_experiment_code: secondSubExperimentCode,
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          run_no: "run-live-axis-x",
+          schedule_id: "schedule-live-axis-x",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: firstSubExperimentCode,
+          status: "实验已完成",
+          axis_codes: ["x+"],
+          tray_codes: [trayCode],
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          run_no: "run-live-axis-x",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: firstSubExperimentCode,
+          tray_code: trayCode,
+          status: "实验已完成",
+          run_tray_status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "run-live-axis-x",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: firstSubExperimentCode,
+          axis_code: "x+",
+          step_no: 1,
+          status: "实验已完成",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        ...createSnapshot()[STORAGE_KEYS.samples],
+        {
+          id: `${taskCode}-SP-001`,
+          code: `${taskCode}-SP-001`,
+          task_code: taskCode,
+          owner: "周工",
+          location: "振动一室",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [
+            {
+              tray_code: trayCode,
+              status: "送至实验室",
+              target_experiment_code: experimentCode,
+              target_lab: "振动一室",
+              quantity: 1,
+            },
+          ],
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
+
+    expect(plannedColumn.text()).toContain("允许暂存 5");
+    await mounted.get('[data-testid="zancun-console-search"]').setValue(trayCode);
+    await settlePage(mounted);
+    expect(plannedColumn.text()).toContain(trayCode);
+  });
+
   test("renders latest completed experiment as the current staging tray label", async () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-001`;
@@ -380,7 +501,8 @@ describe("StagingManagementPage runtime", () => {
       .find((row) => row.text().includes(trayCode));
 
     expect(targetRow?.text()).toContain(trayCode);
-    expect(targetRow?.text()).toContain("盐雾试验已完成");
+    expect(targetRow?.text()).toContain("放置暂存间");
+    expect(targetRow?.text()).not.toContain("盐雾试验已完成");
     expect(targetRow?.text()).not.toContain("到货");
   });
 

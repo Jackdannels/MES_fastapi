@@ -14,6 +14,7 @@ from app.core.mysql_storage_status import (
     TASK_STORED_STATUS,
     backfill_missing_unscheduled_since,
     derive_experiment_status_map,
+    derive_schedule_status_map,
     derive_task_status_map,
 )
 
@@ -295,7 +296,7 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
 
     cursor.execute(
         """
-        SELECT schedule_id, task_id, task_no, experiment_no, schedule_status
+        SELECT schedule_id, task_id, task_no, experiment_no, sub_experiment_code, axis_codes_json, schedule_status
         FROM biz_schedule
         WHERE schedule_type = %s
         ORDER BY task_no ASC, experiment_no ASC
@@ -315,7 +316,7 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
 
     cursor.execute(
         """
-        SELECT relation_id, run_no, task_no, experiment_no, tray_no, run_tray_status
+        SELECT relation_id, run_no, task_no, experiment_no, sub_experiment_code, tray_no, run_tray_status
         FROM biz_experiment_run_tray
         ORDER BY task_no ASC, experiment_no ASC, tray_no ASC
         """
@@ -334,11 +335,16 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
             [(status, experiment_no) for experiment_no, status in experiment_status_map.items()],
         )
         if schedules:
+            schedule_status_map = derive_schedule_status_map(
+                schedules,
+                experiment_status_map,
+                experiment_run_trays=experiment_run_trays,
+            )
             cursor.executemany(
                 "UPDATE biz_schedule SET schedule_status = %s WHERE schedule_id = %s",
                 [
                     (
-                        experiment_status_map.get(normalize_text(row.get("experiment_no")), normalize_text(row.get("schedule_status"))),
+                        schedule_status_map.get(row["schedule_id"], normalize_text(row.get("schedule_status"))),
                         row["schedule_id"],
                     )
                     for row in schedules

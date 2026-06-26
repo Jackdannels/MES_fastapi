@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from typing import Any, Dict, Iterable
@@ -34,6 +35,47 @@ from app.core.mysql_storage_codecs import (
 
 APPEARANCE_INSPECTION_LOCATION = "外观检测间"
 PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测间存放"
+
+
+def _normalize_axis_codes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            try:
+                decoded = json.loads(text)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                decoded = []
+            raw_values = decoded if isinstance(decoded, list) else []
+        else:
+            raw_values = text.replace("，", ",").split(",")
+    else:
+        raw_values = []
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        normalized = normalize_text(item)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+def _axis_codes_json(value: Any) -> str | None:
+    axis_codes = _normalize_axis_codes(value)
+    return json.dumps(axis_codes, ensure_ascii=False) if axis_codes else None
+
+
+def _sub_experiment_code(value: Dict[str, Any]) -> str:
+    return normalize_text(
+        value.get("sub_experiment_code")
+        or value.get("subExperimentCode")
+        or value.get("sub_experiment_no")
+        or value.get("subExperimentNo")
+    )
+
 
 def build_task_insert_row(task: Dict[str, Any]) -> Dict[str, Any]:
     now_beijing = current_beijing_datetime()
@@ -119,6 +161,7 @@ def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
         "priority": parse_priority_value(experiment.get("priority")),
         "planned_hours": parse_float_value(experiment.get("planned_hours")),
         "experiment_status": normalize_experiment_status(experiment.get("status")),
+        "axis_codes_json": _axis_codes_json(experiment.get("axis_codes") or experiment.get("axisCodes")),
         "unscheduled_since": parse_storage_datetime(experiment.get("unscheduled_since")),
         "created_at": parse_storage_datetime(experiment.get("created_at")) or now_beijing,
         "updated_at": parse_storage_datetime(experiment.get("updated_at")) or now_beijing,
@@ -127,7 +170,7 @@ def build_experiment_insert_row(experiment: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_storage_experiment_item(row: Dict[str, Any]) -> Dict[str, Any]:
     planned_hours = row.get("planned_hours")
-    return {
+    item = {
         "id": normalize_text(row.get("experiment_no")),
         "task_code": normalize_text(row.get("task_no")),
         "experiment_code": normalize_text(row.get("experiment_no")),
@@ -140,6 +183,10 @@ def build_storage_experiment_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
+    axis_codes = _normalize_axis_codes(row.get("axis_codes_json") or row.get("axis_codes") or row.get("axisCodes"))
+    if axis_codes:
+        item["axis_codes"] = axis_codes
+    return item
 
 
 def build_experiment_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
@@ -198,7 +245,10 @@ def build_experiment_run_insert_row(run: Dict[str, Any]) -> Dict[str, Any]:
         "schedule_no": normalize_text(run.get("schedule_id")) or normalize_text(run.get("schedule_no")),
         "task_no": normalize_text(run.get("task_code")),
         "experiment_no": normalize_text(run.get("experiment_code")),
+        "sub_experiment_code": _sub_experiment_code(run),
         "device_name": normalize_text(run.get("device")),
+        "axis_codes_json": _axis_codes_json(run.get("axis_codes") or run.get("axisCodes")),
+        "axis_batch_no": normalize_text(run.get("axis_batch_no") or run.get("axisBatchNo")),
         "planned_hours": parse_float_value(run.get("planned_hours")),
         "run_status": normalize_experiment_status(run.get("status")),
         "started_at": parse_storage_datetime(run.get("started_at")),
@@ -212,7 +262,7 @@ def build_experiment_run_insert_row(run: Dict[str, Any]) -> Dict[str, Any]:
 def build_storage_experiment_run_item(row: Dict[str, Any], tray_codes: list[str] | None = None) -> Dict[str, Any]:
     run_no = normalize_text(row.get("run_no"))
     planned_hours = row.get("planned_hours")
-    return {
+    item = {
         "id": run_no,
         "run_no": run_no,
         "schedule_id": normalize_text(row.get("schedule_no")),
@@ -228,13 +278,71 @@ def build_storage_experiment_run_item(row: Dict[str, Any], tray_codes: list[str]
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
+    sub_experiment_code = _sub_experiment_code(row)
+    axis_codes = _normalize_axis_codes(row.get("axis_codes_json") or row.get("axis_codes") or row.get("axisCodes"))
+    axis_batch_no = normalize_text(row.get("axis_batch_no") or row.get("axisBatchNo"))
+    if sub_experiment_code:
+        item["sub_experiment_code"] = sub_experiment_code
+    if axis_codes:
+        item["axis_codes"] = axis_codes
+    if axis_batch_no:
+        item["axis_batch_no"] = axis_batch_no
+    return item
+
+
+def build_experiment_run_step_insert_row(step: Dict[str, Any]) -> Dict[str, Any]:
+    now_beijing = current_beijing_datetime()
+    run_no = normalize_text(step.get("run_no") or step.get("runNo"))
+    axis_code = normalize_text(step.get("axis_code") or step.get("axisCode"))
+    return {
+        "run_no": run_no,
+        "task_no": normalize_text(step.get("task_code") or step.get("task_no") or step.get("taskCode") or step.get("taskNo")),
+        "experiment_no": normalize_text(
+            step.get("experiment_code")
+            or step.get("experiment_no")
+            or step.get("experimentCode")
+            or step.get("experimentNo")
+        ),
+        "sub_experiment_code": _sub_experiment_code(step),
+        "axis_code": axis_code,
+        "step_no": parse_int_value(step.get("step_no") or step.get("stepNo")),
+        "step_status": normalize_experiment_status(step.get("status") or step.get("step_status") or step.get("stepStatus")),
+        "started_at": parse_storage_datetime(step.get("started_at") or step.get("startedAt")),
+        "ended_at": parse_storage_datetime(step.get("ended_at") or step.get("endedAt")),
+        "created_at": parse_storage_datetime(step.get("created_at") or step.get("createdAt")) or now_beijing,
+        "updated_at": parse_storage_datetime(step.get("updated_at") or step.get("updatedAt")) or now_beijing,
+    }
+
+
+def build_storage_experiment_run_step_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    step_id = normalize_text(row.get("step_id"))
+    run_no = normalize_text(row.get("run_no"))
+    axis_code = normalize_text(row.get("axis_code"))
+    step_no = parse_int_value(row.get("step_no"))
+    item = {
+        "id": step_id or f"{run_no}:{step_no}:{axis_code}",
+        "run_no": run_no,
+        "task_code": normalize_text(row.get("task_no")),
+        "experiment_code": normalize_text(row.get("experiment_no")),
+        "axis_code": axis_code,
+        "step_no": step_no,
+        "status": normalize_experiment_status(row.get("step_status") or row.get("status")),
+        "started_at": format_iso_storage_datetime(row.get("started_at")),
+        "ended_at": format_iso_storage_datetime(row.get("ended_at")),
+        "created_at": format_iso_storage_datetime(row.get("created_at")),
+        "updated_at": format_iso_storage_datetime(row.get("updated_at")),
+    }
+    sub_experiment_code = _sub_experiment_code(row)
+    if sub_experiment_code:
+        item["sub_experiment_code"] = sub_experiment_code
+    return item
 
 
 def build_storage_experiment_run_tray_item(row: Dict[str, Any]) -> Dict[str, Any]:
     relation_id = normalize_text(row.get("relation_id"))
     run_no = normalize_text(row.get("run_no"))
     tray_no = normalize_text(row.get("tray_no"))
-    return {
+    item = {
         "id": relation_id or f"{run_no}:{tray_no}",
         "run_no": run_no,
         "task_code": normalize_text(row.get("task_no")),
@@ -247,6 +355,10 @@ def build_storage_experiment_run_tray_item(row: Dict[str, Any]) -> Dict[str, Any
         "created_at": format_iso_storage_datetime(row.get("created_at")),
         "updated_at": format_iso_storage_datetime(row.get("updated_at")),
     }
+    sub_experiment_code = _sub_experiment_code(row)
+    if sub_experiment_code:
+        item["sub_experiment_code"] = sub_experiment_code
+    return item
 
 
 def build_experiment_run_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, Any]:
@@ -255,6 +367,7 @@ def build_experiment_run_tray_insert_row(relation: Dict[str, Any]) -> Dict[str, 
         "run_no": normalize_text(relation.get("run_no")) or normalize_text(relation.get("runNo")),
         "task_no": normalize_text(relation.get("task_code") or relation.get("task_no")),
         "experiment_no": normalize_text(relation.get("experiment_code") or relation.get("experiment_no")),
+        "sub_experiment_code": _sub_experiment_code(relation),
         "tray_no": normalize_text(relation.get("tray_code") or relation.get("tray_no")),
         "run_tray_status": normalize_experiment_status(relation.get("run_tray_status") or relation.get("runTrayStatus") or relation.get("status")),
         "started_at": parse_storage_datetime(relation.get("started_at")),
@@ -280,10 +393,13 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
         "schedule_no": normalize_text(schedule.get("id")),
         "task_no": normalize_text(schedule.get("task_code")),
         "experiment_no": normalize_text(schedule.get("experiment_code")),
+        "sub_experiment_code": _sub_experiment_code(schedule),
         "schedule_type": STORAGE_MARKER,
         "lab_id": parse_int_value(schedule.get("lab_id") or schedule.get("labId")),
         "lab_code": normalize_text(schedule.get("lab_code") or schedule.get("labCode")),
         "device_name": device,
+        "axis_codes_json": _axis_codes_json(schedule.get("axis_codes") or schedule.get("axisCodes")),
+        "axis_batch_no": normalize_text(schedule.get("axis_batch_no") or schedule.get("axisBatchNo")),
         "schedule_start_time": parse_storage_datetime(schedule.get("start_at")),
         "schedule_end_time": parse_storage_datetime(schedule.get("end_at")),
         "planned_hours": parse_float_value(schedule.get("planned_hours")),
@@ -296,7 +412,7 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
 def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
     planned_hours = row.get("planned_hours")
     lab_id = parse_int_value(row.get("lab_id"))
-    return {
+    item = {
         "id": normalize_text(row.get("schedule_no")),
         "task_code": normalize_text(row.get("task_no")),
         "experiment_code": normalize_text(row.get("experiment_no")),
@@ -308,6 +424,16 @@ def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
         "planned_hours": 0 if planned_hours in (None, "") else float(planned_hours),
         "status": normalize_experiment_status_text(row.get("schedule_status")),
     }
+    sub_experiment_code = _sub_experiment_code(row)
+    axis_codes = _normalize_axis_codes(row.get("axis_codes_json") or row.get("axis_codes") or row.get("axisCodes"))
+    axis_batch_no = normalize_text(row.get("axis_batch_no") or row.get("axisBatchNo"))
+    if sub_experiment_code:
+        item["sub_experiment_code"] = sub_experiment_code
+    if axis_codes:
+        item["axis_codes"] = axis_codes
+    if axis_batch_no:
+        item["axis_batch_no"] = axis_batch_no
+    return item
 
 
 def build_device_insert_row(device: Dict[str, Any]) -> Dict[str, Any]:

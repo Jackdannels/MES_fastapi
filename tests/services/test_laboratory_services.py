@@ -6,6 +6,7 @@ from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
     tray_assigned_experiments_are_completed,
 )
+from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
 
@@ -205,6 +206,113 @@ def test_ready_clears_fixture_ready_marker_after_countdown():
     assert "fixtureReady" not in tray
 
 
+def test_ready_operation_does_not_reopen_completed_axis_schedules():
+    completed_axes = ["x+", "x-", "y+"]
+    remaining_axes = ["y-", "z+", "z-"]
+    snapshot = {
+        "tasks": [{"code": "SYLU-2026-07-001", "status": "任务已完成"}],
+        "experiments": [
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "experiment_name": "冲击试验",
+                "status": "实验已完成",
+                "axis_codes": [*completed_axes, *remaining_axes],
+            }
+        ],
+        "schedules": [
+            {
+                "id": "SCH-AXIS-DONE",
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+            },
+            {
+                "id": "SCH-AXIS-REMAINING",
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": remaining_axes,
+            },
+        ],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-AXIS-DONE",
+                "schedule_id": "SCH-AXIS-DONE",
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+            }
+        ],
+        "experiment_run_steps": [
+            {
+                "run_no": "RUN-AXIS-DONE",
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "axis_code": axis_code,
+                "status": "实验已完成",
+            }
+            for axis_code in completed_axes
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-AXIS-DONE",
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "tray_code": "SYLU-2026-07-001-TP-001",
+                "status": "实验已完成",
+                "run_tray_status": "实验已完成",
+            }
+        ],
+        "experiment_trays": [
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "tray_code": "SYLU-2026-07-001-TP-001",
+            }
+        ],
+        "experiment_samples": [
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "sample_code": "SYLU-2026-07-001-SP-001",
+            }
+        ],
+        "samples": [
+            _sample(
+                "SYLU-2026-07-001-SP-001",
+                "SYLU-2026-07-001",
+                "SYLU-2026-07-001-TP-001",
+                "工装夹具安装",
+                "冲击一室",
+            )
+        ],
+    }
+
+    result = apply_laboratory_task_operation(
+        snapshot,
+        operation_type="ready",
+        task_code="SYLU-2026-07-001",
+        experiment_code="SYLU-2026-07-001-A",
+        lab_name="冲击一室",
+        tray_codes=["SYLU-2026-07-001-TP-001"],
+        occurred_at="2026-06-25 20:57:17",
+    )
+
+    assert "schedules" not in result
+    assert "experiments" not in result
+    assert "tasks" not in result
+    schedules = {schedule["id"]: schedule for schedule in snapshot["schedules"]}
+    assert schedules["SCH-AXIS-DONE"]["status"] == "实验已完成"
+    assert schedules["SCH-AXIS-REMAINING"]["status"] == "实验已完成"
+    assert snapshot["experiments"][0]["status"] == "实验已完成"
+    assert snapshot["tasks"][0]["status"] == "任务已完成"
+
+
 def test_install_after_current_recompare_overwrites_stale_experiment_target():
     current_sample = _sample("SP-CURRENT", "TASK-1", "TP-1", "已到达实验室", "振动一室")
     current_sample["trays"][0]["target_experiment_code"] = "EXP-SALT"
@@ -402,6 +510,351 @@ def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn
         },
     ]
     assert not pre_experiment_appearance_already_dispatched(sample, tray, withdrawn_events)
+
+
+def _axis_snapshot():
+    sub_experiment_code = "EXP-IMPACT-AXIS-001"
+    return {
+        "tasks": [{"code": "TASK-AXIS", "status": "任务进行中"}],
+        "experiments": [{"task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "experiment_name": "冲击试验", "status": "实验进行中"}],
+        "schedules": [
+            {
+                "id": "SCH-AXIS-1",
+                "task_code": "TASK-AXIS",
+                "experiment_code": "EXP-IMPACT",
+                "sub_experiment_code": sub_experiment_code,
+                "device": "冲击一室",
+                "status": "实验进行中",
+                "axis_codes": ["z-", "y+"],
+                "start_at": "2026-06-24 09:00:00",
+                "end_at": "2026-06-24 10:00:00",
+            },
+            {
+                "id": "SCH-AXIS-2",
+                "task_code": "TASK-AXIS",
+                "experiment_code": "EXP-IMPACT",
+                "sub_experiment_code": sub_experiment_code,
+                "device": "冲击一室",
+                "status": "已排程",
+                "axis_codes": ["x-", "x+"],
+                "start_at": "2026-06-24 10:00:00",
+                "end_at": "2026-06-24 11:00:00",
+            },
+        ],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-AXIS",
+                "task_code": "TASK-AXIS",
+                "experiment_code": "EXP-IMPACT",
+                "sub_experiment_code": sub_experiment_code,
+                "schedule_id": "SCH-AXIS-1",
+                "device": "冲击一室",
+                "status": "实验进行中",
+                "axis_codes": ["z-", "y+", "x-", "x+"],
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-AXIS",
+                "task_code": "TASK-AXIS",
+                "experiment_code": "EXP-IMPACT",
+                "sub_experiment_code": sub_experiment_code,
+                "tray_code": "TP-AXIS",
+                "status": "实验进行中",
+                "run_tray_status": "实验进行中",
+            }
+        ],
+        "experiment_run_steps": [
+            {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "z-", "step_no": 1, "status": "实验已完成"},
+            {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "y+", "step_no": 2, "status": "实验进行中"},
+            {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x-", "step_no": 3, "status": "待执行"},
+            {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x+", "step_no": 4, "status": "待执行"},
+        ],
+        "experiment_trays": [{"task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "tray_code": "TP-AXIS"}],
+        "experiment_samples": [{"task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sample_code": "SP-AXIS"}],
+        "samples": [_sample("SP-AXIS", "TASK-AXIS", "TP-AXIS", "实验进行中", "冲击一室")],
+    }
+
+
+def test_start_axis_run_uses_current_schedule_axes_when_axis_codes_are_omitted():
+    snapshot = _axis_snapshot()
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "y+", "x-", "x+"]
+    snapshot["experiment_runs"] = []
+    snapshot["experiment_run_trays"] = []
+    snapshot["experiment_run_steps"] = []
+    snapshot["schedules"][0]["status"] = "已排程"
+
+    result = start_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS-SCH-1",
+        lab_name="冲击一室",
+        schedule_id="SCH-AXIS-1",
+        tray_codes=["TP-AXIS"],
+        started_at="2026-06-24 09:00:00",
+    )
+
+    assert result["experimentRuns"][0]["axis_codes"] == ["z-", "y+"]
+    assert [step["axis_code"] for step in result["experimentRunSteps"]] == ["z-", "y+"]
+    assert result["schedules"][0]["status"] == "实验进行中"
+    assert result["schedules"][1]["status"] == "已排程"
+
+
+def test_start_axis_run_rejects_axis_batch_without_sub_experiment_code():
+    snapshot = _axis_snapshot()
+    for schedule in snapshot["schedules"]:
+        schedule.pop("sub_experiment_code", None)
+        schedule["axis_batch_no"] = "001"
+    snapshot["experiment_runs"] = []
+    snapshot["experiment_run_trays"] = []
+    snapshot["experiment_run_steps"] = []
+    snapshot["schedules"][0]["status"] = "已排程"
+
+    with pytest.raises(ValueError, match="sub_experiment_code is required"):
+        start_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-AXIS",
+            experiment_code="EXP-IMPACT",
+            run_no="RUN-AXIS-SCH-1",
+            lab_name="冲击一室",
+            schedule_id="SCH-AXIS-1",
+            tray_codes=["TP-AXIS"],
+            started_at="2026-06-24 09:00:00",
+        )
+
+
+def test_axis_step_completion_keeps_experiment_running_until_all_planned_axes_finish():
+    result = complete_storage_laboratory_axis_step(
+        _axis_snapshot(),
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        axis_code="y+",
+        next_axis_code="x-",
+        completed_at="2026-06-24 10:00:00",
+    )
+
+    steps = {step["axis_code"]: step["status"] for step in result["experimentRunSteps"]}
+    assert steps["y+"] == "实验已完成"
+    assert steps["x-"] == "实验进行中"
+    assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
+    assert result["experiments"][0]["status"] == "实验进行中"
+    assert result["schedules"][0]["status"] == "实验进行中"
+
+
+def test_axis_step_completion_uses_scheduled_axes_when_current_run_is_partial():
+    snapshot = _axis_snapshot()
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "y+", "x-", "x+"]
+    snapshot["experiment_runs"][0]["axis_codes"] = ["z-", "y+"]
+    snapshot["experiment_run_steps"] = [
+        step for step in snapshot["experiment_run_steps"] if step["axis_code"] in {"z-", "y+"}
+    ]
+
+    result = complete_storage_laboratory_axis_step(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        axis_code="y+",
+        completed_at="2026-06-24 10:00:00",
+    )
+
+    steps = {step["axis_code"]: step["status"] for step in result["experimentRunSteps"]}
+    assert steps["y+"] == "实验已完成"
+    assert set(steps) == {"z-", "y+"}
+    assert result["experimentRuns"][0]["status"] == "实验已完成"
+    assert result["samples"][0]["status"] == "送至实验室"
+    assert result["samples"][0]["flow_status"] == "送至实验室"
+    assert result["samples"][0]["trays"][0]["status"] == "送至实验室"
+    assert not any(
+        entry.get("detail") == "TASK-AXIS / 冲击试验 / 实验已完成"
+        for entry in result["samples"][0]["history"]
+    )
+    assert result["experiments"][0]["status"] == "实验进行中"
+    assert result["schedules"][0]["status"] == "实验已完成"
+    assert result["schedules"][1]["status"] == "已排程"
+
+
+def test_axis_run_completion_without_axis_code_keeps_experiment_running_when_axes_remain():
+    snapshot = _axis_snapshot()
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "y+", "x-", "x+"]
+    snapshot["experiment_runs"][0]["axis_codes"] = ["z-", "y+"]
+    snapshot["experiment_run_steps"] = [
+        step for step in snapshot["experiment_run_steps"] if step["axis_code"] in {"z-", "y+"}
+    ]
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        completed_at="2026-06-24 10:00:00",
+    )
+
+    assert result["samples"][0]["status"] == "送至实验室"
+    assert result["samples"][0]["trays"][0]["status"] == "送至实验室"
+    assert not any(
+        entry.get("detail") == "TASK-AXIS / 冲击试验 / 实验已完成"
+        for entry in result["samples"][0]["history"]
+    )
+    assert result["experimentRuns"][0]["status"] == "实验已完成"
+    assert result["experimentRunTrays"][0]["run_tray_status"] == "实验已完成"
+    assert result["experiments"][0]["status"] == "实验进行中"
+    assert result["schedules"][0]["status"] == "实验已完成"
+    assert result["schedules"][1]["status"] == "已排程"
+
+
+def test_axis_batches_use_sub_experiment_code_for_independent_run_lifecycle():
+    snapshot = _axis_snapshot()
+    first_sub_code = "EXP-IMPACT-AXIS-001"
+    second_sub_code = "EXP-IMPACT-AXIS-002"
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "y+", "x-", "x+"]
+    snapshot["schedules"][0]["sub_experiment_code"] = first_sub_code
+    snapshot["schedules"][0]["axis_batch_no"] = "001"
+    snapshot["schedules"][1]["sub_experiment_code"] = second_sub_code
+    snapshot["schedules"][1]["axis_batch_no"] = "002"
+    snapshot["experiment_runs"][0]["sub_experiment_code"] = first_sub_code
+    snapshot["experiment_runs"][0]["axis_codes"] = ["z-", "y+"]
+    snapshot["experiment_run_trays"][0]["sub_experiment_code"] = first_sub_code
+    snapshot["experiment_run_steps"] = [
+        {**step, "sub_experiment_code": first_sub_code}
+        for step in snapshot["experiment_run_steps"]
+        if step["axis_code"] in {"z-", "y+"}
+    ]
+    snapshot["experiment_run_steps"][0]["status"] = "实验已完成"
+    snapshot["experiment_run_steps"][1]["status"] = "实验进行中"
+
+    first_done = complete_storage_laboratory_axis_step(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        sub_experiment_code=first_sub_code,
+        run_no="RUN-AXIS",
+        axis_code="y+",
+        completed_at="2026-06-24 10:00:00",
+    )
+
+    assert first_done["experiments"][0]["status"] == "实验进行中"
+    assert first_done["schedules"][0]["status"] == "实验已完成"
+    assert first_done["schedules"][1]["status"] == "已排程"
+    assert first_done["samples"][0]["status"] == "送至实验室"
+    assert first_done["samples"][0]["flow_status"] == "送至实验室"
+    assert first_done["samples"][0]["trays"][0]["status"] == "送至实验室"
+    assert not any(
+        entry.get("detail") == "TASK-AXIS / 冲击试验 / 实验已完成"
+        for entry in first_done["samples"][0]["history"]
+    )
+
+    second_started = start_storage_laboratory_experiment(
+        {
+            **snapshot,
+            "experiments": first_done["experiments"],
+            "experiment_runs": first_done["experimentRuns"],
+            "experiment_run_trays": first_done["experimentRunTrays"],
+            "experiment_run_steps": first_done["experimentRunSteps"],
+            "samples": first_done["samples"],
+            "schedules": first_done["schedules"],
+        },
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        sub_experiment_code=second_sub_code,
+        run_no="RUN-AXIS-2",
+        lab_name="冲击一室",
+        schedule_id="SCH-AXIS-2",
+        tray_codes=["TP-AXIS"],
+        started_at="2026-06-24 10:00:00",
+    )
+
+    runs = {run["run_no"]: run for run in second_started["experimentRuns"]}
+    assert runs["RUN-AXIS"]["sub_experiment_code"] == first_sub_code
+    assert runs["RUN-AXIS"]["status"] == "实验已完成"
+    assert runs["RUN-AXIS-2"]["sub_experiment_code"] == second_sub_code
+    assert runs["RUN-AXIS-2"]["axis_codes"] == ["x-", "x+"]
+    assert {
+        step["axis_code"]
+        for step in second_started["experimentRunSteps"]
+        if step["run_no"] == "RUN-AXIS-2"
+    } == {"x-", "x+"}
+    assert second_started["experiments"][0]["status"] == "实验进行中"
+    assert second_started["schedules"][1]["status"] == "实验进行中"
+
+
+def test_final_axis_step_completion_completes_the_experiment():
+    snapshot = _axis_snapshot()
+    for step in snapshot["experiment_run_steps"]:
+        step["status"] = "实验已完成" if step["axis_code"] != "x+" else "实验进行中"
+
+    result = complete_storage_laboratory_axis_step(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        axis_code="x+",
+        completed_at="2026-06-24 11:00:00",
+    )
+
+    assert all(step["status"] == "实验已完成" for step in result["experimentRunSteps"])
+    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
+    assert result["experiments"][0]["status"] == "实验已完成"
+    assert result["schedules"][0]["status"] == "实验已完成"
+
+
+def test_final_axis_step_completion_can_finish_axes_across_split_runs():
+    snapshot = _axis_snapshot()
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "y+", "x-", "x+"]
+    snapshot["experiment_runs"] = [
+        {
+            **snapshot["experiment_runs"][0],
+            "run_no": "RUN-AXIS-OLD",
+            "id": "RUN-AXIS-OLD",
+            "schedule_id": "SCH-AXIS-1",
+            "status": "实验已完成",
+            "axis_codes": ["z-", "y+"],
+        },
+        {
+            **snapshot["experiment_runs"][0],
+            "run_no": "RUN-AXIS",
+            "id": "RUN-AXIS",
+            "schedule_id": "SCH-AXIS-2",
+            "status": "实验进行中",
+            "axis_codes": ["x-", "x+"],
+        },
+    ]
+    snapshot["experiment_run_trays"] = [
+        {
+            **snapshot["experiment_run_trays"][0],
+            "run_no": "RUN-AXIS-OLD",
+            "status": "实验已完成",
+            "run_tray_status": "实验已完成",
+        },
+        {
+            **snapshot["experiment_run_trays"][0],
+            "run_no": "RUN-AXIS",
+            "status": "实验进行中",
+            "run_tray_status": "实验进行中",
+        },
+    ]
+    sub_experiment_code = snapshot["schedules"][0]["sub_experiment_code"]
+    snapshot["experiment_run_steps"] = [
+        {"run_no": "RUN-AXIS-OLD", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "z-", "step_no": 1, "status": "实验已完成"},
+        {"run_no": "RUN-AXIS-OLD", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "y+", "step_no": 2, "status": "实验已完成"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x-", "step_no": 1, "status": "实验已完成"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x+", "step_no": 2, "status": "实验进行中"},
+    ]
+
+    result = complete_storage_laboratory_axis_step(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        axis_code="x+",
+        completed_at="2026-06-24 11:00:00",
+    )
+
+    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
+    assert result["experiments"][0]["status"] == "实验已完成"
+    assert all(schedule["status"] == "实验已完成" for schedule in result["schedules"])
 
 
 def test_mqtt_sample_scope_delegates_to_shared_laboratory_scope(monkeypatch):

@@ -648,6 +648,7 @@ function buildTrayOverviewRows({
   tasks,
   experiments = [],
   experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
   samples,
@@ -711,6 +712,7 @@ function buildTrayOverviewRows({
         || "-";
       const flowView = buildTrayFlowView({
         experimentRuns,
+        experimentRunSteps,
         experimentRunTrays,
         experimentTrays: experimentTrayList,
         experiments: experimentList,

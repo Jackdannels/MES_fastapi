@@ -21,6 +21,7 @@ import {
   parseRetainedCompletedExperimentBeforeWithdrawal,
   parseWithdrawalRestoreTarget,
 } from "./sampleFlow.experimentHelpers";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 
 const buildSingleExperimentStatusLabel = (experimentName, status) => {
   const normalizedName = normalizeText(experimentName);
@@ -174,6 +175,9 @@ const resolveExperimentEvent = (eventMap, experiment) => {
 };
 
 const experimentFlowStatusRank = (status) => {
+  if (isAxisPartialProgressStatus(status)) {
+    return FLOW_STEP_INDEX_BY_KEY.get("running") ?? FLOW_STEP_INDEX_BY_KEY.get("ready") ?? -1;
+  }
   const normalizedStatus = normalizeLifecycleStatus("", status);
   if (normalizedStatus === APPEARANCE_SENT_STATUS) {
     return (FLOW_STEP_INDEX_BY_KEY.get("completed") ?? 9) + 0.1;

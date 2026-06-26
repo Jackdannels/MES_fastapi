@@ -84,10 +84,17 @@ const buildOrderedTrayExperiments = ({ taskCode, trayCode, experiments = [], exp
       const experimentType = normalizeText(experiment?.experiment_type) || normalizeText(experiment?.experimentType);
       const testType = normalizeText(experiment?.test_type) || normalizeText(experiment?.testType);
       const requiredDevice = normalizeText(experiment?.required_device) || normalizeText(experiment?.requiredDevice);
+      const axisCodes = Array.isArray(experiment?.axis_codes)
+        ? experiment.axis_codes
+        : Array.isArray(experiment?.axisCodes)
+          ? experiment.axisCodes
+          : experiment?.axis_codes || experiment?.axisCodes;
       return {
         code: experimentCode,
         name,
         displayName,
+        axis_codes: axisCodes,
+        axisCodes,
         experiment_name: normalizeText(experiment?.experiment_name),
         experimentName: normalizeText(experiment?.experimentName),
         experiment_type: experimentType,

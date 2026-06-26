@@ -112,7 +112,7 @@ describe("schedulePageModel", () => {
         {
           id: "schedule-1",
           task_code: "SYLU-2099-03-001",
-          device: "冲击一室",
+          device: "盐雾试验室",
           start_at: "2099-03-20T00:00:00.000Z",
           end_at: "2099-03-20T05:40:00.000Z",
         },
@@ -122,6 +122,40 @@ describe("schedulePageModel", () => {
     expect(result.error).toBeUndefined();
     expect(result.startTime).toBe("13:50");
     expect(result.endTime).toBe("17:20");
+  });
+
+  test("resolveScheduleTimes ignores other laboratories when resolving afternoon fixed slot start", () => {
+    const schedules = [
+      {
+        id: "schedule-morning",
+        task_code: "SYLU-2099-03-001",
+        device: "振动一室",
+        start_at: "2099-03-20T08:00:00",
+        end_at: "2099-03-20T13:40:00",
+      },
+    ];
+
+    const result = resolveScheduleTimes(
+      {
+        device: "振动二室",
+        planned_hours: 3.5,
+        schedule_date: "2099-03-20",
+        time_slot: "afternoon",
+      },
+      new Date("2099-03-19T19:24:00"),
+      schedules,
+    );
+    const options = buildManualTimeSlotOptions({
+      device: "振动二室",
+      now: new Date("2099-03-19T19:24:00"),
+      scheduleDate: "2099-03-20",
+      schedules,
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.startTime).toBe("12:00");
+    expect(result.endTime).toBe("15:30");
+    expect(options.find((option) => option.value === "afternoon")?.label).toBe("下午（12:00-18:00）");
   });
 
   test("resolveScheduleTimes rejects custom starts before the current time", () => {
@@ -469,6 +503,37 @@ describe("schedulePageModel", () => {
     });
   });
 
+  test("buildScheduleRows keeps axis text in its own display field", async () => {
+    const { buildScheduleRows } = await import("./model");
+    const rows = buildScheduleRows({
+      tasks: [{ code: "SYLU-2026-03-AXIS", name: "轴向任务", test_type: "振动试验" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          experiment_name: "振动试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-axis",
+          axis_codes: ["y+"],
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          device: "振动一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(rows[0]).toMatchObject({
+      axisLabel: "Y+",
+      experimentLabel: "振动试验",
+    });
+  });
+
   test("buildScheduleRows resolves row status per experiment instead of sharing one task status", async () => {
     const { buildScheduleRows } = await import("./model");
     const rows = buildScheduleRows({
@@ -630,6 +695,7 @@ describe("schedulePageModel", () => {
         fullCode: "SYLU-2026-03-006-B",
         label: "振动试验",
         requiredDevice: "低温实验室",
+        supportsAxisScheduling: true,
         taskCode: "SYLU-2026-03-006",
       },
     ]);
@@ -654,6 +720,7 @@ describe("schedulePageModel", () => {
         fullCode: "SYLU-2026-03-003-A",
         label: "霉菌试验",
         requiredDevice: "霉菌试验",
+        supportsAxisScheduling: false,
         taskCode: "SYLU-2026-03-003",
       },
     ]);
@@ -679,6 +746,7 @@ describe("schedulePageModel", () => {
         fullCode: "SYLU-2026-03-003-A",
         label: "冲击试验",
         requiredDevice: "冲击试验",
+        supportsAxisScheduling: true,
         taskCode: "SYLU-2026-03-003",
       },
       {
@@ -686,6 +754,7 @@ describe("schedulePageModel", () => {
         fullCode: "SYLU-2026-03-003-B",
         label: "盐雾试验",
         requiredDevice: "盐雾试验",
+        supportsAxisScheduling: false,
         taskCode: "SYLU-2026-03-003",
       },
     ]);
@@ -867,6 +936,8 @@ describe("schedulePageModel", () => {
         task_code: "SYLU-2026-03-008",
       }),
     ).toEqual({
+      axis_batch_no: "",
+      axis_codes: [],
       custom_end: "11:30",
       custom_start: "08:00",
       device: "振动一室",
@@ -890,6 +961,8 @@ describe("schedulePageModel", () => {
         task_code: "SYLU-2026-03-008",
       }),
     ).toEqual({
+      axis_batch_no: "",
+      axis_codes: [],
       custom_end: "11:45",
       custom_start: "09:15",
       device: "冲击一室",
@@ -1580,6 +1653,7 @@ describe("schedulePageModel", () => {
       }),
     );
     expect(gantt.rows[0].slots[0].items.map((item) => item.taskCode)).toEqual(["TASK-001", "TASK-002"]);
+    expect(gantt.rows[0].slots[0].allItems.map((item) => item.taskCode)).toEqual(["TASK-001", "TASK-002", "TASK-003"]);
   });
 
   test("buildGanttRows marks exactly two non-overlapping tasks as split instead of stacked", () => {
@@ -1654,6 +1728,84 @@ describe("schedulePageModel", () => {
     expect(gantt.rows[0].slots[0].title).toContain("TASK-001 / A实验 / 2099-03-20 08:00 - 2099-03-20 09:00");
     expect(gantt.rows[0].slots[0].title).toContain("TASK-002 / B实验 / 2099-03-20 09:30 - 2099-03-20 11:00");
     expect(gantt.rows[0].slots[0].title).toContain("隐藏:");
+  });
+
+  test("buildGanttRows keeps sequential axis schedules visible in one half-day cell", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "振动一室" }],
+      experiments: [
+        { task_code: "SYLU-2026-03-AXIS", experiment_code: "SYLU-2026-03-AXIS-A", experiment_name: "振动试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-axis-1",
+          axis_codes: ["y+"],
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          device: "振动一室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T01:00:00.000Z",
+        },
+        {
+          id: "schedule-axis-2",
+          axis_codes: ["x-"],
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          device: "振动一室",
+          start_at: "2099-03-20T01:00:00.000Z",
+          end_at: "2099-03-20T02:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    const vibrationRow = gantt.rows.find((row) => row.device === "振动一室");
+    const slot = vibrationRow.slots.find((entry) => String(entry.title || "").includes("振动试验 Y+"));
+    expect(slot.items).toHaveLength(2);
+    expect(slot.title).toContain("振动试验 Y+");
+    expect(slot.title).toContain("振动试验 X-");
+  });
+
+  test("buildGanttRows keeps adjacent axis schedules as separate gantt segments across half-day slots", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      experiments: [
+        { task_code: "SYLU-2026-06-022", experiment_code: "SYLU-2026-06-022-A", experiment_name: "冲击试验" },
+      ],
+      schedules: [
+        {
+          id: "schedule-axis-am",
+          axis_codes: ["z+"],
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T00:00:00.000Z",
+          end_at: "2099-03-20T04:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+        {
+          id: "schedule-axis-pm",
+          axis_codes: ["z-"],
+          task_code: "SYLU-2026-06-022",
+          experiment_code: "SYLU-2026-06-022-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T04:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    const segments = impactRow.segments.filter((entry) => entry.label === "SYLU-2026-06-022");
+
+    expect(segments).toHaveLength(2);
+    expect(segments.map((segment) => segment.colspan)).toEqual([1, 1]);
+    expect(segments.map((segment) => segment.scheduleIds)).toEqual([["schedule-axis-am"], ["schedule-axis-pm"]]);
+    expect(segments[0].title).toContain("冲击试验 Z+");
+    expect(segments[0].title).not.toContain("冲击试验 Z-");
+    expect(segments[1].title).toContain("冲击试验 Z-");
   });
 
   test("buildGanttRows keeps unstarted schedules visible even after their planned end time has passed", () => {
@@ -1987,6 +2139,492 @@ describe("schedulePageModel", () => {
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
   });
 
+  test("buildExperimentOptions keeps impact or vibration experiments available while scheduled axes remain", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-06-018",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-018",
+          experiment_code: "SYLU-2026-06-018-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["z-", "y+", "x-", "x+"],
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-018",
+          experiment_code: "SYLU-2026-06-018-A",
+          device: "冲击一室",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["z-", "y+"],
+        },
+      ],
+    });
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        code: "SYLU-2026-06-018-A",
+        axisCodes: ["z-", "y+", "x-", "x+"],
+        scheduledAxisCodes: ["z-", "y+"],
+        remainingAxisCodes: ["x-", "x+"],
+      }),
+    ]);
+  });
+
+  test("buildExperimentOptions keeps completed axes visible and removes them from remaining selections", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-06-218",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-218",
+          experiment_code: "SYLU-2026-06-218-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          axis_codes: ["x+", "x-", "y+"],
+        },
+      ],
+      experimentRunSteps: [
+        {
+          task_code: "SYLU-2026-06-218",
+          experiment_code: "SYLU-2026-06-218-A",
+          run_no: "run-axis-218",
+          axis_code: "x+",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-218",
+          experiment_code: "SYLU-2026-06-218-A",
+          run_no: "run-axis-218",
+          axis_code: "x-",
+          status: "待执行",
+        },
+      ],
+      schedules: [],
+    });
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        code: "SYLU-2026-06-218-A",
+        axisCodes: ["x+", "x-", "y+"],
+        completedAxisCodes: ["x+"],
+        remainingAxisCodes: ["x-", "y+"],
+      }),
+    ]);
+  });
+
+  test("buildExperimentOptions does not infer axes for impact or vibration experiments without dispatched axis data", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-06-019",
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-019",
+          experiment_code: "SYLU-2026-06-019-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+        },
+      ],
+      schedules: [
+        {
+          task_code: "SYLU-2026-06-019",
+          experiment_code: "SYLU-2026-06-019-A",
+          device: "振动一室",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+        },
+      ],
+    });
+
+    expect(options).toEqual([]);
+  });
+
+  test("createScheduleRecord stores selected dispatched axes on one schedule record", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-201",
+          experiment_code: "SYLU-2026-06-201-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          axis_codes: ["y+", "x-", "z+"],
+          unscheduled_since: "2099-03-10T07:00:00.000Z",
+        },
+      ],
+      form: {
+        axis_batch_no: "batch-1",
+        axis_codes: ["y+", "x-", "z+"],
+        custom_start: "08:00",
+        device: "振动一室",
+        experiment_code: "SYLU-2026-06-201-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-201",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-201", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules).toHaveLength(1);
+    expect(result.schedules[0].axis_codes).toEqual(["y+", "x-", "z+"]);
+    expect(result.schedules[0].axis_batch_no).toBe("batch-1");
+    expect(formatDateTime(result.schedules[0].start_at)).toBe("2099-03-20 08:00");
+    expect(formatDateTime(result.schedules[0].end_at)).toBe("2099-03-20 09:00");
+    expect(result.experiments[0].unscheduled_since).toBe("");
+  });
+
+  test("createScheduleRecord stores sub experiment code for an axis batch", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      form: {
+        axis_batch_no: "impact-axis-batch-x",
+        axis_codes: ["x+", "x-"],
+        custom_start: "08:00",
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-06-202-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-202",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-202", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules[0]).toEqual(expect.objectContaining({
+      axis_batch_no: "impact-axis-batch-x",
+      sub_experiment_code: "SYLU-2026-06-202-A-AXIS-impact-axis-batch-x",
+    }));
+  });
+
+  test("createScheduleRecord generates sub experiment code for selected axes without an explicit axis batch", () => {
+    const first = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          axis_codes: ["z-", "z+", "y-", "x+"],
+        },
+      ],
+      form: {
+        axis_codes: ["z-", "z+"],
+        custom_start: "08:00",
+        device: "振动一室",
+        experiment_code: "SYLU-2026-06-202-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-202",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-202", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+    const second = createScheduleRecord({
+      experiments: first.experiments,
+      form: {
+        axis_codes: ["y-", "x+"],
+        custom_start: "10:00",
+        device: "振动一室",
+        experiment_code: "SYLU-2026-06-202-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-202",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: first.schedules,
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-202", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+
+    expect(first.error).toBeUndefined();
+    expect(second.error).toBeUndefined();
+    expect(first.schedules[0]).toEqual(expect.objectContaining({
+      axis_batch_no: "001",
+      sub_experiment_code: "SYLU-2026-06-202-A-AXIS-001",
+    }));
+    expect(second.schedules[1]).toEqual(expect.objectContaining({
+      axis_batch_no: "002",
+      sub_experiment_code: "SYLU-2026-06-202-A-AXIS-002",
+    }));
+  });
+
+  test("buildScheduleRows exposes sub experiment code from persisted axis schedules", () => {
+    const rows = buildScheduleRows({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          experiment_name: "振动试验",
+          axis_codes: ["y+", "y-"],
+        },
+      ],
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-vibration-y",
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          device: "振动一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:00:00.000Z",
+          sub_experiment_code: "vibration-axis-batch-y",
+          axis_codes: ["y+", "y-"],
+        },
+      ],
+      tasks: [{ code: "SYLU-2026-06-203", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+
+    expect(rows[0]).toEqual(expect.objectContaining({
+      subExperimentCode: "vibration-axis-batch-y",
+      sub_experiment_code: "vibration-axis-batch-y",
+    }));
+  });
+
+  test("createScheduleRecord rejects later vibration axes on a different vibration lab", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          axis_codes: ["y+", "x-"],
+        },
+      ],
+      form: {
+        axis_codes: ["x-"],
+        custom_start: "10:00",
+        device: "振动二室",
+        experiment_code: "SYLU-2026-06-206-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-206",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-y-plus",
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          device: "振动一室",
+          start_at: "2099-03-20T08:00",
+          end_at: "2099-03-20T09:00",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-206", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+
+    expect(result).toEqual({ error: "后续振动轴向需沿用振动一室" });
+  });
+
+  test("createScheduleRecord rejects later impact axes on a different impact lab", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-207",
+          experiment_code: "SYLU-2026-06-207-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["y+", "x-"],
+        },
+      ],
+      form: {
+        axis_codes: ["x-"],
+        custom_start: "10:00",
+        device: "冲击二室",
+        experiment_code: "SYLU-2026-06-207-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-207",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-impact-y-plus",
+          task_code: "SYLU-2026-06-207",
+          experiment_code: "SYLU-2026-06-207-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00",
+          end_at: "2099-03-20T09:00",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-207", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result).toEqual({ error: "后续冲击轴向需沿用冲击一室" });
+  });
+
+  test("createScheduleRecord keeps multiple selected axes on the same schedule", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-202",
+          experiment_code: "SYLU-2026-06-202-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      form: {
+        axis_codes: ["x+", "x-"],
+        custom_start: "08:00",
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-06-202-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-202",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-202", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules).toHaveLength(1);
+    expect(result.schedules[0].axis_codes).toEqual(["x+", "x-"]);
+    expect(result.schedules[0]).toEqual(expect.objectContaining({
+      axis_batch_no: "001",
+      sub_experiment_code: "SYLU-2026-06-202-A-AXIS-001",
+    }));
+  });
+
+  test("createScheduleRecord rejects axis experiments until at least one axis is selected for this schedule", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-205",
+          experiment_code: "SYLU-2026-06-205-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      form: {
+        axis_codes: [],
+        custom_start: "08:00",
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-06-205-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-205",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-205", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result).toEqual({ error: "请选择轴向" });
+  });
+
+  test("createScheduleRecord rejects axis experiments when dispatched axis data is missing", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-203",
+          experiment_code: "SYLU-2026-06-203-A",
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+        },
+      ],
+      form: {
+        custom_start: "08:00",
+        device: "振动一室",
+        experiment_code: "SYLU-2026-06-203-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-06-203",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-203", status: STATUS_WAITING, test_type: "振动试验" }],
+    });
+
+    expect(result).toEqual({ error: "当前实验缺少任务下发的轴向信息" });
+  });
+
+  test("createScheduleRecord rejects axis experiments when all dispatched axes are already scheduled", () => {
+    const result = createScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["X+", "x-"],
+        },
+      ],
+      form: {
+        custom_start: "08:00",
+        device: "冲击一室",
+        experiment_code: "SYLU-2026-06-204-A",
+        planned_hours: "1",
+        schedule_date: "2099-03-22",
+        task_code: "SYLU-2026-06-204",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-19T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-x-plus",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00",
+          end_at: "2099-03-20T09:00",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x+"],
+        },
+        {
+          id: "schedule-x-minus",
+          task_code: "SYLU-2026-06-204",
+          experiment_code: "SYLU-2026-06-204-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T09:00",
+          end_at: "2099-03-20T10:00",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["X-"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-204", status: STATUS_WAITING, test_type: "冲击试验" }],
+    });
+
+    expect(result).toEqual({ error: "当前实验的轴向已全部排程" });
+  });
+
   test("updateScheduleRecord blocks rescheduling after fixture installation", () => {
     const result = updateScheduleRecord({
       devices: [{ code: "Lab-A" }],
@@ -2123,6 +2761,75 @@ describe("schedulePageModel", () => {
     ]);
   });
 
+  test("deleteScheduleRecord allows deleting a partially completed multi-axis schedule for rescheduling unfinished axes", () => {
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "y+"],
+        },
+      ],
+      experimentRuns: [
+        {
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          sub_experiment_code: "SYLU-2026-06-219-A-AXIS-001",
+          run_no: "run-axis-219",
+          status: "实验进行中",
+        },
+      ],
+      experimentRunSteps: [
+        {
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          sub_experiment_code: "SYLU-2026-06-219-A-AXIS-001",
+          run_no: "run-axis-219",
+          axis_code: "x+",
+          status: "实验已完成",
+        },
+        {
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          sub_experiment_code: "SYLU-2026-06-219-A-AXIS-001",
+          run_no: "run-axis-219",
+          axis_code: "x-",
+          status: "待执行",
+        },
+        {
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          sub_experiment_code: "SYLU-2026-06-219-A-AXIS-001",
+          run_no: "run-axis-219",
+          axis_code: "y+",
+          status: "待执行",
+        },
+      ],
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      scheduleId: "schedule-axis-partial",
+      schedules: [
+        {
+          id: "schedule-axis-partial",
+          task_code: "SYLU-2026-06-219",
+          experiment_code: "SYLU-2026-06-219-A",
+          sub_experiment_code: "SYLU-2026-06-219-A-AXIS-001",
+          device: "冲击一室",
+          planned_hours: 2,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x+", "x-", "y+"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-219", status: "任务进行中", test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules).toEqual([]);
+  });
+
   test("deleteScheduleRecord blocks deleting a schedule after fixture installation", () => {
     const result = deleteScheduleRecord({
       experiments: [
@@ -2195,14 +2902,13 @@ describe("schedulePageModel", () => {
     expect(labRow?.segments).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          colspan: expect.any(Number),
+          colspan: 5,
           label: "SYLU-2026-03-001",
           scheduleId: "schedule-1",
           state: "busy",
         }),
       ]),
     );
-    expect(labRow?.segments.find((segment) => segment.scheduleId === "schedule-1")?.colspan).toBe(5);
   });
 
   test("createManualScheduleForm keeps today morning before 12:00", async () => {

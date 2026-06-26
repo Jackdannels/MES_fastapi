@@ -8,6 +8,7 @@ import {
   RUNNING_SCHEDULE_DELETE_MESSAGE,
   RUNNING_SCHEDULE_RESCHEDULE_MESSAGE,
   scheduleExperimentHasStarted,
+  scheduleHasPartialCompletedAxes,
 } from "@/lib/runningExperimentGuards";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
@@ -37,6 +38,27 @@ const COMPLETED_TRAY_STATUSES = new Set([
   "实验后暂存间存放",
   "厂家收回",
 ]);
+const AXIS_EXPERIMENT_TYPES = new Set(["冲击试验", "冲击实验", "振动试验", "振动实验"]);
+const AXIS_LAB_LOCK_GROUPS = [
+  {
+    label: "冲击",
+    experimentTypes: new Set(["冲击试验", "冲击实验"]),
+    labs: new Set(["冲击一室", "冲击二室"]),
+  },
+  {
+    label: "振动",
+    experimentTypes: new Set(["振动试验", "振动实验"]),
+    labs: new Set(["振动一室", "振动二室"]),
+  },
+];
+const AXIS_CODE_OPTIONS = [
+  { code: "x+", label: "X+", testId: "x-plus" },
+  { code: "x-", label: "X-", testId: "x-minus" },
+  { code: "y+", label: "Y+", testId: "y-plus" },
+  { code: "y-", label: "Y-", testId: "y-minus" },
+  { code: "z+", label: "Z+", testId: "z-plus" },
+  { code: "z-", label: "Z-", testId: "z-minus" },
+];
 import {
   RETENTION_DEVICE,
   RETENTION_KEYWORD,
@@ -111,6 +133,214 @@ const buildFallbackExperimentsForTask = (task) => {
     required_device: experimentTypes[index] || experimentTypes[0] || "",
     task_code: taskCode,
   }));
+};
+
+const normalizeAxisCodes = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.replace(/，/g, ",").split(",")
+      : [];
+  const seen = new Set();
+  return rawValues
+    .map((item) => normalizeText(item).toLowerCase())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+};
+
+const resolveSubExperimentCode = (value = {}) =>
+  normalizeText(value?.subExperimentCode ?? value?.sub_experiment_code ?? value?.sub_experiment_no ?? value?.subExperimentNo);
+
+const deriveAxisSubExperimentCode = (experimentCode, axisBatchNo) => {
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  let normalizedAxisBatchNo = normalizeText(axisBatchNo);
+  if (!normalizedExperimentCode || !normalizedAxisBatchNo) {
+    return "";
+  }
+  if (/^\d+$/.test(normalizedAxisBatchNo)) {
+    normalizedAxisBatchNo = normalizedAxisBatchNo.padStart(3, "0");
+  }
+  return `${normalizedExperimentCode}-AXIS-${normalizedAxisBatchNo}`;
+};
+
+const resolveNextAxisBatchNo = ({ experimentCode = "", schedules = [], taskCode = "" } = {}) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const relatedAxisSchedules = (Array.isArray(schedules) ? schedules : []).filter((schedule) =>
+    normalizeText(schedule?.task_code ?? schedule?.taskCode) === normalizedTaskCode
+    && normalizeText(schedule?.experiment_code ?? schedule?.experimentCode) === normalizedExperimentCode
+    && normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0,
+  );
+  const maxNumericBatchNo = relatedAxisSchedules.reduce((maxValue, schedule) => {
+    const batchNo = normalizeText(schedule?.axis_batch_no ?? schedule?.axisBatchNo);
+    if (!/^\d+$/.test(batchNo)) {
+      return maxValue;
+    }
+    return Math.max(maxValue, Number(batchNo));
+  }, 0);
+  const nextBatchNo = maxNumericBatchNo > 0 ? maxNumericBatchNo + 1 : relatedAxisSchedules.length + 1;
+  return String(nextBatchNo).padStart(3, "0");
+};
+
+const experimentSupportsAxisScheduling = (experiment) => {
+  const axisCodes = normalizeAxisCodes(experiment?.axis_codes ?? experiment?.axisCodes);
+  const labels = [
+    normalizeText(experiment?.experiment_name),
+    normalizeText(experiment?.experiment_type),
+    normalizeText(experiment?.required_device),
+  ];
+  return axisCodes.length > 0 || labels.some((label) => AXIS_EXPERIMENT_TYPES.has(label));
+};
+
+const resolveAxisLabLockGroup = (experiment) => {
+  const labels = [
+    normalizeText(experiment?.experiment_name),
+    normalizeText(experiment?.experiment_type),
+    normalizeText(experiment?.required_device),
+  ];
+  if (!experimentSupportsAxisScheduling(experiment)) {
+    return null;
+  }
+  return AXIS_LAB_LOCK_GROUPS.find((group) => labels.some((label) => group.experimentTypes.has(label))) || null;
+};
+
+const resolveExperimentAxisCodes = (experiment) => {
+  const explicitAxisCodes = normalizeAxisCodes(experiment?.axis_codes ?? experiment?.axisCodes);
+  if (explicitAxisCodes.length > 0) {
+    return explicitAxisCodes;
+  }
+  return [];
+};
+
+const resolveAxisScheduleLockContext = ({ experimentCode, experiments = [], form = {}, schedules = [], taskCode = "" }) => {
+  const normalizedTaskCode = normalizeText(taskCode || form?.task_code);
+  const normalizedExperimentCode = normalizeText(experimentCode ?? form?.experiment_code);
+  if (!normalizedTaskCode || !normalizedExperimentCode) {
+    return { device: "", label: "" };
+  }
+  const experiment = (Array.isArray(experiments) ? experiments : []).find(
+    (entry) =>
+      normalizeText(entry?.experiment_code) === normalizedExperimentCode &&
+      normalizeText(entry?.task_code) === normalizedTaskCode,
+  );
+  const lockGroup = resolveAxisLabLockGroup(experiment);
+  if (!lockGroup) {
+    return { device: "", label: "" };
+  }
+  const relatedSchedule = (Array.isArray(schedules) ? schedules : []).find((schedule) => {
+    const device = normalizeText(schedule?.device);
+    return (
+      !isRetentionDevice(schedule) &&
+      normalizeText(schedule?.task_code) === normalizedTaskCode &&
+      normalizeText(schedule?.experiment_code) === normalizedExperimentCode &&
+      lockGroup.labs.has(device) &&
+      normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0
+    );
+  });
+  return { device: normalizeText(relatedSchedule?.device), label: lockGroup.label };
+};
+
+const resolveAxisScheduleDeviceLock = (options) => resolveAxisScheduleLockContext(options).device;
+
+const formatAxisLabel = (value) => normalizeText(value).toUpperCase();
+
+const buildAxisExperimentLabel = (experimentLabel, axisCodes) => {
+  const normalizedLabel = normalizeText(experimentLabel);
+  const axisLabel = normalizeAxisCodes(axisCodes).map(formatAxisLabel).join(" / ");
+  return axisLabel ? `${normalizedLabel} ${axisLabel}`.trim() : normalizedLabel;
+};
+
+const scheduledAxisCodesForExperiment = ({ experimentCode, schedules }) => {
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const seen = new Set();
+  return (Array.isArray(schedules) ? schedules : [])
+    .filter((schedule) => !isRetentionDevice(schedule) && normalizeText(schedule?.experiment_code) === normalizedExperimentCode)
+    .flatMap((schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes))
+    .filter((axisCode) => {
+      if (!axisCode || seen.has(axisCode)) {
+        return false;
+      }
+      seen.add(axisCode);
+      return true;
+    });
+};
+
+const AXIS_STEP_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
+
+const completedAxisCodesForExperiment = ({ experimentCode, experimentRunSteps = [], taskCode = "" }) => {
+  const normalizedExperimentCode = normalizeText(experimentCode);
+  const normalizedTaskCode = normalizeText(taskCode);
+  const seen = new Set();
+  return (Array.isArray(experimentRunSteps) ? experimentRunSteps : [])
+    .filter((step) => {
+      const stepTaskCode = normalizeText(step?.task_code ?? step?.taskCode);
+      const stepExperimentCode = normalizeText(step?.experiment_code ?? step?.experimentCode);
+      const stepStatus = normalizeText(step?.status ?? step?.step_status ?? step?.stepStatus);
+      return (
+        stepExperimentCode === normalizedExperimentCode &&
+        (!normalizedTaskCode || stepTaskCode === normalizedTaskCode) &&
+        AXIS_STEP_COMPLETED_STATUSES.has(stepStatus)
+      );
+    })
+    .map((step) => normalizeText(step?.axis_code ?? step?.axisCode).toLowerCase())
+    .filter((axisCode) => {
+      if (!axisCode || seen.has(axisCode)) {
+        return false;
+      }
+      seen.add(axisCode);
+      return true;
+    });
+};
+
+const resolveScheduledAxisCodes = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [] }) => {
+  const selection = resolveScheduledAxisSelection({ experimentCode, experiments, experimentRunSteps, form, schedules });
+  return selection.axisCodes;
+};
+
+const resolveScheduledAxisSelection = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [] }) => {
+  const explicitAxisCodes = normalizeAxisCodes(form?.axis_codes ?? form?.axisCodes);
+  const hasExplicitAxisSelection = explicitAxisCodes.length > 0;
+
+  const normalizedTaskCode = normalizeText(form?.task_code);
+  const normalizedExperimentCode = normalizeText(experimentCode ?? form?.experiment_code);
+  const experiment = (Array.isArray(experiments) ? experiments : []).find(
+    (entry) =>
+      normalizeText(entry?.experiment_code) === normalizedExperimentCode &&
+      (!normalizedTaskCode || normalizeText(entry?.task_code) === normalizedTaskCode),
+  );
+  if (!experiment || !experimentSupportsAxisScheduling(experiment)) {
+    return { axisCodes: [] };
+  }
+  const axisCodes = resolveExperimentAxisCodes(experiment);
+  if (axisCodes.length === 0) {
+    return { axisCodes: [], error: "当前实验缺少任务下发的轴向信息" };
+  }
+  const completedAxisCodes = completedAxisCodesForExperiment({
+    experimentCode: normalizedExperimentCode,
+    experimentRunSteps,
+    taskCode: normalizedTaskCode,
+  });
+  const unavailableAxisCodes = new Set([
+    ...scheduledAxisCodesForExperiment({ experimentCode: normalizedExperimentCode, schedules }),
+    ...completedAxisCodes,
+  ]);
+  const remainingAxisCodes = axisCodes.filter((axisCode) => !unavailableAxisCodes.has(axisCode));
+  if (remainingAxisCodes.length === 0) {
+    return { axisCodes: [], error: "当前实验的轴向已全部排程" };
+  }
+  if (!hasExplicitAxisSelection) {
+    return { axisCodes: [], error: "请选择轴向" };
+  }
+  const selectedAxisCodes = explicitAxisCodes.filter((axisCode) => remainingAxisCodes.includes(axisCode));
+  if (selectedAxisCodes.length === 0) {
+    return { axisCodes: [], error: "请选择轴向" };
+  }
+  return { axisCodes: selectedAxisCodes };
 };
 
 const buildExperimentCandidates = ({ taskCode, experiments, tasks }) => {
@@ -485,13 +715,19 @@ const buildSlotTaskItems = ({ matchedSchedules, now, experimentNameByCode }) => 
     if (!taskCode) {
       return;
     }
-    const current = byTaskCode.get(taskCode);
+    const experimentCode = normalizeText(schedule?.experiment_code);
+    const axisCodes = normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
+    const subExperimentCode = resolveSubExperimentCode(schedule);
+    const groupKey = subExperimentCode || (axisCodes.length > 0 ? `${taskCode}::${experimentCode}::${axisCodes.join("/")}` : taskCode);
+    const current = byTaskCode.get(groupKey);
     const startAt = parseDate(schedule?.start_at);
     const endAt = parseDate(schedule?.end_at);
     const stateMeta = getSlotState({ startAt, endAt, now });
     if (!current) {
-      const experimentCode = normalizeText(schedule?.experiment_code);
-      const experimentLabel = experimentNameByCode?.get(experimentCode) || buildExperimentLabel(experimentCode);
+      const experimentLabel = buildAxisExperimentLabel(
+        experimentNameByCode?.get(experimentCode) || buildExperimentLabel(experimentCode),
+        axisCodes,
+      );
       const timeRange = formatScheduleWindow(schedule?.start_at, schedule?.end_at);
       const nextItem = {
         color: resolveTaskColor(taskCode),
@@ -499,11 +735,13 @@ const buildSlotTaskItems = ({ matchedSchedules, now, experimentNameByCode }) => 
         scheduleId: normalizeText(schedule?.id),
         scheduleIds: [normalizeText(schedule?.id)].filter(Boolean),
         state: stateMeta.state,
+        subExperimentCode,
+        sub_experiment_code: subExperimentCode,
         taskCode,
         timeRange,
         title: `${taskCode} / ${experimentLabel || "-"} / ${timeRange}`.trim(),
       };
-      byTaskCode.set(taskCode, nextItem);
+      byTaskCode.set(groupKey, nextItem);
       items.push(nextItem);
       return;
     }
@@ -521,6 +759,39 @@ const buildSlotTaskItems = ({ matchedSchedules, now, experimentNameByCode }) => 
 
   return items;
 };
+
+const mergeUniqueTextList = (values) => {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : [])
+    .map(normalizeText)
+    .filter((value) => {
+      if (!value || seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
+};
+
+const mergeGanttItems = (leftItems = [], rightItems = []) => {
+  const result = [];
+  const seen = new Set();
+  [...(Array.isArray(leftItems) ? leftItems : []), ...(Array.isArray(rightItems) ? rightItems : [])].forEach((item) => {
+    const itemScheduleIds = Array.isArray(item?.scheduleIds) ? item.scheduleIds : [item?.scheduleId].filter(Boolean);
+    const key = itemScheduleIds.join("\u0001") || normalizeText(item?.title);
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    result.push(item);
+  });
+  return result;
+};
+
+const collectGanttScheduleIds = (items = []) =>
+  mergeUniqueTextList((Array.isArray(items) ? items : []).flatMap((item) =>
+    Array.isArray(item?.scheduleIds) ? item.scheduleIds : [item?.scheduleId],
+  ));
 
 const buildExperimentNameMap = (experiments) =>
   new Map(
@@ -951,6 +1222,7 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
     .map((schedule) => {
       const taskCode = normalizeText(schedule?.task_code);
       const experimentCode = normalizeText(schedule?.experiment_code);
+      const subExperimentCode = resolveSubExperimentCode(schedule);
       const task = taskByCode.get(taskCode);
       // 排程列表的状态按当前这条实验排程的真实生命周期判断，避免同任务下兄弟实验互相串扰。
       const status = resolveScheduleRowStatus({
@@ -963,14 +1235,18 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
       });
 
       return {
+        axisLabel: normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).map(formatAxisLabel).join(" / "),
         device: normalizeText(schedule?.device),
         endAt: formatDateTime(schedule?.end_at),
+        axisCodes: normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes),
         experimentCode,
         experimentLabel: experimentNameByCode.get(experimentCode) || buildExperimentLabel(experimentCode),
         id: normalizeText(schedule?.id),
         rowStatus: status,
         rowStatusClass: statusClass(status),
         startAt: formatDateTime(schedule?.start_at),
+        subExperimentCode,
+        sub_experiment_code: subExperimentCode,
         taskCode,
         taskName: normalizeText(task?.name),
         testType: normalizeText(task?.test_type),
@@ -1186,6 +1462,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         if (items.length === 2) {
           return {
             className: "gantt-slot busy gantt-slot--split",
+            allItems: items,
             date: day.key,
             displayMode: "split",
             items,
@@ -1202,6 +1479,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         if (items.length > 1) {
           return {
             className: "gantt-slot busy gantt-slot--stacked",
+            allItems: items,
             date: day.key,
             displayMode: "stacked",
             items: items.slice(0, 2),
@@ -1229,6 +1507,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         const stateMeta = getSlotState({ completed: lifecycleState.completed, endAt, now, startAt, started: lifecycleState.started });
         return {
           className: stateMeta.className,
+          allItems: items,
           date: day.key,
           displayMode: "single",
           items,
@@ -1247,19 +1526,36 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
 
     const segments = [];
     slots.forEach((slot) => {
-      // 连续同态槽位在这里折叠成 colspan 段，减少甘特图重复单元格。
+      // 空闲类槽位可折叠；同一条排程跨多个半天槽位也可延展，但不同排程不合并。
       const signature = slot.state === "idle" || slot.state === "maintenance" || slot.state === "disabled"
         ? `${slot.state}:${slot.label}:${slot.title}`
         : slot.state === "conflict" || slot.state === "stacked" || slot.state === "split"
           ? `${slot.state}:${slot.key}`
           : `${slot.label}:${slot.className}`;
       const previous = segments[segments.length - 1];
-      if (previous && previous.signature == signature && slot.state !== "conflict" && slot.state !== "stacked" && slot.state !== "split") {
+      const canMergeSlot =
+        slot.state === "idle"
+        || slot.state === "maintenance"
+        || slot.state === "disabled"
+        || (
+          slot.displayMode === "single"
+          && previous?.displayMode === "single"
+          && normalizeText(slot.scheduleId)
+          && normalizeText(slot.scheduleId) === normalizeText(previous.scheduleId)
+        );
+      if (canMergeSlot && previous && previous.signature == signature) {
         previous.colspan += 1;
+        previous.allItems = mergeGanttItems(previous.allItems, slot.allItems || slot.items);
+        previous.items = mergeGanttItems(previous.items, slot.items);
+        previous.scheduleIds = collectGanttScheduleIds(previous.allItems);
+        previous.title = previous.allItems.map((item) => item.title).filter(Boolean).join("\n");
         return;
       }
+      const allItems = slot.allItems || slot.items;
+      const scheduleIds = collectGanttScheduleIds(allItems);
       segments.push({
         className: slot.className,
+        allItems,
         colspan: 1,
         displayMode: slot.displayMode,
         items: slot.items,
@@ -1267,6 +1563,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         label: slot.label,
         overflowCount: slot.overflowCount,
         scheduleId: slot.scheduleId,
+        scheduleIds,
         signature,
         stackKey: slot.stackKey || slot.key,
         state: slot.state,
@@ -1486,7 +1783,7 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
   });
 }
 
-function buildExperimentOptions({ taskCode, experiments, schedules, tasks, samples = [] }) {
+function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = [], schedules, tasks, samples = [] }) {
   const { activeTasks, activeTaskCodes } = buildActiveTaskContext(tasks, samples);
   const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : tasks;
   const normalizedTaskCode = normalizeText(taskCode);
@@ -1494,29 +1791,64 @@ function buildExperimentOptions({ taskCode, experiments, schedules, tasks, sampl
     return [];
   }
   const activeSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples });
-  const scheduledExperimentCodes = new Set(
-    activeSchedules
-      .filter(
-        (schedule) =>
-          !isRetentionDevice(schedule) &&
-          normalizeText(schedule?.experiment_code),
-      )
-      .map((schedule) => normalizeText(schedule?.experiment_code)),
-  );
-
   const seenLabels = new Set();
   return buildExperimentCandidates({ taskCode, experiments, tasks: taskList })
-    .filter((experiment) => !scheduledExperimentCodes.has(normalizeText(experiment?.experiment_code)))
     .map((experiment) => {
       const experimentCode = normalizeText(experiment?.experiment_code);
-      const typeLabel = resolveExperimentTypeLabel(experiment) || experimentCode;
+      const axisCodes = resolveExperimentAxisCodes(experiment);
+      const scheduledAxisCodes = scheduledAxisCodesForExperiment({ experimentCode, schedules: activeSchedules });
+      const completedAxisCodes = completedAxisCodesForExperiment({
+        experimentCode,
+        experimentRunSteps,
+        taskCode: normalizeText(experiment?.task_code),
+      });
+      const unavailableAxisCodes = new Set([...scheduledAxisCodes, ...completedAxisCodes]);
+      const remainingAxisCodes = axisCodes.filter((axisCode) => !unavailableAxisCodes.has(axisCode));
+      const matchingFormalSchedules = activeSchedules.filter(
+        (schedule) =>
+          !isRetentionDevice(schedule) &&
+          normalizeText(schedule?.experiment_code) === experimentCode,
+      );
+      const hasFormalSchedule = matchingFormalSchedules.length > 0;
+      const hasAxisFormalSchedule = matchingFormalSchedules.some(
+        (schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0,
+      );
       return {
+        experiment,
+        axisCodes,
+        scheduledAxisCodes,
+        completedAxisCodes,
+        remainingAxisCodes,
+        hiddenBySchedule:
+          hasFormalSchedule &&
+          (!experimentSupportsAxisScheduling(experiment) || !hasAxisFormalSchedule || remainingAxisCodes.length === 0),
+      };
+    })
+    .filter((entry) => !entry.hiddenBySchedule)
+    .map((entry) => {
+      const experiment = entry.experiment;
+      const experimentCode = normalizeText(experiment?.experiment_code);
+      const typeLabel = resolveExperimentTypeLabel(experiment) || experimentCode;
+      const option = {
         code: experimentCode,
         fullCode: experimentCode,
         label: typeLabel,
         requiredDevice: normalizeText(experiment?.required_device) || typeLabel,
         taskCode: normalizeText(experiment?.task_code),
       };
+      if (
+        entry.axisCodes.length > 0 ||
+        entry.scheduledAxisCodes.length > 0 ||
+        entry.completedAxisCodes.length > 0 ||
+        entry.remainingAxisCodes.length > 0
+      ) {
+        option.axisCodes = entry.axisCodes;
+        option.scheduledAxisCodes = entry.scheduledAxisCodes;
+        option.completedAxisCodes = entry.completedAxisCodes;
+        option.remainingAxisCodes = entry.remainingAxisCodes;
+      }
+      option.supportsAxisScheduling = experimentSupportsAxisScheduling(experiment);
+      return option;
     })
     .filter((option) => {
       const label = normalizeText(option.label);
@@ -1582,7 +1914,18 @@ function findScheduleConflicts({ schedules, candidate, ignoreId = "", experiment
   });
 }
 
-function createScheduleRecord({ devices = [], experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
+function createScheduleRecord({
+  devices = [],
+  experiments,
+  experimentRunSteps = [],
+  form,
+  tasks,
+  schedules,
+  streams,
+  now = new Date(),
+  samples = [],
+  experimentTrays = [],
+}) {
   const taskCode = normalizeText(form?.task_code);
   const device = normalizeText(form?.device);
   if (!taskCode || !device) {
@@ -1595,6 +1938,65 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
   }
 
   const deviceRecord = findDeviceRecord(devices, device);
+  const initialDeviceBlockMessage = isRetentionDevice(device)
+    ? ""
+    : resolveDeviceScheduleBlockMessage({
+        device: deviceRecord,
+        endAt: resolved.endAt,
+        now,
+        startAt: resolved.startAt,
+      });
+  if (initialDeviceBlockMessage) {
+    return { error: initialDeviceBlockMessage };
+  }
+
+  const axisSelection = resolveScheduledAxisSelection({
+    experimentCode: form?.experiment_code,
+    experiments,
+    experimentRunSteps,
+    form,
+    schedules,
+  });
+  if (axisSelection.error) {
+    return { error: axisSelection.error };
+  }
+  const selectedAxisCodes = axisSelection.axisCodes;
+  const axisScheduleLock = resolveAxisScheduleLockContext({
+    experimentCode: form?.experiment_code,
+    experiments,
+    form,
+    schedules,
+  });
+  if (axisScheduleLock.device && device !== axisScheduleLock.device) {
+    return { error: `后续${axisScheduleLock.label}轴向需沿用${axisScheduleLock.device}` };
+  }
+  const explicitAxisBatchNo = normalizeText(form?.axis_batch_no ?? form?.axisBatchNo);
+  const axisBatchNo = explicitAxisBatchNo || (selectedAxisCodes.length > 0
+    ? resolveNextAxisBatchNo({
+      experimentCode: form?.experiment_code,
+      schedules,
+      taskCode,
+    })
+    : "");
+  const subExperimentCode = resolveSubExperimentCode(form) || deriveAxisSubExperimentCode(form?.experiment_code, axisBatchNo);
+  const candidate = {
+    device,
+    end_at: formatLocalDateTime(resolved.endAt),
+    experiment_code: normalizeText(form?.experiment_code),
+    lab_code: normalizeText(form?.lab_code ?? form?.labCode),
+    lab_id: form?.lab_id ?? form?.labId ?? "",
+    planned_hours: resolved.plannedHours,
+    start_at: formatLocalDateTime(resolved.startAt),
+    sub_experiment_code: subExperimentCode,
+    task_code: taskCode,
+  };
+  if (selectedAxisCodes.length > 0) {
+    candidate.axis_codes = selectedAxisCodes;
+  }
+  if (axisBatchNo) {
+    candidate.axis_batch_no = axisBatchNo;
+  }
+
   const deviceBlockMessage = isRetentionDevice(device)
     ? ""
     : resolveDeviceScheduleBlockMessage({
@@ -1608,16 +2010,6 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
   }
 
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
-      const candidate = {
-        device,
-        end_at: formatLocalDateTime(resolved.endAt),
-        experiment_code: normalizeText(form?.experiment_code),
-        lab_code: normalizeText(form?.lab_code ?? form?.labCode),
-        lab_id: form?.lab_id ?? form?.labId ?? "",
-        planned_hours: resolved.plannedHours,
-        start_at: formatLocalDateTime(resolved.startAt),
-        task_code: taskCode,
-  };
   const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules });
   if (conflicts.length > 0) {
     return { error: "排程冲突，请调整时间或实验室" };
@@ -1635,12 +2027,26 @@ function createScheduleRecord({ devices = [], experiments, form, tasks, schedule
     retentionSchedule.lab_code = candidate.lab_code;
     retentionSchedule.lab_id = candidate.lab_id;
     retentionSchedule.planned_hours = candidate.planned_hours;
+    retentionSchedule.sub_experiment_code = candidate.sub_experiment_code;
     retentionSchedule.status = STATUS_SCHEDULED;
+    if (candidate.axis_codes) {
+      retentionSchedule.axis_codes = candidate.axis_codes;
+    } else {
+      delete retentionSchedule.axis_codes;
+    }
+    if (candidate.axis_batch_no) {
+      retentionSchedule.axis_batch_no = candidate.axis_batch_no;
+    } else {
+      delete retentionSchedule.axis_batch_no;
+    }
+    if (!candidate.sub_experiment_code) {
+      delete retentionSchedule.sub_experiment_code;
+    }
   } else {
     // 否则新增一条排程记录，并根据设备类型设置初始状态。
-      nextSchedules.push({
-        id: createId("schedule"),
-        ...candidate,
+    nextSchedules.push({
+      id: createId("schedule"),
+      ...candidate,
       status: isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED,
     });
   }
@@ -1697,6 +2103,7 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
     lab_id: form?.lab_id ?? form?.labId ?? "",
     planned_hours: resolved.plannedHours,
     start_at: formatLocalDateTime(resolved.startAt),
+    sub_experiment_code: resolveSubExperimentCode(form),
     task_code: normalizeText(form?.task_code),
   };
   const deviceRecord = findDeviceRecord(devices, device);
@@ -1724,7 +2131,11 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
   target.lab_code = candidate.lab_code;
   target.lab_id = candidate.lab_id;
   target.planned_hours = candidate.planned_hours;
+  target.sub_experiment_code = candidate.sub_experiment_code;
   target.status = isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED;
+  if (!candidate.sub_experiment_code) {
+    delete target.sub_experiment_code;
+  }
 
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
@@ -1742,6 +2153,7 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
 
 function deleteScheduleRecord({
   experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
   experiments,
@@ -1761,6 +2173,11 @@ function deleteScheduleRecord({
       experimentRunTrays,
       experimentTrays,
       samples,
+      schedule: removedSchedule,
+    }) &&
+    !scheduleHasPartialCompletedAxes({
+      experimentRuns,
+      experimentRunSteps,
       schedule: removedSchedule,
     })
   ) {
@@ -1793,6 +2210,7 @@ function deleteScheduleRecord({
 }
 
 export {
+  AXIS_CODE_OPTIONS,
   RETENTION_DEVICE,
   PLANNED_DURATION_MAX_DAYS,
   PLANNED_DURATION_MAX_HOURS,
@@ -1827,6 +2245,7 @@ export {
   resolveLegalManualScheduleState,
   resolveRetentionTimeState,
   resolveScheduleTimes,
+  resolveAxisScheduleDeviceLock,
   resolveTaskStatus,
   isManualScheduleSelectionLegal,
   updateScheduleRecord,

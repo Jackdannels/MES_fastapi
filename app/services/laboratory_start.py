@@ -3,6 +3,16 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.experiment_segments import (
+    record_sub_experiment_code,
+    resolve_record_sub_experiment_code,
+)
+from app.services.laboratory_axis_steps import (
+    AXIS_PENDING_STATUS,
+    AXIS_RUNNING_STATUS,
+    normalize_axis_codes,
+    planned_axis_codes_for_run,
+)
 from app.services.laboratory_operations import clear_fixture_ready_marker
 
 
@@ -30,6 +40,7 @@ def start_storage_laboratory_experiment(
     *,
     task_code: str,
     experiment_code: str,
+    sub_experiment_code: str = "",
     run_no: str,
     lab_name: str = "",
     schedule_id: str = "",
@@ -37,9 +48,13 @@ def start_storage_laboratory_experiment(
     started_at: str = "",
     planned_hours: float | int | None = None,
     planned_end_at: str = "",
+    axis_codes: list[str] | None = None,
+    axis_batch_no: int | str | None = None,
+    current_axis_code: str = "",
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    normalized_sub_experiment_code = normalize_text(sub_experiment_code)
     normalized_run_no = normalize_text(run_no)
     started_time = format_business_datetime(started_at) or normalize_text(started_at) or now_business_text()
     if not normalized_task_code or not normalized_experiment_code or not normalized_run_no:
@@ -51,9 +66,11 @@ def start_storage_laboratory_experiment(
 
     experiments = [dict(item) for item in snapshot.get("experiments", [])]
     schedules = [dict(item) for item in snapshot.get("schedules", [])]
+    normalized_schedule_id = normalize_text(schedule_id)
     tasks = [dict(item) for item in snapshot.get("tasks", [])]
     experiment_runs = [dict(item) for item in snapshot.get("experiment_runs", [])]
     experiment_run_trays = [dict(item) for item in snapshot.get("experiment_run_trays", [])]
+    experiment_run_steps = [dict(item) for item in snapshot.get("experiment_run_steps", [])]
     experiment_trays = [dict(item) for item in snapshot.get("experiment_trays", [])]
     experiment_samples = [dict(item) for item in snapshot.get("experiment_samples", [])]
     samples = [
@@ -163,6 +180,15 @@ def start_storage_laboratory_experiment(
     detail = start_history_detail(normalized_task_code, experiment_name, affected_tray_codes)
     normalized_lab_name = normalize_text(lab_name)
     affected_sample_count = 0
+    if not normalized_sub_experiment_code and normalized_schedule_id:
+        for schedule in schedules:
+            if normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId")) != normalized_schedule_id:
+                continue
+            normalized_sub_experiment_code = resolve_record_sub_experiment_code(
+                schedule,
+                experiment_code=normalized_experiment_code,
+            )
+            break
 
     for sample in samples:
         if not sample_matches_current_experiment(sample):
@@ -179,6 +205,11 @@ def start_storage_laboratory_experiment(
                 }
                 for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
                     next_tray.pop(target_key, None)
+                if normalized_sub_experiment_code:
+                    next_tray["target_sub_experiment_code"] = normalized_sub_experiment_code
+                else:
+                    next_tray.pop("target_sub_experiment_code", None)
+                    next_tray.pop("targetSubExperimentCode", None)
                 clear_fixture_ready_marker(next_tray)
                 touched = True
             else:
@@ -233,7 +264,6 @@ def start_storage_laboratory_experiment(
         else item
         for item in experiments
     ]
-    normalized_schedule_id = normalize_text(schedule_id)
     schedules = [
         {
             **item,
@@ -241,10 +271,16 @@ def start_storage_laboratory_experiment(
             "updated_at": started_time,
         }
         if (
-            (normalized_schedule_id and normalize_text(item.get("id") or item.get("schedule_id")) == normalized_schedule_id)
+            (
+                normalized_schedule_id
+                and normalize_text(item.get("id") or item.get("schedule_id") or item.get("scheduleId")) == normalized_schedule_id
+            )
             or (
+                not normalized_schedule_id
+                and
                 normalize_text(item.get("task_code")) == normalized_task_code
                 and normalize_text(item.get("experiment_code")) == normalized_experiment_code
+                and (not normalized_sub_experiment_code or record_sub_experiment_code(item) == normalized_sub_experiment_code)
                 and (not normalized_lab_name or normalize_text(item.get("device") or item.get("device_name")) == normalized_lab_name)
             )
         )
@@ -253,12 +289,36 @@ def start_storage_laboratory_experiment(
     ]
 
     planned_hours_value = None if planned_hours in ("", None) else planned_hours
+    planned_axis_codes = normalize_axis_codes(axis_codes)
+    if not planned_axis_codes and normalized_schedule_id:
+        for schedule in schedules:
+            if normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId")) != normalized_schedule_id:
+                continue
+            planned_axis_codes = normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
+            if not normalized_sub_experiment_code:
+                normalized_sub_experiment_code = resolve_record_sub_experiment_code(
+                    schedule,
+                    experiment_code=normalized_experiment_code,
+                )
+            break
+    if not planned_axis_codes:
+        planned_axis_codes = planned_axis_codes_for_run(
+            {**snapshot, "experiment_runs": experiment_runs, "schedules": schedules},
+            task_code=normalized_task_code,
+            experiment_code=normalized_experiment_code,
+            run_no=normalized_run_no,
+        )
+    if planned_axis_codes and not normalized_sub_experiment_code:
+        raise ValueError("sub_experiment_code is required for axis experiment start")
+    normalized_current_axis_code = normalize_text(current_axis_code) or (planned_axis_codes[0] if planned_axis_codes else "")
+
     run_record = {
         "id": normalized_run_no,
         "run_no": normalized_run_no,
         "schedule_id": normalized_schedule_id,
         "task_code": normalized_task_code,
         "experiment_code": normalized_experiment_code,
+        "sub_experiment_code": normalized_sub_experiment_code,
         "device": normalized_lab_name,
         "device_name": normalized_lab_name,
         "tray_codes": affected_tray_codes,
@@ -270,6 +330,10 @@ def start_storage_laboratory_experiment(
         "created_at": started_time,
         "updated_at": started_time,
     }
+    if planned_axis_codes:
+        run_record["axis_codes"] = planned_axis_codes
+    if axis_batch_no not in ("", None):
+        run_record["axis_batch_no"] = axis_batch_no
     experiment_runs = [
         run
         for run in experiment_runs
@@ -288,10 +352,11 @@ def start_storage_laboratory_experiment(
         relation_key = (normalized_run_no, tray_code)
         if relation_key in existing_relation_keys:
             experiment_run_trays = [
-                {
-                    **item,
-                    "status": RUNNING_STATUS,
-                    "run_tray_status": RUNNING_STATUS,
+                    {
+                        **item,
+                        "sub_experiment_code": normalized_sub_experiment_code or record_sub_experiment_code(item),
+                        "status": RUNNING_STATUS,
+                        "run_tray_status": RUNNING_STATUS,
                     "started_at": normalize_text(item.get("started_at")) or started_time,
                     "ended_at": "",
                     "updated_at": started_time,
@@ -310,6 +375,7 @@ def start_storage_laboratory_experiment(
                 "run_no": normalized_run_no,
                 "task_code": normalized_task_code,
                 "experiment_code": normalized_experiment_code,
+                "sub_experiment_code": normalized_sub_experiment_code,
                 "tray_code": tray_code,
                 "status": RUNNING_STATUS,
                 "run_tray_status": RUNNING_STATUS,
@@ -320,10 +386,55 @@ def start_storage_laboratory_experiment(
             }
         )
 
+    if planned_axis_codes:
+        existing_step_keys = {
+            (
+                normalize_text(item.get("run_no") or item.get("runNo")),
+                normalize_text(item.get("axis_code") or item.get("axisCode")),
+            )
+            for item in experiment_run_steps
+        }
+        for index, axis_code in enumerate(planned_axis_codes, start=1):
+            step_key = (normalized_run_no, axis_code)
+            if step_key in existing_step_keys:
+                experiment_run_steps = [
+                    {
+                        **item,
+                        "sub_experiment_code": normalized_sub_experiment_code or record_sub_experiment_code(item),
+                        "status": AXIS_RUNNING_STATUS if axis_code == normalized_current_axis_code else normalize_text(item.get("status")) or AXIS_PENDING_STATUS,
+                        "started_at": started_time if axis_code == normalized_current_axis_code else normalize_text(item.get("started_at") or item.get("startedAt")),
+                        "updated_at": started_time,
+                    }
+                    if (
+                        normalize_text(item.get("run_no") or item.get("runNo")) == normalized_run_no
+                        and normalize_text(item.get("axis_code") or item.get("axisCode")) == axis_code
+                    )
+                    else item
+                    for item in experiment_run_steps
+                ]
+                continue
+            experiment_run_steps.append(
+                {
+                    "id": f"{normalized_run_no}:{index}:{axis_code}",
+                    "run_no": normalized_run_no,
+                    "task_code": normalized_task_code,
+                    "experiment_code": normalized_experiment_code,
+                    "sub_experiment_code": normalized_sub_experiment_code,
+                    "axis_code": axis_code,
+                    "step_no": index,
+                    "status": AXIS_RUNNING_STATUS if axis_code == normalized_current_axis_code else AXIS_PENDING_STATUS,
+                    "started_at": started_time if axis_code == normalized_current_axis_code else "",
+                    "ended_at": "",
+                    "created_at": started_time,
+                    "updated_at": started_time,
+                }
+            )
+
     return {
         "affectedSampleCount": affected_sample_count,
         "affectedTrayCodes": affected_tray_codes,
         "experimentRunTrays": experiment_run_trays,
+        "experimentRunSteps": experiment_run_steps,
         "experimentRuns": experiment_runs,
         "experiments": experiments,
         "samples": samples,

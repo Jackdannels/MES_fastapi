@@ -9,6 +9,7 @@ const RUNNING_SCHEDULE_DELETE_MESSAGE = "实验已开始，不能删除排程";
 const RUNNING_SCHEDULE_RESCHEDULE_MESSAGE = "实验已开始，不能删除后重新排程";
 const RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务";
 const SCHEDULE_LOCKED_TRAY_STATUSES = new Set(["工装夹具安装", "实验准备就绪", "实验进行中", "实验中", "实验已完成", "实验完成", "实验已经完成"]);
+const AXIS_STEP_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -18,11 +19,33 @@ const rowExperimentCode = (row) => normalizeText(
   row?.experiment_code ?? row?.experimentCode ?? row?.experimentNo ?? row?.experiment_no,
 );
 const rowTrayCode = (row) => normalizeText(row?.tray_code ?? row?.trayCode ?? row?.trayNo ?? row?.tray_no);
+const rowRunNo = (row) => normalizeText(row?.run_no ?? row?.runNo ?? row?.id);
+const rowAxisCode = (row) => normalizeText(row?.axis_code ?? row?.axisCode).toLowerCase();
+const rowSubExperimentCode = (row) =>
+  normalizeText(row?.sub_experiment_code ?? row?.subExperimentCode ?? row?.sub_experiment_no ?? row?.subExperimentNo);
 
 const rowHasRunningExperimentStatus = (row, fields = ["status"]) =>
   fields.some((field) => isExperimentRunningStatus(row?.[field]));
 const rowHasScheduleLockedStatus = (row, fields = ["status"]) =>
   fields.some((field) => SCHEDULE_LOCKED_TRAY_STATUSES.has(normalizeText(row?.[field])) || isExperimentRunningStatus(row?.[field]));
+const rowHasCompletedAxisStatus = (row) => AXIS_STEP_COMPLETED_STATUSES.has(normalizeText(row?.status ?? row?.step_status ?? row?.stepStatus));
+const normalizeAxisCodes = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.replace(/，/g, ",").split(",")
+      : [];
+  const seen = new Set();
+  return rawValues
+    .map((item) => normalizeText(item).toLowerCase())
+    .filter((item) => {
+      if (!item || seen.has(item)) {
+        return false;
+      }
+      seen.add(item);
+      return true;
+    });
+};
 
 const taskHasRunningStatus = (task) => normalizeTaskStatusLabel(task?.status) === TASK_STATUS_RUNNING;
 
@@ -116,6 +139,47 @@ function scheduleExperimentHasStarted({
   return samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays, samples, taskCode });
 }
 
+function scheduleHasPartialCompletedAxes({
+  experimentRuns = [],
+  experimentRunSteps = [],
+  schedule,
+}) {
+  const taskCode = rowTaskCode(schedule);
+  const experimentCode = rowExperimentCode(schedule);
+  const subExperimentCode = rowSubExperimentCode(schedule);
+  const scheduledAxisCodes = normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
+  if (!taskCode || !experimentCode || !subExperimentCode || scheduledAxisCodes.length <= 1) {
+    return false;
+  }
+
+  const matchingRunNos = new Set(
+    asList(experimentRuns)
+      .filter((row) => rowMatchesExperiment(row, taskCode, experimentCode) && rowSubExperimentCode(row) === subExperimentCode)
+      .map(rowRunNo)
+      .filter(Boolean),
+  );
+  const scheduledAxisSet = new Set(scheduledAxisCodes);
+  const completedAxisCodes = new Set();
+  for (const step of asList(experimentRunSteps)) {
+    if (!rowMatchesExperiment(step, taskCode, experimentCode)) {
+      continue;
+    }
+    if (rowSubExperimentCode(step) !== subExperimentCode) {
+      continue;
+    }
+    const stepRunNo = rowRunNo(step);
+    if (matchingRunNos.size > 0 && stepRunNo && !matchingRunNos.has(stepRunNo)) {
+      continue;
+    }
+    const axisCode = rowAxisCode(step);
+    if (scheduledAxisSet.has(axisCode) && rowHasCompletedAxisStatus(step)) {
+      completedAxisCodes.add(axisCode);
+    }
+  }
+
+  return completedAxisCodes.size > 0 && completedAxisCodes.size < scheduledAxisCodes.length;
+}
+
 function taskHasRunningExperiment({
   experimentRuns = [],
   experimentRunTrays = [],
@@ -156,5 +220,6 @@ export {
   RUNNING_SCHEDULE_RESCHEDULE_MESSAGE,
   RUNNING_TASK_DELETE_MESSAGE,
   scheduleExperimentHasStarted,
+  scheduleHasPartialCompletedAxes,
   taskHasRunningExperiment,
 };

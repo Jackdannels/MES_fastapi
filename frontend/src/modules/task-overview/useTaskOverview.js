@@ -298,11 +298,12 @@ function useTaskOverview() {
     });
 
   // 托盘视图和任务视图共享同一份底层快照，但会产出不同结构。
-  const buildTrayOverviewRows = (tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays) =>
+  const buildTrayOverviewRows = (tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays, experimentRunSteps) =>
     buildTrayOverviewRowsModel({
       tasks,
       experiments,
       experimentRuns,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
       samples,
@@ -313,10 +314,10 @@ function useTaskOverview() {
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,
     });
 
-  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = [], experimentRuns = [], experimentRunTrays = []) => {
+  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = [], experimentRuns = [], experimentRunTrays = [], experimentRunSteps = []) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
     rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays);
-    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays);
+    trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays, experimentRunSteps);
   };
 
   const testTypeOptions = computed(() => {
@@ -374,6 +375,7 @@ function useTaskOverview() {
         snapshot[STORAGE_KEYS.experiment_trays],
         snapshot[STORAGE_KEYS.experiment_runs],
         snapshot[STORAGE_KEYS.experiment_run_trays],
+        snapshot[STORAGE_KEYS.experiment_run_steps],
       );
       lastOverviewSnapshot = {
         [STORAGE_KEYS.tasks]: snapshot[STORAGE_KEYS.tasks],
@@ -383,6 +385,7 @@ function useTaskOverview() {
         [STORAGE_KEYS.experiment_trays]: snapshot[STORAGE_KEYS.experiment_trays],
         [STORAGE_KEYS.experiment_runs]: snapshot[STORAGE_KEYS.experiment_runs],
         [STORAGE_KEYS.experiment_run_trays]: snapshot[STORAGE_KEYS.experiment_run_trays],
+        [STORAGE_KEYS.experiment_run_steps]: snapshot[STORAGE_KEYS.experiment_run_steps],
       };
     } finally {
       if (showBlockingLoading) {

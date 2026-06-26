@@ -4,6 +4,7 @@ import {
   POST_EXPERIMENT_STAGING_STOCKED_STATUS,
 } from "@/modules/samples/sampleFlow.constants";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
+import { trayExperimentRunIsCompleted } from "@/modules/experiment-progress/model";
 import { buildZancunRowsFromSnapshot } from "@/modules/staging-management/model";
 import {
   asArray,
@@ -16,7 +17,7 @@ import {
   resolveTaskCode,
   resolveTrayCode,
 } from "./sharedModel";
-import { COMPLETED_EXPERIMENT_STATUSES, resolveRelationStatus, sampleHasCompletedExperiment } from "./experimentCompletionModel";
+import { sampleHasCompletedExperiment } from "./experimentCompletionModel";
 
 const STAGING_CURRENT_STATUSES = new Set(["暂存间存放", "已到达暂存间"]);
 const APPEARANCE_CURRENT_STATUSES = new Set(["实验后外观检测间存放", APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]);
@@ -207,14 +208,6 @@ const collectTrayExperimentCodes = ({ experimentTrays, taskCode, trayCode }) => 
   return codes;
 };
 
-const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays, taskCode, trayCode }) =>
-  asArray(experimentRunTrays).some((entry) =>
-    resolveTaskCode(entry) === taskCode
-    && resolveExperimentCode(entry) === experimentCode
-    && resolveTrayCode(entry) === trayCode
-    && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
-  );
-
 const trayExperimentHistoryIsCompleted = ({ experimentByKey, experimentCode, samples, taskCode, trayCode }) => {
   const relation = {
     experiment: experimentByKey.get(`${taskCode}::${experimentCode}`) || null,
@@ -227,14 +220,14 @@ const trayExperimentHistoryIsCompleted = ({ experimentByKey, experimentCode, sam
   );
 };
 
-const trayAssignedExperimentsAreCompleted = ({ experimentRunTrays, experimentTrays, experiments, samples, taskCode, trayCode }) => {
+const trayAssignedExperimentsAreCompleted = ({ experimentRunSteps, experimentRunTrays, experimentTrays, experiments, samples, taskCode, trayCode }) => {
   const experimentCodes = collectTrayExperimentCodes({ experimentTrays, taskCode, trayCode });
   if (experimentCodes.size === 0) {
     return false;
   }
   const experimentByKey = buildExperimentByTaskAndCode(experiments);
   return Array.from(experimentCodes).every((experimentCode) =>
-    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode })
+    trayExperimentRunIsCompleted({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode })
     || trayExperimentHistoryIsCompleted({ experimentByKey, experimentCode, samples, taskCode, trayCode }),
   );
 };
@@ -308,6 +301,7 @@ function buildStagingSamplesView(input = {}) {
   const capacity = Number.isFinite(Number(input.capacity)) ? Number(input.capacity) : 100;
   const trayCapacity = Number.isFinite(Number(input.trayCapacity)) ? Number(input.trayCapacity) : SYSTEM_TRAY_TOTAL;
   const samples = asArray(input.samples);
+  const experimentRunSteps = firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps);
   const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
   const experimentTrays = input.experimentTrays || input.experiment_trays;
   const taskByCode = buildTaskByCode(input.tasks);
@@ -336,6 +330,7 @@ function buildStagingSamplesView(input = {}) {
       const current = trayMap.get(key) || {
         allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
           experiments: input.experiments,
+          experimentRunSteps,
           experimentRunTrays,
           experimentTrays,
           samples,
@@ -361,6 +356,7 @@ function buildStagingSamplesView(input = {}) {
         current.allAssignedExperimentsCompleted
         || trayAssignedExperimentsAreCompleted({
           experiments: input.experiments,
+          experimentRunSteps,
           experimentRunTrays,
           experimentTrays,
           samples,
@@ -404,6 +400,7 @@ function buildStagingSamplesView(input = {}) {
       trayMap.set(key, {
         allAssignedExperimentsCompleted: trayAssignedExperimentsAreCompleted({
           experiments: input.experiments,
+          experimentRunSteps,
           experimentRunTrays,
           experimentTrays,
           samples,

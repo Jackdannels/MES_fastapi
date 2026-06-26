@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.storage_backend import EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
+from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, DEFAULT_AXIS_CODES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
 MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
@@ -16,6 +16,13 @@ def _task_code(index: int, base_time: datetime) -> str:
 
 def _task_source(index: int) -> str:
     return "外部委托" if index <= 10 else "内部新增"
+
+
+def _random_axis_requirements(rng: random.SystemRandom) -> list[str]:
+    shuffled_axis_codes = list(DEFAULT_AXIS_CODES)
+    rng.shuffle(shuffled_axis_codes)
+    count = rng.randint(1, len(shuffled_axis_codes))
+    return shuffled_axis_codes[:count]
 
 
 def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: datetime | None = None) -> dict[str, Any]:
@@ -67,19 +74,23 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
             }
         )
         for exp_index, experiment_code in enumerate(experiment_codes):
+            experiment_type = experiment_types[exp_index]
+            experiment = {
+                "id": experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": experiment_type,
+                "required_device": experiment_type,
+                "priority": "",
+                "planned_hours": 0,
+                "status": "待排程",
+                "created_at": created_at,
+                "updated_at": created_at,
+            }
+            if experiment_type in AXIS_EXPERIMENT_TYPES:
+                experiment["axis_codes"] = _random_axis_requirements(rng)
             experiments.append(
-                {
-                    "id": experiment_code,
-                    "task_code": task_code,
-                    "experiment_code": experiment_code,
-                    "experiment_name": experiment_types[exp_index],
-                    "required_device": experiment_types[exp_index],
-                    "priority": "",
-                    "planned_hours": 0,
-                    "status": "待排程",
-                    "created_at": created_at,
-                    "updated_at": created_at,
-                }
+                experiment
             )
         for sample_index in range(1, sample_count + 1):
             sample_code = f"{task_code}-SP-{sample_index:03d}"

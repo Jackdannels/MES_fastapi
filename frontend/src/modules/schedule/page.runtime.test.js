@@ -12,6 +12,7 @@ const SCHEDULES_KEY = "mes.schedules";
 const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_RUNS_KEY = "mes.experiment_runs";
+const EXPERIMENT_RUN_STEPS_KEY = "mes.experiment_run_steps";
 const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const CONFLICTS_KEY = "mes.conflicts";
@@ -430,6 +431,7 @@ describe("SchedulePage runtime", () => {
         experiment_code: "SYLU-2026-03-006-B",
         experiment_name: "振动试验",
         required_device: SECONDARY_LAB,
+        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
       },
     ]);
     setStorage(DEVICES_KEY, [
@@ -454,12 +456,154 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("morning");
+    for (const testId of ["x-plus", "x-minus", "y-plus", "y-minus", "z-plus", "z-minus"]) {
+      await wrapper.get(`[data-testid="schedule-axis-option-${testId}"]`).trigger("click");
+    }
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
     await settle(wrapper);
 
     expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
     expect(getStorage(SCHEDULES_KEY)[0].experiment_code).toBe("SYLU-2026-03-006-B");
+    expect(getStorage(SCHEDULES_KEY)[0].axis_codes).toEqual(["x+", "x-", "y+", "y-", "z+", "z-"]);
     expect(wrapper.text()).toContain("振动试验");
+  });
+
+  test("shows dispatched vibration axis requirements and lets this schedule choose axes", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-axis",
+        code: "SYLU-2026-06-201",
+        name: "振动轴向任务",
+        test_type: "振动试验",
+        status: STATUS_WAITING,
+        tray_codes: ["SYLU-2026-06-201-TP-001"],
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-06-201-A",
+        task_code: "SYLU-2026-06-201",
+        experiment_code: "SYLU-2026-06-201-A",
+        experiment_name: "振动试验",
+        required_device: SECONDARY_LAB,
+        axis_codes: ["y+", "x-"],
+      },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: SECONDARY_LAB, name: SECONDARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-06-201");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="schedule-axis-selector"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).toContain("剩余轴向");
+    expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).not.toContain("本次排程");
+    expect(wrapper.findAll('[data-testid^="schedule-axis-requirement-"]').map((tag) => tag.text())).toEqual([
+      "Y+",
+      "X-",
+    ]);
+    expect(wrapper.find('[data-testid="schedule-axis-requirement-y-plus"]').element.tagName).toBe("SPAN");
+    expect(wrapper.find('[data-testid="schedule-axis-requirement-x-minus"]').element.tagName).toBe("SPAN");
+    expect(wrapper.findAll('[data-testid^="schedule-axis-option-"]').map((button) => button.text())).toEqual([
+      "Y+",
+      "X-",
+    ]);
+    expect(wrapper.find('[data-testid="schedule-axis-option-y-plus"]').element.tagName).toBe("BUTTON");
+    expect(wrapper.find('[data-testid="schedule-axis-option-x-minus"]').element.tagName).toBe("BUTTON");
+    expect(wrapper.find('[data-testid="schedule-axis-order"]').exists()).toBe(false);
+
+    await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
+    await wrapper.get('select[name="time_slot"]').setValue("custom");
+    await wrapper.get('input[name="custom_start"]').setValue("08:00");
+    await wrapper.get('input[name="planned_hours"]').setValue("1");
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("请选择轴向");
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(0);
+
+    await wrapper.get('[data-testid="schedule-axis-option-y-plus"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="schedule-axis-order"]').text()).toContain("Y+");
+    expect(wrapper.get('[data-testid="schedule-axis-order"]').text()).not.toContain("X-");
+
+    await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+    expect(getStorage(SCHEDULES_KEY).map((schedule) => schedule.axis_codes)).toEqual([["y+"]]);
+    expect(getStorage(SCHEDULES_KEY).map((schedule) => schedule.device)).toEqual([SECONDARY_LAB]);
+    expect(getStorage(SCHEDULES_KEY).map((schedule) => schedule.experiment_code)).toEqual(["SYLU-2026-06-201-A"]);
+  });
+
+  test("shows completed axes while only unfinished axes remain selectable", async () => {
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-axis-partial",
+        code: "SYLU-2026-06-219",
+        name: "冲击轴向任务",
+        test_type: "冲击试验",
+        status: "任务进行中",
+        tray_codes: ["SYLU-2026-06-219-TP-001"],
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-06-219-A",
+        task_code: "SYLU-2026-06-219",
+        experiment_code: "SYLU-2026-06-219-A",
+        experiment_name: "冲击试验",
+        required_device: SECONDARY_LAB,
+        axis_codes: ["x+", "x-", "y+"],
+      },
+    ]);
+    setStorage(EXPERIMENT_RUNS_KEY, [
+      {
+        task_code: "SYLU-2026-06-219",
+        experiment_code: "SYLU-2026-06-219-A",
+        run_no: "run-axis-219",
+        status: "实验进行中",
+      },
+    ]);
+    setStorage(EXPERIMENT_RUN_STEPS_KEY, [
+      {
+        task_code: "SYLU-2026-06-219",
+        experiment_code: "SYLU-2026-06-219-A",
+        run_no: "run-axis-219",
+        axis_code: "x+",
+        status: "实验已完成",
+      },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: SECONDARY_LAB, name: SECONDARY_LAB }]);
+    setStorage(SCHEDULES_KEY, []);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-06-219");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="schedule-axis-requirement-"]').map((tag) => tag.text())).toEqual([
+      "X+",
+      "X-",
+      "Y+",
+    ]);
+    expect(wrapper.findAll('[data-testid^="schedule-axis-completed-"]').map((tag) => tag.text())).toEqual(["X+"]);
+    expect(wrapper.findAll('[data-testid^="schedule-axis-option-"]').map((button) => button.text())).toEqual([
+      "X-",
+      "Y+",
+    ]);
+    expect(wrapper.find('[data-testid="schedule-axis-option-x-plus"]').exists()).toBe(false);
   });
 
   test("shows only atomic experiment types in the manual scheduling selector for legacy combined task types", async () => {
@@ -1031,6 +1175,138 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.text()).toContain("任务详情");
     expect(wrapper.text()).toContain("TASK-002");
     expect(wrapper.text()).toContain("B实验");
+  });
+
+  test("opens adjacent gantt schedules as separate axis details", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      {
+        id: "task-axis-merge",
+        code: "SYLU-2026-06-022",
+        name: "414",
+        test_type: "冲击试验 / 振动试验",
+        source: "内部新增",
+        priority: "高",
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "SYLU-2026-06-022-A",
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-A",
+        experiment_name: "冲击试验",
+        required_device: PRIMARY_LAB,
+      },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-axis-am",
+        axis_codes: ["z+"],
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-A",
+        device: PRIMARY_LAB,
+        planned_hours: 2,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T04:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-axis-pm",
+        axis_codes: ["z-"],
+        task_code: "SYLU-2026-06-022",
+        experiment_code: "SYLU-2026-06-022-A",
+        device: PRIMARY_LAB,
+        planned_hours: 1.5,
+        start_at: `${future.isoDate}T04:00:00.000Z`,
+        end_at: `${future.isoDate}T10:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="gantt-segment-schedule-axis-am"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    const values = wrapper.findAll(".modal.is-open input").map((input) => input.element.value);
+    expect(values).toContain("SYLU-2026-06-022");
+    expect(values).toContain("Z+");
+    expect(values).not.toContain("Z+ / Z-");
+    expect(values).toContain("2");
+  });
+
+  test("opens stacked gantt overflow tasks in a modal and then opens task detail", async () => {
+    const future = buildDateParts(2);
+
+    setStorage(TASKS_KEY, [
+      { id: "task-1", code: "TASK-001", name: "Task 1", test_type: "冲击试验", source: "内部新增", priority: "中", status: STATUS_SCHEDULED },
+      { id: "task-2", code: "TASK-002", name: "Task 2", test_type: "冲击试验", source: "外部委托", priority: "高", status: STATUS_SCHEDULED },
+      { id: "task-3", code: "TASK-003", name: "Task 3", test_type: "冲击试验", source: "外部委托", priority: "高", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "TASK-001-A", task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "A实验", required_device: PRIMARY_LAB },
+      { id: "TASK-002-B", task_code: "TASK-002", experiment_code: "TASK-002-B", experiment_name: "B实验", required_device: PRIMARY_LAB },
+      { id: "TASK-003-C", task_code: "TASK-003", experiment_code: "TASK-003-C", experiment_name: "C实验", required_device: PRIMARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-1",
+        task_code: "TASK-001",
+        experiment_code: "TASK-001-A",
+        device: PRIMARY_LAB,
+        planned_hours: 1,
+        start_at: `${future.isoDate}T00:00:00.000Z`,
+        end_at: `${future.isoDate}T01:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-2",
+        task_code: "TASK-002",
+        experiment_code: "TASK-002-B",
+        device: PRIMARY_LAB,
+        planned_hours: 0.5,
+        start_at: `${future.isoDate}T01:30:00.000Z`,
+        end_at: `${future.isoDate}T02:00:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+      {
+        id: "schedule-3",
+        task_code: "TASK-003",
+        experiment_code: "TASK-003-C",
+        device: PRIMARY_LAB,
+        planned_hours: 1,
+        start_at: `${future.isoDate}T02:30:00.000Z`,
+        end_at: `${future.isoDate}T03:30:00.000Z`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get(`[data-testid="gantt-overflow-${PRIMARY_LAB}-${future.isoDate}-am"]`).trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="gantt-overflow-modal"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("TASK-003");
+    expect(wrapper.text()).toContain("C实验");
+
+    await wrapper.get('[data-testid="gantt-overflow-task-schedule-3"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("任务详情");
+    expect(wrapper.text()).toContain("TASK-003");
+    expect(wrapper.text()).toContain("C实验");
   });
 
   test("keeps unstarted gantt schedules visible after their planned end time has passed", async () => {

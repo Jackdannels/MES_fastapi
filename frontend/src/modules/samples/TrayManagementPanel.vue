@@ -63,17 +63,23 @@
               <td>{{ slot.row.sampleCount }}</td>
               <td class="tray-sample-summary" :data-testid="`samples-trays-sample-codes-${index}`">
                 <div class="tray-sample-lines" tabindex="0">
-                  <span
+                  <component
+                    :is="sampleCode === SAMPLE_CODES_ELLIPSIS ? 'button' : 'span'"
                     v-for="sampleCode in visibleSampleCodes(slot.row)"
                     :key="`${slot.row.trayCode}-${sampleCode}`"
                     class="tray-sample-line"
                     :class="{ 'is-ellipsis': sampleCode === SAMPLE_CODES_ELLIPSIS }"
+                    :type="sampleCode === SAMPLE_CODES_ELLIPSIS ? 'button' : undefined"
+                    :aria-expanded="sampleCode === SAMPLE_CODES_ELLIPSIS ? sampleCodesPopoverIsOpen(slot.row) : undefined"
+                    :aria-label="sampleCode === SAMPLE_CODES_ELLIPSIS ? '查看全部样品编号' : undefined"
+                    @click.stop="sampleCode === SAMPLE_CODES_ELLIPSIS ? toggleSampleCodesPopover(slot.row) : undefined"
                   >
                     {{ sampleCode }}
-                  </span>
+                  </component>
                   <div
-                    v-if="hasHiddenSampleCodes(slot.row)"
+                    v-if="hasHiddenSampleCodes(slot.row) && sampleCodesPopoverIsOpen(slot.row)"
                     class="tray-sample-popover"
+                    :class="{ 'is-above': samplePopoverOpensAbove(index) }"
                     :data-testid="`samples-trays-sample-popover-${index}`"
                   >
                     <strong>全部样品编号</strong>
@@ -194,6 +200,7 @@ const TASK_FLOW_INDEX = new Map(TASK_FLOW_STEPS.map((step, index) => [step.label
 const selectedTrayCode = ref("");
 const selectedTaskCode = ref("");
 const trayPage = ref(1);
+const openSampleCodesTrayCode = ref("");
 
 const setTaskFilter = (taskCode) => {
   selectedTaskCode.value = String(taskCode || "").trim();
@@ -256,6 +263,16 @@ const allSampleCodes = (row) => {
 
 const hasHiddenSampleCodes = (row) => allSampleCodes(row).length > SAMPLE_CODES_VISIBLE_LIMIT;
 
+const sampleCodesPopoverIsOpen = (row) =>
+  Boolean(normalizeText(row?.trayCode) && openSampleCodesTrayCode.value === normalizeText(row?.trayCode));
+
+const toggleSampleCodesPopover = (row) => {
+  const trayCode = normalizeText(row?.trayCode);
+  openSampleCodesTrayCode.value = openSampleCodesTrayCode.value === trayCode ? "" : trayCode;
+};
+
+const samplePopoverOpensAbove = (index) => index >= TRAY_PAGE_SIZE - 2;
+
 const visibleSampleCodes = (row) => {
   const codes = allSampleCodes(row);
   if (!codes.length) {
@@ -275,6 +292,14 @@ watch(
   () => selectedTaskCode.value,
   () => {
     trayPage.value = 1;
+    openSampleCodesTrayCode.value = "";
+  },
+);
+
+watch(
+  () => safeTrayPage.value,
+  () => {
+    openSampleCodesTrayCode.value = "";
   },
 );
 
@@ -347,6 +372,7 @@ const selectedTaskFlow = computed(() => {
 const selectedTrayFlow = computed(() =>
   buildTrayFlowView({
     experimentRuns: props.samplesFlow.rawExperimentRuns,
+    experimentRunSteps: props.samplesFlow.rawExperimentRunSteps,
     experimentRunTrays: props.samplesFlow.rawExperimentRunTrays,
     experimentTrays: props.samplesFlow.rawExperimentTrays,
     experiments: props.samplesFlow.rawExperiments,

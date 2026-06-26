@@ -15,6 +15,7 @@ class FakeTransferStorage:
             "mes.experiment_samples": [],
             "mes.experiment_runs": [],
             "mes.experiment_run_trays": [],
+            "mes.experiment_run_steps": [],
             "mes.staging_events": [],
             "mes.devices": [],
             "mes.streams": [],
@@ -735,7 +736,57 @@ def test_transfer_area_dispatch_from_pre_experiment_appearance_goes_to_real_targ
     assert appearance_events[-1]["target_experiment_code"] == "SYLU-2026-03-102-B"
 
 
-def test_transfer_area_dispatch_from_appearance_rejects_non_whitelist_lab(monkeypatch):
+def test_transfer_area_dispatch_from_pre_appearance_rejects_non_whitelist_lab(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "device": "振动一室",
+                "start_at": "2026-03-20T09:00:00",
+                "end_at": "2026-03-20T12:00:00",
+            },
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "盐雾试验室",
+                "start_at": "2026-03-20T10:00:00",
+                "end_at": "2026-03-20T13:00:00",
+            },
+        ],
+    )
+    experiments = storage.read("mes.experiments")
+    experiments[0]["experiment_name"] = "振动试验"
+    experiments[0]["required_device"] = "振动一室"
+    experiments[1]["experiment_name"] = "盐雾试验"
+    experiments[1]["required_device"] = "盐雾试验室"
+    storage.write("mes.experiments", experiments)
+    samples = storage.read("mes.samples")
+    for sample in samples:
+        if sample["task_code"] != "SYLU-2026-03-102":
+            continue
+        sample["location"] = "外观检测间"
+        sample["status"] = "实验前外观检测间存放"
+        sample["flow_status"] = "实验前外观检测间存放"
+        sample["trays"][0]["status"] = "实验前外观检测间存放"
+    storage.write("mes.samples", samples)
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-A"},
+    )
+    payload = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch").json()
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "目标实验室与当前托盘不匹配"
+    assert [item["targetName"] for item in payload["destinations"]] == ["恒温恒湿间（暂存间）", "盐雾试验室"]
+
+
+def test_transfer_area_dispatch_from_post_appearance_allows_scheduled_non_whitelist_lab(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(
         storage,
@@ -774,15 +825,19 @@ def test_transfer_area_dispatch_from_appearance_rejects_non_whitelist_lab(monkey
         sample["trays"][0]["status"] = "实验后外观检测间存放"
     storage.write("mes.samples", samples)
 
+    payload = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch").json()
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
         json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-A"},
     )
-    payload = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch").json()
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "目标实验室与当前托盘不匹配"
-    assert [item["targetName"] for item in payload["destinations"]] == ["恒温恒湿间（暂存间）", "盐雾试验室"]
+    assert "振动一室" in [item["targetName"] for item in payload["destinations"]]
+    assert response.status_code == 200
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert all(sample["status"] == "送至实验室" for sample in updated_samples)
+    assert all(sample["location"] == "振动一室" for sample in updated_samples)
+    assert all(sample["trays"][0]["target_lab"] == "振动一室" for sample in updated_samples)
+    assert all(sample["trays"][0]["target_experiment_code"] == "SYLU-2026-03-102-A" for sample in updated_samples)
 
 
 def test_transfer_area_dispatch_to_lab_clears_stale_fixture_ready(monkeypatch):
@@ -1552,6 +1607,531 @@ def test_transfer_area_dispatches_completed_experiment_tray_to_next_lab(monkeypa
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
     assert all(sample["location"] == "振动一室" for sample in updated_samples)
     assert all(sample["trays"][0]["status"] == "送至实验室" for sample in updated_samples)
+
+
+def test_transfer_area_dispatches_partial_axis_completed_tray_to_remaining_axis_lab(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-07-001"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    sample_code = f"{task_code}-SP-001"
+    completed_axes = ["x+", "x-", "y+"]
+    remaining_axes = ["y-", "z+", "z-"]
+    first_sub_code = f"{experiment_code}#AXIS-001"
+    second_sub_code = f"{experiment_code}#AXIS-002"
+    storage.write(
+        "mes.tasks",
+        [
+            {
+                "id": task_code,
+                "code": task_code,
+                "name": "13652",
+                "test_type": "冲击试验",
+                "status": "任务进行中",
+                "transfer_status": "到货",
+            }
+        ],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": sample_code,
+                "code": sample_code,
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "冲击一室",
+                "trays": [
+                    {
+                        "tray_code": tray_code,
+                        "quantity": 1,
+                        "status": "实验进行中",
+                        "target_lab": "冲击一室",
+                        "target_experiment_code": experiment_code,
+                        "target_sub_experiment_code": second_sub_code,
+                    }
+                ],
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验进行中",
+                "axis_codes": [*completed_axes, *remaining_axes],
+            }
+        ],
+    )
+    storage.write("mes.experiment_trays", [{"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}])
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-impact-done",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "start_at": "2026-06-25T15:08:00",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+                "sub_experiment_code": first_sub_code,
+            },
+            {
+                "id": "schedule-impact-remaining",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "start_at": "2026-06-26T08:00:00",
+                "status": "已排程",
+                "axis_codes": remaining_axes,
+                "sub_experiment_code": second_sub_code,
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "status": "实验已完成",
+                "tray_codes": [tray_code],
+                "axis_codes": completed_axes,
+                "schedule_id": "schedule-impact-done",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_steps",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "axis_code": axis_code,
+                "step_no": index + 1,
+                "status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+            for index, axis_code in enumerate(completed_axes)
+        ],
+    )
+
+    response = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "lab", "targetName": "冲击一室", "experimentCode": experiment_code},
+    )
+
+    assert response.status_code == 200
+    updated_sample = storage.read("mes.samples")[0]
+    assert updated_sample["status"] == "送至实验室"
+    assert updated_sample["trays"][0]["target_experiment_code"] == experiment_code
+
+
+def test_transfer_area_dispatches_partial_axis_completed_tray_to_staging(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-07-001"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    sample_code = f"{task_code}-SP-001"
+    completed_axes = ["x+", "x-", "y+"]
+    remaining_axes = ["y-", "z+", "z-"]
+    first_sub_code = f"{experiment_code}#AXIS-001"
+    second_sub_code = f"{experiment_code}#AXIS-002"
+    storage.write(
+        "mes.tasks",
+        [{"id": task_code, "code": task_code, "name": "13652", "test_type": "冲击试验", "status": "任务进行中", "transfer_status": "到货"}],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": sample_code,
+                "code": sample_code,
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "location": "冲击一室",
+                "trays": [
+                    {
+                        "tray_code": tray_code,
+                        "quantity": 1,
+                        "status": "实验进行中",
+                        "target_lab": "冲击一室",
+                        "target_experiment_code": experiment_code,
+                        "target_sub_experiment_code": second_sub_code,
+                    }
+                ],
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验进行中",
+                "axis_codes": [*completed_axes, *remaining_axes],
+            }
+        ],
+    )
+    storage.write("mes.experiment_trays", [{"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}])
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-impact-done",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+                "sub_experiment_code": first_sub_code,
+            },
+            {
+                "id": "schedule-impact-remaining",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "已排程",
+                "axis_codes": remaining_axes,
+                "sub_experiment_code": second_sub_code,
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+                "schedule_id": "schedule-impact-done",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_steps",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "axis_code": axis_code,
+                "status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+            for axis_code in completed_axes
+        ],
+    )
+
+    response = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+
+    assert response.status_code == 200
+    updated_sample = storage.read("mes.samples")[0]
+    assert updated_sample["status"] == "送至暂存间"
+    assert updated_sample["trays"][0]["status"] == "送至暂存间"
+    assert "target_experiment_code" not in updated_sample["trays"][0]
+
+
+def test_transfer_area_rejects_partial_axis_redispatch_without_pending_axis_schedule(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-07-001"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    sample_code = f"{task_code}-SP-001"
+    completed_axes = ["x+", "x-", "y+"]
+    remaining_axes = ["y-", "z+", "z-"]
+    first_sub_code = f"{experiment_code}#AXIS-001"
+    second_sub_code = f"{experiment_code}#AXIS-002"
+    storage.write(
+        "mes.tasks",
+        [{"id": task_code, "code": task_code, "name": "13652", "test_type": "冲击试验", "status": "任务进行中", "transfer_status": "到货"}],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": sample_code,
+                "code": sample_code,
+                "task_code": task_code,
+                "status": "送至实验室",
+                "flow_status": "送至实验室",
+                "location": "冲击一室",
+                "trays": [
+                    {
+                        "tray_code": tray_code,
+                        "quantity": 1,
+                        "status": "送至实验室",
+                        "target_lab": "冲击一室",
+                        "target_experiment_code": experiment_code,
+                        "target_sub_experiment_code": second_sub_code,
+                    }
+                ],
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验进行中",
+                "axis_codes": [*completed_axes, *remaining_axes],
+            }
+        ],
+    )
+    storage.write("mes.experiment_trays", [{"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}])
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-impact-done",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+                "sub_experiment_code": first_sub_code,
+            },
+            {
+                "id": "schedule-impact-remaining",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": remaining_axes,
+                "sub_experiment_code": second_sub_code,
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "status": "实验已完成",
+                "tray_codes": [tray_code],
+                "axis_codes": completed_axes,
+                "schedule_id": "schedule-impact-done",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_steps",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "axis_code": axis_code,
+                "status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+            for axis_code in completed_axes
+        ],
+    )
+
+    response = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "lab", "targetName": "冲击一室", "experimentCode": experiment_code},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "目标实验室与当前托盘不匹配"
+    assert storage.read("mes.samples")[0]["status"] == "送至实验室"
+
+
+def test_transfer_area_rejects_partial_axis_staging_dispatch_without_pending_axis_schedule(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    task_code = "SYLU-2026-07-001"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    completed_axes = ["x+", "x-", "y+"]
+    remaining_axes = ["y-", "z+", "z-"]
+    first_sub_code = f"{experiment_code}#AXIS-001"
+    second_sub_code = f"{experiment_code}#AXIS-002"
+    storage.write(
+        "mes.tasks",
+        [{"id": task_code, "code": task_code, "name": "13652", "test_type": "冲击试验", "status": "任务进行中", "transfer_status": "到货"}],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            {
+                "id": f"{task_code}-SP-001",
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "送至实验室",
+                "flow_status": "送至实验室",
+                "location": "冲击一室",
+                "trays": [
+                    {
+                        "tray_code": tray_code,
+                        "quantity": 1,
+                        "status": "送至实验室",
+                        "target_lab": "冲击一室",
+                        "target_experiment_code": experiment_code,
+                        "target_sub_experiment_code": second_sub_code,
+                    }
+                ],
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiments",
+        [
+            {
+                "id": experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "实验进行中",
+                "axis_codes": [*completed_axes, *remaining_axes],
+            }
+        ],
+    )
+    storage.write("mes.experiment_trays", [{"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}])
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-impact-done",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": completed_axes,
+                "sub_experiment_code": first_sub_code,
+            },
+            {
+                "id": "schedule-impact-remaining",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": "冲击一室",
+                "status": "实验已完成",
+                "axis_codes": remaining_axes,
+                "sub_experiment_code": second_sub_code,
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "status": "实验已完成",
+                "tray_codes": [tray_code],
+                "axis_codes": completed_axes,
+                "schedule_id": "schedule-impact-done",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_steps",
+        [
+            {
+                "run_no": "RUN-IMPACT-AXIS",
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "axis_code": axis_code,
+                "status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+            }
+            for axis_code in completed_axes
+        ],
+    )
+
+    response = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已送往目标位置，请勿重复操作"
+    assert storage.read("mes.samples")[0]["status"] == "送至实验室"
 
 
 def test_transfer_area_dispatch_rejects_duplicate_outbound(monkeypatch):

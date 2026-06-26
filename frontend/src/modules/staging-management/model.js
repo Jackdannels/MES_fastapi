@@ -6,6 +6,7 @@ import {
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
+import { isAxisProgressIncomplete, parseAxisCodes, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
@@ -13,6 +14,7 @@ const SCHEDULES_KEY = "mes.schedules";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
+const EXPERIMENT_RUN_STEPS_KEY = "mes.experiment_run_steps";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
@@ -22,6 +24,7 @@ const STAGING_STOCKED_STATUS = "到货";
 const POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间";
 const POST_EXPERIMENT_STAGING_STATUS = "实验后暂存间存放";
 const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
+const NORMAL_STAGING_LABEL = "放置暂存间";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
@@ -422,11 +425,24 @@ const resolveTrayStatus = (statuses, events, options = {}) => {
   if (config.key === "appearance" && normalizeText(latestEvent?.action) === "stock_out" && hasPreAppearanceInbound) {
     return "待入库";
   }
-  if (config.key === "staging" && normalizeText(latestEvent?.action) === "stock_out" && (hasCompletedExperimentStatus || options.isPostExperimentInbound)) {
+  if (
+    config.key === "staging"
+    && normalizeText(latestEvent?.action) === "stock_out"
+    && (hasCompletedExperimentStatus || options.isPostExperimentInbound || options.isPartialAxisInbound)
+  ) {
     return "待入库";
   }
   if (normalizeText(latestEvent?.action) === "stock_out") {
     return "已出库";
+  }
+  if (
+    config.key === "staging"
+    && !hasStoredStatus
+    && !hasStockInCandidateStatus
+    && !normalizeText(latestEvent?.action)
+    && (options.isPostExperimentInbound || options.isPartialAxisInbound)
+  ) {
+    return "待入库";
   }
   if (normalizeText(latestEvent?.action) === "stock_out_withdraw") {
     if (
@@ -541,21 +557,134 @@ const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => 
   return codes;
 };
 
-const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunTrays, taskCode, trayCode }) =>
+const trayHasPartialAxisRunCompletion = ({ experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode }) => {
+  const experimentMap = buildExperimentMap(experiments);
+  return asArray(experimentRunTrays).some((entry) => {
+    if (
+      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
+      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
+      || !COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+    ) {
+      return false;
+    }
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
+    const subExperimentCode = normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo);
+    if (!subExperimentCode) {
+      return false;
+    }
+    const experiment = experimentMap.get(experimentCode);
+    const progress = resolveAxisProgress({
+      experiment,
+      experimentCode,
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      subExperimentCode,
+      taskCode,
+      trayCode,
+    });
+    return isAxisProgressIncomplete(progress) && Number(progress.completedCount) > 0;
+  });
+};
+
+const latestPartialAxisRunCompletionTime = ({ experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode }) => {
+  const experimentMap = buildExperimentMap(experiments);
+  return asArray(experimentRunTrays).reduce((latest, entry) => {
+    if (
+      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
+      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
+      || !COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+    ) {
+      return latest;
+    }
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
+    const subExperimentCode = normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo);
+    if (!subExperimentCode) {
+      return latest;
+    }
+    const progress = resolveAxisProgress({
+      experiment: experimentMap.get(experimentCode),
+      experimentCode,
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      subExperimentCode,
+      taskCode,
+      trayCode,
+    });
+    if (!isAxisProgressIncomplete(progress) || Number(progress.completedCount) <= 0) {
+      return latest;
+    }
+    return Math.max(
+      latest,
+      parseTimeValue(
+        entry?.ended_at || entry?.endedAt || entry?.completed_at || entry?.completedAt || entry?.updated_at || entry?.updatedAt,
+      ),
+    );
+  }, 0);
+};
+
+const trayHasLabStockOutAtOrAfter = ({ config, context, events, timestamp }) => {
+  if (timestamp <= 0) {
+    return false;
+  }
+  return asArray(events).some((event) => {
+    if (
+      normalizeText(event?.action) !== "stock_out"
+      || !eventMatchesRoom(event, config)
+      || eventTargetsStorageRoom(event, config, context)
+    ) {
+      return false;
+    }
+    return parseTimeValue(event?.time) >= timestamp;
+  });
+};
+
+const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode }) =>
   asArray(experimentRunTrays).some((entry) =>
     normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) === taskCode
     && normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) === trayCode
     && normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo) === experimentCode
-    && COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status)),
+    && COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+    && !isAxisProgressIncomplete(resolveAxisProgress({
+      experiment: buildExperimentMap(experiments).get(experimentCode),
+      experimentCode,
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      subExperimentCode: normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo),
+      taskCode,
+      trayCode,
+    })),
   );
 
-const trayAssignedExperimentsAreCompleted = ({ taskCode, trayCode, experimentTrays, experimentRunTrays }) => {
+const scheduleAxisBatchIsCompleted = ({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, schedule, taskCode, trayCode }) => {
+  const scheduleAxisCodes = parseAxisCodes(schedule?.axis_codes || schedule?.axisCodes);
+  if (!scheduleAxisCodes.length) {
+    return false;
+  }
+  const subExperimentCode = normalizeText(schedule?.sub_experiment_code || schedule?.subExperimentCode || schedule?.sub_experiment_no || schedule?.subExperimentNo);
+  const progress = resolveAxisProgress({
+    experiment: buildExperimentMap(experiments).get(experimentCode),
+    experimentCode,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    subExperimentCode,
+    taskCode,
+    trayCode,
+  });
+  const completedAxisCodes = new Set(asArray(progress?.completedAxisCodes).map(normalizeText).filter(Boolean));
+  return scheduleAxisCodes.every((axisCode) => completedAxisCodes.has(normalizeText(axisCode)));
+};
+
+const trayAssignedExperimentsAreCompleted = ({ taskCode, trayCode, experimentTrays, experimentRunSteps, experimentRunTrays, experiments }) => {
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   if (trayExperimentCodes.size === 0) {
     return false;
   }
   return Array.from(trayExperimentCodes).every((experimentCode) =>
-    trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode }),
+    trayExperimentRunIsCompleted({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode }),
   );
 };
 
@@ -610,7 +739,7 @@ const collectCompletedExperimentNames = ({ samples, taskCode, trayCode }) => {
 const appearanceExperimentIsAllowed = (experimentName) =>
   requiresPreExperimentAppearanceStorage(experimentName);
 
-const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
+const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experiments, experimentRunSteps, experimentRunTrays }) => {
   const completedEvents = collectCompletedExperimentEvents({ samples, taskCode, trayCode });
   const experimentMap = buildExperimentMap(experiments);
   let sequence = completedEvents.length;
@@ -623,7 +752,20 @@ const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experimen
       return;
     }
     const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
+    const subExperimentCode = normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo);
     const experiment = experimentMap.get(experimentCode);
+    if (isAxisProgressIncomplete(resolveAxisProgress({
+      experiment,
+      experimentCode,
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      subExperimentCode,
+      taskCode,
+      trayCode,
+    }))) {
+      return;
+    }
     const experimentName = resolveExperimentName(experiment, experimentCode);
     if (!experimentName) {
       return;
@@ -645,8 +787,8 @@ const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experimen
     .at(-1) || null;
 };
 
-const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunTrays }) => {
-  const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunTrays, samples, taskCode, trayCode });
+const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunSteps, experimentRunTrays }) => {
+  const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunSteps, experimentRunTrays, samples, taskCode, trayCode });
   if (appearanceExperimentIsAllowed(latestCompleted?.experimentName)) {
     return true;
   }
@@ -703,7 +845,7 @@ const resolveInboundKind = ({ config, isExplicitStagingInbound, status }) => {
   return { inboundKind: "allowed", inboundKindLabel: "允许暂存" };
 };
 
-const resolveTrayStatusLabel = ({ config, experiments, experimentRunTrays, isPostExperimentInbound, samples, status, taskCode, trayCode }) => {
+const resolveTrayStatusLabel = ({ config, experiments, experimentRunSteps, experimentRunTrays, isPostExperimentInbound, samples, status, taskCode, trayCode }) => {
   const normalizedStatus = normalizeText(status);
   if (config.key !== "staging" || !isCurrentStagingStatus(normalizedStatus, config)) {
     return normalizedStatus;
@@ -711,18 +853,10 @@ const resolveTrayStatusLabel = ({ config, experiments, experimentRunTrays, isPos
   if (isPostExperimentInbound) {
     return POST_EXPERIMENT_STAGING_LABEL;
   }
-  const latestCompleted = latestCompletedExperimentEvent({
-    experiments,
-    experimentRunTrays,
-    samples,
-    taskCode: normalizeText(taskCode),
-    trayCode: normalizeText(trayCode),
-  });
-  const experimentName = normalizeText(latestCompleted?.experimentName);
-  return experimentName ? `${experimentName}已完成` : normalizedStatus;
+  return NORMAL_STAGING_LABEL;
 };
 
-const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunTrays }) => {
+const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments, experimentTrays, experimentRunSteps, experimentRunTrays }) => {
   const experimentMap = buildExperimentMap(experiments);
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   if (trayExperimentCodes.size === 0) {
@@ -731,7 +865,7 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
 
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   return Array.from(trayExperimentCodes).some((experimentCode) => {
-    if (trayExperimentRunIsCompleted({ experimentCode, experimentRunTrays, taskCode, trayCode })) {
+    if (trayExperimentRunIsCompleted({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, taskCode, trayCode })) {
       return false;
     }
     const experimentName = resolveExperimentName(experimentMap.get(experimentCode));
@@ -739,7 +873,7 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
   });
 };
 
-const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunTrays, room = "staging" }) => {
+const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunSteps, experimentRunTrays, room = "staging" }) => {
   const config = resolveStorageRoomConfig(room);
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
@@ -751,8 +885,11 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
+  const restrictToAppearanceDestinations =
+    config.key === "appearance"
+    && asArray(row?.statuses).some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS);
   const appearanceAcceptsExperiment = (experiment, fallbackName = "") =>
-    config.key !== "appearance"
+    !restrictToAppearanceDestinations
     || requiresPreExperimentAppearanceStorage(
       resolveExperimentName(experiment, fallbackName),
       experiment?.required_device,
@@ -761,7 +898,14 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       experiment?.test_type,
     );
   const isUnfinishedExperiment = (experimentCode, fallbackName = "") => {
-    if (trayExperimentRunIsCompleted({ experimentCode: normalizeText(experimentCode), experimentRunTrays, taskCode, trayCode })) {
+    if (trayExperimentRunIsCompleted({
+      experimentCode: normalizeText(experimentCode),
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      taskCode,
+      trayCode,
+    })) {
       return false;
     }
     const experiment = experimentMap.get(normalizeText(experimentCode));
@@ -790,6 +934,15 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           && normalizeText(schedule?.experiment_code) === nextExperimentCode
           && device
           && !isStagingDestination(device)
+          && !scheduleAxisBatchIsCompleted({
+            experimentCode: nextExperimentCode,
+            experimentRunSteps,
+            experimentRunTrays,
+            experiments,
+            schedule,
+            taskCode,
+            trayCode,
+          })
         );
       })
       .sort((left, right) => parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at));
@@ -839,6 +992,15 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           && acceptsExperimentCode(experimentCode)
           && appearanceAcceptsExperiment(experimentMap.get(experimentCode), schedule?.experiment_name)
           && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
+          && !scheduleAxisBatchIsCompleted({
+            experimentCode,
+            experimentRunSteps,
+            experimentRunTrays,
+            experiments,
+            schedule,
+            taskCode,
+            trayCode,
+          })
         );
       })
       .map((schedule) => {
@@ -946,6 +1108,7 @@ const pruneTerminalExperimentSchedules = (snapshot, taskCode) => {
   }
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
+  const experimentRunSteps = asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]);
   const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const terminalExperimentCodes = new Set();
@@ -958,6 +1121,7 @@ const pruneTerminalExperimentSchedules = (snapshot, taskCode) => {
     if (experimentScopeIsTerminal({
       experiments,
       experimentCode,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
       samples,
@@ -990,6 +1154,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
   const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
+  const experimentRunSteps = asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
@@ -1124,11 +1289,34 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         .find((event) => normalizeText(event?.action) === "stock_in") || null;
       const hasCompletedExperimentStatus = row.statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
       const allAssignedExperimentsCompleted = trayAssignedExperimentsAreCompleted({
+        experiments,
         experimentRunTrays,
+        experimentRunSteps,
         experimentTrays,
         taskCode: normalizeText(row.taskCode),
         trayCode: normalizeText(row.trayCode),
       });
+      const partialAxisCompletionTime = config.key === "staging"
+        ? latestPartialAxisRunCompletionTime({
+          experiments,
+          experimentRunSteps,
+          experimentRunTrays,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+        })
+        : 0;
+      const latestLabStockOutAfterPartialAxisCompletion =
+        config.key === "staging"
+        && trayHasLabStockOutAtOrAfter({
+          config,
+          context: storageEventContext,
+          events: trayStorageEvents,
+          timestamp: partialAxisCompletionTime,
+        });
+      const isPartialAxisInbound =
+        config.key === "staging"
+        && partialAxisCompletionTime > 0
+        && !latestLabStockOutAfterPartialAxisCompletion;
       const explicitAppearanceInboundStatus =
         hasPreAppearanceInboundStatus(effectiveStatuses)
         && (config.key === "appearance" || !latestEventDispatchesToCurrentRoom);
@@ -1144,6 +1332,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         hasCompletedExperimentStatus
         && trayHasAllowedAppearanceSource({
           experiments,
+          experimentRunSteps,
           experimentRunTrays,
           samples,
           taskCode: normalizeText(row.taskCode),
@@ -1165,13 +1354,14 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && (hasCompletedExperimentStatus || allAssignedExperimentsCompleted)
         && !hasRemainingMappedExperiment({
           experiments,
+          experimentRunSteps,
           experimentRunTrays,
           experimentTrays,
           samples,
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
-      let status = resolveTrayStatus(effectiveStatuses, events, { isPostExperimentInbound, room: config.key });
+      let status = resolveTrayStatus(effectiveStatuses, events, { isPartialAxisInbound, isPostExperimentInbound, room: config.key });
       if (isPreExperimentAppearanceLabDispatch) {
         status = "待入库";
       }
@@ -1207,6 +1397,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && status
         && !trayHasAllowedAppearanceSource({
           experiments,
+          experimentRunSteps,
           experimentRunTrays,
           samples,
           taskCode: normalizeText(row.taskCode),
@@ -1224,6 +1415,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
 
       const targetDestinations = resolveTrayTargetDestinations({
         experiments,
+        experimentRunSteps,
         experimentRunTrays,
         experimentTrays,
         row,
@@ -1240,6 +1432,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const statusLabel = resolveTrayStatusLabel({
         config,
         experiments,
+        experimentRunSteps,
         experimentRunTrays,
         isPostExperimentInbound,
         samples,
@@ -1264,6 +1457,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         stockInToday,
         stockOutToday,
         taskCode: normalizeText(row.taskCode),
+        isPartialAxisInbound,
         isPostExperimentInbound,
         isPostExperimentAppearanceInbound,
         isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
@@ -1470,6 +1664,7 @@ function applyZancunInventoryAction(input = {}) {
     [EXPERIMENTS_KEY]: asArray(snapshot[EXPERIMENTS_KEY]).map((experiment) => ({ ...experiment })),
     [EXPERIMENT_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_TRAYS_KEY]).map((entry) => ({ ...entry })),
     [EXPERIMENT_RUN_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]).map((entry) => ({ ...entry })),
+    [EXPERIMENT_RUN_STEPS_KEY]: asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]).map((entry) => ({ ...entry })),
     [SAMPLES_KEY]: asArray(snapshot[SAMPLES_KEY]).map((sample) => ({
       ...sample,
       trays: asArray(sample?.trays).map((tray) => ({ ...tray })),
@@ -1591,6 +1786,7 @@ function applyZancunInventoryAction(input = {}) {
 
   if (
     actionMode === "stockOut"
+    && !matchedRow.isPartialAxisInbound
     && (
       normalizeText(matchedRow.status) === POST_EXPERIMENT_STAGING_STATUS
       || (config.key === "staging" && matchedRow.isPostExperimentInbound)
@@ -1699,16 +1895,19 @@ function applyZancunInventoryAction(input = {}) {
   });
 
   if (actionMode === "stockIn") {
+    const isPostExperimentStagingStockIn =
+      config.key === "staging"
+      && matchedRow.isPostExperimentInbound;
     const nextStockInStatus =
       matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
         ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
           ? APPEARANCE_STOCKED_STATUS
-        : matchedRow.isPostExperimentInbound && config.key === "staging"
+        : isPostExperimentStagingStockIn
           ? POST_EXPERIMENT_STAGING_STATUS
           : config.stockInStatus;
     const nextStockInLocation =
-      matchedRow.isPostExperimentInbound && config.key === "staging"
+      isPostExperimentStagingStockIn
         ? POST_EXPERIMENT_STAGING_LOCATION
         : config.currentLocation;
     const synced = synchronizeSamplesForTrayCodes({

@@ -6,6 +6,7 @@ from typing import Any, Callable, Iterable
 
 from app.core.storage_backend import normalize_storage_payload
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.experiment_segments import normalize_text
 
 
 COMPARE_STATUS = "已到达实验室"
@@ -29,10 +30,6 @@ FIXTURE_READY_KEYS = ("fixtureReady", "fixture_ready")
 _LOCKS_GUARD = threading.Lock()
 _RESOURCE_LOCKS: dict[str, threading.RLock] = {}
 _STORAGE_COMMIT_LOCK = threading.RLock()
-
-
-def normalize_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
 def clear_fixture_ready_marker(tray: dict[str, Any]) -> None:
@@ -213,6 +210,7 @@ def apply_laboratory_task_operation(
     operation_type: str,
     task_code: str,
     experiment_code: str,
+    sub_experiment_code: str = "",
     lab_name: str = "",
     tray_codes: list[str] | None = None,
     occurred_at: str = "",
@@ -223,6 +221,7 @@ def apply_laboratory_task_operation(
         raise ValueError("unsupported laboratory operation")
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    normalized_sub_experiment_code = normalize_text(sub_experiment_code)
     affected_tray_codes = [normalize_text(code) for code in (tray_codes or []) if normalize_text(code)]
     if not normalized_task_code or not normalized_experiment_code:
         raise ValueError("taskCode and experimentCode are required")
@@ -265,6 +264,11 @@ def apply_laboratory_task_operation(
                 tray["status"] = next_status
                 tray["updated_at"] = occurred_time
                 tray["target_experiment_code"] = normalized_experiment_code
+                if normalized_sub_experiment_code:
+                    tray["target_sub_experiment_code"] = normalized_sub_experiment_code
+                else:
+                    tray.pop("target_sub_experiment_code", None)
+                    tray.pop("targetSubExperimentCode", None)
                 if target_lab_name:
                     tray["target_lab"] = target_lab_name
                 tray.pop("targetExperimentCode", None)
@@ -318,7 +322,16 @@ def run_atomic_laboratory_operation(
             snapshot = storage_snapshot(storage.read_all())
             result = operation(snapshot)
             updates = updates_from_result(result) if updates_from_result else {"mes.samples": result["samples"]}
+            if updates_from_result is None:
+                optional_update_keys = {
+                    "experiments": "mes.experiments",
+                    "schedules": "mes.schedules",
+                    "tasks": "mes.tasks",
+                }
+                for result_key, storage_key in optional_update_keys.items():
+                    if result_key in result:
+                        updates[storage_key] = result[result_key]
             storage.write_many(updates)
             if publish_storage_update:
-                publish_storage_update(list(update_keys))
+                publish_storage_update(list(dict.fromkeys([*update_keys, *updates.keys()])))
             return result

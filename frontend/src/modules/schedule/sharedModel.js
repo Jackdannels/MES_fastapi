@@ -70,8 +70,9 @@ const addDays = (date, days) => {
 
 const buildSlotBoundary = (dateValue, timeValue) => parseDate(`${dateValue}T${timeValue}:00`);
 
-const getLatestMorningScheduleEnd = (dateValue, schedules = []) => {
+const getLatestMorningScheduleEnd = (dateValue, schedules = [], device = "") => {
   const noonBoundary = buildSlotBoundary(dateValue, SLOT_RANGES.afternoon.start);
+  const normalizedDevice = normalizeText(device);
   if (!noonBoundary) {
     return null;
   }
@@ -79,6 +80,9 @@ const getLatestMorningScheduleEnd = (dateValue, schedules = []) => {
   let latestEnd = null;
   (Array.isArray(schedules) ? schedules : []).forEach((schedule) => {
     if (isRetentionDevice(schedule)) {
+      return;
+    }
+    if (normalizedDevice && normalizeText(schedule?.device) !== normalizedDevice) {
       return;
     }
     const startAt = parseDate(schedule?.start_at);
@@ -100,7 +104,7 @@ const getLatestMorningScheduleEnd = (dateValue, schedules = []) => {
   return latestEnd;
 };
 
-const resolveFixedSlotStartAt = ({ dateValue, now = new Date(), schedules = [], slot }) => {
+const resolveFixedSlotStartAt = ({ dateValue, device = "", now = new Date(), schedules = [], slot }) => {
   const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
   const current = truncateToMinute(now) || new Date();
   let earliestStart = buildSlotBoundary(dateValue, range.start);
@@ -111,7 +115,7 @@ const resolveFixedSlotStartAt = ({ dateValue, now = new Date(), schedules = [], 
   }
 
   if (slot === "afternoon") {
-    const latestMorningEnd = getLatestMorningScheduleEnd(dateValue, schedules);
+    const latestMorningEnd = getLatestMorningScheduleEnd(dateValue, schedules, device);
     if (latestMorningEnd) {
       const bufferedStart = new Date(latestMorningEnd.getTime() + SLOT_BUFFER_MINUTES * 60 * 1000);
       if (bufferedStart > earliestStart) {
@@ -127,10 +131,10 @@ const resolveFixedSlotStartAt = ({ dateValue, now = new Date(), schedules = [], 
   return truncateToMinute(earliestStart);
 };
 
-const buildFixedSlotLabel = ({ dateValue, now = new Date(), schedules = [], slot }) => {
+const buildFixedSlotLabel = ({ dateValue, device = "", now = new Date(), schedules = [], slot }) => {
   const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
   const prefix = slot === "afternoon" ? "下午" : "上午";
-  const earliestStart = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
+  const earliestStart = resolveFixedSlotStartAt({ dateValue, device, now, schedules, slot });
   const earliestText = toLocalTimeValue(earliestStart);
   if (!earliestText || earliestText === range.start) {
     return `${prefix}（${range.start}-${range.end}）`;

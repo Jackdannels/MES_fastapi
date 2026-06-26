@@ -43,6 +43,7 @@ const applyLaboratoryOperation = async ({
   labName = "",
   occurredAt = "",
   operationType,
+  subExperimentCode = "",
   taskCode,
   trayCodes = [],
 }) => {
@@ -65,6 +66,7 @@ const applyLaboratoryOperation = async ({
       labName: String(labName || "").trim(),
       occurredAt: String(occurredAt || "").trim(),
       operationType: normalizedOperationType,
+      subExperimentCode: String(subExperimentCode || "").trim(),
       taskCode: normalizedTaskCode,
       trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
     }),
@@ -76,6 +78,9 @@ const applyLaboratoryOperation = async ({
 };
 
 const startLaboratoryExperiment = async ({
+  axisBatchNo = "",
+  axisCodes = [],
+  currentAxisCode = "",
   experimentCode,
   labCode = "",
   labName = "",
@@ -84,6 +89,7 @@ const startLaboratoryExperiment = async ({
   runNo = "",
   scheduleId = "",
   startedAt = "",
+  subExperimentCode = "",
   taskCode,
   trayCodes = [],
 }) => {
@@ -93,6 +99,9 @@ const startLaboratoryExperiment = async ({
     throw new Error("缺少当前任务或实验信息。");
   }
   const body = {
+    axisBatchNo: String(axisBatchNo || "").trim(),
+    axisCodes: Array.isArray(axisCodes) ? axisCodes : [],
+    currentAxisCode: String(currentAxisCode || "").trim(),
     labCode: String(labCode || "").trim(),
     labName: String(labName || "").trim(),
     plannedEndAt: String(plannedEndAt || "").trim(),
@@ -100,6 +109,7 @@ const startLaboratoryExperiment = async ({
     runNo: String(runNo || "").trim(),
     scheduleId: String(scheduleId || "").trim(),
     startedAt: String(startedAt || "").trim(),
+    subExperimentCode: String(subExperimentCode || "").trim(),
     trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
   };
   const scopedBody = Object.fromEntries(
@@ -129,9 +139,12 @@ const startLaboratoryExperiment = async ({
 };
 
 const completeLaboratoryExperiment = async ({
+  axisCode = "",
   completedAt = "",
   experimentCode,
+  nextAxisCode = "",
   runNo = "",
+  subExperimentCode = "",
   taskCode,
   trayCodes = [],
 }) => {
@@ -153,8 +166,11 @@ const completeLaboratoryExperiment = async ({
       },
       credentials: "include",
       body: JSON.stringify({
+        axisCode,
         completedAt,
+        nextAxisCode,
         runNo,
+        subExperimentCode,
         trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
       }),
     },

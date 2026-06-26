@@ -43,6 +43,7 @@ const RUNNING_MODAL_RESTORE_MS = 10_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
+const TASK_SWITCH_LOCKED_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS, "实验进行中", "实验中"]);
 const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成"]);
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 const SALT_SPRAY_LAB_CODE = "LAB_SALT";
@@ -55,6 +56,7 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_trays,
+  STORAGE_KEYS.experiment_run_steps,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.devices,
@@ -63,6 +65,27 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 const normalizeText = (value) => String(value ?? "").trim();
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
+const normalizeAxisCodes = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.replace(/，/g, ",").split(",")
+      : [];
+  const seen = new Set();
+  return rawValues.map(normalizeText).filter((axisCode) => {
+    if (!axisCode || seen.has(axisCode)) {
+      return false;
+    }
+    seen.add(axisCode);
+    return true;
+  });
+};
+const stepAxisCode = (step) => normalizeText(step?.axis_code || step?.axisCode);
+const stepRunNo = (step) => normalizeText(step?.run_no || step?.runNo);
+const stepStatus = (step) => normalizeText(step?.status || step?.step_status || step?.stepStatus);
+const scheduleAxisCodes = (schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
+const resolveSubExperimentCode = (value = {}) =>
+  normalizeText(value?.subExperimentCode ?? value?.sub_experiment_code ?? value?.sub_experiment_no ?? value?.subExperimentNo);
 
 const STATIC_LAB_CODES_BY_NAME = Object.freeze({
   "冲击一室": "LAB_IMPACT_1",
@@ -165,6 +188,7 @@ function useLaboratoryPage(options = {}) {
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_run_trays,
+      STORAGE_KEYS.experiment_run_steps,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.devices,
@@ -178,6 +202,7 @@ function useLaboratoryPage(options = {}) {
   const experiments = ref([]);
   const experimentRuns = ref([]);
   const experimentRunTrays = ref([]);
+  const experimentRunSteps = ref([]);
   const experimentTrays = ref([]);
   const samples = ref([]);
   const devices = ref([]);
@@ -228,6 +253,7 @@ function useLaboratoryPage(options = {}) {
     buildLaboratoryWorkbenchView({
       experiments: experiments.value,
       experimentRuns: experimentRuns.value,
+      experimentRunSteps: experimentRunSteps.value,
       experimentRunTrays: experimentRunTrays.value,
       experimentTrays: experimentTrays.value,
       now: tickNow.value,
@@ -274,6 +300,112 @@ function useLaboratoryPage(options = {}) {
     return "";
   });
   const runningExperiment = computed(() => view.value.runningExperiment);
+  const axisContinuation = computed(() => {
+    const activeRunNo = normalizeText(runningExperiment.value?.runNo);
+    const taskCode = normalizeText(currentTask.value?.taskCode);
+    const experimentCode = normalizeText(currentTask.value?.experimentCode);
+    const emptyState = {
+      canContinue: false,
+      completedAxisCodes: [],
+      currentAxisCode: "",
+      hasAxisSteps: false,
+      nextAxisCode: "",
+      statusLabel: "",
+      unfinishedAxisCodes: [],
+    };
+    if (!activeRunNo || !taskCode || !experimentCode) {
+      return emptyState;
+    }
+    const currentRun = experimentRuns.value.find((run) => {
+      const runNo = normalizeText(run?.run_no || run?.runNo || run?.id);
+      return runNo === activeRunNo;
+    });
+    const currentRunScheduleId = normalizeText(currentRun?.schedule_id || currentRun?.scheduleId);
+    const currentRunSchedule = schedules.value.find(
+      (schedule) => normalizeText(schedule?.id || schedule?.schedule_id || schedule?.scheduleId) === currentRunScheduleId,
+    );
+    const steps = experimentRunSteps.value
+      .filter((step) => stepRunNo(step) === activeRunNo)
+      .sort((left, right) => Number(left?.step_no ?? left?.stepNo ?? 0) - Number(right?.step_no ?? right?.stepNo ?? 0));
+    const runningStepIndex = steps.findIndex((step) => stepStatus(step) === "实验进行中");
+    const currentIndex = runningStepIndex >= 0 ? runningStepIndex : steps.findIndex((step) => stepStatus(step) !== "实验已完成");
+    const currentStep = currentIndex >= 0 ? steps[currentIndex] : null;
+    const nextStep = currentIndex >= 0 ? steps.slice(currentIndex + 1).find((step) => stepStatus(step) !== "实验已完成") : null;
+    const currentAxisCode = stepAxisCode(currentStep);
+    const nextAxisCode = stepAxisCode(nextStep);
+    const completedAxisCodes = steps
+      .filter((step) => stepStatus(step) === "实验已完成")
+      .map(stepAxisCode)
+      .filter(Boolean);
+    const unfinishedAxisCodes = steps
+      .filter((step) => stepStatus(step) !== "实验已完成")
+      .map(stepAxisCode)
+      .filter(Boolean);
+    const completedCount = completedAxisCodes.length;
+    const totalCount = steps.length;
+    const statusLabel = totalCount > 0 ? `实验进行中 ${completedCount}/${totalCount}轴` : "";
+    const hasAxisSteps = Boolean(currentAxisCode && totalCount > 0);
+    const baseState = { completedAxisCodes, currentAxisCode, hasAxisSteps, nextAxisCode, statusLabel, unfinishedAxisCodes };
+    if (!currentAxisCode || !nextAxisCode) {
+      return { ...baseState, canContinue: false };
+    }
+    const currentTaskAxisCodes = scheduleAxisCodes(currentTask.value);
+    const currentRunAxisCodes = scheduleAxisCodes(currentRun);
+    const currentRunScheduleAxisCodes = scheduleAxisCodes(currentRunSchedule);
+    if (
+      currentTaskAxisCodes.length > 1
+      && normalizeText(currentTask.value?.id) === currentRunScheduleId
+      && currentTaskAxisCodes.includes(currentAxisCode)
+      && currentTaskAxisCodes.includes(nextAxisCode)
+    ) {
+      return { ...baseState, canContinue: true };
+    }
+    if (
+      currentRunAxisCodes.length > 1
+      && currentRunScheduleAxisCodes.length > 1
+      && currentRunAxisCodes.includes(currentAxisCode)
+      && currentRunAxisCodes.includes(nextAxisCode)
+      && currentRunScheduleAxisCodes.includes(currentAxisCode)
+      && currentRunScheduleAxisCodes.includes(nextAxisCode)
+    ) {
+      return { ...baseState, canContinue: true };
+    }
+    if (
+      currentRunScheduleAxisCodes.length > 1
+      && currentRunScheduleAxisCodes.includes(currentAxisCode)
+      && currentRunScheduleAxisCodes.includes(nextAxisCode)
+    ) {
+      return { ...baseState, canContinue: true };
+    }
+    const currentSchedule = schedules.value.find(
+      (schedule) =>
+        normalizeText(schedule?.task_code) === taskCode
+        && normalizeText(schedule?.experiment_code) === experimentCode
+        && scheduleAxisCodes(schedule).includes(currentAxisCode),
+    );
+    const nextSchedule = schedules.value.find(
+      (schedule) =>
+        normalizeText(schedule?.task_code) === taskCode
+        && normalizeText(schedule?.experiment_code) === experimentCode
+        && scheduleAxisCodes(schedule).includes(nextAxisCode),
+    );
+    if (
+      currentSchedule
+      && currentSchedule === nextSchedule
+      && scheduleAxisCodes(currentSchedule).includes(currentAxisCode)
+      && scheduleAxisCodes(currentSchedule).includes(nextAxisCode)
+    ) {
+      return { ...baseState, canContinue: true };
+    }
+    return { ...baseState, canContinue: false };
+  });
+  const currentAxisCompletion = computed(() => {
+    const continuation = axisContinuation.value;
+    return {
+      axisCode: normalizeText(continuation.currentAxisCode),
+      enabled: Boolean(continuation.hasAxisSteps && continuation.currentAxisCode),
+    };
+  });
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const operationLock = computed(() =>
     getLaboratoryOperationLock(view.value.allScheduleRows, currentTask.value, {
@@ -347,9 +479,17 @@ function useLaboratoryPage(options = {}) {
   ));
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
-  const runningModalExperiment = computed(() =>
-    completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value,
-  );
+  const runningModalExperiment = computed(() => {
+    const base = completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value;
+    const continuation = axisContinuation.value;
+    return {
+      ...base,
+      axisCompletedLabel: continuation.completedAxisCodes.length ? `已完成：${continuation.completedAxisCodes.join("、")}` : "已完成：暂无",
+      axisContinuation: continuation,
+      axisStatusLabel: continuation.statusLabel,
+      axisUnfinishedLabel: continuation.unfinishedAxisCodes.length ? `未完成：${continuation.unfinishedAxisCodes.join("、")}` : "未完成：暂无",
+    };
+  });
   const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
   const canTeleportScheduleAction = ref(false);
   const canResetCurrentTask = computed(() => {
@@ -580,12 +720,26 @@ function useLaboratoryPage(options = {}) {
     verifiedTrayCodes.value = [];
   };
 
-  const taskSelectionKey = (task) => String(task?.experimentKey || task?.id || task?.taskCode || "").trim();
+  const taskSelectionKey = (task) => String(task?.id || task?.experimentKey || task?.taskCode || "").trim();
 
   const taskHasSwitchRevertibleTrays = (task) =>
     (Array.isArray(task?.trayRows) ? task.trayRows : []).some((row) =>
       SWITCH_REVERTIBLE_TRAY_STATUSES.has(String(row?.trayStatus || row?.displayStatus || "").trim()),
     );
+  const taskHasSwitchLockedTrays = (task) =>
+    (Array.isArray(task?.trayRows) ? task.trayRows : []).some((row) =>
+      TASK_SWITCH_LOCKED_TRAY_STATUSES.has(String(row?.trayStatus || row?.displayStatus || row?.lifecycleStatus || "").trim()),
+    );
+  const currentTaskSwitchLocked = computed(() => taskHasSwitchLockedTrays(currentTask.value));
+  const canSelectTaskKey = (taskKey) => {
+    const nextSelectionKey = String(taskKey ?? "").trim();
+    const currentSelectionKey = taskSelectionKey(currentTask.value);
+    return (
+      !runningInteractionLocked.value
+      && Boolean(nextSelectionKey)
+      && (!currentTaskSwitchLocked.value || !currentSelectionKey || nextSelectionKey === currentSelectionKey)
+    );
+  };
 
   const buildCurrentSnapshotFallback = () => ({
     [STORAGE_KEYS.tasks]: tasks.value,
@@ -593,6 +747,7 @@ function useLaboratoryPage(options = {}) {
     [STORAGE_KEYS.experiments]: experiments.value,
     [STORAGE_KEYS.experiment_runs]: experimentRuns.value,
     [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays.value,
+    [STORAGE_KEYS.experiment_run_steps]: experimentRunSteps.value,
     [STORAGE_KEYS.experiment_trays]: experimentTrays.value,
     [STORAGE_KEYS.samples]: samples.value,
     [STORAGE_KEYS.devices]: devices.value,
@@ -604,6 +759,7 @@ function useLaboratoryPage(options = {}) {
     || experiments.value.length > 0
     || experimentRuns.value.length > 0
     || experimentRunTrays.value.length > 0
+    || experimentRunSteps.value.length > 0
     || experimentTrays.value.length > 0
     || samples.value.length > 0
     || devices.value.length > 0;
@@ -643,6 +799,7 @@ function useLaboratoryPage(options = {}) {
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, experiments, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, experimentRuns, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, experimentRunTrays, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_steps, experimentRunSteps, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, experimentTrays, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, samples, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.devices, devices, { preserveInvalid });
@@ -760,7 +917,7 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const openTaskList = () => {
-    pendingTaskCode.value = currentTask.value?.experimentKey || currentTask.value?.taskCode || "";
+    pendingTaskCode.value = taskSelectionKey(currentTask.value);
     taskListModalOpen.value = true;
   };
   const closeTaskList = () => {
@@ -858,14 +1015,40 @@ function useLaboratoryPage(options = {}) {
       task_code: currentTask.value?.taskCode || "",
     };
   };
-  const buildReadyPayload = () => ({
-    experiment_code: currentTask.value?.experimentCode || "",
-    lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
-    task_code: currentTask.value?.taskCode || "",
-  });
+  const buildReadyPayload = () => {
+    const axisCodes = scheduleAxisCodes(currentTask.value);
+    const subExperimentCode = resolveSubExperimentCode(currentTask.value);
+    const payload = {
+      experiment_code: currentTask.value?.experimentCode || "",
+      lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+      schedule_id: currentTask.value?.id || "",
+      task_code: currentTask.value?.taskCode || "",
+    };
+    const axisBatchNo = currentTask.value?.axis_batch_no || currentTask.value?.axisBatchNo || "";
+    if (axisBatchNo) {
+      payload.axis_batch_no = axisBatchNo;
+    }
+    if (axisCodes.length > 0) {
+      payload.axis_codes = axisCodes;
+      payload.current_axis_code = axisCodes[0];
+    }
+    if (subExperimentCode) {
+      payload.sub_experiment_code = subExperimentCode;
+    }
+    return payload;
+  };
   const applyOperationResponse = (payload = {}) => {
+    if (Array.isArray(payload?.tasks)) {
+      tasks.value = payload.tasks;
+    }
     if (Array.isArray(payload?.samples)) {
       samples.value = payload.samples;
+    }
+    if (Array.isArray(payload?.schedules)) {
+      schedules.value = payload.schedules;
+    }
+    if (Array.isArray(payload?.experiments)) {
+      experiments.value = payload.experiments;
     }
   };
   const applyExperimentStartResponse = (payload = {}) => {
@@ -886,6 +1069,9 @@ function useLaboratoryPage(options = {}) {
     }
     if (Array.isArray(payload?.experimentRunTrays)) {
       experimentRunTrays.value = payload.experimentRunTrays;
+    }
+    if (Array.isArray(payload?.experimentRunSteps)) {
+      experimentRunSteps.value = payload.experimentRunSteps;
     }
   };
   const queueLaboratoryOperation = (operation) => {
@@ -926,10 +1112,14 @@ function useLaboratoryPage(options = {}) {
     }
     return "";
   };
-  const persistCurrentTaskStep = async (nextStatus) => {
+  const persistCurrentTaskStep = async (nextStatus, options = {}) => {
+    const normalizedOptions = options && typeof options === "object" && !Array.isArray(options) ? options : {};
+    const trayCodeOverride = normalizedOptions.trayCodes || null;
     const actionTime = formatLocalDateTime();
     const targetTrayCodes =
-      nextStatus === LAB_COMPARE_STATUS
+      Array.isArray(trayCodeOverride)
+        ? trayCodeOverride
+        : nextStatus === LAB_COMPARE_STATUS
         ? verifiedTrayCodes.value
         : nextStatus === LAB_INSTALL_STATUS
           ? getCurrentTaskTrayCodesByStatus(LAB_COMPARE_STATUS)
@@ -947,6 +1137,7 @@ function useLaboratoryPage(options = {}) {
         labName: laboratoryConfig.value.labName,
         occurredAt: actionTime,
         operationType,
+        subExperimentCode: resolveSubExperimentCode(currentTask.value),
         taskCode: currentTask.value?.taskCode,
         trayCodes: targetTrayCodes,
       }),
@@ -1055,11 +1246,15 @@ function useLaboratoryPage(options = {}) {
     hostlessFixtureReadyTimer = window.setTimeout(confirmFixtureReady, capabilities.fixtureReadyDelayMs);
   };
   const scheduleHostlessExperimentStart = ({
+    axisBatchNo = "",
+    axisCodes = [],
+    currentAxisCode = "",
     experimentCode,
     plannedEndAt = "",
     plannedHours = null,
-    runNo = "",
-    scheduleId = "",
+        runNo = "",
+        scheduleId = "",
+    subExperimentCode = "",
     taskCode,
     trayCodes = [],
   }) => {
@@ -1071,6 +1266,9 @@ function useLaboratoryPage(options = {}) {
     const startExperiment = () => {
       hostlessStartTimer = null;
       void startLaboratoryExperiment({
+        axisBatchNo,
+        axisCodes,
+        currentAxisCode,
         experimentCode,
         labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
         labName: laboratoryConfig.value.labName,
@@ -1079,6 +1277,7 @@ function useLaboratoryPage(options = {}) {
         runNo,
         scheduleId,
         startedAt: formatLocalDateTime(),
+        subExperimentCode,
         taskCode,
         trayCodes,
       })
@@ -1215,11 +1414,16 @@ function useLaboratoryPage(options = {}) {
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
     if (isHostlessMqttLab()) {
+      const currentAxisCodes = scheduleAxisCodes(currentTask.value);
       scheduleHostlessExperimentStart({
+        axisBatchNo: currentTask.value?.axis_batch_no || currentTask.value?.axisBatchNo || "",
+        axisCodes: currentAxisCodes,
+        currentAxisCode: currentAxisCodes[0] || "",
         experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
         plannedEndAt: currentTask.value?.endAt || "",
         runNo: generateExperimentRunNo(),
         scheduleId: currentTask.value?.id || "",
+        subExperimentCode: resolveSubExperimentCode(currentTask.value),
         taskCode: currentTask.value?.taskCode || payload.task_code,
         trayCodes: getCurrentTaskTrayCodesByStatus(LAB_READY_STATUS),
       });
@@ -1289,10 +1493,11 @@ function useLaboratoryPage(options = {}) {
     completePromptVisible.value = false;
     flushPendingRealtimeRefresh();
   };
-  const completeRunningExperiment = async ({ keepModal = false } = {}) => {
+  const completeRunningExperiment = async ({ axisCode = "", keepModal = false, nextAxisCode = "" } = {}) => {
     if (!runningExperiment.value?.active) {
       return;
     }
+    const effectiveAxisCode = normalizeText(axisCode) || (currentAxisCompletion.value.enabled ? currentAxisCompletion.value.axisCode : "");
     const runningSnapshot = { ...runningExperiment.value };
     const taskCode = normalizeText(currentTask.value?.taskCode);
     const experimentCode = normalizeText(currentTask.value?.experimentCode);
@@ -1306,13 +1511,22 @@ function useLaboratoryPage(options = {}) {
     const runningTrayCodes = (runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean);
     try {
       const completionResult = await persistRunningExperimentCompletion({
+        axisCode: effectiveAxisCode,
         completedAt,
         experimentCode,
+        nextAxisCode,
         runNo: runningRunNo,
+        subExperimentCode: resolveSubExperimentCode(runningExperiment.value) || resolveSubExperimentCode(currentTask.value),
         taskCode,
         trayCodes: runningTrayCodes,
       });
-      completedRunningExperiment.value = keepModal
+      const experimentCompleted = (Array.isArray(completionResult?.experiments) ? completionResult.experiments : []).some(
+        (experiment) =>
+          normalizeText(experiment?.task_code) === taskCode
+          && normalizeText(experiment?.experiment_code) === experimentCode
+          && COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(experiment?.status)),
+      );
+      completedRunningExperiment.value = keepModal && (!effectiveAxisCode || experimentCompleted)
         ? {
             ...runningSnapshot,
             active: true,
@@ -1336,6 +1550,9 @@ function useLaboratoryPage(options = {}) {
         if (Array.isArray(completionResult?.experimentRunTrays)) {
           experimentRunTrays.value = completionResult.experimentRunTrays;
         }
+        if (Array.isArray(completionResult?.experimentRunSteps)) {
+          experimentRunSteps.value = completionResult.experimentRunSteps;
+        }
         schedules.value = completionResult.schedules;
       } else {
         await load();
@@ -1344,7 +1561,7 @@ function useLaboratoryPage(options = {}) {
         window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
       }
       completePromptVisible.value = false;
-      runningModalVisible.value = keepModal;
+      runningModalVisible.value = keepModal || Boolean(effectiveAxisCode && !experimentCompleted);
       clearRunningModalRestoreTimer();
       flushPendingRealtimeRefresh();
     } finally {
@@ -1352,7 +1569,22 @@ function useLaboratoryPage(options = {}) {
     }
   };
   const confirmCompleteExperiment = async () => {
+    if (currentAxisCompletion.value.enabled) {
+      await completeRunningExperiment({ axisCode: currentAxisCompletion.value.axisCode });
+      return;
+    }
     await completeRunningExperiment();
+  };
+  const confirmCompleteAxisAndContinue = async () => {
+    const continuation = axisContinuation.value;
+    if (!continuation.canContinue) {
+      return;
+    }
+    await completeRunningExperiment({
+      axisCode: continuation.currentAxisCode,
+      keepModal: true,
+      nextAxisCode: continuation.nextAxisCode,
+    });
   };
   const confirmCurrentTask = () => {
     if (!pendingTaskCode.value || runningInteractionLocked.value) {
@@ -1361,6 +1593,10 @@ function useLaboratoryPage(options = {}) {
     const previousTask = currentTask.value;
     const nextSelectionKey = String(pendingTaskCode.value || "").trim();
     const previousSelectionKey = taskSelectionKey(previousTask);
+    if (currentTaskSwitchLocked.value && previousSelectionKey && previousSelectionKey !== nextSelectionKey) {
+      pendingTaskCode.value = previousSelectionKey;
+      return;
+    }
     const pendingRevertKey = taskSelectionKey(pendingRevertTask.value);
     if (pendingRevertKey && pendingRevertKey === nextSelectionKey) {
       pendingRevertTask.value = null;
@@ -1383,6 +1619,7 @@ function useLaboratoryPage(options = {}) {
     canTeleportScheduleAction,
     checklist,
     closeCompleteConfirm,
+    currentAxisCompletion,
     compareFeedback,
     compareScanInputRef,
     closeCompare,
@@ -1405,6 +1642,7 @@ function useLaboratoryPage(options = {}) {
       confirmCompare,
     confirmResetPrompt,
     confirmResetTask,
+    confirmCompleteAxisAndContinue,
     confirmCompleteExperiment,
     confirmInstall,
     confirmReady,
@@ -1418,6 +1656,7 @@ function useLaboratoryPage(options = {}) {
     canCompleteCompare,
     runningInteractionLocked,
     currentTask,
+    currentTaskSwitchLocked,
     hasLaboratoryTasks,
     openCompare,
     openCompleteConfirm,
@@ -1442,7 +1681,11 @@ function useLaboratoryPage(options = {}) {
     runningModalVisible,
     scheduleModalOpen,
     scheduleRows: computed(() => view.value.scheduleRows),
+    canSelectTaskKey,
     setPendingTaskCode: (taskKey) => {
+      if (!canSelectTaskKey(taskKey)) {
+        return;
+      }
       pendingTaskCode.value = String(taskKey ?? "");
     },
     summary,

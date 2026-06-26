@@ -133,6 +133,7 @@ describe("useTaskOverviewEditor", () => {
       expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001", experiment_code: "TASK-001-A" })]),
       [],
       [],
+      [],
       []
     );
   });
@@ -278,7 +279,8 @@ describe("useTaskOverviewEditor", () => {
       [],
       [],
       [{ id: "run-2", task_code: "TASK-002", experiment_code: "TASK-002-A" }],
-      [{ id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TP-002" }]
+      [{ id: "run-tray-2", task_code: "TASK-002", experiment_code: "TASK-002-A", tray_code: "TP-002" }],
+      []
     );
   });
 

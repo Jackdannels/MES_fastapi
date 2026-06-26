@@ -91,16 +91,16 @@ const resolveLegalManualScheduleState = (now = new Date()) => {
   };
 };
 
-function buildManualTimeSlotOptions({ now = new Date(), scheduleDate = "", schedules = [] } = {}) {
+function buildManualTimeSlotOptions({ device = "", now = new Date(), scheduleDate = "", schedules = [] } = {}) {
   const selectedDate = normalizeText(scheduleDate) || toLocalDateValue(now);
   return [
     {
       value: "morning",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "morning" }),
+      label: buildFixedSlotLabel({ dateValue: selectedDate, device, now, schedules, slot: "morning" }),
     },
     {
       value: "afternoon",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, now, schedules, slot: "afternoon" }),
+      label: buildFixedSlotLabel({ dateValue: selectedDate, device, now, schedules, slot: "afternoon" }),
     },
     {
       value: "custom",
@@ -139,6 +139,8 @@ const isManualScheduleSelectionLegal = (form, now = new Date()) => {
 function createManualScheduleForm(now = new Date()) {
   const legalState = resolveLegalManualScheduleState(now);
   return {
+    axis_batch_no: "",
+    axis_codes: [],
     custom_end: "",
     custom_start: "",
     device: "",
@@ -155,6 +157,8 @@ function createManualScheduleForm(now = new Date()) {
 
 function createScheduleEditForm() {
   return {
+    axis_batch_no: "",
+    axis_codes: [],
     custom_end: "",
     custom_start: "",
     device: "",
@@ -187,6 +191,8 @@ function buildScheduleEditForm(schedule) {
 
   // 编辑表单会尽量把固定时段还原回上午/下午选项，否则回退到自定义时段。
   return {
+    axis_batch_no: normalizeText(schedule?.axis_batch_no ?? schedule?.axisBatchNo),
+    axis_codes: Array.isArray(schedule?.axis_codes ?? schedule?.axisCodes) ? [...(schedule?.axis_codes ?? schedule?.axisCodes)] : [],
     custom_end: endTime,
     custom_start: startTime,
     device: normalizeText(schedule?.device),
@@ -205,6 +211,8 @@ function buildScheduleEditForm(schedule) {
 function buildScheduleRescheduleForm(schedule) {
   const editForm = buildScheduleEditForm(schedule);
   return {
+    axis_batch_no: editForm.axis_batch_no,
+    axis_codes: editForm.axis_codes,
     custom_end: editForm.custom_end,
     custom_start: editForm.custom_start,
     device: editForm.device,
@@ -265,7 +273,7 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
   } else {
     // 上午/下午快捷时段直接复用预设时间窗。
     const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-    const slotStartAt = resolveFixedSlotStartAt({ dateValue, now, schedules, slot });
+    const slotStartAt = resolveFixedSlotStartAt({ dateValue, device: form?.device, now, schedules, slot });
     startTime = toLocalTimeValue(slotStartAt) || range.start;
     plannedHours ||= inferPlannedHours(
       slotStartAt,

@@ -19,7 +19,7 @@ const buildSamplesFlow = (overrides = {}) => ({
 });
 
 describe("TrayManagementPanel", () => {
-  test("renders tray table without task info/current status columns and collapses long sample code lists", () => {
+  test("renders tray table without task info/current status columns and collapses long sample code lists", async () => {
     const wrapper = mount(TrayManagementPanel, {
       props: {
         samplesFlow: {
@@ -79,6 +79,10 @@ describe("TrayManagementPanel", () => {
       "SYLU-2026-03-021-SP-004",
       "...",
     ]);
+    expect(wrapper.find('[data-testid="samples-trays-sample-popover-0"]').exists()).toBe(false);
+
+    await wrapper.get(".tray-sample-line.is-ellipsis").trigger("click");
+
     expect(wrapper.get('[data-testid="samples-trays-sample-popover-0"]').findAll(".tray-sample-popover-line").map((node) => node.text())).toEqual([
       "SYLU-2026-03-021-SP-001",
       "SYLU-2026-03-021-SP-002",
@@ -87,6 +91,30 @@ describe("TrayManagementPanel", () => {
       "SYLU-2026-03-021-SP-005",
       "SYLU-2026-03-021-SP-006",
     ]);
+  });
+
+  test("opens the last visible tray sample popover above the row", async () => {
+    const trayRows = Array.from({ length: 5 }, (_, index) => ({
+      sampleCodes: Array.from({ length: 6 }, (__, sampleIndex) =>
+        `SYLU-2026-06-023-SP-${String(index * 10 + sampleIndex + 1).padStart(3, "0")}`,
+      ),
+      sampleCount: 6,
+      status: index === 4 ? "已到达实验室" : "已到达暂存间",
+      taskCode: "SYLU-2026-06-023",
+      trayCode: `SYLU-2026-06-023-TP-${String(index + 1).padStart(3, "0")}`,
+    }));
+    const wrapper = mount(TrayManagementPanel, {
+      props: {
+        samplesFlow: buildSamplesFlow({ trayRows }),
+      },
+    });
+
+    expect(wrapper.find('[data-testid="samples-trays-sample-popover-4"]').exists()).toBe(false);
+
+    await wrapper.get('[data-testid="samples-trays-sample-codes-4"] .tray-sample-line.is-ellipsis').trigger("click");
+
+    expect(wrapper.get('[data-testid="samples-trays-sample-popover-4"]').classes()).toContain("is-above");
+    expect(wrapper.get('[data-testid="samples-trays-sample-popover-4"]').findAll(".tray-sample-popover-line")).toHaveLength(6);
   });
 
   test("paginates tray rows to five per page", async () => {

@@ -33,6 +33,55 @@
             </option>
           </select>
         </div>
+        <div v-if="showAxisSelector" class="form-field schedule-axis-selector" data-testid="schedule-axis-selector">
+          <label>{{ uiText.axis }}</label>
+          <div class="schedule-axis-block">
+            <div class="schedule-axis-caption">{{ uiText.axisRequirement }}</div>
+            <div class="schedule-axis-options" aria-label="轴向要求">
+              <span
+                v-for="option in scheduleAxisRequirementOptions"
+                :key="option.code"
+                class="schedule-axis-chip is-active is-readonly"
+                :data-testid="`schedule-axis-requirement-${option.testId}`"
+              >
+                {{ option.label }}
+              </span>
+            </div>
+          </div>
+          <div v-if="scheduleCompletedAxisOptions.length" class="schedule-axis-block">
+            <div class="schedule-axis-caption">{{ uiText.axisCompleted }}</div>
+            <div class="schedule-axis-options" aria-label="已完成轴向">
+              <span
+                v-for="option in scheduleCompletedAxisOptions"
+                :key="option.code"
+                class="schedule-axis-chip is-completed is-readonly"
+                :data-testid="`schedule-axis-completed-${option.testId}`"
+              >
+                {{ option.label }}
+              </span>
+            </div>
+          </div>
+          <div class="schedule-axis-block">
+            <div class="schedule-axis-caption">{{ uiText.axisCurrentSchedule }}</div>
+            <div class="schedule-axis-options" role="group" aria-label="本次排程轴向">
+              <button
+                v-for="option in scheduleAxisOptions"
+                :key="option.code"
+                type="button"
+                class="schedule-axis-chip"
+                :class="{ 'is-active': isScheduleAxisSelected(option.code) }"
+                :data-testid="`schedule-axis-option-${option.testId}`"
+                :aria-pressed="isScheduleAxisSelected(option.code)"
+                @click="toggleScheduleAxis(option.code)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <div v-if="selectedAxisLabel" class="schedule-axis-order" data-testid="schedule-axis-order">
+            {{ uiText.axisOrder }}{{ selectedAxisLabel }}
+          </div>
+        </div>
         <div class="form-field">
           <label>{{ uiText.lab }}</label>
           <select v-model="scheduleForm.device" name="device">
@@ -206,7 +255,7 @@
                     ? `gantt-segment-${segment.scheduleId}`
                     : null
               "
-              @click="segment.displayMode !== 'stacked' && segment.displayMode !== 'split' && segment.scheduleId && openTaskDetailModal(segment.scheduleId)"
+              @click="segment.displayMode !== 'stacked' && segment.displayMode !== 'split' && segment.scheduleId && openTaskDetailModal(segment.scheduleId, segment.scheduleIds)"
             >
               <template v-if="segment.displayMode === 'split' || segment.displayMode === 'stacked'">
                 <div
@@ -226,11 +275,20 @@
                       :disabled="!item.scheduleId"
                       :style="{ '--gantt-task-color': item.color }"
                       :title="item.title"
-                      @click.stop="item.scheduleId && openTaskDetailModal(item.scheduleId)"
+                      @click.stop="item.scheduleId && openTaskDetailModal(item.scheduleId, item.scheduleIds)"
                     >
                       {{ item.taskCode }}
                     </button>
-                    <span v-if="segment.displayMode === 'stacked' && segment.overflowCount > 0" class="gantt-task-overflow">+{{ segment.overflowCount }}</span>
+                    <button
+                      v-if="segment.displayMode === 'stacked' && segment.overflowCount > 0"
+                      class="gantt-task-overflow"
+                      type="button"
+                      :data-testid="`gantt-overflow-${segment.stackKey}`"
+                      :title="uiText.ganttOverflowTitle"
+                      @click.stop="openGanttOverflowModal(segment)"
+                    >
+                      +{{ segment.overflowCount }}
+                    </button>
                   </span>
                 </div>
               </template>
@@ -251,6 +309,24 @@
     </div>
   </section>
 
+  <AppModal :open="ganttOverflowOpen" :title="uiText.ganttOverflowTitle" data-testid="gantt-overflow-modal" @close="closeGanttOverflowModal">
+    <div class="gantt-overflow-list">
+      <button
+        v-for="item in ganttOverflowDetail?.items || []"
+        :key="item.scheduleId || item.title"
+        class="gantt-overflow-row"
+        type="button"
+        :data-testid="item.scheduleId ? `gantt-overflow-task-${item.scheduleId}` : null"
+        :disabled="!item.scheduleId"
+        @click="item.scheduleId && openGanttOverflowTask(item.scheduleId, item.scheduleIds)"
+      >
+        <span class="gantt-overflow-row__main">{{ item.taskCode }}</span>
+        <span class="gantt-overflow-row__meta">{{ item.experimentLabel || "-" }}</span>
+        <span class="gantt-overflow-row__time">{{ item.timeRange || "-" }}</span>
+      </button>
+    </div>
+  </AppModal>
+
   <section class="section">
     <div class="card">
       <h3>{{ uiText.nextSchedule }}</h3>
@@ -270,6 +346,7 @@
           <th>{{ uiText.index }}</th>
           <th>{{ uiText.task }}</th>
           <th>{{ uiText.experimentCode }}</th>
+          <th>{{ uiText.axis }}</th>
           <th>{{ uiText.device }}</th>
           <th>{{ uiText.startTime }}</th>
           <th>{{ uiText.endTime }}</th>
@@ -279,12 +356,13 @@
       </thead>
       <tbody>
         <tr v-if="scheduleRows.length === 0">
-          <td class="muted" colspan="8">{{ uiText.noScheduleRecords }}</td>
+          <td class="muted" colspan="9">{{ uiText.noScheduleRecords }}</td>
         </tr>
         <tr v-for="(row, index) in scheduleRows" :key="row.id">
           <td>{{ index + 1 }}</td>
           <td>{{ row.taskCode }}</td>
           <td>{{ row.experimentLabel || "-" }}</td>
+          <td>{{ row.axisLabel || "-" }}</td>
           <td>{{ row.device }}</td>
           <td>{{ row.startAt }}</td>
           <td>{{ row.endAt }}</td>
@@ -321,6 +399,10 @@
       <div class="form-field">
         <label>{{ uiText.experimentLabel }}</label>
         <input :value="selectedTaskDetail.experimentLabel" type="text" readonly />
+      </div>
+      <div class="form-field">
+        <label>{{ uiText.axis }}</label>
+        <input :value="selectedTaskDetail.axisLabel" type="text" readonly />
       </div>
       <div class="form-field">
         <label>{{ uiText.testType }}</label>
@@ -567,6 +649,11 @@ const uiText = {
   actions: "操作",
   afternoonShort: "下午 12:00-18:00",
   afternoonSlot: "下午（12:00-18:00）",
+  axis: "轴向",
+  axisCompleted: "已完成",
+  axisCurrentSchedule: "剩余轴向",
+  axisOrder: "顺序：",
+  axisRequirement: "轴向要求",
   cancelConflictSchedule: "取消排程",
   clear: "重置",
   conflictCandidateLabel: "当前实验：",
@@ -590,6 +677,7 @@ const uiText = {
   experimentCode: "实验类型",
   experimentLabel: "实验标签",
   fullConflictTitle: "完全冲突提示",
+  ganttOverflowTitle: "折叠任务",
   ganttTitle: "设备空闲排程（上午/下午）",
   index: "序号",
   lab: "实验室",
@@ -647,11 +735,15 @@ const {
   exceptionModalOpen,
   experimentOptions,
   ganttView,
+  ganttOverflowDetail,
+  ganttOverflowOpen,
   showNextGanttWindow,
   showPreviousGanttWindow,
   manualLabOptionItems,
   manualTimeSlotOptions,
   openExceptionModal,
+  openGanttOverflowModal,
+  openGanttOverflowTask,
   openScheduleDrawer,
   openTaskDetailModal,
   pendingExceptionCount,
@@ -670,6 +762,9 @@ const {
   scheduleDrawerOpen,
   scheduleForm,
   scheduleCustomStartMinTime,
+  scheduleAxisRequirementOptions,
+  scheduleCompletedAxisOptions,
+  scheduleAxisOptions,
   scheduleRows,
   scheduleSearch,
   scheduleWarning,
@@ -680,6 +775,11 @@ const {
   summaryCards,
   taskOptions,
   taskScheduledOverlays,
+  isScheduleAxisSelected,
+  selectedAxisLabel,
+  showAxisSelector,
+  toggleScheduleAxis,
+  closeGanttOverflowModal,
   resetScheduleForm,
 } = useSchedulePage();
 

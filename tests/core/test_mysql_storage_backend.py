@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from app.core import mysql_storage_backend as mysql_storage_backend_module
@@ -23,12 +24,15 @@ from app.core.mysql_storage_backend import (
     normalize_storage_payload,
     build_experiment_insert_row,
     build_experiment_run_insert_row,
+    build_experiment_run_step_insert_row,
+    build_experiment_run_tray_insert_row,
     build_experiment_sample_insert_row,
     build_experiment_tray_insert_row,
     build_sample_insert_row,
     build_storage_experiment_item,
     build_storage_experiment_sample_item,
     build_storage_experiment_run_tray_item,
+    build_storage_experiment_run_step_item,
     build_storage_experiment_tray_item,
     build_storage_sample_item,
     build_device_insert_row,
@@ -85,6 +89,8 @@ def test_mysql_storage_backend_reexports_extracted_mappers() -> None:
         "build_experiment_run_insert_row",
         "build_storage_experiment_run_item",
         "build_storage_experiment_run_tray_item",
+        "build_experiment_run_step_insert_row",
+        "build_storage_experiment_run_step_item",
         "build_experiment_run_tray_insert_row",
         "build_experiment_run_tray_insert_rows",
         "build_schedule_insert_row",
@@ -164,6 +170,7 @@ def test_mysql_storage_backend_reexports_extracted_loaders() -> None:
         "load_experiment_samples",
         "load_experiment_runs",
         "load_experiment_run_trays",
+        "load_experiment_run_steps",
         "load_devices",
         "load_streams",
     ]
@@ -187,6 +194,7 @@ def test_mysql_storage_backend_reexports_extracted_replacers() -> None:
         "replace_experiment_trays",
         "replace_experiment_samples",
         "replace_experiment_run_trays",
+        "replace_experiment_run_steps",
         "replace_experiment_runs",
         "replace_experiments",
         "replace_devices",
@@ -242,6 +250,80 @@ def test_replace_experiment_runs_does_not_write_run_tray_rows_from_run_tray_code
 
     assert not any("INSERT INTO biz_experiment_run_tray" in sql for sql, _rows in cursor.executemany_calls)
     assert not any("DELETE FROM biz_experiment_run_tray" in sql for sql, _params in cursor.execute_calls)
+
+
+def test_replace_experiments_writes_dispatched_axis_codes() -> None:
+    class TrackingCursor:
+        def __init__(self):
+            self.executemany_calls = []
+            self.execute_calls = []
+            self.result = []
+
+        def execute(self, sql, params=None):
+            normalized_sql = " ".join(str(sql).split())
+            self.execute_calls.append((normalized_sql, params))
+            if "SELECT task_id, task_no FROM biz_task" in normalized_sql:
+                self.result = [{"task_id": 7, "task_no": "TASK-001"}]
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self.result
+
+    cursor = TrackingCursor()
+
+    mysql_storage_replacers_module.replace_experiments(
+        cursor,
+        [
+            {
+                "task_code": "TASK-001",
+                "experiment_code": "TASK-001-B",
+                "experiment_name": "振动试验",
+                "required_device": "振动试验",
+                "status": "待排程",
+                "axis_codes": ["z-", "y+"],
+            }
+        ],
+    )
+
+    insert_sql, rows = cursor.executemany_calls[0]
+    assert "axis_codes_json" in insert_sql
+    assert "axis_codes_json = VALUES(axis_codes_json)" in insert_sql
+    assert json.loads(rows[0]["axis_codes_json"]) == ["z-", "y+"]
+
+
+def test_load_experiments_reads_dispatched_axis_codes() -> None:
+    class TrackingCursor:
+        def __init__(self):
+            self.executed_sql = ""
+
+        def execute(self, sql, params=None):
+            self.executed_sql = " ".join(str(sql).split())
+
+        def fetchall(self):
+            return [
+                {
+                    "experiment_no": "TASK-001-B",
+                    "task_no": "TASK-001",
+                    "experiment_name": "振动试验",
+                    "required_device": "振动试验",
+                    "priority": None,
+                    "planned_hours": 1,
+                    "experiment_status": "待排程",
+                    "axis_codes_json": '["z-","y+"]',
+                    "unscheduled_since": None,
+                    "created_at": datetime(2026, 3, 17, 9, 30, 0),
+                    "updated_at": datetime(2026, 3, 17, 9, 35, 0),
+                }
+            ]
+
+    cursor = TrackingCursor()
+
+    experiments = mysql_storage_loaders_module.load_experiments(cursor)
+
+    assert "axis_codes_json" in cursor.executed_sql
+    assert experiments[0]["axis_codes"] == ["z-", "y+"]
 
 
 def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> None:
@@ -525,6 +607,100 @@ def test_ensure_schema_extensions_adds_missing_schedule_lab_id(monkeypatch) -> N
     assert connection.committed is True
 
 
+def test_ensure_schema_extensions_adds_axis_schedule_run_and_step_storage(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.statements = []
+            self._result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.statements.append(statement)
+            if "SHOW COLUMNS FROM biz_schedule LIKE 'axis_codes_json'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_schedule LIKE 'axis_batch_no'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_schedule LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment LIKE 'axis_codes_json'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_run LIKE 'axis_codes_json'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_run LIKE 'axis_batch_no'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_run LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_run_tray LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_run_step LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_mq_message_log LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_event LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_experiment_result LIKE 'sub_experiment_code'" in statement:
+                self._result = None
+            elif "SHOW COLUMNS FROM biz_task LIKE 'task_type'" in statement:
+                self._result = {"Field": "task_type", "Type": "varchar(200)", "Null": "NO"}
+            elif statement.startswith("SHOW COLUMNS"):
+                self._result = {"Field": "existing", "Type": "varchar(100)"}
+            else:
+                self._result = None
+
+        def fetchone(self):
+            return self._result
+
+    class _CaptureConnection:
+        def __init__(self) -> None:
+            self.cursor_instance = _CaptureCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+        def commit(self):
+            self.committed = True
+
+    connection = _CaptureConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    backend._ensure_schema_extensions()
+
+    statements = connection.cursor_instance.statements
+    assert any("ALTER TABLE biz_schedule ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_schedule ADD COLUMN axis_batch_no VARCHAR(50) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_schedule ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_run ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_run ADD COLUMN axis_batch_no VARCHAR(50) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_run ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_experiment_run_step" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_experiment_run_step" in statement and "sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_run_tray ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_run_step ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_mq_message_log ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_event ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any("ALTER TABLE biz_experiment_result ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert connection.committed is True
+
+
 def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -775,6 +951,28 @@ def test_schedule_mapping_accepts_legacy_device_name_field() -> None:
     assert insert_row["lab_code"] == "LAB_SALT"
 
 
+def test_schedule_mapping_round_trips_axis_codes_in_scheduled_order() -> None:
+    storage_schedule = {
+        "id": "schedule-axis",
+        "task_code": "SYLU-2026-06-201",
+        "experiment_code": "SYLU-2026-06-201-A",
+        "device": "振动一室",
+        "axis_codes": ["z-", "y+", "x-"],
+        "axis_batch_no": "batch-2",
+        "subExperimentCode": "SYLU-2026-06-201-A-VIB-Z",
+    }
+
+    insert_row = build_schedule_insert_row(storage_schedule)
+    storage_item = build_storage_schedule_item(insert_row)
+
+    assert json.loads(insert_row["axis_codes_json"]) == ["z-", "y+", "x-"]
+    assert insert_row["axis_batch_no"] == "batch-2"
+    assert insert_row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+    assert storage_item["axis_codes"] == ["z-", "y+", "x-"]
+    assert storage_item["axis_batch_no"] == "batch-2"
+    assert storage_item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+
+
 def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> None:
     storage_experiment = {
         "id": "experiment-1",
@@ -806,6 +1004,33 @@ def test_experiment_mapping_round_trip_preserves_task_and_device_fields() -> Non
     assert storage_item["task_code"] == "SYLU-2026-04-106"
     assert storage_item["experiment_name"] == "A实验"
     assert storage_item["status"] == "待排程"
+
+
+def test_experiment_mapping_round_trips_dispatched_axis_codes() -> None:
+    storage_experiment = {
+        "id": "experiment-1",
+        "task_code": "SYLU-2026-04-106",
+        "experiment_code": "SYLU-2026-04-106-B",
+        "experiment_name": "振动试验",
+        "required_device": "振动试验",
+        "priority": "高",
+        "planned_hours": 3.5,
+        "status": "待排程",
+        "axis_codes": ["z-", "y+", "x-"],
+        "created_at": "2026-03-17T09:30:00Z",
+        "updated_at": "2026-03-17T09:35:00Z",
+    }
+
+    insert_row = build_experiment_insert_row(storage_experiment)
+    storage_item = build_storage_experiment_item(
+        {
+            **insert_row,
+            "experiment_id": 8,
+        }
+    )
+
+    assert json.loads(insert_row["axis_codes_json"]) == ["z-", "y+", "x-"]
+    assert storage_item["axis_codes"] == ["z-", "y+", "x-"]
 
 
 def test_experiment_mapping_round_trip_preserves_unscheduled_since() -> None:
@@ -1288,6 +1513,95 @@ def test_derive_experiment_status_map_reopens_stale_completed_batch_when_run_tra
         experiment_run_trays=experiment_run_trays,
     ) == {
         "SYLU-2026-06-001-A": "实验进行中",
+    }
+
+
+def test_derive_experiment_status_map_keeps_axis_experiment_running_until_all_sub_experiments_complete() -> None:
+    experiments = [
+        {
+            "experiment_no": "SYLU-2026-07-001-A",
+            "task_no": "SYLU-2026-07-001",
+            "experiment_name": "冲击试验",
+            "experiment_status": "实验已完成",
+        }
+    ]
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "axis_codes_json": ["x+", "x-", "y+"],
+            "schedule_status": "实验已完成",
+        },
+        {
+            "schedule_id": 2,
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-002",
+            "axis_codes_json": ["y-", "z+", "z-"],
+            "schedule_status": "实验已完成",
+        },
+    ]
+    experiment_trays = [
+        {"task_no": "SYLU-2026-07-001", "experiment_no": "SYLU-2026-07-001-A", "tray_no": "SYLU-2026-07-001-TP-001"},
+    ]
+    experiment_run_trays = [
+        {
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "tray_no": "SYLU-2026-07-001-TP-001",
+            "run_tray_status": "实验已完成",
+        }
+    ]
+
+    assert derive_experiment_status_map(
+        experiments,
+        schedules,
+        experiment_trays=experiment_trays,
+        experiment_run_trays=experiment_run_trays,
+    ) == {
+        "SYLU-2026-07-001-A": "实验进行中",
+    }
+
+
+def test_derive_schedule_status_map_keeps_unstarted_axis_sub_experiment_scheduled() -> None:
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "axis_codes_json": ["x+", "x-", "y+"],
+            "schedule_status": "实验已完成",
+        },
+        {
+            "schedule_id": 2,
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-002",
+            "axis_codes_json": ["y-", "z+", "z-"],
+            "schedule_status": "实验已完成",
+        },
+    ]
+    experiment_run_trays = [
+        {
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "tray_no": "SYLU-2026-07-001-TP-001",
+            "run_tray_status": "实验已完成",
+        }
+    ]
+
+    assert mysql_storage_status_module.derive_schedule_status_map(
+        schedules,
+        {"SYLU-2026-07-001-A": "实验进行中"},
+        experiment_run_trays=experiment_run_trays,
+    ) == {
+        1: "实验已完成",
+        2: "已排程",
     }
 
 
@@ -2758,6 +3072,7 @@ def test_replace_schedules_backfills_task_id_from_task_no() -> None:
                 "id": "schedule-1",
                 "task_code": "SYLU-2026-03-002",
                 "experiment_code": "SYLU-2026-03-002-A",
+                "subExperimentCode": "SYLU-2026-03-002-A-VIB-Z",
                 "device": "盐雾试验室",
                 "start_at": "2026-04-09T10:05:38Z",
                 "end_at": "2026-04-09T13:35:38Z",
@@ -2772,6 +3087,7 @@ def test_replace_schedules_backfills_task_id_from_task_no() -> None:
         if "INSERT INTO biz_schedule" in sql
     )
     assert schedule_call[0]["task_id"] == 12773
+    assert schedule_call[0]["sub_experiment_code"] == "SYLU-2026-03-002-A-VIB-Z"
 
 
 def test_replace_schedules_backfills_lab_id_from_device_name() -> None:
@@ -2955,6 +3271,7 @@ def test_load_schedules_exposes_lab_code_and_lab_id() -> None:
                     "device_name": "盐雾试验室",
                     "lab_id": 9,
                     "lab_code": "LAB_SALT",
+                    "sub_experiment_code": "SYLU-2026-03-002-A-VIB-Z",
                     "schedule_start_time": datetime(2026, 4, 9, 10, 5, 38),
                     "schedule_end_time": datetime(2026, 4, 9, 13, 35, 38),
                     "planned_hours": 3.5,
@@ -2969,10 +3286,12 @@ def test_load_schedules_exposes_lab_code_and_lab_id() -> None:
     statement = cursor.executed[0][0]
     assert "s.lab_id" in statement
     assert "l.lab_code" in statement
+    assert "s.sub_experiment_code" in statement
     assert "LEFT JOIN md_lab" in statement
     assert schedules[0]["device"] == "盐雾试验室"
     assert schedules[0]["lab_id"] == 9
     assert schedules[0]["lab_code"] == "LAB_SALT"
+    assert schedules[0]["sub_experiment_code"] == "SYLU-2026-03-002-A-VIB-Z"
 
 
 def test_normalize_legacy_status_columns_converts_stored_status_to_arrived() -> None:
@@ -3143,6 +3462,75 @@ def test_experiment_run_row_round_trips_tray_scoped_batch_times() -> None:
     assert item["planned_end_at"] == "2026-06-01 13:10:00"
 
 
+def test_experiment_run_row_round_trips_axis_plan() -> None:
+    row = build_experiment_run_insert_row(
+        {
+            "id": "RUN-AXIS",
+            "schedule_id": "schedule-axis",
+            "task_code": "SYLU-2026-06-201",
+            "experiment_code": "SYLU-2026-06-201-A",
+            "device": "振动一室",
+            "status": "实验进行中",
+            "axis_codes": ["z-", "y+", "x-"],
+            "axis_batch_no": 2,
+            "subExperimentCode": "SYLU-2026-06-201-A-VIB-Y",
+        }
+    )
+    item = build_storage_experiment_run_item(row, tray_codes=["TP-AXIS-001"])
+
+    assert json.loads(row["axis_codes_json"]) == ["z-", "y+", "x-"]
+    assert row["axis_batch_no"] == "2"
+    assert row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+    assert item["axis_codes"] == ["z-", "y+", "x-"]
+    assert item["axis_batch_no"] == "2"
+    assert item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+
+
+def test_experiment_run_step_row_round_trips_axis_status() -> None:
+    row = build_experiment_run_step_insert_row(
+        {
+            "id": "RUN-AXIS:2:y+",
+            "run_no": "RUN-AXIS",
+            "task_code": "SYLU-2026-06-201",
+            "experiment_code": "SYLU-2026-06-201-A",
+            "subExperimentCode": "SYLU-2026-06-201-A-VIB-Y",
+            "axis_code": "y+",
+            "step_no": 2,
+            "status": "实验进行中",
+            "started_at": "2026-06-08T09:30:00+08:00",
+        }
+    )
+    item = build_storage_experiment_run_step_item(row)
+
+    assert row["run_no"] == "RUN-AXIS"
+    assert row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+    assert row["axis_code"] == "y+"
+    assert row["step_no"] == 2
+    assert row["step_status"] == "实验进行中"
+    assert item["id"] == "RUN-AXIS:2:y+"
+    assert item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+    assert item["axis_code"] == "y+"
+    assert item["step_no"] == 2
+    assert item["status"] == "实验进行中"
+
+
+def test_experiment_run_tray_row_round_trips_sub_experiment_code() -> None:
+    row = build_experiment_run_tray_insert_row(
+        {
+            "run_no": "RUN-AXIS",
+            "task_code": "SYLU-2026-06-201",
+            "experiment_code": "SYLU-2026-06-201-A",
+            "subExperimentCode": "SYLU-2026-06-201-A-VIB-Y",
+            "tray_code": "TP-AXIS-001",
+            "status": "实验进行中",
+        }
+    )
+    item = build_storage_experiment_run_tray_item(row)
+
+    assert row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+    assert item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
+
+
 def test_experiment_run_tray_item_exposes_tray_scoped_status() -> None:
     item = build_storage_experiment_run_tray_item(
         {
@@ -3172,6 +3560,135 @@ def test_experiment_run_tray_item_exposes_tray_scoped_status() -> None:
         "created_at": "2026-06-05 08:30:00",
         "updated_at": "2026-06-05 08:35:00",
     }
+
+
+def test_replace_run_tray_and_step_tables_write_sub_experiment_code() -> None:
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.execute_calls = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            self.execute_calls.append((" ".join(str(sql).split()), params))
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+    cursor = _CaptureCursor()
+
+    mysql_storage_replacers_module.replace_experiment_runs(
+        cursor,
+        [
+            {
+                "id": "RUN-AXIS",
+                "task_code": "SYLU-2026-06-201",
+                "experiment_code": "SYLU-2026-06-201-A",
+                "subExperimentCode": "SYLU-2026-06-201-A-VIB-Z",
+            }
+        ],
+        replace_trays=False,
+    )
+    mysql_storage_replacers_module.replace_experiment_run_trays(
+        cursor,
+        [
+            {
+                "run_no": "RUN-AXIS",
+                "task_code": "SYLU-2026-06-201",
+                "experiment_code": "SYLU-2026-06-201-A",
+                "subExperimentCode": "SYLU-2026-06-201-A-VIB-Z",
+                "tray_code": "TP-AXIS-001",
+            }
+        ],
+    )
+    mysql_storage_replacers_module.replace_experiment_run_steps(
+        cursor,
+        [
+            {
+                "run_no": "RUN-AXIS",
+                "task_code": "SYLU-2026-06-201",
+                "experiment_code": "SYLU-2026-06-201-A",
+                "subExperimentCode": "SYLU-2026-06-201-A-VIB-Z",
+                "axis_code": "z-",
+                "step_no": 1,
+            }
+        ],
+    )
+
+    run_sql, run_rows = next(call for call in cursor.executemany_calls if "INSERT INTO biz_experiment_run (" in call[0])
+    tray_sql, tray_rows = next(call for call in cursor.executemany_calls if "INSERT INTO biz_experiment_run_tray" in call[0])
+    step_sql, step_rows = next(call for call in cursor.executemany_calls if "INSERT INTO biz_experiment_run_step" in call[0])
+    assert "sub_experiment_code" in run_sql
+    assert "sub_experiment_code = VALUES(sub_experiment_code)" in run_sql
+    assert run_rows[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+    assert "sub_experiment_code" in tray_sql
+    assert tray_rows[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+    assert "sub_experiment_code" in step_sql
+    assert step_rows[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+
+
+def test_load_run_tray_and_step_tables_read_sub_experiment_code() -> None:
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self.executed = []
+            self._result = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            self.executed.append((statement, params))
+            if "SELECT run_no, tray_no FROM biz_experiment_run_tray" in statement:
+                self._result = [{"run_no": "RUN-AXIS", "tray_no": "TP-AXIS-001"}]
+            elif "FROM biz_experiment_run_tray" in statement:
+                self._result = [
+                    {
+                        "relation_id": 1,
+                        "run_no": "RUN-AXIS",
+                        "task_no": "SYLU-2026-06-201",
+                        "experiment_no": "SYLU-2026-06-201-A",
+                        "sub_experiment_code": "SYLU-2026-06-201-A-VIB-Z",
+                        "tray_no": "TP-AXIS-001",
+                    }
+                ]
+            elif "FROM biz_experiment_run_step" in statement:
+                self._result = [
+                    {
+                        "step_id": 2,
+                        "run_no": "RUN-AXIS",
+                        "task_no": "SYLU-2026-06-201",
+                        "experiment_no": "SYLU-2026-06-201-A",
+                        "sub_experiment_code": "SYLU-2026-06-201-A-VIB-Z",
+                        "axis_code": "z-",
+                        "step_no": 1,
+                    }
+                ]
+            elif "FROM biz_experiment_run" in statement:
+                self._result = [
+                    {
+                        "run_no": "RUN-AXIS",
+                        "schedule_no": "schedule-axis",
+                        "task_no": "SYLU-2026-06-201",
+                        "experiment_no": "SYLU-2026-06-201-A",
+                        "sub_experiment_code": "SYLU-2026-06-201-A-VIB-Z",
+                        "device_name": "振动一室",
+                        "planned_hours": None,
+                        "run_status": "实验进行中",
+                    }
+                ]
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+
+    runs = mysql_storage_loaders_module.load_experiment_runs(cursor)
+    trays = mysql_storage_loaders_module.load_experiment_run_trays(cursor)
+    steps = mysql_storage_loaders_module.load_experiment_run_steps(cursor)
+
+    assert "sub_experiment_code" in cursor.executed[1][0]
+    assert "sub_experiment_code" in cursor.executed[2][0]
+    assert "sub_experiment_code" in cursor.executed[3][0]
+    assert runs[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+    assert trays[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
+    assert steps[0]["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
 
 
 class _DummySnapshotRepository:
@@ -3244,6 +3761,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         lambda cursor, rows, replace_trays=True: order.append(f"experiment_runs:{replace_trays}"),
     )
     monkeypatch.setattr(backend, "_replace_experiment_run_trays", lambda cursor, rows: order.append("experiment_run_trays"))
+    monkeypatch.setattr(backend, "_replace_experiment_run_steps", lambda cursor, rows: order.append("experiment_run_steps"))
     monkeypatch.setattr(backend, "_replace_experiment_trays", lambda cursor, rows: order.append("experiment_trays"))
     monkeypatch.setattr(backend, "_replace_experiment_samples", lambda cursor, rows: order.append("experiment_samples"))
     monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: order.append("schedule_task_ids"))
@@ -3264,6 +3782,16 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
                     "run_tray_status": "实验进行中",
                 }
             ],
+            "mes.experiment_run_steps": [
+                {
+                    "run_no": "run-001",
+                    "experiment_code": "SYLU-2026-03-001-A",
+                    "task_code": "SYLU-2026-03-001",
+                    "axis_code": "z-",
+                    "step_no": 1,
+                    "status": "实验进行中",
+                }
+            ],
             "mes.experiment_trays": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "tray_code": "SYLU-2026-03-001-TP-001"}],
             "mes.experiment_samples": [{"experiment_code": "SYLU-2026-03-001-A", "task_code": "SYLU-2026-03-001", "sample_code": "SYLU-2026-03-001-SP-001"}],
         }
@@ -3275,6 +3803,7 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "experiments",
         "experiment_runs:False",
         "experiment_run_trays",
+        "experiment_run_steps",
         "experiment_trays",
         "experiment_samples",
         "tasks:True",
@@ -3396,6 +3925,7 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_run_steps", lambda cursor: [])
     monkeypatch.setattr(
         backend,
         "_load_experiment_samples",
@@ -3418,6 +3948,59 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
     assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17 17:00:00"
     assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 17, 0)}
     assert connection.commit_count == 2
+
+
+def test_read_all_includes_experiment_run_steps(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: _DummyConnection())
+    monkeypatch.setattr(backend, "_normalize_legacy_status_columns", lambda cursor: None)
+    monkeypatch.setattr(backend, "_load_tasks", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_schedules", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_devices", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_streams", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_samples", lambda cursor, *args, **kwargs: [])
+    monkeypatch.setattr(backend, "_load_experiments", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
+    monkeypatch.setattr(
+        backend,
+        "_load_experiment_run_steps",
+        lambda cursor: [
+            {
+                "run_no": "RUN-AXIS",
+                "task_code": "SYLU-2026-06-201",
+                "experiment_code": "SYLU-2026-06-201-A",
+                "axis_code": "y+",
+                "step_no": 2,
+                "status": "实验进行中",
+            }
+        ],
+    )
+    monkeypatch.setattr(backend, "_load_experiment_samples", lambda cursor: [])
+    monkeypatch.setattr(
+        backend,
+        "_backfill_unscheduled_since_for_reads",
+        lambda cursor, **kwargs: (kwargs["experiments"], False),
+    )
+
+    snapshot = backend.read_all()
+
+    assert snapshot["mes.experiment_run_steps"] == [
+        {
+            "run_no": "RUN-AXIS",
+            "task_code": "SYLU-2026-06-201",
+            "experiment_code": "SYLU-2026-06-201-A",
+            "axis_code": "y+",
+            "step_no": 2,
+            "status": "实验进行中",
+        }
+    ]
 
 
 def test_write_many_does_not_clear_unrelated_experiment_tray_assignments(monkeypatch) -> None:

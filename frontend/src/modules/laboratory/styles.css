@@ -111,7 +111,34 @@
 
 .laboratory-running-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: flex-end;
+}
+
+.laboratory-running-axis-status {
+  align-self: start;
+  display: grid;
+  gap: 4px;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+.action-btn.success {
+  background: #059669;
+  border-color: #047857;
+  color: #ffffff;
+}
+
+.action-btn.success:disabled {
+  background: #d1d5db;
+  border-color: #cbd5e1;
+  color: #475569;
 }
 
 .laboratory-running-modal__hint {
@@ -467,6 +494,22 @@
   font-size: 18px;
   font-weight: 700;
   color: var(--text);
+}
+
+.laboratory-recent-task__axes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.38);
+  border-radius: 6px;
+  background: rgba(var(--industrial-accent-rgb), 0.1);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .laboratory-recent-task__time {

@@ -7,6 +7,7 @@ from app.core.mysql_storage_mappers import (
     build_storage_device_item,
     build_storage_experiment_item,
     build_storage_experiment_run_item,
+    build_storage_experiment_run_step_item,
     build_storage_experiment_run_tray_item,
     build_storage_experiment_sample_item,
     build_storage_experiment_tray_item,
@@ -46,7 +47,8 @@ def load_tasks(cursor) -> list[dict[str, Any]]:
 def load_schedules(cursor) -> list[dict[str, Any]]:
     cursor.execute(
         """
-        SELECT s.schedule_no, s.task_no, s.experiment_no, s.device_name, s.lab_id, l.lab_code,
+        SELECT s.schedule_no, s.task_no, s.experiment_no, s.sub_experiment_code, s.device_name, s.lab_id, l.lab_code,
+               s.axis_codes_json, s.axis_batch_no,
                s.schedule_start_time, s.schedule_end_time, s.planned_hours, s.schedule_status
         FROM biz_schedule s
         LEFT JOIN md_lab l
@@ -63,7 +65,7 @@ def load_experiments(cursor) -> list[dict[str, Any]]:
     cursor.execute(
         """
         SELECT experiment_no, task_no, experiment_name, required_device, priority,
-               planned_hours, experiment_status, unscheduled_since, created_at, updated_at
+               planned_hours, experiment_status, axis_codes_json, unscheduled_since, created_at, updated_at
         FROM biz_experiment
         ORDER BY task_no ASC, experiment_no ASC
         """
@@ -110,7 +112,7 @@ def load_experiment_runs(cursor) -> list[dict[str, Any]]:
 
     cursor.execute(
         """
-        SELECT run_no, schedule_no, task_no, experiment_no, device_name, planned_hours,
+        SELECT run_no, schedule_no, task_no, experiment_no, sub_experiment_code, device_name, axis_codes_json, axis_batch_no, planned_hours,
                run_status, started_at, planned_end_at, ended_at, created_at, updated_at
         FROM biz_experiment_run
         ORDER BY started_at DESC, run_no DESC
@@ -122,13 +124,25 @@ def load_experiment_runs(cursor) -> list[dict[str, Any]]:
 def load_experiment_run_trays(cursor) -> list[dict[str, Any]]:
     cursor.execute(
         """
-        SELECT relation_id, run_no, task_no, experiment_no, tray_no, run_tray_status,
+        SELECT relation_id, run_no, task_no, experiment_no, sub_experiment_code, tray_no, run_tray_status,
                started_at, ended_at, created_at, updated_at
         FROM biz_experiment_run_tray
         ORDER BY task_no ASC, experiment_no ASC, run_no ASC, tray_no ASC
         """
     )
     return [build_storage_experiment_run_tray_item(row) for row in cursor.fetchall()]
+
+
+def load_experiment_run_steps(cursor) -> list[dict[str, Any]]:
+    cursor.execute(
+        """
+        SELECT step_id, run_no, task_no, experiment_no, sub_experiment_code, axis_code, step_no, step_status,
+               started_at, ended_at, created_at, updated_at
+        FROM biz_experiment_run_step
+        ORDER BY task_no ASC, experiment_no ASC, run_no ASC, step_no ASC, axis_code ASC
+        """
+    )
+    return [build_storage_experiment_run_step_item(row) for row in cursor.fetchall()]
 
 
 def load_devices(cursor) -> list[dict[str, Any]]:

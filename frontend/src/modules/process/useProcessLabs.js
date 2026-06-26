@@ -212,6 +212,7 @@ function useProcessLabs(options = {}) {
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_run_trays,
+      STORAGE_KEYS.experiment_run_steps,
       STORAGE_KEYS.experiments,
     ]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
@@ -249,6 +250,7 @@ function useProcessLabs(options = {}) {
   const experimentSamples = ref([]);
   const experimentRuns = ref([]);
   const experimentRunTrays = ref([]);
+  const experimentRunSteps = ref([]);
   const experiments = ref([]);
   const transferWorkspaceByTaskCode = ref({});
   const activeFilter = ref(PROCESS_FILTERS.overview);
@@ -276,6 +278,7 @@ function useProcessLabs(options = {}) {
   const isCompletedSchedule = (schedule) =>
     scheduleExperimentIsCompleted({
       experiments: experiments.value,
+      experimentRunSteps: experimentRunSteps.value,
       experimentRunTrays: experimentRunTrays.value,
       experimentTrays: experimentTrays.value,
       samples: samples.value,
@@ -450,7 +453,9 @@ function useProcessLabs(options = {}) {
         const isRunning = RUNNING_TRAY_STATUSES.has(status);
         const isCompleted = trayExperimentRunIsCompleted({
           experimentCode: normalizedExperimentCode,
+          experimentRunSteps: experimentRunSteps.value,
           experimentRunTrays: [relation],
+          experiments: experiments.value,
           taskCode: normalizedTaskCode,
           trayCode,
         });
@@ -808,6 +813,7 @@ function useProcessLabs(options = {}) {
         ? buildTrayFlowView({
             currentExperimentCode: selectedTrayFlowExperimentCode,
             experimentRuns: experimentRuns.value,
+            experimentRunSteps: experimentRunSteps.value,
             experimentRunTrays: experimentRunTrays.value,
             experimentTrays: experimentTrays.value,
             experiments: experiments.value,
@@ -860,6 +866,7 @@ function useProcessLabs(options = {}) {
           devices.value,
           experimentRuns.value,
           experimentRunTrays.value,
+          experimentRunSteps.value,
         )[0]
         || lab
       );
@@ -944,6 +951,7 @@ function useProcessLabs(options = {}) {
       devices.value,
       experimentRuns.value,
       experimentRunTrays.value,
+      experimentRunSteps.value,
     ).map(enrichLabCard);
   };
 
@@ -991,6 +999,7 @@ function useProcessLabs(options = {}) {
     [STORAGE_KEYS.experiment_samples]: experimentSamples.value,
     [STORAGE_KEYS.experiment_runs]: experimentRuns.value,
     [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays.value,
+    [STORAGE_KEYS.experiment_run_steps]: experimentRunSteps.value,
     [STORAGE_KEYS.experiments]: experiments.value,
   });
 
@@ -1028,6 +1037,7 @@ function useProcessLabs(options = {}) {
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_samples, experimentSamples);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, experimentRuns);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, experimentRunTrays);
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_steps, experimentRunSteps);
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, experiments);
       rebuildLabCards();
       if (taskDrawerOpen.value) {

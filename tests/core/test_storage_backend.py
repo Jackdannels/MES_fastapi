@@ -10,7 +10,7 @@ from datetime import datetime
 import pytest
 
 import app.core.storage_backend as storage_backend_module
-from app.core.demo_data_reset import build_demo_reset_snapshot, reset_demo_data, run_demo_reset
+from app.core.demo_data_reset import _random_axis_requirements, build_demo_reset_snapshot, reset_demo_data, run_demo_reset
 from app.core.storage_backend import normalize_storage_payload
 
 
@@ -141,6 +141,21 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all(any(experiment["experiment_name"] == "盐雾试验" for experiment in task_experiments) for task_experiments in experiments_by_task.values())
     assert all(len({experiment["experiment_name"] for experiment in task_experiments}) == 3 for task_experiments in experiments_by_task.values())
     assert all(all(experiment["status"] == "待排程" for experiment in task_experiments) for task_experiments in experiments_by_task.values())
+    axis_experiments = [
+        experiment
+        for experiment in experiments
+        if experiment["experiment_name"] in {"冲击试验", "振动试验"}
+    ]
+    assert axis_experiments
+    allowed_axis_codes = {"x+", "x-", "y+", "y-", "z+", "z-"}
+    assert all(experiment["axis_codes"] for experiment in axis_experiments)
+    assert all(set(experiment["axis_codes"]) <= allowed_axis_codes for experiment in axis_experiments)
+    assert any(experiment["axis_codes"] != ["x+", "x-", "y+", "y-", "z+", "z-"] for experiment in axis_experiments)
+    assert all(
+        "axis_codes" not in experiment
+        for experiment in experiments
+        if experiment["experiment_name"] == "温度冲击试验"
+    )
 
     samples_by_task = {}
     for sample in samples:
@@ -161,6 +176,19 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert snapshot["mes.experiment_samples"] == []
     assert snapshot["mes.streams"] == []
     assert snapshot["mes.conflicts"] == []
+
+
+def test_demo_reset_axis_requirements_use_random_count_and_order() -> None:
+    class _FakeRng:
+        def shuffle(self, values):
+            values[:] = ["z-", "x+", "y-", "x-", "z+", "y+"]
+
+        def randint(self, start, end):
+            assert start == 1
+            assert end == 6
+            return 3
+
+    assert _random_axis_requirements(_FakeRng()) == ["z-", "x+", "y-"]
 
 
 def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_three() -> None:
@@ -187,6 +215,44 @@ def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_th
         "SYLU-2026-04-501-B",
     ]
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
+    assert normalized["mes.experiments"][1]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
+
+
+def test_normalize_storage_payload_adds_axis_codes_to_existing_impact_and_vibration_experiments() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-502",
+                "name": "轴向实验任务",
+                "test_type": "冲击试验 / 振动试验",
+                "test_types": ["冲击试验", "振动试验"],
+                "experiment_codes": ["SYLU-2026-04-502-A", "SYLU-2026-04-502-B"],
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [
+            {
+                "task_code": "SYLU-2026-04-502",
+                "experiment_code": "SYLU-2026-04-502-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+            },
+            {
+                "task_code": "SYLU-2026-04-502",
+                "experiment_code": "SYLU-2026-04-502-B",
+                "experiment_name": "振动试验",
+                "required_device": "振动试验",
+                "axis_codes": ["z-", "y+"],
+            },
+        ],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    experiments = normalized["mes.experiments"]
+    assert experiments[0]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
+    assert experiments[1]["axis_codes"] == ["z-", "y+"]
 
 
 def test_normalize_storage_payload_splits_legacy_test_type_without_expanding_to_three() -> None:

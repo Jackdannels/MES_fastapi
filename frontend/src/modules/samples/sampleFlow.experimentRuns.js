@@ -10,6 +10,11 @@ import {
   resolveEntryTrayCode,
 } from "./sampleFlow.trayScope";
 import { experimentRunTimeValue } from "./sampleFlow.experimentHelpers";
+import {
+  buildAxisPartialProgressStatus,
+  isAxisProgressIncomplete,
+  resolveAxisProgress,
+} from "@/modules/experiment-progress/axisProgress";
 
 const resolveRunNo = (run) => normalizeText(run?.run_no || run?.runNo || run?.id);
 
@@ -114,20 +119,80 @@ const resolveExperimentRunEntry = ({ experimentCode, experimentRuns = [], experi
     )[0];
 };
 
-const resolveExperimentRunStatus = ({ experimentCode, experimentRuns = [], experimentRunTrays = [], taskCode, trayCode }) => {
+const resolveExperimentRunStatus = ({
+  experiment,
+  experimentCode,
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays = [],
+  experiments = [],
+  schedules = [],
+  taskCode,
+  trayCode,
+}) => {
   const matchedRun = resolveExperimentRunEntry({ experimentCode, experimentRuns, experimentRunTrays, taskCode, trayCode });
   const rawRunStatus = normalizeText(matchedRun?.status);
   if (!rawRunStatus) {
     return "";
   }
   const runStatus = normalizeLifecycleStatus("", rawRunStatus);
+  if (runStatus === "实验已完成") {
+    const matchedExperiment = experiment || asArray(experiments).find((entry) =>
+      resolveEntryExperimentCode(entry) === normalizeText(experimentCode),
+    ) || null;
+    const axisProgress = resolveAxisProgress({
+      experiment: matchedExperiment,
+      experimentCode,
+      experimentRuns: [matchedRun, ...asArray(experimentRuns)].filter(Boolean),
+      experimentRunSteps,
+      experimentRunTrays,
+      experiments,
+      schedules,
+      taskCode,
+      trayCode,
+    });
+    const axisStatus = buildAxisPartialProgressStatus(
+      normalizeText(matchedExperiment?.displayName || matchedExperiment?.name || matchedExperiment?.experiment_name || matchedExperiment?.experimentName),
+      axisProgress,
+    );
+    if (axisStatus) {
+      return axisStatus;
+    }
+  }
   return RUNNING_EXPERIMENT_RUN_STATUSES.has(runStatus) ? "实验进行中" : runStatus;
 };
 
-const resolveCompletedExperimentRuntime = ({ experimentCode, experimentRuns = [], experimentRunTrays = [], taskCode, trayCode }) => {
+const resolveCompletedExperimentRuntime = ({
+  experiment,
+  experimentCode,
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays = [],
+  experiments = [],
+  schedules = [],
+  taskCode,
+  trayCode,
+}) => {
   const matchedRun = resolveExperimentRunEntry({ experimentCode, experimentRuns, experimentRunTrays, taskCode, trayCode });
   const runStatus = normalizeLifecycleStatus("", matchedRun?.status);
   if (runStatus !== "实验已完成") {
+    return null;
+  }
+  const matchedExperiment = experiment || asArray(experiments).find((entry) =>
+    resolveEntryExperimentCode(entry) === normalizeText(experimentCode),
+  ) || null;
+  const axisProgress = resolveAxisProgress({
+    experiment: matchedExperiment,
+    experimentCode,
+    experimentRuns: [matchedRun, ...asArray(experimentRuns)].filter(Boolean),
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    schedules,
+    taskCode,
+    trayCode,
+  });
+  if (isAxisProgressIncomplete(axisProgress)) {
     return null;
   }
   return {

@@ -137,7 +137,7 @@ const collectScheduleSamples = ({ experimentTrays, samples, schedule }) => {
   };
 };
 
-const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], experimentTrays, samples, schedule, taskStatusMap }) => {
+const scheduleExperimentIsCompleted = ({ experiments, experimentRunSteps = [], experimentRunTrays = [], experimentTrays, samples, schedule, taskStatusMap }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   if (!taskCode) {
@@ -160,6 +160,7 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentRunTrays = [], e
   if (experimentScopeIsTerminal({
     experiments,
     experimentCode,
+    experimentRunSteps,
     experimentRunTrays,
     experimentTrays,
     samples,
@@ -270,6 +271,7 @@ const buildProcessLabCards = (
   devices = [],
   experimentRuns = [],
   experimentRunTrays = [],
+  experimentRunSteps = [],
 ) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
   const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
@@ -304,6 +306,7 @@ const buildProcessLabCards = (
           (entry) =>
             !scheduleExperimentIsCompleted({
               experiments,
+              experimentRunSteps,
               experimentRunTrays,
               experimentTrays,
               samples: sampleList,

@@ -31,6 +31,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.experiments",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.samples",
@@ -48,6 +49,8 @@ EXPERIMENT_TYPE_OPTIONS: tuple[str, ...] = (
     "盐雾试验",
     "霉菌试验",
 )
+DEFAULT_AXIS_CODES: tuple[str, ...] = ("x+", "x-", "y+", "y-", "z+", "z-")
+AXIS_EXPERIMENT_TYPES: set[str] = {"冲击试验", "振动试验"}
 
 SAMPLE_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     ("鏍峰搧鐧昏", "样品登记"),
@@ -261,6 +264,25 @@ def _split_experiment_type_text(value: Any) -> list[str]:
     return types
 
 
+def _normalize_axis_codes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        raw_values = re.split(r"[,，]+", value)
+    else:
+        raw_values = []
+    axis_codes: list[str] = []
+    for item in raw_values:
+        normalized = str(item or "").strip()
+        if normalized and normalized not in axis_codes:
+            axis_codes.append(normalized)
+    return axis_codes
+
+
+def _experiment_requires_axis_codes(*values: Any) -> bool:
+    return any(str(value or "").strip() in AXIS_EXPERIMENT_TYPES for value in values)
+
+
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
     base_type = str(task.get("test_type") or task.get("required_device") or "").strip()
     types: list[str] = []
@@ -354,21 +376,25 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
             required_device = str(source.get("required_device") or "").strip() or experiment_types[index]
             if not experiment_name or re.fullmatch(r"[A-Z]实验", experiment_name):
                 experiment_name = required_device
-            normalized_experiments.append(
-                {
-                    **source,
-                    "id": str(source.get("id") or "").strip() or experiment_code,
-                    "task_code": task_code,
-                    "experiment_code": experiment_code,
-                    "experiment_name": experiment_name,
-                    "required_device": required_device,
-                    "priority": source.get("priority") if source.get("priority") is not None else task.get("priority", ""),
-                    "planned_hours": source.get("planned_hours", 0),
-                    "status": str(source.get("status") or task.get("status") or "待排程").strip(),
-                    "created_at": source.get("created_at") or task.get("created_at"),
-                    "updated_at": source.get("updated_at") or task.get("updated_at") or task.get("created_at"),
-                }
-            )
+            normalized_experiment = {
+                **source,
+                "id": str(source.get("id") or "").strip() or experiment_code,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "experiment_name": experiment_name,
+                "required_device": required_device,
+                "priority": source.get("priority") if source.get("priority") is not None else task.get("priority", ""),
+                "planned_hours": source.get("planned_hours", 0),
+                "status": str(source.get("status") or task.get("status") or "待排程").strip(),
+                "created_at": source.get("created_at") or task.get("created_at"),
+                "updated_at": source.get("updated_at") or task.get("updated_at") or task.get("created_at"),
+            }
+            if _experiment_requires_axis_codes(experiment_name, required_device):
+                normalized_experiment["axis_codes"] = (
+                    _normalize_axis_codes(source.get("axis_codes") or source.get("axisCodes"))
+                    or list(DEFAULT_AXIS_CODES)
+                )
+            normalized_experiments.append(normalized_experiment)
 
         if task.get("experiment_codes") != experiment_codes:
             task["experiment_codes"] = experiment_codes
@@ -741,7 +767,7 @@ def _normalize_value(key: str, value: Any) -> Any:
         return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")
     if key == "mes.tasks" and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="task")
-    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs", "mes.experiment_run_trays"} and isinstance(value, list):
+    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs", "mes.experiment_run_trays", "mes.experiment_run_steps"} and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="experiment")
     if key == STORAGE_META_KEY:
         return _normalize_meta(value)

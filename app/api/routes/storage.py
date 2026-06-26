@@ -18,6 +18,7 @@ from app.services.appearance_inspection import (
 )
 from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.storage_atomic import merge_concurrent_storage_updates
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
@@ -165,6 +166,155 @@ def _schedule_is_fixture_locked(schedule: Any, samples: Any, experiment_trays: A
         _task_code(sample) == task_code and _sample_has_fixture_locked_tray(sample, tray_codes)
         for sample in _as_list(samples)
     )
+
+
+def _normalize_axis_codes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        raw_values = value.replace("，", ",").split(",")
+    else:
+        raw_values = []
+    axis_codes: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        axis_code = _normalize_text(item)
+        if not axis_code or axis_code in seen:
+            continue
+        seen.add(axis_code)
+        axis_codes.append(axis_code)
+    return axis_codes
+
+
+def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_steps: Any) -> bool:
+    if not isinstance(schedule, dict):
+        return False
+    axis_codes = _normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
+    if len(axis_codes) < 2:
+        return False
+    axis_code_set = set(axis_codes)
+    task_code = _task_code(schedule)
+    experiment_code = _experiment_code(schedule)
+    sub_experiment_code = _record_sub_code(schedule, experiment_code=experiment_code)
+    if not sub_experiment_code:
+        return False
+    completed_axis_codes = {
+        _normalize_text(step.get("axis_code") or step.get("axisCode"))
+        for step in _as_list(experiment_run_steps)
+        if isinstance(step, dict)
+        and _task_code(step) == task_code
+        and _experiment_code(step) == experiment_code
+        and record_sub_experiment_code(step) == sub_experiment_code
+        and _normalize_text(step.get("status")) in COMPLETED_EXPERIMENT_STATUSES
+        and _normalize_text(step.get("axis_code") or step.get("axisCode")) in axis_code_set
+    }
+    return bool(completed_axis_codes) and not axis_code_set.issubset(completed_axis_codes)
+
+
+def _run_no(record: Any) -> str:
+    return _normalize_text(record.get("run_no") or record.get("runNo") or record.get("id")) if isinstance(record, dict) else ""
+
+
+def _record_schedule_id(record: Any) -> str:
+    return _normalize_text(record.get("schedule_id") or record.get("scheduleId") or record.get("schedule_no")) if isinstance(record, dict) else ""
+
+
+def _is_completed_status(value: Any) -> bool:
+    return _normalize_text(value) in COMPLETED_EXPERIMENT_STATUSES
+
+
+def _record_sub_code(record: Any, *, experiment_code: str = "") -> str:
+    if not isinstance(record, dict):
+        return ""
+    return resolve_record_sub_experiment_code(record, experiment_code=experiment_code)
+
+
+def tray_has_scoped_partial_axis_batch_completion(
+    *,
+    task_code: str,
+    tray_code: str,
+    experiments: list[dict[str, Any]] | None = None,
+    experiment_runs: list[dict[str, Any]] | None = None,
+    experiment_run_steps: list[dict[str, Any]] | None = None,
+    experiment_run_trays: list[dict[str, Any]] | None = None,
+    experiment_trays: list[dict[str, Any]] | None = None,
+    schedules: list[dict[str, Any]] | None = None,
+) -> bool:
+    normalized_task_code = _normalize_text(task_code)
+    normalized_tray_code = _normalize_text(tray_code)
+    run_by_no = {
+        _run_no(run): run
+        for run in _as_list(experiment_runs)
+        if isinstance(run, dict) and _task_code(run) == normalized_task_code and _run_no(run)
+    }
+    schedule_by_id = {
+        _schedule_id(schedule): schedule
+        for schedule in _as_list(schedules)
+        if isinstance(schedule, dict) and _schedule_id(schedule)
+    }
+    completed_steps_by_run: dict[str, set[str]] = {}
+    for step in _as_list(experiment_run_steps):
+        if not isinstance(step, dict) or _task_code(step) != normalized_task_code:
+            continue
+        if not _is_completed_status(step.get("status")):
+            continue
+        axis_code = _normalize_text(step.get("axis_code") or step.get("axisCode"))
+        if not axis_code:
+            continue
+        completed_steps_by_run.setdefault(_run_no(step), set()).add(axis_code)
+
+    completed_batches: dict[str, list[dict[str, Any]]] = {}
+    for relation in _as_list(experiment_run_trays):
+        if not isinstance(relation, dict):
+            continue
+        if _task_code(relation) != normalized_task_code or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != normalized_tray_code:
+            continue
+        if not _is_completed_status(relation.get("status") or relation.get("run_tray_status")):
+            continue
+        experiment_code = _experiment_code(relation)
+        run_no = _run_no(relation)
+        run = run_by_no.get(run_no)
+        if not experiment_code or not run or not _is_completed_status(run.get("status")):
+            continue
+        axes = set(completed_steps_by_run.get(run_no, set()))
+        axes.update(_normalize_axis_codes(run.get("axis_codes") or run.get("axisCodes")))
+        if not axes:
+            continue
+        run_schedule = schedule_by_id.get(_record_schedule_id(run))
+        sub_code = record_sub_experiment_code(relation) or record_sub_experiment_code(run)
+        if not sub_code and run_schedule:
+            sub_code = _record_sub_code(run_schedule, experiment_code=experiment_code)
+        if not sub_code:
+            continue
+        completed_batches.setdefault(experiment_code, []).append(
+            {
+                "axes": axes,
+                "schedule_id": _record_schedule_id(run),
+                "sub_experiment_code": sub_code,
+            }
+        )
+
+    for schedule in _as_list(schedules):
+        if not isinstance(schedule, dict) or _task_code(schedule) != normalized_task_code:
+            continue
+        if _is_completed_status(schedule.get("status") or schedule.get("schedule_status")):
+            continue
+        experiment_code = _experiment_code(schedule)
+        pending_axes = set(_normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes")))
+        if not experiment_code or not pending_axes:
+            continue
+        schedule_id = _schedule_id(schedule)
+        schedule_sub_code = _record_sub_code(schedule, experiment_code=experiment_code)
+        if not schedule_sub_code:
+            continue
+        for completed_batch in completed_batches.get(experiment_code, []):
+            if schedule_id and schedule_id == completed_batch["schedule_id"]:
+                continue
+            if schedule_sub_code == completed_batch["sub_experiment_code"]:
+                continue
+            if pending_axes - completed_batch["axes"]:
+                return True
+    return False
 
 
 def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:
@@ -666,7 +816,7 @@ def _validate_samples_appearance_dispatch_transition(
             if not isinstance(next_tray, dict):
                 continue
             current_tray = current_trays.get(_tray_code(next_tray))
-            if not _is_appearance_stored(current_sample, current_tray):
+            if not _is_pre_experiment_appearance_inbound(current_sample, current_tray):
                 continue
             if not _is_lab_dispatch_outbound(next_sample, next_tray):
                 continue
@@ -677,16 +827,93 @@ def _validate_samples_appearance_dispatch_transition(
 def _post_staging_reentry_is_completed(
     sample: Any,
     tray: Any,
+    experiments: Any,
+    experiment_runs: Any,
+    experiment_run_steps: Any,
     experiment_trays: Any,
     experiment_run_trays: Any,
+    schedules: Any,
 ) -> bool:
     if not isinstance(sample, dict) or not isinstance(tray, dict):
         return False
+    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no"))
+    tray_code = _tray_code(tray)
+    normalized_experiments = [item for item in _as_list(experiments) if isinstance(item, dict)]
+    normalized_experiment_runs = [item for item in _as_list(experiment_runs) if isinstance(item, dict)]
+    normalized_experiment_run_steps = [item for item in _as_list(experiment_run_steps) if isinstance(item, dict)]
+    normalized_experiment_trays = [item for item in _as_list(experiment_trays) if isinstance(item, dict)]
+    normalized_experiment_run_trays = [item for item in _as_list(experiment_run_trays) if isinstance(item, dict)]
+    normalized_schedules = [item for item in _as_list(schedules) if isinstance(item, dict)]
+    if tray_has_scoped_partial_axis_batch_completion(
+        task_code=task_code,
+        tray_code=tray_code,
+        experiments=normalized_experiments,
+        experiment_runs=normalized_experiment_runs,
+        experiment_run_steps=normalized_experiment_run_steps,
+        experiment_trays=normalized_experiment_trays,
+        experiment_run_trays=normalized_experiment_run_trays,
+        schedules=normalized_schedules,
+    ):
+        return True
+    assigned_experiment_codes = {
+        _experiment_code(item)
+        for item in normalized_experiment_trays
+        if _task_code(item) == task_code
+        and _normalize_text(item.get("tray_code") or item.get("tray_no")) == tray_code
+        and _experiment_code(item)
+    }
+    axis_aware_experiment_codes = {
+        _experiment_code(item)
+        for item in normalized_experiments
+        if _task_code(item) == task_code
+        and _experiment_code(item) in assigned_experiment_codes
+        and _normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
+    }
+    axis_aware_experiment_codes.update(
+        _experiment_code(item)
+        for item in normalized_schedules
+        if _task_code(item) == task_code
+        and _experiment_code(item) in assigned_experiment_codes
+        and _normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
+    )
+    if axis_aware_experiment_codes:
+        completed_axis_experiment_codes = {
+            _experiment_code(item)
+            for item in normalized_experiments
+            if _task_code(item) == task_code
+            and _experiment_code(item) in axis_aware_experiment_codes
+            and _is_completed_status(item.get("status") or item.get("experiment_status"))
+        }
+        return axis_aware_experiment_codes.issubset(completed_axis_experiment_codes)
     return tray_assigned_experiments_are_completed(
+        task_code=task_code,
+        tray_code=tray_code,
+        experiment_trays=normalized_experiment_trays,
+        experiment_run_trays=normalized_experiment_run_trays,
+    )
+
+
+def _normal_staging_reentry_is_partial_axis_batch(
+    sample: Any,
+    tray: Any,
+    experiments: Any,
+    experiment_runs: Any,
+    experiment_run_steps: Any,
+    experiment_trays: Any,
+    experiment_run_trays: Any,
+    schedules: Any,
+) -> bool:
+    if not isinstance(sample, dict) or not isinstance(tray, dict):
+        return False
+    return tray_has_scoped_partial_axis_batch_completion(
         task_code=_normalize_text(sample.get("task_code") or sample.get("task_no")),
         tray_code=_tray_code(tray),
+        experiments=[item for item in _as_list(experiments) if isinstance(item, dict)],
+        experiment_runs=[item for item in _as_list(experiment_runs) if isinstance(item, dict)],
+        experiment_run_steps=[item for item in _as_list(experiment_run_steps) if isinstance(item, dict)],
         experiment_trays=[item for item in _as_list(experiment_trays) if isinstance(item, dict)],
         experiment_run_trays=[item for item in _as_list(experiment_run_trays) if isinstance(item, dict)],
+        schedules=[item for item in _as_list(schedules) if isinstance(item, dict)],
     )
 
 
@@ -752,8 +979,11 @@ def _validate_samples_staging_reentry_transition(
     current_samples: Any,
     next_samples: Any,
     experiments: Any,
+    experiment_runs: Any,
+    experiment_run_steps: Any,
     experiment_trays: Any,
     experiment_run_trays: Any,
+    schedules: Any,
     staging_events: Any,
     next_staging_events: Any | None = None,
 ) -> None:
@@ -786,8 +1016,12 @@ def _validate_samples_staging_reentry_transition(
             if _is_post_experiment_staging_inbound(next_sample, next_tray) and not _post_staging_reentry_is_completed(
                 current_sample,
                 current_tray,
+                experiments,
+                experiment_runs,
+                experiment_run_steps,
                 experiment_trays,
                 experiment_run_trays,
+                schedules,
             ):
                 raise HTTPException(status_code=400, detail=STAGING_STOCK_IN_BLOCKED_DETAIL)
             if _tray_has_blocked_lab_status(current_sample, current_tray) and _tray_is_storage_room_inbound(next_tray):
@@ -803,8 +1037,26 @@ def _validate_samples_staging_reentry_transition(
                 if _is_post_experiment_staging_inbound(next_sample, next_tray) and _post_staging_reentry_is_completed(
                     current_sample,
                     current_tray,
+                    experiments,
+                    experiment_runs,
+                    experiment_run_steps,
                     experiment_trays,
                     experiment_run_trays,
+                    schedules,
+                ):
+                    continue
+                if _tray_is_staging_inbound(next_tray) and not _is_post_experiment_staging_inbound(
+                    next_sample,
+                    next_tray,
+                ) and _normal_staging_reentry_is_partial_axis_batch(
+                    current_sample,
+                    current_tray,
+                    experiments,
+                    experiment_runs,
+                    experiment_run_steps,
+                    experiment_trays,
+                    experiment_run_trays,
+                    schedules,
                 ):
                     continue
                 raise HTTPException(status_code=400, detail=_stock_in_blocked_detail(next_sample, next_tray))
@@ -948,7 +1200,13 @@ def _validate_samples_maintenance_lock(current_samples: Any, next_samples: Any, 
             raise HTTPException(status_code=400, detail=f"{device_name}设备维护中，禁止实验室操作")
 
 
-def _validate_fixture_locked_schedules(current_schedules: Any, next_schedules: Any, samples: Any, experiment_trays: Any) -> None:
+def _validate_fixture_locked_schedules(
+    current_schedules: Any,
+    next_schedules: Any,
+    samples: Any,
+    experiment_trays: Any,
+    experiment_run_steps: Any,
+) -> None:
     if not isinstance(next_schedules, list):
         return
     next_by_id = {
@@ -958,6 +1216,8 @@ def _validate_fixture_locked_schedules(current_schedules: Any, next_schedules: A
     }
     for current_schedule in _as_list(current_schedules):
         if not isinstance(current_schedule, dict) or not _schedule_is_fixture_locked(current_schedule, samples, experiment_trays):
+            continue
+        if _is_partially_completed_multi_axis_schedule(current_schedule, experiment_run_steps):
             continue
         schedule_id = _schedule_id(current_schedule)
         next_schedule = next_by_id.get(schedule_id)
@@ -972,6 +1232,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
             updates["mes.schedules"],
             storage.read("mes.samples"),
             storage.read("mes.experiment_trays"),
+            storage.read("mes.experiment_run_steps"),
         )
     if "mes.samples" not in updates:
         return
@@ -982,8 +1243,11 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
         current_samples,
         updates["mes.samples"],
         storage.read("mes.experiments"),
+        storage.read("mes.experiment_runs"),
+        storage.read("mes.experiment_run_steps"),
         storage.read("mes.experiment_trays"),
         storage.read("mes.experiment_run_trays"),
+        storage.read("mes.schedules"),
         current_staging_events,
         updates.get("mes.staging_events", current_staging_events),
     )

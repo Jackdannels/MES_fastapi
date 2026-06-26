@@ -9,6 +9,7 @@ import {
 } from "./sampleFlow.constants";
 import { normalizeText } from "./sampleFlow.shared";
 import { normalizeLifecycleStatus } from "./sampleFlow.status";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import {
   asArray,
   compareText,
@@ -254,6 +255,9 @@ const parseRetainedCompletedExperimentBeforeWithdrawal = (entry, taskCode, withd
 const buildExperimentRouteSteps = () => MULTI_EXPERIMENT_ROUTE_STEPS.slice();
 
 const hasExperimentEnteredLabFlow = (status, location = "") => {
+  if (isAxisPartialProgressStatus(status)) {
+    return true;
+  }
   const normalizedStatus = normalizeLifecycleStatus(location, status);
   const key = FLOW_STEP_KEY_BY_LABEL.get(normalizedStatus);
   const index = FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
