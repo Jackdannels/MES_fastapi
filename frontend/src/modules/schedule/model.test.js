@@ -1862,6 +1862,162 @@ describe("schedulePageModel", () => {
     expect(row?.slots.every((slot) => slot.state === "idle")).toBe(true);
   });
 
+  test("buildGanttRows releases a completed schedule by schedule status when shared-tray history is missing", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }, { code: "振动一室" }],
+      experiments: [
+        { task_code: "TASK-031", experiment_code: "TASK-031-A", experiment_name: "冲击试验" },
+        { task_code: "TASK-031", experiment_code: "TASK-031-B", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-031", experiment_code: "TASK-031-A", tray_code: "TASK-031-TP-001" },
+        { task_code: "TASK-031", experiment_code: "TASK-031-B", tray_code: "TASK-031-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-031-SP-001",
+          task_code: "TASK-031",
+          status: STATUS_COMPLETED,
+          trays: [{ tray_code: "TASK-031-TP-001", status: STATUS_COMPLETED, quantity: 1 }],
+          history: [],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-31-a",
+          task_code: "TASK-031",
+          experiment_code: "TASK-031-A",
+          device: "冲击一室",
+          status: STATUS_COMPLETED,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+        {
+          id: "schedule-31-b",
+          task_code: "TASK-031",
+          experiment_code: "TASK-031-B",
+          device: "振动一室",
+          status: STATUS_SCHEDULED,
+          start_at: "2099-03-20T12:00:00.000Z",
+          end_at: "2099-03-20T14:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      now: new Date("2099-03-20T09:00:00.000Z"),
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    const vibrationRow = gantt.rows.find((row) => row.device === "振动一室");
+    const impactScheduleIds = (impactRow?.segments || []).flatMap((segment) => segment.scheduleIds || [segment.scheduleId]).filter(Boolean);
+    const vibrationScheduleIds = (vibrationRow?.segments || []).flatMap((segment) => segment.scheduleIds || [segment.scheduleId]).filter(Boolean);
+    expect(impactScheduleIds).not.toContain("schedule-31-a");
+    expect(vibrationScheduleIds).toContain("schedule-31-b");
+  });
+
+  test("buildGanttRows releases only the completed axis schedule and keeps unfinished axes visible", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      experiments: [
+        {
+          task_code: "TASK-032",
+          experiment_code: "TASK-032-A",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "y+"],
+        },
+        { task_code: "TASK-032", experiment_code: "TASK-032-B", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-032", experiment_code: "TASK-032-A", tray_code: "TASK-032-TP-001" },
+        { task_code: "TASK-032", experiment_code: "TASK-032-B", tray_code: "TASK-032-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-032-SP-001",
+          task_code: "TASK-032",
+          status: "送至实验室",
+          trays: [{ tray_code: "TASK-032-TP-001", status: "送至实验室", quantity: 1 }],
+          history: [],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-32-axis-1",
+          task_code: "TASK-032",
+          experiment_code: "TASK-032-A",
+          sub_experiment_code: "TASK-032-A-AXIS-001",
+          device: "冲击一室",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+", "x-"],
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+        {
+          id: "schedule-32-axis-2",
+          task_code: "TASK-032",
+          experiment_code: "TASK-032-A",
+          sub_experiment_code: "TASK-032-A-AXIS-002",
+          device: "冲击一室",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+          start_at: "2099-03-20T12:00:00.000Z",
+          end_at: "2099-03-20T14:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      now: new Date("2099-03-20T09:00:00.000Z"),
+    });
+
+    const row = gantt.rows.find((entry) => entry.device === "冲击一室");
+    const scheduleIds = (row?.segments || []).flatMap((segment) => segment.scheduleIds || [segment.scheduleId]).filter(Boolean);
+    expect(scheduleIds).not.toContain("schedule-32-axis-1");
+    expect(scheduleIds).toContain("schedule-32-axis-2");
+  });
+
+  test("buildGanttRows keeps an axis schedule visible when only one step completed", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      experiments: [
+        {
+          task_code: "TASK-033",
+          experiment_code: "TASK-033-A",
+          experiment_name: "冲击试验",
+          axis_codes: ["x+", "x-", "y+"],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-033", experiment_code: "TASK-033-A", tray_code: "TASK-033-TP-001" },
+      ],
+      samples: [
+        {
+          code: "TASK-033-SP-001",
+          task_code: "TASK-033",
+          status: "实验进行中",
+          trays: [{ tray_code: "TASK-033-TP-001", status: "实验进行中", quantity: 1 }],
+          history: [],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-33-axis",
+          task_code: "TASK-033",
+          experiment_code: "TASK-033-A",
+          sub_experiment_code: "TASK-033-A-AXIS-001",
+          device: "冲击一室",
+          status: "实验进行中",
+          axis_codes: ["x+", "x-", "y+"],
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T12:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      now: new Date("2099-03-20T09:00:00.000Z"),
+    });
+
+    const row = gantt.rows.find((entry) => entry.device === "冲击一室");
+    const scheduleIds = (row?.segments || []).flatMap((segment) => segment.scheduleIds || [segment.scheduleId]).filter(Boolean);
+    expect(scheduleIds).toContain("schedule-33-axis");
+  });
+
   test("buildGanttRows keeps the board visible after one experiment has formally started", () => {
     const gantt = buildGanttRows({
       devices: [{ code: "冲击一室" }, { code: "振动一室" }],

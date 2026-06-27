@@ -38,6 +38,12 @@ const COMPLETED_TRAY_STATUSES = new Set([
   "实验后暂存间存放",
   "厂家收回",
 ]);
+const COMPLETED_SCHEDULE_STATUSES = new Set([
+  STATUS_COMPLETED,
+  "实验完成",
+  "实验已经完成",
+  "厂家收回",
+]);
 const AXIS_EXPERIMENT_TYPES = new Set(["冲击试验", "冲击实验", "振动试验", "振动实验"]);
 const AXIS_LAB_LOCK_GROUPS = [
   {
@@ -933,6 +939,13 @@ const resolveScheduleLifecycleState = ({
   experimentNameByCode = new Map(),
   trayExperimentCodeMap = new Map(),
 }) => {
+  if (COMPLETED_SCHEDULE_STATUSES.has(normalizeText(schedule?.status ?? schedule?.schedule_status))) {
+    return {
+      completed: true,
+      started: true,
+    };
+  }
+
   const { matchedSamples, scopedTrayCodes, taskCode, experimentCode } = collectScheduleMatchedSamples({
     schedule,
     samples,

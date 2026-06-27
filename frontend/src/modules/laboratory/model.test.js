@@ -3226,7 +3226,127 @@ describe("laboratory model", () => {
       totalStatusLabel: "振动试验部分完成 1/2轴",
     }));
     expect(view.currentTaskFlow.currentStatus).toBe("振动试验部分完成 1/2轴");
-    expect(view.selectedTrayFlow.currentStatus).toContain("振动试验部分完成 1/2轴");
+    expect(view.selectedTrayRow).toEqual(expect.objectContaining({
+      completedForCurrentExperiment: false,
+      trayCode: `${taskCode}-TP-002`,
+      trayStatus: "到货",
+    }));
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${taskCode}-TP-002 | 当前状态：到货`);
+  });
+
+  test("buildLaboratoryWorkbenchView does not show vibration partial axis status for an untested selected tray", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const experimentCode = `${taskCode}-VIB`;
+    const completedTrayCode = `${taskCode}-TP-001`;
+    const untestedTrayCode = `${taskCode}-TP-004`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          run_no: "run-vibration-z",
+          schedule_id: "schedule-vibration-z",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "振动一室",
+          status: "实验已完成",
+          axis_codes: ["z+", "z-"],
+          tray_codes: [completedTrayCode],
+        },
+      ],
+      experimentRunSteps: [
+        { run_no: "run-vibration-z", task_code: taskCode, experiment_code: experimentCode, axis_code: "z+", status: "实验已完成" },
+        { run_no: "run-vibration-z", task_code: taskCode, experiment_code: experimentCode, axis_code: "z-", status: "实验已完成" },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-vibration-z",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: completedTrayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: completedTrayCode },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: untestedTrayCode },
+      ],
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          status: "实验进行中",
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+      ],
+      labCode: "LAB_VIBRATION_1",
+      labName: "振动一室",
+      now: new Date("2026-06-27T15:00:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "振动一室",
+          status: "实验进行中",
+          task_code: taskCode,
+          trays: [
+            {
+              tray_code: completedTrayCode,
+              status: "实验进行中",
+              target_experiment_code: experimentCode,
+              target_lab: "振动一室",
+              quantity: 1,
+            },
+          ],
+        },
+        {
+          code: `${taskCode}-SP-004`,
+          location: "振动一室",
+          status: "到货",
+          task_code: taskCode,
+          trays: [
+            {
+              tray_code: untestedTrayCode,
+              status: "到货",
+              quantity: 1,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-vibration-z",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_VIBRATION_1",
+          device: "振动一室",
+          start_at: "2026-06-27 14:17:00",
+          end_at: "2026-06-27 17:47:00",
+          status: "实验进行中",
+          axis_codes: ["z+", "z-"],
+        },
+        {
+          id: "schedule-vibration-rest",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          lab_code: "LAB_VIBRATION_1",
+          device: "振动一室",
+          start_at: "2026-06-28 12:00:00",
+          end_at: "2026-06-28 15:30:00",
+          status: "已排程",
+          axis_codes: ["x+", "x-", "y+", "y-"],
+        },
+      ],
+      selectedTrayCode: untestedTrayCode,
+      tasks: [{ code: taskCode, name: "振动任务", test_type: "振动试验" }],
+    });
+
+    expect(view.currentTaskFlow.currentStatus).toBe("振动试验部分完成 2/6轴");
+    expect(view.selectedTrayRow).toEqual(expect.objectContaining({
+      completedForCurrentExperiment: false,
+      trayCode: untestedTrayCode,
+      trayStatus: "到货",
+    }));
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${untestedTrayCode} | 当前状态：到货`);
   });
 
   test("buildLaboratoryWorkbenchView keeps a tray visible for its unfinished sub experiment batch", () => {

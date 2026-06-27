@@ -1497,6 +1497,21 @@ const buildCompletedScheduleTrayCodeSet = ({ experimentRuns = [], experimentRunT
       .filter(Boolean),
   );
 };
+
+const selectedTrayHasCompletedAxisRunEvidence = ({ experimentRunTrays = [], flowContextTask = null, selectedTrayRow = null }) => {
+  const taskCode = normalizeText(flowContextTask?.taskCode);
+  const experimentCode = normalizeText(flowContextTask?.experimentCode);
+  const trayCode = normalizeText(selectedTrayRow?.trayCode);
+  if (!taskCode || !experimentCode || !trayCode) {
+    return false;
+  }
+  return asArray(experimentRunTrays).some((relation) =>
+    resolveRelationTaskCode(relation) === taskCode
+    && resolveRelationExperimentCode(relation) === experimentCode
+    && resolveRelationTrayCode(relation) === trayCode
+    && relationIsCompleted(relation),
+  );
+};
 const stepAxisCode = (step) => normalizeText(step?.axis_code || step?.axisCode);
 const stepRunNo = (step) => normalizeText(step?.run_no || step?.runNo);
 const stepTaskCode = (step) => normalizeText(step?.task_code || step?.taskCode || step?.task_no || step?.taskNo);
@@ -2401,14 +2416,26 @@ function buildLaboratoryWorkbenchView({
   const selectedTrayAxisStatus =
     resolveSelectedTrayAxisStatusLabel(currentTask?.axisProgress, flowContextTask?.axisProgress);
   const selectedTrayFlowLifecycleStatus = normalizeLifecycleStatus("", selectedTrayFlowStatus);
+  const selectedTrayHasAxisStatusEvidence =
+    isAxisPartialProgressStatus(baseSelectedTrayFlow?.status)
+    || isAxisPartialProgressStatus(selectedTrayFlowStatus)
+    || isAxisPartialProgressStatus(selectedTrayRow?.trayStatus)
+    || isAxisPartialProgressStatus(selectedTrayRow?.displayStatus)
+    || isAxisPartialProgressStatus(selectedTrayRow?.lifecycleStatus)
+    || selectedTrayHasCompletedAxisRunEvidence({
+      experimentRunTrays,
+      flowContextTask,
+      selectedTrayRow,
+    });
   const selectedTrayFlowShouldUseAxisStatus =
     selectedTrayAxisStatus
+    && selectedTrayHasAxisStatusEvidence
     && (
       isAxisPartialProgressStatus(baseSelectedTrayFlow?.status)
       || !AXIS_PARTIAL_REAL_FOLLOW_UP_STATUSES.has(selectedTrayFlowLifecycleStatus)
     );
   const selectedTrayFlow =
-    selectedTrayRow && selectedTrayAxisStatus
+    selectedTrayRow && selectedTrayAxisStatus && selectedTrayHasAxisStatusEvidence
       ? {
           ...baseSelectedTrayFlow,
           canonicalStatus: selectedTrayAxisStatus,

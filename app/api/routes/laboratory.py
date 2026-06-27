@@ -35,6 +35,7 @@ HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 WITHDRAWAL_HISTORY_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+PARTIAL_AXIS_CONTINUATION_STATUS = "送至实验室"
 BLOCK_WITHDRAW_TRAY_STATUSES = {
     "实验进行中",
     "实验中",
@@ -119,6 +120,24 @@ class LaboratoryOperationRequest(BaseModel):
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def normalize_axis_codes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        raw_values = value.replace("，", ",").split(",")
+    else:
+        raw_values = []
+    axis_codes: list[str] = []
+    seen: set[str] = set()
+    for item in raw_values:
+        axis_code = normalize_text(item)
+        if not axis_code or axis_code in seen:
+            continue
+        seen.add(axis_code)
+        axis_codes.append(axis_code)
+    return axis_codes
 
 
 def as_list(value: Any) -> list[Any]:
@@ -400,6 +419,183 @@ def latest_previous_completed_experiment(
     }
 
 
+def experiment_display_name(snapshot: dict[str, list[dict[str, Any]]], task_code: str, experiment_code: str) -> str:
+    for experiment in snapshot["experiments"]:
+        if normalize_text(experiment.get("task_code") or experiment.get("task_no")) != task_code:
+            continue
+        if normalize_text(experiment.get("experiment_code") or experiment.get("experiment_no")) != experiment_code:
+            continue
+        return (
+            normalize_text(experiment.get("experiment_name"))
+            or normalize_text(experiment.get("experiment_type"))
+            or experiment_code
+        )
+    return experiment_code
+
+
+def required_axis_codes_for_restore(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    task_code: str,
+    experiment_code: str,
+) -> list[str]:
+    for experiment in snapshot["experiments"]:
+        if normalize_text(experiment.get("task_code") or experiment.get("task_no")) != task_code:
+            continue
+        if normalize_text(experiment.get("experiment_code") or experiment.get("experiment_no")) != experiment_code:
+            continue
+        axis_codes = normalize_axis_codes(experiment.get("axis_codes") or experiment.get("axisCodes"))
+        if axis_codes:
+            return axis_codes
+
+    axis_codes: list[str] = []
+    seen: set[str] = set()
+    schedules = [
+        schedule
+        for schedule in snapshot["schedules"]
+        if normalize_text(schedule.get("task_code") or schedule.get("task_no")) == task_code
+        and normalize_text(schedule.get("experiment_code") or schedule.get("experiment_no")) == experiment_code
+    ]
+    schedules.sort(key=lambda schedule: normalize_text(schedule.get("start_at") or schedule.get("startAt") or schedule.get("start_time")))
+    for schedule in schedules:
+        for axis_code in normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes")):
+            if axis_code in seen:
+                continue
+            seen.add(axis_code)
+            axis_codes.append(axis_code)
+    return axis_codes
+
+
+def latest_previous_partial_axis_completion(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    task_code: str,
+    tray_code: str,
+) -> dict[str, Any] | None:
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_tray_code:
+        return None
+
+    run_by_no = {
+        normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")): run
+        for run in snapshot["experiment_runs"]
+        if normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
+    }
+    schedule_by_id = {
+        normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId")): schedule
+        for schedule in snapshot["schedules"]
+        if normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId"))
+    }
+    experiment_codes = {
+        normalize_text(relation.get("experiment_code") or relation.get("experiment_no"))
+        for relation in snapshot["experiment_run_trays"]
+        if normalize_text(relation.get("task_code") or relation.get("task_no")) == task_code
+        and normalize_text(relation.get("tray_code") or relation.get("tray_no")) == normalized_tray_code
+        and normalize_text(relation.get("status") or relation.get("run_tray_status")) in COMPLETED_EXPERIMENT_STATUSES
+        and normalize_text(relation.get("experiment_code") or relation.get("experiment_no"))
+    }
+    candidates: list[dict[str, Any]] = []
+    for experiment_code in experiment_codes:
+        experiment_name = experiment_display_name(snapshot, task_code, experiment_code)
+        required_axes = required_axis_codes_for_restore(
+            snapshot,
+            task_code=task_code,
+            experiment_code=experiment_code,
+        )
+        if not required_axes:
+            continue
+
+        related_run_nos = {
+            normalize_text(relation.get("run_no") or relation.get("runNo"))
+            for relation in snapshot["experiment_run_trays"]
+            if normalize_text(relation.get("task_code") or relation.get("task_no")) == task_code
+            and normalize_text(relation.get("experiment_code") or relation.get("experiment_no")) == experiment_code
+            and normalize_text(relation.get("tray_code") or relation.get("tray_no")) == normalized_tray_code
+            and normalize_text(relation.get("status") or relation.get("run_tray_status")) in COMPLETED_EXPERIMENT_STATUSES
+        }
+        related_run_nos.discard("")
+        if not related_run_nos:
+            continue
+
+        completed_axes: set[str] = set()
+        event_times: list[datetime] = []
+        completed_schedule_ids: set[str] = set()
+        for run_no in related_run_nos:
+            run = run_by_no.get(run_no, {})
+            completed_axes.update(normalize_axis_codes(run.get("axis_codes") or run.get("axisCodes")))
+            schedule_id = normalize_text(run.get("schedule_id") or run.get("scheduleId") or run.get("schedule_no"))
+            if schedule_id:
+                completed_schedule_ids.add(schedule_id)
+            event_times.extend(
+                time
+                for time in [
+                    parse_datetime_value(run.get("ended_at") or run.get("endedAt")),
+                    parse_datetime_value(run.get("updated_at") or run.get("updatedAt")),
+                ]
+                if time is not None
+            )
+
+        for relation in snapshot["experiment_run_trays"]:
+            if normalize_text(relation.get("run_no") or relation.get("runNo")) not in related_run_nos:
+                continue
+            event_times.extend(
+                time
+                for time in [
+                    parse_datetime_value(relation.get("ended_at") or relation.get("endedAt")),
+                    parse_datetime_value(relation.get("updated_at") or relation.get("updatedAt")),
+                ]
+                if time is not None
+            )
+
+        for step in snapshot["experiment_run_steps"]:
+            if normalize_text(step.get("run_no") or step.get("runNo")) not in related_run_nos:
+                continue
+            if normalize_text(step.get("status")) not in COMPLETED_EXPERIMENT_STATUSES:
+                continue
+            axis_code = normalize_text(step.get("axis_code") or step.get("axisCode"))
+            if axis_code:
+                completed_axes.add(axis_code)
+            event_times.extend(
+                time
+                for time in [
+                    parse_datetime_value(step.get("ended_at") or step.get("endedAt")),
+                    parse_datetime_value(step.get("updated_at") or step.get("updatedAt")),
+                ]
+                if time is not None
+            )
+
+        if not completed_axes or set(required_axes).issubset(completed_axes):
+            continue
+
+        location = ""
+        for schedule_id in completed_schedule_ids:
+            schedule = schedule_by_id.get(schedule_id, {})
+            location = normalize_text(schedule.get("device") or schedule.get("lab") or schedule.get("lab_name"))
+            if location:
+                break
+        if not location:
+            for run_no in related_run_nos:
+                run = run_by_no.get(run_no, {})
+                location = normalize_text(run.get("device") or run.get("device_name") or run.get("lab_name"))
+                if location:
+                    break
+
+        candidates.append(
+            {
+                "status": PARTIAL_AXIS_CONTINUATION_STATUS,
+                "location": location,
+                "experimentName": experiment_name,
+                "scope": "partial_axis",
+                "time": max(event_times) if event_times else datetime.min,
+            }
+        )
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item["time"])
+    return candidates[-1]
+
+
 def related_samples_for_tray(
     snapshot: dict[str, list[dict[str, Any]]],
     task_code: str,
@@ -601,9 +797,22 @@ def resolve_restore_snapshot(
         current_experiment_name,
         related_samples_for_tray(snapshot, task_code, tray_code),
     )
+    partial_axis = latest_previous_partial_axis_completion(
+        snapshot,
+        task_code=task_code,
+        tray_code=tray_code,
+    )
     staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
     appearance = latest_appearance_origin_snapshot(sample, snapshot, tray_code)
+    partial_axis_matches_current = (
+        partial_axis
+        and normalize_text(partial_axis.get("experimentName")) == normalize_text(current_experiment_name)
+    )
+    if partial_axis_matches_current and (not completed or completed["time"] <= partial_axis["time"]):
+        return partial_axis
     candidates = [candidate for candidate in [completed, staging, appearance] if candidate]
+    if partial_axis and not partial_axis_matches_current:
+        candidates.append(partial_axis)
     if candidates:
         candidates.sort(key=lambda item: item["time"])
         return candidates[-1]
@@ -935,7 +1144,9 @@ def withdraw_current_experiment(
                 sample["updated_at"] = now
                 sample["trays"] = next_trays
                 detail_target = restore_snapshot["status"]
-                if restore_snapshot.get("experimentName"):
+                if restore_snapshot.get("scope") == "partial_axis" and restore_snapshot.get("experimentName"):
+                    detail_target = f"{restore_snapshot['experimentName']}部分完成"
+                elif restore_snapshot.get("experimentName"):
                     detail_target = f"{restore_snapshot['experimentName']}已完成"
                 detail = f"{normalized_task_code} / {current_experiment_name} / 撤回至{detail_target}"
                 reason = normalize_text(request.reason)
