@@ -877,14 +877,14 @@ def _post_staging_reentry_is_completed(
         and _normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
     )
     if axis_aware_experiment_codes:
-        completed_axis_experiment_codes = {
-            _experiment_code(item)
-            for item in normalized_experiments
-            if _task_code(item) == task_code
-            and _experiment_code(item) in axis_aware_experiment_codes
-            and _is_completed_status(item.get("status") or item.get("experiment_status"))
-        }
-        return axis_aware_experiment_codes.issubset(completed_axis_experiment_codes)
+        return _tray_axis_aware_experiments_are_completed(
+            task_code=task_code,
+            tray_code=tray_code,
+            axis_aware_experiment_codes=axis_aware_experiment_codes,
+            assigned_experiment_codes=assigned_experiment_codes,
+            schedules=normalized_schedules,
+            experiment_run_trays=normalized_experiment_run_trays,
+        )
     return tray_assigned_experiments_are_completed(
         task_code=task_code,
         tray_code=tray_code,
@@ -915,6 +915,53 @@ def _normal_staging_reentry_is_partial_axis_batch(
         experiment_run_trays=[item for item in _as_list(experiment_run_trays) if isinstance(item, dict)],
         schedules=[item for item in _as_list(schedules) if isinstance(item, dict)],
     )
+
+
+def _tray_axis_aware_experiments_are_completed(
+    *,
+    task_code: str,
+    tray_code: str,
+    axis_aware_experiment_codes: set[str],
+    assigned_experiment_codes: set[str],
+    schedules: list[dict[str, Any]],
+    experiment_run_trays: list[dict[str, Any]],
+) -> bool:
+    if not axis_aware_experiment_codes:
+        return False
+    completed_by_experiment: dict[str, set[str]] = {}
+    completed_non_axis_experiment_codes: set[str] = set()
+    for relation in experiment_run_trays:
+        if (
+            _task_code(relation) != task_code
+            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
+            or not _is_completed_status(relation.get("status") or relation.get("run_tray_status"))
+        ):
+            continue
+        experiment_code = _experiment_code(relation)
+        if not experiment_code:
+            continue
+        sub_experiment_code = record_sub_experiment_code(relation)
+        if sub_experiment_code:
+            completed_by_experiment.setdefault(experiment_code, set()).add(sub_experiment_code)
+        else:
+            completed_non_axis_experiment_codes.add(experiment_code)
+
+    for experiment_code in axis_aware_experiment_codes:
+        required_sub_experiment_codes = {
+            _record_sub_code(schedule, experiment_code=experiment_code)
+            for schedule in schedules
+            if _task_code(schedule) == task_code
+            and _experiment_code(schedule) == experiment_code
+            and _normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
+            and _record_sub_code(schedule, experiment_code=experiment_code)
+        }
+        if not required_sub_experiment_codes:
+            return False
+        if not required_sub_experiment_codes.issubset(completed_by_experiment.get(experiment_code, set())):
+            return False
+
+    non_axis_experiment_codes = assigned_experiment_codes - axis_aware_experiment_codes
+    return non_axis_experiment_codes.issubset(completed_non_axis_experiment_codes)
 
 
 def _index_samples(samples: Any) -> dict[str, dict[str, Any]]:

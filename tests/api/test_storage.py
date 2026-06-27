@@ -1971,6 +1971,164 @@ def test_storage_allows_live_shaped_axis_batch_reentry_after_lab_dispatch(monkey
     assert storage.read("mes.samples") == attempted
 
 
+def test_storage_allows_first_completed_tray_to_post_staging_before_axis_experiment_global_completion(monkeypatch):
+    task_code = "SYLU-2026-06-022"
+    experiment_code = f"{task_code}-A"
+    first_tray_code = f"{task_code}-TP-001"
+    second_tray_code = f"{task_code}-TP-002"
+    first_sub_code = f"{experiment_code}-AXIS-001"
+    second_sub_code = f"{experiment_code}-AXIS-002"
+    samples = [
+        {
+            "code": f"{task_code}-SP-001",
+            "location": "冲击一室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": task_code,
+            "trays": [
+                {
+                    "tray_code": first_tray_code,
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "冲击一室",
+                    "target_experiment_code": experiment_code,
+                }
+            ],
+        },
+        {
+            "code": f"{task_code}-SP-002",
+            "location": "冲击一室",
+            "status": "实验进行中",
+            "flow_status": "实验进行中",
+            "task_code": task_code,
+            "trays": [
+                {
+                    "tray_code": second_tray_code,
+                    "status": "实验进行中",
+                    "quantity": 1,
+                    "target_lab": "冲击一室",
+                    "target_experiment_code": experiment_code,
+                }
+            ],
+        },
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "experiment_name": "冲击试验",
+                    "status": "实验进行中",
+                    "axis_codes": ["x+", "x-", "y+", "y-", "z+", "z-"],
+                }
+            ],
+            "mes.schedules": [
+                {
+                    "id": "schedule-impact-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "device": "冲击一室",
+                    "status": "实验已完成",
+                    "axis_codes": ["x+", "x-", "y+"],
+                    "sub_experiment_code": first_sub_code,
+                },
+                {
+                    "id": "schedule-impact-axis-002",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "device": "冲击一室",
+                    "status": "实验已完成",
+                    "axis_codes": ["y-", "z+", "z-"],
+                    "sub_experiment_code": second_sub_code,
+                },
+            ],
+            "mes.experiment_runs": [
+                {
+                    "run_no": "run-first-axis-001",
+                    "schedule_id": "schedule-impact-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "status": "实验已完成",
+                    "axis_codes": ["x+", "x-", "y+"],
+                    "tray_codes": [first_tray_code],
+                },
+                {
+                    "run_no": "run-first-axis-002",
+                    "schedule_id": "schedule-impact-axis-002",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": second_sub_code,
+                    "status": "实验已完成",
+                    "axis_codes": ["y-", "z+", "z-"],
+                    "tray_codes": [first_tray_code],
+                },
+                {
+                    "run_no": "run-second-axis-001",
+                    "schedule_id": "schedule-impact-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "status": "实验进行中",
+                    "axis_codes": ["x+", "x-", "y+"],
+                    "tray_codes": [second_tray_code],
+                },
+            ],
+            "mes.experiment_run_steps": [
+                {
+                    "run_no": run_no,
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": sub_code,
+                    "axis_code": axis_code,
+                    "status": "实验已完成",
+                }
+                for run_no, sub_code, axes in [
+                    ("run-first-axis-001", first_sub_code, ["x+", "x-", "y+"]),
+                    ("run-first-axis-002", second_sub_code, ["y-", "z+", "z-"]),
+                ]
+                for axis_code in axes
+            ],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": experiment_code, "tray_code": first_tray_code},
+                {"task_code": task_code, "experiment_code": experiment_code, "tray_code": second_tray_code},
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "run_no": "run-first-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "tray_code": first_tray_code,
+                    "run_tray_status": "实验已完成",
+                },
+                {
+                    "run_no": "run-first-axis-002",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": second_sub_code,
+                    "tray_code": first_tray_code,
+                    "run_tray_status": "实验已完成",
+                },
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "恒温恒湿间（实验后暂存间）"
+    attempted[0]["status"] = "实验后暂存间存放"
+    attempted[0]["flow_status"] = "实验后暂存间存放"
+    attempted[0]["trays"][0]["status"] = "实验后暂存间存放"
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == attempted
+
+
 def test_storage_rejects_axis_batch_reentry_without_sub_experiment_code(monkeypatch):
     task_code = "SYLU-2026-07-001"
     experiment_code = f"{task_code}-A"
