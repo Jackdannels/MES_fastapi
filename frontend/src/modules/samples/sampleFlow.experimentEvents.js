@@ -70,6 +70,17 @@ const shouldRetainReturnedSingleTrayCompletedEvent = ({ parsed, sample, trayCode
   && normalizeLifecycleStatus("", parsed?.status) === "实验已完成"
   && sampleCurrentTrayIsReturned(sample, trayCode);
 
+const parsedExperimentEventMatchesTrayCode = (parsed, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  return uniqueNormalizedTexts([
+    parsed?.trayCode,
+    ...(Array.isArray(parsed?.trayCodes) ? parsed.trayCodes : []),
+  ]).includes(normalizedTrayCode);
+};
+
 const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) => {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
@@ -138,7 +149,9 @@ const resolveLatestExperimentEventMap = ({ taskCode, trayCode, samples = [] }) =
       if (!parsed) {
         return;
       }
-      const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode);
+      const trayScoped =
+        entryMatchesTrayCode(entry, normalizedTrayCode)
+        || parsedExperimentEventMatchesTrayCode(parsed, normalizedTrayCode);
       if (
         !trayScoped
         && !shouldRetainReturnedSingleTrayCompletedEvent({
@@ -189,13 +202,49 @@ const experimentFlowStatusRank = (status) => {
   return FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
 };
 
-const chooseExperimentStatus = ({ eventStatus, runtimeStatus, fallbackStatus, recordStatus }) => {
+const isCurrentLabProgressStatus = (status) => {
+  const normalizedStatus = normalizeLifecycleStatus("", status);
+  const key = FLOW_STEP_KEY_BY_LABEL.get(normalizedStatus);
+  const index = FLOW_STEP_INDEX_BY_KEY.get(key) ?? -1;
+  const arrivedIndex = FLOW_STEP_INDEX_BY_KEY.get("sent_to_lab") ?? FLOW_STEP_INDEX_BY_KEY.get("arrived_lab") ?? -1;
+  const completedIndex = FLOW_STEP_INDEX_BY_KEY.get("completed") ?? Number.MAX_SAFE_INTEGER;
+  return index >= arrivedIndex && index < completedIndex;
+};
+
+const chooseExperimentStatus = ({
+  eventStatus,
+  eventTime,
+  runtimeStatus,
+  runtimeTime,
+  fallbackStatus,
+  fallbackTime,
+  recordStatus,
+}) => {
   const normalizedEventStatus = normalizeText(eventStatus);
   const normalizedRuntimeStatus = normalizeText(runtimeStatus);
+  const normalizedFallbackStatus = normalizeText(fallbackStatus);
+  if (
+    isAxisPartialProgressStatus(normalizedRuntimeStatus)
+    && isCurrentLabProgressStatus(normalizedEventStatus)
+    && Number(eventTime || 0) >= Number(runtimeTime || 0)
+  ) {
+    return normalizedEventStatus;
+  }
+  if (
+    isAxisPartialProgressStatus(normalizedRuntimeStatus)
+    && isCurrentLabProgressStatus(normalizedFallbackStatus)
+    && Number(fallbackTime || 0) > 0
+    && Number(fallbackTime || 0) >= Number(runtimeTime || 0)
+  ) {
+    return normalizedFallbackStatus;
+  }
   if (
     normalizedRuntimeStatus
     && experimentFlowStatusRank(normalizedRuntimeStatus) >= experimentFlowStatusRank(normalizedEventStatus)
   ) {
+    return normalizedRuntimeStatus;
+  }
+  if (isAxisPartialProgressStatus(normalizedRuntimeStatus)) {
     return normalizedRuntimeStatus;
   }
   if (normalizeLifecycleStatus("", normalizedEventStatus) === "实验已完成") {

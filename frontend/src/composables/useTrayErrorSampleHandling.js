@@ -24,8 +24,8 @@ function useTrayErrorSampleHandling(options = {}) {
     destinations: [],
   });
 
-  const fetchTrayDispatch = async (trayCode) => {
-    const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/dispatch`, API_BASE_URL), {
+  const fetchWithdrawDispatchLookup = async (trayCode) => {
+    const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/withdraw-dispatch`, API_BASE_URL), {
       headers: {
         Accept: "application/json",
       },
@@ -96,7 +96,7 @@ function useTrayErrorSampleHandling(options = {}) {
 
     state.loading = true;
     try {
-      const payload = await fetchTrayDispatch(trayCode);
+      const payload = await fetchWithdrawDispatchLookup(trayCode);
       applyDispatchPayload(payload);
       feedbackState.clear();
       return true;
@@ -126,10 +126,8 @@ function useTrayErrorSampleHandling(options = {}) {
       const payload = await fetchWithdrawDispatch(trayCode, "");
       applyDispatchPayload(payload, state.destinations);
       feedbackState.show(normalizeText(payload?.message) || "托盘撤回出库成功。", "success");
-      const refreshedPayload = await fetchTrayDispatch(trayCode);
-      applyDispatchPayload(refreshedPayload, state.destinations);
       state.scanCode = "";
-      await notifyChanged(refreshedPayload, "withdraw-dispatch");
+      await notifyChanged(payload, "withdraw-dispatch");
       return true;
     } catch (error) {
       feedbackState.show(error instanceof Error ? error.message : "托盘撤回失败，请重试。", "error");

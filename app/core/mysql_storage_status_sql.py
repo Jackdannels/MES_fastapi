@@ -338,6 +338,7 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
             schedule_status_map = derive_schedule_status_map(
                 schedules,
                 experiment_status_map,
+                experiment_trays=experiment_trays,
                 experiment_run_trays=experiment_run_trays,
             )
             cursor.executemany(

@@ -14,6 +14,7 @@ from app.services.laboratory_axis_steps import (
     planned_axis_codes_for_run,
 )
 from app.services.laboratory_operations import clear_fixture_ready_marker
+from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
 
 
 RUNNING_STATUS = "实验进行中"
@@ -385,6 +386,17 @@ def start_storage_laboratory_experiment(
                 "updated_at": started_time,
             }
         )
+
+    experiment_runs, experiment_run_trays = close_superseded_running_runs_for_trays(
+        experiment_runs=experiment_runs,
+        experiment_run_trays=experiment_run_trays,
+        task_code=normalized_task_code,
+        experiment_code=normalized_experiment_code,
+        sub_experiment_code=normalized_sub_experiment_code,
+        tray_codes=affected_tray_codes,
+        current_run_no=normalized_run_no,
+        ended_at=started_time,
+    )
 
     if planned_axis_codes:
         existing_step_keys = {

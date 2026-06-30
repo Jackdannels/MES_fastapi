@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
@@ -152,12 +152,114 @@ def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str]) -> bool:
     return False
 
 
-def _schedule_is_fixture_locked(schedule: Any, samples: Any, experiment_trays: Any) -> bool:
+def _record_axis_batch_no(record: Any) -> str:
+    return _normalize_text(record.get("axis_batch_no") or record.get("axisBatchNo")) if isinstance(record, dict) else ""
+
+
+def _record_axis_codes(record: Any) -> list[str]:
+    if not isinstance(record, dict):
+        return []
+    return _normalize_axis_codes(record.get("axis_codes") or record.get("axisCodes"))
+
+
+def _schedule_has_axis_scope(schedule: Any) -> bool:
+    if not isinstance(schedule, dict):
+        return False
+    experiment_code = _experiment_code(schedule)
+    return bool(_record_sub_code(schedule, experiment_code=experiment_code) or _record_axis_batch_no(schedule) or _record_axis_codes(schedule))
+
+
+def _record_has_schedule_locked_status(record: Any) -> bool:
+    if not isinstance(record, dict):
+        return False
+    statuses = {
+        _normalize_text(record.get("status")),
+        _normalize_text(record.get("schedule_status")),
+        _normalize_text(record.get("run_tray_status")),
+        _normalize_text(record.get("experiment_status")),
+    }
+    return bool(statuses & SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES)
+
+
+def _record_matches_schedule_scope(record: Any, schedule: Any, *, allow_legacy_experiment_fallback: bool = False) -> bool:
+    if not isinstance(record, dict) or not isinstance(schedule, dict):
+        return False
+    task_code = _task_code(schedule)
+    experiment_code = _experiment_code(schedule)
+    if _task_code(record) != task_code or _experiment_code(record) != experiment_code:
+        return False
+
+    schedule_id = _schedule_id(schedule)
+    record_schedule_id = _record_schedule_id(record)
+    if schedule_id and record_schedule_id:
+        return schedule_id == record_schedule_id
+
+    schedule_sub_code = _record_sub_code(schedule, experiment_code=experiment_code)
+    record_sub_code = _record_sub_code(record, experiment_code=experiment_code)
+    if schedule_sub_code and record_sub_code:
+        return schedule_sub_code == record_sub_code
+
+    schedule_axis_batch_no = _record_axis_batch_no(schedule)
+    record_axis_batch_no = _record_axis_batch_no(record)
+    if schedule_axis_batch_no and record_axis_batch_no:
+        return schedule_axis_batch_no == record_axis_batch_no
+
+    schedule_axis_codes = set(_record_axis_codes(schedule))
+    record_axis_codes = set(_record_axis_codes(record))
+    if schedule_axis_codes and record_axis_codes:
+        return bool(schedule_axis_codes & record_axis_codes)
+
+    schedule_scoped = bool(schedule_sub_code or schedule_axis_batch_no or schedule_axis_codes)
+    record_scoped = bool(record_schedule_id or record_sub_code or record_axis_batch_no or record_axis_codes)
+    if schedule_scoped or record_scoped:
+        return False
+
+    return allow_legacy_experiment_fallback
+
+
+def _schedule_has_started_record(schedule: Any, experiment_runs: Any, experiment_run_trays: Any) -> bool:
+    if not isinstance(schedule, dict):
+        return False
+    if _record_has_schedule_locked_status(schedule):
+        return True
+
+    matching_run_nos: set[str] = set()
+    for run in _as_list(experiment_runs):
+        if (
+            isinstance(run, dict)
+            and _record_has_schedule_locked_status(run)
+            and _record_matches_schedule_scope(run, schedule, allow_legacy_experiment_fallback=True)
+        ):
+            run_no = _run_no(run)
+            if run_no:
+                matching_run_nos.add(run_no)
+            return True
+
+    for relation in _as_list(experiment_run_trays):
+        if not isinstance(relation, dict) or not _record_has_schedule_locked_status(relation):
+            continue
+        run_no = _run_no(relation)
+        if (run_no and run_no in matching_run_nos) or _record_matches_schedule_scope(relation, schedule):
+            return True
+    return False
+
+
+def _schedule_is_fixture_locked(
+    schedule: Any,
+    samples: Any,
+    experiment_trays: Any,
+    experiment_runs: Any = None,
+    experiment_run_trays: Any = None,
+) -> bool:
     if not isinstance(schedule, dict):
         return False
     task_code = _task_code(schedule)
     experiment_code = _experiment_code(schedule)
     if not task_code or not experiment_code:
+        return False
+    if _schedule_has_started_record(schedule, experiment_runs, experiment_run_trays):
+        return True
+    if _schedule_has_axis_scope(schedule):
         return False
     tray_codes = _experiment_tray_codes(experiment_trays, task_code, experiment_code)
     if not tray_codes:
@@ -1251,6 +1353,8 @@ def _validate_fixture_locked_schedules(
     current_schedules: Any,
     next_schedules: Any,
     samples: Any,
+    experiment_runs: Any,
+    experiment_run_trays: Any,
     experiment_trays: Any,
     experiment_run_steps: Any,
 ) -> None:
@@ -1262,7 +1366,13 @@ def _validate_fixture_locked_schedules(
         if isinstance(schedule, dict) and _schedule_id(schedule)
     }
     for current_schedule in _as_list(current_schedules):
-        if not isinstance(current_schedule, dict) or not _schedule_is_fixture_locked(current_schedule, samples, experiment_trays):
+        if not isinstance(current_schedule, dict) or not _schedule_is_fixture_locked(
+            current_schedule,
+            samples,
+            experiment_trays,
+            experiment_runs,
+            experiment_run_trays,
+        ):
             continue
         if _is_partially_completed_multi_axis_schedule(current_schedule, experiment_run_steps):
             continue
@@ -1278,6 +1388,8 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
             storage.read("mes.schedules"),
             updates["mes.schedules"],
             storage.read("mes.samples"),
+            storage.read("mes.experiment_runs"),
+            storage.read("mes.experiment_run_trays"),
             storage.read("mes.experiment_trays"),
             storage.read("mes.experiment_run_steps"),
         )
@@ -1314,11 +1426,15 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
     _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))
 
 
-def publish_storage_update(keys: list[str]) -> None:
+def publish_storage_update(keys: list[str], *, source: str = "", request_id: str = "") -> None:
     payload = {
         "keys": list(keys),
         "updatedAt": now_business_text(),
     }
+    if source:
+        payload["source"] = source
+    if request_id:
+        payload["requestId"] = request_id
     with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
         subscribers = list(_STORAGE_UPDATE_SUBSCRIBERS)
     for subscriber in subscribers:
@@ -1387,7 +1503,11 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
 
 
 @router.put("")
-def write_many(payload: Dict[str, Any] = Body(...)) -> Dict[str, bool]:
+def write_many(
+    payload: Dict[str, Any] = Body(...),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> Dict[str, bool]:
     storage = get_storage_backend()
     updates = {key: value for key, value in payload.items() if key in STORAGE_KEYS}
     if not updates:
@@ -1396,5 +1516,10 @@ def write_many(payload: Dict[str, Any] = Body(...)) -> Dict[str, bool]:
         updates = merge_concurrent_storage_updates(storage.read_all(), updates)
         _validate_storage_update(storage, updates)
         storage.write_many(updates)
-    publish_storage_update(list(updates.keys()))
+    source = str(update_source or "").strip()
+    request_id = str(update_request_id or "").strip()
+    if source or request_id:
+        publish_storage_update(list(updates.keys()), source=source, request_id=request_id)
+    else:
+        publish_storage_update(list(updates.keys()))
     return {"ok": True}

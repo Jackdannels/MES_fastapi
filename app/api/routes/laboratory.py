@@ -35,7 +35,6 @@ HANDOVER_LOCATION = "接驳区"
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 WITHDRAWAL_HISTORY_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
-PARTIAL_AXIS_CONTINUATION_STATUS = "送至实验室"
 BLOCK_WITHDRAW_TRAY_STATUSES = {
     "实验进行中",
     "实验中",
@@ -582,7 +581,7 @@ def latest_previous_partial_axis_completion(
 
         candidates.append(
             {
-                "status": PARTIAL_AXIS_CONTINUATION_STATUS,
+                "status": f"{experiment_name}部分完成 {len(completed_axes)}/{len(required_axes)}轴",
                 "location": location,
                 "experimentName": experiment_name,
                 "scope": "partial_axis",
@@ -808,7 +807,7 @@ def resolve_restore_snapshot(
         partial_axis
         and normalize_text(partial_axis.get("experimentName")) == normalize_text(current_experiment_name)
     )
-    if partial_axis_matches_current and (not completed or completed["time"] <= partial_axis["time"]):
+    if partial_axis_matches_current:
         return partial_axis
     candidates = [candidate for candidate in [completed, staging, appearance] if candidate]
     if partial_axis and not partial_axis_matches_current:

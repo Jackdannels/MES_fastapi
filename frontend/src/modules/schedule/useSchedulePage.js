@@ -942,6 +942,8 @@ function useSchedulePage() {
     const result = updateScheduleRecord({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
+      experimentRuns: rawExperimentRuns.value,
+      experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       form: editForm.value,
       now: now.value,

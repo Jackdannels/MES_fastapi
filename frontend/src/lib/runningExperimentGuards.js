@@ -20,6 +20,8 @@ const rowExperimentCode = (row) => normalizeText(
 );
 const rowTrayCode = (row) => normalizeText(row?.tray_code ?? row?.trayCode ?? row?.trayNo ?? row?.tray_no);
 const rowRunNo = (row) => normalizeText(row?.run_no ?? row?.runNo ?? row?.id);
+const rowScheduleId = (row) => normalizeText(row?.schedule_id ?? row?.scheduleId ?? row?.schedule_no ?? row?.scheduleNo);
+const rowAxisBatchNo = (row) => normalizeText(row?.axis_batch_no ?? row?.axisBatchNo);
 const rowAxisCode = (row) => normalizeText(row?.axis_code ?? row?.axisCode).toLowerCase();
 const rowSubExperimentCode = (row) =>
   normalizeText(row?.sub_experiment_code ?? row?.subExperimentCode ?? row?.sub_experiment_no ?? row?.subExperimentNo);
@@ -52,6 +54,50 @@ const taskHasRunningStatus = (task) => normalizeTaskStatusLabel(task?.status) ==
 const rowMatchesTask = (row, taskCode) => rowTaskCode(row) === normalizeText(taskCode);
 const rowMatchesExperiment = (row, taskCode, experimentCode) =>
   rowMatchesTask(row, taskCode) && rowExperimentCode(row) === normalizeText(experimentCode);
+
+const scheduleHasAxisScope = (schedule) =>
+  Boolean(rowSubExperimentCode(schedule) || rowAxisBatchNo(schedule) || normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0);
+
+function rowMatchesScheduleScope(row, schedule, { allowLegacyExperimentFallback = false } = {}) {
+  const taskCode = rowTaskCode(schedule);
+  const experimentCode = rowExperimentCode(schedule);
+  if (!rowMatchesExperiment(row, taskCode, experimentCode)) {
+    return false;
+  }
+
+  const scheduleId = normalizeText(schedule?.id) || rowScheduleId(schedule);
+  const recordScheduleId = rowScheduleId(row);
+  if (scheduleId && recordScheduleId) {
+    return scheduleId === recordScheduleId;
+  }
+
+  const subExperimentCode = rowSubExperimentCode(schedule);
+  const recordSubExperimentCode = rowSubExperimentCode(row);
+  if (subExperimentCode && recordSubExperimentCode) {
+    return subExperimentCode === recordSubExperimentCode;
+  }
+
+  const axisBatchNo = rowAxisBatchNo(schedule);
+  const recordAxisBatchNo = rowAxisBatchNo(row);
+  if (axisBatchNo && recordAxisBatchNo) {
+    return axisBatchNo === recordAxisBatchNo;
+  }
+
+  const scheduledAxisCodes = normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
+  const recordAxisCodes = normalizeAxisCodes(row?.axis_codes ?? row?.axisCodes);
+  if (scheduledAxisCodes.length > 0 && recordAxisCodes.length > 0) {
+    const recordAxisSet = new Set(recordAxisCodes);
+    return scheduledAxisCodes.some((axisCode) => recordAxisSet.has(axisCode));
+  }
+
+  const scheduleScoped = Boolean(subExperimentCode || axisBatchNo || scheduledAxisCodes.length > 0);
+  const recordScoped = Boolean(recordScheduleId || recordSubExperimentCode || recordAxisBatchNo || recordAxisCodes.length > 0);
+  if (scheduleScoped || recordScoped) {
+    return false;
+  }
+
+  return allowLegacyExperimentFallback;
+}
 
 function buildExperimentTrayCodeSet({ experimentCode, experimentTrays = [], taskCode }) {
   const trays = new Set();
@@ -124,17 +170,39 @@ function scheduleExperimentHasStarted({
   if (rowHasRunningExperimentStatus(schedule)) {
     return true;
   }
-  if (asList(experimentRuns).some((row) => rowMatchesExperiment(row, taskCode, experimentCode) && rowHasRunningExperimentStatus(row))) {
+
+  const matchingRunningRunNos = new Set();
+  const hasMatchingRunningRun = asList(experimentRuns).some((row) => {
+    if (!rowMatchesScheduleScope(row, schedule, { allowLegacyExperimentFallback: true }) || !rowHasRunningExperimentStatus(row)) {
+      return false;
+    }
+    const runNo = rowRunNo(row);
+    if (runNo) {
+      matchingRunningRunNos.add(runNo);
+    }
+    return true;
+  });
+  if (hasMatchingRunningRun) {
     return true;
   }
   if (
     asList(experimentRunTrays).some(
-      (row) =>
-        rowMatchesExperiment(row, taskCode, experimentCode)
-        && rowHasRunningExperimentStatus(row, ["run_tray_status", "status", "experiment_status"]),
+      (row) => {
+        if (!rowMatchesExperiment(row, taskCode, experimentCode)) {
+          return false;
+        }
+        if (!rowHasRunningExperimentStatus(row, ["run_tray_status", "status", "experiment_status"])) {
+          return false;
+        }
+        const runNo = rowRunNo(row);
+        return (runNo && matchingRunningRunNos.has(runNo)) || rowMatchesScheduleScope(row, schedule);
+      },
     )
   ) {
     return true;
+  }
+  if (scheduleHasAxisScope(schedule)) {
+    return false;
   }
   return samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays, samples, taskCode });
 }

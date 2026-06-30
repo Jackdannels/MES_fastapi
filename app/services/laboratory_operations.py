@@ -238,7 +238,6 @@ def apply_laboratory_task_operation(
     experiment_name = resolve_experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
     target_lab_name = normalize_text(lab_name) or resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code)
     history_action = OPERATION_HISTORY_ACTION.get(normalized_operation_type, "")
-    history_detail = f"{normalized_task_code} / {experiment_name or '-'} / {next_status}"
     affected_tray_set = set(affected_tray_codes)
     next_samples: list[dict[str, Any]] = []
     affected_sample_count = 0
@@ -251,6 +250,7 @@ def apply_laboratory_task_operation(
             "history": [dict(entry) for entry in as_list(sample.get("history")) if isinstance(entry, dict)],
         }
         touched = False
+        touched_sample_tray_codes: list[str] = []
         for tray in next_sample["trays"]:
             tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
             if tray_code not in affected_tray_set:
@@ -275,6 +275,7 @@ def apply_laboratory_task_operation(
                 tray.pop("targetLab", None)
                 clear_fixture_ready_marker(tray)
             touched = True
+            touched_sample_tray_codes.append(tray_code)
             touched_tray_codes.add(tray_code)
         if touched:
             next_sample["status"] = next_status
@@ -282,17 +283,21 @@ def apply_laboratory_task_operation(
             next_sample["location"] = target_lab_name or normalize_text(next_sample.get("location"))
             next_sample["updated_at"] = occurred_time
             if history_action:
-                next_sample["history"].insert(
-                    0,
+                history_entries = [
                     {
                         "action": history_action,
-                        "detail": history_detail,
+                        "detail": (
+                            f"{normalized_task_code} / {experiment_name or '-'} / {next_status}"
+                            f" / 托盘：{tray_code}"
+                        ),
                         "location": normalize_text(next_sample.get("location")),
                         "owner": normalize_text(next_sample.get("owner")),
                         "status": next_status,
                         "time": occurred_time,
-                    },
-                )
+                    }
+                    for tray_code in touched_sample_tray_codes
+                ]
+                next_sample["history"] = history_entries + next_sample["history"]
             affected_sample_count += 1
         next_samples.append(next_sample)
 

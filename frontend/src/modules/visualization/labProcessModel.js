@@ -1,5 +1,6 @@
 import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { labIdentityMatches, resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { buildTrayFlowView, normalizeLifecycleStatus, SAMPLE_FLOW_STEPS } from "@/modules/samples/samplesFlowModel";
 import {
   asArray,
@@ -95,6 +96,8 @@ const resolveRelationLabName = (relation) =>
 const LAB_FLOW_OWNER_STATUSES = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中"]);
 const lifecycleStatusBelongsToLabFlow = (status, location = "") =>
   LAB_FLOW_OWNER_STATUSES.has(normalizeLifecycleStatus(location, status));
+const isCompletedOrPartialAxisStatus = (status) =>
+  isAxisPartialProgressStatus(status) || normalizeLifecycleStatus("", status) === "实验已完成";
 const textMatchesLab = (value, lab) =>
   Boolean(normalizeText(value)) && labIdentityMatches({ location: value }, lab);
 
@@ -122,8 +125,12 @@ const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
 
 const FLOW_STEP_RANK_BY_LABEL = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
 const visualizationFlowStatusRank = (status) => {
-  const normalized = normalizeLifecycleStatus("", status);
+  const rawStatus = normalizeText(status);
+  const normalized = isAxisPartialProgressStatus(rawStatus) ? rawStatus : normalizeLifecycleStatus("", rawStatus);
   const completedIndex = FLOW_STEP_RANK_BY_LABEL.get("实验已完成") ?? 9;
+  if (isAxisPartialProgressStatus(normalized)) {
+    return completedIndex - 0.5;
+  }
   if (normalized === "送至外观检测间") {
     return completedIndex + 0.1;
   }
@@ -200,6 +207,7 @@ const buildTrayRowsForLab = ({
   samples,
   experiments,
   experimentRuns,
+  experimentRunSteps,
   experimentRunTrays,
   experimentTrays,
   schedules,
@@ -230,7 +238,15 @@ const buildTrayRowsForLab = ({
         : [];
       const activeTargetExperimentCode =
         targetExperimentCode
-        && targetExperimentRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
+        && targetExperimentRelations.some((relation) => !relationIsCompletedForSample({
+          experimentRuns,
+          experimentRunSteps,
+          experimentRunTrays,
+          experiments,
+          sample,
+          relation,
+          schedules,
+        }))
           ? targetExperimentCode
           : "";
       const targetLabRelations = !activeTargetExperimentCode && targetLab
@@ -238,21 +254,40 @@ const buildTrayRowsForLab = ({
         : [];
       const activeTargetLab =
         targetLab
-        && targetLabRelations.some((relation) => !relationIsCompletedForSample({ experimentRunTrays, sample, relation }))
+        && targetLabRelations.some((relation) => !relationIsCompletedForSample({
+          experimentRuns,
+          experimentRunSteps,
+          experimentRunTrays,
+          experiments,
+          sample,
+          relation,
+          schedules,
+        }))
           ? targetLab
           : "";
       const labRelations = relations.filter((relation) => relationMatchesLab(relation, lab || labName));
       const incompleteLabRelations = labRelations.filter((relation) =>
-        !relationIsCompletedForSample({ experimentRunTrays, sample, relation }),
+        !relationIsCompletedForSample({
+          experimentRuns,
+          experimentRunSteps,
+          experimentRunTrays,
+          experiments,
+          sample,
+          relation,
+          schedules,
+        }),
       );
       if (labRelations.length > 0 && incompleteLabRelations.length === 0) {
         return;
       }
       const trayStatus = normalizeText(tray?.status);
       const lifecycleStatus = trayStatus
-        ? normalizeLifecycleStatus("", trayStatus)
+        ? isAxisPartialProgressStatus(trayStatus)
+          ? trayStatus
+          : normalizeLifecycleStatus("", trayStatus)
         : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
       const lifecycleLocation = trayStatus ? "" : sample?.location;
+      const statusHasOwnFlowContext = isCompletedOrPartialAxisStatus(lifecycleStatus);
       const scheduledLabMatches = incompleteLabRelations.length > 0;
       if (!scheduledLabMatches) {
         return;
@@ -268,8 +303,9 @@ const buildTrayRowsForLab = ({
           : "";
 
       const entry = {
-        currentExperimentCode: activeTargetExperimentCode || currentLabExperimentCode,
-        dispatchTargetLab: activeTargetLab,
+        currentExperimentCode: statusHasOwnFlowContext ? "" : activeTargetExperimentCode || currentLabExperimentCode,
+        dispatchTargetLab: statusHasOwnFlowContext ? "" : activeTargetLab,
+        ignoreTrayDispatchTarget: isAxisPartialProgressStatus(lifecycleStatus),
         lifecycleLocation,
         lifecycleStatus,
         sample,
@@ -307,6 +343,7 @@ const buildTrayRowsForLab = ({
         experimentRunTrays,
         experimentTrays,
         experiments,
+        ignoreTrayDispatchTarget: Boolean(entry.ignoreTrayDispatchTarget),
         location: entry.lifecycleLocation,
         preferCurrentExperimentCode: Boolean(entry.currentExperimentCode),
         samples,
@@ -315,12 +352,19 @@ const buildTrayRowsForLab = ({
         taskCode: aggregate.taskCode,
         trayCode: aggregate.trayCode,
       });
+      const axisPartialStatus = [
+        entry.lifecycleStatus,
+        flow.status,
+        flow.canonicalStatus,
+        ...asArray(flow.steps).map((step) => step?.label),
+      ].map(normalizeText).find((status) => isAxisPartialProgressStatus(status)) || "";
+      const displayStatus = axisPartialStatus || flow.status || "-";
 
       return {
-        canonicalStatus: flow.canonicalStatus || flow.status || "-",
+        canonicalStatus: axisPartialStatus || flow.canonicalStatus || flow.status || "-",
         quantity: aggregate.quantity,
         sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
-        status: flow.status || "-",
+        status: displayStatus,
         steps: asArray(flow.steps),
         taskCode: aggregate.taskCode,
         trayCode: aggregate.trayCode,
@@ -341,6 +385,7 @@ function buildLabProcessPanels(input = {}) {
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
   const experimentRuns = asArray(input.experimentRuns || input.experiment_runs);
+  const experimentRunSteps = firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps);
   const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const schedules = asArray(input.schedules);
@@ -354,6 +399,7 @@ function buildLabProcessPanels(input = {}) {
       samples,
       experiments,
       experimentRuns,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
       buildTrayFlow: input.buildTrayFlow,

@@ -6,6 +6,7 @@ import {
   FLOW_STEP_INDEX_BY_KEY,
   FLOW_STEP_KEY_BY_LABEL,
 } from "./sampleFlow.constants";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { normalizeText } from "./sampleFlow.shared";
 import { normalizeLifecycleStatus } from "./sampleFlow.status";
 
@@ -64,8 +65,15 @@ const parseTimeValue = (value) => {
 const entryTimeValue = (entry) => parseTimeValue(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp);
 
 const resolveFlowStatusRank = (location, status, labels = DEFAULT_LABELS) => {
-  const normalizedStatus = normalizeLifecycleStatus(location, status, labels);
+  const rawStatus = normalizeText(status);
+  const normalizedStatus = isAxisPartialProgressStatus(rawStatus)
+    ? rawStatus
+    : normalizeLifecycleStatus(location, rawStatus, labels);
   const stagingArrivalIndex = FLOW_STEP_INDEX_BY_KEY.get("arrived_staging") ?? 3;
+  const completedIndex = FLOW_STEP_INDEX_BY_KEY.get("completed") ?? 9;
+  if (isAxisPartialProgressStatus(normalizedStatus)) {
+    return completedIndex - 0.5;
+  }
   if (normalizedStatus === APPEARANCE_SENT_STATUS) {
     return stagingArrivalIndex + 0.1;
   }

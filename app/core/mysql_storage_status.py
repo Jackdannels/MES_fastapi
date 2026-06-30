@@ -194,20 +194,33 @@ def derive_schedule_status_map(
     schedules: list[Dict[str, Any]],
     experiment_status_map: dict[str, str],
     *,
+    experiment_trays: list[Dict[str, Any]] | None = None,
     experiment_run_trays: list[Dict[str, Any]] | None = None,
 ) -> dict[Any, str]:
-    completed_axis_batches: set[tuple[str, str]] = set()
+    tray_codes_by_experiment: dict[str, set[str]] = {}
+    for row in experiment_trays or []:
+        experiment_no = normalize_text(row.get("experiment_no") or row.get("experiment_code"))
+        tray_no = normalize_text(row.get("tray_no") or row.get("tray_code"))
+        if experiment_no and tray_no:
+            tray_codes_by_experiment.setdefault(experiment_no, set()).add(tray_no)
+
+    completed_axis_tray_codes_by_batch: dict[tuple[str, str], set[str]] = {}
+    completed_axis_batches_without_tray_scope: set[tuple[str, str]] = set()
     running_axis_batches: set[tuple[str, str]] = set()
     for row in experiment_run_trays or []:
         experiment_no = normalize_text(row.get("experiment_no") or row.get("experiment_code"))
         sub_experiment_code = record_sub_experiment_code(row)
+        tray_no = normalize_text(row.get("tray_no") or row.get("tray_code"))
         if not experiment_no or not sub_experiment_code:
             continue
         raw_status = normalize_text(row.get("run_tray_status") or row.get("status"))
         status = normalize_experiment_status_text(raw_status)
         key = (experiment_no, sub_experiment_code)
         if status in EXPERIMENT_COMPLETED_STATUSES or raw_status in RUN_TRAY_COMPLETED_STATUSES:
-            completed_axis_batches.add(key)
+            if tray_no:
+                completed_axis_tray_codes_by_batch.setdefault(key, set()).add(tray_no)
+            else:
+                completed_axis_batches_without_tray_scope.add(key)
         elif status in EXPERIMENT_RUNNING_STATUSES:
             running_axis_batches.add(key)
 
@@ -220,9 +233,14 @@ def derive_schedule_status_map(
         sub_experiment_code = record_sub_experiment_code(schedule)
         if schedule_has_axis_scope(schedule):
             key = (experiment_no, sub_experiment_code)
-            if key in completed_axis_batches:
+            required_tray_codes = tray_codes_by_experiment.get(experiment_no, set())
+            completed_tray_codes = completed_axis_tray_codes_by_batch.get(key, set())
+            if (
+                (required_tray_codes and required_tray_codes.issubset(completed_tray_codes))
+                or (not required_tray_codes and (completed_tray_codes or key in completed_axis_batches_without_tray_scope))
+            ):
                 status_map[schedule_id] = "实验已完成"
-            elif key in running_axis_batches:
+            elif key in running_axis_batches or completed_tray_codes:
                 status_map[schedule_id] = EXPERIMENT_RUNNING_STATUS
             else:
                 status_map[schedule_id] = "已排程"

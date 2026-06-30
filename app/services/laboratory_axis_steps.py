@@ -4,8 +4,12 @@ from typing import Any
 
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
-from app.services.laboratory_completion import complete_storage_laboratory_experiment
+from app.services.laboratory_completion import (
+    axis_partial_completion_status,
+    complete_storage_laboratory_experiment,
+)
 from app.services.laboratory_operations import clear_fixture_ready_marker
+from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
 
 
 AXIS_COMPLETED_STATUS = "实验已完成"
@@ -298,6 +302,20 @@ def complete_storage_laboratory_axis_step(
         )
         for run in snapshot.get("experiment_runs", [])
     }
+    tray_codes_by_run_no: dict[str, set[str]] = {}
+    for relation in snapshot.get("experiment_run_trays", []):
+        relation_run_no = normalize_text(relation.get("run_no") or relation.get("runNo"))
+        relation_tray_code = normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+        if not relation_run_no or not relation_tray_code:
+            continue
+        tray_codes_by_run_no.setdefault(relation_run_no, set()).add(relation_tray_code)
+    for run in snapshot.get("experiment_runs", []):
+        run_no = normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
+        if not run_no:
+            continue
+        for tray_code in normalize_axis_codes(run.get("tray_codes") or run.get("trayCodes")):
+            tray_codes_by_run_no.setdefault(run_no, set()).add(tray_code)
+    current_run_tray_codes = tray_codes_by_run_no.get(normalized_run_no, set())
 
     def step_matches_experiment(step: dict[str, Any]) -> bool:
         step_task_code = normalize_text(step.get("task_code") or step.get("task_no"))
@@ -312,10 +330,19 @@ def complete_storage_laboratory_axis_step(
         step_run_no = normalize_text(step.get("run_no") or step.get("runNo"))
         return run_scopes.get(step_run_no) == (normalized_task_code, normalized_experiment_code)
 
+    def step_matches_current_run_tray_scope(step: dict[str, Any]) -> bool:
+        if not current_run_tray_codes:
+            return True
+        step_run_no = normalize_text(step.get("run_no") or step.get("runNo"))
+        if step_run_no == normalized_run_no:
+            return True
+        return bool(tray_codes_by_run_no.get(step_run_no, set()) & current_run_tray_codes)
+
     completed_axes = {
         normalize_text(step.get("axis_code") or step.get("axisCode"))
         for step in next_steps
         if step_matches_experiment(step)
+        and step_matches_current_run_tray_scope(step)
         and normalize_text(step.get("status")) == AXIS_COMPLETED_STATUS
     }
     all_axes_completed = bool(required_axes) and set(required_axes).issubset(completed_axes)
@@ -368,6 +395,16 @@ def complete_storage_laboratory_axis_step(
             else dict(item)
             for item in snapshot.get("experiment_run_trays", [])
         ]
+        experiment_runs, experiment_run_trays = close_superseded_running_runs_for_trays(
+            experiment_runs=experiment_runs,
+            experiment_run_trays=experiment_run_trays,
+            task_code=normalized_task_code,
+            experiment_code=normalized_experiment_code,
+            sub_experiment_code=normalized_sub_experiment_code,
+            tray_codes=current_run_tray_codes,
+            current_run_no=normalized_run_no,
+            ended_at=completed_time,
+        )
         completed_run_tray_codes = sorted(
             {
                 normalize_text(item.get("tray_code") or item.get("tray_no"))
@@ -377,6 +414,18 @@ def complete_storage_laboratory_axis_step(
             }
         )
         completed_run_tray_code_set = set(completed_run_tray_codes)
+        scoped_tray_codes = {
+            normalize_text(item.get("tray_code") or item.get("tray_no"))
+            for item in snapshot.get("experiment_trays", [])
+            if normalize_text(item.get("task_code") or item.get("task_no")) == normalized_task_code
+            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == normalized_experiment_code
+            and normalize_text(item.get("tray_code") or item.get("tray_no"))
+        }
+        completed_scope_trays_satisfy_schedule = (
+            scoped_tray_codes.issubset(completed_run_tray_code_set)
+            if scoped_tray_codes
+            else True
+        )
         experiment = next(
             (
                 item
@@ -401,6 +450,12 @@ def complete_storage_laboratory_axis_step(
             "实验后暂存间存放",
             "厂家收回",
         }
+        sample_completion_status = axis_partial_completion_status(
+            experiment_name,
+            len(current_run_completed_axes),
+            len(required_axes),
+        )
+        finished_statuses.add(sample_completion_status)
         for sample in snapshot.get("samples", []):
             next_sample = {
                 **sample,
@@ -417,7 +472,7 @@ def complete_storage_laboratory_axis_step(
                 if tray_code in completed_run_tray_code_set:
                     next_tray = {
                         **tray,
-                        "status": PARTIAL_AXIS_CONTINUATION_STATUS,
+                        "status": sample_completion_status,
                         "updated_at": completed_time,
                     }
                     for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
@@ -432,8 +487,8 @@ def complete_storage_laboratory_axis_step(
             if touched_tray_codes:
                 next_sample["trays"] = next_trays
                 if next_trays and all(normalize_text(tray.get("status")) in finished_statuses for tray in next_trays):
-                    next_sample["status"] = PARTIAL_AXIS_CONTINUATION_STATUS
-                    next_sample["flow_status"] = PARTIAL_AXIS_CONTINUATION_STATUS
+                    next_sample["status"] = sample_completion_status
+                    next_sample["flow_status"] = sample_completion_status
                 next_sample["updated_at"] = completed_time
                 affected_sample_count += 1
             samples.append(next_sample)
@@ -450,19 +505,24 @@ def complete_storage_laboratory_axis_step(
             else item
             for item in experiment_runs
         ]
-        schedules = [
-            {
+
+        def next_schedule_record(item: dict[str, Any]) -> dict[str, Any]:
+            schedule_key = normalize_text(item.get("id") or item.get("schedule_id") or item.get("scheduleId"))
+            if not current_schedule_id or schedule_key != current_schedule_id:
+                return dict(item)
+            if completed_scope_trays_satisfy_schedule:
+                return {
+                    **item,
+                    "status": AXIS_COMPLETED_STATUS,
+                    "updated_at": completed_time,
+                }
+            return {
                 **item,
-                "status": AXIS_COMPLETED_STATUS,
+                "status": AXIS_RUNNING_STATUS,
                 "updated_at": completed_time,
             }
-            if (
-                current_schedule_id
-                and normalize_text(item.get("id") or item.get("schedule_id") or item.get("scheduleId")) == current_schedule_id
-            )
-            else dict(item)
-            for item in snapshot.get("schedules", [])
-        ]
+
+        schedules = [next_schedule_record(item) for item in snapshot.get("schedules", [])]
         return {
             "affectedSampleCount": affected_sample_count,
             "affectedTrayCodes": completed_run_tray_codes,

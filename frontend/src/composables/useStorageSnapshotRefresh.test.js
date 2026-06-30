@@ -30,6 +30,36 @@ describe("useStorageSnapshotRefresh", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  test("ignores snapshot updates from the same source request", async () => {
+    const refresh = vi.fn();
+    useStorageSnapshotRefresh({
+      keys: ["mes.samples"],
+      refresh,
+      debounceMs: 0,
+      ignoreSource: "staging-management",
+      ignoreRequestIds: ["write-1"],
+    });
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: ["mes.samples"], source: "staging-management", requestId: "write-1" },
+    }));
+    storageSubscribers[0]({ keys: ["mes.samples"], source: "staging-management", requestId: "write-1" });
+    window.dispatchEvent(new StorageEvent("storage", {
+      key: SNAPSHOT_UPDATED_STORAGE_KEY,
+      newValue: JSON.stringify({ keys: ["mes.samples"], source: "staging-management", requestId: "write-1" }),
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: ["mes.samples"], source: "staging-management", requestId: "write-2" },
+    }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   test("subscribes to remote storage events and storage markers", async () => {
     const refresh = vi.fn();
     useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh, debounceMs: 0 });

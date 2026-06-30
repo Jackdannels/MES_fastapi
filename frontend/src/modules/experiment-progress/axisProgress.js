@@ -98,6 +98,14 @@ const runMatchesTray = (run, trayCode) => {
   return trayCodes.length === 0 || trayCodes.includes(normalizedTrayCode);
 };
 
+const entryMatchesTray = (entry, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return true;
+  }
+  return resolveTrayCode(entry) === normalizedTrayCode;
+};
+
 const collectTrayRunNos = ({ experimentCode = "", experimentRuns = [], experimentRunTrays = [], subExperimentCode = "", taskCode = "", trayCode = "" } = {}) => {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedExperimentCode = normalizeText(experimentCode);
@@ -136,6 +144,7 @@ const resolveAxisProgress = ({
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedExperimentCode = normalizeText(experimentCode) || resolveExperimentCode(experiment);
   const normalizedSubExperimentCode = normalizeText(subExperimentCode);
+  const normalizedTrayCode = normalizeText(trayCode);
   const requiredAxisCodes = requiredAxisCodesForExperiment({
     experiment,
     experimentCode: normalizedExperimentCode,
@@ -163,6 +172,15 @@ const resolveAxisProgress = ({
     taskCode: normalizedTaskCode,
     trayCode,
   });
+  const stepCanBeAttributedToTray = (step) => {
+    if (!normalizedTrayCode) {
+      return true;
+    }
+    if (entryMatchesTray(step, normalizedTrayCode)) {
+      return true;
+    }
+    return runNos.size > 0 && runNos.has(resolveRunNo(step));
+  };
   const requiredAxisCodeSet = new Set(requiredAxisCodes);
   const completedRunAxisCodes = asArray(experimentRuns)
     .filter((run) =>
@@ -179,7 +197,7 @@ const resolveAxisProgress = ({
         .filter((step) =>
           entryMatchesTaskExperiment(step, normalizedTaskCode, normalizedExperimentCode)
           && entryMatchesSubExperiment(step, normalizedSubExperimentCode)
-          && (!runNos.size || runNos.has(resolveRunNo(step)))
+          && stepCanBeAttributedToTray(step)
           && requiredAxisCodeSet.has(resolveAxisCode(step))
           && isExperimentCompletedStatus(step?.status || step?.step_status || step?.stepStatus),
         )

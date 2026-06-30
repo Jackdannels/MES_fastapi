@@ -2349,7 +2349,158 @@ describe("staging-management model", () => {
     expect(result.error).toBe("该托盘未送至外观检测间，不能外观检测间入库。");
   });
 
-  test("appearance room shows a tray returned from multiple lab withdrawals as current inventory", () => {
+  test("appearance withdrawal from staging dispatch restores post-experiment appearance storage instead of old pre-experiment storage", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-06-023";
+    const trayCode = `${taskCode}-TP-001`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-appearance-withdraw-staging-dispatch",
+      code: taskCode,
+      test_type: "霉菌试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-appearance-withdraw-mold",
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      experiment_name: "霉菌试验",
+      required_device: "霉菌试验室",
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-appearance-withdraw-mold",
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      tray_code: trayCode,
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      tray_code: trayCode,
+      run_tray_status: "实验已完成",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-appearance-withdraw-staging-dispatch",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "扫码登记",
+      location: "外观检测间",
+      status: "实验后外观检测间存放",
+      flow_status: "实验后外观检测间存放",
+      history: [
+        {
+          action: "外观检测间扫码入库",
+          detail: `${trayCode} 实验前外观检测间存放`,
+          location: "外观检测间",
+          status: "实验前外观检测间存放",
+          time: "2026-06-30 21:56:55",
+        },
+        {
+          action: "外观检测间扫码出库",
+          detail: `${trayCode} 送至 霉菌试验室`,
+          location: "霉菌试验室",
+          status: "送至实验室",
+          time: "2026-06-30 21:56:59",
+        },
+        {
+          action: "实验完成",
+          detail: `${taskCode} / 霉菌试验 / 实验已完成`,
+          location: "霉菌试验室",
+          status: "实验已完成",
+          time: "2026-06-30 21:57:20",
+        },
+        {
+          action: "外观检测间扫码入库",
+          detail: `${trayCode} 实验后外观检测间存放`,
+          location: "外观检测间",
+          status: "实验后外观检测间存放",
+          time: "2026-06-30 21:57:26",
+        },
+        {
+          action: "外观检测间扫码出库",
+          detail: `${trayCode} 送至 恒温恒湿间（暂存间）`,
+          location: "恒温恒湿间（暂存间）",
+          status: "送至暂存间",
+          time: "2026-06-30 21:57:34",
+        },
+        {
+          action: "撤回出库",
+          detail: `${trayCode} 撤回出库至实验后外观检测间存放`,
+          location: "外观检测间",
+          status: "实验后外观检测间存放",
+          time: "2026-06-30 21:57:40",
+        },
+      ],
+      trays: [
+        {
+          tray_code: trayCode,
+          status: "实验后外观检测间存放",
+          quantity: 1,
+          target_experiment_code: `${taskCode}-A`,
+          target_lab: "霉菌试验室",
+        },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "appearance-withdraw-pre-in",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_in",
+        time: "2026-06-30 21:56:55",
+      },
+      {
+        id: "appearance-withdraw-pre-out",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out",
+        target_experiment_code: `${taskCode}-A`,
+        target_lab: "霉菌试验室",
+        target_type: "lab",
+        time: "2026-06-30 21:56:59",
+      },
+      {
+        id: "appearance-withdraw-post-in",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_in",
+        time: "2026-06-30 21:57:26",
+      },
+      {
+        id: "appearance-withdraw-post-out-to-staging",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out",
+        target_lab: "恒温恒湿间（暂存间）",
+        target_type: "staging",
+        time: "2026-06-30 21:57:34",
+      },
+      {
+        id: "appearance-withdraw-post-out-to-staging-withdrawn",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "appearance",
+        action: "stock_out_withdraw",
+        target_lab: "恒温恒湿间（暂存间）",
+        time: "2026-06-30 21:57:40",
+      },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-30 21:58:00", room: "appearance" });
+
+    expect(rows.find((row) => row.trayCode === trayCode)).toEqual(expect.objectContaining({
+      status: "实验后外观检测间存放",
+      statusLabel: "实验后外观检测间存放",
+      trayCode,
+    }));
+  });
+
+  test("appearance room uses the latest withdrawal restore status after multiple lab withdrawals", () => {
     const snapshot = createSnapshot();
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-001`;
@@ -2478,8 +2629,8 @@ describe("staging-management model", () => {
     const sections = buildZancunInventorySections(rows, { room: "appearance" });
 
     expect(rows.find((row) => row.trayCode === trayCode)).toEqual(expect.objectContaining({
-      status: "实验前外观检测间存放",
-      statusLabel: "实验前外观检测间存放",
+      status: "实验后外观检测间存放",
+      statusLabel: "实验后外观检测间存放",
       trayCode,
     }));
     expect(sections.currentStagingRows.map((row) => row.trayCode)).toContain(trayCode);
@@ -3217,8 +3368,9 @@ describe("staging-management model", () => {
 
     expect(stockInResult.error).toBe("");
     expect(stockInResult.row).toEqual(expect.objectContaining({
-      status: "到货",
-      statusLabel: "放置暂存间",
+      isPartialAxisInbound: true,
+      status: "已到达暂存间",
+      statusLabel: "已到达暂存间",
       targetScheduleStartAt: "2026-06-22T09:00:00",
     }));
     expect(stockOutResult.error).toBe("");
@@ -3494,7 +3646,11 @@ describe("staging-management model", () => {
       targetScheduleStartAt: "2026-06-26 15:33:00",
     }));
     expect(stockInResult.error).toBe("");
-    expect(stockInResult.row).toEqual(expect.objectContaining({ status: "到货" }));
+    expect(stockInResult.row).toEqual(expect.objectContaining({
+      isPartialAxisInbound: true,
+      status: "已到达暂存间",
+      statusLabel: "已到达暂存间",
+    }));
   });
 
   test("treats a stale running tray as allowed staging inbound when all assigned run-trays are completed", () => {
@@ -3761,6 +3917,172 @@ describe("staging-management model", () => {
     }));
   });
 
+  test("allows partial axis trays in staging to stock out to another unfinished experiment without a schedule", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-07-003";
+    const trayCode = `${taskCode}-TP-001`;
+    const vibrationExperimentCode = `${taskCode}-VIB`;
+    const saltExperimentCode = `${taskCode}-SALT`;
+    const finishedSubExperimentCode = `${vibrationExperimentCode}-AXIS-001`;
+    const remainingSubExperimentCode = `${vibrationExperimentCode}-AXIS-002`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-partial-axis-other-lab",
+      code: taskCode,
+      test_type: "振动试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-partial-axis-other-lab-vib",
+        task_code: taskCode,
+        experiment_code: vibrationExperimentCode,
+        experiment_name: "振动试验",
+        required_device: "振动二室",
+        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+      },
+      {
+        id: "exp-partial-axis-other-lab-salt",
+        task_code: taskCode,
+        experiment_code: saltExperimentCode,
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-partial-axis-other-lab-vib", task_code: taskCode, experiment_code: vibrationExperimentCode, tray_code: trayCode },
+      { id: "rel-partial-axis-other-lab-salt", task_code: taskCode, experiment_code: saltExperimentCode, tray_code: trayCode },
+    );
+    snapshot[STORAGE_KEYS.schedules].push(
+      {
+        id: "schedule-partial-axis-other-lab-vib-done",
+        task_code: taskCode,
+        experiment_code: vibrationExperimentCode,
+        experiment_name: "振动试验",
+        device: "振动二室",
+        start_at: "2026-06-29 08:00:00",
+        end_at: "2026-06-29 10:00:00",
+        status: "实验已完成",
+        axis_codes: ["x+", "x-", "y+"],
+        sub_experiment_code: finishedSubExperimentCode,
+      },
+      {
+        id: "schedule-partial-axis-other-lab-vib-remaining",
+        task_code: taskCode,
+        experiment_code: vibrationExperimentCode,
+        experiment_name: "振动试验",
+        device: "振动二室",
+        start_at: "2026-06-30 08:00:00",
+        end_at: "2026-06-30 10:00:00",
+        status: "已排程",
+        axis_codes: ["y-", "z+", "z-"],
+        sub_experiment_code: remainingSubExperimentCode,
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      ...(snapshot[STORAGE_KEYS.experiment_run_trays] || []),
+      {
+        run_no: "run-partial-axis-other-lab",
+        task_code: taskCode,
+        experiment_code: vibrationExperimentCode,
+        sub_experiment_code: finishedSubExperimentCode,
+        tray_code: trayCode,
+        run_tray_status: "实验已完成",
+        ended_at: "2026-06-29 10:00:00",
+      },
+    ];
+    snapshot[STORAGE_KEYS.experiment_run_steps] = [
+      ...(snapshot[STORAGE_KEYS.experiment_run_steps] || []),
+      ...["x+", "x-", "y+"].map((axisCode, index) => ({
+        run_no: "run-partial-axis-other-lab",
+        task_code: taskCode,
+        experiment_code: vibrationExperimentCode,
+        sub_experiment_code: finishedSubExperimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+    ];
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-partial-axis-other-lab",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "周工",
+      location: "振动二室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      trays: [{
+        tray_code: trayCode,
+        status: "送至实验室",
+        target_experiment_code: vibrationExperimentCode,
+        target_sub_experiment_code: finishedSubExperimentCode,
+        target_lab: "振动二室",
+        quantity: 1,
+      }],
+      history: [],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-partial-axis-other-lab-in",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "staging",
+        action: "stock_in",
+        time: "2026-06-29 07:55:00",
+      },
+      {
+        id: "evt-partial-axis-other-lab-out",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "staging",
+        action: "stock_out",
+        target_experiment_code: vibrationExperimentCode,
+        target_sub_experiment_code: finishedSubExperimentCode,
+        target_lab: "振动二室",
+        time: "2026-06-29 08:00:00",
+      },
+    );
+
+    const stockInResult = applyZancunInventoryAction({
+      now: "2026-06-29 10:10:00",
+      payload: { code: trayCode, mode: "stockIn", room: "staging" },
+      room: "staging",
+      snapshot,
+    });
+    const rows = buildZancunRowsFromSnapshot(stockInResult.snapshot, { now: "2026-06-29 10:11:00", room: "staging" });
+    const stagedRow = rows.find((row) => row.trayCode === trayCode);
+    const stockOutResult = applyZancunInventoryAction({
+      now: "2026-06-29 10:12:00",
+      payload: {
+        code: trayCode,
+        mode: "stockOut",
+        room: "staging",
+        targetExperimentCode: saltExperimentCode,
+        targetLab: "盐雾试验室",
+      },
+      room: "staging",
+      snapshot: stockInResult.snapshot,
+    });
+
+    expect(stockInResult.error).toBe("");
+    expect(stagedRow?.targetDestinations.map((destination) => destination.targetLab)).toEqual([
+      "振动二室",
+      "盐雾试验室",
+    ]);
+    expect(stockOutResult.error).toBe("");
+    expect(stockOutResult.row).toEqual(expect.objectContaining({ status: "已出库" }));
+    expect(stockOutResult.snapshot[STORAGE_KEYS.staging_events].at(-1)).toEqual(expect.objectContaining({
+      action: "stock_out",
+      target_experiment_code: saltExperimentCode,
+      target_lab: "盐雾试验室",
+    }));
+    const updatedSample = stockOutResult.snapshot[STORAGE_KEYS.samples].find((sample) => sample.id === "sample-partial-axis-other-lab");
+    expect(updatedSample?.trays[0]).toEqual(expect.objectContaining({
+      target_experiment_code: saltExperimentCode,
+      target_lab: "盐雾试验室",
+    }));
+  });
+
   test("stocks fully completed axis tray into post-experiment staging before sibling trays finish", () => {
     const snapshot = createSnapshot();
     const taskCode = "SYLU-2026-07-001";
@@ -3910,6 +4232,284 @@ describe("staging-management model", () => {
     });
     expect(updatedSample.trays[0]).toEqual(expect.objectContaining({
       status: "实验后暂存间存放",
+    }));
+  });
+
+  test("treats fully completed split axis schedules with stale running schedule status as post-experiment staging", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-07-001";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const firstSubExperimentCode = `${experimentCode}-AXIS-001`;
+    const secondSubExperimentCode = `${experimentCode}-AXIS-002`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-axis-stale-running",
+      code: taskCode,
+      test_type: "振动试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-axis-stale-running",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      experiment_name: "振动试验",
+      required_device: "振动一室",
+      status: "实验进行中",
+      axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({
+      id: "rel-axis-stale-running",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      tray_code: trayCode,
+    });
+    snapshot[STORAGE_KEYS.schedules].push(
+      {
+        id: "schedule-axis-stale-001",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        device: "振动一室",
+        status: "实验进行中",
+        sub_experiment_code: firstSubExperimentCode,
+        axis_codes: ["x+", "x-", "y+"],
+      },
+      {
+        id: "schedule-axis-stale-002",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        device: "振动一室",
+        status: "实验进行中",
+        sub_experiment_code: secondSubExperimentCode,
+        axis_codes: ["y-", "z+", "z-"],
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      {
+        run_no: "run-axis-stale-001",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        tray_code: trayCode,
+        run_tray_status: "实验已完成",
+        sub_experiment_code: firstSubExperimentCode,
+        ended_at: "2026-06-30 21:41:35",
+      },
+      {
+        run_no: "run-axis-stale-002",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        tray_code: trayCode,
+        run_tray_status: "实验已完成",
+        sub_experiment_code: secondSubExperimentCode,
+        ended_at: "2026-06-30 21:59:52",
+      },
+    ];
+    snapshot[STORAGE_KEYS.experiment_run_steps] = [
+      ...["x+", "x-", "y+"].map((axisCode, index) => ({
+        run_no: "run-axis-stale-001",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        sub_experiment_code: firstSubExperimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+      ...["y-", "z+", "z-"].map((axisCode, index) => ({
+        run_no: "run-axis-stale-002",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        sub_experiment_code: secondSubExperimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+    ];
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-axis-stale-running",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "扫码登记",
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+      flow_status: "已到达暂存间",
+      trays: [{
+        tray_code: trayCode,
+        status: "已到达暂存间",
+        target_experiment_code: experimentCode,
+        target_lab: "振动一室",
+        quantity: 1,
+      }],
+      history: [
+        { action: "实验完成", detail: `${taskCode} / 振动试验 / 实验已完成`, location: "振动一室", status: "实验已完成", time: "2026-06-30 21:59:52" },
+        { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-06-30 22:00:01" },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push({
+      id: "evt-axis-stale-running-in",
+      action: "stock_in",
+      room: "staging",
+      task_code: taskCode,
+      time: "2026-06-30 22:00:01",
+      tray_code: trayCode,
+    });
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-30 22:10:00", room: "staging" });
+    const row = rows.find((item) => item.trayCode === trayCode);
+
+    expect(row).toEqual(expect.objectContaining({
+      isPartialAxisInbound: false,
+      isPostExperimentInbound: true,
+      status: "已到达暂存间",
+      statusLabel: "实验后暂存",
+    }));
+  });
+
+  test("keeps a single scheduled axis tray visible for staging stock-in when sibling trays remain unfinished", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-07-002";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const siblingTrayCode = `${taskCode}-TP-002`;
+    const subExperimentCode = `${experimentCode}-AXIS-001`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-axis-single-schedule",
+      code: taskCode,
+      test_type: "振动试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push({
+      id: "exp-axis-single-schedule",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      experiment_name: "振动试验",
+      required_device: "振动二室",
+      status: "实验进行中",
+      axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-axis-single-schedule-001", task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      { id: "rel-axis-single-schedule-002", task_code: taskCode, experiment_code: experimentCode, tray_code: siblingTrayCode },
+    );
+    snapshot[STORAGE_KEYS.schedules].push({
+      id: "schedule-axis-single-schedule",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      experiment_name: "振动试验",
+      device: "振动二室",
+      start_at: "2026-06-26 17:02:00",
+      end_at: "2026-06-26 20:32:00",
+      status: "实验进行中",
+      sub_experiment_code: subExperimentCode,
+      axis_codes: ["z+", "z-"],
+      axis_batch_no: "001",
+    });
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      ...(snapshot[STORAGE_KEYS.experiment_run_trays] || []),
+      {
+        run_no: "run-axis-single-schedule",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        tray_code: trayCode,
+        run_tray_status: "实验已完成",
+        sub_experiment_code: subExperimentCode,
+        ended_at: "2026-06-26 18:16:33",
+      },
+    ];
+    snapshot[STORAGE_KEYS.experiment_run_steps] = [
+      ...["z+", "z-"].map((axisCode, index) => ({
+        run_no: "run-axis-single-schedule",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        sub_experiment_code: subExperimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+      })),
+    ];
+    snapshot[STORAGE_KEYS.samples].push(
+      {
+        id: "sample-axis-single-schedule-completed",
+        code: `${taskCode}-SP-001`,
+        task_code: taskCode,
+        owner: "扫码登记",
+        location: "振动二室",
+        status: "送至实验室",
+        flow_status: "送至实验室",
+        trays: [{
+          tray_code: trayCode,
+          status: "送至实验室",
+          target_experiment_code: experimentCode,
+          target_sub_experiment_code: subExperimentCode,
+          target_lab: "振动二室",
+          quantity: 1,
+        }],
+        history: [],
+      },
+      {
+        id: "sample-axis-single-schedule-sibling",
+        code: `${taskCode}-SP-002`,
+        task_code: taskCode,
+        owner: "扫码登记",
+        location: "振动二室",
+        status: "实验准备就绪",
+        flow_status: "实验准备就绪",
+        trays: [{
+          tray_code: siblingTrayCode,
+          status: "实验准备就绪",
+          target_experiment_code: experimentCode,
+          target_sub_experiment_code: subExperimentCode,
+          target_lab: "振动二室",
+          quantity: 1,
+        }],
+        history: [],
+      },
+    );
+    snapshot[STORAGE_KEYS.staging_events].push(
+      {
+        id: "evt-axis-single-schedule-in",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "staging",
+        action: "stock_in",
+        time: "2026-06-26 17:00:00",
+      },
+      {
+        id: "evt-axis-single-schedule-out",
+        tray_code: trayCode,
+        task_code: taskCode,
+        room: "staging",
+        action: "stock_out",
+        target_experiment_code: experimentCode,
+        target_sub_experiment_code: subExperimentCode,
+        target_lab: "振动二室",
+        time: "2026-06-26 17:02:00",
+      },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-26 18:30:00", room: "staging" });
+    const row = rows.find((item) => item.trayCode === trayCode);
+    const sections = buildZancunInventorySections(rows, { room: "staging" });
+    const scanDetail = buildZancunScanDetail(rows, trayCode, "stockIn", { room: "staging" });
+    const stockInResult = applyZancunInventoryAction({
+      now: "2026-06-26 18:30:00",
+      payload: { code: trayCode, mode: "stockIn", room: "staging" },
+      room: "staging",
+      snapshot,
+    });
+
+    expect(row).toEqual(expect.objectContaining({
+      inboundKind: "allowed",
+      status: "待入库",
+    }));
+    expect(sections.plannedInboundRows.map((item) => item.trayCode)).toContain(trayCode);
+    expect(scanDetail).toEqual(expect.objectContaining({
+      found: true,
+      status: "待入库",
+    }));
+    expect(stockInResult.error).toBe("");
+    expect(stockInResult.row).toEqual(expect.objectContaining({
+      status: "已到达暂存间",
     }));
   });
 

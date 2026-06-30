@@ -572,10 +572,81 @@ describe("TransferWorkbench runtime", () => {
       expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch"),
       expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
     );
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "X-MES-Update-Source": "transfer-workbench",
+          "X-MES-Update-Request-Id": expect.stringContaining("transfer-workbench:"),
+        }),
+      }),
+    );
     expect(fetch.mock.calls.filter(([input, options = {}]) =>
       String(input).includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
       && (options.method || "GET") === "GET"
-    )).toHaveLength(2);
+    )).toHaveLength(1);
+    expect(dispatchEventSpy.mock.calls.some(([event]) =>
+      event?.type === SAMPLES_UPDATED_EVENT
+      && event?.detail?.source === "transfer-workbench"
+      && event?.detail?.reason === "dispatch"
+    )).toBe(true);
+    wrapper.unmount();
+  });
+
+  test("handover dispatch keeps success feedback when post-dispatch lookup is rejected", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    let dispatched = false;
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => createWorkspacePayload() };
+      }
+      if (url.includes("/api/transfer-area/tasks/102/workspace")) {
+        return { ok: true, status: 200, json: async () => createStoredWorkspace() };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+        if (dispatched) {
+          return {
+            ok: false,
+            status: 400,
+            json: async () => ({ detail: "该托盘当前不在接驳区，不能从接驳区出库" }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => createDispatchLookupPayload() };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && options.method === "POST") {
+        dispatched = true;
+        return { ok: true, status: 200, json: async () => createDispatchPostedPayload() };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-dispatch-destination-1"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已标记为送至实验室");
+    expect(wrapper.text()).not.toContain("该托盘当前不在接驳区，不能从接驳区出库");
+    expect(fetch.mock.calls.filter(([input, options = {}]) =>
+      String(input).includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+      && (options.method || "GET") === "GET"
+    )).toHaveLength(1);
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
     wrapper.unmount();
   });
@@ -587,6 +658,9 @@ describe("TransferWorkbench runtime", () => {
       const url = String(input);
       if (url.includes("/api/transfer-area/bootstrap")) {
         return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => createWorkspacePayload() };
       }
       if (url.includes("/api/transfer-area/tasks/102/workspace")) {
         return { ok: true, status: 200, json: async () => workspacePayload };
@@ -604,7 +678,7 @@ describe("TransferWorkbench runtime", () => {
         };
         return { ok: true, status: 200, json: async () => lookupPayload };
       }
-      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && (options.method || "GET") === "GET") {
         return { ok: true, status: 200, json: async () => lookupPayload };
       }
       throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
@@ -657,6 +731,62 @@ describe("TransferWorkbench runtime", () => {
     wrapper.unmount();
   });
 
+  test("handover error sample dialog uses withdraw lookup instead of dispatch lookup", async () => {
+    let lookupPayload = createDispatchPostedPayload();
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && (options.method || "GET") === "GET") {
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && options.method === "POST") {
+        lookupPayload = createWithdrawnDispatchPayload();
+        return { ok: true, status: 200, json: async () => lookupPayload };
+      }
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ detail: "该托盘当前不在接驳区，不能从接驳区出库" }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      attachTo: document.body,
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="handover-error-sample"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("振动一室");
+    expect(wrapper.text()).not.toContain("该托盘当前不在接驳区，不能从接驳区出库");
+
+    await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="tray-error-sample-withdraw-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已撤回出库");
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("到货");
+    expect(fetch.mock.calls.some(([input, options = {}]) =>
+      String(input).includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+      && (options.method || "GET") === "GET"
+    )).toBe(false);
+    wrapper.unmount();
+  });
+
   test("handover error sample dialog withdraws a staging tray back to arrived status", async () => {
     let lookupPayload = createStagingDispatchPostedPayload();
     vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
@@ -668,7 +798,7 @@ describe("TransferWorkbench runtime", () => {
         lookupPayload = createWithdrawnDispatchPayload();
         return { ok: true, status: 200, json: async () => lookupPayload };
       }
-      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
+      if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch") && (options.method || "GET") === "GET") {
         return { ok: true, status: 200, json: async () => lookupPayload };
       }
       throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
@@ -1259,7 +1389,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get(".transfer-count-chip").text()).toBe("剩余空托盘 7");
   });
 
-  test("keeps unified sample limit capped at 99 and renders validation details as readable text", async () => {
+  test("keeps unified sample limit capped at 16 and renders validation details as readable text", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();
 
@@ -1279,7 +1409,7 @@ describe("TransferWorkbench runtime", () => {
             detail: [
               {
                 loc: ["body", "trayLimit"],
-                msg: "Input should be less than or equal to 99",
+                msg: "Input should be less than or equal to 16",
               },
             ],
           }),
@@ -1300,16 +1430,16 @@ describe("TransferWorkbench runtime", () => {
     await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
     await settle(wrapper);
     const limitInput = wrapper.get('[data-testid="transfer-tray-limit-input"]');
-    expect(limitInput.attributes("max")).toBe("99");
+    expect(limitInput.attributes("max")).toBe("16");
 
-    await limitInput.setValue("99");
+    await limitInput.setValue("16");
     await limitInput.trigger("change");
     await settle(wrapper);
     await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.text()).not.toContain("[object Object]");
-    expect(wrapper.text()).toContain("body.trayLimit: Input should be less than or equal to 99");
+    expect(wrapper.text()).toContain("body.trayLimit: Input should be less than or equal to 16");
   });
 
   test("removes a task from the active workspace when the workspace endpoint reports it archived", async () => {
@@ -1613,6 +1743,7 @@ describe("TransferWorkbench runtime", () => {
     const feedback = wrapper.get('[data-testid="transfer-detail-feedback"]');
     expect(feedback.text()).toContain("任务已确认入库");
     expect(feedback.classes()).toContain("app-feedback--success");
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/transfer-area/bootstrap"))).toHaveLength(1);
 
     await feedback.trigger("click");
     expect(wrapper.find('[data-testid="transfer-detail-feedback"]').exists()).toBe(false);
@@ -1960,10 +2091,10 @@ describe("TransferWorkbench runtime", () => {
 
   test("barcode preview truncates long sample code lists after eight codes", async () => {
     const bootstrapPayload = createBootstrapPayload();
-    const sampleCodes = Array.from({ length: 99 }, (_, index) => `SYLU-2026-05-001-SP-${String(index + 1).padStart(3, "0")}`);
+    const sampleCodes = Array.from({ length: 16 }, (_, index) => `SYLU-2026-05-001-SP-${String(index + 1).padStart(3, "0")}`);
     const workspacePayload = createWorkspacePayload();
     workspacePayload.task.taskNo = "SYLU-2026-05-001";
-    workspacePayload.task.trayLimit = 99;
+    workspacePayload.task.trayLimit = 16;
     workspacePayload.experiments = workspacePayload.experiments.map((experiment) => ({
       ...experiment,
       assignedTrayNos: ["SYLU-2026-05-001-TP-001"],
@@ -1973,7 +2104,7 @@ describe("TransferWorkbench runtime", () => {
         ...workspacePayload.assignedTrays[0],
         trayId: 501,
         trayNo: "SYLU-2026-05-001-TP-001",
-        capacity: 99,
+        capacity: 16,
         experimentLabels: ["盐雾试验", "振动试验"],
         experimentCodes: ["SYLU-2026-03-101-A", "SYLU-2026-03-101-B"],
         samples: sampleCodes.map((sampleNo, index) => ({
@@ -2040,7 +2171,7 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     const modalText = wrapper.get('[data-testid="barcode-modal"]').text();
-    expect(modalText).toContain("样品数：99");
+    expect(modalText).toContain("样品数：16");
     expect(modalText).toContain("SYLU-2026-05-001-SP-008 / ...");
     expect(modalText).not.toContain("SYLU-2026-05-001-SP-009");
   });

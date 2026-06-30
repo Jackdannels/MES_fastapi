@@ -652,11 +652,21 @@ def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> t
     if not scoped_trays:
         return payload, False
 
+    schedules = [dict(item) for item in (payload.get("mes.schedules") if isinstance(payload.get("mes.schedules"), list) else [])]
+    axis_schedule_subs_by_experiment: dict[tuple[str, str], set[str]] = {}
+    for schedule in schedules:
+        task_code = str(schedule.get("task_code") or schedule.get("taskCode") or "").strip()
+        experiment_code = str(schedule.get("experiment_code") or schedule.get("experimentCode") or "").strip()
+        sub_experiment_code = str(schedule.get("sub_experiment_code") or schedule.get("subExperimentCode") or "").strip()
+        if task_code and experiment_code and sub_experiment_code and _normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes")):
+            axis_schedule_subs_by_experiment.setdefault((task_code, experiment_code), set()).add(sub_experiment_code)
+
     experiment_run_trays = [
         dict(item)
         for item in (payload.get("mes.experiment_run_trays") if isinstance(payload.get("mes.experiment_run_trays"), list) else [])
     ]
     completed_run_trays: set[tuple[str, str, str]] = set()
+    completed_axis_run_trays: set[tuple[str, str, str, str]] = set()
     run_tray_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
     for relation in experiment_run_trays:
         task_code = str(relation.get("task_code") or relation.get("taskCode") or relation.get("task_no") or relation.get("taskNo") or "").strip()
@@ -668,12 +678,15 @@ def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> t
             or ""
         ).strip()
         tray_code = str(relation.get("tray_code") or relation.get("trayCode") or relation.get("tray_no") or relation.get("trayNo") or "").strip()
+        sub_experiment_code = str(relation.get("sub_experiment_code") or relation.get("subExperimentCode") or "").strip()
         status = str(relation.get("run_tray_status") or relation.get("runTrayStatus") or relation.get("status") or "").strip()
         if task_code and experiment_code and tray_code:
             key = (task_code, experiment_code, tray_code)
             run_tray_by_key.setdefault(key, relation)
             if status in EXPERIMENT_TERMINAL_STATUSES:
                 completed_run_trays.add(key)
+                if sub_experiment_code:
+                    completed_axis_run_trays.add((task_code, experiment_code, sub_experiment_code, tray_code))
 
     returned_experiment_tray_keys = {
         (task_code, experiment_code, tray_code)
@@ -682,15 +695,29 @@ def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> t
         if tray_code in returned_by_tray and (task_code, experiment_code, tray_code) not in completed_run_trays
     }
 
-    terminal_experiments = {
-        (task_code, experiment_code)
-        for (task_code, experiment_code), tray_codes in scoped_trays.items()
-        if tray_codes
-        and all(
+    def experiment_is_terminal(task_code: str, experiment_code: str, tray_codes: set[str]) -> bool:
+        if not tray_codes:
+            return False
+        axis_sub_experiment_codes = axis_schedule_subs_by_experiment.get((task_code, experiment_code), set())
+        if axis_sub_experiment_codes:
+            return all(
+                all(
+                    (task_code, experiment_code, sub_experiment_code, tray_code) in completed_axis_run_trays
+                    or tray_code in returned_by_tray
+                    for tray_code in tray_codes
+                )
+                for sub_experiment_code in axis_sub_experiment_codes
+            )
+        return all(
             (task_code, experiment_code, tray_code) in completed_run_trays
             or tray_code in returned_by_tray
             for tray_code in tray_codes
         )
+
+    terminal_experiments = {
+        (task_code, experiment_code)
+        for (task_code, experiment_code), tray_codes in scoped_trays.items()
+        if experiment_is_terminal(task_code, experiment_code, tray_codes)
     }
     if not terminal_experiments and not returned_experiment_tray_keys:
         return payload, False
@@ -706,7 +733,6 @@ def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> t
             experiment["status"] = CANONICAL_COMPLETED_STATUS
             changed = True
 
-    schedules = [dict(item) for item in (payload.get("mes.schedules") if isinstance(payload.get("mes.schedules"), list) else [])]
     filtered_schedules = [
         schedule
         for schedule in schedules

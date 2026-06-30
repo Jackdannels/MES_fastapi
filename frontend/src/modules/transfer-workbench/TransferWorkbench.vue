@@ -560,7 +560,7 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "到货";
-const MAX_TRAY_LIMIT = 99;
+const MAX_TRAY_LIMIT = 16;
 
 const activeWorkbenchView = ref("overview");
 const viewMode = ref("overview");
@@ -575,7 +575,7 @@ const experiments = ref([]);
 const activeAssignmentMode = ref("task");
 const draftExperimentTraySelections = ref({});
 const availableInventory = ref([]);
-const trayLimit = ref(4);
+const trayLimit = ref(16);
 const trayLimitInputVersion = ref(0);
 const trayLimitInputKey = computed(() => `tray-limit-${trayLimit.value}-${trayLimitInputVersion.value}`);
 const overviewTaskNoSortDirection = ref("");
@@ -606,7 +606,15 @@ const overviewPageSize = ref(3);
 const pendingTaskCount = ref(0);
 const storedTaskCount = ref(0);
 const exitDialogOpen = ref(false);
-const transferDispatch = useTransferDispatch();
+const ignoredStorageRequestIds = ref([]);
+let storageWriteSequence = 0;
+const trackOwnStorageRequest = (reason = "transfer") => {
+  storageWriteSequence += 1;
+  const requestId = `transfer-workbench:${Date.now()}:${storageWriteSequence}:${reason}`;
+  ignoredStorageRequestIds.value = [...ignoredStorageRequestIds.value, requestId].slice(-20);
+  return { requestId, source: "transfer-workbench" };
+};
+const transferDispatch = useTransferDispatch({ createStorageUpdateMeta: trackOwnStorageRequest });
 let flushPendingStorageRefresh = () => false;
 let hasPendingSamplesRefresh = false;
 
@@ -625,7 +633,7 @@ const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
     allowReset: true,
-    detailHelper: "默认上限为 4，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
+    detailHelper: "默认上限为 16，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
     detailHint: "支持触控先点托盘再点样品，也支持样品换位",
     detailTitle: "托盘分装与入库",
     eyebrow: "接驳区系统",
@@ -1248,7 +1256,7 @@ const applyWorkspace = (workspace) => {
   draftExperimentTraySelections.value = Object.fromEntries(
     experiments.value.map((experiment) => [experiment.experimentCode, [...(experiment.assignedTrayNos || [])]]),
   );
-  trayLimit.value = normalizeTrayLimit(workspace?.task?.trayLimit || 4);
+  trayLimit.value = normalizeTrayLimit(workspace?.task?.trayLimit || 16);
   assignedTrays.value = (workspace?.assignedTrays || []).map((tray) => ({
     ...tray,
     samples: Array.isArray(tray.samples)
@@ -1295,7 +1303,7 @@ const clearWorkspace = () => {
   currentTask.value = null;
   experiments.value = [];
   draftExperimentTraySelections.value = {};
-  trayLimit.value = 4;
+  trayLimit.value = 16;
   assignedTrays.value = [];
   availableInventory.value = [];
   allocationSaved.value = false;
@@ -1439,6 +1447,8 @@ const storageRefresh = useStorageSnapshotRefresh({
   refresh: refreshTransferWorkspaceAfterTrayChange,
   paused: isTransferRealtimeRefreshPaused,
   debounceMs: 100,
+  ignoreSource: "transfer-workbench",
+  ignoreRequestIds: ignoredStorageRequestIds,
 });
 flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
@@ -1974,7 +1984,14 @@ const confirmStorage = async () => {
     const saved = await persistAllocation(false, { allowExperimentMode: true });
     if (!saved) return;
   }
-  const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/confirm-storage`, { method: "POST" });
+  const storageUpdateMeta = trackOwnStorageRequest("confirm-storage");
+  const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/confirm-storage`, {
+    method: "POST",
+    headers: {
+      "X-MES-Update-Source": storageUpdateMeta.source,
+      "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
+    },
+  });
   const confirmedTaskId = selectedTaskId.value;
   const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";
   applyWorkspace(payload.workspace);
@@ -1989,11 +2006,9 @@ const confirmStorage = async () => {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
   }
   showWorkbenchFeedback(payload.message, "success");
-  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "confirm-storage" } }));
-  await loadBootstrap();
-  if (confirmedTaskId) {
-    updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
-  }
+  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
+    detail: { source: "transfer-workbench", reason: "confirm-storage", requestId: storageUpdateMeta.requestId },
+  }));
   flushPendingRealtimeRefresh();
   taskStatusFilter.value = storedStatus;
 };

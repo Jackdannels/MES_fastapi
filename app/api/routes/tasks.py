@@ -698,6 +698,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
+    current_experiment_runs = [dict(row) for row in snapshot.get("mes.experiment_runs", [])]
+    current_experiment_run_trays = [dict(row) for row in snapshot.get("mes.experiment_run_trays", [])]
     current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
     current_experiment_run_steps = [dict(row) for row in snapshot.get("mes.experiment_run_steps", [])]
     affected_schedules = (
@@ -781,6 +783,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         schedules,
         snapshot.get("mes.schedules", []),
         current_samples,
+        current_experiment_runs,
+        current_experiment_run_trays,
         current_experiment_trays,
         current_experiment_run_steps,
     )
@@ -804,6 +808,8 @@ def delete_task(task_id: str) -> None:
     task_code = normalize_text(removed_task.get("code")) or normalize_text(removed_task.get("id"))
     current_schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
+    current_experiment_runs = [dict(row) for row in snapshot.get("mes.experiment_runs", [])]
+    current_experiment_run_trays = [dict(row) for row in snapshot.get("mes.experiment_run_trays", [])]
     current_experiment_trays = [dict(row) for row in snapshot.get("mes.experiment_trays", [])]
     current_experiment_run_steps = [dict(row) for row in snapshot.get("mes.experiment_run_steps", [])]
     snapshot["mes.tasks"] = tasks
@@ -819,6 +825,8 @@ def delete_task(task_id: str) -> None:
         current_schedules,
         snapshot.get("mes.schedules", []),
         current_samples,
+        current_experiment_runs,
+        current_experiment_run_trays,
         current_experiment_trays,
         current_experiment_run_steps,
     )

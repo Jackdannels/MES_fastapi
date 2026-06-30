@@ -117,6 +117,39 @@ describe("TrayManagementPanel", () => {
     expect(wrapper.get('[data-testid="samples-trays-sample-popover-4"]').findAll(".tray-sample-popover-line")).toHaveLength(6);
   });
 
+  test("closes the tray sample popover when clicking outside the sample-code table cell", async () => {
+    const wrapper = mount(TrayManagementPanel, {
+      props: {
+        samplesFlow: buildSamplesFlow({
+          trayRows: [
+            {
+              sampleCodes: [
+                "SYLU-2026-03-021-SP-001",
+                "SYLU-2026-03-021-SP-002",
+                "SYLU-2026-03-021-SP-003",
+                "SYLU-2026-03-021-SP-004",
+                "SYLU-2026-03-021-SP-005",
+                "SYLU-2026-03-021-SP-006",
+              ],
+              sampleCount: 6,
+              status: "送至实验室",
+              taskCode: "SYLU-2026-03-021",
+              trayCode: "SYLU-2026-03-021-TP-001",
+            },
+          ],
+        }),
+      },
+    });
+
+    await wrapper.get(".tray-sample-line.is-ellipsis").trigger("click");
+    expect(wrapper.find('[data-testid="samples-trays-sample-popover-0"]').exists()).toBe(true);
+
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('[data-testid="samples-trays-sample-popover-0"]').exists()).toBe(false);
+  });
+
   test("paginates tray rows to five per page", async () => {
     const trayRows = Array.from({ length: 6 }, (_, index) => ({
       sampleCodes: [`SP-${index + 1}`],

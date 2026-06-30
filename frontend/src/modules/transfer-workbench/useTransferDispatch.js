@@ -13,7 +13,7 @@ const readErrorMessage = async (response) => {
   return payload?.detail || payload?.message || `请求失败（${response.status}）`;
 };
 
-function useTransferDispatch() {
+function useTransferDispatch(options = {}) {
   const feedbackState = useFeedback();
   const state = reactive({
     scanCode: "",
@@ -22,6 +22,9 @@ function useTransferDispatch() {
     tray: null,
     destinations: [],
   });
+  const createStorageUpdateMeta = typeof options.createStorageUpdateMeta === "function"
+    ? options.createStorageUpdateMeta
+    : () => ({});
 
   const fetchTrayDispatch = async (trayCode) => {
     const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/dispatch`, API_BASE_URL), {
@@ -92,12 +95,15 @@ function useTransferDispatch() {
     }
 
     state.submitting = true;
+    const storageUpdateMeta = createStorageUpdateMeta("dispatch");
     try {
       const response = await fetch(buildApiUrl(`/api/transfer-area/trays/${encodeURIComponent(trayCode)}/dispatch`, API_BASE_URL), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(storageUpdateMeta.source ? { "X-MES-Update-Source": storageUpdateMeta.source } : {}),
+          ...(storageUpdateMeta.requestId ? { "X-MES-Update-Request-Id": storageUpdateMeta.requestId } : {}),
         },
         body: JSON.stringify({
           targetType: destination.targetType,
@@ -111,10 +117,10 @@ function useTransferDispatch() {
       const payload = await response.json();
       applyDispatchPayload(payload, state.destinations);
       feedbackState.show(normalizeText(payload?.message) || "托盘出库状态已更新。", "success");
-      const refreshedPayload = await fetchTrayDispatch(trayCode);
-      applyDispatchPayload(refreshedPayload, state.destinations);
       state.scanCode = "";
-      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
+        detail: { source: "transfer-workbench", reason: "dispatch", requestId: storageUpdateMeta.requestId || "" },
+      }));
       return true;
     } catch (error) {
       feedbackState.show(error instanceof Error ? error.message : "托盘出库失败，请重试。", "error");

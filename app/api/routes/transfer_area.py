@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
@@ -27,14 +27,17 @@ TASK_STATUS_PENDING = "未入库"
 TASK_STATUS_STORED = "到货"
 TASK_STATUS_RETURNED = "厂家收回"
 RETURNED_REENTRY_BLOCK_REASON = "该任务已厂家收回，不能重新入库。"
+HANDOVER_LOCATION = "接驳区"
+NOT_IN_HANDOVER_DISPATCH_DETAIL = "该托盘当前不在接驳区，不能从接驳区出库"
 TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "到货"
-DEFAULT_TRAY_LIMIT = 4
-MAX_TRAY_LIMIT = 99
+DEFAULT_TRAY_LIMIT = 16
+MAX_TRAY_LIMIT = 16
 TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT = 12
 SYSTEM_TRAY_TOTAL = 10
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
+STAGING_STOCKED_TRANSFER_BLOCK_DETAIL = "该托盘已在暂存间入库，请从暂存间出库"
 APPEARANCE_LOCATION = "外观检测间"
 APPEARANCE_STORED_STATUS = "实验后外观检测间存放"
 POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间"
@@ -270,7 +273,13 @@ def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], *, replace_task_codes: set[str] | None = None) -> None:
+def write_snapshot(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    replace_task_codes: set[str] | None = None,
+    update_source: str = "",
+    update_request_id: str = "",
+) -> None:
     storage = get_storage_backend()
     updates = {
         "mes.tasks": snapshot["tasks"],
@@ -292,7 +301,12 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], *, replace_task_co
                 replace_task_codes=replace_task_codes,
             )
         )
-    publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
+    source = normalize_text(update_source)
+    request_id = normalize_text(update_request_id)
+    if source or request_id:
+        publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS), source=source, request_id=request_id)
+    else:
+        publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
 
 
 def task_code(task: dict[str, Any]) -> str:
@@ -1391,6 +1405,11 @@ def latest_staging_event_for_tray(
     return matched_events[-1]
 
 
+def tray_is_currently_stocked_in_staging(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
+    latest_event = latest_staging_event_for_tray(snapshot, tray_code, room="staging")
+    return normalize_text(latest_event.get("action") if latest_event else "") in {"stock_in", "stock_out_withdraw"}
+
+
 def sample_has_staging_dispatch_history(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
     normalized_tray_code = normalize_text(tray_code)
     dispatch_entries: list[dict[str, Any]] = []
@@ -1472,6 +1491,40 @@ def tray_current_status(task_samples: list[dict[str, Any]], tray_code: str) -> s
             if normalize_text(entry.get("tray_code")) == normalized_tray_code:
                 return normalize_text(entry.get("status")) or normalize_text(sample.get("status"))
     return ""
+
+
+def tray_is_currently_in_handover(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
+    normalized_tray_code = normalize_text(tray_code)
+    matched_samples = []
+    for sample in task_samples:
+        tray_entries = [
+            entry
+            for entry in as_list(sample.get("trays"))
+            if normalize_text(entry.get("tray_code")) == normalized_tray_code
+        ]
+        if not tray_entries:
+            continue
+        matched_samples.append(sample)
+        sample_status = normalize_text(sample.get("status") or sample.get("flow_status"))
+        sample_location = normalize_text(sample.get("location"))
+        if sample_location != HANDOVER_LOCATION or sample_status != TASK_STATUS_STORED:
+            return False
+        if any(normalize_text(entry.get("status")) != TASK_STATUS_STORED for entry in tray_entries):
+            return False
+    return bool(matched_samples)
+
+
+def ensure_tray_currently_in_handover(task_samples: list[dict[str, Any]], tray_code: str) -> None:
+    if not tray_is_currently_in_handover(task_samples, tray_code):
+        raise HTTPException(status_code=400, detail=NOT_IN_HANDOVER_DISPATCH_DETAIL)
+
+
+def ensure_tray_can_lookup_withdrawal(task_samples: list[dict[str, Any]], tray_code: str) -> None:
+    current_status = tray_current_status(task_samples, tray_code)
+    if tray_has_laboratory_progress(task_samples, tray_code):
+        raise HTTPException(status_code=400, detail="该托盘已进入试验间流程，不能撤回出库")
+    if current_status not in {"送至实验室", "送至暂存间"}:
+        raise HTTPException(status_code=400, detail="该托盘当前不在可撤回的出库状态")
 
 
 def apply_tray_withdrawal(
@@ -1612,17 +1665,28 @@ def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     if is_returned_task(task, task_samples):
         raise HTTPException(status_code=404, detail="任务已归档")
+    if tray_is_currently_stocked_in_staging(snapshot, tray_code):
+        raise HTTPException(status_code=400, detail=STAGING_STOCKED_TRANSFER_BLOCK_DETAIL)
+    ensure_tray_currently_in_handover(task_samples, tray_code)
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
 
 @router.post("/trays/{tray_code}/dispatch")
-def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> dict[str, Any]:
+def dispatch_tray(
+    tray_code: str,
+    request: TrayDispatchRequest = Body(...),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
     snapshot = read_snapshot()
     task, tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     ensure_task_not_returned(task, task_samples)
     if transfer_status_for_task(task, task_samples) != TASK_STATUS_STORED:
         raise HTTPException(status_code=400, detail="该托盘尚未确认入库，不能出库")
+    if tray_is_currently_stocked_in_staging(snapshot, tray_code):
+        raise HTTPException(status_code=400, detail=STAGING_STOCKED_TRANSFER_BLOCK_DETAIL)
+    ensure_tray_currently_in_handover(task_samples, tray_code)
 
     current_tray_status = ""
     current_target_sub_experiment_code = ""
@@ -1762,13 +1826,23 @@ def dispatch_tray(tray_code: str, request: TrayDispatchRequest = Body(...)) -> d
             }
         )
 
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
     return {
         "ok": True,
         "message": f"{normalize_text(tray_code)}已标记为{next_status}",
         "affectedSampleCount": len(tray_samples),
         **serialize_tray_dispatch_payload(snapshot, task, tray_code),
     }
+
+
+@router.get("/trays/{tray_code}/withdraw-dispatch")
+def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
+    snapshot = read_snapshot()
+    task, _tray_samples = find_tray_samples(snapshot, tray_code)
+    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
+    ensure_task_not_returned(task, task_samples)
+    ensure_tray_can_lookup_withdrawal(task_samples, tray_code)
+    return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
 
 @router.post("/trays/{tray_code}/withdraw-dispatch")
@@ -1985,7 +2059,11 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
 
 
 @router.post("/tasks/{task_id}/confirm-storage")
-def confirm_task_storage(task_id: str) -> dict[str, Any]:
+def confirm_task_storage(
+    task_id: str,
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
@@ -2032,7 +2110,7 @@ def confirm_task_storage(task_id: str) -> dict[str, Any]:
             continue
         experiment["unscheduled_since"] = now_iso
 
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
     return {
         "ok": True,
         "message": "任务已确认入库",

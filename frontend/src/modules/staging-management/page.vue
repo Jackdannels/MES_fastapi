@@ -584,8 +584,10 @@ const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
 const scanWarning = ref("");
 const scanSubmitting = ref(false);
+const ignoredStorageRequestIds = ref([]);
 let flushPendingStorageRefresh = () => false;
 let hasPendingSamplesRefresh = false;
+let storageWriteSequence = 0;
 
 const scanForm = reactive({
   code: "",
@@ -701,14 +703,23 @@ const closeReturnDanger = () => {
   flushPendingRealtimeRefresh();
 };
 
+const trackOwnStorageRequest = () => {
+  storageWriteSequence += 1;
+  const source = roomCopy.value.moduleSource;
+  const requestId = `${source}:${Date.now()}:${storageWriteSequence}`;
+  ignoredStorageRequestIds.value = [...ignoredStorageRequestIds.value, requestId].slice(-20);
+  return { requestId, source };
+};
+
 const persistInventoryResult = async (result) => {
   if (!result.error) {
     snapshot.value = result.snapshot;
+    const storageUpdateMeta = trackOwnStorageRequest();
     await writeStorageUpdates({
       [STORAGE_KEYS.tasks]: result.snapshot[STORAGE_KEYS.tasks],
       [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
       [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
-    });
+    }, storageUpdateMeta);
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
   }
   return !result.error;
@@ -905,15 +916,7 @@ const confirmDetailAction = async () => {
     snapshot: snapshot.value,
   });
 
-  if (!result.error) {
-    snapshot.value = result.snapshot;
-    await writeStorageUpdates({
-      [STORAGE_KEYS.tasks]: result.snapshot[STORAGE_KEYS.tasks],
-      [STORAGE_KEYS.samples]: result.snapshot[STORAGE_KEYS.samples],
-      [STORAGE_KEYS.staging_events]: result.snapshot[STORAGE_KEYS.staging_events],
-    });
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
-  }
+  await persistInventoryResult(result);
 
   closeDetailModal();
 };
@@ -977,6 +980,8 @@ const storageRefresh = useStorageSnapshotRefresh({
   keys: STAGING_SNAPSHOT_KEYS,
   refresh: loadSnapshot,
   paused: isRealtimeRefreshPaused,
+  ignoreSource: roomCopy.value.moduleSource,
+  ignoreRequestIds: ignoredStorageRequestIds,
 });
 flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 

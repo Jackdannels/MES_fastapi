@@ -144,6 +144,35 @@ describe("storageApi", () => {
     window.removeEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
   });
 
+  test("includes source metadata in local write notifications", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    const eventSpy = vi.fn();
+    window.addEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+
+    await writeStorageUpdates(
+      {
+        [STORAGE_KEYS.samples]: [{ code: "S-1" }],
+      },
+      { source: "staging-management", requestId: "write-1" },
+    );
+
+    expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        keys: [STORAGE_KEYS.samples],
+        requestId: "write-1",
+        source: "staging-management",
+      }),
+    }));
+    expect(fetch).toHaveBeenCalledWith(STORAGE_ENDPOINT, expect.objectContaining({
+      headers: expect.objectContaining({
+        "X-MES-Update-Request-Id": "write-1",
+        "X-MES-Update-Source": "staging-management",
+      }),
+    }));
+
+    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+  });
+
   test("returns clean remote sample payloads without refreshing local sample cache", async () => {
     vi.stubGlobal(
       "fetch",

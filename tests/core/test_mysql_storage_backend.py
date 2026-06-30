@@ -1605,6 +1605,49 @@ def test_derive_schedule_status_map_keeps_unstarted_axis_sub_experiment_schedule
     }
 
 
+def test_derive_schedule_status_map_keeps_axis_batch_running_until_all_trays_complete() -> None:
+    schedules = [
+        {
+            "schedule_id": 1,
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "axis_codes_json": ["x+"],
+            "schedule_status": "实验进行中",
+        },
+    ]
+    experiment_trays = [
+        {
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "tray_no": "SYLU-2026-07-001-TP-001",
+        },
+        {
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "tray_no": "SYLU-2026-07-001-TP-002",
+        },
+    ]
+    experiment_run_trays = [
+        {
+            "task_no": "SYLU-2026-07-001",
+            "experiment_no": "SYLU-2026-07-001-A",
+            "sub_experiment_code": "SYLU-2026-07-001-A-AXIS-001",
+            "tray_no": "SYLU-2026-07-001-TP-001",
+            "run_tray_status": "实验已完成",
+        }
+    ]
+
+    assert mysql_storage_status_module.derive_schedule_status_map(
+        schedules,
+        {"SYLU-2026-07-001-A": "实验进行中"},
+        experiment_run_trays=experiment_run_trays,
+        experiment_trays=experiment_trays,
+    ) == {
+        1: "实验进行中",
+    }
+
+
 def test_derive_experiment_status_map_keeps_completed_batch_when_remaining_run_tray_is_returned() -> None:
     experiments = [
         {
@@ -2119,6 +2162,85 @@ def test_build_storage_sample_item_recovers_tray_target_lab_from_dispatch_histor
     )
 
     assert storage_item["trays"][0]["target_lab"] == "温度冲击一室"
+
+
+def test_build_storage_sample_item_uses_latest_lab_operation_as_tray_target() -> None:
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 140,
+            "sample_no": "SYLU-2026-07-001-SP-001",
+            "task_no": "SYLU-2026-07-001",
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "振动一室",
+            "sample_status": "已到达实验室",
+            "flow_status": "已到达实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-06-29 13:16:06",
+            "updated_at": "2026-06-29 13:18:22",
+        },
+        tray_rows=[
+            {
+                "id": "SYLU-2026-07-001-TP-001",
+                "tray_code": "SYLU-2026-07-001-TP-001",
+                "sample_code": "SYLU-2026-07-001-SP-001",
+                "quantity": 1,
+                "status": "已到达实验室",
+                "target_lab": "冲击一室",
+                "created_at": "2026-06-29 13:16:20",
+                "updated_at": "2026-06-29 13:18:22",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 3207204,
+                "event_time": "2026-06-29 13:18:22",
+                "action_type": "任务比对",
+                "location_desc": "振动一室",
+                "sample_status": "已到达实验室",
+                "detail": "SYLU-2026-07-001 / 振动试验 / 已到达实验室 / 托盘：SYLU-2026-07-001-TP-001",
+            },
+            {
+                "event_id": 3207213,
+                "event_time": "2026-06-29 13:17:01",
+                "action_type": "送至实验室",
+                "location_desc": "冲击一室",
+                "sample_status": "送至实验室",
+                "detail": "SYLU-2026-07-001-TP-001 -> 冲击一室",
+            },
+        ],
+        schedules=[
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "device": "冲击一室",
+            },
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-B",
+                "device": "振动一室",
+            },
+        ],
+        experiment_trays=[
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-A",
+                "tray_code": "SYLU-2026-07-001-TP-001",
+            },
+            {
+                "task_code": "SYLU-2026-07-001",
+                "experiment_code": "SYLU-2026-07-001-B",
+                "tray_code": "SYLU-2026-07-001-TP-001",
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "振动一室"
+    assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-07-001-B"
 
 
 def test_build_storage_sample_item_keeps_lab_target_after_pre_appearance_stock_in_history() -> None:

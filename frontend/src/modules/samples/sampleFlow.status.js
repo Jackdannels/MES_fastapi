@@ -9,6 +9,7 @@ import {
   SAMPLE_FLOW_STEPS,
   TEST_LABS,
 } from "./sampleFlow.constants";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { normalizeText } from "./sampleFlow.shared";
 
 // 允许通过覆盖 labels 复用同一套状态推导逻辑。
@@ -47,6 +48,9 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   const isPreRetention = normalizedLocation && normalizedLocation === preRetentionLocation;
   const isPostRetention = normalizedLocation && normalizedLocation === postRetentionLocation;
 
+  if (isAxisPartialProgressStatus(currentStatus)) {
+    return currentStatus;
+  }
   if (isPostRetention && isAmbiguousStagingStatus(currentStatus)) {
     return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }
@@ -63,7 +67,7 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
     return currentStatus;
   }
   if (currentStatus === "放置暂存间") {
-    return currentStatus;
+    return "已到达暂存间";
   }
   if (
     currentStatus === normalizedLabels.sampleStored

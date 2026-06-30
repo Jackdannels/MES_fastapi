@@ -539,16 +539,21 @@ def extract_dispatch_target_lab(detail: Any, tray_code: str = "") -> str:
     return normalize_text(dispatch_match.group("lab")) if dispatch_match else ""
 
 
+LAB_OPERATION_TARGET_ACTIONS = {"任务比对", "样品安装", "实验确认"}
+LAB_OPERATION_TARGET_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
+
+
 def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) -> Dict[str, str]:
     dispatch_events: list[tuple[datetime, str, str]] = []
     for event in event_rows or []:
         action = normalize_text(event.get("action") or event.get("action_type"))
         status = normalize_experiment_status_text(event.get("status") or event.get("sample_status"))
         is_pre_appearance = action == PRE_EXPERIMENT_APPEARANCE_STATUS or status == PRE_EXPERIMENT_APPEARANCE_STATUS
-        if action != "送至实验室" and status != "送至实验室" and not is_pre_appearance:
+        is_lab_operation_target = action in LAB_OPERATION_TARGET_ACTIONS and status in LAB_OPERATION_TARGET_STATUSES
+        if action != "送至实验室" and status != "送至实验室" and not is_pre_appearance and not is_lab_operation_target:
             continue
         detail = normalize_experiment_detail_text(event.get("detail"))
-        tray_match = re.search(r"(?P<tray_code>\S+-TP-\d+)", detail)
+        tray_match = re.search(r"(?P<tray_code>[A-Za-z0-9_-]+-TP-\d+)", detail)
         tray_code = normalize_text(tray_match.group("tray_code")) if tray_match else ""
         explicit_target_lab = normalize_text(event.get("target_lab") or event.get("targetLab"))
         if is_pre_appearance:
@@ -700,10 +705,11 @@ def build_storage_sample_item(
         if tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS and raw_target_lab == APPEARANCE_INSPECTION_LOCATION:
             raw_target_lab = ""
         staging_target = staging_target_by_tray_code.get(tray_code, {})
+        event_target_lab = target_lab_by_tray_code.get(tray_code, "")
         target_lab = "" if tray_completed else (
-            raw_target_lab
+            event_target_lab
+            or raw_target_lab
             or normalize_text(staging_target.get("target_lab"))
-            or target_lab_by_tray_code.get(tray_code, "")
         )
         target_experiment_code = "" if tray_completed else (
             normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))

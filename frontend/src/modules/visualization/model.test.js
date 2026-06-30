@@ -678,6 +678,155 @@ describe("visualization model", () => {
     expect(panels[0].trays[0]).toEqual(expect.objectContaining({ taskCode: "TASK-SALT", trayCode: "TRAY-SALT-001" }));
   });
 
+  test("keeps partial-axis completed trays visible in the lab process panel until all axes finish", () => {
+    const taskCode = "SYLU-2026-06-021";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const completedAxisCodes = ["X+", "X-", "Y+"];
+    const remainingAxisCodes = ["Y-", "Z+", "Z-"];
+    const panels = buildLabProcessPanels({
+      labNames: ["冲击一室"],
+      experiments: [
+        {
+          axis_codes: [...completedAxisCodes, ...remainingAxisCodes],
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击一室",
+          task_code: taskCode,
+        },
+      ],
+      experimentRuns: [
+        {
+          axis_codes: completedAxisCodes,
+          experiment_code: experimentCode,
+          run_no: "RUN-IMPACT-PARTIAL",
+          status: "实验已完成",
+          sub_experiment_code: `${experimentCode}-SUB-001`,
+          task_code: taskCode,
+        },
+      ],
+      experimentRunSteps: completedAxisCodes.map((axisCode, index) => ({
+        axis_code: axisCode,
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-PARTIAL",
+        status: "实验已完成",
+        step_order: index + 1,
+        sub_experiment_code: `${experimentCode}-SUB-001`,
+        task_code: taskCode,
+      })),
+      experimentRunTrays: [
+        {
+          experiment_code: experimentCode,
+          run_no: "RUN-IMPACT-PARTIAL",
+          run_tray_status: "实验已完成",
+          sub_experiment_code: `${experimentCode}-SUB-001`,
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode },
+      ],
+      schedules: [
+        {
+          axis_codes: completedAxisCodes,
+          device: "冲击一室",
+          experiment_code: experimentCode,
+          status: "实验已完成",
+          sub_experiment_code: `${experimentCode}-SUB-001`,
+          task_code: taskCode,
+        },
+        {
+          axis_codes: remainingAxisCodes,
+          device: "冲击一室",
+          experiment_code: experimentCode,
+          status: "已排程",
+          sub_experiment_code: `${experimentCode}-SUB-002`,
+          task_code: taskCode,
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "冲击一室",
+          status: "冲击试验部分完成 3/6轴",
+          task_code: taskCode,
+          trays: [
+            { quantity: 2, status: "冲击试验部分完成 3/6轴", tray_code: trayCode },
+          ],
+        },
+      ],
+    });
+
+    expect(panels[0]).toEqual(expect.objectContaining({
+      name: "冲击一室",
+      sampleCount: 1,
+      taskCount: 1,
+      trayCount: 1,
+    }));
+    expect(panels[0].trays[0]).toEqual(expect.objectContaining({
+      status: "冲击试验部分完成 3/6轴",
+      taskCode,
+      trayCode,
+    }));
+  });
+
+  test("does not project stale target labs over partial-axis completion in lab process panels", () => {
+    const taskCode = "SYLU-2026-07-001";
+    const impactExperimentCode = `${taskCode}-A`;
+    const vibrationExperimentCode = `${taskCode}-B`;
+    const trayCode = `${taskCode}-TP-002`;
+    const panels = buildLabProcessPanels({
+      labNames: ["振动二室"],
+      experiments: [
+        {
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击一室",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: vibrationExperimentCode,
+          experiment_name: "振动试验",
+          required_device: "振动二室",
+          task_code: taskCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: impactExperimentCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: vibrationExperimentCode, task_code: taskCode, tray_code: trayCode },
+      ],
+      schedules: [
+        { device: "冲击一室", experiment_code: impactExperimentCode, status: "实验进行中", task_code: taskCode },
+        { device: "振动二室", experiment_code: vibrationExperimentCode, status: "已排程", task_code: taskCode },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-002`,
+          location: "冲击一室",
+          status: "冲击试验部分完成 3/6轴",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "冲击试验部分完成 3/6轴",
+              target_experiment_code: vibrationExperimentCode,
+              target_lab: "振动二室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(panels[0].trays[0]).toEqual(expect.objectContaining({
+      status: "冲击试验部分完成 3/6轴",
+      taskCode,
+      trayCode,
+    }));
+    expect(panels[0].trays[0].steps.find((step) => step.label === "送至振动二室")).toBeUndefined();
+  });
+
   test("removes manufacturer-returned trays from laboratory process panels for that experiment", () => {
     const taskCode = "SYLU-2026-06-021";
     const experimentCode = `${taskCode}-A`;
@@ -1620,6 +1769,57 @@ describe("visualization model", () => {
     );
     expect(JSON.stringify(view)).not.toContain("TASK-004");
     expect(JSON.stringify(view)).not.toContain("暂存间");
+  });
+
+  test("keeps one visualization schedule color per task and separates different tasks", () => {
+    const view = buildLabScheduleThreeDayView({
+      labNames: ["冲击一室", "冲击二室", "振动一室"],
+      now: new Date("2026-06-29T10:00:00+08:00"),
+      schedules: [
+        {
+          id: "schedule-impact-a",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT-A",
+          device: "冲击一室",
+          start_at: "2026-06-29T14:00:00+08:00",
+          end_at: "2026-06-29T18:00:00+08:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-impact-b",
+          task_code: "SYLU-2026-06-021",
+          experiment_code: "EXP-IMPACT-B",
+          device: "冲击二室",
+          start_at: "2026-06-30T08:00:00+08:00",
+          end_at: "2026-06-30T11:30:00+08:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-vibration",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "EXP-VIB",
+          device: "振动一室",
+          start_at: "2026-06-29T14:00:00+08:00",
+          end_at: "2026-06-29T18:00:00+08:00",
+          status: "已排程",
+        },
+      ],
+    });
+
+    const task021Items = view.rows
+      .flatMap((row) => row.slots)
+      .flatMap((slot) => slot.items.map((item) => ({ item, slot })))
+      .filter(({ item }) => item.taskCode === "SYLU-2026-06-021");
+    const task07001Item = view.rows
+      .flatMap((row) => row.slots)
+      .flatMap((slot) => slot.items.map((item) => ({ item, slot })))
+      .find(({ item }) => item.taskCode === "SYLU-2026-07-001");
+
+    expect(task021Items).toHaveLength(2);
+    expect(new Set(task021Items.map(({ item }) => item.color)).size).toBe(1);
+    expect(new Set(task021Items.map(({ slot }) => slot.taskColor)).size).toBe(1);
+    expect(task07001Item?.item.color).toBeTruthy();
+    expect(task07001Item?.item.color).not.toBe(task021Items[0].item.color);
   });
 
   test("marks visualization schedule idle slots as maintenance or disabled from device state", () => {

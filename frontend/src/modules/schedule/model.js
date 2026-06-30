@@ -2081,7 +2081,19 @@ function createScheduleRecord({
   return { experiments: nextExperiments, schedules: nextSchedules, streams: nextStreams, tasks: nextTasks };
 }
 
-function updateScheduleRecord({ devices = [], experiments, form, tasks, schedules, streams, now = new Date(), samples = [], experimentTrays = [] }) {
+function updateScheduleRecord({
+  devices = [],
+  experiments,
+  experimentRuns = [],
+  experimentRunTrays = [],
+  experimentTrays = [],
+  form,
+  tasks,
+  schedules,
+  streams,
+  now = new Date(),
+  samples = [],
+}) {
   const scheduleId = normalizeText(form?.id);
   const nextSchedules = Array.isArray(schedules) ? schedules.map((schedule) => ({ ...schedule })) : [];
   const target = nextSchedules.find((schedule) => normalizeText(schedule?.id) === scheduleId);
@@ -2090,6 +2102,8 @@ function updateScheduleRecord({ devices = [], experiments, form, tasks, schedule
   }
   if (
     scheduleExperimentHasStarted({
+      experimentRuns,
+      experimentRunTrays,
       experimentTrays,
       samples,
       schedule: target,

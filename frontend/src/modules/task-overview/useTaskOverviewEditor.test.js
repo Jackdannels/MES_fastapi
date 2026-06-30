@@ -138,6 +138,34 @@ describe("useTaskOverviewEditor", () => {
     );
   });
 
+  test("saveEdit rejects more than 99 pasted sample codes", async () => {
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [{ code: "TASK-001", test_type: "旧类型", name: "旧类型", required_device: "旧类型", sample_count: 1 }],
+      [STORAGE_KEYS.samples]: [{ id: "sample-1", code: "TASK-001-SP-001", task_code: "TASK-001", trays: [] }],
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const { openEdit, editForm, saveEdit, persistSnapshot, editError } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    openEdit({
+      taskCode: "TASK-001",
+      taskType: "旧类型",
+      sampleCount: 1,
+      sampleCodes: ["TASK-001-SP-001"],
+    });
+    editForm.value.sampleCount = 0;
+    editForm.value.sampleCodesText = Array.from({ length: 100 }, (_, index) =>
+      `TASK-001-SP-${String(index + 1).padStart(3, "0")}`
+    ).join("\n");
+
+    await saveEdit("TASK-001");
+
+    expect(persistSnapshot).not.toHaveBeenCalled();
+    expect(editError.value).toBe("样品编号最多为 99 个");
+  });
+
   test("saveEdit rejects sample count changes after storage is confirmed with experiments", async () => {
     const snapshot = {
       [STORAGE_KEYS.tasks]: [

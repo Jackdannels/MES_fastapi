@@ -34,6 +34,32 @@ function resolvePaused(paused) {
   return Boolean(unref(paused));
 }
 
+function normalizeSource(value) {
+  return String(value || "").trim();
+}
+
+function normalizeRequestIds(value) {
+  const resolved = typeof value === "function" ? value() : unref(value);
+  if (resolved instanceof Set) {
+    return resolved;
+  }
+  if (Array.isArray(resolved)) {
+    return new Set(resolved.map((item) => String(item || "").trim()).filter(Boolean));
+  }
+  const requestId = String(resolved || "").trim();
+  return requestId ? new Set([requestId]) : new Set();
+}
+
+function shouldIgnoreUpdate(payload, options) {
+  const ignoredSource = normalizeSource(options.ignoreSource);
+  const source = normalizeSource(payload?.source);
+  const requestId = String(payload?.requestId || "").trim();
+  if (!ignoredSource || !source || source !== ignoredSource || !requestId) {
+    return false;
+  }
+  return normalizeRequestIds(options.ignoreRequestIds).has(requestId);
+}
+
 function useStorageSnapshotRefresh(options = {}) {
   const watchedKeys = new Set(normalizeKeys(options.keys));
   const refresh = typeof options.refresh === "function" ? options.refresh : () => {};
@@ -99,6 +125,9 @@ function useStorageSnapshotRefresh(options = {}) {
   };
 
   const requestRefresh = (payload = {}) => {
+    if (shouldIgnoreUpdate(payload, options)) {
+      return;
+    }
     const incomingKeys = normalizeKeys(payload?.keys);
     if (!shouldRefreshForKeys(watchedKeys, incomingKeys)) {
       return;

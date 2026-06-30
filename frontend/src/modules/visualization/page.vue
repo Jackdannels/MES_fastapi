@@ -346,6 +346,7 @@ const VISUALIZATION_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_trays,
+  STORAGE_KEYS.experiment_run_steps,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.staging_events,
@@ -412,6 +413,7 @@ const labScreens = computed(() => {
     experiments: snapshot[STORAGE_KEYS.experiments],
     experimentRuns: snapshot[STORAGE_KEYS.experiment_runs],
     experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+    experimentRunSteps: snapshot[STORAGE_KEYS.experiment_run_steps],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
     stagingEvents: snapshot[STORAGE_KEYS.staging_events],
@@ -439,6 +441,7 @@ const stagingSamplesView = computed(() => {
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
+    experimentRunSteps: snapshot[STORAGE_KEYS.experiment_run_steps],
     experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
@@ -456,6 +459,7 @@ const currentLabTaskView = computed(() => {
     experiments: snapshot[STORAGE_KEYS.experiments],
     experimentRuns: snapshot[STORAGE_KEYS.experiment_runs],
     experimentRunTrays: snapshot[STORAGE_KEYS.experiment_run_trays],
+    experimentRunSteps: snapshot[STORAGE_KEYS.experiment_run_steps],
     experimentTrays: snapshot[STORAGE_KEYS.experiment_trays],
     schedules: snapshot[STORAGE_KEYS.schedules],
   });
@@ -1105,8 +1109,11 @@ const compactTimeRange = (value) => {
   return matches.length >= 2 ? `${matches[0]}-${matches.at(-1)}` : String(value || "").trim();
 };
 
+const scheduleSlotTaskColor = (slot) =>
+  String(slot?.taskColor || slot?.items?.find((item) => item?.color)?.color || "").trim();
+
 const renderScheduleItem = (item, slot, compact) =>
-  h("div", { class: "visual-schedule-task", style: item?.color ? { "--schedule-task-color": item.color } : null }, [
+  h("div", { class: "visual-schedule-task", style: item?.color || slot.taskColor ? { "--schedule-task-color": item?.color || slot.taskColor } : null }, [
     h("strong", item?.taskCode || slot.label || "-"),
     compact ? null : h("span", item?.experimentLabel || "-"),
     h("small", compactTimeRange(item?.timeRange || slot.title)),
@@ -1120,14 +1127,15 @@ const renderScheduleSlot = (slot, compact) => {
   const isPlainCell = stateLabel === "已排程" || stateLabel === "空闲";
   const hidesStateBadge = normalizedState === "running";
   const isStatusOnlyCell = visibleItems.length === 0 && ["maintenance", "disabled"].includes(normalizedState);
-  return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : ""] }, [
+  const taskColor = scheduleSlotTaskColor(slot);
+  return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : ""], style: taskColor ? { "--schedule-task-color": scheduleSlotTaskColor(slot) } : null }, [
     isPlainCell || isStatusOnlyCell || hidesStateBadge ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
     ...(visibleItems.length
       ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
       : isStatusOnlyCell
         ? [h("div", { class: "visual-schedule-status-only" }, stateLabel)]
         : slot.state !== "idle"
-        ? [h("div", { class: "visual-schedule-task" }, [h("strong", slot.label || "-"), h("small", compactTimeRange(slot.title))])]
+        ? [h("div", { class: "visual-schedule-task", style: slot.taskColor ? { "--schedule-task-color": slot.taskColor } : null }, [h("strong", slot.label || "-"), h("small", compactTimeRange(slot.title))])]
         : [h("div", { class: "visual-schedule-idle" }, "空闲")]),
     slot.overflowCount > 0 ? h("div", { class: "visual-schedule-overflow" }, `+${slot.overflowCount}`) : null,
   ]);
@@ -1223,11 +1231,13 @@ const LabScheduleScreen = {
 };
 
 const taskPlanTrayText = (entry) => (entry.trays?.length ? entry.trays.join(" / ") : "待分配托盘");
+const taskPlanRowToneClass = (taskIndex) => `visual-task-plan-row-tone is-tone-${taskIndex % 2 === 0 ? "a" : "b"}`;
 const flattenTaskPlanRows = (tasks) =>
-  tasks.flatMap((task) =>
+  tasks.flatMap((task, taskIndex) =>
     (task.experiments || []).map((experiment) => ({
       ...experiment,
       taskCode: task.taskCode,
+      taskToneClass: taskPlanRowToneClass(taskIndex),
     })),
   );
 const taskPlanSummary = (tasks) => ({
@@ -1293,7 +1303,7 @@ const TodayTaskPlanScreen = {
                   h("div", { class: "visual-task-plan-table-head is-flat" }, ["任务编号", "实验类型", "时间", "试验间", "托盘信息", "样品数"].map((label) => h("span", label))),
                   ...(taskRows.length
                     ? taskRows.map((row) =>
-                      h("div", { class: "visual-task-plan-row is-flat", key: `${row.taskCode}-${row.experimentCode || row.experimentType}` }, [
+                      h("div", { class: ["visual-task-plan-row", "is-flat", row.taskToneClass], key: `${row.taskCode}-${row.experimentCode || row.experimentType}` }, [
                         h("strong", row.taskCode),
                         h("span", row.experimentType),
                         h("span", row.time),

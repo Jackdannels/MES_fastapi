@@ -9,6 +9,7 @@ from app.services.appearance_inspection import (
 )
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_operations import clear_fixture_ready_marker
+from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
 
 
 COMPLETED_STATUS = "实验已完成"
@@ -49,6 +50,10 @@ def normalize_axis_codes(value: Any) -> list[str]:
 
 def completion_history_detail(task_code: Any, experiment_name: Any) -> str:
     return f"{normalize_text(task_code)} / {normalize_text(experiment_name)} / {COMPLETED_STATUS}"
+
+
+def axis_partial_completion_status(experiment_name: Any, completed_count: int, total_count: int) -> str:
+    return f"{normalize_text(experiment_name)}部分完成 {completed_count}/{total_count}轴"
 
 
 def run_tray_completed_statuses_for_experiment(
@@ -163,6 +168,7 @@ def completed_axis_codes_for_completion(
     experiment_runs: list[dict[str, Any]],
     experiment_run_steps: list[dict[str, Any]],
     experiment_run_trays: list[dict[str, Any]],
+    include_all_sub_experiments: bool = False,
     sub_experiment_code: str = "",
     task_code: str,
 ) -> set[str]:
@@ -175,23 +181,64 @@ def completed_axis_codes_for_completion(
         for run in experiment_runs
         if normalize_text(run.get("task_code") or run.get("task_no")) == normalized_task_code
         and normalize_text(run.get("experiment_code") or run.get("experiment_no")) == normalized_experiment_code
-        and (not normalized_sub_experiment_code or record_sub_experiment_code(run) == normalized_sub_experiment_code)
+        and (
+            include_all_sub_experiments
+            or not normalized_sub_experiment_code
+            or record_sub_experiment_code(run) == normalized_sub_experiment_code
+        )
         and normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
     }
+    tray_codes_by_run_no: dict[str, set[str]] = {}
+    for relation in experiment_run_trays:
+        if (
+            normalize_text(relation.get("task_code") or relation.get("task_no")) != normalized_task_code
+            or normalize_text(relation.get("experiment_code") or relation.get("experiment_no")) != normalized_experiment_code
+            or (
+                not include_all_sub_experiments
+                and normalized_sub_experiment_code
+                and record_sub_experiment_code(relation) != normalized_sub_experiment_code
+            )
+        ):
+            continue
+        relation_run_no = normalize_text(relation.get("run_no") or relation.get("runNo"))
+        relation_tray_code = normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+        if relation_run_no and relation_tray_code:
+            tray_codes_by_run_no.setdefault(relation_run_no, set()).add(relation_tray_code)
+    for run_no, run in run_by_no.items():
+        for tray_code in normalize_axis_codes(run.get("tray_codes") or run.get("trayCodes")):
+            tray_codes_by_run_no.setdefault(run_no, set()).add(tray_code)
+
+    def step_matches_affected_tray_scope(step: dict[str, Any]) -> bool:
+        if not affected_tray_codes:
+            return True
+        step_run_no = normalize_text(step.get("run_no") or step.get("runNo"))
+        if normalized_current_run_no and step_run_no == normalized_current_run_no:
+            return True
+        return bool(tray_codes_by_run_no.get(step_run_no, set()) & affected_tray_codes)
+
     completed_axes = {
         normalize_text(step.get("axis_code") or step.get("axisCode"))
         for step in experiment_run_steps
         if normalize_text(step.get("task_code") or step.get("task_no")) == normalized_task_code
         and normalize_text(step.get("experiment_code") or step.get("experiment_no")) == normalized_experiment_code
-        and (not normalized_sub_experiment_code or record_sub_experiment_code(step) == normalized_sub_experiment_code)
+        and (
+            include_all_sub_experiments
+            or not normalized_sub_experiment_code
+            or record_sub_experiment_code(step) == normalized_sub_experiment_code
+        )
         and normalize_text(step.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES
+        and step_matches_affected_tray_scope(step)
         and normalize_text(step.get("axis_code") or step.get("axisCode"))
     }
     for relation in experiment_run_trays:
         if (
             normalize_text(relation.get("task_code") or relation.get("task_no")) != normalized_task_code
             or normalize_text(relation.get("experiment_code") or relation.get("experiment_no")) != normalized_experiment_code
-            or (normalized_sub_experiment_code and record_sub_experiment_code(relation) != normalized_sub_experiment_code)
+            or (
+                not include_all_sub_experiments
+                and normalized_sub_experiment_code
+                and record_sub_experiment_code(relation) != normalized_sub_experiment_code
+            )
         ):
             continue
         tray_code = normalize_text(relation.get("tray_code") or relation.get("tray_no"))
@@ -202,6 +249,61 @@ def completed_axis_codes_for_completion(
         if relation_completed or (normalized_current_run_no and run_no == normalized_current_run_no):
             completed_axes.update(run_axis_codes(run_by_no.get(run_no)))
     return {axis_code for axis_code in completed_axes if axis_code}
+
+
+def full_axis_codes_for_experiment(
+    experiments: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
+    *,
+    experiment_code: str,
+    task_code: str,
+) -> list[str]:
+    return required_axis_codes_for_completion(
+        experiments,
+        schedules,
+        experiment_code=experiment_code,
+        sub_experiment_code="",
+        task_code=task_code,
+    )
+
+
+def axis_completion_status_for_trays(
+    *,
+    affected_tray_codes: set[str],
+    current_run_no: str,
+    experiment_code: str,
+    experiment_name: str,
+    experiment_runs: list[dict[str, Any]],
+    experiment_run_steps: list[dict[str, Any]],
+    experiment_run_trays: list[dict[str, Any]],
+    experiments: list[dict[str, Any]],
+    schedules: list[dict[str, Any]],
+    task_code: str,
+) -> str:
+    required_axes = full_axis_codes_for_experiment(
+        experiments,
+        schedules,
+        experiment_code=experiment_code,
+        task_code=task_code,
+    )
+    if not required_axes:
+        return ""
+    completed_axes = completed_axis_codes_for_completion(
+        affected_tray_codes=affected_tray_codes,
+        current_run_no=current_run_no,
+        experiment_code=experiment_code,
+        experiment_runs=experiment_runs,
+        experiment_run_steps=experiment_run_steps,
+        experiment_run_trays=experiment_run_trays,
+        include_all_sub_experiments=True,
+        sub_experiment_code="",
+        task_code=task_code,
+    )
+    if not completed_axes:
+        return ""
+    if set(required_axes).issubset(completed_axes):
+        return COMPLETED_STATUS
+    return axis_partial_completion_status(experiment_name, len(completed_axes), len(required_axes))
 
 
 def axis_completion_is_incomplete(
@@ -238,7 +340,29 @@ def axis_completion_is_incomplete(
     )
     if not completed_axes:
         return False
-    return not set(required_axes).issubset(completed_axes)
+    if not set(required_axes).issubset(completed_axes):
+        return True
+    full_required_axes = full_axis_codes_for_experiment(
+        experiments,
+        schedules,
+        experiment_code=experiment_code,
+        task_code=task_code,
+    )
+    if full_required_axes:
+        full_completed_axes = completed_axis_codes_for_completion(
+            affected_tray_codes=affected_tray_codes,
+            current_run_no=current_run_no,
+            experiment_code=experiment_code,
+            experiment_runs=experiment_runs,
+            experiment_run_steps=experiment_run_steps,
+            experiment_run_trays=experiment_run_trays,
+            include_all_sub_experiments=True,
+            sub_experiment_code="",
+            task_code=task_code,
+        )
+        if not set(full_required_axes).issubset(full_completed_axes):
+            return True
+    return False
 
 
 def tray_assigned_experiments_are_completed(
@@ -410,9 +534,28 @@ def complete_storage_laboratory_experiment(
         sub_experiment_code=normalized_sub_experiment_code,
         task_code=normalized_task_code,
     )
+    axis_tray_completion_status = ""
+    if axis_run_requires_sub_experiment:
+        axis_tray_completion_status = axis_completion_status_for_trays(
+            affected_tray_codes=affected_tray_codes,
+            current_run_no=normalized_run_no,
+            experiment_code=normalized_experiment_code,
+            experiment_name=experiment_name,
+            experiment_runs=experiment_runs,
+            experiment_run_steps=snapshot.get("experiment_run_steps", []),
+            experiment_run_trays=experiment_run_trays,
+            experiments=experiments,
+            schedules=schedules,
+            task_code=normalized_task_code,
+        )
     next_experiment_status = RUNNING_STATUS if axis_completion_incomplete else experiment_status_for_completed_trays(
         scoped_tray_codes,
         completed_experiment_tray_codes,
+    )
+    completed_scope_trays_satisfy_schedule = (
+        experiment_trays_are_completed(scoped_tray_codes, completed_experiment_tray_codes)
+        if scoped_tray_codes
+        else True
     )
     completed_run_schedule_id = ""
     if normalized_run_no:
@@ -456,8 +599,10 @@ def complete_storage_laboratory_experiment(
         and bool(normalized_sub_experiment_code)
         and next_experiment_status != COMPLETED_STATUS
     )
-    sample_completion_status = PARTIAL_AXIS_CONTINUATION_STATUS if is_partial_axis_continuation else COMPLETED_STATUS
-    should_write_completion_history = not is_partial_axis_continuation
+    sample_completion_status = (
+        axis_tray_completion_status
+        or (PARTIAL_AXIS_CONTINUATION_STATUS if is_partial_axis_continuation else COMPLETED_STATUS)
+    )
 
     scoped_sample_codes = {
         normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
@@ -489,7 +634,7 @@ def complete_storage_laboratory_experiment(
                 return True
         return False
 
-    detail = completion_history_detail(normalized_task_code, experiment_name)
+    detail = f"{normalized_task_code} / {experiment_name} / {sample_completion_status}"
     affected_sample_count = 0
     for sample in samples:
         if not sample_matches_current_experiment(sample):
@@ -527,13 +672,13 @@ def complete_storage_laboratory_experiment(
             sample["flow_status"] = sample_completion_status
         sample["updated_at"] = completed_time
         sample["trays"] = next_trays
-        if should_write_completion_history:
+        if sample_completion_status != PARTIAL_AXIS_CONTINUATION_STATUS:
             history_entry = {
                 "action": COMPLETION_ACTION,
                 "detail": detail,
                 "location": previous_location,
                 "owner": normalize_text(sample.get("owner")),
-                "status": COMPLETED_STATUS,
+                "status": sample_completion_status,
                 "time": completed_time,
             }
             history_tray_codes = sorted({code for code in touched_tray_codes if code})
@@ -564,16 +709,25 @@ def complete_storage_laboratory_experiment(
         else item
         for item in experiments
     ]
-    schedules = [
-        {
+    def next_schedule_record(item: dict[str, Any]) -> dict[str, Any]:
+        if not schedule_matches_completed_scope(item):
+            return item
+        if completed_scope_trays_satisfy_schedule:
+            return {
+                **item,
+                "status": COMPLETED_STATUS,
+                "updated_at": completed_time,
+            }
+        schedule_key = normalize_text(item.get("id") or item.get("schedule_id") or item.get("scheduleId"))
+        if completed_run_schedule_id and schedule_key != completed_run_schedule_id:
+            return item
+        return {
             **item,
-            "status": COMPLETED_STATUS,
+            "status": RUNNING_STATUS,
             "updated_at": completed_time,
         }
-        if schedule_matches_completed_scope(item)
-        else item
-        for item in schedules
-    ]
+
+    schedules = [next_schedule_record(item) for item in schedules]
     def run_matches_completion(item: dict[str, Any]) -> bool:
         if normalized_run_no:
             return run_matches_request(item)
@@ -662,6 +816,18 @@ def complete_storage_laboratory_experiment(
                     "updated_at": completed_time,
                 }
             )
+
+    if normalized_run_no:
+        experiment_runs, experiment_run_trays = close_superseded_running_runs_for_trays(
+            experiment_runs=experiment_runs,
+            experiment_run_trays=experiment_run_trays,
+            task_code=normalized_task_code,
+            experiment_code=normalized_experiment_code,
+            sub_experiment_code=normalized_sub_experiment_code,
+            tray_codes=affected_tray_codes,
+            current_run_no=normalized_run_no,
+            ended_at=completed_time,
+        )
 
     return {
         "affectedSampleCount": affected_sample_count,

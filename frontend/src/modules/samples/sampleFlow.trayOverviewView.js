@@ -4,7 +4,9 @@ import { normalizeLifecycleStatus } from "./sampleFlow.status";
 import {
   compareText,
   getSampleTrayList,
+  resolveFlowStatusRank,
 } from "./sampleFlow.trayScope";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { resolveStatusClass } from "./sampleFlow.sampleTableHelpers";
 
 function buildSamplesTrayOverviewView(input = {}) {
@@ -34,7 +36,9 @@ function buildSamplesTrayOverviewView(input = {}) {
         return;
       }
       const rawTrayStatus = normalizeText(tray?.status || tray?.tray_status || tray?.trayStatus);
-      const trayStatus = rawTrayStatus ? normalizeLifecycleStatus(sample?.location, rawTrayStatus) : "";
+      const trayStatus = isAxisPartialProgressStatus(rawTrayStatus)
+        ? rawTrayStatus
+        : rawTrayStatus ? normalizeLifecycleStatus(sample?.location, rawTrayStatus) : "";
       if (isReturnedTrayStatus(trayStatus)) {
         return;
       }
@@ -53,7 +57,9 @@ function buildSamplesTrayOverviewView(input = {}) {
       if (!row.sampleCodes.includes(sampleCode)) {
         row.sampleCodes.push(sampleCode);
       }
-      if (!row.status) {
+      const rowStatusRank = resolveFlowStatusRank(sample?.location, row.status);
+      const trayStatusRank = resolveFlowStatusRank(sample?.location, trayStatus);
+      if (!row.status || trayStatusRank > rowStatusRank) {
         row.status = trayStatus;
       }
     });

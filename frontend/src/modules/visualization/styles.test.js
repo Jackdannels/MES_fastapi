@@ -26,10 +26,30 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-schedule-task strong\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*14px;/s);
     expect(source).toMatch(/\.visual-schedule-task span\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*13px;[^}]*font-weight:\s*900;/s);
     expect(source).toMatch(/\.visual-schedule-task small\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*12px;[^}]*font-weight:\s*900;/s);
-    expect(source).toMatch(/\.visual-schedule-slot\.state-running\s*{[^}]*background:\s*rgba\(20,\s*83,\s*45,\s*0\.62\);/s);
+    const runningSlotRule = source.slice(
+      source.indexOf(".visual-schedule-slot.state-running {"),
+      source.indexOf(".visual-schedule-slot.state-maintenance"),
+    );
+    expect(runningSlotRule).toContain("var(--schedule-task-color)");
     expect(source).toMatch(/\.visual-schedule-slot\.is-idle \.visual-schedule-idle\s*{[^}]*place-items:\s*center;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*font-size:\s*13px;/s);
     expect(source).toMatch(/\.visual-schedule-day\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*justify-items:\s*center;/s);
     expect(source).toMatch(/\.visual-schedule-day small\s*{[^}]*position:\s*absolute;[^}]*right:\s*10px;/s);
+  });
+
+  test("schedule screen uses task color on every occupied cell", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(pageSource).toContain("scheduleSlotTaskColor(slot)");
+    expect(pageSource).toContain("\"--schedule-task-color\": scheduleSlotTaskColor(slot)");
+    expect(pageSource).toContain("\"--schedule-task-color\": item?.color || slot.taskColor");
+    const occupiedSlotRule = source.slice(
+      source.indexOf(".visual-schedule-slot.is-planned,"),
+      source.indexOf(".visual-schedule-slot.state-maintenance"),
+    );
+    expect(occupiedSlotRule).toContain(".visual-schedule-slot.state-busy");
+    expect(occupiedSlotRule).toContain(".visual-schedule-slot.state-stacked");
+    expect(occupiedSlotRule).toContain("var(--schedule-task-color)");
   });
 
   test("visualization cells constrain long text inside their panels", () => {
@@ -177,6 +197,9 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-task-plan-table\.is-empty\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
     expect(pageSource).toContain("taskRows.length ? \"\" : \"is-empty\"");
     expect(source).toMatch(/\.visual-task-plan-row\.is-flat\s*{[^}]*min-height:\s*76px;/s);
+    expect(pageSource).toContain("visual-task-plan-row-tone");
+    expect(source).toContain(".visual-task-plan-row.is-tone-a");
+    expect(source).toContain(".visual-task-plan-row.is-tone-b");
     expect(source).toMatch(/\.visual-task-plan-row strong\s*{[^}]*width:\s*100%;[^}]*font-size:\s*16px;/s);
     expect(source).toMatch(/\.visual-task-plan-row span\s*{[^}]*width:\s*100%;[^}]*font-size:\s*15px;/s);
     expect(source).toMatch(/\.visual-task-plan-table-head span\s*{[^}]*font-size:\s*14px;/s);

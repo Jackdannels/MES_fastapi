@@ -199,6 +199,7 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, task
     schedules: snapshot.schedules,
     experiments: snapshot.experiments,
     experimentRuns: snapshot.experimentRuns,
+    experimentRunSteps: snapshot.experimentRunSteps,
     experimentRunTrays: snapshot.experimentRunTrays,
     experimentTrays: snapshot.experimentTrays,
     samples: snapshot.samples,
@@ -285,6 +286,7 @@ function buildLabCurrentTaskMatrixView(input = {}) {
   const snapshot = {
     devices: asArray(input.devices),
     experimentRuns: asArray(input.experimentRuns || input.experiment_runs),
+    experimentRunSteps: asArray(input.experimentRunSteps || input.experiment_run_steps),
     experimentRunTrays: asArray(input.experimentRunTrays || input.experiment_run_trays),
     experimentTrays: asArray(input.experimentTrays || input.experiment_trays),
     experiments: asArray(input.experiments),

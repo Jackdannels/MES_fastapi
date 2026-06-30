@@ -2017,6 +2017,86 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
+  test("updates tray flow to laboratory arrival after comparing a partially completed axis tray", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-07-001", name: "振动轴向任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+          experiment_code: "SYLU-2026-07-001-VIB",
+          experiment_name: "振动试验",
+          task_code: "SYLU-2026-07-001",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        {
+          experiment_code: "SYLU-2026-07-001-VIB",
+          task_code: "SYLU-2026-07-001",
+          tray_code: "SYLU-2026-07-001-TP-002",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-07-001-SP-002",
+          flow_status: "振动试验部分完成 3/6轴",
+          history: [
+            {
+              action: "实验完成",
+              detail: "SYLU-2026-07-001 / 振动试验 / 振动试验部分完成 3/6轴",
+              location: "振动一室",
+              status: "振动试验部分完成 3/6轴",
+              time: "2026-06-29 16:12:56",
+              tray_code: "SYLU-2026-07-001-TP-002",
+            },
+          ],
+          location: "振动一室",
+          owner: "王工",
+          status: "振动试验部分完成 3/6轴",
+          task_code: "SYLU-2026-07-001",
+          trays: [
+            {
+              quantity: 1,
+              status: "振动试验部分完成 3/6轴",
+              target_experiment_code: "SYLU-2026-07-001-VIB",
+              target_lab: "振动一室",
+              tray_code: "SYLU-2026-07-001-TP-002",
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          axis_codes: ["y-", "z+", "z-"],
+          device: "振动一室",
+          experiment_code: "SYLU-2026-07-001-VIB",
+          id: "schedule-vibration-rest",
+          lab_code: "LAB_VIBRATION_1",
+          start_at: "2026-06-30 12:00:00",
+          task_code: "SYLU-2026-07-001",
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("SYLU-2026-07-001-TP-002");
+    await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-compare-complete"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toBe(
+      "当前托盘：SYLU-2026-07-001-TP-002 | 当前状态：已到达实验室",
+    );
+  });
+
   test("collapses many task-list trays and opens a full tray detail modal", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({

@@ -2796,9 +2796,9 @@ def test_mysql_mark_axis_run_ended_marks_current_schedule_complete_without_finis
     MySQLMqEventRepository().mark_run_ended("RUN-AXIS", "2026-06-24 10:00:00", axis_code="y+")
 
     written = storage.writes[-1]
-    assert written["mes.samples"][0]["status"] == "送至实验室"
-    assert written["mes.samples"][0]["flow_status"] == "送至实验室"
-    assert written["mes.samples"][0]["trays"][0]["status"] == "送至实验室"
+    assert written["mes.samples"][0]["status"] == "冲击试验部分完成 2/4轴"
+    assert written["mes.samples"][0]["flow_status"] == "冲击试验部分完成 2/4轴"
+    assert written["mes.samples"][0]["trays"][0]["status"] == "冲击试验部分完成 2/4轴"
     assert not any(
         entry.get("detail") == "TASK-AXIS / 冲击试验 / 实验已完成"
         for entry in written["mes.samples"][0]["history"]
@@ -3002,7 +3002,7 @@ def test_mysql_mark_run_ended_keeps_experiment_open_when_bound_tray_is_not_finis
 
     written = storage.writes[-1]
     assert written["mes.experiments"][0]["status"] == "实验进行中"
-    assert written["mes.schedules"][0]["status"] == "实验已完成"
+    assert written["mes.schedules"][0]["status"] == "实验进行中"
     assert written["mes.samples"][0]["location"] == "盐雾试验室"
     assert written["mes.samples"][0]["status"] == "实验已完成"
     assert written["mes.samples"][0]["flow_status"] == "实验已完成"

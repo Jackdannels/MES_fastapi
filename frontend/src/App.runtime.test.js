@@ -176,6 +176,75 @@ describe("App runtime boundary", () => {
     expect(wrapper.find(".sidebar").exists()).toBe(false);
   });
 
+  test.each([
+    {
+      module: "staging",
+      name: "staging-management",
+      path: "/staging-management",
+      title: "暂存间系统",
+    },
+    {
+      module: "appearance",
+      name: "appearance-inspection",
+      path: "/appearance-inspection",
+      title: "外观检测间系统",
+    },
+  ])("shared error sample handling on $title uses withdraw lookup", async (routeInfo) => {
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/trays/TP-ERR-001/withdraw-dispatch") && (options.method || "GET") === "GET") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tray: {
+              trayNo: "TP-ERR-001",
+              trayStatus: "送至实验室",
+              trayDisplayStatus: "振动一室",
+              taskNo: "TASK-ERR",
+              taskName: "出错样品撤回",
+              sampleCount: 1,
+              experimentLabels: ["振动试验"],
+              experimentCodes: ["TASK-ERR-A"],
+            },
+            destinations: [],
+          }),
+        };
+      }
+      if (url.includes("/api/transfer-area/trays/TP-ERR-001/dispatch") && (options.method || "GET") === "GET") {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ detail: "该托盘当前不在接驳区，不能从接驳区出库" }),
+        };
+      }
+      throw new Error(`Unhandled request: ${url}`);
+    }));
+    reactiveRoute.meta = { module: routeInfo.module, title: routeInfo.title };
+    reactiveRoute.name = routeInfo.name;
+    reactiveRoute.path = routeInfo.path;
+
+    mountApp();
+    await nextTick();
+
+    await wrapper.get('[data-testid="staging-error-sample"]').trigger("click");
+    await nextTick();
+    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("TP-ERR-001");
+    await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("振动一室");
+    expect(wrapper.text()).not.toContain("该托盘当前不在接驳区，不能从接驳区出库");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/trays/TP-ERR-001/withdraw-dispatch"),
+      expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
+    );
+    expect(fetch.mock.calls.some(([input, options = {}]) =>
+      String(input).includes("/api/transfer-area/trays/TP-ERR-001/dispatch") && (options.method || "GET") === "GET"
+    )).toBe(false);
+  });
+
   test("renders laboratory routes in the standalone module shell", async () => {
     reactiveRoute.meta = { module: "laboratory", title: "试验室操作台", subtitle: "查看当前试验室任务与实验准备流程。" };
     reactiveRoute.name = "laboratory";

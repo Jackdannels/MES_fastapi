@@ -25,6 +25,7 @@ const createEmptyEditForm = () => ({
 });
 
 const MAX_SAMPLE_COUNT = 99;
+const SAMPLE_CODE_LIMIT_MESSAGE = `样品编号最多为 ${MAX_SAMPLE_COUNT} 个`;
 const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
 
 // 样品数、托盘数等编辑输入统一归一化为非负整数。
@@ -376,10 +377,14 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
         .filter((experiment) => experiment.experimentCode);
 
       const inputCodes = uniqueCodes(splitCodeText(editForm.value.sampleCodesText));
+      if (inputCodes.length > MAX_SAMPLE_COUNT) {
+        showEditError(SAMPLE_CODE_LIMIT_MESSAGE);
+        return;
+      }
       let desiredCount = normalizeCount(editForm.value.sampleCount);
       if (desiredCount <= 0) {
         // 未明确填写数量时，以用户录入的样品编号数为准。
-        desiredCount = inputCodes.length;
+        desiredCount = Math.min(inputCodes.length, MAX_SAMPLE_COUNT);
       }
 
       let finalCodes = inputCodes.slice(0, desiredCount || inputCodes.length);

@@ -145,7 +145,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -273,6 +273,17 @@ const toggleSampleCodesPopover = (row) => {
 
 const samplePopoverOpensAbove = (index) => index >= TRAY_PAGE_SIZE - 2;
 
+const closeSampleCodesPopoverOnOutsideClick = (event) => {
+  if (!openSampleCodesTrayCode.value) {
+    return;
+  }
+  const target = event?.target;
+  if (target instanceof Element && target.closest(".tray-sample-summary")) {
+    return;
+  }
+  openSampleCodesTrayCode.value = "";
+};
+
 const visibleSampleCodes = (row) => {
   const codes = allSampleCodes(row);
   if (!codes.length) {
@@ -287,6 +298,14 @@ const visibleSampleCodes = (row) => {
 const selectTray = (trayCode) => {
   selectedTrayCode.value = String(trayCode || "").trim();
 };
+
+onMounted(() => {
+  document.addEventListener("click", closeSampleCodesPopoverOnOutsideClick);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("click", closeSampleCodesPopoverOnOutsideClick);
+});
 
 watch(
   () => selectedTaskCode.value,

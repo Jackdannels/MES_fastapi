@@ -1,3 +1,4 @@
+import { isAxisProgressIncomplete, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 import { asArray, normalizeText, resolveExperimentCode, resolveTaskCode, resolveTrayCode } from "./sharedModel";
 
@@ -67,16 +68,58 @@ const sampleHasCompletedExperiment = (sample, relation) => {
     const parsed = parseExperimentHistoryDetail(entry?.detail);
     return parsed?.taskCode === taskCode
       && parsed?.experimentName === experimentName
-      && normalizeLifecycleStatus("", parsed?.status) === "实验已完成";
+    && normalizeLifecycleStatus("", parsed?.status) === "实验已完成";
   });
 };
-const relationIsCompletedByRunTray = ({ experimentRunTrays, relation }) =>
-  asArray(experimentRunTrays).some((entry) =>
-    resolveTaskCode(entry) === resolveTaskCode(relation)
-    && resolveExperimentCode(entry) === resolveExperimentCode(relation)
-    && resolveTrayCode(entry) === resolveTrayCode(relation)
-    && EXPERIMENT_TRAY_TERMINAL_STATUSES.has(normalizeLifecycleStatus("", resolveRelationStatus(entry))),
-  );
+const relationHasIncompleteAxisProgress = ({
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays = [],
+  experiments = [],
+  relation,
+  schedules = [],
+}) => isAxisProgressIncomplete(resolveAxisProgress({
+  experiment: relation?.experiment,
+  experimentCode: resolveExperimentCode(relation),
+  experimentRuns,
+  experimentRunSteps,
+  experimentRunTrays,
+  experiments,
+  schedules,
+  taskCode: resolveTaskCode(relation),
+  trayCode: resolveTrayCode(relation),
+}));
+const relationIsCompletedByRunTray = ({
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays,
+  experiments = [],
+  relation,
+  schedules = [],
+}) => {
+  const axisProgressIncomplete = relationHasIncompleteAxisProgress({
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    relation,
+    schedules,
+  });
+  return asArray(experimentRunTrays).some((entry) => {
+    if (
+      resolveTaskCode(entry) !== resolveTaskCode(relation)
+      || resolveExperimentCode(entry) !== resolveExperimentCode(relation)
+      || resolveTrayCode(entry) !== resolveTrayCode(relation)
+    ) {
+      return false;
+    }
+    const status = normalizeLifecycleStatus("", resolveRelationStatus(entry));
+    if (status === "厂家收回") {
+      return true;
+    }
+    return EXPERIMENT_TRAY_TERMINAL_STATUSES.has(status) && !axisProgressIncomplete;
+  });
+};
 const sampleTrayIsReturned = ({ sample, relation }) => {
   const trayCode = resolveTrayCode(relation);
   const trays = asArray(sample?.trays);
@@ -95,10 +138,33 @@ const sampleTrayIsReturned = ({ sample, relation }) => {
   }
   return trays.every((tray) => normalizeLifecycleStatus("", normalizeText(tray?.status)) === "厂家收回");
 };
-const relationIsCompletedForSample = ({ experimentRunTrays = [], sample, relation }) => {
-  return relationIsCompletedByRunTray({ experimentRunTrays, relation })
+const relationIsCompletedForSample = ({
+  experimentRuns = [],
+  experimentRunSteps = [],
+  experimentRunTrays = [],
+  experiments = [],
+  sample,
+  relation,
+  schedules = [],
+}) => {
+  const axisProgressIncomplete = relationHasIncompleteAxisProgress({
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    relation,
+    schedules,
+  });
+  return relationIsCompletedByRunTray({
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experiments,
+    relation,
+    schedules,
+  })
     || sampleTrayIsReturned({ sample, relation })
-    || sampleHasCompletedExperiment(sample, relation);
+    || (!axisProgressIncomplete && sampleHasCompletedExperiment(sample, relation));
 };
 
 export {
@@ -107,6 +173,7 @@ export {
   entryMatchesTrayCode,
   relationIsCompletedForSample,
   relationIsCompletedByRunTray,
+  relationHasIncompleteAxisProgress,
   resolveRelationStatus,
   sampleHasCompletedExperiment,
   sampleTrayIsReturned,

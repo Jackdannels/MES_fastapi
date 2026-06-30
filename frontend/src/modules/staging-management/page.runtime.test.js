@@ -569,16 +569,30 @@ describe("StagingManagementPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.get('[data-testid="zancun-planned-inbound-column"]').text()).not.toContain("SYLU-2026-04-108-TP-001");
+    const getStorageCallCount = () => fetch.mock.calls.filter(([url, options = {}]) =>
+      String(url).includes("/api/storage") && (!options.method || options.method === "GET")
+    ).length;
+    const getCallsBeforeStockIn = getStorageCallCount();
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    vi.advanceTimersByTime(100);
+    await settlePage(mounted);
 
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
     expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(4);
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-107-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
+    expect(getStorageCallCount()).toBe(getCallsBeforeStockIn);
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/storage"), expect.objectContaining({
+      method: "PUT",
+      headers: expect.objectContaining({
+        "X-MES-Update-Source": "staging-management",
+        "X-MES-Update-Request-Id": expect.stringContaining("staging-management:"),
+      }),
+    }));
   });
 
   test("clicking KPI cards filters the inventory columns without opening scan modals", async () => {

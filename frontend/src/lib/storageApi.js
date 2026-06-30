@@ -46,16 +46,25 @@ function readStorageSnapshot(keys, options = {}) {
   );
 }
 
-async function writeStorageUpdates(updates) {
+async function writeStorageUpdates(updates, options = {}) {
   pendingSnapshotReads.clear();
   const rawPayload = updates && typeof updates === "object" ? updates : {};
   const payload = Object.fromEntries(Object.entries(rawPayload));
+  const source = String(options?.source || "").trim();
+  const requestId = String(options?.requestId || "").trim();
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (source) {
+    headers["X-MES-Update-Source"] = source;
+  }
+  if (requestId) {
+    headers["X-MES-Update-Request-Id"] = requestId;
+  }
   const response = await fetch(buildApiUrl("/api/storage", API_BASE_URL), {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
+    headers,
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -70,15 +79,19 @@ async function writeStorageUpdates(updates) {
     const suffix = detail ? `，${detail}` : "";
     throw new Error(`Failed to write storage updates: ${response.status} ${response.statusText}${suffix}`);
   }
-  notifyStorageSnapshotUpdated(payload);
+  notifyStorageSnapshotUpdated(payload, { source, requestId });
 }
 
-function notifyStorageSnapshotUpdated(updates = {}) {
+function notifyStorageSnapshotUpdated(updates = {}, options = {}) {
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
+  const source = String(options?.source || "").trim();
+  const requestId = String(options?.requestId || "").trim();
   const marker = JSON.stringify({
     keys: Object.keys(updates || {}),
+    ...(source ? { source } : {}),
+    ...(requestId ? { requestId } : {}),
     updatedAt: formatLocalDateTime(),
   });
   let detail = null;
@@ -89,6 +102,8 @@ function notifyStorageSnapshotUpdated(updates = {}) {
     // localStorage may be unavailable in private or embedded browser contexts.
     detail = {
       keys: Object.keys(updates || {}),
+      ...(source ? { source } : {}),
+      ...(requestId ? { requestId } : {}),
       updatedAt: formatLocalDateTime(),
     };
   }

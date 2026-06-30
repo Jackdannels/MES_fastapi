@@ -1242,13 +1242,33 @@ def test_storage_bulk_update_publishes_changed_keys(monkeypatch):
 
     published = []
     client, storage = build_client(monkeypatch)
-    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys: published.append(keys))
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys, **kwargs: published.append((keys, kwargs)))
 
     response = client.put("/api/storage", json={"mes.samples": [{"code": "SP-1"}], "mes.tasks": [{"code": "T-1"}]})
 
     assert response.status_code == 200
     assert storage.read("mes.samples") == [{"code": "SP-1"}]
-    assert published == [["mes.samples", "mes.tasks"]]
+    assert published == [(["mes.samples", "mes.tasks"], {})]
+
+
+def test_storage_bulk_update_publishes_source_metadata(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    published = []
+    client, _storage = build_client(monkeypatch)
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys, **kwargs: published.append((keys, kwargs)))
+
+    response = client.put(
+        "/api/storage",
+        json={"mes.samples": [{"code": "SP-1"}]},
+        headers={
+            "X-MES-Update-Source": "staging-management",
+            "X-MES-Update-Request-Id": "write-1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert published == [(["mes.samples"], {"source": "staging-management", "request_id": "write-1"})]
 
 
 def test_storage_key_update_publishes_changed_key(monkeypatch):
@@ -1346,6 +1366,67 @@ def test_storage_rejects_rescheduling_after_fixture_install(monkeypatch):
     assert storage.read("mes.schedules") == schedules
 
 
+def test_storage_allows_deleting_untouched_future_axis_schedule_after_sibling_starts(monkeypatch):
+    schedules = [
+        {
+            "id": "schedule-vibration-active",
+            "task_code": "TASK-AXIS-SCHEDULE",
+            "experiment_code": "EXP-VIBRATION",
+            "sub_experiment_code": "EXP-VIBRATION#AXIS-001",
+            "device": "振动一室",
+            "start_at": "2026-06-23 08:00",
+            "end_at": "2026-06-23 10:00",
+            "axis_codes": ["x+"],
+        },
+        {
+            "id": "schedule-vibration-future",
+            "task_code": "TASK-AXIS-SCHEDULE",
+            "experiment_code": "EXP-VIBRATION",
+            "sub_experiment_code": "EXP-VIBRATION#AXIS-002",
+            "device": "振动二室",
+            "start_at": "2026-06-24 08:00",
+            "end_at": "2026-06-24 10:00",
+            "axis_codes": ["y+"],
+        },
+    ]
+    samples = [
+        {
+            "code": "SP-AXIS-SCHEDULE",
+            "task_code": "TASK-AXIS-SCHEDULE",
+            "status": "工装夹具安装",
+            "flow_status": "工装夹具安装",
+            "trays": [{"tray_code": "TP-AXIS-SCHEDULE", "status": "工装夹具安装", "quantity": 1}],
+        }
+    ]
+    experiment_trays = [
+        {"task_code": "TASK-AXIS-SCHEDULE", "experiment_code": "EXP-VIBRATION", "tray_code": "TP-AXIS-SCHEDULE"}
+    ]
+    experiment_runs = [
+        {
+            "run_no": "run-vibration-active",
+            "schedule_id": "schedule-vibration-active",
+            "task_code": "TASK-AXIS-SCHEDULE",
+            "experiment_code": "EXP-VIBRATION",
+            "sub_experiment_code": "EXP-VIBRATION#AXIS-001",
+            "status": "实验进行中",
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.experiment_runs": experiment_runs,
+            "mes.experiment_trays": experiment_trays,
+            "mes.samples": samples,
+            "mes.schedules": schedules,
+        },
+    )
+
+    response = client.put("/api/storage/mes.schedules", json=[schedules[0]])
+
+    assert response.status_code == 200
+    assert storage.read("mes.schedules") == [schedules[0]]
+
+
 def test_storage_allows_deleting_partially_completed_multi_axis_schedule(monkeypatch):
     sub_experiment_code = "EXP-IMPACT#AXIS-001"
     schedules = [
@@ -1416,7 +1497,7 @@ def test_storage_update_event_stream_yields_published_keys():
     try:
         assert next(stream) == ": connected\n\n"
 
-        storage_route.publish_storage_update(["mes.samples"])
+        storage_route.publish_storage_update(["mes.samples"], source="staging-management", request_id="write-1")
 
         event = next(stream)
     finally:
@@ -1424,6 +1505,8 @@ def test_storage_update_event_stream_yields_published_keys():
 
     assert event.startswith("data: ")
     assert '"keys": ["mes.samples"]' in event
+    assert '"source": "staging-management"' in event
+    assert '"requestId": "write-1"' in event
     assert '"updatedAt":' in event
 
 

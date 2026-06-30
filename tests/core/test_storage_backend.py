@@ -608,6 +608,115 @@ def test_normalize_storage_payload_marks_returned_tray_terminal_for_unfinished_f
     }
 
 
+def test_normalize_storage_payload_preserves_unfinished_axis_schedule_when_returned_tray_completed_only_one_batch() -> None:
+    task_code = "SYLU-2026-08-002"
+    experiment_code = f"{task_code}-A"
+    tray_one = f"{task_code}-TP-001"
+    tray_two = f"{task_code}-TP-002"
+    first_sub_code = f"{experiment_code}-AXIS-001"
+    second_sub_code = f"{experiment_code}-AXIS-002"
+    payload = {
+        "mes.tasks": [{"code": task_code, "status": "任务进行中"}],
+        "mes.experiments": [
+            {
+                "axis_codes": ["x+", "x-", "y+", "y-", "z+", "z-"],
+                "experiment_code": experiment_code,
+                "experiment_name": "冲击试验",
+                "status": "实验进行中",
+                "task_code": task_code,
+            }
+        ],
+        "mes.schedules": [
+            {
+                "axis_codes": ["x+", "x-", "y+"],
+                "experiment_code": experiment_code,
+                "id": "schedule-impact-axis-001",
+                "status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+                "task_code": task_code,
+            },
+            {
+                "axis_codes": ["y-", "z+", "z-"],
+                "experiment_code": experiment_code,
+                "id": "schedule-impact-axis-002",
+                "status": "已排程",
+                "sub_experiment_code": second_sub_code,
+                "task_code": task_code,
+            },
+        ],
+        "mes.experiment_trays": [
+            {"experiment_code": experiment_code, "task_code": task_code, "tray_code": tray_one},
+            {"experiment_code": experiment_code, "task_code": task_code, "tray_code": tray_two},
+        ],
+        "mes.experiment_run_trays": [
+            {
+                "experiment_code": experiment_code,
+                "run_no": "RUN-TP1-AXIS-001",
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+                "task_code": task_code,
+                "tray_code": tray_one,
+            },
+            {
+                "experiment_code": experiment_code,
+                "run_no": "RUN-TP1-AXIS-002",
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": second_sub_code,
+                "task_code": task_code,
+                "tray_code": tray_one,
+            },
+            {
+                "experiment_code": experiment_code,
+                "run_no": "RUN-TP2-AXIS-001",
+                "run_tray_status": "实验已完成",
+                "sub_experiment_code": first_sub_code,
+                "task_code": task_code,
+                "tray_code": tray_two,
+            },
+        ],
+        "mes.samples": [
+            {
+                "code": f"{task_code}-SP-001",
+                "location": "厂家收回",
+                "status": "厂家收回",
+                "task_code": task_code,
+                "trays": [{"status": "厂家收回", "tray_code": tray_one}],
+            },
+            {
+                "code": f"{task_code}-SP-002",
+                "location": "冲击一室",
+                "status": "冲击试验部分完成 3/6轴",
+                "task_code": task_code,
+                "trays": [{"status": "冲击试验部分完成 3/6轴", "tray_code": tray_two}],
+            },
+        ],
+        "mes.staging_events": [
+            {
+                "action": "manufacturer_return",
+                "target_lab": "厂家收回",
+                "task_code": task_code,
+                "time": "2026-06-30 17:51:00",
+                "tray_code": tray_one,
+            },
+        ],
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert [schedule["id"] for schedule in normalized["mes.schedules"]] == [
+        "schedule-impact-axis-001",
+        "schedule-impact-axis-002",
+    ]
+    assert {
+        schedule["id"]: schedule["status"]
+        for schedule in normalized["mes.schedules"]
+    } == {
+        "schedule-impact-axis-001": "实验已完成",
+        "schedule-impact-axis-002": "已排程",
+    }
+    assert normalized["mes.experiments"][0]["status"] == "实验进行中"
+
+
 def test_normalize_storage_payload_infers_returned_tray_task_from_experiment_relations() -> None:
     task_code = "SYLU-2026-06-021"
     tray_code = f"{task_code}-TP-001"

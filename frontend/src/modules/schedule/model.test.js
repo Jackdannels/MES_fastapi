@@ -2836,6 +2836,93 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("实验已开始，不能删除后重新排程");
   });
 
+  test("updateScheduleRecord allows rescheduling an untouched future axis schedule after a sibling schedule starts", () => {
+    const result = updateScheduleRecord({
+      devices: [{ code: "振动二室" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-301",
+          experiment_code: "SYLU-2026-06-301-V",
+          experiment_name: "振动试验",
+        },
+      ],
+      experimentRuns: [
+        {
+          run_no: "run-vibration-active",
+          schedule_id: "schedule-vibration-active",
+          task_code: "SYLU-2026-06-301",
+          experiment_code: "SYLU-2026-06-301-V",
+          sub_experiment_code: "SYLU-2026-06-301-V-AXIS-001",
+          status: "实验进行中",
+        },
+      ],
+      experimentTrays: [
+        {
+          task_code: "SYLU-2026-06-301",
+          experiment_code: "SYLU-2026-06-301-V",
+          tray_code: "SYLU-2026-06-301-TP-001",
+        },
+      ],
+      form: {
+        id: "schedule-vibration-future",
+        device: "振动二室",
+        experiment_code: "SYLU-2026-06-301-V",
+        planned_hours: "2",
+        schedule_date: "2099-03-22",
+        task_code: "SYLU-2026-06-301",
+        time_slot: "afternoon",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      samples: [
+        {
+          task_code: "SYLU-2026-06-301",
+          status: "工装夹具安装",
+          trays: [
+            { tray_code: "SYLU-2026-06-301-TP-001", status: "工装夹具安装" },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-vibration-active",
+          task_code: "SYLU-2026-06-301",
+          experiment_code: "SYLU-2026-06-301-V",
+          sub_experiment_code: "SYLU-2026-06-301-V-AXIS-001",
+          device: "振动一室",
+          planned_hours: 2,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x+"],
+        },
+        {
+          id: "schedule-vibration-future",
+          task_code: "SYLU-2026-06-301",
+          experiment_code: "SYLU-2026-06-301-V",
+          sub_experiment_code: "SYLU-2026-06-301-V-AXIS-002",
+          device: "振动一室",
+          planned_hours: 2,
+          start_at: "2099-03-21T08:00:00.000Z",
+          end_at: "2099-03-21T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-301", status: "任务进行中", test_type: "振动试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules).toEqual([
+      expect.objectContaining({ id: "schedule-vibration-active", device: "振动一室" }),
+      expect.objectContaining({
+        id: "schedule-vibration-future",
+        device: "振动二室",
+        start_at: "2099-03-22 12:00:00",
+      }),
+    ]);
+  });
+
   test("deleteScheduleRecord restores unscheduled_since from transfer confirmation when removing the last formal schedule", () => {
     const result = deleteScheduleRecord({
       experiments: [
@@ -2914,6 +3001,63 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("实验已开始，不能删除排程");
     expect(result.schedules).toEqual([
       expect.objectContaining({ id: "schedule-running" }),
+    ]);
+  });
+
+  test("deleteScheduleRecord allows deleting an untouched future axis schedule after a sibling schedule starts", () => {
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: "SYLU-2026-06-302",
+          experiment_code: "SYLU-2026-06-302-I",
+          experiment_name: "冲击试验",
+        },
+      ],
+      experimentRuns: [
+        {
+          run_no: "run-impact-active",
+          schedule_id: "schedule-impact-active",
+          task_code: "SYLU-2026-06-302",
+          experiment_code: "SYLU-2026-06-302-I",
+          sub_experiment_code: "SYLU-2026-06-302-I-AXIS-001",
+          status: "实验进行中",
+        },
+      ],
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      scheduleId: "schedule-impact-future",
+      schedules: [
+        {
+          id: "schedule-impact-active",
+          task_code: "SYLU-2026-06-302",
+          experiment_code: "SYLU-2026-06-302-I",
+          sub_experiment_code: "SYLU-2026-06-302-I-AXIS-001",
+          device: "冲击一室",
+          planned_hours: 2,
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x+"],
+        },
+        {
+          id: "schedule-impact-future",
+          task_code: "SYLU-2026-06-302",
+          experiment_code: "SYLU-2026-06-302-I",
+          sub_experiment_code: "SYLU-2026-06-302-I-AXIS-002",
+          device: "冲击二室",
+          planned_hours: 2,
+          start_at: "2099-03-21T08:00:00.000Z",
+          end_at: "2099-03-21T10:00:00.000Z",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["y+"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-06-302", status: "任务进行中", test_type: "冲击试验" }],
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.schedules).toEqual([
+      expect.objectContaining({ id: "schedule-impact-active" }),
     ]);
   });
 

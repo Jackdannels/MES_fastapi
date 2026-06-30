@@ -46,15 +46,18 @@ const extractLabDestinationName = (value) => {
   if (!text) {
     return "";
   }
-  if (TEST_LABS.has(text) || isLikelyLabDestination(text)) {
+  if (TEST_LABS.has(text)) {
     return text;
   }
   const knownLab = Array.from(TEST_LABS).find((lab) => text.includes(lab));
   if (knownLab) {
     return knownLab;
   }
-  const dispatchMatch = text.match(/送至\s*([^，,；;/\s]+室)/);
-  return dispatchMatch ? normalizeText(dispatchMatch[1]) : "";
+  const dispatchMatch = text.match(/(?:送至|->|→)\s*([^，,；;/\s]+室)/);
+  if (dispatchMatch) {
+    return normalizeText(dispatchMatch[1]);
+  }
+  return isLikelyLabDestination(text) ? text : "";
 };
 
 const resolveLabDestinationName = (...values) =>
@@ -154,9 +157,23 @@ const parseExperimentHistoryDetail = (detail, taskCode) => {
   if (segments.length < 3 || segments[0] !== normalizeText(taskCode)) {
     return null;
   }
+  const trayCodes = segments
+    .slice(3)
+    .flatMap((segment) => {
+      const matched = segment.match(/^托盘\s*[:：]\s*(.+)$/);
+      if (!matched) {
+        return [];
+      }
+      return matched[1]
+        .split(/[,，、\s]+/)
+        .map((code) => normalizeText(code))
+        .filter(Boolean);
+    });
   return {
     experimentName: segments[1],
     status: segments[2],
+    ...(trayCodes.length === 1 ? { trayCode: trayCodes[0] } : {}),
+    ...(trayCodes.length > 0 ? { trayCodes } : {}),
   };
 };
 
