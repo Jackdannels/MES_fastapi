@@ -210,6 +210,78 @@ describe("StagingManagementPage runtime", () => {
         if (String(url).includes("/api/storage") && (!options.method || options.method === "GET")) {
           return { ok: true, json: async () => remoteSnapshot };
         }
+        if (String(url).includes("/api/storage/rooms/") && options.method === "POST") {
+          const body = JSON.parse(options.body || "{}");
+          const path = String(url);
+          const room = decodeURIComponent(path.match(/\/rooms\/([^/]+)\//)?.[1] || "staging");
+          const trayCode = decodeURIComponent(path.match(/\/trays\/([^/]+)\//)?.[1] || "");
+          const isManufacturerReturn = path.endsWith("/manufacturer-return");
+          const isStockIn = path.endsWith("/stock-in");
+          const action = isManufacturerReturn ? "manufacturer_return" : isStockIn ? "stock_in" : "stock_out";
+          const targetLab = isManufacturerReturn ? "厂家收回" : body.targetLab;
+          const targetType = isManufacturerReturn ? "" : body.targetType || "lab";
+          const nextStatus = isManufacturerReturn
+            ? "厂家收回"
+            : isStockIn
+              ? body.status || "已到达暂存间"
+              : targetType === "staging" || targetLab === "恒温恒湿间（暂存间）"
+              ? "送至暂存间"
+              : "送至实验室";
+          const nextLocation = isManufacturerReturn
+            ? "厂家收回"
+            : isStockIn
+              ? body.location || "恒温恒湿间（暂存间）"
+              : targetType === "staging" || targetLab === "恒温恒湿间（暂存间）"
+              ? "恒温恒湿间（暂存间）"
+              : targetLab;
+          remoteSnapshot = {
+            ...remoteSnapshot,
+            [STORAGE_KEYS.samples]: remoteSnapshot[STORAGE_KEYS.samples].map((sample) => {
+              const touchesTray = sample.trays?.some((tray) => tray.tray_code === trayCode);
+              if (!touchesTray) {
+                return sample;
+              }
+              return {
+                ...sample,
+                location: nextLocation,
+                status: nextStatus,
+                flow_status: nextStatus,
+                trays: sample.trays.map((tray) => tray.tray_code === trayCode
+                  ? {
+                      ...tray,
+                      status: nextStatus,
+                      ...(targetLab ? { target_lab: targetLab } : {}),
+                      ...(body.targetLabCode ? { target_lab_code: body.targetLabCode } : {}),
+                      ...(body.targetLabId ? { target_lab_id: body.targetLabId } : {}),
+                      ...(body.targetExperimentCode ? { target_experiment_code: body.targetExperimentCode } : {}),
+                      ...(targetType ? { target_type: targetType } : {}),
+                    }
+                  : tray),
+              };
+            }),
+            [STORAGE_KEYS.staging_events]: [
+              ...remoteSnapshot[STORAGE_KEYS.staging_events],
+              {
+                id: `evt-${trayCode}-${remoteSnapshot[STORAGE_KEYS.staging_events].length + 1}`,
+                action,
+                room,
+                target_lab: targetLab,
+                target_experiment_code: body.targetExperimentCode,
+                target_type: targetType,
+                time: "2026-04-01T12:00:00",
+                tray_code: trayCode,
+              },
+            ],
+          };
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              trayCode,
+              updatedKeys: [STORAGE_KEYS.samples, STORAGE_KEYS.staging_events],
+            }),
+          };
+        }
         if (String(url).includes("/api/storage") && options.method === "PUT") {
           const body = JSON.parse(options.body);
           remoteSnapshot = {
@@ -586,8 +658,8 @@ describe("StagingManagementPage runtime", () => {
     expect(plannedColumn.text()).toContain("SYLU-2026-04-107-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
     expect(getStorageCallCount()).toBe(getCallsBeforeStockIn);
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/storage"), expect.objectContaining({
-      method: "PUT",
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-101-TP-001/stock-in"), expect.objectContaining({
+      method: "POST",
       headers: expect.objectContaining({
         "X-MES-Update-Source": "staging-management",
         "X-MES-Update-Request-Id": expect.stringContaining("staging-management:"),
@@ -639,8 +711,13 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-101-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    await settlePage(mounted);
 
     expect(mounted.text()).toContain("今日到货2");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-101-TP-001/stock-in"),
+      expect.objectContaining({ method: "POST" }),
+    );
     expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
     expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("");
     expect(document.activeElement).toBe(mounted.get('[data-testid="zancun-scan-code"]').element);
@@ -651,6 +728,9 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
     expect(mounted.text()).toContain("今日到货3");
+    expect(fetch.mock.calls.some(([url, options = {}]) =>
+      String(url).endsWith("/api/storage") && options.method === "PUT",
+    )).toBe(false);
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_in" && event.time.startsWith("2026-04-01"))).toHaveLength(3);
     expect(mounted.find('[data-testid="zancun-detail-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
@@ -704,6 +784,13 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
 
     expect(mounted.text()).toContain("今日已出库2");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-102-TP-001/stock-out"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch.mock.calls.some(([url, options = {}]) =>
+      String(url).endsWith("/api/storage") && options.method === "PUT",
+    )).toBe(false);
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
       action: "stock_out",
       target_lab: "振动一室",

@@ -173,6 +173,44 @@ def test_start_scopes_requested_trays_to_current_experiment_assignment():
     assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-A"]
 
 
+def test_start_ignores_requested_trays_not_ready_in_current_laboratory():
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "冲击试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "冲击一室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-READY"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-ARRIVED"},
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-READY"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-ARRIVED"},
+        ],
+        "samples": [
+            _sample("SP-READY", "TASK-1", "TP-READY", "实验准备就绪", "冲击一室"),
+            _sample("SP-ARRIVED", "TASK-1", "TP-ARRIVED", "到货", "接驳区"),
+        ],
+    }
+
+    result = start_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        lab_name="冲击一室",
+        schedule_id="SCH-A",
+        tray_codes=["TP-READY", "TP-ARRIVED"],
+        started_at="2026-06-06 09:00:00",
+    )
+
+    assert result["affectedTrayCodes"] == ["TP-READY"]
+    assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
+    assert result["samples"][1]["trays"][0]["status"] == "到货"
+    assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-READY"]
+
+
 def test_start_clears_stale_fixture_ready_marker():
     sample = _sample("SP-A", "TASK-1", "TP-A", "实验准备就绪", "盐雾试验室")
     sample["trays"][0]["fixture_ready"] = True
@@ -1698,6 +1736,57 @@ def test_complete_scopes_requested_trays_to_current_experiment_assignment():
     assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
     assert result["samples"][1]["trays"][0]["status"] == "实验进行中"
     assert result["experimentRunTrays"][0]["tray_code"] == "TP-A"
+
+
+def test_complete_ignores_requested_trays_not_bound_to_current_run():
+    snapshot = {
+        "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "冲击试验"}],
+        "schedules": [{"id": "SCH-A", "task_code": "TASK-1", "experiment_code": "EXP-A", "device": "冲击一室"}],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-RUNNING"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-A",
+                "tray_code": "TP-RUNNING",
+                "run_tray_status": "实验进行中",
+            }
+        ],
+        "experiment_trays": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-RUNNING"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "tray_code": "TP-ARRIVED"},
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-RUNNING"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-A", "sample_code": "SP-ARRIVED"},
+        ],
+        "samples": [
+            _sample("SP-RUNNING", "TASK-1", "TP-RUNNING", "实验进行中", "冲击一室"),
+            _sample("SP-ARRIVED", "TASK-1", "TP-ARRIVED", "到货", "接驳区"),
+        ],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-1",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        tray_codes=["TP-RUNNING", "TP-ARRIVED"],
+        completed_at="2026-06-06 10:00:00",
+    )
+
+    assert result["affectedTrayCodes"] == ["TP-RUNNING"]
+    assert result["samples"][0]["trays"][0]["status"] == "实验已完成"
+    assert result["samples"][1]["trays"][0]["status"] == "到货"
+    assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-RUNNING"]
 
 
 def test_complete_clears_stale_fixture_ready_marker():

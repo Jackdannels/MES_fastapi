@@ -549,6 +549,33 @@ const latestAppearanceLabDispatchRequiresPreExperiment = ({ events, experiments 
   );
 };
 
+const hasAppearanceStockInBeforeLatestLabDispatch = ({ config, latestStorageEvent, trayStorageEvents }) => {
+  if (
+    config.key !== "appearance"
+    || normalizeText(latestStorageEvent?.action) !== "stock_out"
+    || eventTargetsStorageRoom(latestStorageEvent, config)
+    || eventTargetsPostExperimentStaging(latestStorageEvent)
+  ) {
+    return false;
+  }
+  const targetType = normalizeText(latestStorageEvent?.target_type || latestStorageEvent?.targetType);
+  const targetText = [
+    latestStorageEvent?.target_lab,
+    latestStorageEvent?.targetLab,
+    latestStorageEvent?.target_name,
+    latestStorageEvent?.targetName,
+  ].map((value) => normalizeText(value)).filter(Boolean).join(" ");
+  if (targetType === "appearance" || targetType === "staging" || targetText.includes("外观检测间") || targetText.includes("暂存间")) {
+    return false;
+  }
+  const latestDispatchTime = parseTimeValue(latestStorageEvent?.time);
+  return asArray(trayStorageEvents).some((event) =>
+    eventMatchesRoom(event, config)
+    && normalizeText(event?.action) === "stock_in"
+    && (!latestDispatchTime || parseTimeValue(event?.time) < latestDispatchTime),
+  );
+};
+
 const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => {
   const codes = new Set();
   asArray(experimentTrays).forEach((entry) => {
@@ -1396,13 +1423,18 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         config.key === "appearance"
         && latestAction === "stock_out"
         && eventTargetsPostExperimentStaging(latestStorageEvent);
+      const appearanceAlreadyDispatchedFromStorage =
+        hasAppearanceStockInBeforeLatestLabDispatch({ config, latestStorageEvent, trayStorageEvents });
       const appearancePreInspectionAlreadyDispatched =
-        config.key === "appearance"
-        && normalizeText(lastEvent?.action) === "stock_out"
-        && !eventTargetsPostExperimentStaging(lastEvent)
-        && events
-          .slice(0, -1)
-          .some((event) => normalizeText(event?.action) === "stock_in");
+        appearanceAlreadyDispatchedFromStorage
+        || (
+          config.key === "appearance"
+          && normalizeText(lastEvent?.action) === "stock_out"
+          && !eventTargetsPostExperimentStaging(lastEvent)
+          && events
+            .slice(0, -1)
+            .some((event) => normalizeText(event?.action) === "stock_in")
+        );
       const lastStockInEvent = events
         .slice()
         .reverse()

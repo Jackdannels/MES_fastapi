@@ -315,10 +315,10 @@ def experiment_sample_codes(snapshot: dict[str, list[dict[str, Any]]], task_code
 
 
 def parse_experiment_history_detail(detail: Any, task_code: str) -> dict[str, str] | None:
-    parts = [normalize_text(part) for part in normalize_text(detail).split("/") if normalize_text(part)]
+    parts = [normalize_text(part) for part in normalize_text(detail).split(" / ") if normalize_text(part)]
     if len(parts) < 3 or parts[0] != task_code:
         return None
-    status = parts[-1]
+    status = parts[2]
     if status in {"实验完成", "实验已经完成"}:
         status = "实验已完成"
     return {"experimentName": parts[1], "status": status}
@@ -470,8 +470,10 @@ def latest_previous_partial_axis_completion(
     *,
     task_code: str,
     tray_code: str,
+    exclude_experiment_code: str = "",
 ) -> dict[str, Any] | None:
     normalized_tray_code = normalize_text(tray_code)
+    normalized_excluded_experiment_code = normalize_text(exclude_experiment_code)
     if not normalized_tray_code:
         return None
 
@@ -495,6 +497,8 @@ def latest_previous_partial_axis_completion(
     }
     candidates: list[dict[str, Any]] = []
     for experiment_code in experiment_codes:
+        if normalized_excluded_experiment_code and experiment_code == normalized_excluded_experiment_code:
+            continue
         experiment_name = experiment_display_name(snapshot, task_code, experiment_code)
         required_axes = required_axis_codes_for_restore(
             snapshot,
@@ -789,6 +793,8 @@ def resolve_restore_snapshot(
     task_code: str,
     current_experiment_name: str,
     tray_code: str,
+    current_experiment_code: str = "",
+    skip_current_partial_axis: bool = False,
 ) -> dict[str, str]:
     completed = latest_previous_completed_experiment(
         sample,
@@ -800,6 +806,7 @@ def resolve_restore_snapshot(
         snapshot,
         task_code=task_code,
         tray_code=tray_code,
+        exclude_experiment_code=current_experiment_code if skip_current_partial_axis else "",
     )
     staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
     appearance = latest_appearance_origin_snapshot(sample, snapshot, tray_code)
@@ -869,9 +876,6 @@ def single_tray_sample_matches_current_with_stale_target(
     normalized_lab_name = normalize_text(lab_name)
     if normalized_lab_name and normalize_text(sample.get("location")) != normalized_lab_name:
         return False
-    sample_status = normalize_text(sample.get("status"))
-    if sample_status not in ALLOW_WITHDRAW_STATUSES:
-        return False
     current_name = normalize_text(current_experiment_name)
     latest_match: dict[str, Any] | None = None
     for entry in as_list(sample.get("history")):
@@ -892,6 +896,67 @@ def single_tray_sample_matches_current_with_stale_target(
     return not normalized_lab_name or latest_match["location"] == normalized_lab_name
 
 
+def partial_axis_experiment_name(status: str) -> str:
+    normalized = normalize_text(status)
+    marker = "部分完成"
+    if marker not in normalized or not normalized.endswith("轴"):
+        return ""
+    return normalize_text(normalized.split(marker, 1)[0])
+
+
+def status_matches_current_partial_axis(status: str, current_experiment_name: str) -> bool:
+    return bool(
+        normalize_text(current_experiment_name)
+        and partial_axis_experiment_name(status) == normalize_text(current_experiment_name)
+    )
+
+
+def is_withdrawable_laboratory_status(status: str, current_experiment_name: str = "") -> bool:
+    normalized = normalize_text(status)
+    return normalized in ALLOW_WITHDRAW_STATUSES or status_matches_current_partial_axis(normalized, current_experiment_name)
+
+
+def latest_current_experiment_withdrawable_history_status(
+    sample: dict[str, Any],
+    *,
+    current_experiment_name: str,
+    lab_name: str,
+    task_code: str,
+) -> str:
+    current_name = normalize_text(current_experiment_name)
+    normalized_lab_name = normalize_text(lab_name)
+    latest_match: dict[str, Any] | None = None
+    for entry in as_list(sample.get("history")):
+        parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
+        if not parsed or parsed["experimentName"] != current_name:
+            continue
+        entry_location = normalize_text(entry.get("location"))
+        if normalized_lab_name and entry_location != normalized_lab_name:
+            continue
+        entry_status = normalize_text(parsed["status"])
+        if not is_withdrawable_laboratory_status(entry_status, current_name):
+            continue
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        if latest_match is None or entry_time >= latest_match["time"]:
+            latest_match = {"status": entry_status, "time": entry_time}
+    return normalize_text(latest_match.get("status")) if latest_match else ""
+
+
+def sample_or_tray_has_current_partial_axis_status(
+    sample: dict[str, Any],
+    matched_tray_codes: list[str],
+    current_experiment_name: str,
+) -> bool:
+    if status_matches_current_partial_axis(sample.get("status"), current_experiment_name):
+        return True
+    matched_code_set = {normalize_text(code) for code in matched_tray_codes}
+    return any(
+        normalize_text(tray.get("tray_code")) in matched_code_set
+        and status_matches_current_partial_axis(tray.get("status"), current_experiment_name)
+        for tray in as_list(sample.get("trays"))
+    )
+
+
 def withdrawable_sample_matches(
     sample_matches: list[tuple[dict[str, Any], list[str]]],
     *,
@@ -903,31 +968,47 @@ def withdrawable_sample_matches(
     result: list[tuple[dict[str, Any], list[str]]] = []
     normalized_experiment_code = normalize_text(experiment_code)
     normalized_lab_name = normalize_text(lab_name)
+    current_name = normalize_text(current_experiment_name)
     for sample, matched_tray_codes in sample_matches:
         matched_code_set = set(matched_tray_codes)
         withdrawable_codes: list[str] = []
+        history_withdrawable_status = latest_current_experiment_withdrawable_history_status(
+            sample,
+            current_experiment_name=current_experiment_name,
+            lab_name=lab_name,
+            task_code=task_code,
+        )
         for tray in as_list(sample.get("trays")):
             tray_code = normalize_text(tray.get("tray_code"))
             if tray_code not in matched_code_set:
                 continue
             target_experiment_code = normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
+            target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
             stale_target_matches_current = single_tray_sample_matches_current_with_stale_target(
                 sample,
                 current_experiment_name=current_experiment_name,
                 lab_name=lab_name,
                 task_code=task_code,
             )
+            history_matches_this_tray = bool(history_withdrawable_status) and (
+                not target_lab or not normalized_lab_name or target_lab == normalized_lab_name
+            )
+            stale_target_matches_current = stale_target_matches_current or history_matches_this_tray
             if target_experiment_code and target_experiment_code != normalized_experiment_code and not stale_target_matches_current:
                 continue
-            target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
             if target_lab and normalized_lab_name and target_lab != normalized_lab_name and not stale_target_matches_current:
                 continue
             sample_status = normalize_text(sample.get("status"))
             tray_status = normalize_text(tray.get("status"))
             if tray_status in BLOCK_WITHDRAW_TRAY_STATUSES:
                 continue
-            current_status = tray_status if tray_status in ALLOW_WITHDRAW_STATUSES else sample_status
-            if current_status in ALLOW_WITHDRAW_STATUSES:
+            if is_withdrawable_laboratory_status(tray_status, current_name):
+                current_status = tray_status
+            elif is_withdrawable_laboratory_status(sample_status, current_name):
+                current_status = sample_status
+            else:
+                current_status = history_withdrawable_status
+            if is_withdrawable_laboratory_status(current_status, current_name):
                 withdrawable_codes.append(tray_code)
         if withdrawable_codes:
             result.append((sample, sorted(set(withdrawable_codes))))
@@ -1111,12 +1192,19 @@ def withdraw_current_experiment(
             }
             for sample, matched_tray_codes in withdrawable_matches:
                 restore_sample = restore_samples_by_code.get(normalize_text(sample.get("code")), sample)
+                skip_current_partial_axis = sample_or_tray_has_current_partial_axis_status(
+                    sample,
+                    matched_tray_codes,
+                    current_experiment_name,
+                )
                 restore_snapshot = resolve_restore_snapshot(
                     restore_sample,
                     restore_lookup_snapshot,
                     normalized_task_code,
                     current_experiment_name,
                     matched_tray_codes[0],
+                    current_experiment_code=normalized_experiment_code,
+                    skip_current_partial_axis=skip_current_partial_axis,
                 )
                 restored_targets.append(restore_snapshot)
                 next_trays = []

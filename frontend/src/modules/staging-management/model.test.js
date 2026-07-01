@@ -2109,6 +2109,89 @@ describe("staging-management model", () => {
     });
   });
 
+  test("appearance room does not plan inbound again after a tray leaves post-appearance storage for the next lab", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-07-021";
+    const trayCode = `${taskCode}-TP-001`;
+    snapshot[STORAGE_KEYS.tasks].push({
+      id: "task-post-appearance-to-mold",
+      code: taskCode,
+      test_type: "霉菌试验 / 盐雾试验",
+      sample_type: "组件",
+      source: "内部新增",
+    });
+    snapshot[STORAGE_KEYS.experiments].push(
+      {
+        id: "exp-post-appearance-mold",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-A`,
+        experiment_name: "霉菌试验",
+        required_device: "霉菌试验室",
+        status: "已排程",
+      },
+      {
+        id: "exp-post-appearance-salt",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-B`,
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+        status: "实验已完成",
+      },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(
+      { id: "rel-post-appearance-mold", task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+      { id: "rel-post-appearance-salt", task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: trayCode },
+    );
+    snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      task_code: taskCode,
+      experiment_code: `${taskCode}-B`,
+      tray_code: trayCode,
+      run_tray_status: "实验已完成",
+      ended_at: "2026-07-01 16:03:01",
+    });
+    snapshot[STORAGE_KEYS.samples].push({
+      id: "sample-post-appearance-to-mold",
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      owner: "周工",
+      location: "霉菌试验室",
+      status: "送至实验室",
+      flow_status: "送至实验室",
+      history: [
+        { action: "暂存间扫码出库", detail: `${trayCode} 送至 霉菌试验室`, location: "霉菌试验室", status: "送至实验室", time: "2026-07-01 16:11:41" },
+        { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-07-01 16:11:37" },
+        { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-07-01 16:11:30" },
+        { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-07-01 16:10:54" },
+        { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-07-01 16:03:01" },
+        { action: "外观检测间扫码出库", detail: `${trayCode} 送至 盐雾试验室`, location: "盐雾试验室", status: "送至实验室", time: "2026-07-01 16:02:43" },
+        { action: "外观检测间扫码入库", detail: `${trayCode} 实验前外观检测间存放`, location: "外观检测间", status: "实验前外观检测间存放", time: "2026-07-01 16:02:34" },
+      ],
+      trays: [
+        {
+          tray_code: trayCode,
+          status: "送至实验室",
+          quantity: 1,
+          target_experiment_code: `${taskCode}-A`,
+          target_lab: "霉菌试验室",
+        },
+      ],
+    });
+    snapshot[STORAGE_KEYS.staging_events].push(
+      { id: "post-appearance-pre-in", tray_code: trayCode, task_code: taskCode, room: "appearance", action: "stock_in", time: "2026-07-01 16:02:34" },
+      { id: "post-appearance-pre-out", tray_code: trayCode, task_code: taskCode, room: "appearance", action: "stock_out", target_experiment_code: `${taskCode}-B`, target_lab: "盐雾试验室", target_type: "lab", time: "2026-07-01 16:02:43" },
+      { id: "post-appearance-post-in", tray_code: trayCode, task_code: taskCode, room: "appearance", action: "stock_in", time: "2026-07-01 16:10:54" },
+      { id: "post-appearance-post-out-staging", tray_code: trayCode, task_code: taskCode, room: "appearance", action: "stock_out", target_lab: "恒温恒湿间（暂存间）", target_type: "staging", time: "2026-07-01 16:11:30" },
+      { id: "post-appearance-staging-in", tray_code: trayCode, task_code: taskCode, room: "staging", action: "stock_in", time: "2026-07-01 16:11:37" },
+      { id: "post-appearance-staging-out-mold", tray_code: trayCode, task_code: taskCode, room: "staging", action: "stock_out", target_experiment_code: `${taskCode}-A`, target_lab: "霉菌试验室", target_type: "lab", time: "2026-07-01 16:11:41" },
+    );
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-07-01 16:12:00", room: "appearance" });
+    const sections = buildZancunInventorySections(rows, { room: "appearance" });
+
+    expect(sections.plannedInboundRows.map((row) => row.trayCode)).not.toContain(trayCode);
+  });
+
   test("appearance room can stock in a tray dispatched to a high-low temperature humidity lab as optional pre-experiment inspection", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.tasks].push({

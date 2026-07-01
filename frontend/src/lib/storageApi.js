@@ -82,6 +82,124 @@ async function writeStorageUpdates(updates, options = {}) {
   notifyStorageSnapshotUpdated(payload, { source, requestId });
 }
 
+function normalizeSegment(value, fallback = "") {
+  const text = String(value || "").trim() || fallback;
+  return encodeURIComponent(text);
+}
+
+function storageTrayActionEndpoint(action = {}) {
+  const mode = String(action?.mode || "").trim();
+  const room = normalizeSegment(action?.room, "staging");
+  const trayCode = normalizeSegment(action?.trayCode || action?.tray_code);
+  const actionName = mode === "manufacturerReturn"
+    ? "manufacturer-return"
+    : mode === "stockIn"
+      ? "stock-in"
+      : "stock-out";
+  return buildApiUrl(`/api/storage/rooms/${room}/trays/${trayCode}/${actionName}`, API_BASE_URL);
+}
+
+function storageTrayActionBody(action = {}) {
+  const mode = String(action?.mode || "").trim();
+  const excludedKeys = new Set(["mode", "room", "trayCode", "tray_code"]);
+  if (mode === "manufacturerReturn") {
+    return Object.fromEntries(
+      Object.entries(action || {}).filter(([key, value]) => !excludedKeys.has(key) && value !== undefined),
+    );
+  }
+  return Object.fromEntries(
+    Object.entries(action || {}).filter(([key, value]) => !excludedKeys.has(key) && value !== undefined),
+  );
+}
+
+async function writeStorageTrayAction(action, options = {}) {
+  pendingSnapshotReads.clear();
+  const source = String(options?.source || "").trim();
+  const requestId = String(options?.requestId || "").trim();
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (source) {
+    headers["X-MES-Update-Source"] = source;
+  }
+  if (requestId) {
+    headers["X-MES-Update-Request-Id"] = requestId;
+  }
+  const response = await fetch(storageTrayActionEndpoint(action), {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(storageTrayActionBody(action)),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = String(payload?.detail || payload?.message || "").trim();
+    } catch {
+      detail = "";
+    }
+    const suffix = detail ? `，${detail}` : "";
+    throw new Error(`Failed to write storage tray action: ${response.status} ${response.statusText}${suffix}`);
+  }
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  const updatedKeys = Array.isArray(payload?.updatedKeys) && payload.updatedKeys.length
+    ? payload.updatedKeys
+    : ["mes.samples", "mes.staging_events"];
+  notifyStorageSnapshotUpdated(Object.fromEntries(updatedKeys.map((key) => [key, true])), { source, requestId });
+  return payload;
+}
+
+async function writeStorageSchedulePatch(patch, options = {}) {
+  pendingSnapshotReads.clear();
+  const source = String(options?.source || "").trim();
+  const requestId = String(options?.requestId || "").trim();
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (source) {
+    headers["X-MES-Update-Source"] = source;
+  }
+  if (requestId) {
+    headers["X-MES-Update-Request-Id"] = requestId;
+  }
+  const response = await fetch(buildApiUrl("/api/storage/schedules/patch", API_BASE_URL), {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify(patch && typeof patch === "object" ? patch : {}),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = String(payload?.detail || payload?.message || "").trim();
+    } catch {
+      detail = "";
+    }
+    const suffix = detail ? `，${detail}` : "";
+    throw new Error(`Failed to write storage schedule patch: ${response.status} ${response.statusText}${suffix}`);
+  }
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  const updatedKeys = Array.isArray(payload?.updatedKeys) && payload.updatedKeys.length
+    ? payload.updatedKeys
+    : ["mes.experiments", "mes.schedules", "mes.streams", "mes.tasks"];
+  notifyStorageSnapshotUpdated(Object.fromEntries(updatedKeys.map((key) => [key, true])), { source, requestId });
+  return payload;
+}
+
 function notifyStorageSnapshotUpdated(updates = {}, options = {}) {
   if (typeof window === "undefined" || !window.localStorage) {
     return;
@@ -140,5 +258,7 @@ export {
   notifyStorageSnapshotUpdated,
   readStorageSnapshot,
   subscribeStorageSnapshotUpdates,
+  writeStorageSchedulePatch,
+  writeStorageTrayAction,
   writeStorageUpdates,
 };

@@ -43,13 +43,14 @@ import { filterActiveTasks } from "@/lib/taskArchive";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { RUNNING_SCHEDULE_RESCHEDULE_MESSAGE } from "@/lib/runningExperimentGuards";
+import { writeStorageSchedulePatch } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 // 统一管理创建、编辑和查看排程记录所需的响应式状态。
 
 function useSchedulePage() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+  const { loadSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
@@ -91,6 +92,8 @@ function useSchedulePage() {
   const exceptionModal = useDialogState();
   const pendingScheduleDraft = ref(null);
   const scheduleFormWatchSuspended = ref(false);
+  const ignoredStorageRequestIds = ref(new Set());
+  let schedulePatchRequestSeq = 0;
   let clockTimer = null;
   let flushPendingStorageRefresh = () => false;
   let hasPendingSamplesRefresh = false;
@@ -570,7 +573,15 @@ function useSchedulePage() {
   );
 
   const persistAll = async (updates) => {
-    await persistSnapshot(updates);
+    const requestId = `schedule-page-${Date.now()}-${schedulePatchRequestSeq += 1}`;
+    ignoredStorageRequestIds.value.add(requestId);
+    try {
+      await writeStorageSchedulePatch(buildSchedulePatch(updates), { source: "schedule-page", requestId });
+    } finally {
+      window.setTimeout(() => {
+        ignoredStorageRequestIds.value.delete(requestId);
+      }, 5000);
+    }
 
     // 只同步本页关心的任务、排程和数据流，设备/样品保持原样。
     if (Array.isArray(updates[STORAGE_KEYS.experiments])) {
@@ -588,6 +599,79 @@ function useSchedulePage() {
     if (Array.isArray(updates[STORAGE_KEYS.streams])) {
       rawStreams.value = updates[STORAGE_KEYS.streams];
     }
+  };
+
+  const schedulePatchRowKey = (key, row) => {
+    if (!row || typeof row !== "object") {
+      return "";
+    }
+    if (key === STORAGE_KEYS.tasks) {
+      return normalizeText(row.code || row.id);
+    }
+    if (key === STORAGE_KEYS.experiments) {
+      return `${normalizeText(row.task_code || row.taskCode)}::${normalizeText(row.experiment_code || row.experimentCode)}`;
+    }
+    if (key === STORAGE_KEYS.schedules) {
+      return normalizeText(row.id) || [
+        normalizeText(row.task_code || row.taskCode),
+        normalizeText(row.experiment_code || row.experimentCode),
+        normalizeText(row.device),
+      ].join("::");
+    }
+    return normalizeText(row.id);
+  };
+
+  const currentRowsForPatchKey = (key) => {
+    if (key === STORAGE_KEYS.conflicts) {
+      return rawConflicts.value;
+    }
+    if (key === STORAGE_KEYS.experiments) {
+      return rawExperiments.value;
+    }
+    if (key === STORAGE_KEYS.schedules) {
+      return rawSchedules.value;
+    }
+    if (key === STORAGE_KEYS.streams) {
+      return rawStreams.value;
+    }
+    if (key === STORAGE_KEYS.tasks) {
+      return rawTasks.value;
+    }
+    return [];
+  };
+
+  const buildSchedulePatch = (updates) => {
+    const patch = { deletes: {}, upserts: {} };
+    [STORAGE_KEYS.conflicts, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.streams, STORAGE_KEYS.tasks].forEach((key) => {
+      if (!Array.isArray(updates?.[key])) {
+        return;
+      }
+      const currentRows = currentRowsForPatchKey(key);
+      const currentByKey = new Map(
+        (Array.isArray(currentRows) ? currentRows : [])
+          .map((row) => [schedulePatchRowKey(key, row), row])
+          .filter(([rowKey]) => rowKey),
+      );
+      const nextByKey = new Map(
+        updates[key]
+          .map((row) => [schedulePatchRowKey(key, row), row])
+          .filter(([rowKey]) => rowKey),
+      );
+      const upserts = [];
+      nextByKey.forEach((row, rowKey) => {
+        if (JSON.stringify(currentByKey.get(rowKey) || null) !== JSON.stringify(row)) {
+          upserts.push(row);
+        }
+      });
+      const deletes = [...currentByKey.keys()].filter((rowKey) => !nextByKey.has(rowKey));
+      if (upserts.length > 0) {
+        patch.upserts[key] = upserts;
+      }
+      if (deletes.length > 0) {
+        patch.deletes[key] = deletes;
+      }
+    });
+    return patch;
   };
 
   const resetScheduleForm = () => {
@@ -1139,6 +1223,8 @@ function useSchedulePage() {
     refresh: () => loadSchedulePage({ resetForm: false }),
     paused: isRealtimeRefreshPaused,
     debounceMs: 100,
+    ignoreSource: "schedule-page",
+    ignoreRequestIds: () => ignoredStorageRequestIds.value,
   });
   flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 

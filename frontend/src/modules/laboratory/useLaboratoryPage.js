@@ -23,6 +23,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
+import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
   buildLaboratoryChecklist,
@@ -63,6 +64,10 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();
+const isResettableTrayStatus = (status) => {
+  const normalized = normalizeText(status);
+  return RESETTABLE_TRAY_STATUSES.has(normalized) || isAxisPartialProgressStatus(normalized);
+};
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
 const normalizeAxisCodes = (value) => {
@@ -496,7 +501,7 @@ function useLaboratoryPage(options = {}) {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
     return (
       trayRows.length > 0
-      && trayRows.some((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+      && trayRows.some((row) => isResettableTrayStatus(row?.trayStatus))
       && !runningInteractionLocked.value
       && !laboratoryUnderMaintenance.value
     );
@@ -944,7 +949,7 @@ function useLaboratoryPage(options = {}) {
   const getCurrentResettableTrayCodes = () =>
     Array.from(new Set(
       (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
-        .filter((row) => RESETTABLE_TRAY_STATUSES.has(String(row?.trayStatus ?? "").trim()))
+        .filter((row) => isResettableTrayStatus(row?.trayStatus))
         .map((row) => String(row?.trayCode || "").trim())
         .filter(Boolean),
     ));

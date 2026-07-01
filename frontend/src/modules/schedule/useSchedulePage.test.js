@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
   readMasterLabs: vi.fn(),
+  writeStorageSchedulePatch: vi.fn(),
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
@@ -17,6 +18,13 @@ vi.mock("@/composables/useStorageSnapshot", () => ({
 
 vi.mock("@/lib/masterDataApi", () => ({
   readMasterLabs: mocks.readMasterLabs,
+}));
+
+vi.mock("@/lib/storageApi", () => ({
+  SNAPSHOT_UPDATED_EVENT: "mes:snapshot-updated",
+  SNAPSHOT_UPDATED_STORAGE_KEY: "mes:snapshot-updated-at",
+  subscribeStorageSnapshotUpdates: () => () => {},
+  writeStorageSchedulePatch: mocks.writeStorageSchedulePatch,
 }));
 
 import { RETENTION_DEVICE, STATUS_SCHEDULED, STATUS_WAITING } from "./model";
@@ -90,6 +98,7 @@ describe("useSchedulePage", () => {
     mocks.loadSnapshot.mockResolvedValue(buildSnapshot());
     mocks.persistSnapshot.mockResolvedValue(undefined);
     mocks.readMasterLabs.mockResolvedValue([]);
+    mocks.writeStorageSchedulePatch.mockResolvedValue({ ok: true, updatedKeys: [] });
   });
 
   afterEach(() => {
@@ -97,6 +106,7 @@ describe("useSchedulePage", () => {
     mocks.loadSnapshot.mockReset();
     mocks.persistSnapshot.mockReset();
     mocks.readMasterLabs.mockReset();
+    mocks.writeStorageSchedulePatch.mockReset();
   });
 
   test("opens a partial conflict confirmation before persisting a new schedule", async () => {
@@ -156,18 +166,23 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.scheduleConflictOpen).toBe(false);
-    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
-    expect(mocks.persistSnapshot.mock.calls[0][0]["mes.schedules"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          experiment_code: "SYLU-2026-03-006-C",
-          task_code: "SYLU-2026-03-006",
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledTimes(1);
+    expect(mocks.writeStorageSchedulePatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        upserts: expect.objectContaining({
+          "mes.schedules": expect.arrayContaining([
+            expect.objectContaining({
+              experiment_code: "SYLU-2026-03-006-C",
+              task_code: "SYLU-2026-03-006",
+            }),
+          ]),
         }),
-      ]),
+      }),
     );
   });
 
-  test("directly persists when the candidate schedule does not conflict with task trays", async () => {
+  test("directly persists a local schedule patch when the candidate schedule does not conflict with task trays", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 
@@ -183,11 +198,24 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.scheduleConflictOpen).toBe(false);
-    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledTimes(1);
+    expect(mocks.writeStorageSchedulePatch.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        upserts: expect.objectContaining({
+          "mes.schedules": expect.arrayContaining([
+            expect.objectContaining({
+              experiment_code: "SYLU-2026-03-006-B",
+              task_code: "SYLU-2026-03-006",
+            }),
+          ]),
+        }),
+      }),
+    );
   });
 
   test("does not keep an optimistic schedule when persistence fails", async () => {
-    mocks.persistSnapshot.mockRejectedValueOnce(new Error("Failed to write storage updates: 400 Bad Request，夹具安装后排程不可删除或重新排程。"));
+    mocks.writeStorageSchedulePatch.mockRejectedValueOnce(new Error("Failed to write storage schedule patch: 400 Bad Request，夹具安装后排程不可删除或重新排程。"));
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 
@@ -202,7 +230,8 @@ describe("useSchedulePage", () => {
     await wrapper.vm.submitSchedule();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.scheduleWarning).toContain("排程保存失败");
     expect(wrapper.vm.scheduleWarning).toContain("夹具安装后排程不可删除或重新排程");
     expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(
@@ -286,10 +315,14 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.taskDetailModalOpen).toBe(false);
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        "mes.schedules": expect.not.arrayContaining([expect.objectContaining({ id: "schedule-1" })]),
+        deletes: expect.objectContaining({
+          "mes.schedules": expect.arrayContaining(["schedule-1"]),
+        }),
       }),
+      expect.any(Object),
     );
   });
 
@@ -368,33 +401,39 @@ describe("useSchedulePage", () => {
     await wrapper.vm.submitSchedule();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        "mes.experiments": expect.arrayContaining([
-          expect.objectContaining({
-            experiment_code: "SYLU-2026-03-006-B",
-            unscheduled_since: "",
-          }),
-        ]),
+        upserts: expect.objectContaining({
+          "mes.experiments": expect.arrayContaining([
+            expect.objectContaining({
+              experiment_code: "SYLU-2026-03-006-B",
+              unscheduled_since: "",
+            }),
+          ]),
+        }),
       }),
+      expect.any(Object),
     );
 
-    mocks.persistSnapshot.mockClear();
+    mocks.writeStorageSchedulePatch.mockClear();
     wrapper.vm.openTaskDetailModal("schedule-1");
     await settle(wrapper);
 
     await wrapper.vm.removeTaskDetailSchedule();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledWith(
       expect.objectContaining({
-        "mes.experiments": expect.arrayContaining([
-          expect.objectContaining({
-            experiment_code: "SYLU-2026-03-006-A",
-            unscheduled_since: expect.any(String),
-          }),
-        ]),
+        upserts: expect.objectContaining({
+          "mes.experiments": expect.arrayContaining([
+            expect.objectContaining({
+              experiment_code: "SYLU-2026-03-006-A",
+              unscheduled_since: expect.any(String),
+            }),
+          ]),
+        }),
       }),
+      expect.any(Object),
     );
   });
 

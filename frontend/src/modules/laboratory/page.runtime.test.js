@@ -2717,6 +2717,47 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
   });
 
+  test("enables reset for a current partial-axis experiment tray", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = [
+      {
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        experiment_name: "振动试验",
+        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-vibration-axis-remaining",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:30:00.000Z",
+        end_at: "2026-04-02T11:00:00.000Z",
+        axis_codes: ["y-", "z+", "z-"],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "振动试验部分完成 3/6轴",
+        flow_status: "振动试验部分完成 3/6轴",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "振动试验部分完成 3/6轴", tray_code: "TP-001" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeUndefined();
+  });
+
   test("withdraws only the current salt-spray experiment trays after double confirmation", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();

@@ -53,6 +53,49 @@ const resetStorage = () => {
   masterLabsShouldFail = false;
 };
 
+const patchRowKey = (key, row) => {
+  if (!row || typeof row !== "object") {
+    return "";
+  }
+  if (key === TASKS_KEY) {
+    return String(row.code || row.id || "").trim();
+  }
+  if (key === EXPERIMENTS_KEY) {
+    return `${String(row.task_code || row.taskCode || "").trim()}::${String(row.experiment_code || row.experimentCode || "").trim()}`;
+  }
+  if (key === SCHEDULES_KEY) {
+    return String(row.id || "").trim() || [
+      String(row.task_code || row.taskCode || "").trim(),
+      String(row.experiment_code || row.experimentCode || "").trim(),
+      String(row.device || "").trim(),
+    ].join("::");
+  }
+  return String(row.id || "").trim();
+};
+
+const applyStoragePatchRows = (key, upserts = [], deletes = []) => {
+  const currentRows = getStorage(key);
+  const upsertByKey = new Map(
+    (Array.isArray(upserts) ? upserts : [])
+      .map((row) => [patchRowKey(key, row), row])
+      .filter(([rowKey]) => rowKey),
+  );
+  const deleteKeys = new Set((Array.isArray(deletes) ? deletes : []).map((value) => String(value || "").trim()).filter(Boolean));
+  const orderedKeys = [];
+  [...currentRows, ...(Array.isArray(upserts) ? upserts : [])].forEach((row) => {
+    const rowKey = patchRowKey(key, row);
+    if (rowKey && !orderedKeys.includes(rowKey)) {
+      orderedKeys.push(rowKey);
+    }
+  });
+  const currentByKey = new Map(currentRows.map((row) => [patchRowKey(key, row), row]).filter(([rowKey]) => rowKey));
+  storageState[key] = orderedKeys
+    .filter((rowKey) => !deleteKeys.has(rowKey))
+    .map((rowKey) => upsertByKey.get(rowKey) || currentByKey.get(rowKey))
+    .filter(Boolean)
+    .map((row) => JSON.parse(JSON.stringify(row)));
+};
+
 const installStorageFetchMock = () => {
   fetchMock = vi.fn(async (input, options = {}) => {
     const url = String(input);
@@ -77,6 +120,22 @@ const installStorageFetchMock = () => {
         ok: true,
         status: 200,
         json: async () => ({ ok: true }),
+      };
+    }
+
+    if (url.endsWith("/api/storage/schedules/patch") && method === "POST") {
+      const patch = JSON.parse(options.body ?? "{}");
+      const keys = new Set([
+        ...Object.keys(patch.upserts || {}),
+        ...Object.keys(patch.deletes || {}),
+      ]);
+      keys.forEach((key) => {
+        applyStoragePatchRows(key, patch.upserts?.[key], patch.deletes?.[key]);
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, updatedKeys: [...keys] }),
       };
     }
 

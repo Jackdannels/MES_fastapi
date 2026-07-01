@@ -67,7 +67,23 @@ const mergeRunWithTrayStatus = (run, relation) => {
   };
 };
 
-const resolveExperimentRunEntry = ({ experimentCode, experimentRuns = [], experimentRunTrays = [], taskCode, trayCode }) => {
+const runtimeIsBeforeCutoff = (run, runtimeCutoffTime = 0) => {
+  const cutoff = Number(runtimeCutoffTime) || 0;
+  if (!cutoff) {
+    return false;
+  }
+  const runtimeTime = experimentRunTimeValue(run) || entryTimeValue(run);
+  return runtimeTime > 0 && runtimeTime < cutoff;
+};
+
+const resolveExperimentRunEntry = ({
+  experimentCode,
+  experimentRuns = [],
+  experimentRunTrays = [],
+  runtimeCutoffTime = 0,
+  taskCode,
+  trayCode,
+}) => {
   const normalizedExperimentCode = normalizeText(experimentCode);
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
@@ -112,6 +128,7 @@ const resolveExperimentRunEntry = ({ experimentCode, experimentRuns = [], experi
       }, relation))
     : [];
   return [...runMatches, ...relationOnlyMatches]
+    .filter((run) => !runtimeIsBeforeCutoff(run, runtimeCutoffTime))
     .sort((left, right) =>
       experimentRunTimeValue(right) - experimentRunTimeValue(left)
       || entryTimeValue(right) - entryTimeValue(left)
@@ -126,11 +143,19 @@ const resolveExperimentRunStatus = ({
   experimentRunSteps = [],
   experimentRunTrays = [],
   experiments = [],
+  runtimeCutoffTime = 0,
   schedules = [],
   taskCode,
   trayCode,
 }) => {
-  const matchedRun = resolveExperimentRunEntry({ experimentCode, experimentRuns, experimentRunTrays, taskCode, trayCode });
+  const matchedRun = resolveExperimentRunEntry({
+    experimentCode,
+    experimentRuns,
+    experimentRunTrays,
+    runtimeCutoffTime,
+    taskCode,
+    trayCode,
+  });
   const rawRunStatus = normalizeText(matchedRun?.status);
   if (!rawRunStatus) {
     return "";
@@ -169,11 +194,19 @@ const resolveCompletedExperimentRuntime = ({
   experimentRunSteps = [],
   experimentRunTrays = [],
   experiments = [],
+  runtimeCutoffTime = 0,
   schedules = [],
   taskCode,
   trayCode,
 }) => {
-  const matchedRun = resolveExperimentRunEntry({ experimentCode, experimentRuns, experimentRunTrays, taskCode, trayCode });
+  const matchedRun = resolveExperimentRunEntry({
+    experimentCode,
+    experimentRuns,
+    experimentRunTrays,
+    runtimeCutoffTime,
+    taskCode,
+    trayCode,
+  });
   const runStatus = normalizeLifecycleStatus("", matchedRun?.status);
   if (runStatus !== "实验已完成") {
     return null;

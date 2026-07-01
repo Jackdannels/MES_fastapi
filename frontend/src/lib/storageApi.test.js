@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { SNAPSHOT_UPDATED_EVENT, readStorageSnapshot, subscribeStorageSnapshotUpdates, writeStorageUpdates } from "./storageApi";
+import { SNAPSHOT_UPDATED_EVENT, readStorageSnapshot, subscribeStorageSnapshotUpdates, writeStorageSchedulePatch, writeStorageTrayAction, writeStorageUpdates } from "./storageApi";
 import { STORAGE_KEYS } from "./storageKeys";
 
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
@@ -230,6 +230,179 @@ describe("storageApi", () => {
         [STORAGE_KEYS.samples]: [],
       }),
     ).rejects.toThrow("Failed to write storage updates: 400 Bad Request，托盘尚未从接驳间出库，不能直接到达实验室");
+  });
+
+  test("writes single tray stock-out action with source metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        trayCode: "TP-001",
+        updatedKeys: [STORAGE_KEYS.samples, STORAGE_KEYS.staging_events],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const eventSpy = vi.fn();
+    window.addEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+
+    const result = await writeStorageTrayAction(
+      {
+        mode: "stockOut",
+        room: "staging",
+        targetLab: "冲击一室",
+        targetType: "lab",
+        trayCode: "TP-001",
+      },
+      { source: "staging-management", requestId: "tray-write-1" },
+    );
+
+    expect(result.trayCode).toBe("TP-001");
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/rooms/staging/trays/TP-001/stock-out", getFrontendApiBaseUrl()),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-MES-Update-Request-Id": "tray-write-1",
+          "X-MES-Update-Source": "staging-management",
+        }),
+        credentials: "include",
+        body: JSON.stringify({
+          targetLab: "冲击一室",
+          targetType: "lab",
+        }),
+      }),
+    );
+    expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        keys: [STORAGE_KEYS.samples, STORAGE_KEYS.staging_events],
+        requestId: "tray-write-1",
+        source: "staging-management",
+      }),
+    }));
+    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+  });
+
+  test("writes single tray stock-in action", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, updatedKeys: [STORAGE_KEYS.samples, STORAGE_KEYS.staging_events] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await writeStorageTrayAction({
+      mode: "stockIn",
+      room: "staging",
+      trayCode: "TP-IN",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/rooms/staging/trays/TP-IN/stock-in", getFrontendApiBaseUrl()),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+  });
+
+  test("writes single tray manufacturer return action", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, updatedKeys: [STORAGE_KEYS.tasks, STORAGE_KEYS.samples, STORAGE_KEYS.staging_events] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await writeStorageTrayAction({
+      mode: "manufacturerReturn",
+      room: "staging",
+      trayCode: "TP-RETURN",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/rooms/staging/trays/TP-RETURN/manufacturer-return", getFrontendApiBaseUrl()),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+  });
+
+  test("includes backend detail when single tray action fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        statusText: "Conflict",
+        json: async () => ({ detail: "该托盘尚未完成暂存间扫码入库。" }),
+      }),
+    );
+
+    await expect(
+      writeStorageTrayAction({ mode: "stockOut", room: "staging", trayCode: "TP-001", targetLab: "冲击一室" }),
+    ).rejects.toThrow("Failed to write storage tray action: 409 Conflict，该托盘尚未完成暂存间扫码入库。");
+  });
+
+  test("writes schedule patches with source metadata", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        updatedKeys: [STORAGE_KEYS.schedules, STORAGE_KEYS.tasks],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const eventSpy = vi.fn();
+    window.addEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+
+    const patch = {
+      upserts: {
+        [STORAGE_KEYS.schedules]: [{ id: "schedule-1", task_code: "T-1" }],
+      },
+    };
+
+    const result = await writeStorageSchedulePatch(patch, { source: "schedule-page", requestId: "schedule-write-1" });
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/schedules/patch", getFrontendApiBaseUrl()),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-MES-Update-Request-Id": "schedule-write-1",
+          "X-MES-Update-Source": "schedule-page",
+        }),
+        credentials: "include",
+        body: JSON.stringify(patch),
+      }),
+    );
+    expect(eventSpy).toHaveBeenCalledWith(expect.objectContaining({
+      detail: expect.objectContaining({
+        keys: [STORAGE_KEYS.schedules, STORAGE_KEYS.tasks],
+        requestId: "schedule-write-1",
+        source: "schedule-page",
+      }),
+    }));
+    window.removeEventListener(SNAPSHOT_UPDATED_EVENT, eventSpy);
+  });
+
+  test("includes backend detail when schedule patch fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        statusText: "Conflict",
+        json: async () => ({ detail: "排程冲突，请调整时间或实验室" }),
+      }),
+    );
+
+    await expect(
+      writeStorageSchedulePatch({ upserts: { [STORAGE_KEYS.schedules]: [{ id: "schedule-1" }] } }),
+    ).rejects.toThrow("Failed to write storage schedule patch: 409 Conflict，排程冲突，请调整时间或实验室");
   });
 
   test("subscribes to remote storage update events with EventSource", () => {

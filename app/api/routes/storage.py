@@ -20,6 +20,16 @@ from app.services.laboratory_completion import tray_assigned_experiments_are_com
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.storage_atomic import merge_concurrent_storage_updates
+from app.services.storage_tray_actions import (
+    SAMPLES_KEY,
+    STAGING_EVENTS_KEY,
+    StorageTrayActionError,
+    build_manufacturer_return_updates,
+    build_stock_in_updates,
+    build_stock_out_updates,
+    summarize_tray_row,
+)
+from app.services.storage_schedule_patch import StorageSchedulePatchError, build_schedule_patch_updates
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -1479,6 +1489,132 @@ def read_all() -> Dict[str, Any]:
 @router.get("/events")
 def storage_update_events() -> StreamingResponse:
     return StreamingResponse(_storage_update_event_stream(), media_type="text/event-stream")
+
+
+def _publish_tray_action_update(updates: dict[str, Any], *, source: str = "", request_id: str = "") -> None:
+    keys = list(updates.keys())
+    if source or request_id:
+        publish_storage_update(keys, source=source, request_id=request_id)
+        return
+    publish_storage_update(keys)
+
+
+def _run_storage_tray_action(
+    update_builder,
+    *,
+    room: str,
+    tray_code: str,
+    payload: dict[str, Any],
+    source: str = "",
+    request_id: str = "",
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    action_time = now_business_text()
+    try:
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage.read_all()
+            updates = update_builder(snapshot, room=room, tray_code=tray_code, payload=payload, now=action_time)
+            _validate_storage_update(storage, updates)
+            storage.write_many(updates)
+    except StorageTrayActionError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    _publish_tray_action_update(updates, source=source, request_id=request_id)
+    updated_samples = updates.get(SAMPLES_KEY, [])
+    return {
+        "ok": True,
+        "trayCode": tray_code,
+        "row": summarize_tray_row(updated_samples, tray_code),
+        "updatedKeys": list(updates.keys()),
+    }
+
+
+def _run_storage_schedule_patch(
+    payload: dict[str, Any],
+    *,
+    source: str = "",
+    request_id: str = "",
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    try:
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage.read_all()
+            updates = build_schedule_patch_updates(snapshot, payload if isinstance(payload, dict) else {})
+            _validate_storage_update(storage, updates)
+            storage.write_many(updates)
+    except StorageSchedulePatchError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+    _publish_tray_action_update(updates, source=source, request_id=request_id)
+    return {
+        "ok": True,
+        "updatedKeys": list(updates.keys()),
+    }
+
+
+@router.post("/rooms/{room}/trays/{tray_code}/stock-out")
+def stock_out_storage_room_tray(
+    room: str,
+    tray_code: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
+    return _run_storage_tray_action(
+        build_stock_out_updates,
+        room=room,
+        tray_code=tray_code,
+        payload=payload if isinstance(payload, dict) else {},
+        source=str(update_source or "").strip(),
+        request_id=str(update_request_id or "").strip(),
+    )
+
+
+@router.post("/rooms/{room}/trays/{tray_code}/stock-in")
+def stock_in_storage_room_tray(
+    room: str,
+    tray_code: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
+    return _run_storage_tray_action(
+        build_stock_in_updates,
+        room=room,
+        tray_code=tray_code,
+        payload=payload if isinstance(payload, dict) else {},
+        source=str(update_source or "").strip(),
+        request_id=str(update_request_id or "").strip(),
+    )
+
+
+@router.post("/rooms/{room}/trays/{tray_code}/manufacturer-return")
+def return_storage_room_tray_to_manufacturer(
+    room: str,
+    tray_code: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
+    return _run_storage_tray_action(
+        build_manufacturer_return_updates,
+        room=room,
+        tray_code=tray_code,
+        payload=payload if isinstance(payload, dict) else {},
+        source=str(update_source or "").strip(),
+        request_id=str(update_request_id or "").strip(),
+    )
+
+
+@router.post("/schedules/patch")
+def patch_storage_schedules(
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
+    return _run_storage_schedule_patch(
+        payload if isinstance(payload, dict) else {},
+        source=str(update_source or "").strip(),
+        request_id=str(update_request_id or "").strip(),
+    )
 
 
 @router.get("/{key}")

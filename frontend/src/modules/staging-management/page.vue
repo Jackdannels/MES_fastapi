@@ -334,7 +334,7 @@ import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { formatLocalDateTime } from "@/lib/dateTime";
-import { writeStorageUpdates } from "@/lib/storageApi";
+import { writeStorageTrayAction, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
@@ -725,6 +725,24 @@ const persistInventoryResult = async (result) => {
   return !result.error;
 };
 
+const persistTrayActionResult = async (result, actionPayload) => {
+  if (result.error) {
+    scanWarning.value = result.error;
+    return false;
+  }
+  snapshot.value = result.snapshot;
+  const storageUpdateMeta = trackOwnStorageRequest();
+  try {
+    await writeStorageTrayAction(actionPayload, storageUpdateMeta);
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
+    return true;
+  } catch (error) {
+    scanWarning.value = error?.message || "托盘操作保存失败，请刷新后重试。";
+    void loadSnapshot();
+    return false;
+  }
+};
+
 const resolveScannedDetail = () => {
   if (!String(scanForm.code ?? "").trim()) {
     scanWarning.value = "请先完成扫码或输入托盘编号。";
@@ -766,7 +784,16 @@ const submitStockInScan = async () => {
       room: activeRoom.value,
       snapshot: snapshot.value,
     });
-    if (await persistInventoryResult(result)) {
+    const stockInActionPayload = {
+      mode: "stockIn",
+      room: activeRoom.value,
+      trayCode: detail.found ? detail.trayCode : scannedCode,
+    };
+    if (activeRoom.value === "appearance" || result.row?.status !== "到货") {
+      stockInActionPayload.location = result.row?.location;
+      stockInActionPayload.status = result.row?.status;
+    }
+    if (await persistTrayActionResult(result, stockInActionPayload)) {
       scanWarning.value = "";
       resetScanForm();
       if (scanInputRef.value) {
@@ -841,6 +868,17 @@ const confirmDestinationAction = async (destination = null) => {
   if (!target?.scheduled) {
     return;
   }
+  const actionPayload = {
+    mode: "stockOut",
+    room: activeRoom.value,
+    targetExperimentCode: target.targetExperimentCode,
+    targetExperimentName: target.targetExperimentName,
+    targetLab: target.targetLab,
+    targetLabCode: target.targetLabCode,
+    targetLabId: target.targetLabId,
+    targetType: target.targetType,
+    trayCode: activeDetail.trayCode,
+  };
   const result = applyZancunInventoryAction({
     now: nowValue(),
       payload: {
@@ -858,7 +896,10 @@ const confirmDestinationAction = async (destination = null) => {
       snapshot: snapshot.value,
   });
 
-  await persistInventoryResult(result);
+  const persisted = await persistTrayActionResult(result, actionPayload);
+  if (!persisted) {
+    return;
+  }
   closeDestinationModal();
   if (!result.error) {
     await openScanModal("stockOut");
@@ -896,7 +937,14 @@ const submitManufacturerReturn = async () => {
       snapshot: snapshot.value,
   });
 
-  await persistInventoryResult(result);
+  const persisted = await persistTrayActionResult(result, {
+    mode: "manufacturerReturn",
+    room: activeRoom.value,
+    trayCode: activeDetail.trayCode,
+  });
+  if (!persisted) {
+    return;
+  }
   closeDestinationModal();
 };
 

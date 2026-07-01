@@ -2566,11 +2566,16 @@ const collectTrayRows = ({
           !normalizeText(currentExperimentCode)
           || normalizeText(latestDispatch.targetExperimentCode) === normalizeText(currentExperimentCode)
         );
+      const rawCurrentExperimentHistoryStatus = normalizeText(currentExperimentHistorySnapshot?.status);
+      const rawCurrentExperimentHistoryRank = resolveLaboratoryStatusRank(rawCurrentExperimentHistoryStatus);
+      const currentScheduleSuppressesCurrentHistory =
+        currentScheduleIsAxisSubExperiment
+        && (rawCurrentExperimentHistoryRank <= 0 || rawCurrentExperimentHistoryRank >= 5);
       const currentExperimentHistoryStatus = dispatchRestoresWithdrawnCurrentExperiment
         || currentExperimentHistoryIsStale
-        || currentScheduleIsAxisSubExperiment
+        || currentScheduleSuppressesCurrentHistory
         ? ""
-        : normalizeText(currentExperimentHistorySnapshot?.status);
+        : rawCurrentExperimentHistoryStatus;
       const latestExperimentHistoryStatus = normalizeText(latestExperimentHistorySnapshot?.status);
       const restoredTargetLab = targetLab || normalizeText(restoredDispatch?.targetLab);
       const restoredTargetExperimentCode =
@@ -3020,17 +3025,28 @@ function buildLaboratoryWorkbenchView({
     samples,
     selectedTrayRow,
   });
+  const flowContextExperimentName = normalizeText(flowContextTask?.experimentName);
+  const selectedTrayResolvedAxisExperimentName = parsePartialAxisExperimentName(selectedTrayResolvedFlowStatus);
+  const selectedTrayPartialAxisEvidenceExperimentName = parsePartialAxisExperimentName(selectedTrayPartialAxisEvidenceStatus);
+  const selectedTrayEffectiveResolvedFlowStatus =
+    isAxisPartialProgressStatus(selectedTrayResolvedFlowStatus)
+    && selectedTrayPartialAxisEvidenceStatus
+    && selectedTrayPartialAxisEvidenceExperimentName
+    && selectedTrayPartialAxisEvidenceExperimentName === flowContextExperimentName
+    && selectedTrayResolvedAxisExperimentName !== flowContextExperimentName
+      ? selectedTrayPartialAxisEvidenceStatus
+      : selectedTrayResolvedFlowStatus;
   const selectedTrayHasDisplayCurrentExperimentContext =
     selectedTrayHasCurrentExperimentContext
     && (
       selectedTrayHasCurrentExperimentDisplayDispatch
       || (
         selectedTrayCanEnterCurrentExperimentAfterOtherCompletion
-        && !isAxisPartialProgressStatus(selectedTrayResolvedFlowStatus)
+        && !isAxisPartialProgressStatus(selectedTrayEffectiveResolvedFlowStatus)
       )
     );
   const selectedTrayAxisPartialStatusCandidate = [
-    selectedTrayResolvedFlowStatus,
+    selectedTrayEffectiveResolvedFlowStatus,
     selectedTrayPartialAxisEvidenceStatus,
     ...rowPartialAxisCompletionStatusLabels(selectedTrayRow),
   ].map(normalizeText).find((status) => isAxisPartialProgressStatus(status)) || "";
@@ -3039,8 +3055,8 @@ function buildLaboratoryWorkbenchView({
     && selectedTrayAxisPartialStatusCandidate
     && (
       !selectedTrayHasDisplayCurrentExperimentContext
-      || isAxisPartialProgressStatus(selectedTrayResolvedFlowStatus)
-      || COMPLETED_TRAY_STATUSES.has(normalizeLifecycleStatus("", selectedTrayResolvedFlowStatus))
+      || isAxisPartialProgressStatus(selectedTrayEffectiveResolvedFlowStatus)
+      || COMPLETED_TRAY_STATUSES.has(normalizeLifecycleStatus("", selectedTrayEffectiveResolvedFlowStatus))
     )
     && selectedTrayAxisPartialStatusIsSupersededByLaterExperimentCompletion({
       axisStatus: selectedTrayAxisPartialStatusCandidate,
@@ -3058,7 +3074,7 @@ function buildLaboratoryWorkbenchView({
     && !selectedTrayAxisPartialStatusSupersededByLaterCompletion
     && !selectedTrayAxisPartialStatusCandidate
     && selectedTrayRow?.completedForCurrentExperiment !== true
-    && selectedTrayResolvedFlowStatus === LAB_RESET_STATUS;
+    && selectedTrayEffectiveResolvedFlowStatus === LAB_RESET_STATUS;
   const selectedTrayProjectsFromOtherExperimentCompletion =
     selectedTrayProjectsCurrentDispatchStatus
     && selectedTrayRow?.completedForOtherExperiment === true
@@ -3079,12 +3095,14 @@ function buildLaboratoryWorkbenchView({
         ? EXPERIMENT_COMPLETED_STATUS
       : selectedTrayOnlyHasOtherExperimentCompletion
       ? EXPERIMENT_COMPLETED_STATUS
-      : selectedTrayResolvedFlowStatus;
+      : selectedTrayEffectiveResolvedFlowStatus;
   const currentTaskStatus = resolveLaboratoryTaskStatus(currentTask);
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress);
   const rawSelectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
         currentExperimentCode: selectedTrayAxisPartialStatusSupersededByLaterCompletion
+          || selectedTrayProjectsFromOtherExperimentCompletion
+          || selectedTrayOnlyHasOtherExperimentCompletion
           ? ""
           : selectedTrayHasDisplayCurrentExperimentContext
           ? normalizeText(flowContextTask?.experimentCode)
@@ -3135,14 +3153,26 @@ function buildLaboratoryWorkbenchView({
     || normalizeText(flowContextTask?.axisProgress?.totalStatusLabel);
   const selectedTrayFlowAxisStatusCounts = parsePartialAxisStatusLabelCounts(selectedTrayFlowAxisStatus);
   const flowContextAxisStatusCounts = parsePartialAxisStatusLabelCounts(flowContextAxisStatus);
+  const selectedTrayFlowAxisExperimentName = parsePartialAxisExperimentName(selectedTrayFlowAxisStatus);
+  const flowContextAxisExperimentName = parsePartialAxisExperimentName(flowContextAxisStatus);
   const selectedTrayAxisStatus =
     selectedTrayFlowAxisStatus
       ? (
           flowContextAxisStatus
           && selectedTrayFlowAxisStatusCounts
           && flowContextAxisStatusCounts
-          && selectedTrayFlowAxisStatusCounts.completed === flowContextAxisStatusCounts.completed
-          && selectedTrayFlowAxisStatusCounts.total !== flowContextAxisStatusCounts.total
+          && (
+            (
+              selectedTrayFlowAxisStatusCounts.completed === flowContextAxisStatusCounts.completed
+              && selectedTrayFlowAxisStatusCounts.total !== flowContextAxisStatusCounts.total
+            )
+            || (
+              selectedTrayFlowAxisStatusCounts.completed === flowContextAxisStatusCounts.completed
+              && selectedTrayFlowAxisStatusCounts.total === flowContextAxisStatusCounts.total
+              && flowContextAxisExperimentName
+              && selectedTrayFlowAxisExperimentName !== flowContextAxisExperimentName
+            )
+          )
             ? flowContextAxisStatus
             : selectedTrayFlowAxisStatus
         )

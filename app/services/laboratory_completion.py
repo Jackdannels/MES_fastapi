@@ -488,6 +488,19 @@ def complete_storage_laboratory_experiment(
             raise ValueError("experiment_run_trays are required when completing by run_no")
         return inferred_from_relations
 
+    def structured_tray_codes_for_run() -> set[str]:
+        if not normalized_run_no:
+            return set()
+        return {
+            normalize_text(item.get("tray_code") or item.get("tray_no"))
+            for item in experiment_run_trays
+            if normalize_text(item.get("run_no") or item.get("runNo")) == normalized_run_no
+            and normalize_text(item.get("task_code")) == normalized_task_code
+            and normalize_text(item.get("experiment_code")) == normalized_experiment_code
+            and (not normalized_sub_experiment_code or record_sub_experiment_code(item) == normalized_sub_experiment_code)
+            and normalize_text(item.get("tray_code") or item.get("tray_no"))
+        }
+
     if requested_tray_codes:
         affected_tray_codes = requested_tray_codes
     else:
@@ -496,6 +509,9 @@ def complete_storage_laboratory_experiment(
             affected_tray_codes = inferred_run_tray_codes
         else:
             raise ValueError("trayCodes are required for experiment completion")
+    run_bound_tray_codes = structured_tray_codes_for_run()
+    if run_bound_tray_codes:
+        affected_tray_codes = {tray_code for tray_code in affected_tray_codes if tray_code in run_bound_tray_codes}
     if scoped_tray_codes:
         affected_tray_codes = {tray_code for tray_code in affected_tray_codes if tray_code in scoped_tray_codes}
     if not affected_tray_codes:

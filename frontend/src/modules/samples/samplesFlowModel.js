@@ -108,6 +108,7 @@ const resolveExperimentRuntimeFlowEvent = ({
   experimentRunSteps,
   experimentRunTrays,
   experiments,
+  runtimeCutoffTime = 0,
   schedules,
   taskCode,
   trayCode,
@@ -120,6 +121,7 @@ const resolveExperimentRuntimeFlowEvent = ({
     experimentRunSteps,
     experimentRunTrays,
     experiments,
+    runtimeCutoffTime,
     schedules,
     taskCode,
     trayCode,
@@ -128,6 +130,7 @@ const resolveExperimentRuntimeFlowEvent = ({
     experimentCode,
     experimentRuns,
     experimentRunTrays,
+    runtimeCutoffTime,
     taskCode,
     trayCode,
   });
@@ -158,6 +161,90 @@ const partialAxisStatusMatchesExperiment = (status, experiment) => {
     experiment?.testType,
     ...(Array.isArray(experiment?.aliases) ? experiment.aliases : []),
   ]).some((name) => name && normalizedStatus.startsWith(name));
+};
+
+const experimentIdentityNames = (experiment) => uniqueNormalizedTexts([
+  experiment?.displayName,
+  experiment?.name,
+  experiment?.experiment_name,
+  experiment?.experimentName,
+  experiment?.experiment_type,
+  experiment?.experimentType,
+  experiment?.test_type,
+  experiment?.testType,
+  ...(Array.isArray(experiment?.aliases) ? experiment.aliases : []),
+]);
+
+const withdrawalRestoreTargetMatchesExperiment = (restoreTarget, experiment) => {
+  const targetName = normalizeText(restoreTarget?.experimentName);
+  return Boolean(targetName) && experimentIdentityNames(experiment).includes(targetName);
+};
+
+const withdrawalRestoreTargetInvalidatesRuntime = (restoreTarget) => {
+  const status = normalizeText(restoreTarget?.status);
+  if (!status) {
+    return false;
+  }
+  return normalizeLifecycleStatus("", status) !== "实验已完成" && !isAxisPartialProgressStatus(status);
+};
+
+const historyEntryAppliesToTray = (entry, sample, trayCode) => {
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTrayCode) {
+    return false;
+  }
+  if (entryMatchesTrayCode(entry, normalizedTrayCode)) {
+    return true;
+  }
+  const sampleTrayCodes = getSampleTrayList(sample).map(resolveEntryTrayCode).filter(Boolean);
+  return sampleTrayCodes.length === 1 && sampleTrayCodes[0] === normalizedTrayCode;
+};
+
+const resolveExperimentRuntimeCutoffMap = ({
+  orderedExperiments = [],
+  samples = [],
+  taskCode,
+  trayCode,
+} = {}) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode) {
+    return new Map();
+  }
+  const cutoffMap = new Map();
+  asArray(samples).forEach((sample) => {
+    if (resolveEntryTaskCode(sample) !== normalizedTaskCode) {
+      return;
+    }
+    if (!getSampleTrayList(sample).some((tray) => resolveEntryTrayCode(tray) === normalizedTrayCode)) {
+      return;
+    }
+    asArray(sample?.history).forEach((entry) => {
+      if (!WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action))) {
+        return;
+      }
+      if (!historyEntryAppliesToTray(entry, sample, normalizedTrayCode)) {
+        return;
+      }
+      const restoreTarget = parseWithdrawalRestoreTarget(entry?.detail, normalizedTaskCode);
+      if (!withdrawalRestoreTargetInvalidatesRuntime(restoreTarget)) {
+        return;
+      }
+      const withdrawalTime = entryTimeValue(entry);
+      if (!withdrawalTime) {
+        return;
+      }
+      const matchedExperiment = asArray(orderedExperiments).find((experiment) =>
+        withdrawalRestoreTargetMatchesExperiment(restoreTarget, experiment),
+      );
+      const experimentCode = normalizeText(matchedExperiment?.code);
+      if (!experimentCode) {
+        return;
+      }
+      cutoffMap.set(experimentCode, Math.max(cutoffMap.get(experimentCode) || 0, withdrawalTime));
+    });
+  });
+  return cutoffMap;
 };
 
 const parseAxisPartialProgressStatus = (status) => {
@@ -333,6 +420,14 @@ const buildTrayExperimentFlow = (input = {}) => {
     experimentTrays: input.experimentTrays,
     schedules: input.schedules,
   });
+  const runtimeCutoffTimeByExperimentCode = resolveExperimentRuntimeCutoffMap({
+    orderedExperiments,
+    samples: input.samples,
+    taskCode,
+    trayCode,
+  });
+  const runtimeCutoffTimeForExperiment = (experiment) =>
+    runtimeCutoffTimeByExperimentCode.get(normalizeText(experiment?.code)) || 0;
   const singleExperimentAxisRuntimeStatus = orderedExperiments.length === 1
     ? resolveExperimentRunStatus({
       experiment: orderedExperiments[0],
@@ -341,6 +436,7 @@ const buildTrayExperimentFlow = (input = {}) => {
       experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
       experiments: orderedExperiments,
+      runtimeCutoffTime: runtimeCutoffTimeForExperiment(orderedExperiments[0]),
       schedules: input.schedules,
       taskCode,
       trayCode,
@@ -353,7 +449,11 @@ const buildTrayExperimentFlow = (input = {}) => {
   const normalizedStatus = resolveEffectiveTrayLifecycleStatus(input) || normalizeLifecycleStatus(input.location, input.status);
   const normalizedStatusTime = resolveCurrentTrayStatusTime(input, normalizedStatus);
   const trayIsReturned = normalizedStatus === "厂家收回";
-  const inputCurrentExperimentCode = normalizeText(input.currentExperimentCode);
+  const rawInputCurrentExperimentCode = normalizeText(input.currentExperimentCode);
+  const inputCurrentExperimentCode =
+    input.suppressGuessedDestinationLab && normalizeLifecycleStatus("", normalizedStatus) === "实验已完成"
+      ? ""
+      : rawInputCurrentExperimentCode;
   const dispatchTarget = resolveTrayDispatchTarget(input);
   const effectiveDispatchTarget =
     input.preferCurrentExperimentCode && inputCurrentExperimentCode
@@ -389,6 +489,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
         experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
         experiments: orderedExperiments,
+        runtimeCutoffTime: runtimeCutoffTimeForExperiment(trayTargetExperiment),
         schedules: input.schedules,
         taskCode,
         trayCode,
@@ -413,6 +514,7 @@ const buildTrayExperimentFlow = (input = {}) => {
       experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
       experiments: orderedExperiments,
+      runtimeCutoffTime: runtimeCutoffTimeForExperiment(experiment),
       schedules: input.schedules,
       taskCode,
       trayCode,
@@ -431,6 +533,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
         experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
         experiments: orderedExperiments,
+        runtimeCutoffTime: runtimeCutoffTimeForExperiment(experiment),
         schedules: input.schedules,
         taskCode,
         trayCode,
@@ -472,6 +575,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         && !suppressInputCurrentFallback
         && normalizedStatus !== "厂家收回"
         && !(normalizedStatusIsCompleted && !event)
+        && (!isAxisPartialProgressStatus(normalizedStatus) || partialAxisStatusMatchesExperiment(normalizedStatus, experiment))
         && (!normalizedStatusIsRunning || hasTrayScopedRunningEvidence || explicitFromInputCurrent)
           ? normalizedStatus
           : "";
@@ -508,6 +612,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
         experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
         experiments: orderedExperiments,
+        runtimeCutoffTime: runtimeCutoffTimeForExperiment(experiment),
         schedules: input.schedules,
         taskCode,
         trayCode,
@@ -570,6 +675,7 @@ const buildTrayExperimentFlow = (input = {}) => {
   const explicitExperiment =
     explicitIndex >= 0
     && !completedCodeSet.has(orderedExperiments[explicitIndex]?.code)
+    && !historicalPartialAxisCodeSet.has(orderedExperiments[explicitIndex]?.code)
     && hasExperimentEnteredLabFlow(experimentStatusMap.get(orderedExperiments[explicitIndex]?.code))
       ? orderedExperiments[explicitIndex]
       : null;
@@ -617,11 +723,53 @@ const buildTrayExperimentFlow = (input = {}) => {
     isAxisPartialProgressStatus(normalizedStatus)
       ? partialAxisExperiments.find((experiment) => partialAxisStatusMatchesExperiment(normalizedStatus, experiment))
       : null;
-  const currentExperiment =
+  const partialAxisExperimentTime = (experiment) => {
+    const runtimeTime = Number(experimentRuntimeEventMap.get(experiment.code)?.timeValue) || 0;
+    const eventTime = Number(resolveExperimentEvent(experimentEventMap, experiment)?.time) || 0;
+    return Math.max(runtimeTime, eventTime);
+  };
+  const latestActivePartialAxisExperiment =
+    isAxisPartialProgressStatus(normalizedStatus) && activePartialAxisExperiments.length > 0
+      ? activePartialAxisExperiments.slice().sort((left, right) => {
+        const leftTime = partialAxisExperimentTime(left);
+        const rightTime = partialAxisExperimentTime(right);
+        if (leftTime !== rightTime) {
+          return rightTime - leftTime;
+        }
+        const leftIndex = orderedExperiments.findIndex((experiment) => experiment.code === left.code);
+        const rightIndex = orderedExperiments.findIndex((experiment) => experiment.code === right.code);
+        return rightIndex - leftIndex;
+      })[0]
+      : null;
+  const explicitExperimentStatus = explicitExperiment
+    ? normalizeText(experimentStatusMap.get(explicitExperiment.code))
+    : "";
+  const latestActivePartialAxisExperimentStatus = latestActivePartialAxisExperiment
+    ? normalizeText(experimentStatusMap.get(latestActivePartialAxisExperiment.code))
+    : "";
+  const latestPartialAxisExperimentOverridesExplicit =
     explicitExperiment
+    && latestActivePartialAxisExperiment
+    && latestActivePartialAxisExperiment.code !== explicitExperiment.code
+    && isAxisPartialProgressStatus(explicitExperimentStatus)
+    && isAxisPartialProgressStatus(latestActivePartialAxisExperimentStatus)
+    && partialAxisExperimentTime(latestActivePartialAxisExperiment) > partialAxisExperimentTime(explicitExperiment);
+  const shouldStayOnHistoricalCompletedFlow =
+    Boolean(input.suppressGuessedDestinationLab)
+    && normalizeLifecycleStatus("", normalizedStatus) === "实验已完成"
+    && completedExperiments.length > 0
+    && !trayTargetExperimentCode
+    && !inputCurrentExperimentCode;
+  const currentExperiment =
+    shouldStayOnHistoricalCompletedFlow
+      ? null
+      : latestPartialAxisExperimentOverridesExplicit
+        ? latestActivePartialAxisExperiment
+        : explicitExperiment
     || explicitUnstartedReturnedExperiment
     || explicitUnstartedAfterOtherCompletion
     || explicitUnstartedAppearanceExperiment
+    || latestActivePartialAxisExperiment
     || statusMatchedPartialAxisExperiment
     || currentStartedUnfinishedExperiments[0]
     || appearanceRequiredUnstartedExperiment
@@ -1040,11 +1188,20 @@ const buildTrayFlowTimeMap = (input = {}) => {
     experimentTrays: input.experimentTrays,
     schedules: input.schedules,
   });
+  const runtimeCutoffTimeByExperimentCode = resolveExperimentRuntimeCutoffMap({
+    orderedExperiments,
+    samples: input.samples,
+    taskCode,
+    trayCode,
+  });
+  const runtimeCutoffTimeForExperiment = (experiment) =>
+    runtimeCutoffTimeByExperimentCode.get(normalizeText(experiment?.code)) || 0;
   orderedExperiments.forEach((experiment) => {
     const matchedRun = resolveExperimentRunEntry({
       experimentCode: experiment.code,
       experimentRuns: input.experimentRuns || input.experiment_runs,
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
+      runtimeCutoffTime: runtimeCutoffTimeForExperiment(experiment),
       taskCode,
       trayCode,
     });
@@ -1055,6 +1212,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
       experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
       experiments: orderedExperiments,
+      runtimeCutoffTime: runtimeCutoffTimeForExperiment(experiment),
       schedules: input.schedules,
       taskCode,
       trayCode,
@@ -1256,8 +1414,16 @@ function buildTrayFlowView(input = {}) {
       const hasActualAppearanceMilestone =
         [APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS].includes(currentLifecycleStatus)
         || Boolean(stepTimeMap.get(APPEARANCE_STOCKED_STATUS));
+      const currentLifecycleCanUsePartialProgressFloor =
+        ["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"].includes(currentLifecycleStatus);
       const completedExperimentTimesBeforeCurrent = experimentsBeforeCurrent.map((experiment, index) =>
-        normalizeText(experiment?.state) === "partial" ? 0 : completedExperimentTime(experiment, index),
+        normalizeText(experiment?.state) === "partial"
+          ? (
+              currentLifecycleCanUsePartialProgressFloor
+                ? parseTimeValue(stepTimeMap.get(normalizeText(experiment?.routeStatus)))
+                : 0
+            )
+          : completedExperimentTime(experiment, index),
       );
       experimentsBeforeCurrent.forEach((experiment, index) => {
         completedStepIndexes.push(pushExperimentStep(experiment, index));
@@ -1329,24 +1495,13 @@ function buildTrayFlowView(input = {}) {
       const baseRouteSteps = Array.isArray(activeExperiment?.routeSteps) && activeExperiment.routeSteps.length > 0
         ? activeExperiment.routeSteps.filter(Boolean)
         : buildExperimentRouteSteps();
-      const hasActualStagingRoute =
-        Boolean(routeStepTimeAfter("送至暂存间") || routeStepTimeAfter("已到达暂存间"));
-      const shouldSuppressUnreachedPreLabStaging =
-        Boolean(partialAxisStatus)
-        && !shouldShowPartialAxisStaging
-        && !["送至暂存间", "已到达暂存间"].includes(currentLifecycleStatus)
-        && !hasActualStagingRoute;
-      const effectiveBaseRouteSteps =
-        shouldSuppressUnreachedPreLabStaging
-          ? baseRouteSteps.filter((label) => !["送至暂存间", "已到达暂存间"].includes(label))
-          : baseRouteSteps;
       const routeSteps = shouldPlaceAppearanceBeforeLab
-        ? effectiveBaseRouteSteps.flatMap((label) =>
+        ? baseRouteSteps.flatMap((label) =>
           label === "已到达暂存间"
             ? [label, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]
             : [label],
         )
-        : effectiveBaseRouteSteps;
+        : baseRouteSteps;
       const inputCurrentExperimentCode = normalizeText(effectiveInput.currentExperimentCode);
       const shouldKeepPreferredCurrentDispatch =
         Boolean(effectiveInput.preferCurrentExperimentCode)
@@ -1741,11 +1896,30 @@ function buildTrayFlowView(input = {}) {
           });
         });
         const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
+        const postTestStagingSentIndex = pushStep({
+          key: "route-folded-post-staging-sent",
+          label: "送至暂存间",
+          reached: normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "厂家收回",
+          time: stepTimeMap.get("送至暂存间") || "",
+        });
         const postTestStagingIndex = pushStep({
           key: "route-folded-post-staging",
           label: "已到达暂存间",
           reached: normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "厂家收回",
           time: stepTimeMap.get("已到达暂存间") || stepTimeMap.get(POST_EXPERIMENT_STAGING_STOCKED_STATUS) || "",
+        });
+        const pendingAxisContinuationLabels = new Set();
+        foldedExperimentResults.forEach((experiment, index) => {
+          const status = normalizeText(experiment?.routeStatus);
+          const label = buildPendingAxisContinuationLabel(status);
+          if (!label || pendingAxisContinuationLabels.has(label)) {
+            return;
+          }
+          pendingAxisContinuationLabels.add(label);
+          pushStep({
+            key: `axis-folded-continuation-${index}`,
+            label,
+          });
         });
         const returnedIndex = pushStep({
           key: "route-folded-returned",
@@ -1758,6 +1932,7 @@ function buildTrayFlowView(input = {}) {
           resultIndexes.forEach((stepIndex) => {
             steps[stepIndex].reached = true;
           });
+          steps[postTestStagingSentIndex].reached = true;
           steps[postTestStagingIndex].reached = true;
         } else if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {
           activeIndex = postTestStagingIndex;
@@ -1915,6 +2090,14 @@ function buildTrayFlowView(input = {}) {
   }
 
   const singleExperiment = resolveSingleTrayExperiment(input);
+  const singleExperimentRuntimeCutoffTime = singleExperiment
+    ? resolveExperimentRuntimeCutoffMap({
+      orderedExperiments: [singleExperiment],
+      samples: effectiveInput.samples,
+      taskCode: effectiveInput.taskCode,
+      trayCode: effectiveInput.trayCode,
+    }).get(normalizeText(singleExperiment.code)) || 0
+    : 0;
   const singleExperimentEvent = singleExperiment
     ? resolveExperimentEvent(
       resolveLatestExperimentEventMap({
@@ -1933,6 +2116,7 @@ function buildTrayFlowView(input = {}) {
       experimentRunSteps: firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps),
       experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
       experiments: input.experiments,
+      runtimeCutoffTime: singleExperimentRuntimeCutoffTime,
       schedules: input.schedules,
       taskCode: effectiveInput.taskCode,
       trayCode: effectiveInput.trayCode,

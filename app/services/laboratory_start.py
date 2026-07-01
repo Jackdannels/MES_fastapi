@@ -21,6 +21,8 @@ RUNNING_STATUS = "实验进行中"
 START_ACTION = "开始实验"
 TASK_RUNNING_STATUS = "任务进行中"
 RETURNED_STATUS = "厂家收回"
+STARTABLE_TRAY_STATUSES = {"实验准备就绪", RUNNING_STATUS, "实验中"}
+AXIS_PARTIAL_STATUS_MARKER = "部分完成"
 
 
 def normalize_text(value: Any) -> str:
@@ -29,6 +31,11 @@ def normalize_text(value: Any) -> str:
 
 def is_returned_text(value: Any) -> bool:
     return normalize_text(value) == RETURNED_STATUS
+
+
+def is_startable_tray_status(value: Any) -> bool:
+    status = normalize_text(value)
+    return status in STARTABLE_TRAY_STATUSES or AXIS_PARTIAL_STATUS_MARKER in status
 
 
 def start_history_detail(task_code: Any, experiment_name: Any, tray_codes: list[str]) -> str:
@@ -166,6 +173,18 @@ def start_storage_laboratory_experiment(
     affected_tray_codes = [tray_code for tray_code in affected_tray_codes if tray_code not in returned_tray_codes]
     if not affected_tray_codes:
         raise ValueError("current experiment has no matching active tray samples")
+    startable_tray_codes = {
+        normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
+        for sample in samples
+        if sample_matches_current_experiment(sample)
+        for tray in sample.get("trays", [])
+        if isinstance(tray, dict)
+        and normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no")) in set(affected_tray_codes)
+        and is_startable_tray_status(tray.get("status"))
+    }
+    affected_tray_codes = [tray_code for tray_code in affected_tray_codes if tray_code in startable_tray_codes]
+    if not affected_tray_codes:
+        raise ValueError("current experiment has no matching tray samples")
     affected_tray_code_set = set(affected_tray_codes)
 
     experiment = next(
