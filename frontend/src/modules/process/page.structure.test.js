@@ -82,6 +82,22 @@ describe("ProcessPage structure", () => {
     expect(trayList).toContain("scrollbar-gutter: stable");
   });
 
+  test("keeps the next tray queue single-column and condenses it when more than two trays are waiting", () => {
+    const source = readProcessPage();
+    const remainingGrid = cssBlock(source, ".process-task-remaining-tray-grid");
+    const condensedRows = cssBlock(source, ".process-task-remaining-tray-grid.is-condensed .process-task-tray-row");
+    const titleRow = cssBlock(source, ".process-task-summary-title-row");
+
+    expect(source).toContain("data-testid=\"process-remaining-tray-grid\"");
+    expect(source).toContain("data-testid=\"process-remaining-tray-count\"");
+    expect(remainingGrid).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(remainingGrid).toContain("align-content: start");
+    expect(remainingGrid).toContain("overflow: auto");
+    expect(source).not.toContain(".process-task-remaining-tray-grid.is-adaptive");
+    expect(condensedRows).toContain("padding: 8px 10px");
+    expect(titleRow).toContain("justify-content: space-between");
+  });
+
   test("keeps process task selector controls on industrial dark tokens", () => {
     const source = readProcessPage();
     const button = cssBlocksContaining(source, ".process-task-select-button");

@@ -437,6 +437,7 @@ describe("tasks model", () => {
     expect(validateTaskTextFields({ contact: "张三", contact_info: "" }, { requireContact: true })).toBe("请填写联系方式");
     expect(validateTaskTextFields({ contact: "张三", contact_info: "1380000123A" }, { requireContact: true })).toBe("联系方式必须为 1-15 位数字");
     expect(validateTaskTextFields({ contact: "张三", contact_info: "1234567890123456" }, { requireContact: true })).toBe("联系方式必须为 1-15 位数字");
+    expect(validateTaskTextFields({ contact: "一二三四五六七八九十一二三四五六", contact_info: "13800001234" }, { requireContact: true })).toBe("联系人不能超过 15 个字");
     expect(validateTaskTextFields({ name: "一二三四五六七八九十一二三四五六七八九十X", contact: "张三", contact_info: "13800001234" }, { requireContact: true })).toBe("任务名称不能超过 20 个字");
     expect(validateTaskTextFields({ name: "" })).toBe("");
   });
@@ -479,6 +480,32 @@ describe("tasks model", () => {
     );
   });
 
+  test("createTaskRecord keeps selected axes only for selected axis-aware experiment types", () => {
+    const task = createTaskRecord(
+      {
+        code: "SYLU-2026-03-002",
+        name: "轴向任务",
+        source: "内部新增",
+        sample_count: "2",
+        sample_type: "结构件",
+        test_types: ["冲击试验", "盐雾试验"],
+        axis_codes_by_test_type: {
+          冲击试验: ["z-", "x+"],
+          振动试验: ["y+"],
+          盐雾试验: ["x-"],
+        },
+      },
+      [],
+    );
+
+    expect(task.axis_codes_by_test_type).toEqual({
+      冲击试验: ["z-", "x+"],
+    });
+    expect(task.axisCodesByTestType).toEqual({
+      冲击试验: ["z-", "x+"],
+    });
+  });
+
   test("updateTaskRecord derives test_type from the edited experiment array in order", () => {
     const result = updateTaskRecord(
       [
@@ -515,6 +542,65 @@ describe("tasks model", () => {
         test_types: ["盐雾试验", "霉菌试验"],
       }),
     );
+  });
+
+  test("updateTaskRecord persists edited axis codes and removes stale axis maps", () => {
+    const result = updateTaskRecord(
+      [
+        {
+          id: "task-1",
+          code: "SYLU-2026-03-001",
+          name: "旧任务",
+          status: "待排程",
+          sample_count: "2",
+          sample_type: "结构件",
+          test_type: "冲击试验 / 盐雾试验",
+          test_types: ["冲击试验", "盐雾试验"],
+          required_device: "冲击试验 / 盐雾试验",
+          axis_codes_by_test_type: {
+            冲击试验: ["z-", "x+"],
+            振动试验: ["y+"],
+          },
+        },
+        {
+          id: "task-2",
+          code: "SYLU-2026-03-002",
+          name: "普通任务",
+          status: "待排程",
+          test_type: "盐雾试验",
+          test_types: ["盐雾试验"],
+          axis_codes_by_test_type: {
+            冲击试验: ["z-"],
+          },
+        },
+      ],
+      {
+        id: "task-1",
+        code: "SYLU-2026-03-001",
+        name: "旧任务",
+        priority: "高",
+        sample_count: "2",
+        sample_type: "结构件",
+        source: "内部新增",
+        status: "待排程",
+        test_types: ["冲击试验", "盐雾试验"],
+        axis_codes_by_test_type: {
+          冲击试验: ["x+", "y+"],
+          振动试验: ["y+"],
+          盐雾试验: ["x-"],
+        },
+      },
+    );
+
+    expect(result.tasks[0].axis_codes_by_test_type).toEqual({
+      冲击试验: ["x+", "y+"],
+    });
+    expect(result.tasks[0].axisCodesByTestType).toEqual({
+      冲击试验: ["x+", "y+"],
+    });
+    expect(result.tasks[1].axis_codes_by_test_type).toEqual({
+      冲击试验: ["z-"],
+    });
   });
 
   test("updateTaskRecord keeps task status read-only during intake edits", () => {
@@ -655,6 +741,46 @@ describe("tasks model", () => {
         testType: "温度冲击 / 振动 / 盐雾",
       }),
     );
+  });
+
+  test("buildTaskRows and buildTaskEditForm expose axis codes from task experiments", () => {
+    const rows = buildTaskRows(
+      [
+        {
+          id: "task-axis",
+          code: "SYLU-2026-03-901",
+          name: "轴向详情任务",
+          status: "待排程",
+          sample_count: 3,
+          test_types: ["冲击试验", "盐雾试验"],
+          test_type: "冲击试验 / 盐雾试验",
+        },
+      ],
+      [],
+      [],
+      [
+        {
+          task_code: "SYLU-2026-03-901",
+          experiment_code: "SYLU-2026-03-901-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["z-", "x+"],
+        },
+        {
+          task_code: "SYLU-2026-03-901",
+          experiment_code: "SYLU-2026-03-901-B",
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验",
+        },
+      ],
+    );
+
+    expect(rows[0].axis_codes_by_test_type).toEqual({
+      冲击试验: ["z-", "x+"],
+    });
+    expect(buildTaskEditForm(rows[0]).axis_codes_by_test_type).toEqual({
+      冲击试验: ["z-", "x+"],
+    });
   });
 
   test("buildTaskRows does not mix experiment names into the experiment type summary", () => {

@@ -7,6 +7,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/health",
         "/api/master",
         "/api/tasks",
+        "/api/task-history",
         "/person",
         "/customer",
         "/companydepartment",

@@ -164,9 +164,8 @@ import { computed, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import AppPagination from "@/components/shared/AppPagination.vue";
-import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { readTasks } from "@/lib/tasksApi";
+import { readTaskHistoryPage } from "@/lib/taskHistoryApi";
 import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
 
 import {
@@ -189,7 +188,8 @@ const experimentRuns = ref([]);
 const experimentRunTrays = ref([]);
 const experimentTrays = ref([]);
 const schedules = ref([]);
-const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const historyServerTotalCount = ref(0);
+const historyServerPageCount = ref(1);
 const HISTORY_SNAPSHOT_KEYS = [
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
@@ -199,18 +199,6 @@ const HISTORY_SNAPSHOT_KEYS = [
   STORAGE_KEYS.schedules,
 ];
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
-
-const readRawStorageSnapshot = async () => {
-  const response = await fetch(STORAGE_API_URL, {
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
-  }
-  const payload = await response.json();
-  return payload && typeof payload === "object" ? payload : {};
-};
 
 const assignArrayFromSnapshot = (targetRef, snapshot, key) => {
   if (hasOwn(snapshot, key) && Array.isArray(snapshot[key])) {
@@ -223,7 +211,7 @@ const historyView = computed(() => buildReturnedTaskHistoryView({
     days: historyDateRange.value,
     query: historySearch.value,
   },
-  page: historyPage.value,
+  page: 1,
   pageSize: 8,
   tasks: tasks.value,
   samples: samples.value,
@@ -232,8 +220,8 @@ const historyView = computed(() => buildReturnedTaskHistoryView({
 }));
 const historyTasks = computed(() => historyView.value.tasks);
 const pagedHistoryTasks = computed(() => historyTasks.value);
-const historyTotalCount = computed(() => historyView.value.totalCount || 0);
-const historyPageCount = computed(() => historyView.value.totalPages || 1);
+const historyTotalCount = computed(() => historyServerTotalCount.value);
+const historyPageCount = computed(() => historyServerPageCount.value);
 const selectedTask = computed(() => historyTasks.value.find((task) => task.code === selectedTaskCode.value) || null);
 const selectedTray = computed(() => selectedTask.value?.trays.find((tray) => tray.trayCode === selectedTrayCode.value) || null);
 const selectedTraySampleRows = computed(() => {
@@ -282,7 +270,15 @@ watch(historyTasks, (nextTasks) => {
 }, { immediate: true });
 
 watch([historySearch, historyDateRange], () => {
-  historyPage.value = 1;
+  if (historyPage.value !== 1) {
+    historyPage.value = 1;
+    return;
+  }
+  void refreshHistoryData();
+});
+
+watch(historyPage, () => {
+  void refreshHistoryData();
 });
 
 watch(selectedTask, (task) => {
@@ -297,20 +293,26 @@ watch(selectedTask, (task) => {
 
 const refreshHistoryData = async () => {
   try {
-    const [loadedTasks, snapshot] = await Promise.all([
-      readTasks({ includeArchived: true }),
-      readRawStorageSnapshot(),
-    ]);
-    if (Array.isArray(loadedTasks)) {
-      tasks.value = loadedTasks;
+    const payload = await readTaskHistoryPage({
+      days: historyDateRange.value,
+      page: historyPage.value,
+      pageSize: 8,
+      query: historySearch.value,
+    });
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    assignArrayFromSnapshot(tasks, safePayload, "tasks");
+    assignArrayFromSnapshot(samples, safePayload, "samples");
+    assignArrayFromSnapshot(experiments, safePayload, "experiments");
+    assignArrayFromSnapshot(experimentRuns, safePayload, "experimentRuns");
+    assignArrayFromSnapshot(experimentRunTrays, safePayload, "experimentRunTrays");
+    assignArrayFromSnapshot(experimentTrays, safePayload, "experimentTrays");
+    assignArrayFromSnapshot(schedules, safePayload, "schedules");
+    historyServerTotalCount.value = Number.isFinite(Number(safePayload.totalCount)) ? Number(safePayload.totalCount) : historyView.value.totalCount || 0;
+    historyServerPageCount.value = Math.max(1, Number.isFinite(Number(safePayload.totalPages)) ? Number(safePayload.totalPages) : historyView.value.totalPages || 1);
+    const currentPage = Number.parseInt(String(safePayload.currentPage ?? historyPage.value), 10);
+    if (Number.isFinite(currentPage) && currentPage > 0 && currentPage !== historyPage.value) {
+      historyPage.value = currentPage;
     }
-    const safeSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
-    assignArrayFromSnapshot(samples, safeSnapshot, STORAGE_KEYS.samples);
-    assignArrayFromSnapshot(experiments, safeSnapshot, STORAGE_KEYS.experiments);
-    assignArrayFromSnapshot(experimentRuns, safeSnapshot, STORAGE_KEYS.experiment_runs);
-    assignArrayFromSnapshot(experimentRunTrays, safeSnapshot, STORAGE_KEYS.experiment_run_trays);
-    assignArrayFromSnapshot(experimentTrays, safeSnapshot, STORAGE_KEYS.experiment_trays);
-    assignArrayFromSnapshot(schedules, safeSnapshot, STORAGE_KEYS.schedules);
     loadError.value = "";
   } catch (error) {
     const detail = error instanceof Error ? error.message : "";

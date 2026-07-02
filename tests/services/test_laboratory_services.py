@@ -138,6 +138,81 @@ def test_laboratory_operation_records_tray_code_in_comparison_history():
     assert "振动试验" in history["detail"]
 
 
+def test_laboratory_compare_rejects_partial_axis_tray_targeted_to_another_experiment():
+    task_code = "SYLU-2026-07-027"
+    tray_code = f"{task_code}-TP-001"
+    impact_experiment_code = f"{task_code}-B"
+    mold_experiment_code = f"{task_code}-A"
+    sample = _sample(f"{task_code}-SP-001", task_code, tray_code, "冲击试验部分完成 5/6轴", "冲击一室")
+    sample["trays"][0]["target_experiment_code"] = mold_experiment_code
+    sample["trays"][0]["target_lab"] = "霉菌试验室"
+    sample["history"] = [
+        {
+            "action": "实验任务撤回",
+            "detail": f"{task_code} / 霉菌试验 / 撤回至冲击试验部分完成（试验间内撤回当前实验任务）",
+            "location": "冲击一室",
+            "status": "冲击试验部分完成 5/6轴",
+            "time": "2026-07-01 17:39:21",
+        },
+        {
+            "action": "任务比对",
+            "detail": f"{task_code} / 冲击试验 / 已到达实验室 / 托盘：{tray_code}",
+            "location": "冲击一室",
+            "status": "已到达实验室",
+            "time": "2026-07-01 17:37:25",
+        },
+    ]
+    snapshot = {
+        "tasks": [{"code": task_code, "status": "任务进行中"}],
+        "experiments": [
+            {"task_code": task_code, "experiment_code": mold_experiment_code, "experiment_name": "霉菌试验"},
+            {
+                "axis_codes": ["x+", "x-", "y+", "y-", "z+", "z-"],
+                "task_code": task_code,
+                "experiment_code": impact_experiment_code,
+                "experiment_name": "冲击试验",
+            },
+        ],
+        "schedules": [
+            {"id": "SCH-IMPACT-REMAINING", "task_code": task_code, "experiment_code": impact_experiment_code, "device": "冲击一室"},
+            {"id": "SCH-MOLD", "task_code": task_code, "experiment_code": mold_experiment_code, "device": "霉菌试验室"},
+        ],
+        "experiment_runs": [],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-IMPACT-5",
+                "task_code": task_code,
+                "experiment_code": impact_experiment_code,
+                "tray_code": tray_code,
+                "run_tray_status": "实验已完成",
+            }
+        ],
+        "experiment_trays": [
+            {"task_code": task_code, "experiment_code": mold_experiment_code, "tray_code": tray_code},
+            {"task_code": task_code, "experiment_code": impact_experiment_code, "tray_code": tray_code},
+        ],
+        "experiment_samples": [
+            {"task_code": task_code, "experiment_code": mold_experiment_code, "sample_code": sample["code"]},
+            {"task_code": task_code, "experiment_code": impact_experiment_code, "sample_code": sample["code"]},
+        ],
+        "samples": [sample],
+    }
+
+    with pytest.raises(ValueError, match="current experiment has no matching active tray samples"):
+        apply_laboratory_task_operation(
+            snapshot,
+            operation_type="compare",
+            task_code=task_code,
+            experiment_code=impact_experiment_code,
+            lab_name="冲击一室",
+            tray_codes=[tray_code],
+            occurred_at="2026-07-01 17:40:00",
+        )
+
+    assert snapshot["samples"][0]["trays"][0]["target_experiment_code"] == mold_experiment_code
+    assert snapshot["samples"][0]["trays"][0]["target_lab"] == "霉菌试验室"
+
+
 def test_start_scopes_requested_trays_to_current_experiment_assignment():
     snapshot = {
         "tasks": [{"code": "TASK-1", "status": "任务进行中"}],

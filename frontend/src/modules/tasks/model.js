@@ -34,7 +34,10 @@ const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
 const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
 const MIN_SAMPLE_COUNT = 1;
 const MAX_SAMPLE_COUNT = 99;
+const MAX_CONTACT_LENGTH = 15;
 const INVALID_TASK_TEXT_PATTERN = /[\uFFFD&^*#<>`{}|\\]/;
+const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
+const AXIS_AWARE_EXPERIMENT_TYPES = new Set(["冲击试验", "振动试验"]);
 const TASK_TEXT_FIELD_LABELS = {
   attachment: "附件",
   client: "委托单位/部门",
@@ -48,6 +51,45 @@ const TASK_TEXT_FIELD_LABELS = {
 
 // 所有输入字段统一走字符串规范化，减少 null / undefined 分支。
 const normalizeText = (value) => String(value ?? "").trim();
+const isAxisAwareExperimentType = (value) => AXIS_AWARE_EXPERIMENT_TYPES.has(normalizeText(value));
+const formatAxisCodeLabel = (value) => normalizeText(value).toUpperCase();
+const normalizeAxisCodes = (value) => {
+  const rawValues = Array.isArray(value)
+    ? value
+    : normalizeText(value)
+      .split(/[,，、\s]+/)
+      .filter(Boolean);
+  const codes = [];
+  rawValues.forEach((item) => {
+    const normalized = normalizeText(item).toLowerCase();
+    if (!normalized || codes.includes(normalized)) {
+      return;
+    }
+    codes.push(normalized);
+  });
+  return codes;
+};
+const normalizeAxisCodesByTestType = (axisMap, selectedTypes = []) => {
+  const source = axisMap && typeof axisMap === "object" ? axisMap : {};
+  const selectedAxisTypes = collectExperimentTypes(selectedTypes).filter(isAxisAwareExperimentType);
+  return selectedAxisTypes.reduce((result, experimentType) => {
+    const axisCodes = normalizeAxisCodes(source[experimentType]);
+    if (axisCodes.length > 0) {
+      result[experimentType] = axisCodes;
+    }
+    return result;
+  }, {});
+};
+const buildExperimentTypeAxisSummary = (types, axisMap = {}) =>
+  collectExperimentTypes(types)
+    .map((experimentType) => {
+      const axisCodes = normalizeAxisCodes(axisMap?.[experimentType]);
+      if (!isAxisAwareExperimentType(experimentType) || axisCodes.length === 0) {
+        return experimentType;
+      }
+      return `${experimentType}（${axisCodes.map(formatAxisCodeLabel).join("、")}）`;
+    })
+    .join(" / ");
 const compareTaskCodes = (left, right) =>
   normalizeText(left).localeCompare(normalizeText(right), "zh-Hans-CN", { numeric: true });
 const validateTaskSampleCount = (value) => {
@@ -85,6 +127,9 @@ const validateTaskTextFields = (form = {}, options = {}) => {
   }
   if (requireContact && !contactInfo) {
     return "请填写联系方式";
+  }
+  if ([...contact].length > MAX_CONTACT_LENGTH) {
+    return `联系人不能超过 ${MAX_CONTACT_LENGTH} 个字`;
   }
   if (contactInfo && !/^\d{1,15}$/.test(contactInfo)) {
     return "联系方式必须为 1-15 位数字";
@@ -341,6 +386,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
   const { samples, experiments, now } = resolveBuildTaskRowCollections(samplesOrNow, experimentsOrNow, nowMaybe);
   const taskList = filterActiveTasks(tasks, samples);
   const experimentsByTaskCode = new Map();
+  const axisCodesByTaskCode = new Map();
 
   (Array.isArray(experiments) ? experiments : []).forEach((experiment) => {
     const taskCode = normalizeText(experiment?.task_code);
@@ -355,6 +401,13 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       current.push(label);
     }
     experimentsByTaskCode.set(taskCode, current);
+    const axisCodes = normalizeAxisCodes(experiment?.axis_codes || experiment?.axisCodes);
+    if (label && isAxisAwareExperimentType(label) && axisCodes.length > 0) {
+      axisCodesByTaskCode.set(taskCode, {
+        ...(axisCodesByTaskCode.get(taskCode) || {}),
+        [label]: axisCodes,
+      });
+    }
   });
 
   return taskList
@@ -365,6 +418,18 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       const experimentTypes = collectExperimentTypes(experimentsByTaskCode.get(taskCode) || []);
       const fallbackType = normalizeText(task?.test_type);
       const taskExperimentTypes = collectExperimentTypes(experimentTypes, fallbackType);
+      const taskAxisCodesByTestType = normalizeAxisCodesByTestType(
+        task?.axis_codes_by_test_type || task?.axisCodesByTestType,
+        taskExperimentTypes,
+      );
+      const experimentAxisCodesByTestType = normalizeAxisCodesByTestType(
+        axisCodesByTaskCode.get(taskCode),
+        taskExperimentTypes,
+      );
+      const axisCodesByTestType = {
+        ...taskAxisCodesByTestType,
+        ...experimentAxisCodesByTestType,
+      };
       const experimentSummary = buildExperimentTypeSummary(taskExperimentTypes);
       const experimentCount =
         taskExperimentTypes.length ||
@@ -397,6 +462,8 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
         statusClass: statusClass(displayStatus),
         testType: experimentSummary,
         testTypes: taskExperimentTypes,
+        axis_codes_by_test_type: axisCodesByTestType,
+        axisCodesByTestType,
       };
     })
     .sort((left, right) => compareTaskCodes(left.code, right.code));
@@ -506,6 +573,7 @@ function createTaskIntakeForm() {
     source: SOURCE_INTERNAL,
     test_type: "",
     test_types: [],
+    axis_codes_by_test_type: {},
   };
 }
 
@@ -524,6 +592,7 @@ function createTaskEditForm() {
     status: STATUS_WAITING,
     test_type: "",
     test_types: [],
+    axis_codes_by_test_type: {},
   };
 }
 
@@ -531,6 +600,10 @@ function createTaskEditForm() {
 function buildTaskEditForm(row = {}) {
   const selectedTestTypes = collectExperimentTypes(row?.testTypes, row?.test_types, row?.testType, row?.test_type);
   const testTypeSummary = buildExperimentTypeSummary(selectedTestTypes);
+  const axisCodesByTestType = normalizeAxisCodesByTestType(
+    row?.axis_codes_by_test_type || row?.axisCodesByTestType,
+    selectedTestTypes,
+  );
   return {
     arrival_at: toDateTimeLocalValue(row?.arrivalAt ?? row?.arrival_at),
     code: normalizeText(row?.code),
@@ -545,12 +618,17 @@ function buildTaskEditForm(row = {}) {
     status: normalizeTaskStatusLabel(row?.displayStatus ?? row?.status) || STATUS_WAITING,
     test_type: testTypeSummary,
     test_types: selectedTestTypes,
+    axis_codes_by_test_type: axisCodesByTestType,
   };
 }
 
 // 将新的受理表单转换为可持久化的任务记录。
 function createTaskRecord(form, tasks) {
   const selectedTestTypes = collectExperimentTypes(form?.test_types);
+  const axisCodesByTestType = normalizeAxisCodesByTestType(
+    form?.axis_codes_by_test_type || form?.axisCodesByTestType,
+    selectedTestTypes,
+  );
   const testTypeSummary = buildExperimentTypeSummary(
     selectedTestTypes,
     selectedTestTypes.length > 0 ? "" : form?.test_type,
@@ -572,6 +650,12 @@ function createTaskRecord(form, tasks) {
     sample_type: normalizeText(form?.sample_type),
     test_type: testTypeSummary,
     test_types: selectedTestTypes,
+    ...(Object.keys(axisCodesByTestType).length > 0
+      ? {
+          axis_codes_by_test_type: axisCodesByTestType,
+          axisCodesByTestType,
+        }
+      : {}),
     required_device: testTypeSummary,
     due_at: fromDateTimeLocalValue(form?.due_at) || buildDefaultDueAt(),
     arrival_at: "",
@@ -597,8 +681,15 @@ function updateTaskRecord(tasks, editForm) {
     selectedTestTypes,
     selectedTestTypes.length > 0 ? "" : editForm?.test_type,
   );
+  const axisCodesByTestType = normalizeAxisCodesByTestType(
+    editForm?.axis_codes_by_test_type
+      || editForm?.axisCodesByTestType
+      || taskList[targetIndex]?.axis_codes_by_test_type
+      || taskList[targetIndex]?.axisCodesByTestType,
+    selectedTestTypes,
+  );
   // 更新时保留未编辑字段，仅覆盖抽屉允许修改的部分。
-  taskList[targetIndex] = {
+  const nextTask = {
     ...taskList[targetIndex],
     code: normalizeText(editForm?.code) || taskList[targetIndex].code,
     due_at: fromDateTimeLocalValue(editForm?.due_at),
@@ -614,6 +705,14 @@ function updateTaskRecord(tasks, editForm) {
     test_types: collectExperimentTypes(selectedTestTypes, testTypeSummary),
     updated_at: formatLocalDateTime(),
   };
+  if (Object.keys(axisCodesByTestType).length > 0) {
+    nextTask.axis_codes_by_test_type = axisCodesByTestType;
+    nextTask.axisCodesByTestType = axisCodesByTestType;
+  } else {
+    delete nextTask.axis_codes_by_test_type;
+    delete nextTask.axisCodesByTestType;
+  }
+  taskList[targetIndex] = nextTask;
 
   return { previousCode, tasks: taskList };
 }
@@ -847,11 +946,17 @@ export {
   buildTaskRows,
   buildTaskSampleCodes,
   buildTaskStatusLabel,
+  buildExperimentTypeAxisSummary,
   createTaskEditForm,
   createTaskIntakeForm,
   createTaskRecord,
   deleteTaskSnapshot,
+  DEFAULT_AXIS_CODES,
+  formatAxisCodeLabel,
+  isAxisAwareExperimentType,
   normalizeText,
+  normalizeAxisCodes,
+  normalizeAxisCodesByTestType,
   normalizeTaskSampleCount,
   applyTaskSampleCodes,
   aggregateTaskStatusFromSamples,

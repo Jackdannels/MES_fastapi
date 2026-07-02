@@ -137,6 +137,7 @@ function useSchedulePage() {
   const taskOptions = computed(() =>
     buildManualTaskOptions({
       experiments: rawExperiments.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentTrays: rawExperimentTrays.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,

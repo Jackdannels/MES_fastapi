@@ -20,6 +20,7 @@ const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFro
 const buildCurrentMonthFirstTaskCode = () =>
   `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-001`;
 const ALL_EXPERIMENT_TYPES = Object.keys(TEST_PREFIX_MAP);
+const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
 
 const routeState = reactive({ hash: "" });
 
@@ -88,6 +89,7 @@ const buildMockTaskExperiments = (task, existingExperiments = []) => {
   while (codes.length < desiredCount) {
     codes.push(`${taskCode}-${String.fromCharCode(65 + codes.length)}`);
   }
+  const axisCodesByTestType = task?.axis_codes_by_test_type || task?.axisCodesByTestType || {};
   return codes.slice(0, desiredCount).map((experimentCode, index) => ({
     id: experimentCode,
     task_code: taskCode,
@@ -95,6 +97,9 @@ const buildMockTaskExperiments = (task, existingExperiments = []) => {
     experiment_name: testTypes[index] ?? `实验${index + 1}`,
     required_device: testTypes[index] ?? `实验${index + 1}`,
     status: task?.status ?? "待排程",
+    ...(Array.isArray(axisCodesByTestType[testTypes[index]]) && axisCodesByTestType[testTypes[index]].length > 0
+      ? { axis_codes: [...axisCodesByTestType[testTypes[index]]] }
+      : {}),
   }));
 };
 
@@ -277,6 +282,44 @@ const settle = async (wrapper) => {
   await wrapper.vm.$nextTick();
 };
 
+const selectIntakeAxisExperiment = async (wrapper, experimentType, axisCodes = DEFAULT_AXIS_CODES) => {
+  await wrapper.get(`[data-testid="task-intake-test-type-option-${experimentType}"]`).trigger("click");
+  await settle(wrapper);
+  expect(wrapper.get('[data-testid="task-intake-axis-modal"]').exists()).toBe(true);
+  const selectedCodes = new Set(axisCodes);
+  for (const axisCode of DEFAULT_AXIS_CODES) {
+    if (!selectedCodes.has(axisCode)) {
+      await wrapper.get(`[data-testid="task-intake-axis-option-${axisCode}"]`).trigger("click");
+    }
+  }
+  await wrapper.get('[data-testid="task-intake-axis-confirm"]').trigger("click");
+  await settle(wrapper);
+};
+
+const selectEditAxisExperiment = async (wrapper, experimentType, axisCodes = DEFAULT_AXIS_CODES) => {
+  await wrapper.get(`[data-testid="task-edit-test-type-option-${experimentType}"]`).trigger("click");
+  await settle(wrapper);
+  expect(wrapper.get('[data-testid="task-edit-axis-modal"]').exists()).toBe(true);
+  const selectedCodes = new Set(axisCodes);
+  for (const axisCode of DEFAULT_AXIS_CODES) {
+    const option = wrapper.get(`[data-testid="task-edit-axis-option-${axisCode}"]`);
+    const isSelected = option.classes().includes("is-selected");
+    if (selectedCodes.has(axisCode) !== isSelected) {
+      await option.trigger("click");
+    }
+  }
+  await wrapper.get('[data-testid="task-edit-axis-confirm"]').trigger("click");
+  await settle(wrapper);
+};
+
+const removeEditAxisExperiment = async (wrapper, experimentType) => {
+  await wrapper.get(`[data-testid="task-edit-test-type-option-${experimentType}"]`).trigger("click");
+  await settle(wrapper);
+  expect(wrapper.get('[data-testid="task-edit-axis-modal"]').exists()).toBe(true);
+  await wrapper.get('[data-testid="task-edit-axis-remove"]').trigger("click");
+  await settle(wrapper);
+};
+
 describe("TasksPage runtime", () => {
   beforeEach(() => {
     window.location.hash = "";
@@ -317,6 +360,17 @@ describe("TasksPage runtime", () => {
           created_at: "2026-03-13T09:00:00.000Z",
         }),
       ],
+      experiments: [
+        {
+          id: "SYLU-2026-03-001-A",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["z-", "x+"],
+          status: "待排程",
+        },
+      ],
     });
 
     const wrapper = mount(TasksPage);
@@ -336,6 +390,25 @@ describe("TasksPage runtime", () => {
     expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
     expect(wrapper.find('[data-testid="task-detail-modal"].modal.is-open').exists()).toBe(true);
     expect(wrapper.text()).toContain("任务详情");
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("冲击试验（Z-、X+）");
+
+    await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
+
+    expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（Z-、X+）");
+
+    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-edit-axis-modal"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="task-edit-axis-type"]').text()).toBe("冲击试验");
+    expect(wrapper.get('[data-testid="task-edit-axis-option-z-"]').classes()).toContain("is-selected");
+    expect(wrapper.get('[data-testid="task-edit-axis-option-x+"]').classes()).toContain("is-selected");
+    await wrapper.get('[data-testid="task-edit-axis-option-z-"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-axis-option-y+"]').trigger("click");
+    await wrapper.get('[data-testid="task-edit-axis-confirm"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（X+、Y+）");
   });
 
   test("shows five sample codes in task detail and edits sample codes in a separate modal", async () => {
@@ -781,10 +854,20 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("已选");
     expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("未选");
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="task-intake-axis-modal"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').classes()).not.toContain("is-selected");
+    expect(wrapper.get('[data-testid="task-intake-test-type-check-冲击试验"]').text()).not.toContain("✓");
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).not.toContain("冲击试验");
+    for (const axisCode of DEFAULT_AXIS_CODES.filter((code) => code !== "x+")) {
+      await wrapper.get(`[data-testid="task-intake-axis-option-${axisCode}"]`).trigger("click");
+    }
+    await wrapper.get('[data-testid="task-intake-axis-confirm"]').trigger("click");
+    await settle(wrapper);
     expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').classes()).toContain("is-selected");
     expect(wrapper.get('[data-testid="task-intake-test-type-check-冲击试验"]').text()).toContain("✓");
     await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
-    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验 / 盐雾试验");
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验（X+） / 盐雾试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await settle(wrapper);
 
@@ -793,7 +876,7 @@ describe("TasksPage runtime", () => {
     const expectedTaskCode = buildCurrentMonthFirstTaskCode();
 
     expect(codeInput.element.value).toBe(expectedTaskCode);
-    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("冲击试验 / 盐雾试验");
+    expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).toContain("冲击试验（X+） / 盐雾试验");
     expect(wrapper.get('[data-testid="task-intake-test-types-trigger"]').text()).not.toContain("→");
     expect(wrapper.find('input[name="required_device"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("必需设备/能力");
@@ -812,6 +895,9 @@ describe("TasksPage runtime", () => {
         name: "冲击试验-批次B",
         test_type: "冲击试验 / 盐雾试验",
         test_types: ["冲击试验", "盐雾试验"],
+        axis_codes_by_test_type: {
+          冲击试验: ["x+"],
+        },
       }),
     );
   });
@@ -827,7 +913,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await settle(wrapper);
 
@@ -854,7 +940,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await settle(wrapper);
 
@@ -879,7 +965,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="sample_count"]').setValue("3");
     await wrapper.get('[data-testid="task-submit"]').trigger("click");
@@ -968,7 +1054,7 @@ describe("TasksPage runtime", () => {
       await settle(wrapper);
 
       await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-      await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+      await selectIntakeAxisExperiment(wrapper, "冲击试验");
       await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
       await settle(wrapper);
 
@@ -1010,6 +1096,10 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     for (const experimentType of ALL_EXPERIMENT_TYPES) {
+      if (["冲击试验", "振动试验"].includes(experimentType)) {
+        await selectIntakeAxisExperiment(wrapper, experimentType);
+        continue;
+      }
       await wrapper.get(`[data-testid="task-intake-test-type-option-${experimentType}"]`).trigger("click");
     }
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
@@ -1027,6 +1117,10 @@ describe("TasksPage runtime", () => {
 
     expect(payload.test_types).toHaveLength(ALL_EXPERIMENT_TYPES.length);
     expect(payload.test_types).toEqual(expect.arrayContaining(ALL_EXPERIMENT_TYPES));
+    expect(payload.axis_codes_by_test_type).toEqual({
+      冲击试验: DEFAULT_AXIS_CODES,
+      振动试验: DEFAULT_AXIS_CODES,
+    });
     expect(payload.test_type).toContain("冲击试验");
     expect(payload.test_type).toContain("霉菌试验");
     expect(wrapper.text()).not.toContain("任务提交失败");
@@ -1043,7 +1137,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await settle(wrapper);
 
@@ -1108,7 +1202,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次C");
@@ -1183,7 +1277,7 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-type-option-霉菌试验"]').trigger("click");
-    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await removeEditAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await settle(wrapper);
     await wrapper.get('[data-testid="task-update"]').trigger("click");
@@ -1388,7 +1482,7 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await removeEditAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await wrapper.get('[data-testid="task-update"]').trigger("click");
@@ -1430,7 +1524,7 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await removeEditAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await wrapper.get('[data-testid="task-update"]').trigger("click");
@@ -1739,7 +1833,7 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
+    await removeEditAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await wrapper.get('[data-testid="task-update"]').trigger("click");
     await settle(wrapper);
@@ -1853,6 +1947,10 @@ describe("TasksPage runtime", () => {
     for (const experimentType of ALL_EXPERIMENT_TYPES) {
       const option = wrapper.get(`[data-testid="task-edit-test-type-option-${experimentType}"]`);
       if (!option.classes().includes("is-selected")) {
+        if (["冲击试验", "振动试验"].includes(experimentType)) {
+          await selectEditAxisExperiment(wrapper, experimentType);
+          continue;
+        }
         await option.trigger("click");
       }
     }
@@ -1887,7 +1985,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('select[name="source"]').element.value).toBe("内部新增");
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="contact"]').setValue("张三");
     await wrapper.get('input[name="contact_info"]').setValue("13800001234");
@@ -1958,7 +2056,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次D");
     await wrapper.get('input[name="contact"]').setValue("张三");
@@ -2004,7 +2102,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
-    await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
+    await selectIntakeAxisExperiment(wrapper, "冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await wrapper.get('input[name="name"]').setValue("冲击试验-批次E");
     await wrapper.get('input[name="contact"]').setValue("张三");
@@ -2033,7 +2131,11 @@ describe("TasksPage runtime", () => {
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
-    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="task-intake-axis-modal"]').exists()).toBe(true);
+    await wrapper.get('[data-testid="task-intake-axis-cancel"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).not.toContain("冲击试验");
     await wrapper.get('[data-testid="task-intake-test-types-cancel"]').trigger("click");
     await settle(wrapper);
 

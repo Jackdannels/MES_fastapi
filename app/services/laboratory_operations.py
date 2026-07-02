@@ -12,6 +12,8 @@ from app.services.experiment_segments import normalize_text
 COMPARE_STATUS = "已到达实验室"
 INSTALL_STATUS = "工装夹具安装"
 READY_STATUS = "实验准备就绪"
+AXIS_PARTIAL_STATUS_MARKER = "部分完成"
+COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成", "实验后暂存间存放", "厂家收回"}
 OPERATION_STATUS = {
     "compare": COMPARE_STATUS,
     "install": INSTALL_STATUS,
@@ -111,6 +113,87 @@ def tray_target_experiment_code(tray: dict[str, Any]) -> str:
     )
 
 
+def partial_axis_experiment_name(status: Any) -> str:
+    normalized = normalize_text(status)
+    if AXIS_PARTIAL_STATUS_MARKER not in normalized or not normalized.endswith("轴"):
+        return ""
+    return normalize_text(normalized.split(AXIS_PARTIAL_STATUS_MARKER, 1)[0])
+
+
+def experiment_completed_for_tray(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    task_code: str,
+    experiment_code: str,
+    tray_code: str,
+) -> bool:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_task_code or not normalized_experiment_code or not normalized_tray_code:
+        return False
+    for relation in snapshot.get("experiment_run_trays", []):
+        relation_task_code = normalize_text(
+            relation.get("task_code")
+            or relation.get("taskCode")
+            or relation.get("task_no")
+            or relation.get("taskNo")
+        )
+        relation_experiment_code = normalize_text(
+            relation.get("experiment_code")
+            or relation.get("experimentCode")
+            or relation.get("experiment_no")
+            or relation.get("experimentNo")
+        )
+        relation_tray_code = normalize_text(
+            relation.get("tray_code")
+            or relation.get("trayCode")
+            or relation.get("tray_no")
+            or relation.get("trayNo")
+        )
+        relation_status = normalize_text(
+            relation.get("run_tray_status")
+            or relation.get("runTrayStatus")
+            or relation.get("status")
+        )
+        if (
+            relation_task_code == normalized_task_code
+            and relation_experiment_code == normalized_experiment_code
+            and relation_tray_code == normalized_tray_code
+            and relation_status in COMPLETED_EXPERIMENT_STATUSES
+        ):
+            return True
+    return False
+
+
+def partial_axis_target_blocks_current_operation(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    current_experiment_code: str,
+    current_experiment_name: str,
+    sample: dict[str, Any],
+    task_code: str,
+    tray: dict[str, Any],
+    tray_code: str,
+) -> bool:
+    target_experiment_code = tray_target_experiment_code(tray)
+    normalized_current_experiment_code = normalize_text(current_experiment_code)
+    if not target_experiment_code or target_experiment_code == normalized_current_experiment_code:
+        return False
+    if experiment_completed_for_tray(
+        snapshot,
+        task_code=task_code,
+        experiment_code=target_experiment_code,
+        tray_code=tray_code,
+    ):
+        return False
+    current_experiment_name = normalize_text(current_experiment_name)
+    return any(
+        partial_axis_experiment_name(status) == current_experiment_name
+        for status in (tray.get("status"), sample.get("status"), sample.get("flow_status"))
+    )
+
+
 def scope_snapshot_samples_for_experiment(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
@@ -124,6 +207,7 @@ def scope_snapshot_samples_for_experiment(
     if not normalized_task_code or not normalized_experiment_code or not scoped_tray_codes:
         return snapshot
 
+    current_experiment_name = resolve_experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
     experiment_sample_codes = {
         normalize_text(item.get("sample_code") or item.get("sampleCode") or item.get("sample_no") or item.get("sampleNo"))
         for item in snapshot.get("experiment_samples", [])
@@ -139,14 +223,24 @@ def scope_snapshot_samples_for_experiment(
         matching_tray_codes = sample_tray_codes(sample).intersection(scoped_tray_codes)
         if not matching_tray_codes:
             continue
-        if current_sample_code in experiment_sample_codes:
-            eligible_sample_codes.add(current_sample_code)
-            continue
         for tray in as_list(sample.get("trays")):
             if not isinstance(tray, dict):
                 continue
             tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
             if tray_code not in matching_tray_codes:
+                continue
+            if partial_axis_target_blocks_current_operation(
+                snapshot,
+                current_experiment_code=normalized_experiment_code,
+                current_experiment_name=current_experiment_name,
+                sample=sample,
+                task_code=normalized_task_code,
+                tray=tray,
+                tray_code=tray_code,
+            ):
+                continue
+            if current_sample_code in experiment_sample_codes:
+                eligible_sample_codes.add(current_sample_code)
                 continue
             target_experiment_code = tray_target_experiment_code(tray)
             if target_experiment_code == normalized_experiment_code:

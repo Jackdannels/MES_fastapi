@@ -136,6 +136,142 @@ describe("tray flow consistency", () => {
     expect(panels.find((panel) => panel.name === "振动一室")?.trays[0]?.status).not.toBe("振动试验进行中");
   });
 
+  test("laboratory tray flow keeps unfinished experiment hints after a later completed experiment", () => {
+    const taskCode = "SYLU-2026-07-023";
+    const trayCode = `${taskCode}-TP-001`;
+    const experiments = [
+      { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击二室", status: "实验已完成", axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"] },
+      { task_code: taskCode, experiment_code: `${taskCode}-B`, experiment_name: "温度冲击试验", required_device: "温度冲击二室", status: "实验进行中" },
+      { task_code: taskCode, experiment_code: `${taskCode}-C`, experiment_name: "振动试验", required_device: "振动二室", status: "实验进行中", axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"] },
+      { task_code: taskCode, experiment_code: `${taskCode}-D`, experiment_name: "霉菌试验", required_device: "霉菌试验室", status: "实验进行中" },
+      { task_code: taskCode, experiment_code: `${taskCode}-E`, experiment_name: "高低温湿热试验", required_device: "高低温湿热二室", status: "实验进行中" },
+      { task_code: taskCode, experiment_code: `${taskCode}-F`, experiment_name: "盐雾试验", required_device: "盐雾试验室", status: "实验进行中" },
+    ];
+    const schedules = [
+      { id: "schedule-vibration-done", task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室", lab_code: "LAB_VIBRATION_2", status: "实验进行中", start_at: "2026-07-04 08:00:00", sub_experiment_code: `${taskCode}-C-AXIS-001`, axis_codes: ["x+", "y+", "z+"] },
+      { id: "schedule-vibration-next", task_code: taskCode, experiment_code: `${taskCode}-C`, device: "振动二室", lab_code: "LAB_VIBRATION_2", status: "已排程", start_at: "2026-07-05 08:00:00", sub_experiment_code: `${taskCode}-C-AXIS-002`, axis_codes: ["x-", "y-", "z-"] },
+      { id: "schedule-temp", task_code: taskCode, experiment_code: `${taskCode}-B`, device: "温度冲击二室", status: "实验进行中", start_at: "2026-07-06 08:00:00" },
+      { id: "schedule-mold", task_code: taskCode, experiment_code: `${taskCode}-D`, device: "霉菌试验室", status: "实验进行中", start_at: "2026-07-07 08:00:00" },
+      { id: "schedule-humid", task_code: taskCode, experiment_code: `${taskCode}-E`, device: "高低温湿热二室", status: "实验进行中", start_at: "2026-07-08 08:00:00" },
+      { id: "schedule-salt", task_code: taskCode, experiment_code: `${taskCode}-F`, device: "盐雾试验室", status: "实验进行中", start_at: "2026-07-09 08:00:00" },
+    ];
+    const experimentTrays = experiments.map((experiment) => ({
+      task_code: taskCode,
+      experiment_code: experiment.experiment_code,
+      tray_code: trayCode,
+    }));
+    const experimentRuns = [
+      {
+        run_no: "run-vibration-partial",
+        schedule_id: "schedule-vibration-done",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-C`,
+        device: "振动二室",
+        status: "实验已完成",
+        started_at: "2026-07-02 10:00:00",
+        ended_at: "2026-07-02 10:10:00",
+        tray_codes: [trayCode],
+        sub_experiment_code: `${taskCode}-C-AXIS-001`,
+        axis_codes: ["x+", "y+", "z+"],
+      },
+      {
+        run_no: "run-impact-minus",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-A`,
+        device: "冲击二室",
+        status: "实验已完成",
+        started_at: "2026-07-02 10:30:00",
+        ended_at: "2026-07-02 10:40:00",
+        tray_codes: [trayCode],
+        sub_experiment_code: `${taskCode}-A-AXIS-001`,
+        axis_codes: ["x-", "y-", "z-"],
+      },
+      {
+        run_no: "run-impact-plus",
+        task_code: taskCode,
+        experiment_code: `${taskCode}-A`,
+        device: "冲击二室",
+        status: "实验已完成",
+        started_at: "2026-07-02 11:00:00",
+        ended_at: "2026-07-02 11:10:00",
+        tray_codes: [trayCode],
+        sub_experiment_code: `${taskCode}-A-AXIS-002`,
+        axis_codes: ["x+", "y+", "z+"],
+      },
+    ];
+    const experimentRunTrays = experimentRuns.map((run) => ({
+      run_no: run.run_no,
+      task_code: run.task_code,
+      experiment_code: run.experiment_code,
+      tray_code: trayCode,
+      run_tray_status: "实验已完成",
+      status: "实验已完成",
+      started_at: run.started_at,
+      ended_at: run.ended_at,
+      sub_experiment_code: run.sub_experiment_code,
+    }));
+    const axisSteps = (runNo, experimentCode, subExperimentCode, axisCodes, startedAt) =>
+      axisCodes.map((axisCode, index) => ({
+        run_no: runNo,
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+        started_at: startedAt,
+        ended_at: startedAt.replace(":00:00", `:0${index + 1}:00`),
+        sub_experiment_code: subExperimentCode,
+      }));
+    const experimentRunSteps = [
+      ...axisSteps("run-vibration-partial", `${taskCode}-C`, `${taskCode}-C-AXIS-001`, ["x+", "y+", "z+"], "2026-07-02 10:00:00"),
+      ...axisSteps("run-impact-minus", `${taskCode}-A`, `${taskCode}-A-AXIS-001`, ["x-", "y-", "z-"], "2026-07-02 10:30:00"),
+      ...axisSteps("run-impact-plus", `${taskCode}-A`, `${taskCode}-A-AXIS-002`, ["x+", "y+", "z+"], "2026-07-02 11:00:00"),
+    ];
+    const input = {
+      tasks: [{ code: taskCode, test_type: "冲击试验 / 温度冲击试验 / 振动试验 / 霉菌试验 / 高低温湿热试验 / 盐雾试验", status: "任务进行中" }],
+      experiments,
+      experimentRuns,
+      experimentRunSteps,
+      experimentRunTrays,
+      experimentTrays,
+      samples: [
+        {
+          task_code: taskCode,
+          code: `${taskCode}-SP-001`,
+          location: "冲击二室",
+          status: "实验已完成",
+          flow_status: "实验已完成",
+          trays: [{ tray_code: trayCode, quantity: 1, status: "实验已完成", target_lab: "", target_experiment_code: "" }],
+          history: [
+            { time: "2026-07-02 10:10:00", status: "振动试验部分完成 3/6轴", location: "振动二室", detail: `${taskCode} / 振动试验 / 振动试验部分完成 3/6轴` },
+            { time: "2026-07-02 11:10:00", status: "实验已完成", location: "冲击二室", detail: `${taskCode} / 冲击试验 / 实验已完成` },
+          ],
+        },
+      ],
+      schedules,
+    };
+
+    const centralFlow = buildTrayFlowView({
+      ...input,
+      taskCode,
+      trayCode,
+      status: "实验已完成",
+    });
+    const laboratoryView = buildLaboratoryWorkbenchView({
+      ...input,
+      labName: "振动二室",
+      labCode: "LAB_VIBRATION_2",
+      selectedTaskCode: "schedule-vibration-next",
+      selectedTrayCode: trayCode,
+    });
+    const centralLabels = centralFlow.steps.map((step) => step.label);
+    const laboratoryLabels = laboratoryView.selectedTrayFlow.steps.map((step) => step.label);
+    ["温度冲击试验未完成", "霉菌试验未完成", "高低温湿热试验未完成", "盐雾试验未完成", "待继续振动试验：剩余 3/6轴"].forEach((label) => {
+      expect(centralLabels).toContain(label);
+      expect(laboratoryLabels).toContain(label);
+    });
+  });
+
   test("visualization filtering uses tray scoped run completion without task tray cross-talk", () => {
     const panels = buildLabProcessPanels({
       labNames: ["盐雾试验室", "振动一室"],

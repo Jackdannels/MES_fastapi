@@ -36,6 +36,21 @@ class FakeStorage:
             self.write(key, value)
 
 
+class CountingStorage(FakeStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.read_calls = []
+        self.read_all_count = 0
+
+    def read(self, key):
+        self.read_calls.append(key)
+        return super().read(key)
+
+    def read_all(self):
+        self.read_all_count += 1
+        return super().read_all()
+
+
 class DelayedThreadSafeStorage(FakeStorage):
     def __init__(self, payloads=None, delay_first_write=True):
         super().__init__(payloads)
@@ -1315,6 +1330,37 @@ def test_storage_bulk_update_publishes_source_metadata(monkeypatch):
     assert published == [(["mes.samples"], {"source": "staging-management", "request_id": "write-1"})]
 
 
+def test_storage_bulk_sample_update_reuses_read_all_snapshot_for_validation(monkeypatch):
+    samples = [
+        {
+            "code": "SP-BULK-READ-COUNT",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+            "flow_status": "已到达暂存间",
+            "task_code": "TASK-BULK-READ-COUNT",
+            "trays": [{"tray_code": "TP-BULK-READ-COUNT", "status": "已到达暂存间", "quantity": 1}],
+        },
+    ]
+    storage = CountingStorage({
+        "mes.samples": samples,
+        "mes.staging_events": [],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_steps": [],
+        "mes.experiment_trays": [],
+        "mes.experiment_run_trays": [],
+        "mes.schedules": [],
+        "mes.devices": [],
+    })
+    client, storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.put("/api/storage", json={"mes.samples": samples})
+
+    assert response.status_code == 200
+    assert storage.read_all_count == 1
+    assert storage.read_calls == []
+
+
 def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_metadata(monkeypatch):
     from app.api.routes import storage as storage_route
 
@@ -1375,6 +1421,49 @@ def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_me
             {"source": "staging-management", "request_id": "tray-write-1"},
         )
     ]
+
+
+def test_storage_tray_action_validates_against_single_loaded_snapshot(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    samples = [
+        {
+            "code": "SP-READ-COUNT",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+            "flow_status": "已到达暂存间",
+            "task_code": "TASK-READ-COUNT",
+            "trays": [{"tray_code": "TP-READ-COUNT", "status": "已到达暂存间", "quantity": 1}],
+        },
+    ]
+    storage = CountingStorage({
+        "mes.samples": samples,
+        "mes.staging_events": [],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_steps": [],
+        "mes.experiment_trays": [],
+        "mes.experiment_run_trays": [],
+        "mes.schedules": [],
+        "mes.devices": [],
+    })
+    client, storage = build_client_with_storage(monkeypatch, storage)
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys, **kwargs: None)
+
+    response = client.post(
+        "/api/storage/rooms/staging/trays/TP-READ-COUNT/stock-out",
+        json={
+            "targetLab": "冲击一室",
+            "targetLabCode": "LAB_IMPACT_1",
+            "targetExperimentCode": "TASK-READ-COUNT-A",
+            "targetExperimentName": "冲击试验",
+            "targetType": "lab",
+        },
+    )
+
+    assert response.status_code == 200
+    assert storage.read_all_count == 1
+    assert storage.read_calls == []
 
 
 def test_storage_tray_stock_in_action_updates_only_target_tray(monkeypatch):

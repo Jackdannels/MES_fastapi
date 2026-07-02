@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TaskHistoryPage from "./page.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { readTasks } from "@/lib/tasksApi";
+import { readTaskHistoryPage } from "@/lib/taskHistoryApi";
 
 const { refreshState, storageState } = vi.hoisted(() => ({
   refreshState: {
@@ -16,6 +16,10 @@ const { refreshState, storageState } = vi.hoisted(() => ({
 
 vi.mock("@/lib/tasksApi", () => ({
   readTasks: vi.fn(),
+}));
+
+vi.mock("@/lib/taskHistoryApi", () => ({
+  readTaskHistoryPage: vi.fn(),
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
@@ -85,14 +89,22 @@ describe("TaskHistoryPage runtime", () => {
   beforeEach(() => {
     refreshState.registrations = [];
     storageState.snapshot = returnedSnapshot;
-    readTasks.mockResolvedValue(returnedTasks);
+    readTaskHistoryPage.mockResolvedValue({
+      currentPage: 1,
+      totalCount: 1,
+      totalPages: 1,
+      tasks: returnedTasks,
+      samples: returnedSnapshot[STORAGE_KEYS.samples],
+      experiments: returnedSnapshot[STORAGE_KEYS.experiments],
+      experimentRuns: returnedSnapshot[STORAGE_KEYS.experiment_runs],
+      experimentRunTrays: returnedSnapshot[STORAGE_KEYS.experiment_run_trays],
+      experimentTrays: returnedSnapshot[STORAGE_KEYS.experiment_trays],
+      schedules: returnedSnapshot[STORAGE_KEYS.schedules],
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url) => {
-        if (String(url).includes("/api/storage")) {
-          return { ok: true, json: async () => storageState.snapshot };
-        }
-        throw new Error(`Unhandled request: ${String(url)}`);
+        throw new Error(`Unexpected direct request: ${String(url)}`);
       }),
     );
   });
@@ -109,15 +121,41 @@ describe("TaskHistoryPage runtime", () => {
 
     expect(mounted.get('[data-testid="history-task-list"]').text()).toContain("TASK-HISTORY-KEEP");
     expect(mounted.get('[data-testid="history-task-detail"]').text()).toContain("TP-HISTORY-KEEP");
+    expect(readTaskHistoryPage).toHaveBeenCalledWith({
+      days: "",
+      page: 1,
+      pageSize: 8,
+      query: "",
+    });
+    expect(fetch).not.toHaveBeenCalled();
 
-    storageState.snapshot = {
-      [STORAGE_KEYS.samples]: "not-an-array",
-    };
+    readTaskHistoryPage.mockResolvedValueOnce({
+      currentPage: 1,
+      totalCount: 1,
+      totalPages: 1,
+      tasks: returnedTasks,
+      samples: "not-an-array",
+    });
     await refreshState.registrations[0].refresh();
     await settlePage(mounted);
 
     expect(mounted.get('[data-testid="history-task-list"]').text()).toContain("TASK-HISTORY-KEEP");
     expect(mounted.get('[data-testid="history-task-detail"]').text()).toContain("TP-HISTORY-KEEP");
     expect(mounted.find('[data-testid="history-task-TASK-HISTORY-KEEP"]').classes()).toContain("active");
+  });
+
+  test("reloads the paged API when the search query changes", async () => {
+    const mounted = await mountPage();
+
+    readTaskHistoryPage.mockClear();
+    await mounted.get('[data-testid="history-task-search"]').setValue("TP-HISTORY-KEEP");
+    await settlePage(mounted);
+
+    expect(readTaskHistoryPage).toHaveBeenCalledWith({
+      days: "",
+      page: 1,
+      pageSize: 8,
+      query: "TP-HISTORY-KEEP",
+    });
   });
 });

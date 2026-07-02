@@ -1,8 +1,36 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import { buildReturnedTaskHistoryView, formatHistoryTime } from "./model";
 
 describe("task history model", () => {
+  test("pre-indexes task history inputs before building paged rows", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/task-history/model.js"), "utf8");
+    const viewSource = source.slice(
+      source.indexOf("function buildReturnedTaskHistoryView"),
+      source.indexOf("export {"),
+    );
+
+    expect(viewSource).toContain("experimentsByTaskCode");
+    expect(viewSource).toContain("experimentTraysByTaskCode");
+    expect(viewSource).toContain("taskStatsByCode");
+    expect(viewSource).not.toContain("buildTaskRow(taskRecord, taskSamples, experiments, experimentTrays)");
+  });
+
+  test("slices paged task summaries before building full task detail rows", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/task-history/model.js"), "utf8");
+    const viewSource = source.slice(
+      source.indexOf("function buildReturnedTaskHistoryView"),
+      source.indexOf("export {"),
+    );
+
+    expect(viewSource).toContain("historyTaskSummaries");
+    expect(viewSource).toContain("pagedSummaries");
+    expect(viewSource.indexOf("pagedSummaries")).toBeLessThan(viewSource.indexOf("buildTaskRow("));
+  });
+
   const returnedTaskFlow = [
     ["待排程", false, true],
     ["已排程", false, true],

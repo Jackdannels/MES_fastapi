@@ -17,15 +17,21 @@ import {
   buildFilterOptions,
   buildTaskCode,
   buildTaskEditForm,
+  buildExperimentTypeAxisSummary,
   buildTaskMetrics,
   buildTaskRows,
   buildTaskSampleCodes,
+  DEFAULT_AXIS_CODES,
   STATUS_COMPLETED,
   STATUS_RUNNING,
   createTaskEditForm,
   createTaskIntakeForm,
   createTaskRecord,
   deleteTaskSnapshot,
+  formatAxisCodeLabel,
+  isAxisAwareExperimentType,
+  normalizeAxisCodes,
+  normalizeAxisCodesByTestType,
   normalizeText,
   normalizeTaskSampleCount,
   applyTaskSampleCodes,
@@ -79,7 +85,13 @@ function useTasksPage() {
   const sampleCodesDraft = ref("");
   const sampleCodesWarning = ref("");
   const intakeExperimentDraft = ref([]);
+  const intakeAxisDraftByTestType = ref({});
+  const intakeAxisPickerType = ref("");
+  const intakeAxisPickerCodes = ref([]);
   const editExperimentDraft = ref([]);
+  const editAxisDraftByTestType = ref({});
+  const editAxisPickerType = ref("");
+  const editAxisPickerCodes = ref([]);
   const scheduledExperimentRemovalDraft = ref(null);
   const savedIntakeDraft = ref(null);
   const selectedTestType = ref("");
@@ -87,7 +99,9 @@ function useTasksPage() {
 
   const intakeModal = useDialogState();
   const intakeExperimentModal = useDialogState();
+  const intakeAxisModal = useDialogState();
   const editExperimentModal = useDialogState();
+  const editAxisModal = useDialogState();
   const sampleCodesModal = useDialogState();
   const scheduledExperimentRemovalModal = useDialogState();
   const resetModal = useDialogState();
@@ -113,10 +127,21 @@ function useTasksPage() {
   );
   const intakeExperimentTypeOptions = experimentTypeOptions;
   const editExperimentTypeOptions = experimentTypeOptions;
-  const intakeExperimentSummary = computed(() => buildExperimentTypeSummary(intakeForm.value.test_types));
-  const intakeExperimentDraftSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
-  const editExperimentSummary = computed(() => buildExperimentTypeSummary(editForm.value.test_types));
-  const editExperimentDraftSummary = computed(() => buildExperimentTypeSummary(editExperimentDraft.value));
+  const intakeExperimentPlainSummary = computed(() => buildExperimentTypeSummary(intakeForm.value.test_types));
+  const intakeExperimentSummary = computed(() =>
+    buildExperimentTypeAxisSummary(intakeForm.value.test_types, intakeForm.value.axis_codes_by_test_type)
+  );
+  const intakeExperimentDraftPlainSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
+  const intakeExperimentDraftSummary = computed(() =>
+    buildExperimentTypeAxisSummary(intakeExperimentDraft.value, intakeAxisDraftByTestType.value)
+  );
+  const intakeExperimentDraftAxisSummary = intakeExperimentDraftSummary;
+  const editExperimentSummary = computed(() =>
+    buildExperimentTypeAxisSummary(editForm.value.test_types, editForm.value.axis_codes_by_test_type)
+  );
+  const editExperimentDraftSummary = computed(() =>
+    buildExperimentTypeAxisSummary(editExperimentDraft.value, editAxisDraftByTestType.value)
+  );
   const intakeSampleCodePreview = computed(() =>
     buildTaskSampleCodes(intakeForm.value.code, intakeForm.value.sample_count, []).slice(0, 5)
   );
@@ -186,7 +211,7 @@ function useTasksPage() {
   };
 
   const syncIntakeDerivedFields = () => {
-    intakeForm.value.test_type = intakeExperimentSummary.value;
+    intakeForm.value.test_type = intakeExperimentPlainSummary.value;
     // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
     const nextCode = buildTaskCode(
       intakeForm.value.test_type,
@@ -199,7 +224,11 @@ function useTasksPage() {
   const resetIntakeForm = () => {
     intakeForm.value = createTaskIntakeForm();
     intakeExperimentDraft.value = [];
+    intakeAxisDraftByTestType.value = {};
+    intakeAxisPickerType.value = "";
+    intakeAxisPickerCodes.value = [];
     intakeExperimentModal.close();
+    intakeAxisModal.close();
     intakeWarning.value = "";
     syncIntakeDerivedFields();
   };
@@ -208,6 +237,10 @@ function useTasksPage() {
     ...createTaskIntakeForm(),
     ...(form && typeof form === "object" ? form : {}),
     test_types: Array.isArray(form?.test_types) ? [...form.test_types] : [],
+    axis_codes_by_test_type: normalizeAxisCodesByTestType(
+      form?.axis_codes_by_test_type || form?.axisCodesByTestType,
+      form?.test_types,
+    ),
   });
 
   const restoreIntakeDraft = () => {
@@ -217,7 +250,11 @@ function useTasksPage() {
     }
     intakeForm.value = cloneIntakeForm(savedIntakeDraft.value);
     intakeExperimentDraft.value = [];
+    intakeAxisDraftByTestType.value = {};
+    intakeAxisPickerType.value = "";
+    intakeAxisPickerCodes.value = [];
     intakeExperimentModal.close();
+    intakeAxisModal.close();
     intakeWarning.value = "";
     syncIntakeDerivedFields();
   };
@@ -239,7 +276,11 @@ function useTasksPage() {
   const closeIntakeModal = () => {
     intakeModal.close();
     intakeExperimentModal.close();
+    intakeAxisModal.close();
     intakeExperimentDraft.value = [];
+    intakeAxisDraftByTestType.value = {};
+    intakeAxisPickerType.value = "";
+    intakeAxisPickerCodes.value = [];
     removeTaskHash();
     flushPendingRealtimeRefresh();
   };
@@ -261,20 +302,85 @@ function useTasksPage() {
 
   const openIntakeExperimentPicker = () => {
     intakeExperimentDraft.value = Array.isArray(intakeForm.value.test_types) ? [...intakeForm.value.test_types] : [];
+    intakeAxisDraftByTestType.value = normalizeAxisCodesByTestType(
+      intakeForm.value.axis_codes_by_test_type || intakeForm.value.axisCodesByTestType,
+      intakeExperimentDraft.value,
+    );
     intakeExperimentModal.openWith({ id: "task-intake-test-types-modal" });
   };
 
   const closeIntakeExperimentPicker = () => {
     intakeExperimentModal.close();
     intakeExperimentDraft.value = [];
+    intakeAxisDraftByTestType.value = {};
+  };
+
+  const openIntakeAxisPicker = (experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (!isAxisAwareExperimentType(normalizedType)) {
+      return;
+    }
+    const existingCodes = normalizeAxisCodes(intakeAxisDraftByTestType.value?.[normalizedType]);
+    intakeAxisPickerType.value = normalizedType;
+    intakeAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
+    intakeAxisModal.openWith({ id: "task-intake-axis-modal", experimentType: normalizedType });
+  };
+
+  const closeIntakeAxisPicker = () => {
+    intakeAxisModal.close();
+    intakeAxisPickerType.value = "";
+    intakeAxisPickerCodes.value = [];
+  };
+
+  const toggleIntakeAxisCode = (axisCode) => {
+    const normalizedCode = normalizeAxisCodes([axisCode])[0];
+    if (!normalizedCode) {
+      return;
+    }
+    const currentCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
+    intakeAxisPickerCodes.value = currentCodes.includes(normalizedCode)
+      ? currentCodes.filter((code) => code !== normalizedCode)
+      : [...currentCodes, normalizedCode];
+  };
+
+  const confirmIntakeAxisPicker = () => {
+    const experimentType = normalizeText(intakeAxisPickerType.value);
+    const axisCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
+    if (!experimentType || axisCodes.length === 0) {
+      intakeWarning.value = "请选择至少一个试验轴向";
+      return;
+    }
+    if (!intakeExperimentDraft.value.includes(experimentType)) {
+      intakeExperimentDraft.value = [...intakeExperimentDraft.value, experimentType];
+    }
+    intakeAxisDraftByTestType.value = {
+      ...intakeAxisDraftByTestType.value,
+      [experimentType]: axisCodes,
+    };
+    intakeWarning.value = "";
+    closeIntakeAxisPicker();
   };
 
   const toggleIntakeExperimentType = (experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (isAxisAwareExperimentType(normalizedType) && !intakeExperimentDraft.value.includes(normalizedType)) {
+      openIntakeAxisPicker(normalizedType);
+      return;
+    }
     toggleExperimentDraftType(intakeExperimentDraft, experimentType);
+    if (isAxisAwareExperimentType(normalizedType)) {
+      const nextAxisDraft = { ...intakeAxisDraftByTestType.value };
+      delete nextAxisDraft[normalizedType];
+      intakeAxisDraftByTestType.value = nextAxisDraft;
+    }
   };
 
   const confirmIntakeExperimentPicker = () => {
     intakeForm.value.test_types = Array.isArray(intakeExperimentDraft.value) ? [...intakeExperimentDraft.value] : [];
+    intakeForm.value.axis_codes_by_test_type = normalizeAxisCodesByTestType(
+      intakeAxisDraftByTestType.value,
+      intakeForm.value.test_types,
+    );
     intakeWarning.value = "";
     syncIntakeDerivedFields();
     closeIntakeExperimentPicker();
@@ -293,21 +399,97 @@ function useTasksPage() {
       return;
     }
     editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
+    editAxisDraftByTestType.value = normalizeAxisCodesByTestType(
+      editForm.value.axis_codes_by_test_type || editForm.value.axisCodesByTestType,
+      editExperimentDraft.value,
+    );
     editExperimentModal.openWith({ id: "task-edit-test-types-modal" });
   };
 
   const closeEditExperimentPicker = () => {
     editExperimentModal.close();
+    editAxisModal.close();
     editExperimentDraft.value = [];
+    editAxisDraftByTestType.value = {};
+    editAxisPickerType.value = "";
+    editAxisPickerCodes.value = [];
+  };
+
+  const openEditAxisPicker = (experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (!isAxisAwareExperimentType(normalizedType)) {
+      return;
+    }
+    const existingCodes = normalizeAxisCodes(editAxisDraftByTestType.value?.[normalizedType]);
+    editAxisPickerType.value = normalizedType;
+    editAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
+    editAxisModal.openWith({ id: "task-edit-axis-modal", experimentType: normalizedType });
+  };
+
+  const closeEditAxisPicker = () => {
+    editAxisModal.close();
+    editAxisPickerType.value = "";
+    editAxisPickerCodes.value = [];
+  };
+
+  const toggleEditAxisCode = (axisCode) => {
+    const normalizedCode = normalizeAxisCodes([axisCode])[0];
+    if (!normalizedCode) {
+      return;
+    }
+    const currentCodes = normalizeAxisCodes(editAxisPickerCodes.value);
+    editAxisPickerCodes.value = currentCodes.includes(normalizedCode)
+      ? currentCodes.filter((code) => code !== normalizedCode)
+      : [...currentCodes, normalizedCode];
+  };
+
+  const confirmEditAxisPicker = () => {
+    const experimentType = normalizeText(editAxisPickerType.value);
+    const axisCodes = normalizeAxisCodes(editAxisPickerCodes.value);
+    if (!experimentType || axisCodes.length === 0) {
+      editWarning.value = "请选择至少一个试验轴向";
+      return;
+    }
+    if (!editExperimentDraft.value.includes(experimentType)) {
+      editExperimentDraft.value = [...editExperimentDraft.value, experimentType];
+    }
+    editAxisDraftByTestType.value = {
+      ...editAxisDraftByTestType.value,
+      [experimentType]: axisCodes,
+    };
+    editWarning.value = "";
+    closeEditAxisPicker();
+  };
+
+  const removeEditAxisExperiment = () => {
+    const experimentType = normalizeText(editAxisPickerType.value);
+    if (!experimentType) {
+      closeEditAxisPicker();
+      return;
+    }
+    editExperimentDraft.value = editExperimentDraft.value.filter((entry) => normalizeText(entry) !== experimentType);
+    const nextAxisDraft = { ...editAxisDraftByTestType.value };
+    delete nextAxisDraft[experimentType];
+    editAxisDraftByTestType.value = nextAxisDraft;
+    closeEditAxisPicker();
   };
 
   const toggleEditExperimentType = (experimentType) => {
+    const normalizedType = normalizeText(experimentType);
+    if (isAxisAwareExperimentType(normalizedType)) {
+      openEditAxisPicker(normalizedType);
+      return;
+    }
     toggleExperimentDraftType(editExperimentDraft, experimentType);
   };
 
   const confirmEditExperimentPicker = () => {
     editForm.value.test_types = Array.isArray(editExperimentDraft.value) ? [...editExperimentDraft.value] : [];
     editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
+    editForm.value.axis_codes_by_test_type = normalizeAxisCodesByTestType(
+      editAxisDraftByTestType.value,
+      editForm.value.test_types,
+    );
     editWarning.value = "";
     closeEditExperimentPicker();
   };
@@ -336,9 +518,13 @@ function useTasksPage() {
   const closeTaskDrawer = () => {
     taskDrawer.close();
     editExperimentModal.close();
+    editAxisModal.close();
     sampleCodesModal.close();
     scheduledExperimentRemovalModal.close();
     editExperimentDraft.value = [];
+    editAxisDraftByTestType.value = {};
+    editAxisPickerType.value = "";
+    editAxisPickerCodes.value = [];
     sampleCodesDraft.value = "";
     sampleCodesWarning.value = "";
     scheduledExperimentRemovalDraft.value = null;
@@ -1023,7 +1209,9 @@ function useTasksPage() {
   const isRealtimeRefreshPaused = () => Boolean(
     intakeModal.open.value
     || intakeExperimentModal.open.value
+    || intakeAxisModal.open.value
     || editExperimentModal.open.value
+    || editAxisModal.open.value
     || sampleCodesModal.open.value
     || scheduledExperimentRemovalModal.open.value
     || resetModal.open.value
@@ -1129,11 +1317,15 @@ function useTasksPage() {
   });
 
   return {
+    closeIntakeAxisPicker,
     closeIntakeModal,
     closeResetModal,
     closeScheduledExperimentRemovalConfirm,
     closeSampleCodesEditor,
     closeTaskDrawer,
+    closeEditAxisPicker,
+    confirmIntakeAxisPicker,
+    confirmEditAxisPicker,
     confirmScheduledExperimentRemoval,
     currentPage,
     deleteTask,
@@ -1141,8 +1333,14 @@ function useTasksPage() {
     editWarning,
     filterStatus: selectedStatus,
     filterTestType: selectedTestType,
+    defaultAxisCodes: DEFAULT_AXIS_CODES,
+    formatAxisCodeLabel,
     intakeForm,
+    intakeAxisModalOpen: intakeAxisModal.open,
+    intakeAxisPickerCodes,
+    intakeAxisPickerType,
     intakeExperimentDraft,
+    intakeExperimentDraftAxisSummary,
     intakeExperimentDraftSummary,
     intakeExperimentModalOpen: intakeExperimentModal.open,
     intakeExperimentSummary,
@@ -1181,7 +1379,11 @@ function useTasksPage() {
     editExperimentModalOpen: editExperimentModal.open,
     editExperimentSummary,
     editExperimentTypeOptions,
+    editAxisModalOpen: editAxisModal.open,
+    editAxisPickerCodes,
+    editAxisPickerType,
     openIntakeExperimentPicker,
+    openIntakeModal,
     openEditExperimentPicker,
     openSampleCodesEditor,
     sortDirection,
@@ -1192,8 +1394,11 @@ function useTasksPage() {
     taskDetailSampleCodes,
     taskRows: visibleRows,
     testTypeOptions: computed(() => filterOptions.value.testTypeOptions),
+    toggleIntakeAxisCode,
     toggleIntakeExperimentType,
+    toggleEditAxisCode,
     toggleEditExperimentType,
+    removeEditAxisExperiment,
     toggleSort,
     updateTask,
     openTaskDrawer,

@@ -42,6 +42,8 @@ COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已�
 COMPLETED_TASK_STATUSES = {"任务已完成", "任务完成", *COMPLETED_EXPERIMENT_STATUSES}
 COMPLETED_TASK_EDITABLE_FIELDS = {"name"}
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
+AXIS_EXPERIMENT_TYPES = {"冲击试验", "振动试验"}
+MAX_CONTACT_LENGTH = 15
 INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
 TASK_TEXT_FIELD_LABELS = {
     "attachment": "附件",
@@ -347,6 +349,8 @@ def validate_task_text_fields(task: dict[str, Any], *, require_contact: bool = F
         raise HTTPException(status_code=400, detail="请填写联系人")
     if require_contact and not contact_info:
         raise HTTPException(status_code=400, detail="请填写联系方式")
+    if len(contact) > MAX_CONTACT_LENGTH:
+        raise HTTPException(status_code=400, detail=f"联系人不能超过 {MAX_CONTACT_LENGTH} 个字")
     if contact_info and not re.fullmatch(r"\d{1,15}", contact_info):
         raise HTTPException(status_code=400, detail="联系方式必须为 1-15 位数字")
     task_name = normalize_text(task.get("name"))
@@ -475,6 +479,30 @@ def parse_test_types(value: Any) -> list[str]:
     return normalized
 
 
+def normalize_axis_codes(value: Any) -> list[str]:
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, str):
+        raw_values = re.split(r"[,，、\s]+", value)
+    else:
+        raw_values = []
+    axis_codes: list[str] = []
+    for item in raw_values:
+        normalized = normalize_text(item).lower()
+        if normalized and normalized not in axis_codes:
+            axis_codes.append(normalized)
+    return axis_codes
+
+
+def axis_codes_for_experiment_type(task: dict[str, Any], experiment_type: str) -> list[str]:
+    if normalize_text(experiment_type) not in AXIS_EXPERIMENT_TYPES:
+        return []
+    raw_map = task.get("axis_codes_by_test_type") or task.get("axisCodesByTestType")
+    if not isinstance(raw_map, dict):
+        return []
+    return normalize_axis_codes(raw_map.get(experiment_type))
+
+
 def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
     explicit_types = task.get("test_types")
     if isinstance(explicit_types, list):
@@ -565,18 +593,23 @@ def build_task_experiments(task: dict[str, Any], existing_experiments: list[dict
             if not experiment_name or re.fullmatch(r"[A-Z]实验", experiment_name):
                 experiment_name = experiment_types[index]
             required_device = normalize_text(source.get("required_device")) or experiment_types[index]
-        experiments.append(
-            {
-                **source,
-                "id": normalize_text(source.get("id")) or experiment_code,
-                "task_code": task_code,
-                "experiment_code": experiment_code,
-                "experiment_name": experiment_name,
-                "required_device": required_device,
-                "priority": normalize_text(source.get("priority")) or normalize_text(task.get("priority")),
-                "status": normalize_text(source.get("status")) or normalize_text(task.get("status")) or "待排程",
-            }
+        next_experiment = {
+            **source,
+            "id": normalize_text(source.get("id")) or experiment_code,
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "experiment_name": experiment_name,
+            "required_device": required_device,
+            "priority": normalize_text(source.get("priority")) or normalize_text(task.get("priority")),
+            "status": normalize_text(source.get("status")) or normalize_text(task.get("status")) or "待排程",
+        }
+        selected_axis_codes = (
+            axis_codes_for_experiment_type(task, experiment_name)
+            or axis_codes_for_experiment_type(task, required_device)
         )
+        if selected_axis_codes:
+            next_experiment["axis_codes"] = selected_axis_codes
+        experiments.append(next_experiment)
     return experiments
 
 

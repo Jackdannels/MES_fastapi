@@ -231,8 +231,25 @@
           </section>
 
           <section class="process-task-summary-card">
-            <div class="process-task-summary-title">待下一轮托盘</div>
-            <div v-if="selectedTaskDetail?.remainingTrayRows?.length" class="process-task-tray-list process-task-tray-list--scrollable">
+            <div class="process-task-summary-title-row">
+              <div class="process-task-summary-title">待下一轮托盘</div>
+              <span
+                v-if="selectedTaskDetail?.remainingTrayRows?.length"
+                class="process-task-summary-count"
+                data-testid="process-remaining-tray-count"
+              >
+                共 {{ selectedTaskDetail.remainingTrayRows.length }} 个
+              </span>
+            </div>
+            <div
+              v-if="selectedTaskDetail?.remainingTrayRows?.length"
+              class="process-task-tray-list process-task-remaining-tray-grid"
+              :class="{
+                'is-single': selectedTaskDetail.remainingTrayRows.length === 1,
+                'is-condensed': selectedTaskDetail.remainingTrayRows.length > 2,
+              }"
+              data-testid="process-remaining-tray-grid"
+            >
               <div
                 v-for="tray in previewRemainingTrayRows"
                 :key="tray.trayCode"
@@ -652,6 +669,30 @@ const formatFlowTime = (value) => {
   margin-bottom: 12px;
 }
 
+.process-task-summary-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.process-task-summary-title-row .process-task-summary-title {
+  margin-bottom: 0;
+}
+
+.process-task-summary-count {
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.34);
+  background: rgba(var(--industrial-accent-rgb), 0.1);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .process-task-stat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -896,6 +937,28 @@ const formatFlowTime = (value) => {
   overscroll-behavior: contain;
   padding-right: 4px;
   scrollbar-gutter: stable;
+}
+
+.process-task-remaining-tray-grid {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.process-task-remaining-tray-grid.is-condensed {
+  gap: 7px;
+}
+
+.process-task-remaining-tray-grid.is-condensed .process-task-tray-row {
+  padding: 8px 10px;
+}
+
+.process-task-remaining-tray-grid.is-condensed .process-task-tray-row__select {
+  gap: 2px;
 }
 
 .process-task-tray-row {

@@ -941,6 +941,81 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("asks for confirmation before resetting a scheduled task", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspaceWithSchedules = {
+      ...createWorkspacePayload(),
+      allocationSaved: true,
+      task: {
+        ...createWorkspacePayload().task,
+        hasSchedules: true,
+        scheduleResetWarning: "当前任务已有排程，重新分配后将清空排程信息，需要重新排程。",
+      },
+    };
+    const reloadedWorkspace = {
+      ...createWorkspacePayload(),
+      allocationSaved: false,
+      task: {
+        ...createWorkspacePayload().task,
+        hasSchedules: false,
+        scheduleResetWarning: "",
+      },
+    };
+    const requestLog = [];
+
+    vi.stubGlobal("confirm", vi.fn(() => {
+      throw new Error("native confirm should not be used");
+    }));
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspaceWithSchedules };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/reload")) {
+        requestLog.push("reload");
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新分配，需要重新排程。", workspace: reloadedWorkspace }) };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    const resetButton = wrapper.findAll("button").find((button) => button.text() === "重新分配");
+    expect(resetButton).toBeTruthy();
+
+    await resetButton.trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-schedule-reset-confirm"]').text()).toContain("当前任务已有排程");
+    expect(wrapper.get('[data-testid="transfer-schedule-reset-confirm"]').text()).toContain("重新分配后将清空排程信息，需要重新排程。");
+    expect(requestLog).toEqual([]);
+
+    await wrapper.get('[data-testid="transfer-schedule-reset-cancel"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-schedule-reset-confirm"]').exists()).toBe(false);
+    expect(requestLog).toEqual([]);
+
+    await resetButton.trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-schedule-reset-submit"]').trigger("click");
+    await settle(wrapper);
+
+    expect(requestLog).toEqual(["reload"]);
+  });
+
   test("pre-allocation overview renders compact page status and jump controls", async () => {
     const bootstrapPayload = createBootstrapPayload();
     bootstrapPayload.taskOverview = Array.from({ length: 30 }, (_, index) => ({

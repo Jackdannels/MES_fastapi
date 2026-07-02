@@ -312,6 +312,50 @@ describe("ProcessPage runtime", () => {
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-002");
   });
 
+  test("keeps one waiting tray in a single-column next tray grid with a count hint", () => {
+    mocks.reset();
+    const detail = mocks.createSelectedTaskDetail();
+    detail.remainingTrayCount = 1;
+    detail.remainingTrayRows = detail.remainingTrayRows.slice(0, 1);
+    mocks.selectedTaskDetail.value = detail;
+
+    const wrapper = mount(ProcessPage);
+
+    const grid = wrapper.get("[data-testid='process-remaining-tray-grid']");
+    expect(grid.classes()).toContain("is-single");
+    expect(grid.classes()).not.toContain("is-adaptive");
+    expect(wrapper.get("[data-testid='process-remaining-tray-count']").text()).toBe("共 1 个");
+    expect(grid.findAll(".process-task-tray-row")).toHaveLength(1);
+  });
+
+  test("keeps more than two waiting trays in one condensed column", () => {
+    mocks.reset();
+    const detail = mocks.createSelectedTaskDetail();
+    detail.remainingTrayCount = 3;
+    detail.remainingTrayRows = [
+      ...detail.remainingTrayRows,
+      {
+        flowStatus: "已到达实验室",
+        locationSummary: "冲击一室",
+        ownerSummary: "钱七",
+        sampleCodes: ["SP-006"],
+        sampleCount: 1,
+        sampleSummary: "SP-006",
+        status: "已到达实验室",
+        trayCode: "TRAY-005",
+      },
+    ];
+    mocks.selectedTaskDetail.value = detail;
+
+    const wrapper = mount(ProcessPage);
+
+    const grid = wrapper.get("[data-testid='process-remaining-tray-grid']");
+    expect(grid.classes()).toContain("is-condensed");
+    expect(grid.classes()).not.toContain("is-adaptive");
+    expect(wrapper.get("[data-testid='process-remaining-tray-count']").text()).toBe("共 3 个");
+    expect(grid.findAll(".process-task-tray-row")).toHaveLength(3);
+  });
+
   test("switches visible labs by summary filter, disables idle actions, and supports tray/start actions", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);

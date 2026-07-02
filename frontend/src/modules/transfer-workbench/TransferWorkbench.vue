@@ -298,6 +298,7 @@
               <button
                 v-if="modeConfig.allowReset"
                 class="action-btn secondary"
+                data-testid="transfer-reset-workspace"
                 :disabled="!canResetWorkspace"
                 @click="reloadWorkspace"
               >
@@ -509,6 +510,34 @@
       </div>
     </div>
 
+    <div v-if="scheduleResetConfirmOpen" class="transfer-modal">
+      <div class="transfer-modal__backdrop transfer-schedule-reset-backdrop" @click="closeScheduleResetConfirm"></div>
+      <div
+        class="transfer-modal__panel transfer-schedule-reset-modal"
+        data-testid="transfer-schedule-reset-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transfer-schedule-reset-title"
+      >
+        <div class="transfer-schedule-reset-modal__head">
+          <span class="transfer-schedule-reset-modal__mark" aria-hidden="true">!</span>
+          <div>
+            <div class="eyebrow">排程重置确认</div>
+            <h3 id="transfer-schedule-reset-title">确认{{ modeConfig.resetActionLabel }}</h3>
+          </div>
+        </div>
+        <p class="transfer-schedule-reset-modal__message">{{ scheduleResetConfirmMessage }}</p>
+        <div class="transfer-schedule-reset-modal__meta">
+          <span>任务编号</span>
+          <strong>{{ currentTask?.taskNo || "--" }}</strong>
+        </div>
+        <div class="transfer-modal__actions transfer-schedule-reset-modal__actions">
+          <button class="action-btn secondary" data-testid="transfer-schedule-reset-cancel" type="button" @click="closeScheduleResetConfirm">取消</button>
+          <button class="action-btn" data-testid="transfer-schedule-reset-submit" type="button" @click="confirmScheduleReset">确认{{ modeConfig.resetActionLabel }}</button>
+        </div>
+      </div>
+    </div>
+
     <ModuleExitDialog
       v-if="showModeHeader"
       :current-module="'handover'"
@@ -599,6 +628,8 @@ const barcodePreviewItems = ref([]);
 const barcodePrintConfirmed = ref(false);
 const sampleCodesModalVisible = ref(false);
 const sampleCodesModalTask = ref(null);
+const scheduleResetConfirmOpen = ref(false);
+const scheduleResetConfirmMessage = ref("");
 const lockedOperationHint = ref("");
 const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 const taskPage = ref(1);
@@ -779,6 +810,17 @@ const closeSampleCodesModal = () => {
   sampleCodesModalVisible.value = false;
   sampleCodesModalTask.value = null;
   flushPendingRealtimeRefresh();
+};
+
+const closeScheduleResetConfirm = () => {
+  scheduleResetConfirmOpen.value = false;
+  scheduleResetConfirmMessage.value = "";
+};
+
+const openScheduleResetConfirm = () => {
+  scheduleResetConfirmMessage.value = normalizeText(currentTask.value?.scheduleResetWarning)
+    || `当前任务已有排程，${modeConfig.value.resetActionLabel}后将清空排程信息，需要重新排程。`;
+  scheduleResetConfirmOpen.value = true;
 };
 
 const openSampleCodesModal = (task) => {
@@ -1293,6 +1335,8 @@ const applyWorkspaceSaveGuards = (workspace) => {
     trayCapacityMessage: nextTask.trayCapacityMessage,
     reloadBlocked: nextTask.reloadBlocked,
     reloadBlockedReason: nextTask.reloadBlockedReason,
+    hasSchedules: nextTask.hasSchedules,
+    scheduleResetWarning: nextTask.scheduleResetWarning,
   };
   availableInventory.value = normalizeInventoryRefs(workspace.trayInventory || [], trayLimit.value);
   allocationSaved.value = Boolean(workspace.allocationSaved);
@@ -2013,7 +2057,7 @@ const confirmStorage = async () => {
   taskStatusFilter.value = storedStatus;
 };
 
-const reloadWorkspace = async () => {
+const executeReloadWorkspace = async () => {
   if (!canResetWorkspace.value) return;
   clearWorkbenchFeedback();
   barcodeModalVisible.value = false;
@@ -2031,6 +2075,20 @@ const reloadWorkspace = async () => {
   window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "reload" } }));
   flushPendingRealtimeRefresh();
   taskStatusFilter.value = pendingStatus;
+};
+
+const reloadWorkspace = async () => {
+  if (!canResetWorkspace.value) return;
+  if (currentTask.value?.hasSchedules) {
+    openScheduleResetConfirm();
+    return;
+  }
+  await executeReloadWorkspace();
+};
+
+const confirmScheduleReset = async () => {
+  closeScheduleResetConfirm();
+  await executeReloadWorkspace();
 };
 
 onMounted(() => {

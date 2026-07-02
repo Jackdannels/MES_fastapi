@@ -303,6 +303,28 @@ const buildEventMap = (stagingEvents, config = STORAGE_ROOM_CONFIGS.staging) => 
   return eventMap;
 };
 
+const buildAllEventMap = (stagingEvents) => {
+  const eventMap = new Map();
+  asArray(stagingEvents).forEach((event) => {
+    const trayCode = normalizeText(event?.tray_code);
+    if (!trayCode) {
+      return;
+    }
+    const current = eventMap.get(trayCode) || [];
+    current.push({ ...event });
+    eventMap.set(trayCode, current);
+  });
+
+  eventMap.forEach((events, trayCode) => {
+    eventMap.set(
+      trayCode,
+      events.slice().sort((left, right) => compareDateTimes(left?.time, right?.time, "asc")),
+    );
+  });
+
+  return eventMap;
+};
+
 const eventTargetsStorageRoom = (event, config = STORAGE_ROOM_CONFIGS.staging, context = {}) => {
   if (!event) {
     return false;
@@ -1306,6 +1328,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
   const eventMap = buildEventMap(stagingEvents, config);
+  const allEventMap = buildAllEventMap(stagingEvents);
   const trayMap = new Map();
 
   samples.forEach((sample) => {
@@ -1394,12 +1417,12 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
     .map((row) => {
       const events = eventMap.get(row.trayCode) || [];
       const lastEvent = events.at(-1) || null;
-      const latestStorageEvent = collectTrayStorageEvents(stagingEvents, row.trayCode).at(-1) || null;
+      const trayStorageEvents = allEventMap.get(row.trayCode) || [];
+      const latestStorageEvent = trayStorageEvents.at(-1) || null;
       const storageEventContext = {
         location: row.location,
         statuses: row.statuses,
       };
-      const trayStorageEvents = collectTrayStorageEvents(stagingEvents, row.trayCode);
       const inboundSourceLabel = resolveStorageInboundSourceLabel(trayStorageEvents, config, storageEventContext);
       const latestEventDispatchesToCurrentRoom = eventTargetsStorageRoom(latestStorageEvent, config, storageEventContext);
       const latestAction = normalizeText(latestStorageEvent?.action);
@@ -1906,10 +1929,9 @@ function applyZancunInventoryAction(input = {}) {
     };
   }
 
-  const latestStorageEvent = collectTrayStorageEvents(nextSnapshot[STAGING_EVENTS_KEY], normalizedCode).at(-1) || null;
-  const latestMatchedEvent = collectTrayStorageEvents(nextSnapshot[STAGING_EVENTS_KEY], normalizedCode)
-    .filter((event) => eventMatchesRoom(event, config))
-    .at(-1);
+  const trayStorageEvents = collectTrayStorageEvents(nextSnapshot[STAGING_EVENTS_KEY], normalizedCode);
+  const latestStorageEvent = trayStorageEvents.at(-1) || null;
+  const latestMatchedEvent = trayStorageEvents.filter((event) => eventMatchesRoom(event, config)).at(-1);
   if (
     actionMode === "stockIn"
     && normalizeText(latestMatchedEvent?.action) === "stock_in"

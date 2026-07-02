@@ -332,4 +332,59 @@ describe("useTasksPage", () => {
       wrapper.unmount();
     }
   });
+
+  test("opens axis picker before selecting impact experiment and submits the selected axes", async () => {
+    mocks.readTasks.mockResolvedValue([]);
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.samples]: [],
+    });
+    mocks.readMasterTestTypes.mockResolvedValue([{ name: "冲击试验" }, { name: "盐雾试验" }]);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openIntakeModal();
+      wrapper.vm.intakeForm.name = "轴向选择任务";
+      wrapper.vm.intakeForm.contact = "张三";
+      wrapper.vm.intakeForm.contact_info = "13800001234";
+      wrapper.vm.intakeForm.sample_count = "2";
+
+      wrapper.vm.openIntakeExperimentPicker();
+      wrapper.vm.toggleIntakeExperimentType("冲击试验");
+      await settle(wrapper);
+
+      expect(wrapper.vm.intakeExperimentDraft).toEqual([]);
+      expect(wrapper.vm.intakeAxisModalOpen).toBe(true);
+      expect(wrapper.vm.intakeAxisPickerType).toBe("冲击试验");
+      expect(wrapper.vm.intakeAxisPickerCodes).toEqual(["x+", "x-", "y+", "y-", "z+", "z-"]);
+
+      wrapper.vm.toggleIntakeAxisCode("x-");
+      wrapper.vm.toggleIntakeAxisCode("y+");
+      wrapper.vm.toggleIntakeAxisCode("y-");
+      wrapper.vm.toggleIntakeAxisCode("z+");
+      wrapper.vm.toggleIntakeAxisCode("z-");
+      wrapper.vm.confirmIntakeAxisPicker();
+      await settle(wrapper);
+
+      expect(wrapper.vm.intakeAxisModalOpen).toBe(false);
+      expect(wrapper.vm.intakeExperimentDraft).toEqual(["冲击试验"]);
+      expect(wrapper.vm.intakeExperimentDraftAxisSummary).toBe("冲击试验（X+）");
+
+      wrapper.vm.confirmIntakeExperimentPicker();
+      await wrapper.vm.submitTask();
+      await settle(wrapper);
+
+      expect(mocks.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          test_types: ["冲击试验"],
+          axis_codes_by_test_type: {
+            冲击试验: ["x+"],
+          },
+        }),
+      );
+    } finally {
+      wrapper.unmount();
+    }
+  });
 });

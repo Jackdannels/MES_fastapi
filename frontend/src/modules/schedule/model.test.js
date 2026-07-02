@@ -1914,6 +1914,57 @@ describe("schedulePageModel", () => {
     expect(vibrationScheduleIds).toContain("schedule-31-b");
   });
 
+  test("buildGanttRows releases a stale schedule when the experiment itself is completed", () => {
+    const gantt = buildGanttRows({
+      devices: [{ code: "冲击一室" }],
+      experiments: [
+        {
+          task_code: "TASK-RETURNED-AXIS",
+          experiment_code: "TASK-RETURNED-AXIS-A",
+          experiment_name: "冲击试验",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-RETURNED-AXIS", experiment_code: "TASK-RETURNED-AXIS-A", tray_code: "TASK-RETURNED-AXIS-TP-001" },
+        { task_code: "TASK-RETURNED-AXIS", experiment_code: "TASK-RETURNED-AXIS-A", tray_code: "TASK-RETURNED-AXIS-TP-002" },
+      ],
+      samples: [
+        {
+          code: "TASK-RETURNED-AXIS-SP-001",
+          task_code: "TASK-RETURNED-AXIS",
+          status: STATUS_COMPLETED,
+          trays: [{ tray_code: "TASK-RETURNED-AXIS-TP-001", status: STATUS_COMPLETED }],
+        },
+        {
+          code: "TASK-RETURNED-AXIS-SP-002",
+          task_code: "TASK-RETURNED-AXIS",
+          status: "厂家收回",
+          trays: [{ tray_code: "TASK-RETURNED-AXIS-TP-002", status: "厂家收回" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-returned-axis",
+          task_code: "TASK-RETURNED-AXIS",
+          experiment_code: "TASK-RETURNED-AXIS-A",
+          device: "冲击一室",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x+", "x-"],
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T10:00:00.000Z",
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00.000Z"),
+      now: new Date("2099-03-20T09:00:00.000Z"),
+    });
+
+    const row = gantt.rows.find((entry) => entry.device === "冲击一室");
+    const scheduleIds = (row?.segments || []).flatMap((segment) => segment.scheduleIds || [segment.scheduleId]).filter(Boolean);
+    expect(scheduleIds).not.toContain("schedule-returned-axis");
+  });
+
   test("buildGanttRows releases only the completed axis schedule and keeps unfinished axes visible", () => {
     const gantt = buildGanttRows({
       devices: [{ code: "冲击一室" }],
@@ -2367,6 +2418,95 @@ describe("schedulePageModel", () => {
         remainingAxisCodes: ["x-", "y+"],
       }),
     ]);
+  });
+
+  test("buildExperimentOptions hides impact experiments after all axes are completed", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-07-026",
+      experiments: [
+        {
+          task_code: "SYLU-2026-07-026",
+          experiment_code: "SYLU-2026-07-026-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["z+", "z-", "x+", "y-", "x-", "y+"],
+        },
+      ],
+      experimentRunSteps: ["z+", "z-", "x+", "y-", "x-", "y+"].map((axisCode) => ({
+        task_code: "SYLU-2026-07-026",
+        experiment_code: "SYLU-2026-07-026-A",
+        axis_code: axisCode,
+        status: "实验已完成",
+      })),
+      schedules: [],
+    });
+
+    expect(options).toEqual([]);
+  });
+
+  test("buildExperimentOptions hides experiments that are already terminal", () => {
+    const options = buildExperimentOptions({
+      taskCode: "SYLU-2026-07-026",
+      experiments: [
+        {
+          task_code: "SYLU-2026-07-026",
+          experiment_code: "SYLU-2026-07-026-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          status: STATUS_COMPLETED,
+          axis_codes: ["z+", "z-", "x+", "y-", "x-", "y+"],
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-07-026",
+          trays: [
+            { tray_code: "SYLU-2026-07-026-TP-001", status: STATUS_COMPLETED },
+            { tray_code: "SYLU-2026-07-026-TP-002", status: "厂家收回" },
+          ],
+        },
+      ],
+      schedules: [],
+    });
+
+    expect(options).toEqual([]);
+  });
+
+  test("buildManualTaskOptions drops tasks whose only schedulable axis experiment is already complete", () => {
+    const options = buildManualTaskOptions({
+      tasks: [
+        {
+          code: "SYLU-2026-07-026",
+          status: "任务进行中",
+          test_type: "冲击试验",
+          tray_codes: ["SYLU-2026-07-026-TP-001"],
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-07-026",
+          experiment_code: "SYLU-2026-07-026-A",
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          axis_codes: ["z+", "z-", "x+", "y-", "x-", "y+"],
+        },
+      ],
+      experimentRunSteps: ["z+", "z-", "x+", "y-", "x-", "y+"].map((axisCode) => ({
+        task_code: "SYLU-2026-07-026",
+        experiment_code: "SYLU-2026-07-026-A",
+        axis_code: axisCode,
+        status: "实验已完成",
+      })),
+      samples: [
+        {
+          task_code: "SYLU-2026-07-026",
+          trays: [{ tray_code: "SYLU-2026-07-026-TP-001", status: "实验已完成" }],
+        },
+      ],
+      schedules: [],
+    });
+
+    expect(options).toEqual([]);
   });
 
   test("buildExperimentOptions does not infer axes for impact or vibration experiments without dispatched axis data", () => {

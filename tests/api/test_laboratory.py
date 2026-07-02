@@ -1031,6 +1031,156 @@ def test_laboratory_withdraw_current_allows_stale_target_when_current_history_is
     updated = storage.read("mes.samples")[0]
     assert updated["status"] == "冲击试验部分完成 3/6轴"
     assert updated["trays"][0]["status"] == "冲击试验部分完成 3/6轴"
+    assert updated["trays"][0]["target_experiment_code"] == "EXP-A"
+    assert updated["trays"][0]["target_lab"] == "冲击一室"
+
+
+def test_laboratory_withdraw_current_uses_latest_restore_point_over_current_partial_axis(monkeypatch):
+    sample = sample_with_history(
+        "已到达实验室",
+        "冲击一室",
+        [
+            {
+                "action": "任务比对",
+                "detail": "TASK-501 / 冲击试验 / 已到达实验室 / 托盘：TP-501",
+                "status": "已到达实验室",
+                "location": "冲击一室",
+                "time": "2026-07-02T15:41:31",
+            },
+            {
+                "action": "实验完成",
+                "detail": "TASK-501 / 四综合试验 / 实验已完成",
+                "status": "实验已完成",
+                "location": "四综合实验室",
+                "time": "2026-07-02T15:41:13",
+            },
+            {
+                "action": "实验完成",
+                "detail": "TASK-501 / 冲击试验 / 冲击试验部分完成 3/6轴",
+                "status": "冲击试验部分完成 3/6轴",
+                "location": "冲击一室",
+                "time": "2026-07-02T15:40:49",
+            },
+        ],
+    )
+    sample["trays"][0]["target_experiment_code"] = "EXP-A"
+    sample["trays"][0]["target_lab"] = "冲击一室"
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[
+            {"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"},
+            {"task_code": "TASK-501", "experiment_code": "EXP-B", "tray_code": "TP-501"},
+        ],
+    )
+    payloads["mes.experiments"] = [
+        {
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "experiment_name": "冲击试验",
+            "axis_codes": ["x+", "x-", "y+", "y-", "z+", "z-"],
+        },
+        {
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-B",
+            "experiment_name": "四综合试验",
+        },
+    ]
+    payloads["mes.schedules"] = [
+        {
+            "id": "SCH-IMPACT-FIRST",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "device": "冲击一室",
+            "status": "实验已完成",
+            "sub_experiment_code": "EXP-A-AXIS-001",
+            "axis_codes": ["x+", "x-", "y+"],
+        },
+        {
+            "id": "SCH-COMPREHENSIVE",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-B",
+            "device": "四综合实验室",
+            "status": "实验已完成",
+        },
+        {
+            "id": "SCH-IMPACT-REMAINING",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "device": "冲击一室",
+            "status": "已排程",
+            "sub_experiment_code": "EXP-A-AXIS-002",
+            "axis_codes": ["y-", "z+", "z-"],
+        },
+    ]
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-IMPACT-AXIS-001",
+            "schedule_id": "SCH-IMPACT-FIRST",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "device": "冲击一室",
+            "status": "实验已完成",
+            "sub_experiment_code": "EXP-A-AXIS-001",
+            "axis_codes": ["x+", "x-", "y+"],
+            "ended_at": "2026-07-02T15:40:49",
+        },
+        {
+            "run_no": "RUN-COMPREHENSIVE",
+            "schedule_id": "SCH-COMPREHENSIVE",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-B",
+            "device": "四综合实验室",
+            "status": "实验已完成",
+            "ended_at": "2026-07-02T15:41:13",
+        },
+    ]
+    payloads["mes.experiment_run_trays"] = [
+        {
+            "run_no": "RUN-IMPACT-AXIS-001",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "tray_code": "TP-501",
+            "status": "实验已完成",
+            "run_tray_status": "实验已完成",
+            "sub_experiment_code": "EXP-A-AXIS-001",
+            "ended_at": "2026-07-02T15:40:49",
+        },
+        {
+            "run_no": "RUN-COMPREHENSIVE",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-B",
+            "tray_code": "TP-501",
+            "status": "实验已完成",
+            "run_tray_status": "实验已完成",
+            "ended_at": "2026-07-02T15:41:13",
+        },
+    ]
+    payloads["mes.experiment_run_steps"] = [
+        {
+            "run_no": "RUN-IMPACT-AXIS-001",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "axis_code": axis_code,
+            "status": "实验已完成",
+            "ended_at": "2026-07-02T15:40:49",
+            "sub_experiment_code": "EXP-A-AXIS-001",
+        }
+        for axis_code in ["x+", "x-", "y+"]
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-A/withdraw-current", json={"trayCodes": ["TP-501"]})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["restoredStatus"] == "实验已完成"
+    assert payload["restoredLocation"] == "四综合实验室"
+    assert payload["restoredExperimentName"] == "四综合试验"
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "实验已完成"
+    assert updated["location"] == "四综合实验室"
+    assert updated["trays"][0]["status"] == "实验已完成"
+    assert "撤回至四综合试验已完成" in updated["history"][0]["detail"]
 
 
 def test_laboratory_withdraw_current_restores_handover_origin_to_arrived(monkeypatch):
@@ -1911,7 +2061,7 @@ def test_laboratory_withdraw_current_restores_previous_partial_axis_completion(m
     assert "撤回至冲击试验部分完成" in updated["history"][0]["detail"]
 
 
-def test_laboratory_withdraw_current_prefers_partial_axis_completion_over_staging_origin(monkeypatch):
+def test_laboratory_withdraw_current_uses_later_staging_origin_over_partial_axis_completion(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "冲击二室",
@@ -2001,16 +2151,16 @@ def test_laboratory_withdraw_current_prefers_partial_axis_completion_over_stagin
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "冲击试验部分完成 3/6轴"
-    assert payload["restoredExperimentName"] == "冲击试验"
+    assert payload["restoredStatus"] == "已到达暂存间"
+    assert payload["restoredExperimentName"] == ""
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "冲击试验部分完成 3/6轴"
-    assert updated["location"] == "冲击一室"
-    assert updated["trays"][0]["status"] == "冲击试验部分完成 3/6轴"
-    assert "撤回至冲击试验部分完成" in updated["history"][0]["detail"]
+    assert updated["status"] == "已到达暂存间"
+    assert updated["location"] == "恒温恒湿间（暂存间）"
+    assert updated["trays"][0]["status"] == "已到达暂存间"
+    assert "撤回至已到达暂存间" in updated["history"][0]["detail"]
 
 
-def test_laboratory_withdraw_current_restores_current_partial_axis_even_after_later_other_experiment_completion(monkeypatch):
+def test_laboratory_withdraw_current_uses_later_other_experiment_completion_over_current_partial_axis(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "振动二室",
@@ -2174,13 +2324,13 @@ def test_laboratory_withdraw_current_restores_current_partial_axis_even_after_la
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["restoredStatus"] == "振动试验部分完成 3/6轴"
-    assert payload["restoredExperimentName"] == "振动试验"
+    assert payload["restoredStatus"] == "实验已完成"
+    assert payload["restoredExperimentName"] == "冲击试验"
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "振动试验部分完成 3/6轴"
-    assert updated["location"] == "振动二室"
-    assert updated["trays"][0]["status"] == "振动试验部分完成 3/6轴"
-    assert "撤回至振动试验部分完成" in updated["history"][0]["detail"]
+    assert updated["status"] == "实验已完成"
+    assert updated["location"] == "冲击一室"
+    assert updated["trays"][0]["status"] == "实验已完成"
+    assert "撤回至冲击试验已完成" in updated["history"][0]["detail"]
 
 
 def test_laboratory_withdraw_current_partial_axis_restores_previous_stable_progress(monkeypatch):
@@ -2288,6 +2438,8 @@ def test_laboratory_withdraw_current_partial_axis_restores_previous_stable_progr
     updated = storage.read("mes.samples")[0]
     assert updated["status"] == "冲击试验部分完成 3/6轴"
     assert updated["trays"][0]["status"] == "冲击试验部分完成 3/6轴"
+    assert updated["trays"][0]["target_experiment_code"] == "EXP-A"
+    assert updated["trays"][0]["target_lab"] == "冲击一室"
 
 
 def test_laboratory_withdraw_current_prefers_staging_origin_over_previous_experiment_partial_axis(monkeypatch):

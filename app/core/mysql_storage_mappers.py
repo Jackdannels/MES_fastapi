@@ -541,6 +541,57 @@ def extract_dispatch_target_lab(detail: Any, tray_code: str = "") -> str:
 
 LAB_OPERATION_TARGET_ACTIONS = {"任务比对", "样品安装", "实验确认"}
 LAB_OPERATION_TARGET_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
+WITHDRAWAL_TARGET_ACTIONS = {"实验任务撤回", "任务切换撤回"}
+
+
+def is_axis_partial_status(status: Any) -> bool:
+    normalized = normalize_experiment_status_text(status)
+    return "部分完成" in normalized and normalized.endswith("轴")
+
+
+def partial_axis_status_name(status: Any) -> str:
+    normalized = normalize_experiment_status_text(status)
+    marker = "部分完成"
+    if marker not in normalized:
+        return ""
+    return normalize_text(normalized.split(marker, 1)[0])
+
+
+def latest_withdrawal_restores_partial_axis(
+    event_rows: Iterable[Dict[str, Any]] | None,
+    *,
+    partial_status: str,
+    tray_code: str,
+) -> bool:
+    expected_name = partial_axis_status_name(partial_status)
+    if not expected_name:
+        return False
+    candidates: list[tuple[datetime, Dict[str, Any]]] = []
+    for event in event_rows or []:
+        action = normalize_text(event.get("action") or event.get("action_type"))
+        if action not in WITHDRAWAL_TARGET_ACTIONS:
+            continue
+        detail = normalize_experiment_detail_text(event.get("detail"))
+        if tray_code and tray_code not in detail and "托盘" in detail:
+            continue
+        status = normalize_experiment_status_text(event.get("status") or event.get("sample_status"))
+        if expected_name not in status and f"撤回至{expected_name}部分完成" not in detail:
+            continue
+        event_time = parse_storage_datetime(event.get("time") or event.get("event_time")) or datetime.min
+        candidates.append((event_time, event))
+    if not candidates:
+        return False
+    candidates.sort(key=lambda item: item[0])
+    latest_time, latest_event = candidates[-1]
+    for event in event_rows or []:
+        event_time = parse_storage_datetime(event.get("time") or event.get("event_time")) or datetime.min
+        if event_time > latest_time:
+            detail = normalize_experiment_detail_text(event.get("detail"))
+            status = normalize_experiment_status_text(event.get("status") or event.get("sample_status"))
+            if expected_name in status or expected_name in detail:
+                continue
+            return False
+    return bool(latest_event)
 
 
 def build_tray_dispatch_target_map(event_rows: Iterable[Dict[str, Any]] | None) -> Dict[str, str]:
@@ -705,17 +756,38 @@ def build_storage_sample_item(
         if tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS and raw_target_lab == APPEARANCE_INSPECTION_LOCATION:
             raw_target_lab = ""
         staging_target = staging_target_by_tray_code.get(tray_code, {})
-        event_target_lab = target_lab_by_tray_code.get(tray_code, "")
-        target_lab = "" if tray_completed else (
-            event_target_lab
-            or raw_target_lab
-            or normalize_text(staging_target.get("target_lab"))
-        )
-        target_experiment_code = "" if tray_completed else (
-            normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
-            or normalize_text(staging_target.get("target_experiment_code"))
-            or scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
-        )
+        staging_target_lab = normalize_text(staging_target.get("target_lab"))
+        staging_target_experiment_code = normalize_text(staging_target.get("target_experiment_code"))
+        raw_target_experiment_code = normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
+        event_target_lab = "" if is_axis_partial_status(tray_status) else target_lab_by_tray_code.get(tray_code, "")
+        if tray_completed:
+            target_lab = ""
+            target_experiment_code = ""
+        elif is_axis_partial_status(tray_status) and latest_withdrawal_restores_partial_axis(
+            event_row_list,
+            partial_status=tray_status,
+            tray_code=tray_code,
+        ):
+            target_lab = normalize_text(row.get("location_desc")) or raw_target_lab or staging_target_lab
+            target_experiment_code = (
+                scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
+                or raw_target_experiment_code
+                or staging_target_experiment_code
+            )
+        elif is_axis_partial_status(tray_status) and (staging_target_lab or staging_target_experiment_code):
+            target_lab = staging_target_lab or raw_target_lab
+            target_experiment_code = (
+                staging_target_experiment_code
+                or raw_target_experiment_code
+                or scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
+            )
+        else:
+            target_lab = event_target_lab or raw_target_lab or staging_target_lab
+            target_experiment_code = (
+                raw_target_experiment_code
+                or staging_target_experiment_code
+                or scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
+            )
         trays.append({
             "id": normalize_text(tray.get("tray_code") or tray.get("id")),
             "tray_code": tray_code,

@@ -97,7 +97,7 @@
         </div>
         <div class="form-field">
           <label>联系人</label>
-          <input v-model="intakeForm.contact" type="text" name="contact" required placeholder="姓名" />
+          <input v-model="intakeForm.contact" type="text" name="contact" maxlength="15" required placeholder="姓名" />
         </div>
         <div class="form-field">
           <label>联系方式</label>
@@ -208,6 +208,42 @@
       </button>
       <button class="action-btn" data-testid="task-intake-test-types-confirm" type="button" @click="confirmIntakeExperimentPicker">
         确认选择
+      </button>
+    </template>
+  </AppModal>
+
+  <AppModal :open="intakeAxisModalOpen" title="选择试验轴向" @close="closeIntakeAxisPicker">
+    <div class="tasks-axis-picker" data-testid="task-intake-axis-modal">
+      <div class="tasks-axis-picker__header">
+        <strong data-testid="task-intake-axis-type">{{ intakeAxisPickerType }}</strong>
+        <span>确认后加入试验类型</span>
+      </div>
+      <div class="tasks-axis-picker__grid" data-testid="task-intake-axis-grid">
+        <button
+          v-for="axisCode in defaultAxisCodes"
+          :key="axisCode"
+          class="tasks-axis-picker__option"
+          :class="{ 'is-selected': intakeAxisPickerCodes.includes(axisCode) }"
+          :data-testid="`task-intake-axis-option-${axisCode}`"
+          type="button"
+          @click="toggleIntakeAxisCode(axisCode)"
+        >
+          {{ formatAxisCodeLabel(axisCode) }}
+        </button>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" data-testid="task-intake-axis-cancel" type="button" @click="closeIntakeAxisPicker">
+        取消
+      </button>
+      <button
+        class="action-btn"
+        data-testid="task-intake-axis-confirm"
+        type="button"
+        :disabled="intakeAxisPickerCodes.length === 0"
+        @click="confirmIntakeAxisPicker"
+      >
+        确认轴向
       </button>
     </template>
   </AppModal>
@@ -390,6 +426,45 @@
     </template>
   </AppModal>
 
+  <AppModal :open="editAxisModalOpen" title="选择试验轴向" @close="closeEditAxisPicker">
+    <div class="tasks-axis-picker" data-testid="task-edit-axis-modal">
+      <div class="tasks-axis-picker__header">
+        <strong data-testid="task-edit-axis-type">{{ editAxisPickerType }}</strong>
+        <span>确认后更新试验轴向</span>
+      </div>
+      <div class="tasks-axis-picker__grid" data-testid="task-edit-axis-grid">
+        <button
+          v-for="axisCode in defaultAxisCodes"
+          :key="axisCode"
+          class="tasks-axis-picker__option"
+          :class="{ 'is-selected': editAxisPickerCodes.includes(axisCode) }"
+          :data-testid="`task-edit-axis-option-${axisCode}`"
+          type="button"
+          @click="toggleEditAxisCode(axisCode)"
+        >
+          {{ formatAxisCodeLabel(axisCode) }}
+        </button>
+      </div>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" data-testid="task-edit-axis-cancel" type="button" @click="closeEditAxisPicker">
+        取消
+      </button>
+      <button class="action-btn secondary" data-testid="task-edit-axis-remove" type="button" @click="removeEditAxisExperiment">
+        移除试验
+      </button>
+      <button
+        class="action-btn"
+        data-testid="task-edit-axis-confirm"
+        type="button"
+        :disabled="editAxisPickerCodes.length === 0"
+        @click="confirmEditAxisPicker"
+      >
+        确认轴向
+      </button>
+    </template>
+  </AppModal>
+
   <AppModal :open="scheduledExperimentRemovalModalOpen" title="确认修改实验类型" @close="closeScheduledExperimentRemovalConfirm">
     <div class="tasks-danger-confirmation" data-testid="task-scheduled-removal-confirm">
       <strong>实验类型已变更</strong>
@@ -420,13 +495,17 @@ import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useTasksPage } from "./useTasksPage";
 
 const {
+  closeIntakeAxisPicker,
   closeIntakeModal,
   closeTaskDrawer,
   closeScheduledExperimentRemovalConfirm,
   currentPage,
   deleteTask,
+  closeEditAxisPicker,
   closeEditExperimentPicker,
   closeSampleCodesEditor,
+  confirmEditAxisPicker,
+  confirmIntakeAxisPicker,
   confirmEditExperimentPicker,
   confirmScheduledExperimentRemoval,
   editExperimentDraft,
@@ -434,11 +513,19 @@ const {
   editExperimentModalOpen,
   editExperimentSummary,
   editExperimentTypeOptions,
+  editAxisModalOpen,
+  editAxisPickerCodes,
+  editAxisPickerType,
   editForm,
   editWarning,
   filterStatus,
   filterTestType,
+  defaultAxisCodes,
+  formatAxisCodeLabel,
   intakeForm,
+  intakeAxisModalOpen,
+  intakeAxisPickerCodes,
+  intakeAxisPickerType,
   intakeExperimentDraft,
   intakeExperimentDraftSummary,
   intakeExperimentModalOpen,
@@ -480,8 +567,11 @@ const {
   taskDetailSampleCodes,
   taskRows,
   testTypeOptions,
+  toggleIntakeAxisCode,
   toggleIntakeExperimentType,
+  toggleEditAxisCode,
   toggleEditExperimentType,
+  removeEditAxisExperiment,
   toggleSort,
   updateTask,
   openTaskDrawer,
@@ -587,6 +677,59 @@ const {
   color: var(--accent);
 }
 
+.tasks-axis-picker {
+  display: grid;
+  gap: 16px;
+}
+
+.tasks-axis-picker__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  border-radius: var(--radius-panel);
+  padding: 12px;
+  background: var(--bg-panel-strong);
+  border: 1px solid var(--border);
+}
+
+.tasks-axis-picker__header strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.tasks-axis-picker__header span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tasks-axis-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tasks-axis-picker__option {
+  min-height: 48px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border);
+  background: var(--bg-card-raised);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.tasks-axis-picker__option:hover {
+  border-color: rgba(var(--industrial-accent-rgb), 0.42);
+}
+
+.tasks-axis-picker__option.is-selected {
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
 .tasks-danger-confirmation {
   display: grid;
   gap: 8px;
@@ -622,6 +765,10 @@ const {
 
   .tasks-intake-test-types__card-name {
     font-size: 14px;
+  }
+
+  .tasks-axis-picker__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

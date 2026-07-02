@@ -283,6 +283,16 @@ def _experiment_requires_axis_codes(*values: Any) -> bool:
     return any(str(value or "").strip() in AXIS_EXPERIMENT_TYPES for value in values)
 
 
+def _task_axis_codes_for_experiment_type(task: dict[str, Any], experiment_type: Any) -> list[str]:
+    normalized_type = str(experiment_type or "").strip()
+    if normalized_type not in AXIS_EXPERIMENT_TYPES:
+        return []
+    raw_map = task.get("axis_codes_by_test_type") or task.get("axisCodesByTestType")
+    if not isinstance(raw_map, dict):
+        return []
+    return _normalize_axis_codes(raw_map.get(normalized_type))
+
+
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
     base_type = str(task.get("test_type") or task.get("required_device") or "").strip()
     types: list[str] = []
@@ -391,7 +401,9 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
             }
             if _experiment_requires_axis_codes(experiment_name, required_device):
                 normalized_experiment["axis_codes"] = (
-                    _normalize_axis_codes(source.get("axis_codes") or source.get("axisCodes"))
+                    _task_axis_codes_for_experiment_type(task, experiment_name)
+                    or _task_axis_codes_for_experiment_type(task, required_device)
+                    or _normalize_axis_codes(source.get("axis_codes") or source.get("axisCodes"))
                     or list(DEFAULT_AXIS_CODES)
                 )
             normalized_experiments.append(normalized_experiment)

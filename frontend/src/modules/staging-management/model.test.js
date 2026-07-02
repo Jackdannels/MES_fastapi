@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
@@ -144,6 +147,28 @@ const createSnapshot = () => ({
 });
 
 describe("staging-management model", () => {
+  test("indexes staging events once when building rows instead of scanning all events per tray", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/model.js"), "utf8");
+    const buildRowsSource = source.slice(
+      source.indexOf("function buildZancunRowsFromSnapshot"),
+      source.indexOf("function buildZancunInventorySections"),
+    );
+
+    expect(buildRowsSource).toContain("allEventMap");
+    expect(buildRowsSource).not.toContain("collectTrayStorageEvents(stagingEvents, row.trayCode)");
+  });
+
+  test("looks up tray storage events once during inventory actions", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/model.js"), "utf8");
+    const actionSource = source.slice(
+      source.indexOf("function applyZancunInventoryAction"),
+      source.indexOf("export {"),
+    );
+    const directLookups = actionSource.match(/collectTrayStorageEvents\(nextSnapshot\[STAGING_EVENTS_KEY\], normalizedCode\)/g) || [];
+
+    expect(directLookups).toHaveLength(1);
+  });
+
   afterEach(() => {
     resetLegacyFallbackHits();
   });

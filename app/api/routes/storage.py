@@ -1392,48 +1392,58 @@ def _validate_fixture_locked_schedules(
             raise HTTPException(status_code=400, detail=SCHEDULE_FIXTURE_LOCKED_DETAIL)
 
 
-def _validate_storage_update(storage: Any, updates: Dict[str, Any]) -> None:
+def _read_current_storage_value(storage: Any, current_snapshot: Dict[str, Any] | None, key: str) -> Any:
+    if current_snapshot is not None and key in current_snapshot:
+        return current_snapshot[key]
+    return storage.read(key)
+
+
+def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None = None) -> None:
     if "mes.schedules" in updates:
         _validate_fixture_locked_schedules(
-            storage.read("mes.schedules"),
+            _read_current_storage_value(storage, current_snapshot, "mes.schedules"),
             updates["mes.schedules"],
-            storage.read("mes.samples"),
-            storage.read("mes.experiment_runs"),
-            storage.read("mes.experiment_run_trays"),
-            storage.read("mes.experiment_trays"),
-            storage.read("mes.experiment_run_steps"),
+            _read_current_storage_value(storage, current_snapshot, "mes.samples"),
+            _read_current_storage_value(storage, current_snapshot, "mes.experiment_runs"),
+            _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_trays"),
+            _read_current_storage_value(storage, current_snapshot, "mes.experiment_trays"),
+            _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_steps"),
         )
     if "mes.samples" not in updates:
         return
-    current_samples = storage.read("mes.samples")
-    current_staging_events = storage.read("mes.staging_events")
+    current_samples = _read_current_storage_value(storage, current_snapshot, "mes.samples")
+    current_staging_events = _read_current_storage_value(storage, current_snapshot, "mes.staging_events")
     _validate_samples_lab_arrival_transition(current_samples, updates["mes.samples"])
     _validate_samples_staging_reentry_transition(
         current_samples,
         updates["mes.samples"],
-        storage.read("mes.experiments"),
-        storage.read("mes.experiment_runs"),
-        storage.read("mes.experiment_run_steps"),
-        storage.read("mes.experiment_trays"),
-        storage.read("mes.experiment_run_trays"),
-        storage.read("mes.schedules"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiments"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiment_runs"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_steps"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiment_trays"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_trays"),
+        _read_current_storage_value(storage, current_snapshot, "mes.schedules"),
         current_staging_events,
         updates.get("mes.staging_events", current_staging_events),
     )
     _validate_samples_appearance_source_transition(
         current_samples,
         updates["mes.samples"],
-        storage.read("mes.experiments"),
-        storage.read("mes.experiment_run_trays"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiments"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_trays"),
         current_staging_events,
     )
     _validate_samples_appearance_dispatch_transition(
         current_samples,
         updates["mes.samples"],
-        storage.read("mes.experiments"),
+        _read_current_storage_value(storage, current_snapshot, "mes.experiments"),
     )
     _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
-    _validate_samples_maintenance_lock(current_samples, updates["mes.samples"], storage.read("mes.devices"))
+    _validate_samples_maintenance_lock(
+        current_samples,
+        updates["mes.samples"],
+        _read_current_storage_value(storage, current_snapshot, "mes.devices"),
+    )
 
 
 def publish_storage_update(keys: list[str], *, source: str = "", request_id: str = "") -> None:
@@ -1514,7 +1524,7 @@ def _run_storage_tray_action(
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage.read_all()
             updates = update_builder(snapshot, room=room, tray_code=tray_code, payload=payload, now=action_time)
-            _validate_storage_update(storage, updates)
+            _validate_storage_update(storage, updates, snapshot)
             storage.write_many(updates)
     except StorageTrayActionError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
@@ -1539,7 +1549,7 @@ def _run_storage_schedule_patch(
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage.read_all()
             updates = build_schedule_patch_updates(snapshot, payload if isinstance(payload, dict) else {})
-            _validate_storage_update(storage, updates)
+            _validate_storage_update(storage, updates, snapshot)
             storage.write_many(updates)
     except StorageSchedulePatchError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
@@ -1631,8 +1641,9 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
         raise HTTPException(status_code=404, detail="Unknown storage key")
     storage = get_storage_backend()
     with acquire_laboratory_storage_commit_lock():
-        updates = merge_concurrent_storage_updates(storage.read_all(), {key: payload})
-        _validate_storage_update(storage, updates)
+        snapshot = storage.read_all()
+        updates = merge_concurrent_storage_updates(snapshot, {key: payload})
+        _validate_storage_update(storage, updates, snapshot)
         storage.write(key, updates[key])
     publish_storage_update([key])
     return {"ok": True}
@@ -1649,8 +1660,9 @@ def write_many(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid storage keys provided")
     with acquire_laboratory_storage_commit_lock():
-        updates = merge_concurrent_storage_updates(storage.read_all(), updates)
-        _validate_storage_update(storage, updates)
+        snapshot = storage.read_all()
+        updates = merge_concurrent_storage_updates(snapshot, updates)
+        _validate_storage_update(storage, updates, snapshot)
         storage.write_many(updates)
     source = str(update_source or "").strip()
     request_id = str(update_request_id or "").strip()

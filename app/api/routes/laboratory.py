@@ -570,6 +570,30 @@ def latest_previous_partial_axis_completion(
         if not completed_axes or set(required_axes).issubset(completed_axes):
             continue
 
+        remaining_axes = set(required_axes) - completed_axes
+        remaining_schedules = [
+            schedule
+            for schedule in snapshot["schedules"]
+            if normalize_text(schedule.get("task_code") or schedule.get("task_no")) == task_code
+            and normalize_text(schedule.get("experiment_code") or schedule.get("experiment_no")) == experiment_code
+        ]
+        remaining_schedules.sort(
+            key=lambda schedule: normalize_text(schedule.get("start_at") or schedule.get("startAt") or schedule.get("start_time"))
+        )
+        target_location = ""
+        for schedule in remaining_schedules:
+            schedule_id = normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId"))
+            if schedule_id and schedule_id in completed_schedule_ids:
+                continue
+            schedule_axes = set(normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes")))
+            if remaining_axes and not schedule_axes:
+                continue
+            if schedule_axes and not schedule_axes.intersection(remaining_axes):
+                continue
+            target_location = normalize_text(schedule.get("device") or schedule.get("lab") or schedule.get("lab_name"))
+            if target_location:
+                break
+
         location = ""
         for schedule_id in completed_schedule_ids:
             schedule = schedule_by_id.get(schedule_id, {})
@@ -582,11 +606,33 @@ def latest_previous_partial_axis_completion(
                 location = normalize_text(run.get("device") or run.get("device_name") or run.get("lab_name"))
                 if location:
                     break
+        if not location:
+            expected_partial_status = f"{experiment_name}部分完成"
+            history_locations: list[tuple[datetime, str]] = []
+            for sample in related_samples_for_tray(snapshot, task_code, normalized_tray_code):
+                for entry in as_list(sample.get("history")):
+                    entry_location = normalize_text(entry.get("location"))
+                    if not entry_location:
+                        continue
+                    entry_tray_code = normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no"))
+                    if entry_tray_code and entry_tray_code != normalized_tray_code:
+                        continue
+                    entry_status = normalize_text(entry.get("status"))
+                    entry_detail = normalize_text(entry.get("detail"))
+                    if expected_partial_status not in entry_status and expected_partial_status not in entry_detail:
+                        continue
+                    entry_time = parse_datetime_value(entry.get("time") or entry.get("created_at") or entry.get("createdAt"))
+                    history_locations.append((entry_time or datetime.min, entry_location))
+            if history_locations:
+                history_locations.sort(key=lambda item: item[0])
+                location = history_locations[-1][1]
 
         candidates.append(
             {
                 "status": f"{experiment_name}部分完成 {len(completed_axes)}/{len(required_axes)}轴",
                 "location": location,
+                "targetLab": target_location or location,
+                "experimentCode": experiment_code,
                 "experimentName": experiment_name,
                 "scope": "partial_axis",
                 "time": max(event_times) if event_times else datetime.min,
@@ -810,14 +856,8 @@ def resolve_restore_snapshot(
     )
     staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
     appearance = latest_appearance_origin_snapshot(sample, snapshot, tray_code)
-    partial_axis_matches_current = (
-        partial_axis
-        and normalize_text(partial_axis.get("experimentName")) == normalize_text(current_experiment_name)
-    )
-    if partial_axis_matches_current:
-        return partial_axis
     candidates = [candidate for candidate in [completed, staging, appearance] if candidate]
-    if partial_axis and not partial_axis_matches_current:
+    if partial_axis:
         candidates.append(partial_axis)
     if candidates:
         candidates.sort(key=lambda item: item["time"])
@@ -1216,6 +1256,15 @@ def withdraw_current_experiment(
                         normalized_tray["updated_at"] = now
                         normalized_tray.pop("fixture_ready", None)
                         normalized_tray.pop("fixtureReady", None)
+                        if restore_snapshot.get("scope") == "partial_axis":
+                            restore_experiment_code = normalize_text(restore_snapshot.get("experimentCode"))
+                            restore_target_lab = normalize_text(restore_snapshot.get("targetLab") or restore_snapshot.get("location"))
+                            if restore_experiment_code:
+                                normalized_tray["target_experiment_code"] = restore_experiment_code
+                                normalized_tray.pop("targetExperimentCode", None)
+                            if restore_target_lab:
+                                normalized_tray["target_lab"] = restore_target_lab
+                                normalized_tray.pop("targetLab", None)
                     next_trays.append(normalized_tray)
                 affected_tray_codes.update(matched_tray_codes)
                 remaining_other_progress_tray = any(

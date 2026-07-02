@@ -444,6 +444,36 @@ def test_create_task_generates_experiments_from_test_types_in_order(monkeypatch)
     assert storage.read("mes.tasks")[0]["test_types"] == ["冲击试验", "盐雾试验", "温度冲击试验"]
 
 
+def test_create_task_applies_axis_selection_to_axis_experiments(monkeypatch):
+    client = build_client(monkeypatch, tasks=[])
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "id": "SYLU-2026-04-106",
+            "code": "SYLU-2026-04-106",
+            "name": "轴向选择任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "3",
+            "test_type": "冲击试验 / 振动试验 / 盐雾试验",
+            "test_types": ["冲击试验", "振动试验", "盐雾试验"],
+            "axis_codes_by_test_type": {
+                "冲击试验": ["x+", "z-"],
+                "振动试验": ["y-"],
+                "盐雾试验": ["x-"],
+            },
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+    experiments = storage.read("mes.experiments")
+
+    assert response.status_code == 201
+    assert [item.get("axis_codes") for item in experiments] == [["x+", "z-"], ["y-"], None]
+
+
 def test_create_and_update_task_accept_all_experiment_types(monkeypatch):
     all_types = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"]
     client = build_client(monkeypatch, tasks=[])
@@ -649,12 +679,15 @@ def test_create_task_rejects_invalid_contact_info_and_long_name(monkeypatch):
 
     invalid_phone = client.post("/api/tasks", json={**base_payload, "contact_info": "1380000ABC"})
     too_long_phone = client.post("/api/tasks", json={**base_payload, "contact_info": "1234567890123456"})
+    too_long_contact = client.post("/api/tasks", json={**base_payload, "contact": "一二三四五六七八九十一二三四五六"})
     too_long_name = client.post("/api/tasks", json={**base_payload, "name": "一二三四五六七八九十一二三四五六七八九十X"})
 
     assert invalid_phone.status_code == 400
     assert invalid_phone.json() == {"detail": "联系方式必须为 1-15 位数字"}
     assert too_long_phone.status_code == 400
     assert too_long_phone.json() == {"detail": "联系方式必须为 1-15 位数字"}
+    assert too_long_contact.status_code == 400
+    assert too_long_contact.json() == {"detail": "联系人不能超过 15 个字"}
     assert too_long_name.status_code == 400
     assert too_long_name.json() == {"detail": "任务名称不能超过 20 个字"}
 
@@ -1901,6 +1934,64 @@ def test_update_task_keeps_experiment_metadata_in_sync(monkeypatch):
         "SYLU-2026-04-105-B",
         "SYLU-2026-04-105-C",
     ]
+
+
+def test_update_task_updates_axis_codes_without_changing_experiment_types(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": "SYLU-2026-04-106",
+                "code": "SYLU-2026-04-106",
+                "name": "冲击试验-轴向修改",
+                "sample_count": "3",
+                "test_type": "冲击试验 / 盐雾试验",
+                "test_types": ["冲击试验", "盐雾试验"],
+                "required_device": "冲击试验 / 盐雾试验",
+                "status": "待排程",
+                "experiment_count": 2,
+                "experiment_codes": ["SYLU-2026-04-106-A", "SYLU-2026-04-106-B"],
+            }
+        ],
+        experiments=[
+            {
+                "id": "SYLU-2026-04-106-A",
+                "task_code": "SYLU-2026-04-106",
+                "experiment_code": "SYLU-2026-04-106-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "axis_codes": ["z-", "x+"],
+            },
+            {
+                "id": "SYLU-2026-04-106-B",
+                "task_code": "SYLU-2026-04-106",
+                "experiment_code": "SYLU-2026-04-106-B",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+            },
+        ],
+    )
+
+    updated = client.put(
+        "/api/tasks/SYLU-2026-04-106",
+        json={
+            "id": "SYLU-2026-04-106",
+            "code": "SYLU-2026-04-106",
+            "name": "冲击试验-轴向修改",
+            "sample_count": "3",
+            "test_type": "冲击试验 / 盐雾试验",
+            "test_types": ["冲击试验", "盐雾试验"],
+            "required_device": "冲击试验 / 盐雾试验",
+            "axis_codes_by_test_type": {"冲击试验": ["x+", "y+"]},
+        },
+    )
+
+    storage = client.app.state.storage
+    experiments = sorted(storage.read("mes.experiments"), key=lambda item: item["experiment_code"])
+
+    assert updated.status_code == 200
+    assert experiments[0]["axis_codes"] == ["x+", "y+"]
+    assert "axis_codes" not in experiments[1]
 
 
 def test_tasks_router_returns_404_for_missing_task(monkeypatch):

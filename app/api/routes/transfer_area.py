@@ -38,6 +38,7 @@ TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT = 12
 SYSTEM_TRAY_TOTAL = 10
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 STAGING_STOCKED_TRANSFER_BLOCK_DETAIL = "该托盘已在暂存间入库，请从暂存间出库"
+SCHEDULE_RESET_WARNING = "当前任务已有排程，重新分配/重新入库后将清空排程信息，需要重新排程。"
 APPEARANCE_LOCATION = "外观检测间"
 APPEARANCE_STORED_STATUS = "实验后外观检测间存放"
 POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间"
@@ -253,6 +254,34 @@ def has_formal_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_val
 
 def schedule_is_completed(schedule: dict[str, Any]) -> bool:
     return normalize_experiment_status_text(schedule.get("status")) in {"实验已完成", "实验完成", "实验已经完成"}
+
+
+def task_has_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str) -> bool:
+    normalized_task_code = normalize_text(task_code_value)
+    return any(
+        normalize_text(schedule.get("task_code") or schedule.get("taskCode")) == normalized_task_code
+        for schedule in as_list(snapshot.get("schedules"))
+        if isinstance(schedule, dict)
+    )
+
+
+def reset_task_schedules_for_reschedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str) -> bool:
+    normalized_task_code = normalize_text(task_code_value)
+    if not normalized_task_code or not task_has_schedule(snapshot, normalized_task_code):
+        return False
+
+    snapshot["schedules"] = [
+        schedule
+        for schedule in snapshot["schedules"]
+        if normalize_text(schedule.get("task_code") or schedule.get("taskCode")) != normalized_task_code
+    ]
+    timestamp = now_business_text()
+    for experiment in snapshot["experiments"]:
+        if normalize_text(experiment.get("task_code") or experiment.get("taskCode")) != normalized_task_code:
+            continue
+        experiment["status"] = "待排程"
+        experiment["unscheduled_since"] = timestamp
+    return True
 
 
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
@@ -1077,6 +1106,7 @@ def serialize_workspace(
     experiments: list[dict[str, Any]] | None = None,
     experiment_trays: list[dict[str, Any]] | None = None,
     experiment_samples: list[dict[str, Any]] | None = None,
+    schedules: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current_task_status = transfer_status_for_task(task, task_samples)
     sample_experiment_map = build_sample_experiment_map(
@@ -1108,6 +1138,7 @@ def serialize_workspace(
     required_tray_count = sum(1 for tray in assigned_trays if tray["samples"])
     tray_capacity_exceeded = required_tray_count > max_assignable_count
     current_reload_block_reason = reload_block_reason(task_samples, task)
+    has_schedules = task_has_schedule({"schedules": schedules or []}, task_code(task))
     tray_capacity_message = (
         f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。"
         if tray_capacity_exceeded
@@ -1135,6 +1166,8 @@ def serialize_workspace(
             "trayCapacityMessage": tray_capacity_message,
             "reloadBlocked": bool(current_reload_block_reason),
             "reloadBlockedReason": current_reload_block_reason,
+            "hasSchedules": has_schedules,
+            "scheduleResetWarning": SCHEDULE_RESET_WARNING if has_schedules else "",
         },
         "assignedTrays": assigned_trays,
         "experiments": task_experiments,
@@ -1328,6 +1361,7 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
         snapshot["experiments"],
         snapshot["experiment_trays"],
         snapshot["experiment_samples"],
+        snapshot["schedules"],
     )
     tray = next(
         (item for item in workspace["assignedTrays"] if normalize_text(item.get("trayNo")) == normalize_text(tray_code)),
@@ -1655,6 +1689,7 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
         snapshot["experiments"],
         snapshot["experiment_trays"],
         snapshot["experiment_samples"],
+        snapshot["schedules"],
     )
 
 
@@ -1986,6 +2021,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     return {
         "ok": True,
         "message": "托盘分配已保存",
+        "scheduleReset": False,
         "workspace": serialize_workspace(
             task,
             task_samples,
@@ -1993,6 +2029,7 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
             snapshot["experiments"],
             snapshot["experiment_trays"],
             snapshot["experiment_samples"],
+            snapshot["schedules"],
         ),
     }
 
@@ -2051,6 +2088,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
         snapshot["experiments"],
         snapshot["experiment_trays"],
         snapshot["experiment_samples"],
+        snapshot["schedules"],
     )
     tray_label_map = {tray["trayNo"]: tray.get("experimentLabels", []) for tray in workspace["assignedTrays"]}
     for barcode in printed:
@@ -2121,6 +2159,7 @@ def confirm_task_storage(
             snapshot["experiments"],
             snapshot["experiment_trays"],
             snapshot["experiment_samples"],
+            snapshot["schedules"],
         ),
     }
 
@@ -2155,10 +2194,15 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
         sample["trays"] = []
         append_history(sample, "任务重新入库", task_code(task))
 
+    schedule_reset = reset_task_schedules_for_reschedule(snapshot, task_code(task))
+    message = "任务已重新入库，已回到未入库列表"
+    if schedule_reset:
+        message = "任务已重新入库，已清空原有排程信息，需要重新排程。"
     write_snapshot(snapshot, replace_task_codes={task_code(task)})
     return {
         "ok": True,
-        "message": "任务已重新入库，已回到未入库列表",
+        "message": message,
+        "scheduleReset": schedule_reset,
         "workspace": serialize_workspace(
             task,
             task_samples,
@@ -2166,5 +2210,6 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
             snapshot["experiments"],
             snapshot["experiment_trays"],
             snapshot["experiment_samples"],
+            snapshot["schedules"],
         ),
     }

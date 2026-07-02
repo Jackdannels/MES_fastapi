@@ -3256,6 +3256,102 @@ def test_transfer_area_keeps_started_stored_tasks_visible_and_rejects_reload(mon
     assert reloaded.json()["detail"] == "该任务已有托盘开始实验，不能重新入库。"
 
 
+def test_transfer_area_reload_clears_existing_task_schedules_and_marks_reschedule_required(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "device": "耐久试验室",
+                "status": "已排程",
+            },
+            {
+                "id": "schedule-other",
+                "task_code": "TASK-OTHER",
+                "experiment_code": "TASK-OTHER-A",
+                "device": "盐雾试验室",
+                "status": "已排程",
+            },
+        ],
+    )
+
+    workspace = client.get("/api/transfer-area/tasks/task-102/workspace")
+    reloaded = client.post("/api/transfer-area/tasks/task-102/reload")
+
+    assert workspace.status_code == 200
+    assert workspace.json()["task"]["hasSchedules"] is True
+    assert "需要重新排程" in workspace.json()["task"]["scheduleResetWarning"]
+    assert reloaded.status_code == 200
+    assert reloaded.json()["scheduleReset"] is True
+    assert "需要重新排程" in reloaded.json()["message"]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["schedule-other"]
+    experiments = {
+        item["experiment_code"]: item
+        for item in storage.read("mes.experiments")
+        if item["task_code"] == "SYLU-2026-03-102"
+    }
+    assert experiments["SYLU-2026-03-102-A"]["status"] == "待排程"
+    assert experiments["SYLU-2026-03-102-A"]["unscheduled_since"]
+    assert experiments["SYLU-2026-03-102-B"]["status"] == "待排程"
+    assert experiments["SYLU-2026-03-102-B"]["unscheduled_since"]
+
+
+def test_transfer_area_preallocation_reassign_clears_existing_task_schedules(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    storage.write(
+        "mes.schedules",
+        [
+            {
+                "id": "schedule-101-a",
+                "task_code": "SYLU-2026-03-101",
+                "experiment_code": "SYLU-2026-03-101-A",
+                "device": "盐雾试验室",
+                "status": "已排程",
+            },
+            {
+                "id": "schedule-other",
+                "task_code": "TASK-OTHER",
+                "experiment_code": "TASK-OTHER-A",
+                "device": "盐雾试验室",
+                "status": "已排程",
+            },
+        ],
+    )
+    experiments = storage.read("mes.experiments")
+    for experiment in experiments:
+        if experiment["task_code"] == "SYLU-2026-03-101":
+            experiment["status"] = "已排程"
+    storage.write("mes.experiments", experiments)
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(),
+    }
+
+    allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+    reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
+
+    assert allocated.status_code == 200
+    assert allocated.json()["scheduleReset"] is False
+    assert reloaded.status_code == 200
+    assert reloaded.json()["scheduleReset"] is True
+    assert "需要重新排程" in reloaded.json()["message"]
+    assert [item["id"] for item in storage.read("mes.schedules")] == ["schedule-other"]
+    task_experiments = [
+        item
+        for item in storage.read("mes.experiments")
+        if item["task_code"] == "SYLU-2026-03-101"
+    ]
+    assert {item["status"] for item in task_experiments} == {"待排程"}
+    assert all(item.get("unscheduled_since") for item in task_experiments)
+
+
 def test_transfer_area_rejects_reload_after_tray_leaves_handover(monkeypatch):
     blocked_statuses = ["送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"]
 

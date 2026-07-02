@@ -218,6 +218,35 @@ def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_th
     assert normalized["mes.experiments"][1]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
 
 
+def test_normalize_storage_payload_applies_task_axis_selection_to_generated_experiments() -> None:
+    payload = {
+        "mes.tasks": [
+            {
+                "code": "SYLU-2026-04-503",
+                "name": "轴向选择任务",
+                "test_type": "冲击试验 / 振动试验 / 盐雾试验",
+                "test_types": ["冲击试验", "振动试验", "盐雾试验"],
+                "axis_codes_by_test_type": {
+                    "冲击试验": ["x+", "z-"],
+                    "振动试验": ["y-"],
+                    "盐雾试验": ["x-"],
+                },
+                "status": "待排程",
+            }
+        ],
+        "mes.experiments": [],
+        "mes.meta": {"schema_version": 2},
+    }
+
+    normalized = normalize_storage_payload(payload)
+
+    assert [experiment.get("axis_codes") for experiment in normalized["mes.experiments"]] == [
+        ["x+", "z-"],
+        ["y-"],
+        None,
+    ]
+
+
 def test_normalize_storage_payload_adds_axis_codes_to_existing_impact_and_vibration_experiments() -> None:
     payload = {
         "mes.tasks": [

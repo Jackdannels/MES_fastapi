@@ -18,6 +18,7 @@ from app.api.routes.productcatalog import router as productcatalog_router
 from app.api.routes.quality import router as quality_router
 from app.api.routes.report import router as report_router
 from app.api.routes.storage import router as storage_router
+from app.api.routes.task_history import router as task_history_router
 from app.api.routes.tasks import router as tasks_router
 from app.api.routes.technologies import router as technologies_router
 from app.api.routes.transfer_area import router as transfer_area_router
@@ -45,7 +46,7 @@ MODULES = (
     AppModule(key="task-overview", spa_routes=("/task-overview",)),
     AppModule(
         key="tasks",
-        api_routers=(tasks_router, person_router, customer_router, companydepartment_router, permissions_router),
+        api_routers=(tasks_router, task_history_router, person_router, customer_router, companydepartment_router, permissions_router),
         spa_routes=("/tasks",),
     ),
     AppModule(

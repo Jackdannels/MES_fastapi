@@ -44,6 +44,7 @@ const COMPLETED_SCHEDULE_STATUSES = new Set([
   "实验已经完成",
   "厂家收回",
 ]);
+const isTerminalExperimentStatus = (status) => COMPLETED_SCHEDULE_STATUSES.has(normalizeText(status));
 const AXIS_EXPERIMENT_TYPES = new Set(["冲击试验", "冲击实验", "振动试验", "振动实验"]);
 const AXIS_LAB_LOCK_GROUPS = [
   {
@@ -1651,7 +1652,7 @@ function buildRetentionInternalRows({ tasks, schedules, now = new Date() }) {
 }
 
 // 生成手动排程表单使用的下拉选项。
-function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, schedules }) {
+function buildManualTaskOptions({ tasks, experiments, experimentTrays, experimentRunSteps = [], samples, schedules }) {
   const { activeTasks } = buildActiveTaskContext(tasks, samples);
   const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : [];
   const activeSchedules = filterSchedulesForActiveTasks({ schedules, tasks, samples });
@@ -1663,6 +1664,7 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, samples, 
           taskCode &&
             buildExperimentOptions({
               experiments,
+              experimentRunSteps,
               samples,
               schedules: activeSchedules,
               taskCode,
@@ -1808,6 +1810,7 @@ function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = []
   return buildExperimentCandidates({ taskCode, experiments, tasks: taskList })
     .map((experiment) => {
       const experimentCode = normalizeText(experiment?.experiment_code);
+      const experimentTerminal = isTerminalExperimentStatus(experiment?.status ?? experiment?.experiment_status);
       const axisCodes = resolveExperimentAxisCodes(experiment);
       const scheduledAxisCodes = scheduledAxisCodesForExperiment({ experimentCode, schedules: activeSchedules });
       const completedAxisCodes = completedAxisCodesForExperiment({
@@ -1826,18 +1829,25 @@ function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = []
       const hasAxisFormalSchedule = matchingFormalSchedules.some(
         (schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0,
       );
+      const axisExperimentComplete =
+        experimentSupportsAxisScheduling(experiment) &&
+        axisCodes.length > 0 &&
+        remainingAxisCodes.length === 0 &&
+        completedAxisCodes.length >= axisCodes.length;
       return {
         experiment,
         axisCodes,
         scheduledAxisCodes,
         completedAxisCodes,
         remainingAxisCodes,
+        hiddenByExperimentStatus: experimentTerminal,
+        hiddenByCompletedAxes: axisExperimentComplete,
         hiddenBySchedule:
           hasFormalSchedule &&
           (!experimentSupportsAxisScheduling(experiment) || !hasAxisFormalSchedule || remainingAxisCodes.length === 0),
       };
     })
-    .filter((entry) => !entry.hiddenBySchedule)
+    .filter((entry) => !entry.hiddenByExperimentStatus && !entry.hiddenBySchedule && !entry.hiddenByCompletedAxes)
     .map((entry) => {
       const experiment = entry.experiment;
       const experimentCode = normalizeText(experiment?.experiment_code);

@@ -175,6 +175,86 @@ const experimentIdentityNames = (experiment) => uniqueNormalizedTexts([
   ...(Array.isArray(experiment?.aliases) ? experiment.aliases : []),
 ]);
 
+const flowExperimentPayload = (experiment, extra = {}) => ({
+  code: experiment.code,
+  name: experiment.name,
+  displayName: experiment.displayName,
+  experiment_name: experiment.experiment_name,
+  experimentName: experiment.experimentName,
+  experiment_type: experiment.experiment_type,
+  experimentType: experiment.experimentType,
+  test_type: experiment.test_type,
+  testType: experiment.testType,
+  required_device: experiment.required_device,
+  requiredDevice: experiment.requiredDevice,
+  destinationLab: experiment.destinationLab,
+  aliases: experiment.aliases,
+  ...extra,
+});
+
+const collectHistoricalPartialAxisExperiments = ({
+  completedTimeByCode = new Map(),
+  orderedExperiments = [],
+  samples = [],
+  taskCode = "",
+  trayCode = "",
+}) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode || orderedExperiments.length === 0) {
+    return [];
+  }
+
+  const latestPartialByExperiment = new Map();
+  asArray(samples).forEach((sample) => {
+    if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
+      return;
+    }
+    const trayList = getSampleTrayList(sample);
+    const touchesTray = trayList.some((tray) => normalizeText(tray?.tray_code) === normalizedTrayCode);
+    if (!touchesTray) {
+      return;
+    }
+    asArray(sample?.history).forEach((entry) => {
+      if (WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action))) {
+        return;
+      }
+      const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
+      if (!parsed || !isAxisPartialProgressStatus(parsed.status)) {
+        return;
+      }
+      const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode) || trayList.length === 1;
+      if (!trayScoped) {
+        return;
+      }
+      const experiment = orderedExperiments.find((candidate) =>
+        partialAxisStatusMatchesExperiment(parsed.status, candidate) ||
+        experimentIdentityNames(candidate).includes(normalizeText(parsed.experimentName)),
+      );
+      if (!experiment) {
+        return;
+      }
+      const completedAt = Number(completedTimeByCode.get(experiment.code)) || 0;
+      const partialAt = entryTimeValue(entry);
+      if (!completedAt || !partialAt || partialAt >= completedAt) {
+        return;
+      }
+      const partialTime = normalizeText(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp);
+      const existing = latestPartialByExperiment.get(experiment.code);
+      if (!existing || partialAt >= existing.partialAt) {
+        latestPartialByExperiment.set(experiment.code, flowExperimentPayload(experiment, {
+          partialAt,
+          partialTime,
+          routeStatus: parsed.status,
+          state: "partial",
+        }));
+      }
+    });
+  });
+
+  return Array.from(latestPartialByExperiment.values());
+};
+
 const withdrawalRestoreTargetMatchesExperiment = (restoreTarget, experiment) => {
   const targetName = normalizeText(restoreTarget?.experimentName);
   return Boolean(targetName) && experimentIdentityNames(experiment).includes(targetName);
@@ -641,7 +721,40 @@ const buildTrayExperimentFlow = (input = {}) => {
     .filter(Boolean)
     .sort((left, right) => left.completedAt - right.completedAt);
   const completedCodeSet = new Set(completedExperiments.map((experiment) => experiment.code));
+  const completedTimeByCode = new Map(completedExperiments.map((experiment) => [experiment.code, Number(experiment.completedAt) || 0]));
+  const completedHistoricalPartialAxisExperiments = collectHistoricalPartialAxisExperiments({
+    completedTimeByCode,
+    orderedExperiments,
+    samples: input.samples,
+    taskCode,
+    trayCode,
+  });
+  const visibleCompletedHistoricalPartialAxisExperiments = completedHistoricalPartialAxisExperiments.filter((partialExperiment) => {
+    const experimentCode = normalizeText(partialExperiment?.code);
+    const partialAt = Number(partialExperiment?.partialAt) || 0;
+    const completedAt = Number(completedTimeByCode.get(experimentCode)) || 0;
+    if (!experimentCode || !partialAt || !completedAt || partialAt >= completedAt) {
+      return true;
+    }
+    const hasInterveningCompletedExperiment = completedExperiments.some((completedExperiment) => {
+      if (normalizeText(completedExperiment?.code) === experimentCode) {
+        return false;
+      }
+      const interveningAt = Number(completedExperiment?.completedAt) || 0;
+      return interveningAt > partialAt && interveningAt < completedAt;
+    });
+    return hasInterveningCompletedExperiment;
+  });
   const unfinishedExperiments = orderedExperiments.filter((experiment) => !completedCodeSet.has(experiment.code));
+  const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
+  const explicitCompletedExperiment =
+    Boolean(input.preferCurrentExperimentCode)
+    && explicitExperimentCode
+    && explicitIndex >= 0
+    && normalizedStatusIsCompleted
+    && completedCodeSet.has(orderedExperiments[explicitIndex]?.code)
+      ? orderedExperiments[explicitIndex]
+      : null;
   const startedUnfinishedExperiments = unfinishedExperiments.filter((experiment) =>
     hasExperimentEnteredLabFlow(experimentStatusMap.get(experiment.code)),
   );
@@ -652,7 +765,6 @@ const buildTrayExperimentFlow = (input = {}) => {
     (latest, experiment) => Math.max(latest, Number(experiment?.completedAt) || 0),
     0,
   );
-  const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
   const activePartialAxisExperiments = partialAxisExperiments.filter((experiment) => {
     if (!normalizedStatusIsCompleted || !latestCompletedExperimentTime) {
       return true;
@@ -763,18 +875,21 @@ const buildTrayExperimentFlow = (input = {}) => {
   const currentExperiment =
     shouldStayOnHistoricalCompletedFlow
       ? null
-      : latestPartialAxisExperimentOverridesExplicit
-        ? latestActivePartialAxisExperiment
-        : explicitExperiment
-    || explicitUnstartedReturnedExperiment
-    || explicitUnstartedAfterOtherCompletion
-    || explicitUnstartedAppearanceExperiment
-    || latestActivePartialAxisExperiment
-    || statusMatchedPartialAxisExperiment
-    || currentStartedUnfinishedExperiments[0]
-    || appearanceRequiredUnstartedExperiment
-    || currentUnfinishedExperiments[0]
-    || null;
+      : explicitCompletedExperiment
+        || (
+          latestPartialAxisExperimentOverridesExplicit
+            ? latestActivePartialAxisExperiment
+            : explicitExperiment
+        )
+        || explicitUnstartedReturnedExperiment
+        || explicitUnstartedAfterOtherCompletion
+        || explicitUnstartedAppearanceExperiment
+        || latestActivePartialAxisExperiment
+        || statusMatchedPartialAxisExperiment
+        || currentStartedUnfinishedExperiments[0]
+        || appearanceRequiredUnstartedExperiment
+        || currentUnfinishedExperiments[0]
+        || null;
   const isSyntheticUnstartedCurrent =
     (Boolean(explicitUnstartedReturnedExperiment) || normalizedStatus === "厂家收回" || normalizeLifecycleStatus("", normalizedStatus) === "实验已完成")
     && currentStartedUnfinishedExperiments.length === 0
@@ -800,6 +915,7 @@ const buildTrayExperimentFlow = (input = {}) => {
 
   if (!currentExperiment) {
     const historicalPartialExperiments = [
+      ...visibleCompletedHistoricalPartialAxisExperiments,
       ...partialAxisExperiments.map((experiment) => ({
         ...experiment,
         partialAt: experimentRuntimeEventMap.get(experiment.code)?.timeValue || 0,
@@ -812,11 +928,13 @@ const buildTrayExperimentFlow = (input = {}) => {
       const latestByExperimentCode = new Map();
       [...completedExperiments, ...historicalPartialExperiments].forEach((experiment) => {
         const experimentCode = normalizeText(experiment?.code);
+        const experimentState = normalizeText(experiment?.state) === "partial" ? "partial" : "completed";
+        const experimentKey = `${experimentCode}::${experimentState}::${normalizeText(experiment?.routeStatus)}`;
         const experimentTime = Number(experiment?.completedAt || experiment?.partialAt || 0);
-        const existing = latestByExperimentCode.get(experimentCode);
+        const existing = latestByExperimentCode.get(experimentKey);
         const existingTime = Number(existing?.completedAt || existing?.partialAt || 0);
         if (!existing || experimentTime >= existingTime) {
-          latestByExperimentCode.set(experimentCode, experiment);
+          latestByExperimentCode.set(experimentKey, experiment);
         }
       });
       return Array.from(latestByExperimentCode.values()).sort((left, right) => {
@@ -842,6 +960,7 @@ const buildTrayExperimentFlow = (input = {}) => {
         requiredDevice: experiment.requiredDevice,
         destinationLab: experiment.destinationLab,
         aliases: experiment.aliases,
+        partialTime: normalizeText(experiment?.partialTime),
         routeStatus: normalizeText(experiment?.routeStatus),
         state: normalizeText(experiment?.state) === "partial" ? "partial" : "completed",
       }));
@@ -870,7 +989,9 @@ const buildTrayExperimentFlow = (input = {}) => {
     ? ""
     : normalizedStatus;
   const routeStatus =
-    explicitUnstartedAfterOtherCompletion && currentExperiment.code === explicitUnstartedAfterOtherCompletion.code
+    explicitCompletedExperiment && currentExperiment.code === explicitCompletedExperiment.code
+      ? "实验已完成"
+      : explicitUnstartedAfterOtherCompletion && currentExperiment.code === explicitUnstartedAfterOtherCompletion.code
       ? normalizedStatus
       : experimentStatusMap.get(currentExperiment.code) || routeStatusFallback;
   const currentExperimentEvent = currentExperiment ? resolveExperimentEvent(experimentEventMap, currentExperiment) : null;
@@ -878,7 +999,9 @@ const buildTrayExperimentFlow = (input = {}) => {
     normalizeLifecycleStatus("", normalizeText(currentExperimentEvent?.status)),
   );
   const currentExperimentUnstarted =
-    (
+    explicitCompletedExperiment && currentExperiment.code === explicitCompletedExperiment.code
+      ? false
+      : (
       Boolean(explicitUnstartedReturnedExperiment)
       || Boolean(explicitUnstartedAppearanceExperiment)
       || normalizedStatus === "厂家收回"
@@ -893,7 +1016,8 @@ const buildTrayExperimentFlow = (input = {}) => {
       && !currentExperimentHasRunningEvent
     );
   const historicalFlowExperiments = [
-    ...completedExperiments,
+    ...completedExperiments.filter((experiment) => experiment.code !== currentExperiment.code),
+    ...visibleCompletedHistoricalPartialAxisExperiments.filter((experiment) => experiment.code !== currentExperiment.code),
     ...partialAxisExperiments
       .filter((experiment) => experiment.code !== currentExperiment.code)
       .map((experiment) => ({
@@ -927,7 +1051,7 @@ const buildTrayExperimentFlow = (input = {}) => {
   ];
 
   return orderedFlowExperiments.map((experiment) => {
-    if (completedCodeSet.has(experiment.code)) {
+    if (completedCodeSet.has(experiment.code) && experiment.code !== currentExperiment.code) {
       return {
         code: experiment.code,
         name: experiment.name,
@@ -979,6 +1103,10 @@ const buildTrayExperimentFlow = (input = {}) => {
         requiredDevice: currentExperiment.requiredDevice,
         destinationLab: currentExperiment.destinationLab,
         aliases: currentExperiment.aliases,
+        explicitCompletedCurrent: Boolean(
+          explicitCompletedExperiment
+          && currentExperiment.code === explicitCompletedExperiment.code,
+        ),
         state: "current",
         unstarted: currentExperimentUnstarted,
         suppressDestinationLab: shouldSuppressGuessedNextLab,
@@ -1098,7 +1226,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
         const withdrawalTimeSource = [APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS].includes(restoreLabel)
           ? "withdrawal"
           : "history";
-        recordLatestFlowTime(restoreLabel, withdrawalTime, withdrawalTimeSource);
+        if (!isAxisPartialProgressStatus(restoreLabel)) {
+          recordLatestFlowTime(restoreLabel, withdrawalTime, withdrawalTimeSource);
+        }
       }
     }
 
@@ -1152,6 +1282,16 @@ const buildTrayFlowTimeMap = (input = {}) => {
       if (experimentEvent) {
         const currentTime = entryTimeValue(entry);
         if (latestWithdrawal && currentTime < latestWithdrawal.time) {
+          const restoreStatus = normalizeText(restoreTarget?.status || latestWithdrawalEntry?.status);
+          if (
+            isAxisPartialProgressStatus(experimentEvent.status) &&
+            (
+              isAxisPartialProgressStatus(restoreStatus) ||
+              normalizeText(restoreTarget?.experimentName) === normalizeText(experimentEvent.experimentName)
+            )
+          ) {
+            recordLatestFlowTime(experimentEvent.status, time);
+          }
           const retainedCompleted = parseRetainedCompletedExperimentBeforeWithdrawal(
             entry,
             taskCode,
@@ -1171,6 +1311,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
           return;
         }
         const experimentStatus = normalizeLifecycleStatus("", experimentEvent.status);
+        if (isAxisPartialProgressStatus(experimentEvent.status)) {
+          recordLatestFlowTime(experimentEvent.status, time);
+        }
         if (experimentStatus === "实验进行中" || experimentStatus === "实验中") {
           recordLatestFlowTime(`${experimentEvent.experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, time);
         }
@@ -1218,6 +1361,17 @@ const buildTrayFlowTimeMap = (input = {}) => {
       trayCode,
     });
     if (isAxisPartialProgressStatus(runtimeStatus)) {
+      const startTime = normalizeText(matchedRun?.started_at || matchedRun?.startedAt || matchedRun?.created_at || matchedRun?.createdAt);
+      if (startTime) {
+        uniqueNormalizedTexts([
+          experiment.displayName,
+          experiment.name,
+          experiment.code,
+          ...(Array.isArray(experiment.aliases) ? experiment.aliases : []),
+        ]).forEach((name) => {
+          recordLatestFlowTime(`${name}${EXPERIMENT_FLOW_STATUS_LABELS.running}`, startTime, "runtime");
+        });
+      }
       const time = normalizeText(matchedRun?.ended_at || matchedRun?.endedAt || matchedRun?.updated_at || matchedRun?.updatedAt);
       if (time) {
         recordLatestFlowTime(runtimeStatus, time, "runtime");
@@ -1394,7 +1548,7 @@ function buildTrayFlowView(input = {}) {
             key: `experiment-partial-${index}`,
             label: normalizeText(experiment.routeStatus),
             reached: true,
-            time: stepTimeMap.get(experiment.routeStatus) || "",
+            time: stepTimeMap.get(experiment.routeStatus) || normalizeText(experiment?.partialTime) || "",
           });
         }
         const labelState = state === "current" && experiment?.unstarted ? "pending" : state;
@@ -1737,7 +1891,26 @@ function buildTrayFlowView(input = {}) {
       } else if (normalizedRouteStatus === "实验已完成" || normalizedRouteStatus === "实验完成") {
         const latestCompletedIndex = completedStepIndexes.at(-1);
         markCompletedAppearanceReached();
-        if (latestCompletedIndex !== undefined) {
+        if (activeExperiment?.explicitCompletedCurrent && activeExperimentCanOwnCompletedRoute && !activeExperiment?.unstarted) {
+          const completedLabel = `${experimentName}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          const completedIdentityLabel = `${experimentIdentityNameText}${EXPERIMENT_FLOW_STATUS_LABELS.completed}`;
+          const completedCodeLabel = experimentCodeStatusLabel(activeExperiment, "completed");
+          completedStepIndexes.forEach((stepIndex) => {
+            steps[stepIndex].reached = true;
+          });
+          steps[currentExperimentIndexInSteps].label = completedLabel;
+          steps[currentExperimentIndexInSteps].time =
+            steps[currentExperimentIndexInSteps].time
+            || stepTimeMap.get(completedLabel)
+            || stepTimeMap.get(completedIdentityLabel)
+            || stepTimeMap.get(completedCodeLabel)
+            || "";
+          currentStatus = completedLabel;
+          activeIndex = currentExperimentIndexInSteps;
+          routeIndexes.forEach((stepIndex) => {
+            steps[stepIndex].reached = true;
+          });
+        } else if (latestCompletedIndex !== undefined) {
           currentStatus = steps[latestCompletedIndex].label;
           activeIndex = latestCompletedIndex;
         } else {
@@ -1882,7 +2055,7 @@ function buildTrayFlowView(input = {}) {
               key: `experiment-folded-partial-${index}`,
               label,
               reached: true,
-              time: stepTimeMap.get(label) || "",
+              time: stepTimeMap.get(label) || normalizeText(experiment?.partialTime) || "",
             });
           }
           const label = experimentStatusLabel(experiment, index, "completed");
@@ -1908,8 +2081,20 @@ function buildTrayFlowView(input = {}) {
           reached: normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "厂家收回",
           time: stepTimeMap.get("已到达暂存间") || stepTimeMap.get(POST_EXPERIMENT_STAGING_STOCKED_STATUS) || "",
         });
+        const foldedCompletedExperimentCodes = new Set(
+          foldedExperimentResults
+            .filter((experiment) => normalizeText(experiment?.state) === "completed")
+            .map((experiment) => normalizeText(experiment?.code))
+            .filter(Boolean),
+        );
         const pendingAxisContinuationLabels = new Set();
         foldedExperimentResults.forEach((experiment, index) => {
+          if (
+            normalizeText(experiment?.state) === "partial" &&
+            foldedCompletedExperimentCodes.has(normalizeText(experiment?.code))
+          ) {
+            return;
+          }
           const status = normalizeText(experiment?.routeStatus);
           const label = buildPendingAxisContinuationLabel(status);
           if (!label || pendingAxisContinuationLabels.has(label)) {

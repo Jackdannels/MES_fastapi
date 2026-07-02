@@ -190,6 +190,20 @@ const collectAssignedTrayCodes = (task, samples, experimentTrays) => {
   return trayCodes;
 };
 
+const groupByTaskCode = (rows, resolveTaskCodeFn) => {
+  const grouped = new Map();
+  asArray(rows).forEach((row) => {
+    const taskCode = resolveTaskCodeFn(row);
+    if (!taskCode) {
+      return;
+    }
+    const current = grouped.get(taskCode) || [];
+    current.push(row);
+    grouped.set(taskCode, current);
+  });
+  return grouped;
+};
+
 const hasAllAssignedTraysReturned = (samples, task = null, experimentTrays = []) => {
   const trayRefsByCode = collectTrayRefs(samples);
   const assignedTrayCodes = collectAssignedTrayCodes(task, samples, experimentTrays);
@@ -198,6 +212,67 @@ const hasAllAssignedTraysReturned = (samples, task = null, experimentTrays = [])
   }
   const returnedTrayCodes = collectReturnedTrayCodes(samples);
   return assignedTrayCodes.size > 0 && returnedTrayCodes.size === assignedTrayCodes.size;
+};
+
+const buildTaskStatsByCode = ({ samplesByTaskCode, taskRecordsByCode, taskCodes, experimentTraysByTaskCode }) => {
+  const taskStatsByCode = new Map();
+  taskCodes.forEach((taskCode) => {
+    const taskSamples = samplesByTaskCode.get(taskCode) || [];
+    const taskRecord = taskRecordsByCode.get(taskCode) || { code: taskCode };
+    const taskExperimentTrays = experimentTraysByTaskCode.get(taskCode) || [];
+    const assignedTrayCodes = collectAssignedTrayCodes(taskRecord, taskSamples, taskExperimentTrays);
+    const returnedTrayCodes = collectReturnedTrayCodes(taskSamples);
+    taskStatsByCode.set(taskCode, {
+      allAssignedTraysReturned: hasAllAssignedTraysReturned(taskSamples, taskRecord, taskExperimentTrays),
+      assignedTrayCodes,
+      flowEntries: collectFlowEntries(taskSamples),
+      hasReturnedTrays: returnedTrayCodes.size > 0,
+      returnedTrayCodes,
+    });
+  });
+  return taskStatsByCode;
+};
+
+const collectTaskSearchTokens = (task, samples, stats) => {
+  const trayRefsByCode = collectTrayRefs(samples);
+  const trayCodes = Array.from(new Set([
+    ...Array.from(trayRefsByCode.keys()),
+    ...Array.from(stats?.assignedTrayCodes || []),
+  ]));
+  const sampleCodes = asArray(samples).map(resolveSampleCode).filter(Boolean);
+  return [
+    resolveTaskCode(task),
+    normalizeText(task?.name || task?.task_name || task?.test_type || task?.experiment_type),
+    ...trayCodes,
+    ...sampleCodes,
+  ];
+};
+
+const buildTaskSummary = (taskCode, task, samples, stats) => {
+  const allTrayCount = stats?.assignedTrayCodes?.size || 0;
+  const returnedTrayCount = stats?.returnedTrayCodes?.size || 0;
+  const isFullyReturned = allTrayCount > 0
+    ? returnedTrayCount === allTrayCount
+    : hasExplicitReturnedStatus(task);
+  const remainingTrayCount = Math.max(allTrayCount - returnedTrayCount, 0);
+  const displayStatus = isFullyReturned
+    ? RETURNED_STATUS
+    : `任务进行中（收回${returnedTrayCount}，剩余${remainingTrayCount}）`;
+  const returnedAt = asArray(stats?.flowEntries).find((entry) => entry.label === RETURNED_STATUS)?.time || "";
+  return {
+    code: taskCode,
+    searchText: collectTaskSearchTokens(task, samples, stats)
+      .concat(displayStatus)
+      .map((item) => normalizeText(item).toLowerCase())
+      .join(" "),
+    task,
+    updatedAt: returnedAt || normalizeText(task?.updated_at || task?.created_at),
+  };
+};
+
+const matchesTaskSummarySearch = (summary, query) => {
+  const normalizedQuery = normalizeText(query).toLowerCase();
+  return !normalizedQuery || normalizeText(summary?.searchText).includes(normalizedQuery);
 };
 
 const collectSampleStats = (task, samples, returnedTrayCodes) => {
@@ -364,10 +439,13 @@ const buildTrayRows = (samples, includedTrayCodes = null) => {
     .sort((left, right) => left.trayCode.localeCompare(right.trayCode, "zh-Hans-CN", { numeric: true }));
 };
 
-const buildTaskRow = (task, samples, experiments, experimentTrays) => {
+const buildTaskRow = (task, samples, context = {}) => {
+  const experiments = asArray(context.experiments);
+  const experimentTrays = asArray(context.experimentTrays);
+  const stats = context.stats || null;
   const code = resolveTaskCode(task) || resolveSampleTaskCode(samples[0]);
-  const assignedTrayCodes = collectAssignedTrayCodes(task, samples, experimentTrays);
-  const returnedTrayCodes = collectReturnedTrayCodes(samples);
+  const assignedTrayCodes = stats?.assignedTrayCodes || collectAssignedTrayCodes(task, samples, experimentTrays);
+  const returnedTrayCodes = stats?.returnedTrayCodes || collectReturnedTrayCodes(samples);
   const allTrayCount = assignedTrayCodes.size;
   const returnedTrayCount = returnedTrayCodes.size;
   const isFullyReturned = allTrayCount > 0
@@ -376,7 +454,7 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   const trays = buildTrayRows(samples, isFullyReturned ? returnedTrayCodes : null);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
-  const sampleFlowEntries = filterTaskFlowForExperiments(collectFlowEntries(samples), experimentRows);
+  const sampleFlowEntries = filterTaskFlowForExperiments(stats?.flowEntries || collectFlowEntries(samples), experimentRows);
   const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
   const remainingTrayCount = Math.max(allTrayCount - returnedTrayCount, 0);
   const sampleStats = collectSampleStats(task, samples, returnedTrayCodes);
@@ -405,22 +483,6 @@ const buildTaskRow = (task, samples, experiments, experimentTrays) => {
   };
 };
 
-const matchesTaskSearch = (task, query) => {
-  const normalizedQuery = normalizeText(query).toLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-  const searchText = [
-    task.code,
-    task.name,
-    task.status,
-    ...asArray(task.trays).flatMap((tray) => [tray.trayCode, ...asArray(tray.sampleCodes)]),
-  ]
-    .map((item) => normalizeText(item).toLowerCase())
-    .join(" ");
-  return searchText.includes(normalizedQuery);
-};
-
 const matchesDateWindow = (task, days, now) => {
   const parsedDays = Number.parseInt(String(days || ""), 10);
   if (!Number.isFinite(parsedDays) || parsedDays <= 0) {
@@ -439,49 +501,56 @@ function buildReturnedTaskHistoryView(input = {}) {
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
-  const samplesByTaskCode = new Map();
-
-  samples.forEach((sample) => {
-    const taskCode = resolveSampleTaskCode(sample);
-    if (!taskCode) {
-      return;
-    }
-    const taskSamples = samplesByTaskCode.get(taskCode) || [];
-    taskSamples.push(sample);
-    samplesByTaskCode.set(taskCode, taskSamples);
-  });
+  const samplesByTaskCode = groupByTaskCode(samples, resolveSampleTaskCode);
+  const experimentsByTaskCode = groupByTaskCode(experiments, resolveExperimentTaskCode);
+  const experimentTraysByTaskCode = groupByTaskCode(experimentTrays, resolveRelationTaskCode);
 
   const taskRecordsByCode = new Map(tasks.map((task) => [resolveTaskCode(task), task]).filter(([code]) => code));
   const taskCodes = new Set([...taskRecordsByCode.keys(), ...samplesByTaskCode.keys()]);
+  const taskStatsByCode = buildTaskStatsByCode({
+    experimentTraysByTaskCode,
+    samplesByTaskCode,
+    taskCodes,
+    taskRecordsByCode,
+  });
   const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
   const pageSize = Number(input.pageSize) > 0 ? Number(input.pageSize) : 8;
-  const historyTasks = Array.from(taskCodes)
+  const historyTaskSummaries = Array.from(taskCodes)
     .map((taskCode) => {
       const taskSamples = samplesByTaskCode.get(taskCode) || [];
       const taskRecord = taskRecordsByCode.get(taskCode) || { code: taskCode };
-      const hasReturnedTrays = collectReturnedTrayCodes(taskSamples).size > 0;
-      if (!hasAllAssignedTraysReturned(taskSamples, taskRecord, experimentTrays) && !hasReturnedTrays) {
+      const stats = taskStatsByCode.get(taskCode);
+      if (!stats?.allAssignedTraysReturned && !stats?.hasReturnedTrays) {
         return null;
       }
-      return buildTaskRow(taskRecord, taskSamples, experiments, experimentTrays);
+      return buildTaskSummary(taskCode, taskRecord, taskSamples, stats);
     })
     .filter(Boolean)
-    .filter((task) => matchesTaskSearch(task, filters.query || input.query))
-    .filter((task) => matchesDateWindow(task, filters.days ?? input.days, input.now))
+    .filter((summary) => matchesTaskSummarySearch(summary, filters.query || input.query))
+    .filter((summary) => matchesDateWindow(summary, filters.days ?? input.days, input.now))
     .sort((left, right) => {
       const timeCompare = String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
       return timeCompare || left.code.localeCompare(right.code, "zh-Hans-CN", { numeric: true });
     });
 
-  const totalPages = Math.max(1, Math.ceil(historyTasks.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(historyTaskSummaries.length / pageSize));
   const rawPage = Number.parseInt(String(input.page ?? 1), 10);
   const currentPage = Number.isFinite(rawPage) ? Math.min(Math.max(rawPage, 1), totalPages) : 1;
   const startIndex = (currentPage - 1) * pageSize;
+  const pagedSummaries = historyTaskSummaries.slice(startIndex, startIndex + pageSize);
+  const historyTasks = pagedSummaries.map((summary) => {
+    const taskCode = summary.code;
+    return buildTaskRow(summary.task, samplesByTaskCode.get(taskCode) || [], {
+      experimentTrays: experimentTraysByTaskCode.get(taskCode) || [],
+      experiments: experimentsByTaskCode.get(taskCode) || [],
+      stats: taskStatsByCode.get(taskCode),
+    });
+  });
 
   return {
     currentPage,
-    tasks: historyTasks.slice(startIndex, startIndex + pageSize),
-    totalCount: historyTasks.length,
+    tasks: historyTasks,
+    totalCount: historyTaskSummaries.length,
     totalPages,
   };
 }
