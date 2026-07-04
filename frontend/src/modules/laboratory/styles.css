@@ -108,6 +108,35 @@
   font-weight: 700;
 }
 
+.laboratory-attendance-login-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  padding-top: 4px;
+}
+
+.laboratory-attendance-login-tab {
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-control) var(--radius-control) 0 0;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 700;
+  padding: 8px 12px;
+}
+
+.laboratory-attendance-login-tab.is-active {
+  background: rgba(83, 127, 231, 0.16);
+  border-color: rgba(83, 127, 231, 0.42);
+  color: var(--text);
+}
+
+.laboratory-attendance-qr-panel {
+  display: grid;
+  gap: 8px;
+}
+
 .laboratory-attendance-modal-footer-logout {
   min-width: 168px;
 }

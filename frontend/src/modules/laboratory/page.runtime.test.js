@@ -61,6 +61,8 @@ const attendanceWorkStartCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/work/start") && (options.method || "GET") === "POST");
 const attendanceLogoutCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/logout") && (options.method || "GET") === "POST");
+const attendanceQrLoginCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/login/qr") && (options.method || "GET") === "POST");
 const handleAttendanceFetch = (url, options = {}) => {
   if (!String(url).includes("/api/attendance/labs/")) {
     return null;
@@ -77,6 +79,18 @@ const handleAttendanceFetch = (url, options = {}) => {
   }
   if (String(url).includes("/session")) {
     return { ok: true, status: 200, json: async () => ({ ...attendanceSessionState, labName }) };
+  }
+  if (String(url).includes("/login/qr")) {
+    const body = JSON.parse(String(options.body || "{}"));
+    attendanceSessionState = {
+      active: true,
+      employeeName: body.qrPayload ? "扫码员工" : "",
+      labName,
+      loggedInAt: "2026-04-02T10:00:00Z",
+      workStartedAt: null,
+      username: body.qrPayload ? "qr-worker" : "",
+    };
+    return { ok: true, status: 200, json: async () => attendanceSessionState };
   }
   if (String(url).includes("/login")) {
     const body = JSON.parse(String(options.body || "{}"));
@@ -948,6 +962,8 @@ describe("LaboratoryPage runtime", () => {
 
     headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
+    document.body.querySelector('[data-testid="laboratory-attendance-password-mode"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
     const usernameInput = document.body.querySelector('[data-testid="laboratory-attendance-username"]');
     const passwordInput = document.body.querySelector('[data-testid="laboratory-attendance-password"]');
     usernameInput.value = "lisi";
@@ -995,6 +1011,51 @@ describe("LaboratoryPage runtime", () => {
     const logoutButton = document.body.querySelector('[data-testid="laboratory-attendance-modal-logout"]');
     expect(logoutButton).toBeTruthy();
     expect(logoutButton?.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("opens the laboratory attendance login modal in QR scan mode by default", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      loggedInAt: null,
+      username: "",
+    };
+    await mountPage();
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-qr-input"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-qr-submit"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-username"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-login-submit"]')).toBeNull();
+  });
+
+  test("logs in to the laboratory by scanning an employee QR code", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      username: "",
+    };
+    await mountPage();
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    const qrInput = document.body.querySelector('[data-testid="laboratory-attendance-qr-input"]');
+    qrInput.value = "MES-ATTENDANCE:QR:test-token-001";
+    qrInput.dispatchEvent(new Event("input", { bubbles: true }));
+    document.body.querySelector('[data-testid="laboratory-attendance-qr-submit"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+
+    expect(attendanceQrLoginCalls()).toHaveLength(1);
+    expect(attendanceQrLoginCalls()[0][0]).toBe("/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login/qr");
+    expect(JSON.parse(attendanceQrLoginCalls()[0][1].body)).toEqual({
+      qrPayload: "MES-ATTENDANCE:QR:test-token-001",
+    });
+    expect(attendanceSessionState.username).toBe("qr-worker");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-login-modal"].is-open')).toBeFalsy();
   });
 
   test("opens the attendance login modal above the running experiment modal when completing an axis without login", async () => {
@@ -1132,7 +1193,7 @@ describe("LaboratoryPage runtime", () => {
     expect(footerButtons).toEqual([
       "取消",
       "laboratory-attendance-modal-logout",
-      "laboratory-attendance-login-submit",
+      "laboratory-attendance-qr-submit",
     ]);
   });
 

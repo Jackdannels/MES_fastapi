@@ -16,6 +16,10 @@ class AttendanceLoginRequest(BaseModel):
     password: str
 
 
+class AttendanceQrLoginRequest(BaseModel):
+    qr_payload: str = Field(alias="qrPayload")
+
+
 class AttendanceLogoutRequest(BaseModel):
     reason: str = "manual"
 
@@ -102,6 +106,22 @@ def reset_user_password(user_id: int, payload: AttendancePasswordResetRequest) -
         raise _service_error(exc) from exc
 
 
+@router.get("/users/{user_id}/qr-token")
+def read_user_qr_token(user_id: int) -> dict[str, Any]:
+    try:
+        return get_attendance_service().read_qr_token(user_id)
+    except AttendanceError as exc:
+        raise _service_error(exc) from exc
+
+
+@router.post("/users/{user_id}/qr-token/reset")
+def reset_user_qr_token(user_id: int) -> dict[str, Any]:
+    try:
+        return get_attendance_service().reset_qr_token(user_id)
+    except AttendanceError as exc:
+        raise _service_error(exc) from exc
+
+
 @router.delete("/users/{user_id}")
 def delete_user(user_id: int, payload: AttendanceAdminRequest) -> dict[str, Any]:
     _verify_admin_credentials(payload)
@@ -125,6 +145,18 @@ def login_lab(lab_name: str, payload: AttendanceLoginRequest) -> dict[str, Any]:
             normalized_lab_name,
             username=payload.username,
             password=payload.password,
+        )
+    except AttendanceError as exc:
+        raise _service_error(exc) from exc
+
+
+@router.post("/labs/{lab_name}/login/qr")
+def login_lab_by_qr(lab_name: str, payload: AttendanceQrLoginRequest) -> dict[str, Any]:
+    normalized_lab_name = _normalize_lab_name(lab_name)
+    try:
+        return get_attendance_service().login_lab_by_qr(
+            normalized_lab_name,
+            qr_payload=payload.qr_payload,
         )
     except AttendanceError as exc:
         raise _service_error(exc) from exc

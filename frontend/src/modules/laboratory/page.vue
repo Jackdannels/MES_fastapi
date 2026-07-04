@@ -250,7 +250,27 @@
           <div v-if="attendanceLoginRunningExperimentActive" class="laboratory-attendance-running-warning">
             {{ attendanceLoggedIn ? "当前试验正在进行，仅允许切换登录人员" : "当前试验正在进行，请先登录人员后继续操作" }}
           </div>
-          <div class="form-grid">
+          <div class="laboratory-attendance-login-tabs">
+            <button
+              class="laboratory-attendance-login-tab"
+              :class="{ 'is-active': attendanceLoginMode === 'qr' }"
+              data-testid="laboratory-attendance-qr-mode"
+              type="button"
+              @click="setAttendanceLoginMode('qr')"
+            >
+              扫码登录
+            </button>
+            <button
+              class="laboratory-attendance-login-tab"
+              :class="{ 'is-active': attendanceLoginMode === 'password' }"
+              data-testid="laboratory-attendance-password-mode"
+              type="button"
+              @click="setAttendanceLoginMode('password')"
+            >
+              账号密码
+            </button>
+          </div>
+          <div v-if="attendanceLoginMode === 'password'" class="form-grid">
             <label class="form-field">
               <span>员工账号</span>
               <input v-model="attendanceLoginUsername" data-testid="laboratory-attendance-username" type="text" />
@@ -264,6 +284,20 @@
                 @keyup.enter="submitAttendanceLogin"
               />
             </label>
+          </div>
+          <div v-else class="laboratory-attendance-qr-panel">
+            <label class="form-field">
+              <span>请扫描人员二维码</span>
+              <input
+                ref="attendanceQrInputRef"
+                v-model="attendanceQrPayload"
+                data-testid="laboratory-attendance-qr-input"
+                type="text"
+                placeholder="请扫描或输入人员二维码"
+                @keyup.enter="submitAttendanceQrLogin"
+              />
+            </label>
+            <p class="muted">扫码枪输入后按 Enter 自动登录；运行中的试验会切换人员并继续计时。</p>
           </div>
           <AppFeedback
             v-if="attendanceLoginError"
@@ -286,6 +320,17 @@
             退出当前试验间登录
           </button>
           <button
+            v-if="attendanceLoginMode === 'qr'"
+            class="action-btn"
+            data-testid="laboratory-attendance-qr-submit"
+            type="button"
+            :disabled="attendanceSubmitting"
+            @click="submitAttendanceQrLogin"
+          >
+            {{ attendanceLoggedIn ? "扫码切换并继续" : "扫码登录并继续" }}
+          </button>
+          <button
+            v-else
             class="action-btn"
             data-testid="laboratory-attendance-login-submit"
             type="button"
@@ -690,9 +735,12 @@ const {
   actionState,
   attendanceLoggedIn,
   attendanceLoginError,
+  attendanceLoginMode,
   attendanceLoginModalOpen,
   attendanceLoginPassword,
   attendanceLoginUsername,
+  attendanceQrInputRef,
+  attendanceQrPayload,
   attendanceLogoutCountdown,
   attendanceLogoutPromptOpen,
   attendanceStatus,
@@ -765,11 +813,13 @@ const {
   selectedTrayFlow,
   selectedTrayRow,
   setPendingTaskCode,
+  setAttendanceLoginMode,
   setSelectedTrayCode,
   showRunningModal,
   summary,
   submitCompareScan,
   submitAttendanceLogin,
+  submitAttendanceQrLogin,
   taskListModalOpen,
   trayFlowTask,
 } = useLaboratoryPage({ selectedLabName });

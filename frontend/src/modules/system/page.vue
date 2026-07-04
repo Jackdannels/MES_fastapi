@@ -33,9 +33,14 @@
           <td>{{ employee.roleName }}</td>
           <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
           <td>
-            <button class="action-link" :data-testid="`open-employee-drawer-${index}`" type="button" @click="openEmployeeDrawer(employee)">
-              编辑
-            </button>
+            <div class="system-table-actions">
+              <button class="action-link" :data-testid="`open-employee-drawer-${index}`" type="button" @click="openEmployeeDrawer(employee)">
+                编辑
+              </button>
+              <button class="action-link" :data-testid="`employee-qr-code-${index}`" type="button" @click="openEmployeeQrModal(employee)">
+                二维码
+              </button>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -160,6 +165,49 @@
       <button class="action-btn secondary" type="button" @click="closeEmployeeDrawer">关闭</button>
     </template>
   </AppModal>
+
+  <AppModal :open="employeeQrModalOpen" data-testid="employee-qr-modal" title="员工登录二维码" @close="closeEmployeeQrModal">
+    <div class="system-qr-modal">
+      <div class="system-qr-summary">
+        <div>
+          <span class="muted">员工</span>
+          <strong>{{ qrEmployee?.employeeName || "-" }}</strong>
+        </div>
+        <div>
+          <span class="muted">账号</span>
+          <strong>{{ qrEmployee?.username || "-" }}</strong>
+        </div>
+        <div>
+          <span class="muted">二维码状态</span>
+          <strong>{{ qrEmployee?.hasQrToken ? "已生成" : "未生成" }}</strong>
+        </div>
+      </div>
+      <div v-if="qrSvg" class="system-qr-preview" v-html="qrSvg"></div>
+      <div v-if="qrPayload" class="system-qr-payload" data-testid="employee-qr-payload">{{ qrPayload }}</div>
+      <AppFeedback
+        v-if="qrError"
+        :message="qrError"
+        tone="error"
+        data-testid="employee-qr-error"
+        @close="qrError = ''"
+      />
+    </div>
+    <template #footer>
+      <button class="action-btn" data-testid="employee-qr-reset" type="button" :disabled="qrSubmitting" @click="resetEmployeeQrToken">
+        {{ qrEmployee?.hasQrToken ? "重置二维码" : "生成二维码" }}
+      </button>
+      <button
+        class="action-btn secondary"
+        data-testid="employee-qr-download"
+        type="button"
+        :disabled="!qrPayload"
+        @click="downloadEmployeeQrCode"
+      >
+        下载图片
+      </button>
+      <button class="action-btn secondary" type="button" @click="closeEmployeeQrModal">关闭</button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
@@ -179,6 +227,7 @@ const {
   createEmployeeError,
   createEmployeeFields,
   deleteEmployee,
+  downloadEmployeeQrCode,
   editEmployeeFields,
   employeeRoleOptions,
   openEmployeeDrawer,
@@ -187,11 +236,20 @@ const {
   resetEmployeePassword,
   employeeDrawerOpen,
   employeeModalOpen,
+  employeeQrModalOpen,
   settings,
+  closeEmployeeQrModal,
   saveNewEmployee,
+  openEmployeeQrModal,
   summaryCards,
   sortDirection,
   sortKey,
+  qrEmployee,
+  qrError,
+  qrPayload,
+  qrSubmitting,
+  qrSvg,
+  resetEmployeeQrToken,
   toggleSort,
   visibleEmployeeRows,
   workTimeRows,

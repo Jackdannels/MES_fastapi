@@ -16,9 +16,11 @@ describe("SystemPage runtime", () => {
         allowedLabs: ["*"],
         currentLabName: "冲击一室",
         employeeName: "张三",
+        hasQrToken: false,
         id: 1,
         lastLoginAt: "2026-07-02T08:15:00Z",
         online: true,
+        qrTokenCreatedAt: null,
         roleName: "试验员",
         todaySeconds: 9300,
         username: "zhangsan",
@@ -244,5 +246,136 @@ describe("SystemPage runtime", () => {
       }),
     }));
     expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(0);
+  });
+
+  test("generates an employee QR code from the personnel management table", async () => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/attendance/work-times")) {
+        return { ok: true, json: async () => employees };
+      }
+      if (url.includes("/api/attendance/users/1/qr-token/reset")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            qrPayload: "MES-ATTENDANCE:QR:test-token-001",
+            qrToken: "test-token-001",
+            user: {
+              ...employees[0],
+              hasQrToken: true,
+              qrTokenCreatedAt: "2026-07-02T16:20:00+08:00",
+            },
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="employee-qr-code-0"]').trigger("click");
+    expect(wrapper.find('[data-testid="employee-qr-admin-username"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="employee-qr-admin-password"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="employee-qr-reset"]').trigger("click");
+    await flushPromises();
+
+    expect(fetch).toHaveBeenCalledWith("/api/attendance/users/1/qr-token/reset", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({}),
+    }));
+    expect(wrapper.get('[data-testid="employee-qr-modal"]').text()).toContain("张三");
+    expect(wrapper.get('[data-testid="employee-qr-payload"]').text()).toContain("MES-ATTENDANCE:QR:test-token-001");
+  });
+
+  test("opens an existing employee QR code without resetting it", async () => {
+    const employees = stubAttendanceFetch();
+    employees[0] = {
+      ...employees[0],
+      hasQrToken: true,
+      qrTokenCreatedAt: "2026-07-02T16:20:00+08:00",
+    };
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/attendance/work-times")) {
+        return { ok: true, json: async () => employees };
+      }
+      if (url.includes("/api/attendance/users/1/qr-token") && (options.method || "GET") === "GET") {
+        return {
+          ok: true,
+          json: async () => ({
+            qrPayload: "MES-ATTENDANCE:QR:existing-token-001",
+            user: employees[0],
+          }),
+        };
+      }
+      if (url.includes("/api/attendance/users/1/qr-token/reset")) {
+        throw new Error("QR code should not reset when opening the modal");
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="employee-qr-code-0"]').trigger("click");
+    await flushPromises();
+
+    expect(fetch).toHaveBeenCalledWith("/api/attendance/users/1/qr-token", expect.objectContaining({
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    }));
+    expect(wrapper.get('[data-testid="employee-qr-modal"]').text()).toContain("已生成");
+    expect(wrapper.get('[data-testid="employee-qr-payload"]').text()).toContain("MES-ATTENDANCE:QR:existing-token-001");
+    expect(wrapper.get('[data-testid="employee-qr-reset"]').text()).toContain("重置二维码");
+  });
+
+  test("downloads the displayed employee QR code as an image", async () => {
+    const employees = stubAttendanceFetch();
+    employees[0] = {
+      ...employees[0],
+      hasQrToken: true,
+      qrTokenCreatedAt: "2026-07-02T16:20:00+08:00",
+    };
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/attendance/work-times")) {
+        return { ok: true, json: async () => employees };
+      }
+      if (url.includes("/api/attendance/users/1/qr-token") && (options.method || "GET") === "GET") {
+        return {
+          ok: true,
+          json: async () => ({
+            qrPayload: "MES-ATTENDANCE:QR:existing-token-001",
+            user: employees[0],
+          }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const createdLinks = [];
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, "createElement").mockImplementation((tagName, options) => {
+      const element = originalCreateElement(tagName, options);
+      if (String(tagName).toLowerCase() === "a") {
+        element.click = vi.fn();
+        createdLinks.push(element);
+      }
+      return element;
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="employee-qr-code-0"]').trigger("click");
+    await flushPromises();
+    const downloadButton = wrapper.get('[data-testid="employee-qr-download"]');
+    expect(downloadButton.attributes("disabled")).toBeUndefined();
+    await downloadButton.trigger("click");
+    await flushPromises();
+
+    expect(createdLinks).toHaveLength(1);
+    expect(createdLinks[0].download).toBe("zhangsan-qr-code.svg");
+    expect(createdLinks[0].href).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+    expect(createdLinks[0].click).toHaveBeenCalledTimes(1);
   });
 });

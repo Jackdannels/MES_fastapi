@@ -17,6 +17,7 @@ import {
 } from "@/lib/laboratoryApi";
 import {
   loginLaboratoryAttendance,
+  loginLaboratoryAttendanceByQr,
   logoutLaboratoryAttendance,
   markLaboratoryAttendanceWorkStarted,
   readLaboratoryAttendanceSession,
@@ -247,8 +248,11 @@ function useLaboratoryPage(options = {}) {
   const completedRunningExperiment = ref(null);
   const attendanceSession = ref({ active: false });
   const attendanceLoginModalOpen = ref(false);
+  const attendanceLoginMode = ref("qr");
   const attendanceLoginUsername = ref("");
   const attendanceLoginPassword = ref("");
+  const attendanceQrInputRef = ref(null);
+  const attendanceQrPayload = ref("");
   const attendanceLoginError = ref("");
   const attendanceSubmitting = ref(false);
   const attendanceLogoutPromptOpen = ref(false);
@@ -568,6 +572,7 @@ function useLaboratoryPage(options = {}) {
         }
   ));
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
+  const { focusScanInput: focusAttendanceQrInput } = useScanInputFocus(attendanceQrInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
   const runningModalExperiment = computed(() => {
     const base = completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value;
@@ -665,11 +670,15 @@ function useLaboratoryPage(options = {}) {
   const openAttendanceLogin = () => {
     attendanceLoginError.value = "";
     attendanceLoginPassword.value = "";
+    attendanceQrPayload.value = "";
+    attendanceLoginMode.value = "qr";
     attendanceLoginModalOpen.value = true;
+    void nextTick().then(() => focusAttendanceQrInput());
   };
 
   const closeAttendanceLogin = () => {
     attendanceLoginModalOpen.value = false;
+    attendanceQrPayload.value = "";
     pendingAttendanceAction = null;
   };
 
@@ -689,6 +698,27 @@ function useLaboratoryPage(options = {}) {
     openAttendanceLogin();
   };
 
+  const setAttendanceLoginMode = async (mode) => {
+    attendanceLoginMode.value = mode === "qr" ? "qr" : "password";
+    attendanceLoginError.value = "";
+    if (attendanceLoginMode.value === "qr") {
+      await nextTick();
+      await focusAttendanceQrInput();
+    }
+  };
+
+  const finishAttendanceLogin = async (session) => {
+    attendanceSession.value = session;
+    attendanceLoginModalOpen.value = false;
+    attendanceLoginPassword.value = "";
+    attendanceQrPayload.value = "";
+    const action = pendingAttendanceAction;
+    pendingAttendanceAction = null;
+    if (typeof action === "function") {
+      await action();
+    }
+  };
+
   const submitAttendanceLogin = async () => {
     if (attendanceSubmitting.value) {
       return;
@@ -701,15 +731,28 @@ function useLaboratoryPage(options = {}) {
         password: attendanceLoginPassword.value,
         username: attendanceLoginUsername.value,
       });
-      attendanceLoginModalOpen.value = false;
-      attendanceLoginPassword.value = "";
-      const action = pendingAttendanceAction;
-      pendingAttendanceAction = null;
-      if (typeof action === "function") {
-        await action();
-      }
+      await finishAttendanceLogin(attendanceSession.value);
     } catch (error) {
       attendanceLoginError.value = formatErrorMessage(error) || "试验间登录失败";
+    } finally {
+      attendanceSubmitting.value = false;
+    }
+  };
+
+  const submitAttendanceQrLogin = async () => {
+    if (attendanceSubmitting.value) {
+      return;
+    }
+    attendanceLoginError.value = "";
+    attendanceSubmitting.value = true;
+    try {
+      const session = await loginLaboratoryAttendanceByQr({
+        labName: laboratoryConfig.value.labName,
+        qrPayload: attendanceQrPayload.value,
+      });
+      await finishAttendanceLogin(session);
+    } catch (error) {
+      attendanceLoginError.value = formatErrorMessage(error) || "扫码登录失败";
     } finally {
       attendanceSubmitting.value = false;
     }
@@ -798,6 +841,7 @@ function useLaboratoryPage(options = {}) {
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
     attendanceLoginModalOpen.value = false;
+    attendanceQrPayload.value = "";
     attendanceLogoutPromptOpen.value = false;
     pendingAttendanceAction = null;
     clearRunningModalRestoreTimer();
@@ -1905,9 +1949,12 @@ function useLaboratoryPage(options = {}) {
     actionState,
     attendanceLoggedIn,
     attendanceLoginError,
+    attendanceLoginMode,
     attendanceLoginModalOpen,
     attendanceLoginPassword,
     attendanceLoginUsername,
+    attendanceQrInputRef,
+    attendanceQrPayload,
     attendanceLogoutCountdown,
     attendanceLogoutPromptOpen,
     attendanceSession,
@@ -1994,6 +2041,8 @@ function useLaboratoryPage(options = {}) {
     summary,
     submitCompareScan,
     submitAttendanceLogin,
+    submitAttendanceQrLogin,
+    setAttendanceLoginMode,
     selectedTrayCode,
     selectedTrayFlow: computed(() => view.value.selectedTrayFlow),
     selectedTrayRow: computed(() => view.value.selectedTrayRow),

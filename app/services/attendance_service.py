@@ -18,6 +18,7 @@ DEFAULT_USERS = (
 )
 
 BEIJING_TZ = timezone(timedelta(hours=8))
+ATTENDANCE_QR_PREFIX = "MES-ATTENDANCE:QR:"
 
 
 def now_utc() -> datetime:
@@ -115,6 +116,28 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(hash_password(password, salt=salt), password_hash)
 
 
+def generate_qr_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def normalize_qr_token(value: Any) -> str:
+    normalized = normalize_text(value)
+    if normalized.startswith(ATTENDANCE_QR_PREFIX):
+        return normalize_text(normalized[len(ATTENDANCE_QR_PREFIX) :])
+    return normalized
+
+
+def hash_qr_token(token: str) -> str:
+    normalized = normalize_qr_token(token)
+    if not normalized:
+        return ""
+    return hashlib.sha256(f"attendance-qr:{normalized}".encode("utf-8")).hexdigest()
+
+
+def build_qr_payload(token: str) -> str:
+    return f"{ATTENDANCE_QR_PREFIX}{normalize_qr_token(token)}"
+
+
 class AttendanceError(Exception):
     def __init__(self, status_code: int, detail: str) -> None:
         super().__init__(detail)
@@ -173,6 +196,16 @@ class InMemoryAttendanceRepository:
         with self._lock:
             user = self.users.get(user_id)
             return deepcopy(user) if user else None
+
+    def find_user_by_qr_token_hash(self, token_hash: str) -> dict[str, Any] | None:
+        normalized_hash = normalize_text(token_hash)
+        if not normalized_hash:
+            return None
+        with self._lock:
+            for user in self.users.values():
+                if normalize_text(user.get("qr_token_hash")) == normalized_hash:
+                    return deepcopy(user)
+        return None
 
     def close_active_lab_session(self, lab_name: str, lab_code: str, *, reason: str, now: datetime) -> dict[str, Any] | None:
         normalized_lab_name = normalize_text(lab_name)
@@ -285,8 +318,23 @@ class MySQLAttendanceRepository:
                     normalized = statement.strip()
                     if normalized:
                         cursor.execute(normalized)
+                self._ensure_schema_extensions(cursor)
             connection.commit()
         self._schema_ready = True
+
+    def _ensure_schema_extensions(self, cursor: Any) -> None:
+        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_hash'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_hash VARCHAR(64) NULL AFTER password_hash")
+        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_payload'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_payload VARCHAR(255) NULL AFTER qr_token_hash")
+        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_created_at'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_created_at DATETIME NULL AFTER qr_token_payload")
+        cursor.execute("SHOW INDEX FROM sys_attendance_user WHERE Key_name = 'idx_sys_attendance_user_qr_token_hash'")
+        if not cursor.fetchone():
+            cursor.execute("ALTER TABLE sys_attendance_user ADD INDEX idx_sys_attendance_user_qr_token_hash (qr_token_hash)")
 
     def _rows(self, cursor: Any) -> list[dict[str, Any]]:
         rows = cursor.fetchall()
@@ -310,7 +358,8 @@ class MySQLAttendanceRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT user_id AS id, username, employee_name, role_name, password_hash, active
+                    SELECT user_id AS id, username, employee_name, role_name, password_hash,
+                           qr_token_hash, qr_token_payload, qr_token_created_at, active
                     FROM sys_attendance_user
                     ORDER BY user_id ASC
                     """
@@ -347,7 +396,12 @@ class MySQLAttendanceRepository:
         for key, value in updates.items():
             column = "active" if key == "active" else key
             assignments.append(f"{column} = %s")
-            values.append(1 if key == "active" and value else 0 if key == "active" else value)
+            if key == "active":
+                values.append(1 if value else 0)
+            elif key.endswith("_at"):
+                values.append(mysql_datetime(value))
+            else:
+                values.append(value)
         values.append(user_id)
         with get_connection() as connection:
             with connection.cursor() as cursor:
@@ -371,7 +425,8 @@ class MySQLAttendanceRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT user_id AS id, username, employee_name, role_name, password_hash, active
+                    SELECT user_id AS id, username, employee_name, role_name, password_hash,
+                           qr_token_hash, qr_token_payload, qr_token_created_at, active
                     FROM sys_attendance_user
                     WHERE username = %s
                     LIMIT 1
@@ -386,12 +441,32 @@ class MySQLAttendanceRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT user_id AS id, username, employee_name, role_name, password_hash, active
+                    SELECT user_id AS id, username, employee_name, role_name, password_hash,
+                           qr_token_hash, qr_token_payload, qr_token_created_at, active
                     FROM sys_attendance_user
                     WHERE user_id = %s
                     LIMIT 1
                     """,
                     (user_id,),
+                )
+                return self._row(cursor)
+
+    def find_user_by_qr_token_hash(self, token_hash: str) -> dict[str, Any] | None:
+        self.ensure_schema()
+        normalized_hash = normalize_text(token_hash)
+        if not normalized_hash:
+            return None
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT user_id AS id, username, employee_name, role_name, password_hash,
+                           qr_token_hash, qr_token_payload, qr_token_created_at, active
+                    FROM sys_attendance_user
+                    WHERE qr_token_hash = %s
+                    LIMIT 1
+                    """,
+                    (normalized_hash,),
                 )
                 return self._row(cursor)
 
@@ -628,7 +703,9 @@ class AttendanceService:
             "active": bool(user.get("active", True)),
             "allowedLabs": ["*"],
             "employeeName": normalize_text(user.get("employee_name")),
+            "hasQrToken": bool(normalize_text(user.get("qr_token_hash"))),
             "id": user.get("id"),
+            "qrTokenCreatedAt": format_beijing(parse_datetime(user.get("qr_token_created_at"))),
             "roleName": normalize_text(user.get("role_name")) or "试验员",
             "username": normalize_text(user.get("username")),
         }
@@ -700,6 +777,43 @@ class AttendanceService:
             raise AttendanceError(400, "New password is required")
         return {"ok": True, "user": self.update_user(user_id, password=new_password)}
 
+    def reset_qr_token(self, user_id: int) -> dict[str, Any]:
+        self.ensure_seed_users()
+        if self.repository.find_user_by_id(user_id) is None:
+            raise AttendanceError(404, "Employee account not found")
+        token = generate_qr_token()
+        qr_payload = build_qr_payload(token)
+        token_hash = hash_qr_token(token)
+        user = self.repository.update_user(
+            user_id,
+            {
+                "qr_token_created_at": self._now(),
+                "qr_token_hash": token_hash,
+                "qr_token_payload": qr_payload,
+            },
+        )
+        if user is None:
+            raise AttendanceError(404, "Employee account not found")
+        return {
+            "ok": True,
+            "qrPayload": qr_payload,
+            "qrToken": token,
+            "user": self.serialize_user(user),
+        }
+
+    def read_qr_token(self, user_id: int) -> dict[str, Any]:
+        self.ensure_seed_users()
+        user = self.repository.find_user_by_id(user_id)
+        if user is None:
+            raise AttendanceError(404, "Employee account not found")
+        qr_payload = normalize_text(user.get("qr_token_payload"))
+        if not qr_payload:
+            raise AttendanceError(404, "Employee QR code not generated")
+        return {
+            "qrPayload": qr_payload,
+            "user": self.serialize_user(user),
+        }
+
     def delete_user(self, user_id: int) -> dict[str, Any]:
         self.ensure_seed_users()
         now = self._now()
@@ -723,11 +837,7 @@ class AttendanceService:
             session = self.repository.update_session(int(session["id"]), {"last_seen_at": self._now()}) or session
         return self.serialize_session(session, lab_name=lab_name)
 
-    def login_lab(self, lab_name: str, *, username: str, password: str, lab_code: str = "") -> dict[str, Any]:
-        self.ensure_seed_users()
-        user = self.repository.find_user_by_username(username)
-        if not user or not user.get("active") or not verify_password(password, normalize_text(user.get("password_hash"))):
-            raise AttendanceError(401, "Invalid employee credentials")
+    def _login_user_to_lab(self, user: dict[str, Any], lab_name: str, *, lab_code: str = "") -> dict[str, Any]:
         now = self._now()
         normalized_lab_name = normalize_text(lab_name) or self.repository.resolve_lab_name(lab_code)
         normalized_lab_code = normalize_text(lab_code)
@@ -766,6 +876,21 @@ class AttendanceService:
                 started_at=now,
             )
         return self.serialize_session(session, lab_name=normalized_lab_name)
+
+    def login_lab(self, lab_name: str, *, username: str, password: str, lab_code: str = "") -> dict[str, Any]:
+        self.ensure_seed_users()
+        user = self.repository.find_user_by_username(username)
+        if not user or not user.get("active") or not verify_password(password, normalize_text(user.get("password_hash"))):
+            raise AttendanceError(401, "Invalid employee credentials")
+        return self._login_user_to_lab(user, lab_name, lab_code=lab_code)
+
+    def login_lab_by_qr(self, lab_name: str, *, qr_payload: str, lab_code: str = "") -> dict[str, Any]:
+        self.ensure_seed_users()
+        token_hash = hash_qr_token(qr_payload)
+        user = self.repository.find_user_by_qr_token_hash(token_hash)
+        if not user or not user.get("active"):
+            raise AttendanceError(401, "Invalid employee QR code")
+        return self._login_user_to_lab(user, lab_name, lab_code=lab_code)
 
     def logout_lab(self, lab_name: str, *, reason: str = "manual") -> dict[str, Any]:
         now = self._now()
@@ -925,11 +1050,15 @@ CREATE TABLE IF NOT EXISTS sys_attendance_user (
   employee_name VARCHAR(100) NOT NULL,
   role_name VARCHAR(80) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
+  qr_token_hash VARCHAR(64) NULL,
+  qr_token_payload VARCHAR(255) NULL,
+  qr_token_created_at DATETIME NULL,
   active TINYINT NOT NULL DEFAULT 1,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id),
-  UNIQUE KEY uk_sys_attendance_user_username (username)
+  UNIQUE KEY uk_sys_attendance_user_username (username),
+  KEY idx_sys_attendance_user_qr_token_hash (qr_token_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS biz_lab_attendance_session (

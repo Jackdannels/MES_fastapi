@@ -29,7 +29,7 @@ const writeJson = async (path, { body, method = "POST", message }) => {
     body: JSON.stringify(body || {}),
   });
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    throw new Error((await readErrorMessage(response)) || message);
   }
   return response.json();
 };
@@ -47,6 +47,15 @@ async function loginLaboratoryAttendance({ labName, password, username }) {
       password: String(password || ""),
     },
     message: "试验间登录失败",
+  });
+}
+
+async function loginLaboratoryAttendanceByQr({ labName, qrPayload }) {
+  return writeJson(`/api/attendance/labs/${encodeLabName(labName)}/login/qr`, {
+    body: {
+      qrPayload: String(qrPayload || "").trim(),
+    },
+    message: "扫码登录失败",
   });
 }
 
@@ -112,6 +121,17 @@ async function resetAttendanceUserPassword(userId, payload = {}) {
   });
 }
 
+async function resetAttendanceUserQrToken(userId) {
+  return writeJson(`/api/attendance/users/${encodeURIComponent(String(userId))}/qr-token/reset`, {
+    body: {},
+    message: "生成员工二维码失败",
+  });
+}
+
+async function readAttendanceUserQrToken(userId) {
+  return readJson(`/api/attendance/users/${encodeURIComponent(String(userId))}/qr-token`, "读取员工二维码失败");
+}
+
 async function deleteAttendanceUser(userId, payload = {}) {
   return writeJson(`/api/attendance/users/${encodeURIComponent(String(userId))}`, {
     method: "DELETE",
@@ -129,9 +149,12 @@ export {
   listAttendanceUsers,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,
+  loginLaboratoryAttendanceByQr,
   logoutLaboratoryAttendance,
   markLaboratoryAttendanceWorkStarted,
   readLaboratoryAttendanceSession,
+  readAttendanceUserQrToken,
   resetAttendanceUserPassword,
+  resetAttendanceUserQrToken,
   updateAttendanceUser,
 };

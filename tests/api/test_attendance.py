@@ -103,6 +103,106 @@ def test_attendance_creates_employee_account_for_role_information_maintenance(cl
     assert login_response.json()["employeeName"] == "新增员工"
 
 
+def test_attendance_qr_token_login_opens_lab_session_and_reset_invalidates_old_token(client):
+    created = client.post(
+        "/api/attendance/users",
+        json={
+            "username": "qr-worker",
+            "password": "pw123",
+            "employeeName": "扫码员工",
+            "roleName": "试验员",
+            "active": True,
+        },
+    )
+    assert created.status_code == 201
+    user_id = created.json()["id"]
+
+    reset = client.post(
+        f"/api/attendance/users/{user_id}/qr-token/reset",
+        json={},
+    )
+    assert reset.status_code == 200
+    first_payload = reset.json()["qrPayload"]
+    assert first_payload.startswith("MES-ATTENDANCE:QR:")
+    assert reset.json()["qrToken"]
+    assert reset.json()["user"]["hasQrToken"] is True
+
+    read_existing = client.get(f"/api/attendance/users/{user_id}/qr-token")
+    assert read_existing.status_code == 200
+    assert read_existing.json()["qrPayload"] == first_payload
+    assert read_existing.json()["user"]["username"] == "qr-worker"
+
+    login_response = client.post(
+        "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login/qr",
+        json={"qrPayload": first_payload},
+    )
+    assert login_response.status_code == 200
+    assert login_response.json()["username"] == "qr-worker"
+    assert login_response.json()["employeeName"] == "扫码员工"
+    assert login_response.json()["labName"] == "冲击一室"
+
+    second_reset = client.post(
+        f"/api/attendance/users/{user_id}/qr-token/reset",
+        json={},
+    )
+    assert second_reset.status_code == 200
+    assert second_reset.json()["qrPayload"] != first_payload
+
+    old_login = client.post(
+        "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login/qr",
+        json={"qrPayload": first_payload},
+    )
+    assert old_login.status_code == 401
+    assert old_login.json() == {"detail": "Invalid employee QR code"}
+
+
+def test_attendance_read_qr_token_rejects_employee_without_generated_code(client):
+    created = client.post(
+        "/api/attendance/users",
+        json={
+            "username": "no-qr-worker",
+            "password": "pw123",
+            "employeeName": "无码员工",
+            "roleName": "试验员",
+            "active": True,
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.get(f"/api/attendance/users/{created.json()['id']}/qr-token")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Employee QR code not generated"}
+
+
+def test_attendance_qr_login_rejects_inactive_employee(client):
+    created = client.post(
+        "/api/attendance/users",
+        json={
+            "username": "inactive-qr-worker",
+            "password": "pw123",
+            "employeeName": "停用扫码员工",
+            "roleName": "试验员",
+            "active": False,
+        },
+    )
+    assert created.status_code == 201
+
+    reset = client.post(
+        f"/api/attendance/users/{created.json()['id']}/qr-token/reset",
+        json={},
+    )
+    assert reset.status_code == 200
+
+    response = client.post(
+        "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login/qr",
+        json={"qrPayload": reset.json()["qrPayload"]},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid employee QR code"}
+
+
 def test_attendance_work_time_date_filter_is_accepted(client):
     today = datetime.now(timezone.utc).date().isoformat()
 
