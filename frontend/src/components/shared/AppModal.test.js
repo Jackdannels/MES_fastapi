@@ -36,4 +36,21 @@ describe("AppModal", () => {
 
     expect(wrapper.emitted("close")).toHaveLength(2);
   });
+
+  test("can hide the close button and ignore backdrop close", async () => {
+    const wrapper = mount(AppModal, {
+      props: {
+        closeOnBackdrop: false,
+        open: true,
+        showClose: false,
+        title: "不可关闭弹窗",
+      },
+    });
+
+    expect(wrapper.find(".modal-close").exists()).toBe(false);
+
+    await wrapper.find(".modal-backdrop").trigger("click");
+
+    expect(wrapper.emitted("close")).toBeUndefined();
+  });
 });

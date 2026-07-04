@@ -11,6 +11,13 @@ vi.mock("@/lib/masterDataApi", () => ({
   readMasterLabs: vi.fn(async () => []),
 }));
 
+vi.mock("@/lib/attendanceApi", () => ({
+  loginLaboratoryAttendance: vi.fn(async () => ({ active: true })),
+  logoutLaboratoryAttendance: vi.fn(async () => ({ active: false })),
+  markLaboratoryAttendanceWorkStarted: vi.fn(async () => ({ active: true })),
+  readLaboratoryAttendanceSession: vi.fn(async (labName) => ({ active: false, labName })),
+}));
+
 const flushPromises = async (cycles = 4) => {
   for (let index = 0; index < cycles; index += 1) {
     await Promise.resolve();

@@ -9,5 +9,6 @@ frontend/.vite/
 frontend/dist/
 app/static/dist/
 .worktrees/
+.superpowers/
 *.stdout.log
 *.stderr.log

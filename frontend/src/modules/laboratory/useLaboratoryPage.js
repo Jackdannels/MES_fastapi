@@ -15,6 +15,13 @@ import {
   startLaboratoryExperiment,
   withdrawCurrentLaboratoryExperiment,
 } from "@/lib/laboratoryApi";
+import {
+  loginLaboratoryAttendance,
+  logoutLaboratoryAttendance,
+  markLaboratoryAttendanceWorkStarted,
+  readLaboratoryAttendanceSession,
+} from "@/lib/attendanceApi";
+import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
@@ -41,6 +48,7 @@ import {
 } from "./model";
 
 const RUNNING_MODAL_RESTORE_MS = 10_000;
+const COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS = 60_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
@@ -51,6 +59,7 @@ const SALT_SPRAY_LAB_CODE = "LAB_SALT";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 5;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
+const ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS = 30;
 const LABORATORY_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.tasks,
   STORAGE_KEYS.schedules,
@@ -64,28 +73,27 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();
+const formatFlowTimeForAttendance = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+};
+const formatAttendanceDuration = (elapsedSeconds) => {
+  const seconds = Math.max(0, Math.floor(Number(elapsedSeconds) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+};
 const isResettableTrayStatus = (status) => {
   const normalized = normalizeText(status);
   return RESETTABLE_TRAY_STATUSES.has(normalized) || isAxisPartialProgressStatus(normalized);
 };
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
-const normalizeAxisCodes = (value) => {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.replace(/，/g, ",").split(",")
-      : [];
-  const seen = new Set();
-  return rawValues.map(normalizeText).filter((axisCode) => {
-    if (!axisCode || seen.has(axisCode)) {
-      return false;
-    }
-    seen.add(axisCode);
-    return true;
-  });
-};
-const stepAxisCode = (step) => normalizeText(step?.axis_code || step?.axisCode);
+const stepAxisCode = (step) => canonicalAxisCode(step?.axis_code || step?.axisCode);
 const stepRunNo = (step) => normalizeText(step?.run_no || step?.runNo);
 const stepStatus = (step) => normalizeText(step?.status || step?.step_status || step?.stepStatus);
 const scheduleAxisCodes = (schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
@@ -237,13 +245,28 @@ function useLaboratoryPage(options = {}) {
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
+  const attendanceSession = ref({ active: false });
+  const attendanceLoginModalOpen = ref(false);
+  const attendanceLoginUsername = ref("");
+  const attendanceLoginPassword = ref("");
+  const attendanceLoginError = ref("");
+  const attendanceSubmitting = ref(false);
+  const attendanceLogoutPromptOpen = ref(false);
+  const attendanceLogoutCountdown = ref(ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS);
   const tickNow = ref(now || new Date());
   let tickTimer = null;
   let runningModalRestoreTimer = null;
+  let completedRunningModalAutoCloseTimer = null;
   let fixtureConfirmTimer = null;
   let fixtureConfirmSuccessTimer = null;
   let hostlessFixtureReadyTimer = null;
   let hostlessStartTimer = null;
+  let attendanceLogoutTimer = null;
+  let attendanceSessionLoadPromise = null;
+  let attendanceWorkStartPendingKey = "";
+  let optimisticAttendanceWorkStartedAt = "";
+  let suppressNextAttendanceWorkStart = false;
+  let pendingAttendanceAction = null;
   let samplesPersistQueue = null;
   let ignoreNextSamplesUpdatedLoad = false;
   const completingRunningExperimentKeys = new Set();
@@ -253,6 +276,26 @@ function useLaboratoryPage(options = {}) {
   let hostInterfaceModeSync = null;
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
+  const attendanceLoggedIn = computed(() => Boolean(attendanceSession.value?.active && normalizeText(attendanceSession.value?.username)));
+  const attendanceWorkStartedAt = computed(() => normalizeText(attendanceSession.value?.workStartedAt || attendanceSession.value?.work_started_at));
+  const attendanceStatus = computed(() => {
+    if (!attendanceLoggedIn.value) {
+      return {
+        detail: "请先登录后操作",
+        employeeName: "未登录",
+      };
+    }
+    const loggedInAt = normalizeText(attendanceSession.value?.loggedInAt || attendanceSession.value?.logged_in_at);
+    const workStartedAt = attendanceWorkStartedAt.value;
+    const workStartedTime = workStartedAt ? new Date(workStartedAt).getTime() : Number.NaN;
+    const elapsedSeconds = Number.isNaN(workStartedTime)
+      ? 0
+      : Math.floor((tickNow.value.getTime() - workStartedTime) / 1000);
+    return {
+      detail: `${loggedInAt ? formatFlowTimeForAttendance(loggedInAt) : "--:--"} 登录 / 当前 ${formatAttendanceDuration(elapsedSeconds)}`,
+      employeeName: normalizeText(attendanceSession.value?.employeeName || attendanceSession.value?.employee_name || attendanceSession.value?.username),
+    };
+  });
 
   const view = computed(() =>
     buildLaboratoryWorkbenchView({
@@ -274,6 +317,7 @@ function useLaboratoryPage(options = {}) {
 
   const summary = computed(() => buildLaboratorySummary(view.value.scheduleRows, now || new Date()));
   const currentTask = computed(() => view.value.currentTask);
+  const selectedTask = computed(() => view.value.selectedTask);
   const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
   const hasLaboratoryTasks = computed(() => view.value.scheduleRows.length > 0);
@@ -300,11 +344,29 @@ function useLaboratoryPage(options = {}) {
       return `当前${laboratoryConfig.value.labName}暂无任务，请先在排程看板安排任务后再进行比对。`;
     }
     if (!currentTask.value || laboratoryUnderMaintenance.value) {
+      const trayFlowTask = view.value.trayFlowTask;
+      const selectedTrayRow = view.value.selectedTrayRow;
+      const targetLab = normalizeText(selectedTrayRow?.targetLab || selectedTrayRow?.target_lab || selectedTrayRow?.location);
+      const currentLab = normalizeText(laboratoryConfig.value.labName);
+      if (trayFlowTask && targetLab && currentLab && targetLab !== currentLab) {
+        return `当前托盘已送至${targetLab}，${currentLab}暂不能开启实验流程。`;
+      }
       return "请先在查看任务中选择一个任务，再开启实验流程。";
     }
     return "";
   });
   const runningExperiment = computed(() => view.value.runningExperiment);
+  const runningAttendanceStartKey = computed(() => {
+    if (!runningExperiment.value?.active) {
+      return "";
+    }
+    const runNo = normalizeText(runningExperiment.value?.runNo);
+    const taskCode = normalizeText(runningExperiment.value?.taskCode || currentTask.value?.taskCode);
+    const experimentCode = normalizeText(runningExperiment.value?.experimentCode || currentTask.value?.experimentCode);
+    const labName = normalizeText(laboratoryConfig.value.labName);
+    const employeeKey = attendanceLoggedIn.value ? normalizeText(attendanceSession.value?.username) : "";
+    return [labName, employeeKey, runNo || `${taskCode}:${experimentCode}`].filter(Boolean).join("::");
+  });
   const axisContinuation = computed(() => {
     const activeRunNo = normalizeText(runningExperiment.value?.runNo);
     const taskCode = normalizeText(currentTask.value?.taskCode);
@@ -412,6 +474,29 @@ function useLaboratoryPage(options = {}) {
     };
   });
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
+  const startAttendanceWorkForRunningExperiment = () => {
+    const startKey = runningAttendanceStartKey.value;
+    if (suppressNextAttendanceWorkStart) {
+      suppressNextAttendanceWorkStart = false;
+      return;
+    }
+    if (optimisticAttendanceWorkStartedAt && attendanceWorkStartedAt.value) {
+      return;
+    }
+    optimisticAttendanceWorkStartedAt = "";
+    if (!startKey || !attendanceLoggedIn.value || attendanceWorkStartedAt.value || attendanceWorkStartPendingKey === startKey) {
+      return;
+    }
+    attendanceWorkStartPendingKey = startKey;
+    void markLaboratoryAttendanceWorkStarted(laboratoryConfig.value.labName)
+      .then((session) => {
+        attendanceSession.value = session;
+      })
+      .catch((error) => {
+        attendanceLoginError.value = formatErrorMessage(error);
+        attendanceWorkStartPendingKey = "";
+      });
+  };
   const operationLock = computed(() =>
     getLaboratoryOperationLock(view.value.allScheduleRows, currentTask.value, {
       code: laboratoryConfig.value.labCode,
@@ -513,6 +598,12 @@ function useLaboratoryPage(options = {}) {
       runningModalRestoreTimer = null;
     }
   };
+  const clearCompletedRunningModalAutoCloseTimer = () => {
+    if (completedRunningModalAutoCloseTimer && typeof window !== "undefined") {
+      window.clearTimeout(completedRunningModalAutoCloseTimer);
+      completedRunningModalAutoCloseTimer = null;
+    }
+  };
   const clearFixtureConfirmTimer = () => {
     if (fixtureConfirmTimer && typeof window !== "undefined") {
       window.clearInterval(fixtureConfirmTimer);
@@ -541,6 +632,146 @@ function useLaboratoryPage(options = {}) {
     clearHostlessFixtureReadyTimer();
     clearHostlessStartTimer();
   };
+  const clearAttendanceLogoutTimer = () => {
+    if (attendanceLogoutTimer && typeof window !== "undefined") {
+      window.clearInterval(attendanceLogoutTimer);
+      attendanceLogoutTimer = null;
+    }
+  };
+
+  const loadAttendanceSession = async (labName = laboratoryConfig.value.labName) => {
+    const normalizedLabName = normalizeText(labName);
+    if (!normalizedLabName) {
+      attendanceSession.value = { active: false };
+      return;
+    }
+    const loadPromise = (async () => {
+      try {
+        attendanceSession.value = await readLaboratoryAttendanceSession(normalizedLabName);
+      } catch {
+        attendanceSession.value = { active: false, labName: normalizedLabName };
+      }
+    })();
+    attendanceSessionLoadPromise = loadPromise;
+    try {
+      await loadPromise;
+    } finally {
+      if (attendanceSessionLoadPromise === loadPromise) {
+        attendanceSessionLoadPromise = null;
+      }
+    }
+  };
+
+  const openAttendanceLogin = () => {
+    attendanceLoginError.value = "";
+    attendanceLoginPassword.value = "";
+    attendanceLoginModalOpen.value = true;
+  };
+
+  const closeAttendanceLogin = () => {
+    attendanceLoginModalOpen.value = false;
+    pendingAttendanceAction = null;
+  };
+
+  const runWithAttendance = async (action) => {
+    if (attendanceLoggedIn.value) {
+      await action();
+      return;
+    }
+    if (attendanceSessionLoadPromise) {
+      await attendanceSessionLoadPromise;
+    }
+    if (attendanceLoggedIn.value) {
+      await action();
+      return;
+    }
+    pendingAttendanceAction = action;
+    openAttendanceLogin();
+  };
+
+  const submitAttendanceLogin = async () => {
+    if (attendanceSubmitting.value) {
+      return;
+    }
+    attendanceLoginError.value = "";
+    attendanceSubmitting.value = true;
+    try {
+      attendanceSession.value = await loginLaboratoryAttendance({
+        labName: laboratoryConfig.value.labName,
+        password: attendanceLoginPassword.value,
+        username: attendanceLoginUsername.value,
+      });
+      attendanceLoginModalOpen.value = false;
+      attendanceLoginPassword.value = "";
+      const action = pendingAttendanceAction;
+      pendingAttendanceAction = null;
+      if (typeof action === "function") {
+        await action();
+      }
+    } catch (error) {
+      attendanceLoginError.value = formatErrorMessage(error) || "试验间登录失败";
+    } finally {
+      attendanceSubmitting.value = false;
+    }
+  };
+
+  const startAttendanceWorkOptimistically = (startedAt = "") => {
+    const normalizedStartedAt = normalizeText(startedAt);
+    if (!attendanceLoggedIn.value || attendanceWorkStartedAt.value || !normalizedStartedAt) {
+      return null;
+    }
+    const previousSession = { ...(attendanceSession.value || {}) };
+    attendanceSession.value = {
+      ...previousSession,
+      active: true,
+      labName: normalizeText(previousSession.labName || previousSession.lab_name) || laboratoryConfig.value.labName,
+      workStartedAt: normalizedStartedAt,
+    };
+    optimisticAttendanceWorkStartedAt = normalizedStartedAt;
+    suppressNextAttendanceWorkStart = true;
+    return previousSession;
+  };
+
+  const rollbackOptimisticAttendanceWork = (previousSession, startedAt = "") => {
+    if (!previousSession) {
+      return;
+    }
+    const normalizedStartedAt = normalizeText(startedAt);
+    if (normalizeText(attendanceSession.value?.workStartedAt || attendanceSession.value?.work_started_at) !== normalizedStartedAt) {
+      return;
+    }
+    attendanceSession.value = previousSession;
+    optimisticAttendanceWorkStartedAt = "";
+    suppressNextAttendanceWorkStart = false;
+  };
+
+  const logoutAttendance = async (reason = "manual") => {
+    clearAttendanceLogoutTimer();
+    attendanceLogoutPromptOpen.value = false;
+    attendanceLogoutCountdown.value = ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS;
+    attendanceSession.value = await logoutLaboratoryAttendance({
+      labName: laboratoryConfig.value.labName,
+      reason,
+    });
+  };
+
+  const openAttendanceLogoutPrompt = () => {
+    if (!attendanceLoggedIn.value || typeof window === "undefined") {
+      return;
+    }
+    clearAttendanceLogoutTimer();
+    attendanceLogoutCountdown.value = ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS;
+    attendanceLogoutPromptOpen.value = true;
+    attendanceLogoutTimer = window.setInterval(() => {
+      attendanceLogoutCountdown.value = Math.max(0, attendanceLogoutCountdown.value - 1);
+      if (attendanceLogoutCountdown.value > 0) {
+        return;
+      }
+      void logoutAttendance("completion-timeout").catch((error) => {
+        attendanceLoginError.value = formatErrorMessage(error);
+      });
+    }, 1000);
+  };
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -566,10 +797,15 @@ function useLaboratoryPage(options = {}) {
     completePromptVisible.value = false;
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
+    attendanceLoginModalOpen.value = false;
+    attendanceLogoutPromptOpen.value = false;
+    pendingAttendanceAction = null;
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
     clearHostlessTimers();
+    clearAttendanceLogoutTimer();
+    clearCompletedRunningModalAutoCloseTimer();
     flushPendingRealtimeRefresh();
   };
 
@@ -594,11 +830,23 @@ function useLaboratoryPage(options = {}) {
       runningModalRestoreTimer = null;
     }, RUNNING_MODAL_RESTORE_MS);
   };
+  const scheduleCompletedRunningModalAutoClose = () => {
+    clearCompletedRunningModalAutoCloseTimer();
+    if (!completedRunningExperiment.value?.active || typeof window === "undefined") {
+      return;
+    }
+    completedRunningModalAutoCloseTimer = window.setTimeout(() => {
+      completedRunningExperiment.value = null;
+      runningModalVisible.value = false;
+      completedRunningModalAutoCloseTimer = null;
+    }, COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS);
+  };
 
   const hideRunningModal = () => {
     if (completedRunningExperiment.value?.active) {
       completedRunningExperiment.value = null;
       runningModalVisible.value = false;
+      clearCompletedRunningModalAutoCloseTimer();
       clearRunningModalRestoreTimer();
       return;
     }
@@ -658,6 +906,8 @@ function useLaboratoryPage(options = {}) {
     };
     runningModalVisible.value = true;
     completePromptVisible.value = false;
+    openAttendanceLogoutPrompt();
+    scheduleCompletedRunningModalAutoClose();
     clearRunningModalRestoreTimer();
     return true;
   };
@@ -798,6 +1048,7 @@ function useLaboratoryPage(options = {}) {
       if (explicitLabName) {
         writeStoredLabName(nextConfig.labName);
       }
+      const attendanceLoad = loadAttendanceSession(nextConfig.labName);
       const preserveInvalid = silent;
       applySnapshotArray(snapshot, STORAGE_KEYS.tasks, tasks, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.schedules, schedules, { preserveInvalid });
@@ -808,6 +1059,7 @@ function useLaboratoryPage(options = {}) {
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, experimentTrays, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, samples, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.devices, devices, { preserveInvalid });
+      await attendanceLoad;
     } finally {
       if (showBlockingLoading) {
         loading.value = false;
@@ -856,6 +1108,12 @@ function useLaboratoryPage(options = {}) {
     hasPendingSamplesRefresh = false;
     void load({ silent: true });
   };
+
+  watch(
+    [runningAttendanceStartKey, attendanceLoggedIn, attendanceWorkStartedAt],
+    startAttendanceWorkForRunningExperiment,
+    { flush: "post" },
+  );
 
   const storageRefresh = useStorageSnapshotRefresh({
     keys: Array.from(LABORATORY_SNAPSHOT_KEYS),
@@ -909,6 +1167,8 @@ function useLaboratoryPage(options = {}) {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
     clearHostlessTimers();
+    clearAttendanceLogoutTimer();
+    clearCompletedRunningModalAutoCloseTimer();
   });
 
   const openScheduleBoard = () => {
@@ -922,7 +1182,7 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const openTaskList = () => {
-    pendingTaskCode.value = taskSelectionKey(currentTask.value);
+    pendingTaskCode.value = taskSelectionKey(selectedTask.value || currentTask.value);
     taskListModalOpen.value = true;
   };
   const closeTaskList = () => {
@@ -933,9 +1193,11 @@ function useLaboratoryPage(options = {}) {
     if (runningInteractionLocked.value || !actionState.value.canCompare) {
       return;
     }
-    resetCompareState();
-    compareModalOpen.value = true;
-    await focusScanInput();
+    await runWithAttendance(async () => {
+      resetCompareState();
+      compareModalOpen.value = true;
+      await focusScanInput();
+    });
   };
   const closeCompare = () => {
     compareModalOpen.value = false;
@@ -1057,6 +1319,12 @@ function useLaboratoryPage(options = {}) {
     }
   };
   const applyExperimentStartResponse = (payload = {}) => {
+    if (payload?.attendanceSession && typeof payload.attendanceSession === "object") {
+      attendanceSession.value = payload.attendanceSession;
+      optimisticAttendanceWorkStartedAt = normalizeText(
+        payload.attendanceSession.workStartedAt || payload.attendanceSession.work_started_at,
+      ) || optimisticAttendanceWorkStartedAt;
+    }
     if (Array.isArray(payload?.tasks)) {
       tasks.value = payload.tasks;
     }
@@ -1270,6 +1538,9 @@ function useLaboratoryPage(options = {}) {
     }
     const startExperiment = () => {
       hostlessStartTimer = null;
+      const startedAt = formatLocalDateTime();
+      suppressNextAttendanceWorkStart = true;
+      const previousAttendanceSession = startAttendanceWorkOptimistically(startedAt);
       void startLaboratoryExperiment({
         axisBatchNo,
         axisCodes,
@@ -1281,7 +1552,7 @@ function useLaboratoryPage(options = {}) {
         plannedHours,
         runNo,
         scheduleId,
-        startedAt: formatLocalDateTime(),
+        startedAt,
         subExperimentCode,
         taskCode,
         trayCodes,
@@ -1293,6 +1564,8 @@ function useLaboratoryPage(options = {}) {
           }
         })
         .catch((error) => {
+          rollbackOptimisticAttendanceWork(previousAttendanceSession, startedAt);
+          suppressNextAttendanceWorkStart = false;
           laboratoryMqError.value = {
             detail: formatErrorMessage(error),
             title: "实验启动失败",
@@ -1353,7 +1626,9 @@ function useLaboratoryPage(options = {}) {
     if (runningInteractionLocked.value || !canRequestFixtureInstall.value) {
       return;
     }
-    installModalOpen.value = true;
+    void runWithAttendance(async () => {
+      installModalOpen.value = true;
+    });
   };
   const closeInstall = () => {
     installModalOpen.value = false;
@@ -1401,7 +1676,9 @@ function useLaboratoryPage(options = {}) {
     if (runningInteractionLocked.value || !canRequestReady.value) {
       return;
     }
-    readyModalOpen.value = true;
+    void runWithAttendance(async () => {
+      readyModalOpen.value = true;
+    });
   };
   const closeReady = () => {
     readyModalOpen.value = false;
@@ -1492,7 +1769,9 @@ function useLaboratoryPage(options = {}) {
     if (!runningExperiment.value?.active) {
       return;
     }
-    completePromptVisible.value = true;
+    void runWithAttendance(async () => {
+      completePromptVisible.value = true;
+    });
   };
   const closeCompleteConfirm = () => {
     completePromptVisible.value = false;
@@ -1531,7 +1810,8 @@ function useLaboratoryPage(options = {}) {
           && normalizeText(experiment?.experiment_code) === experimentCode
           && COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(experiment?.status)),
       );
-      completedRunningExperiment.value = keepModal && (!effectiveAxisCode || experimentCompleted)
+      const continuingNextAxisInSchedule = keepModal && Boolean(normalizeText(nextAxisCode));
+      completedRunningExperiment.value = keepModal && !continuingNextAxisInSchedule && (!effectiveAxisCode || experimentCompleted)
         ? {
             ...runningSnapshot,
             active: true,
@@ -1567,6 +1847,10 @@ function useLaboratoryPage(options = {}) {
       }
       completePromptVisible.value = false;
       runningModalVisible.value = keepModal || Boolean(effectiveAxisCode && !experimentCompleted);
+      if (!continuingNextAxisInSchedule) {
+        openAttendanceLogoutPrompt();
+        scheduleCompletedRunningModalAutoClose();
+      }
       clearRunningModalRestoreTimer();
       flushPendingRealtimeRefresh();
     } finally {
@@ -1619,11 +1903,22 @@ function useLaboratoryPage(options = {}) {
 
   return {
     actionState,
+    attendanceLoggedIn,
+    attendanceLoginError,
+    attendanceLoginModalOpen,
+    attendanceLoginPassword,
+    attendanceLoginUsername,
+    attendanceLogoutCountdown,
+    attendanceLogoutPromptOpen,
+    attendanceSession,
+    attendanceStatus,
+    attendanceSubmitting,
     canRequestFixtureInstall,
     canRequestReady,
     canTeleportScheduleAction,
     checklist,
     closeCompleteConfirm,
+    closeAttendanceLogin,
     currentAxisCompletion,
     compareFeedback,
     compareScanInputRef,
@@ -1662,14 +1957,17 @@ function useLaboratoryPage(options = {}) {
     runningInteractionLocked,
     currentTask,
     currentTaskSwitchLocked,
+    selectedTask,
     hasLaboratoryTasks,
     openCompare,
+    openAttendanceLogin,
     openCompleteConfirm,
     openInstall,
     openReady,
     openResetConfirm,
     openScheduleBoard,
     openTaskList,
+    logoutAttendance,
     showRunningModal,
     currentTaskFlow: computed(() => view.value.currentTaskFlow),
     currentExperimentTrayRows: computed(() => view.value.currentExperimentTrayRows),
@@ -1695,9 +1993,11 @@ function useLaboratoryPage(options = {}) {
     },
     summary,
     submitCompareScan,
+    submitAttendanceLogin,
     selectedTrayCode,
     selectedTrayFlow: computed(() => view.value.selectedTrayFlow),
     selectedTrayRow: computed(() => view.value.selectedTrayRow),
+    trayFlowTask: computed(() => view.value.trayFlowTask),
     setSelectedTrayCode: (trayCode) => {
       selectedTrayCode.value = String(trayCode ?? "");
     },

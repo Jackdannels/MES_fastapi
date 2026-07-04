@@ -3,9 +3,11 @@ import re
 
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
+from app.core.axis_codes import sort_axis_codes
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
 from app.api.routes.storage import publish_storage_update, _validate_fixture_locked_schedules
+from app.services.attendance_service import get_attendance_service
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 SNAPSHOT_KEYS = (
@@ -18,6 +20,8 @@ SNAPSHOT_KEYS = (
     "mes.experiment_samples",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
+    "mes.staging_events",
 )
 TASK_STORAGE_UPDATE_KEYS = (
     *SNAPSHOT_KEYS,
@@ -491,7 +495,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
         normalized = normalize_text(item).lower()
         if normalized and normalized not in axis_codes:
             axis_codes.append(normalized)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def axis_codes_for_experiment_type(task: dict[str, Any], experiment_type: str) -> list[str]:
@@ -659,6 +663,7 @@ def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 def reset_tasks() -> dict[str, int]:
     storage = get_storage_backend()
     result = run_demo_reset(storage)
+    get_attendance_service().clear_all_sessions(reason="task-reset")
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return result
 

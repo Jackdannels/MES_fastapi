@@ -1770,14 +1770,14 @@ describe("TransferWorkbench runtime", () => {
       allocationSaved: true,
       task: {
         ...preAllocatedWorkspace.task,
-        taskStatus: "已入库",
+        taskStatus: "未入库",
         taskProgress: "已确认入库",
         receivedTime: "2026-04-21 16:30",
       },
       assignedTrays: preAllocatedWorkspace.assignedTrays.map((tray) => ({
         ...tray,
-        trayStatus: "已入库",
-        samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "已入库" })),
+        trayStatus: "未入库",
+        samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "未入库" })),
       })),
     };
 
@@ -1818,10 +1818,76 @@ describe("TransferWorkbench runtime", () => {
     const feedback = wrapper.get('[data-testid="transfer-detail-feedback"]');
     expect(feedback.text()).toContain("任务已确认入库");
     expect(feedback.classes()).toContain("app-feedback--success");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("托盘状态 到货");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-04-201-SP-001");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("到货");
     expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/transfer-area/bootstrap"))).toHaveLength(1);
 
     await feedback.trigger("click");
     expect(wrapper.find('[data-testid="transfer-detail-feedback"]').exists()).toBe(false);
+  });
+
+  test("handover confirmation marks auto-allocation writes as own updates and keeps samples stored after one click", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    const savedWorkspace = { ...workspacePayload, allocationSaved: true };
+    const staleConfirmedWorkspace = {
+      ...savedWorkspace,
+      task: {
+        ...savedWorkspace.task,
+        taskProgress: "已确认入库",
+      },
+      assignedTrays: savedWorkspace.assignedTrays.map((tray) => ({
+        ...tray,
+        trayStatus: "未入库",
+        samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "未入库" })),
+      })),
+    };
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate") && options.method === "POST") {
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }) };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/confirm-storage") && options.method === "POST") {
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已确认入库", workspace: staleConfirmedWorkspace }) };
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    const confirmButton = wrapper.findAll("button").find((button) => button.text() === "确认入库");
+    await confirmButton.trigger("click");
+    await settle(wrapper);
+    await settle(wrapper);
+
+    const allocateCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/transfer-area/tasks/101/allocate"));
+    const confirmCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/transfer-area/tasks/101/confirm-storage"));
+    expect(allocateCall?.[1]?.headers).toEqual(expect.objectContaining({
+      "X-MES-Update-Source": "transfer-workbench",
+      "X-MES-Update-Request-Id": expect.stringContaining("allocate"),
+    }));
+    expect(confirmCall?.[1]?.headers).toEqual(expect.objectContaining({
+      "X-MES-Update-Source": "transfer-workbench",
+      "X-MES-Update-Request-Id": expect.stringContaining("confirm-storage"),
+    }));
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("托盘状态 到货");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("到货");
   });
 
   test("pre-allocation mode allows printing barcodes after saving even before arrival", async () => {

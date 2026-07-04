@@ -3159,8 +3159,139 @@ describe("laboratory model", () => {
       requiredAxisCodes: ["x+", "x-"],
       statusLabel: "冲击试验部分完成 1/2轴",
     }));
-    expect(view.currentTaskFlow.currentStatus).toBe("冲击试验部分完成 1/2轴");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("冲击试验部分完成 1/2轴");
     expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：TP-AXIS-PARTIAL | 当前状态：冲击试验部分完成 1/2轴");
+  });
+
+  test("buildLaboratoryWorkbenchView keeps task flow running when only one tray has completed all axes", () => {
+    const taskCode = "SYLU-2026-07-021";
+    const experimentCode = `${taskCode}-A`;
+    const completedTrayCode = `${taskCode}-TP-001`;
+    const pendingTrayCode = `${taskCode}-TP-002`;
+    const firstAxisCodes = ["x+", "y+", "y-"];
+    const secondAxisCodes = ["z-", "x-", "z+"];
+    const allAxisCodes = [...firstAxisCodes, ...secondAxisCodes];
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          run_no: "run-impact-axis-001",
+          schedule_id: "schedule-impact-axis-001",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: `${experimentCode}-AXIS-001`,
+          device: "冲击一室",
+          status: "实验已完成",
+          axis_codes: firstAxisCodes,
+          tray_codes: [completedTrayCode],
+        },
+        {
+          run_no: "run-impact-axis-002",
+          schedule_id: "schedule-impact-axis-002",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: `${experimentCode}-AXIS-002`,
+          device: "冲击一室",
+          status: "实验已完成",
+          axis_codes: secondAxisCodes,
+          tray_codes: [completedTrayCode],
+        },
+      ],
+      experimentRunSteps: [
+        ...firstAxisCodes.map((axisCode, index) => ({
+          axis_code: axisCode,
+          experiment_code: experimentCode,
+          run_no: "run-impact-axis-001",
+          status: "实验已完成",
+          step_no: index + 1,
+          sub_experiment_code: `${experimentCode}-AXIS-001`,
+          task_code: taskCode,
+          tray_code: completedTrayCode,
+        })),
+        ...secondAxisCodes.map((axisCode, index) => ({
+          axis_code: axisCode,
+          experiment_code: experimentCode,
+          run_no: "run-impact-axis-002",
+          status: "实验已完成",
+          step_no: index + 1,
+          sub_experiment_code: `${experimentCode}-AXIS-002`,
+          task_code: taskCode,
+          tray_code: completedTrayCode,
+        })),
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "run-impact-axis-001",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: `${experimentCode}-AXIS-001`,
+          tray_code: completedTrayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+        },
+        {
+          run_no: "run-impact-axis-002",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: `${experimentCode}-AXIS-002`,
+          tray_code: completedTrayCode,
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: completedTrayCode },
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: pendingTrayCode },
+      ],
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          status: "实验进行中",
+          axis_codes: allAxisCodes,
+        },
+      ],
+      labCode: "LAB_IMPACT_1",
+      labName: "冲击一室",
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "厂家收回",
+          status: "厂家收回",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "厂家收回", tray_code: completedTrayCode }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          location: "接驳区",
+          status: "到货",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "到货", tray_code: pendingTrayCode }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-impact-axis-002",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          sub_experiment_code: `${experimentCode}-AXIS-002`,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-07-03 12:00:00",
+          status: "实验进行中",
+          axis_codes: secondAxisCodes,
+        },
+      ],
+      selectedTrayCode: pendingTrayCode,
+      tasks: [{ code: taskCode, name: "多托盘冲击任务", test_type: "冲击试验" }],
+    });
+
+    expect(view.currentTask.axisProgress).toEqual(expect.objectContaining({
+      totalStatusLabel: "冲击试验已完成 6/6轴",
+    }));
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${pendingTrayCode} | 当前状态：到货`);
   });
 
   test("buildLaboratoryWorkbenchView removes completed axis batch schedule and selects the next axis batch as current", () => {
@@ -3289,7 +3420,8 @@ describe("laboratory model", () => {
       experimentCode,
       axisCodes: remainingAxisCodes,
     }));
-    expect(view.currentTaskFlow.currentStatus).toBe("已排程");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("振动试验部分完成 4/6轴");
     expect(view.selectedTrayFlow.currentStatus).toBe("当前托盘：SYLU-2026-07-001-TP-001 | 当前状态：振动试验部分完成 4/6轴");
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "振动试验部分完成 4/6轴")).toEqual(
       expect.objectContaining({ active: true }),
@@ -3643,7 +3775,8 @@ describe("laboratory model", () => {
     });
 
     expect(view.currentTask).toEqual(expect.objectContaining({ id: "schedule-impact-axis" }));
-    expect(view.currentTaskFlow.currentStatus).toBe("冲击试验部分完成 2/6轴");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("冲击试验部分完成 2/6轴");
     expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${taskCode}-TP-002 | 当前状态：冲击试验部分完成 2/6轴`);
   });
 
@@ -3766,7 +3899,8 @@ describe("laboratory model", () => {
       statusLabel: "振动试验已完成 1/1轴",
       totalStatusLabel: "振动试验部分完成 1/2轴",
     }));
-    expect(view.currentTaskFlow.currentStatus).toBe("振动试验部分完成 1/2轴");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("振动试验部分完成 1/2轴");
     expect(view.selectedTrayRow).toEqual(expect.objectContaining({
       completedForCurrentExperiment: false,
       trayCode: `${taskCode}-TP-002`,
@@ -3881,7 +4015,8 @@ describe("laboratory model", () => {
       tasks: [{ code: taskCode, name: "振动任务", test_type: "振动试验" }],
     });
 
-    expect(view.currentTaskFlow.currentStatus).toBe("振动试验部分完成 2/6轴");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("振动试验部分完成 2/6轴");
     expect(view.selectedTrayRow).toEqual(expect.objectContaining({
       completedForCurrentExperiment: false,
       trayCode: untestedTrayCode,
@@ -9605,6 +9740,158 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("keeps remaining impact axis schedule visible after the shared tray is dispatched to mold", () => {
+    const taskCode = "SYLU-2026-07-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const impactExperimentCode = `${taskCode}-A`;
+    const moldExperimentCode = `${taskCode}-B`;
+    const impactCompletedSubExperimentCode = `${impactExperimentCode}-AXIS-001`;
+    const impactRemainingSubExperimentCode = `${impactExperimentCode}-AXIS-002`;
+    const input = {
+      experimentRuns: [
+        {
+          axis_codes: ["x+", "x-", "y+", "y-"],
+          ended_at: "2026-07-03 20:51:50",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-Z",
+          status: "实验已完成",
+          sub_experiment_code: impactCompletedSubExperimentCode,
+          task_code: taskCode,
+          tray_codes: [trayCode],
+        },
+      ],
+      experimentRunSteps: ["x+", "x-", "y+", "y-"].map((axisCode, index) => ({
+        axis_code: axisCode,
+        ended_at: "2026-07-03 20:51:50",
+        experiment_code: impactExperimentCode,
+        run_no: "RUN-IMPACT-Z",
+        status: "实验已完成",
+        step_no: index + 1,
+        sub_experiment_code: impactCompletedSubExperimentCode,
+        task_code: taskCode,
+      })),
+      experimentRunTrays: [
+        {
+          ended_at: "2026-07-03 20:51:50",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-Z",
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          sub_experiment_code: impactCompletedSubExperimentCode,
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: impactExperimentCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: moldExperimentCode, task_code: taskCode, tray_code: trayCode },
+      ],
+      experiments: [
+        {
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击试验",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: moldExperimentCode,
+          experiment_name: "霉菌试验",
+          required_device: "霉菌试验",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      now: new Date("2026-07-03T21:00:00.000+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          history: [
+            {
+              action: "外观检测间扫码出库",
+              detail: `${trayCode} 送至 霉菌试验室`,
+              location: "霉菌试验室",
+              status: "送至实验室",
+              time: "2026-07-03 20:53:12",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 2/6轴`,
+              location: "冲击一室",
+              status: "冲击试验部分完成 2/6轴",
+              time: "2026-07-03 20:51:50",
+              tray_code: trayCode,
+            },
+          ],
+          location: "霉菌试验室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: moldExperimentCode,
+              target_lab: "霉菌试验室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          axis_codes: ["z+", "z-"],
+          device: "冲击一室",
+          experiment_code: impactExperimentCode,
+          lab_code: "LAB_IMPACT_1",
+          start_at: "2026-07-04 12:00:00",
+          status: "已排程",
+          sub_experiment_code: impactRemainingSubExperimentCode,
+          task_code: taskCode,
+        },
+        {
+          axis_codes: ["x+", "x-", "y+", "y-"],
+          device: "冲击一室",
+          experiment_code: impactExperimentCode,
+          lab_code: "LAB_IMPACT_1",
+          start_at: "2026-07-04 08:00:00",
+          status: "实验已完成",
+          sub_experiment_code: impactCompletedSubExperimentCode,
+          task_code: taskCode,
+        },
+        {
+          device: "霉菌试验室",
+          experiment_code: moldExperimentCode,
+          lab_code: "LAB_MOLD",
+          start_at: "2026-07-05 08:00:00",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "测试实验07021", test_type: "冲击试验 / 霉菌试验" }],
+    };
+
+    const impactView = buildLaboratoryWorkbenchView({ ...input, labName: "冲击一室" });
+    expect(impactView.scheduleRows.map((row) => row.subExperimentCode)).toContain(impactRemainingSubExperimentCode);
+    expect(impactView.scheduleRows.map((row) => row.taskCode)).toContain(taskCode);
+    expect(impactView.currentTask).toBeNull();
+    expect(impactView.currentExperimentTrayRows.map((row) => row.trayCode)).toContain(trayCode);
+    expect(impactView.selectedTrayRow).toEqual(expect.objectContaining({
+      targetExperimentCode: moldExperimentCode,
+      targetLab: "霉菌试验室",
+      trayCode,
+    }));
+    expect(impactView.selectedTrayFlow.currentStatus).toContain(`当前托盘：${trayCode}`);
+    expect(impactView.currentTaskFlow.currentStatus).toBe("待排程");
+    expect(impactView.currentTaskFlow.axisStatusLabel).toBe("");
+
+    const moldView = buildLaboratoryWorkbenchView({ ...input, labName: "霉菌试验室" });
+    expect(moldView.scheduleRows.map((row) => row.experimentCode)).toContain(moldExperimentCode);
+    expect(moldView.scheduleRows[0].trayRows.map((row) => row.trayCode)).toContain(trayCode);
+  });
+
   test("buildLaboratoryWorkbenchView keeps running time before restored partial-axis tray flow", () => {
     const taskCode = "SYLU-2026-12-001";
     const trayCode = `${taskCode}-TP-001`;
@@ -10031,7 +10318,8 @@ describe("laboratory model", () => {
       statusLabel: "",
       totalStatusLabel: "冲击试验部分完成 3/6轴",
     }));
-    expect(view.currentTaskFlow.currentStatus).toBe("已排程");
+    expect(view.currentTaskFlow.currentStatus).toBe("任务进行中");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("冲击试验部分完成 3/6轴");
     expect(getLaboratoryActionState(workflow).canCompare).toBe(true);
     expect(scanResult).toEqual(expect.objectContaining({
       message: "比对正确",
@@ -10560,6 +10848,344 @@ describe("laboratory model", () => {
       );
     });
   });
+
+  test("hides an axis continuation from the current lab when the tray is dispatched to another unfinished experiment", () => {
+    const taskCode = "SYLU-2026-08-001";
+    const trayCode = `${taskCode}-TP-001`;
+    const impactExperimentCode = `${taskCode}-A`;
+    const combinedExperimentCode = `${taskCode}-B`;
+    const saltExperimentCode = `${taskCode}-C`;
+    const impactFirstSubExperimentCode = `${impactExperimentCode}-AXIS-001`;
+    const impactRemainingSubExperimentCode = `${impactExperimentCode}-AXIS-002`;
+
+    const view = buildLaboratoryWorkbenchView({
+      experimentRunTrays: [
+        {
+          ended_at: "2026-07-03 15:40:11",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-FIRST",
+          run_tray_status: "实验已完成",
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+        {
+          ended_at: "2026-07-03 15:40:47",
+          experiment_code: combinedExperimentCode,
+          run_no: "RUN-COMBINED",
+          run_tray_status: "实验已完成",
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentRuns: [
+        {
+          axis_codes: ["x+", "x-", "y+"],
+          ended_at: "2026-07-03 15:40:11",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-FIRST",
+          schedule_id: "schedule-impact-axis-001",
+          status: "实验已完成",
+          sub_experiment_code: impactFirstSubExperimentCode,
+          task_code: taskCode,
+          tray_codes: [trayCode],
+        },
+        {
+          ended_at: "2026-07-03 15:40:47",
+          experiment_code: combinedExperimentCode,
+          run_no: "RUN-COMBINED",
+          status: "实验已完成",
+          task_code: taskCode,
+          tray_codes: [trayCode],
+        },
+      ],
+      experimentRunSteps: ["x+", "x-", "y+"].map((axisCode) => ({
+        axis_code: axisCode,
+        experiment_code: impactExperimentCode,
+        run_no: "RUN-IMPACT-FIRST",
+        status: "实验已完成",
+        task_code: taskCode,
+      })),
+      experiments: [
+        {
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击一室",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: combinedExperimentCode,
+          experiment_name: "四综合试验",
+          required_device: "四综合实验室",
+          status: "实验已完成",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: saltExperimentCode,
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: impactExperimentCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: combinedExperimentCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: saltExperimentCode, task_code: taskCode, tray_code: trayCode },
+      ],
+      labName: "冲击一室",
+      now: new Date("2026-07-03T15:42:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${trayCode} 送至 盐雾试验室`,
+              location: "盐雾试验室",
+              status: "送至实验室",
+              time: "2026-07-03 15:41:08",
+              tray_code: trayCode,
+            },
+            {
+              action: "暂存间扫码入库",
+              detail: `${trayCode} 已到达暂存间`,
+              location: "恒温恒湿间（暂存间）",
+              status: "已到达暂存间",
+              time: "2026-07-03 15:41:01",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 四综合试验 / 实验已完成`,
+              location: "四综合实验室",
+              status: "实验已完成",
+              time: "2026-07-03 15:40:47",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 3/6轴`,
+              location: "冲击一室",
+              status: "冲击试验部分完成 3/6轴",
+              time: "2026-07-03 15:40:11",
+              tray_code: trayCode,
+            },
+          ],
+          location: "盐雾试验室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: saltExperimentCode,
+              target_lab: "盐雾试验室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          axis_codes: ["y-", "z+", "z-"],
+          device: "冲击一室",
+          end_at: "2026-07-04 15:30:00",
+          experiment_code: impactExperimentCode,
+          id: "schedule-impact-axis-002",
+          start_at: "2026-07-04 12:00:00",
+          status: "已排程",
+          sub_experiment_code: impactRemainingSubExperimentCode,
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "复合环境任务", test_type: "冲击试验 / 四综合试验 / 盐雾试验" }],
+    });
+
+    expect(view.scheduleRows).toHaveLength(1);
+    expect(view.currentTask).toBeNull();
+    expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toContain(trayCode);
+    expect(view.selectedTrayRow).toEqual(expect.objectContaining({
+      targetExperimentCode: saltExperimentCode,
+      targetLab: "盐雾试验室",
+      trayCode,
+    }));
+    expect(view.selectedTrayFlow.currentStatus).toContain(`当前托盘：${trayCode}`);
+    expect(view.selectedTrayFlow.currentStatus).not.toBe("当前状态：样品运输中");
+  });
+
+  test.each([
+    {
+      experimentName: "冲击试验",
+      labName: "冲击一室",
+      omitsTargetFields: false,
+      targetExperimentName: "盐雾试验",
+      targetLab: "盐雾试验室",
+    },
+    {
+      experimentName: "振动试验",
+      labName: "振动一室",
+      omitsTargetFields: false,
+      targetExperimentName: "霉菌试验",
+      targetLab: "霉菌试验室",
+    },
+    {
+      experimentName: "冲击试验",
+      labName: "冲击一室",
+      omitsTargetFields: true,
+      targetExperimentName: "盐雾试验",
+      targetLab: "盐雾试验室",
+    },
+  ])(
+    "does not revive a started $experimentName axis continuation after the tray is dispatched to $targetLab",
+    ({ experimentName, labName, omitsTargetFields, targetExperimentName, targetLab }) => {
+      const taskCode = "SYLU-2026-08-001";
+      const trayCode = `${taskCode}-TP-001`;
+      const axisExperimentCode = `${taskCode}-A`;
+      const targetExperimentCode = `${taskCode}-C`;
+      const firstSubExperimentCode = `${axisExperimentCode}-AXIS-001`;
+      const remainingSubExperimentCode = `${axisExperimentCode}-AXIS-002`;
+      const completedAxes = ["x+", "x-", "y+"];
+      const remainingAxes = ["y-", "z+", "z-"];
+
+      const view = buildLaboratoryWorkbenchView({
+        experimentRunTrays: [
+          {
+            ended_at: "2026-07-03 15:40:11",
+            experiment_code: axisExperimentCode,
+            run_no: "RUN-AXIS-FIRST",
+            run_tray_status: "实验已完成",
+            task_code: taskCode,
+            tray_code: trayCode,
+          },
+        ],
+        experimentRuns: [
+          {
+            axis_codes: completedAxes,
+            ended_at: "2026-07-03 15:40:11",
+            experiment_code: axisExperimentCode,
+            run_no: "RUN-AXIS-FIRST",
+            schedule_id: "schedule-axis-001",
+            status: "实验已完成",
+            sub_experiment_code: firstSubExperimentCode,
+            task_code: taskCode,
+            tray_codes: [trayCode],
+          },
+        ],
+        experimentRunSteps: completedAxes.map((axisCode) => ({
+          axis_code: axisCode,
+          experiment_code: axisExperimentCode,
+          run_no: "RUN-AXIS-FIRST",
+          status: "实验已完成",
+          task_code: taskCode,
+        })),
+        experiments: [
+          {
+            axis_codes: [...completedAxes, ...remainingAxes],
+            experiment_code: axisExperimentCode,
+            experiment_name: experimentName,
+            required_device: labName,
+            status: "实验进行中",
+            task_code: taskCode,
+          },
+          {
+            experiment_code: targetExperimentCode,
+            experiment_name: targetExperimentName,
+            required_device: targetLab,
+            status: "已排程",
+            task_code: taskCode,
+          },
+        ],
+        experimentTrays: [
+          { experiment_code: axisExperimentCode, task_code: taskCode, tray_code: trayCode },
+          { experiment_code: targetExperimentCode, task_code: taskCode, tray_code: trayCode },
+        ],
+        labName,
+        now: new Date("2026-07-04T12:30:00+08:00"),
+        samples: [
+          {
+            code: `${taskCode}-SP-001`,
+            history: [
+              {
+                action: "外观检测间扫码出库",
+                detail: `${trayCode} 送至 ${targetLab}`,
+                location: targetLab,
+                status: "送至实验室",
+                ...(omitsTargetFields ? {} : { target_experiment_code: targetExperimentCode, target_lab: targetLab }),
+                time: "2026-07-03 15:41:20",
+                tray_code: trayCode,
+              },
+              {
+                action: "外观检测间扫码入库",
+                detail: `${trayCode} 实验后外观检测间存放`,
+                location: "外观检测间",
+                status: "实验后外观检测间存放",
+                time: "2026-07-03 15:41:10",
+                tray_code: trayCode,
+              },
+              {
+                action: "暂存间扫码入库",
+                detail: `${trayCode} 已到达暂存间`,
+                location: "恒温恒湿间（暂存间）",
+                status: "已到达暂存间",
+                time: "2026-07-03 15:41:01",
+                tray_code: trayCode,
+              },
+              {
+                action: "实验完成",
+                detail: `${taskCode} / ${experimentName} / ${experimentName}部分完成 3/6轴`,
+                location: labName,
+                status: `${experimentName}部分完成 3/6轴`,
+                time: "2026-07-03 15:40:11",
+                tray_code: trayCode,
+              },
+            ],
+            location: targetLab,
+            status: "送至实验室",
+            task_code: taskCode,
+            trays: [
+              {
+                quantity: 1,
+                status: "送至实验室",
+                ...(omitsTargetFields ? {} : { target_experiment_code: targetExperimentCode, target_lab: targetLab }),
+                tray_code: trayCode,
+              },
+            ],
+          },
+        ],
+        schedules: [
+          {
+            axis_codes: remainingAxes,
+            device: labName,
+            end_at: "2026-07-04 15:30:00",
+            experiment_code: axisExperimentCode,
+            id: "schedule-axis-002",
+            start_at: "2026-07-04 12:00:00",
+            status: "已排程",
+            sub_experiment_code: remainingSubExperimentCode,
+            task_code: taskCode,
+          },
+        ],
+        selectedTrayCode: trayCode,
+        tasks: [{ code: taskCode, name: "轴向转后续任务", test_type: `${experimentName} / ${targetExperimentName}` }],
+      });
+
+      expect(view.scheduleRows).toHaveLength(1);
+      expect(view.currentTask).toBeNull();
+      expect(view.currentExperimentTrayRows.map((row) => row.trayCode)).toContain(trayCode);
+      expect(view.selectedTrayRow).toEqual(expect.objectContaining({
+        targetLab,
+        trayCode,
+      }));
+      if (!omitsTargetFields) {
+        expect(view.selectedTrayRow?.targetExperimentCode).toBe(targetExperimentCode);
+      }
+      expect(view.selectedTrayFlow.currentStatus).toContain(`当前托盘：${trayCode}`);
+      expect(view.selectedTrayFlow.currentStatus).not.toBe("当前状态：样品运输中");
+    },
+  );
 
   test("uses current laboratory axis status instead of stale same-count partial axis status", () => {
     const taskCode = "SYLU-2026-08-001";

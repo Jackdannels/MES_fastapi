@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>可视化托盘信息布局方案预览</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #031012;
+      --panel: rgba(5, 18, 22, 0.94);
+      --panel-2: rgba(7, 26, 32, 0.88);
+      --line: rgba(34, 211, 238, 0.24);
+      --line-strong: rgba(45, 212, 191, 0.56);
+      --text: #e9fffb;
+      --muted: #8db6b2;
+      --cyan: #22d3ee;
+      --teal: #2dd4bf;
+      --green: #86efac;
+      --amber: #fbbf24;
+      --blue-row: rgba(14, 116, 144, 0.18);
+      --green-row: rgba(34, 197, 94, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 18% 0%, rgba(34, 211, 238, 0.14), transparent 30%),
+        linear-gradient(180deg, #020a0d 0%, #041214 100%);
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    .page {
+      display: grid;
+      gap: 16px;
+      padding: 18px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(3, 16, 20, 0.88);
+      box-shadow: inset 0 0 26px rgba(34, 211, 238, 0.08);
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      font: 800 12px/1.2 Consolas, "Microsoft YaHei", monospace;
+    }
+
+    h1 {
+      margin: 4px 0 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .topbar p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .legend span,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: rgba(8, 47, 73, 0.34);
+      white-space: nowrap;
+    }
+
+    .options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .option {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+      box-shadow: 0 22px 42px rgba(0, 0, 0, 0.28);
+    }
+
+    .option-head {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 47, 73, 0.22);
+    }
+
+    .option-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .option-title strong {
+      min-width: 0;
+      font-size: 16px;
+    }
+
+    .option-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .screen {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 8px;
+      min-height: 620px;
+      padding: 10px;
+      background:
+        linear-gradient(180deg, rgba(34, 211, 238, 0.07), transparent 24%),
+        #020d12;
+    }
+
+    .screen-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(45, 212, 191, 0.34);
+    }
+
+    .screen-title strong {
+      font-size: 14px;
+    }
+
+    .screen-title small {
+      color: var(--green);
+      font: 700 11px/1 Consolas, monospace;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .metric {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 7px 8px;
+      border: 1px solid rgba(45, 212, 191, 0.18);
+      background: rgba(4, 20, 24, 0.84);
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .metric strong {
+      color: #d9fffb;
+      font: 900 16px/1 Consolas, monospace;
+    }
+
+    .board {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+      border: 1px solid rgba(45, 212, 191, 0.2);
+      border-radius: 6px;
+      background: rgba(2, 12, 18, 0.72);
+      overflow: hidden;
+    }
+
+    .board-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px;
+      color: var(--cyan);
+      border-bottom: 1px solid rgba(238, 253, 249, 0.1);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .table {
+      display: grid;
+      align-content: start;
+      gap: 6px;
+      min-width: 0;
+      padding: 8px;
+      overflow: hidden;
+    }
+
+    .thead,
+    .row {
+      display: grid;
+      gap: 4px;
+      align-items: stretch;
+      min-width: 0;
+    }
+
+    .thead {
+      color: #bae6fd;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .thead > span,
+    .row > span,
+    .row > strong,
+    .cell {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 30px;
+      padding: 5px 6px;
+      border: 1px solid rgba(56, 189, 248, 0.16);
+      background: rgba(8, 47, 73, 0.32);
+      text-align: center;
+    }
+
+    .row {
+      min-height: 58px;
+      border-left: 3px solid var(--cyan);
+      background: var(--blue-row);
+    }
+
+    .row.alt {
+      border-left-color: var(--green);
+      background: var(--green-row);
+    }
+
+    .row > strong,
+    .row > span {
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .row > strong {
+      color: #e0f2fe;
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 12px;
+    }
+
+    .qty {
+      color: #d8fffb !important;
+      font-family: Consolas, monospace;
+    }
+
+    .tray-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      max-width: 100%;
+      padding: 0 7px;
+      color: #c9fff1;
+      border: 1px solid rgba(134, 239, 172, 0.3);
+      border-radius: 4px;
+      background: rgba(20, 83, 45, 0.28);
+      font: 800 11px/1.2 Consolas, "Microsoft YaHei", monospace;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .option-a .thead,
+    .option-a .row {
+      grid-template-columns: minmax(112px, 0.96fr) minmax(78px, 0.66fr) minmax(72px, 0.6fr) minmax(84px, 0.7fr) minmax(188px, 1.55fr) minmax(46px, 0.36fr);
+    }
+
+    .option-a .row {
+      min-height: 74px;
+    }
+
+    .option-a .tray-cell {
+      flex-wrap: wrap;
+      align-content: center;
+      padding: 5px;
+    }
+
+    .option-a .chip {
+      flex: 0 1 calc(50% - 3px);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .option-b .thead,
+    .option-b .row {
+      grid-template-columns: minmax(118px, 1fr) minmax(74px, 0.58fr) minmax(72px, 0.58fr) minmax(80px, 0.66fr) minmax(98px, 0.78fr) minmax(46px, 0.34fr);
+    }
+
+    .option-b .tray-cell {
+      flex-wrap: nowrap;
+    }
+
+    .more {
+      color: var(--amber);
+      border-color: rgba(251, 191, 36, 0.34);
+      background: rgba(120, 53, 15, 0.24);
+    }
+
+    .detail {
+      display: grid;
+      gap: 7px;
+      margin: 2px 8px 8px;
+      padding: 9px;
+      border: 1px solid rgba(45, 212, 191, 0.28);
+      border-left: 3px solid var(--teal);
+      border-radius: 5px;
+      background: rgba(4, 26, 31, 0.9);
+    }
+
+    .detail-title {
+      display: flex;
+      justify-content: space-between;
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .detail-grid .chip {
+      width: 100%;
+      min-height: 26px;
+    }
+
+    .option-c .screen {
+      min-height: 620px;
+    }
+
+    .cards {
+      display: grid;
+      gap: 8px;
+      padding: 8px;
+      overflow: hidden;
+    }
+
+    .task-card {
+      display: grid;
+      grid-template-columns: minmax(118px, 0.7fr) minmax(0, 1.8fr);
+      gap: 8px;
+      min-width: 0;
+      padding: 9px;
+      border: 1px solid rgba(56, 189, 248, 0.18);
+      border-left: 3px solid var(--cyan);
+      border-radius: 5px;
+      background: var(--blue-row);
+    }
+
+    .task-card.alt {
+      border-left-color: var(--green);
+      background: var(--green-row);
+    }
+
+    .task-main {
+      display: grid;
+      gap: 6px;
+      align-content: start;
+      min-width: 0;
+    }
+
+    .task-main strong {
+      color: #e0f2fe;
+      font: 900 13px/1.25 Consolas, "Microsoft YaHei", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .task-main span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .experiment-list {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .experiment-row {
+      display: grid;
+      grid-template-columns: minmax(70px, 0.5fr) minmax(74px, 0.5fr) minmax(0, 1.3fr) minmax(34px, 0.25fr);
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      padding: 6px;
+      border: 1px solid rgba(238, 253, 249, 0.08);
+      border-radius: 4px;
+      background: rgba(2, 12, 18, 0.45);
+    }
+
+    .experiment-row span {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .experiment-row .tray-cell {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
+
+    .experiment-row .chip {
+      flex: 0 1 calc(50% - 3px);
+    }
+
+    @media (max-width: 1320px) {
+      .options {
+        grid-template-columns: 1fr;
+      }
+
+      .screen {
+        min-height: 520px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">VISUAL PREVIEW</div>
+        <h1>今日任务计划总览屏：多托盘显示三种方案</h1>
+        <p>模拟 2 个及以上托盘编号同时出现的情况，重点看“托盘信息”列不再出框或被截断。</p>
+      </div>
+      <div class="legend">
+        <span>当前问题：长托盘编号 + 单行省略</span>
+        <span>预览比例：大屏 16:9 信息密度</span>
+      </div>
+    </header>
+
+    <section class="options">
+      <article class="option option-a">
+        <div class="option-head">
+          <div class="option-title">
+            <strong>方案 A：表格保留，托盘列改为换行标签</strong>
+            <span class="badge">推荐</span>
+          </div>
+          <p>最小改动。保留现有表格结构，把托盘信息列放宽并改成可换行 chip；2-4 个托盘直接完整显示，行高自动增加。</p>
+        </div>
+        <div class="screen">
+          <div class="screen-title"><strong>今日任务计划总览屏</strong><small>真实数据</small></div>
+          <div class="metrics">
+            <div class="metric"><span>今日任务</span><strong>2</strong></div>
+            <div class="metric"><span>实验数量</span><strong>5</strong></div>
+            <div class="metric"><span>已分配托盘</span><strong>5</strong></div>
+            <div class="metric"><span>样品总数</span><strong>6件</strong></div>
+          </div>
+          <div class="board">
+            <div class="board-head"><span>今日计划</span><span>2026-07-03</span></div>
+            <div class="table">
+              <div class="thead"><span>任务编号</span><span>实验类型</span><span>时间</span><span>试验间</span><span>托盘信息</span><span>样品数</span></div>
+              <div class="row"><strong>SYLU-2026-08-001</strong><span>冲击试验</span><span>15:38-19:08</span><span>冲击一室</span><div class="cell"><div class="tray-cell"><span class="chip">SYLU-2026-08-001-TP-001</span><span class="chip">SYLU-2026-08-001-TP-002</span></div></div><span class="qty">2件</span></div>
+              <div class="row"><strong>SYLU-2026-08-001</strong><span>四综合试验</span><span>15:38-19:08</span><span>四综合实验室</span><div class="cell"><div class="tray-cell"><span class="chip">SYLU-2026-08-001-TP-001</span><span class="chip">SYLU-2026-08-001-TP-002</span><span class="chip">SYLU-2026-08-001-TP-003</span></div></div><span class="qty">3件</span></div>
+              <div class="row alt"><strong>SYLU-2026-07-021</strong><span>冲击试验</span><span>15:40-19:10</span><span>冲击二室</span><div class="cell"><div class="tray-cell"><span class="chip">SYLU-2026-07-021-TP-001</span><span class="chip">SYLU-2026-07-021-TP-002</span><span class="chip">SYLU-2026-07-021-TP-003</span><span class="chip">SYLU-2026-07-021-TP-004</span></div></div><span class="qty">4件</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option option-b">
+        <div class="option-head">
+          <div class="option-title">
+            <strong>方案 B：主表压缩，托盘展开详情行</strong>
+            <span class="badge">稳妥</span>
+          </div>
+          <p>主表只显示首个托盘和数量，当前行下方展示完整托盘清单。适合 5 个以上托盘，但需要增加“展开/当前选择”的交互逻辑。</p>
+        </div>
+        <div class="screen">
+          <div class="screen-title"><strong>今日任务计划总览屏</strong><small>真实数据</small></div>
+          <div class="metrics">
+            <div class="metric"><span>今日任务</span><strong>2</strong></div>
+            <div class="metric"><span>实验数量</span><strong>5</strong></div>
+            <div class="metric"><span>已分配托盘</span><strong>5</strong></div>
+            <div class="metric"><span>样品总数</span><strong>6件</strong></div>
+          </div>
+          <div class="board">
+            <div class="board-head"><span>今日计划</span><span>2026-07-03</span></div>
+            <div class="table">
+              <div class="thead"><span>任务编号</span><span>实验类型</span><span>时间</span><span>试验间</span><span>托盘</span><span>样品</span></div>
+              <div class="row"><strong>SYLU-2026-08-001</strong><span>冲击试验</span><span>15:38-19:08</span><span>冲击一室</span><div class="cell"><div class="tray-cell"><span class="chip">TP-001</span><span class="chip more">+1</span></div></div><span class="qty">2</span></div>
+              <div class="row"><strong>SYLU-2026-08-001</strong><span>四综合试验</span><span>15:38-19:08</span><span>四综合实验室</span><div class="cell"><div class="tray-cell"><span class="chip">TP-001</span><span class="chip more">+2</span></div></div><span class="qty">3</span></div>
+              <div class="detail">
+                <div class="detail-title"><span>SYLU-2026-08-001 / 四综合试验托盘清单</span><span>3 托盘</span></div>
+                <div class="detail-grid">
+                  <span class="chip">SYLU-2026-08-001-TP-001</span>
+                  <span class="chip">SYLU-2026-08-001-TP-002</span>
+                  <span class="chip">SYLU-2026-08-001-TP-003</span>
+                </div>
+              </div>
+              <div class="row alt"><strong>SYLU-2026-07-021</strong><span>冲击试验</span><span>15:40-19:10</span><span>冲击二室</span><div class="cell"><div class="tray-cell"><span class="chip">TP-001</span><span class="chip more">+3</span></div></div><span class="qty">4</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="option option-c">
+        <div class="option-head">
+          <div class="option-title">
+            <strong>方案 C：任务卡片化，实验与托盘分层展示</strong>
+            <span class="badge">大改</span>
+          </div>
+          <p>按任务聚合，右侧列出实验行和托盘标签。信息最完整，适合大屏查看，但会改变当前“纯表格”的视觉节奏。</p>
+        </div>
+        <div class="screen">
+          <div class="screen-title"><strong>今日任务计划总览屏</strong><small>真实数据</small></div>
+          <div class="metrics">
+            <div class="metric"><span>今日任务</span><strong>2</strong></div>
+            <div class="metric"><span>实验数量</span><strong>5</strong></div>
+            <div class="metric"><span>已分配托盘</span><strong>5</strong></div>
+            <div class="metric"><span>样品总数</span><strong>6件</strong></div>
+          </div>
+          <div class="board">
+            <div class="board-head"><span>今日计划</span><span>按任务聚合</span></div>
+            <div class="cards">
+              <div class="task-card">
+                <div class="task-main">
+                  <strong>SYLU-2026-08-001</strong>
+                  <span>3 实验 / 3 托盘 / 5 样品</span>
+                  <span class="muted">15:38-19:08</span>
+                </div>
+                <div class="experiment-list">
+                  <div class="experiment-row"><span>冲击试验</span><span>冲击一室</span><div class="tray-cell"><span class="chip">TP-001</span><span class="chip">TP-002</span></div><span>2件</span></div>
+                  <div class="experiment-row"><span>四综合试验</span><span>四综合实验室</span><div class="tray-cell"><span class="chip">TP-001</span><span class="chip">TP-002</span><span class="chip">TP-003</span></div><span>3件</span></div>
+                  <div class="experiment-row"><span>盐雾试验</span><span>盐雾试验室</span><div class="tray-cell"><span class="chip">TP-001</span></div><span>1件</span></div>
+                </div>
+              </div>
+              <div class="task-card alt">
+                <div class="task-main">
+                  <strong>SYLU-2026-07-021</strong>
+                  <span>2 实验 / 4 托盘 / 4 样品</span>
+                  <span class="muted">15:40-19:10</span>
+                </div>
+                <div class="experiment-list">
+                  <div class="experiment-row"><span>冲击试验</span><span>冲击二室</span><div class="tray-cell"><span class="chip">TP-001</span><span class="chip">TP-002</span><span class="chip">TP-003</span><span class="chip">TP-004</span></div><span>4件</span></div>
+                  <div class="experiment-row"><span>振动试验</span><span>振动一室</span><div class="tray-cell"><span class="chip">TP-001</span><span class="chip">TP-002</span></div><span>2件</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

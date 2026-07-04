@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Iterable
 
+from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import (
     normalize_experiment_detail_text,
     normalize_experiment_status_text,
@@ -60,7 +61,7 @@ def _normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(normalized)
         result.append(normalized)
-    return result
+    return sort_axis_codes(result)
 
 
 def _axis_codes_json(value: Any) -> str | None:

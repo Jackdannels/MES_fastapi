@@ -4,9 +4,10 @@ import {
   requiresPreExperimentAppearanceStorage,
 } from "@/modules/samples/sampleFlow.constants";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
-import { isAxisProgressIncomplete, parseAxisCodes, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
+import { isAxisProgressIncomplete, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
@@ -617,7 +618,7 @@ const hasPendingSiblingAxisSchedule = ({ experimentCode, schedules, subExperimen
     if (
       normalizeText(schedule?.task_code || schedule?.taskCode || schedule?.task_no || schedule?.taskNo) !== taskCode
       || normalizeText(schedule?.experiment_code || schedule?.experimentCode || schedule?.experiment_no || schedule?.experimentNo) !== experimentCode
-      || !parseAxisCodes(schedule?.axis_codes || schedule?.axisCodes).length
+      || !normalizeAxisCodes(schedule?.axis_codes || schedule?.axisCodes).length
       || normalizeText(schedule?.sub_experiment_code || schedule?.subExperimentCode || schedule?.sub_experiment_no || schedule?.subExperimentNo) === subExperimentCode
     ) {
       return false;
@@ -737,7 +738,7 @@ const findAxisSchedulesForExperiment = ({ experimentCode, schedules, taskCode })
   asArray(schedules).filter((schedule) =>
     normalizeText(schedule?.task_code || schedule?.taskCode || schedule?.task_no || schedule?.taskNo) === taskCode
     && normalizeText(schedule?.experiment_code || schedule?.experimentCode || schedule?.experiment_no || schedule?.experimentNo) === experimentCode
-    && parseAxisCodes(schedule?.axis_codes || schedule?.axisCodes).length > 0,
+    && normalizeAxisCodes(schedule?.axis_codes || schedule?.axisCodes).length > 0,
   );
 
 const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, schedules, taskCode, trayCode }) => {
@@ -789,7 +790,7 @@ const trayExperimentRunIsCompleted = ({ experimentCode, experimentRunSteps, expe
 };
 
 const scheduleAxisBatchIsCompleted = ({ experimentCode, experimentRunSteps, experimentRunTrays, experiments, schedule, taskCode, trayCode }) => {
-  const scheduleAxisCodes = parseAxisCodes(schedule?.axis_codes || schedule?.axisCodes);
+  const scheduleAxisCodes = normalizeAxisCodes(schedule?.axis_codes || schedule?.axisCodes);
   if (!scheduleAxisCodes.length) {
     return false;
   }

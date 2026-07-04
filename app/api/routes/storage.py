@@ -7,6 +7,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.core.axis_codes import canonical_axis_code, sort_axis_codes
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
@@ -295,7 +296,7 @@ def _normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(axis_code)
         axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_steps: Any) -> bool:
@@ -311,14 +312,14 @@ def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_st
     if not sub_experiment_code:
         return False
     completed_axis_codes = {
-        _normalize_text(step.get("axis_code") or step.get("axisCode"))
+        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         for step in _as_list(experiment_run_steps)
         if isinstance(step, dict)
         and _task_code(step) == task_code
         and _experiment_code(step) == experiment_code
         and record_sub_experiment_code(step) == sub_experiment_code
         and _normalize_text(step.get("status")) in COMPLETED_EXPERIMENT_STATUSES
-        and _normalize_text(step.get("axis_code") or step.get("axisCode")) in axis_code_set
+        and canonical_axis_code(step.get("axis_code") or step.get("axisCode")) in axis_code_set
     }
     return bool(completed_axis_codes) and not axis_code_set.issubset(completed_axis_codes)
 
@@ -370,7 +371,7 @@ def tray_has_scoped_partial_axis_batch_completion(
             continue
         if not _is_completed_status(step.get("status")):
             continue
-        axis_code = _normalize_text(step.get("axis_code") or step.get("axisCode"))
+        axis_code = canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         if not axis_code:
             continue
         completed_steps_by_run.setdefault(_run_no(step), set()).add(axis_code)

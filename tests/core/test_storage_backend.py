@@ -178,7 +178,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert snapshot["mes.conflicts"] == []
 
 
-def test_demo_reset_axis_requirements_use_random_count_and_order() -> None:
+def test_demo_reset_axis_requirements_use_random_count_and_standard_order() -> None:
     class _FakeRng:
         def shuffle(self, values):
             values[:] = ["z-", "x+", "y-", "x-", "z+", "y+"]
@@ -188,7 +188,7 @@ def test_demo_reset_axis_requirements_use_random_count_and_order() -> None:
             assert end == 6
             return 3
 
-    assert _random_axis_requirements(_FakeRng()) == ["z-", "x+", "y-"]
+    assert _random_axis_requirements(_FakeRng()) == ["x+", "y-", "z-"]
 
 
 def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_three() -> None:
@@ -281,7 +281,7 @@ def test_normalize_storage_payload_adds_axis_codes_to_existing_impact_and_vibrat
 
     experiments = normalized["mes.experiments"]
     assert experiments[0]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
-    assert experiments[1]["axis_codes"] == ["z-", "y+"]
+    assert experiments[1]["axis_codes"] == ["y+", "z-"]
 
 
 def test_normalize_storage_payload_splits_legacy_test_type_without_expanding_to_three() -> None:
@@ -1237,6 +1237,10 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
                 "mes.schedules": [{"task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
                 "mes.experiment_trays": [{"task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
                 "mes.experiment_samples": [{"task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
+                "mes.experiment_runs": [{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
+                "mes.experiment_run_trays": [{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
+                "mes.experiment_run_steps": [{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "axis_code": "x+"}],
+                "mes.staging_events": [{"id": "EVENT-OLD", "task_code": "SYLU-2026-03-999", "tray_code": "SYLU-2026-03-999-TP-001"}],
                 "mes.streams": [{"task_code": "SYLU-2026-03-999", "status": "采集中"}],
                 "mes.conflicts": [{"task_code": "SYLU-2026-03-999"}],
                 "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
@@ -1254,11 +1258,18 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
     assert snapshot["mes.schedules"] == []
     assert snapshot["mes.experiment_trays"] == []
     assert snapshot["mes.experiment_samples"] == []
+    assert snapshot["mes.experiment_runs"] == []
+    assert snapshot["mes.experiment_run_trays"] == []
+    assert snapshot["mes.experiment_run_steps"] == []
+    assert snapshot["mes.staging_events"] == []
     assert snapshot["mes.streams"] == []
     assert snapshot["mes.conflicts"] == []
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in snapshot["mes.samples"])
     assert all(experiment["status"] == "待排程" for experiment in snapshot["mes.experiments"])
     assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert writes["mes.experiment_run_trays"] == []
+    assert writes["mes.experiment_run_steps"] == []
+    assert writes["mes.staging_events"] == []
     today = datetime.now()
     assert writes["mes.tasks"][0]["code"] == f"SYLU-{today.year}-{today.month:02d}-001"
 

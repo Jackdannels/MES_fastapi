@@ -4,6 +4,7 @@ from typing import Any
 
 from app.core.master_data import DEFAULT_LABS, DEFAULT_TEST_TYPES
 from app.core.mysql_storage_codecs import parse_varchar_length
+from app.services.attendance_service import ATTENDANCE_SCHEMA_SQL
 
 
 def ensure_schema_extensions(backend: Any) -> None:
@@ -402,5 +403,9 @@ def ensure_schema_extensions(backend: Any) -> None:
             cursor.execute("SHOW COLUMNS FROM biz_experiment_result LIKE 'sub_experiment_code'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_experiment_result ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")
+            for statement in ATTENDANCE_SCHEMA_SQL.split(";"):
+                normalized_statement = statement.strip()
+                if normalized_statement:
+                    cursor.execute(normalized_statement)
         connection.commit()
     backend._schema_initialized = True

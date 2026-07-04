@@ -11,6 +11,7 @@ import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 let wrapper;
 let pageHeader;
 let headerActions;
+let attendanceSessionState;
 let masterLabsState;
 let snapshotState;
 let storageGetSnapshotOverride;
@@ -56,6 +57,45 @@ const laboratoryStartCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/start") && (options.method || "GET") === "POST");
 const laboratoryOperationCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/operations") && (options.method || "GET") === "POST");
+const attendanceWorkStartCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/work/start") && (options.method || "GET") === "POST");
+const attendanceLogoutCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/logout") && (options.method || "GET") === "POST");
+const handleAttendanceFetch = (url, options = {}) => {
+  if (!String(url).includes("/api/attendance/labs/")) {
+    return null;
+  }
+  const labName = decodeURIComponent(String(url).match(/\/api\/attendance\/labs\/([^/]+)/)?.[1] || "盐雾试验室");
+  if (String(url).includes("/work/start")) {
+    attendanceSessionState = {
+      ...attendanceSessionState,
+      active: true,
+      labName,
+      workStartedAt: attendanceSessionState.workStartedAt || "2026-04-02T10:00:00Z",
+    };
+    return { ok: true, status: 200, json: async () => attendanceSessionState };
+  }
+  if (String(url).includes("/session")) {
+    return { ok: true, status: 200, json: async () => ({ ...attendanceSessionState, labName }) };
+  }
+  if (String(url).includes("/login")) {
+    const body = JSON.parse(String(options.body || "{}"));
+    attendanceSessionState = {
+      active: true,
+      employeeName: body.username === "zhangsan" ? "张三" : body.username,
+      labName,
+      loggedInAt: "2026-04-02T10:00:00Z",
+      workStartedAt: null,
+      username: body.username,
+    };
+    return { ok: true, status: 200, json: async () => attendanceSessionState };
+  }
+  if (String(url).includes("/logout")) {
+    attendanceSessionState = { ...attendanceSessionState, active: false, labName, loggedOutAt: "2026-04-02T10:30:00Z" };
+    return { ok: true, status: 200, json: async () => attendanceSessionState };
+  }
+  return null;
+};
 const handleLaboratoryOperationFetch = (url, options = {}) => {
   if (!String(url).includes("/api/laboratory/operations")) {
     return null;
@@ -168,6 +208,15 @@ const waitForLaboratoryStartCount = async (count) => {
     }
   }
   expect(laboratoryStartCalls()).toHaveLength(count);
+};
+const waitForAttendanceWorkStartCount = async (count) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await flushPageUpdates();
+    if (attendanceWorkStartCalls().length >= count) {
+      return;
+    }
+  }
+  expect(attendanceWorkStartCalls()).toHaveLength(count);
 };
 const useHostInterfaceMode = (mode) => {
   window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? mode : null));
@@ -407,6 +456,13 @@ describe("LaboratoryPage runtime", () => {
       },
     });
     snapshotState = createSnapshot();
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+    };
     masterLabsState = [];
     storageGetSnapshotOverride = null;
     reactiveRoute.query = {};
@@ -415,12 +471,20 @@ describe("LaboratoryPage runtime", () => {
       if (url.includes("/api/master/labs")) {
         return { ok: true, status: 200, json: async () => masterLabsState };
       }
+      const attendanceResponse = handleAttendanceFetch(url, options);
+      if (attendanceResponse) {
+        return attendanceResponse;
+      }
       if (url.includes("/api/laboratory/") && url.includes("/complete")) {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/complete/);
         const taskCode = decodeURIComponent(match?.[1] || "");
         const experimentCode = decodeURIComponent(match?.[2] || "");
         const body = JSON.parse(String(options.body || "{}"));
         const completedAt = body.completedAt || new Date().toISOString();
+        const axisCode = String(body.axisCode || "").trim();
+        const nextAxisCode = String(body.nextAxisCode || "").trim();
+        const subExperimentCode = String(body.subExperimentCode || "").trim();
+        const continuesNextAxis = Boolean(axisCode && nextAxisCode);
         const trayCodes = new Set(
           (Array.isArray(body.trayCodes) && body.trayCodes.length ? body.trayCodes : (snapshotState[STORAGE_KEYS.experiment_trays] || [])
             .filter((entry) => entry.task_code === taskCode && entry.experiment_code === experimentCode)
@@ -441,46 +505,78 @@ describe("LaboratoryPage runtime", () => {
         const runNo = String(body.runNo || "").trim();
         snapshotState = {
           ...snapshotState,
-          [STORAGE_KEYS.samples]: (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
-            if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
-              return sample;
-            }
-            const touchesCompletedTray = sample.trays.some((tray) => trayCodes.has(String(tray.tray_code || "")));
-            if (!touchesCompletedTray) {
-              return sample;
-            }
-            return {
-              ...sample,
-              flow_status: "实验已完成",
-              status: "实验已完成",
-              trays: sample.trays.map((tray) =>
-                trayCodes.has(String(tray.tray_code || "")) ? { ...tray, status: "实验已完成", updated_at: completedAt } : tray,
-              ),
-              history: [
-                {
-                  action: "实验完成",
-                  detail: `${taskCode} / ${experimentName} / 实验已完成`,
-                  location: sample.location || "",
-                  owner: sample.owner || "",
+          [STORAGE_KEYS.samples]: continuesNextAxis
+            ? (snapshotState[STORAGE_KEYS.samples] || [])
+            : (snapshotState[STORAGE_KEYS.samples] || []).map((sample) => {
+                if (sample.task_code !== taskCode || !Array.isArray(sample.trays)) {
+                  return sample;
+                }
+                const touchesCompletedTray = sample.trays.some((tray) => trayCodes.has(String(tray.tray_code || "")));
+                if (!touchesCompletedTray) {
+                  return sample;
+                }
+                return {
+                  ...sample,
+                  flow_status: "实验已完成",
                   status: "实验已完成",
-                  time: completedAt,
-                },
-                ...(Array.isArray(sample.history) ? sample.history : []),
-              ],
-            };
-          }),
+                  trays: sample.trays.map((tray) =>
+                    trayCodes.has(String(tray.tray_code || "")) ? { ...tray, status: "实验已完成", updated_at: completedAt } : tray,
+                  ),
+                  history: [
+                    {
+                      action: "实验完成",
+                      detail: `${taskCode} / ${experimentName} / 实验已完成`,
+                      location: sample.location || "",
+                      owner: sample.owner || "",
+                      status: "实验已完成",
+                      time: completedAt,
+                    },
+                    ...(Array.isArray(sample.history) ? sample.history : []),
+                  ],
+                };
+              }),
           [STORAGE_KEYS.experiment_runs]: (snapshotState[STORAGE_KEYS.experiment_runs] || []).map((entry) =>
-            (runNo && [entry.run_no, entry.id].map((value) => String(value || "").trim()).includes(runNo))
-              || (
-                !runNo
-                && entry.task_code === taskCode
-                && entry.experiment_code === experimentCode
-                && String(entry.status || "").trim() === "实验进行中"
-                && Array.from(trayCodes).every((trayCode) => (Array.isArray(entry.tray_codes) ? entry.tray_codes : []).map(String).includes(trayCode))
+            !continuesNextAxis
+              && (
+                (runNo && [entry.run_no, entry.id].map((value) => String(value || "").trim()).includes(runNo))
+                  || (
+                    !runNo
+                    && entry.task_code === taskCode
+                    && entry.experiment_code === experimentCode
+                    && String(entry.status || "").trim() === "实验进行中"
+                    && Array.from(trayCodes).every((trayCode) => (Array.isArray(entry.tray_codes) ? entry.tray_codes : []).map(String).includes(trayCode))
+                  )
               )
               ? { ...entry, ended_at: completedAt, status: "实验已完成", updated_at: completedAt }
               : entry,
           ),
+          [STORAGE_KEYS.experiment_run_steps]: continuesNextAxis
+            ? (snapshotState[STORAGE_KEYS.experiment_run_steps] || []).map((entry) => {
+                const matchesRun = runNo ? [entry.run_no, entry.id].map((value) => String(value || "").trim()).includes(runNo) : true;
+                const matchesSubExperiment = subExperimentCode
+                  ? String(entry.sub_experiment_code || "").trim() === subExperimentCode
+                  : true;
+                if (
+                  matchesRun
+                  && matchesSubExperiment
+                  && entry.task_code === taskCode
+                  && entry.experiment_code === experimentCode
+                  && String(entry.axis_code || "").trim() === axisCode
+                ) {
+                  return { ...entry, ended_at: completedAt, status: "实验已完成", updated_at: completedAt };
+                }
+                if (
+                  matchesRun
+                  && matchesSubExperiment
+                  && entry.task_code === taskCode
+                  && entry.experiment_code === experimentCode
+                  && String(entry.axis_code || "").trim() === nextAxisCode
+                ) {
+                  return { ...entry, status: "实验进行中", started_at: completedAt, updated_at: completedAt };
+                }
+                return entry;
+              })
+            : (snapshotState[STORAGE_KEYS.experiment_run_steps] || []),
         };
         const allExperimentTraysCompleted =
           scopedTrayCodes.size > 0
@@ -498,7 +594,7 @@ describe("LaboratoryPage runtime", () => {
             });
             return statuses.length > 0 && statuses.every((status) => completedStatuses.has(status));
           });
-        const nextExperimentStatus = allExperimentTraysCompleted ? "实验已完成" : "实验进行中";
+        const nextExperimentStatus = !continuesNextAxis && allExperimentTraysCompleted ? "实验已完成" : "实验进行中";
         snapshotState = {
           ...snapshotState,
           [STORAGE_KEYS.experiments]: (snapshotState[STORAGE_KEYS.experiments] || []).map((entry) =>
@@ -517,6 +613,7 @@ describe("LaboratoryPage runtime", () => {
             experiments: snapshotState[STORAGE_KEYS.experiments],
             schedules: snapshotState[STORAGE_KEYS.schedules],
             experimentRuns: snapshotState[STORAGE_KEYS.experiment_runs],
+            experimentRunSteps: snapshotState[STORAGE_KEYS.experiment_run_steps],
           }),
         };
       }
@@ -578,10 +675,16 @@ describe("LaboratoryPage runtime", () => {
           ],
           [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays,
         };
+        attendanceSessionState = {
+          ...attendanceSessionState,
+          labName: schedule?.device || "高低温湿热二室",
+          workStartedAt: startedAt,
+        };
         return {
           ok: true,
           status: 200,
           json: async () => ({
+            attendanceSession: attendanceSessionState,
             ok: true,
             samples: snapshotState[STORAGE_KEYS.samples],
             tasks: snapshotState[STORAGE_KEYS.tasks],
@@ -679,6 +782,379 @@ describe("LaboratoryPage runtime", () => {
     headerActions = undefined;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  test("does not start attendance work timing when only the compare step begins", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: null,
+    };
+    await mountPage();
+
+    expect(attendanceWorkStartCalls()).toHaveLength(0);
+
+    await wrapper.get('[data-testid="laboratory-compare"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(attendanceWorkStartCalls()).toHaveLength(0);
+    expect(wrapper.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(true);
+  });
+
+  test("keeps attendance work timer at zero after login before any experiment step starts", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: null,
+    };
+    await mountPage();
+
+    vi.advanceTimersByTime(2000);
+    await flushPageUpdates();
+
+    expect(headerActions.textContent || "").toContain("当前 00:00:00");
+  });
+
+  test("shows attendance work timer by second after formal work start exists", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: "2026-04-02T09:59:58Z",
+    };
+    await mountPage();
+
+    expect(headerActions.textContent || "").toContain("当前 00:00:02");
+  });
+
+  test("starts attendance work timing when a non-hostless laboratory loads with a running experiment", async () => {
+    reactiveRoute.query = { lab: "温度冲击二室" };
+    masterLabsState = [
+      { code: "LAB_TEMP_SHOCK_2", name: "温度冲击二室", type: "实验室", testTypeName: "温度冲击试验", status: 1 },
+    ];
+    attendanceSessionState = {
+      active: true,
+      employeeName: "心鑫",
+      labName: "温度冲击二室",
+      loggedInAt: "2026-07-03T15:01:00Z",
+      username: "xinxin",
+      workStartedAt: null,
+    };
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-07-021", name: "温度冲击任务", test_type: "温度冲击试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-07-021",
+          experiment_code: "SYLU-2026-07-021-A",
+          experiment_name: "温度冲击试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-07-021", experiment_code: "SYLU-2026-07-021-A", tray_code: "SYLU-2026-07-021-TP-001" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-temp-shock-2",
+          task_code: "SYLU-2026-07-021",
+          experiment_code: "SYLU-2026-07-021-A",
+          device: "温度冲击二室",
+          start_at: "2026-07-03T15:02:00.000Z",
+          end_at: "2026-07-03T18:32:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-temp-shock-2",
+          run_no: "run-temp-shock-2",
+          schedule_id: "schedule-temp-shock-2",
+          task_code: "SYLU-2026-07-021",
+          experiment_code: "SYLU-2026-07-021-A",
+          device: "温度冲击二室",
+          tray_codes: ["SYLU-2026-07-021-TP-001"],
+          status: "实验进行中",
+          started_at: "2026-07-03T15:02:00.000Z",
+          planned_end_at: "2026-07-03T18:32:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-07-021-SP-001",
+          location: "温度冲击二室",
+          owner: "赵工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-07-021",
+          trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "实验进行中", tray_code: "SYLU-2026-07-021-TP-001" }],
+        },
+      ],
+    };
+
+    await mountPage();
+
+    await waitForAttendanceWorkStartCount(1);
+
+    expect(attendanceWorkStartCalls()[0][0]).toBe("/api/attendance/labs/%E6%B8%A9%E5%BA%A6%E5%86%B2%E5%87%BB%E4%BA%8C%E5%AE%A4/work/start");
+    vi.advanceTimersByTime(3000);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-status"]')?.textContent || "").not.toContain("当前 00:00:00");
+  });
+
+  test("starts work timing for the newly logged employee when switching during a running experiment", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: null,
+    };
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    addActiveExperimentRun();
+
+    await mountPage();
+    await waitForAttendanceWorkStartCount(1);
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    const usernameInput = document.body.querySelector('[data-testid="laboratory-attendance-username"]');
+    const passwordInput = document.body.querySelector('[data-testid="laboratory-attendance-password"]');
+    usernameInput.value = "lisi";
+    usernameInput.dispatchEvent(new Event("input", { bubbles: true }));
+    passwordInput.value = "123";
+    passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    document.body.querySelector('[data-testid="laboratory-attendance-login-submit"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    await waitForAttendanceWorkStartCount(2);
+    expect(attendanceSessionState.username).toBe("lisi");
+  });
+
+  test("renders fixed laboratory login controls before the running modal button when no employee is logged in", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      loggedInAt: null,
+      username: "",
+    };
+    await mountPage();
+
+    const headerText = headerActions.textContent || "";
+    expect(headerText).toContain("试验间登录");
+    expect(headerText).toContain("未登录");
+    expect(headerText).toContain("请先登录后操作");
+    expect(headerText.indexOf("试验间登录")).toBeLessThan(headerText.indexOf("显示弹窗"));
+    expect(headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.hasAttribute("disabled")).toBe(false);
+    expect(headerActions.querySelector('[data-testid="laboratory-attendance-logout"]')).toBeNull();
+  });
+
+  test("keeps laboratory logout inside the login modal and disables it when no employee is logged in", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      loggedInAt: null,
+      username: "",
+    };
+    await mountPage();
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    const logoutButton = document.body.querySelector('[data-testid="laboratory-attendance-modal-logout"]');
+    expect(logoutButton).toBeTruthy();
+    expect(logoutButton?.hasAttribute("disabled")).toBe(true);
+  });
+
+  test("opens the attendance login modal above the running experiment modal when completing an axis without login", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      loggedInAt: null,
+      username: "",
+    };
+    snapshotState[STORAGE_KEYS.schedules] = (snapshotState[STORAGE_KEYS.schedules] || []).map((schedule) =>
+      schedule.id === "schedule-1" ? { ...schedule, status: "实验进行中" } : schedule,
+    );
+    snapshotState[STORAGE_KEYS.experiments] = (snapshotState[STORAGE_KEYS.experiments] || []).map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A" ? { ...experiment, axis_codes: ["x+", "x-"], status: "实验进行中" } : experiment,
+    );
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    addActiveExperimentRun({ trayCodes: ["TP-001"], status: "实验进行中" });
+    snapshotState[STORAGE_KEYS.experiment_run_steps] = [
+      {
+        run_no: "run-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        axis_code: "x+",
+        step_no: 1,
+        status: "实验进行中",
+      },
+      {
+        run_no: "run-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        axis_code: "x-",
+        step_no: 2,
+        status: "待执行",
+      },
+    ];
+
+    await mountPage();
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+
+    const loginModal = document.body.querySelector('[data-testid="laboratory-attendance-login-modal"]');
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeTruthy();
+    expect(loginModal).toBeTruthy();
+    expect(loginModal?.parentElement).toBe(document.body);
+    expect(loginModal?.classList.contains("laboratory-attendance-login-modal--priority")).toBe(true);
+    expect(loginModal?.textContent || "").toContain("当前试验正在进行，请先登录人员后继续操作");
+  });
+
+  test("logs out the current laboratory employee from the login modal", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: null,
+    };
+    await mountPage();
+
+    expect(headerActions.querySelector('[data-testid="laboratory-attendance-logout"]')).toBeNull();
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    const logoutButton = document.body.querySelector('[data-testid="laboratory-attendance-modal-logout"]');
+    expect(logoutButton?.hasAttribute("disabled")).toBe(false);
+
+    logoutButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+
+    expect(attendanceLogoutCalls()).toHaveLength(1);
+  });
+
+  test("hides the standalone attendance logout action while an experiment is running", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: "2026-04-02T09:30:00Z",
+    };
+    snapshotState[STORAGE_KEYS.schedules] = (snapshotState[STORAGE_KEYS.schedules] || []).map((schedule) =>
+      schedule.id === "schedule-1" ? { ...schedule, status: "实验进行中" } : schedule,
+    );
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    addActiveExperimentRun({ trayCodes: ["TP-001"], status: "实验进行中" });
+    await mountPage();
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    const loginModal = document.body.querySelector('[data-testid="laboratory-attendance-login-modal"]');
+    expect(loginModal?.textContent || "").toContain("当前试验正在进行，仅允许切换登录人员");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-modal-logout"]')).toBeNull();
+    expect(attendanceLogoutCalls()).toHaveLength(0);
+  });
+
+  test("places the laboratory logout action in the center of the login modal footer", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+      workStartedAt: null,
+    };
+    await mountPage();
+
+    headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    const footerButtons = Array.from(document.body.querySelectorAll('[data-testid="laboratory-attendance-login-modal"] .form-actions button'))
+      .map((button) => button.getAttribute("data-testid") || String(button.textContent || "").trim());
+    expect(footerButtons).toEqual([
+      "取消",
+      "laboratory-attendance-modal-logout",
+      "laboratory-attendance-login-submit",
+    ]);
+  });
+
+  test("keeps protected action labels and opens employee login before comparing when unauthenticated", async () => {
+    attendanceSessionState = {
+      active: false,
+      employeeName: "",
+      labName: "盐雾试验室",
+      loggedInAt: null,
+      username: "",
+    };
+    await mountPage();
+
+    const compareButton = document.body.querySelector('[data-testid="laboratory-compare"]');
+    expect(compareButton?.textContent || "").toContain("比对任务");
+
+    compareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-login-modal"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-testid="laboratory-compare-modal"].is-open')).toBeFalsy();
+    expect(compareButton?.textContent || "").toContain("比对任务");
   });
 
   test("locks laboratory actions when the selected lab is under maintenance", async () => {
@@ -1356,8 +1832,9 @@ describe("LaboratoryPage runtime", () => {
     const logoutButton = document.body.querySelector('[data-testid="app-logout"]');
     const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
 
-    expect(headerButtons).toEqual(["刷新", "显示弹窗", "退出登录"]);
+    expect(headerButtons).toEqual(["刷新", "切换登录", "显示弹窗", "退出登录"]);
     expect(displayButton?.getAttribute("disabled")).not.toBeNull();
+    expect(displayButton?.previousElementSibling?.textContent || "").toContain("切换登录");
     expect(logoutButton?.previousElementSibling?.querySelector('[data-testid="laboratory-show-running-modal"]')).toBe(displayButton);
   });
 
@@ -1599,10 +2076,169 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
-    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toBe("已排程");
+    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toBe("任务进行中");
+    expect(mounted.get('[data-testid="laboratory-task-axis-status"]').text()).toBe("冲击试验部分完成 4/6轴");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain(`当前托盘：${trayCode}`);
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("冲击试验部分完成 4/6轴");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
+  });
+
+  test("shows tray flow for a remaining impact axis schedule while the tray is dispatched to mold", async () => {
+    vi.setSystemTime(new Date("2026-07-03T21:30:00+08:00"));
+    reactiveRoute.query = { lab: "冲击一室" };
+    masterLabsState = [
+      { code: "LAB_IMPACT_1", name: "冲击一室", type: "实验室", testTypeName: "冲击试验", status: 1 },
+      { code: "LAB_MOLD", name: "霉菌试验室", type: "实验室", testTypeName: "霉菌试验", status: 1 },
+    ];
+    const taskCode = "SYLU-2026-07-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const impactExperimentCode = `${taskCode}-A`;
+    const moldExperimentCode = `${taskCode}-B`;
+    const completedSubExperimentCode = `${impactExperimentCode}-AXIS-001`;
+    const remainingSubExperimentCode = `${impactExperimentCode}-AXIS-002`;
+    const completedAxisCodes = ["x+", "x-", "y+", "y-"];
+    const remainingAxisCodes = ["z+", "z-"];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: taskCode, name: "测试实验07021", status: "任务进行中", test_type: "冲击试验 / 霉菌试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          status: "实验进行中",
+          axis_codes: [...completedAxisCodes, ...remainingAxisCodes],
+        },
+        {
+          task_code: taskCode,
+          experiment_code: moldExperimentCode,
+          experiment_name: "霉菌试验",
+          status: "已排程",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: taskCode, experiment_code: impactExperimentCode, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: moldExperimentCode, tray_code: trayCode },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "run-impact-completed",
+          run_no: "run-impact-completed",
+          schedule_id: "schedule-impact-completed",
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          device: "冲击一室",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+          sub_experiment_code: completedSubExperimentCode,
+          tray_codes: [trayCode],
+          ended_at: "2026-07-03 21:21:51",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: completedAxisCodes.map((axisCode, index) => ({
+        id: `step-${axisCode}`,
+        run_no: "run-impact-completed",
+        task_code: taskCode,
+        experiment_code: impactExperimentCode,
+        axis_code: axisCode,
+        step_no: index + 1,
+        status: "实验已完成",
+        sub_experiment_code: completedSubExperimentCode,
+      })),
+      [STORAGE_KEYS.experiment_run_trays]: [
+        {
+          run_no: "run-impact-completed",
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          tray_code: trayCode,
+          status: "实验已完成",
+          run_tray_status: "实验已完成",
+          sub_experiment_code: completedSubExperimentCode,
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "送至实验室",
+          location: "霉菌试验室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              fixtureReady: false,
+              fixture_ready: false,
+              quantity: 1,
+              status: "送至实验室",
+              target_experiment_code: moldExperimentCode,
+              target_lab: "霉菌试验室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-impact-remaining",
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-07-04 12:00:00",
+          end_at: "2026-07-04 15:30:00",
+          status: "已排程",
+          axis_codes: remainingAxisCodes,
+          sub_experiment_code: remainingSubExperimentCode,
+        },
+        {
+          id: "schedule-mold",
+          task_code: taskCode,
+          experiment_code: moldExperimentCode,
+          lab_code: "LAB_MOLD",
+          device: "霉菌试验室",
+          start_at: "2026-07-04 08:00:00",
+          end_at: "2026-07-04 11:30:00",
+          status: "已排程",
+        },
+        {
+          id: "schedule-impact-completed",
+          task_code: taskCode,
+          experiment_code: impactExperimentCode,
+          lab_code: "LAB_IMPACT_1",
+          device: "冲击一室",
+          start_at: "2026-07-04 08:00:00",
+          end_at: "2026-07-04 11:30:00",
+          status: "实验已完成",
+          axis_codes: completedAxisCodes,
+          sub_experiment_code: completedSubExperimentCode,
+        },
+      ],
+    };
+
+    const mounted = await mountPage();
+    const recentTasks = mounted.findAll(".laboratory-recent-task");
+
+    expect(recentTasks).toHaveLength(1);
+    expect(recentTasks[0].text()).toContain(taskCode);
+    expect(recentTasks[0].text()).toContain("轴向：z+、z-");
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
+    expect(mounted.find(".laboratory-recent-task.is-current").text()).toContain("已选中");
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-select-task-SYLU-2026-07-021"]').text()).toBe("已选中");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
+    expect(mounted.find(".laboratory-recent-task.is-current").text()).toContain("已选中");
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+    expect(mounted.get('[data-testid="laboratory-tray-tab-SYLU-2026-07-021-TP-001"]').text()).toBe(trayCode);
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain(`${taskCode} / 冲击试验`);
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain(`当前托盘：${trayCode}`);
+    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
+    expect(mounted.get('[data-testid="laboratory-task-empty-hint"]').text()).toContain("当前托盘已送至霉菌试验室");
+    expect(mounted.get('[data-testid="laboratory-task-empty-hint"]').text()).not.toContain("请先在查看任务中选择一个任务");
   });
 
   test("blocks switching away from a task that has completed comparison", async () => {
@@ -2199,6 +2835,10 @@ describe("LaboratoryPage runtime", () => {
     const operationWrites = [];
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      const attendanceResponse = handleAttendanceFetch(url, options);
+      if (attendanceResponse) {
+        return attendanceResponse;
+      }
       if (url.includes("/api/laboratory/operations")) {
         return new Promise((resolve) => {
           operationWrites.push(() => resolve(handleLaboratoryOperationFetch(url, options)));
@@ -3320,6 +3960,10 @@ describe("LaboratoryPage runtime", () => {
     ];
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      const attendanceResponse = handleAttendanceFetch(url, options);
+      if (attendanceResponse) {
+        return attendanceResponse;
+      }
       if (url.includes("/api/mq/laboratory/fixture-install")) {
         return { ok: true, status: 200, json: async () => ({ ok: true, published: false, reason: "broker offline" }) };
       }
@@ -3380,6 +4024,10 @@ describe("LaboratoryPage runtime", () => {
     ];
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      const attendanceResponse = handleAttendanceFetch(url, options);
+      if (attendanceResponse) {
+        return attendanceResponse;
+      }
       if (url.includes("/api/mq/laboratory/ready")) {
         return { ok: true, status: 200, json: async () => ({ ok: true, published: false, reason: "broker offline" }) };
       }
@@ -3444,6 +4092,7 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
+    expect(attendanceWorkStartCalls()).toHaveLength(0);
 
     snapshotState = {
       ...snapshotState,
@@ -3492,6 +4141,8 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中");
     expect(mounted.text()).toContain("当前任务 SYLU-2026-04-101 已进入实验进行中");
+    expect(attendanceWorkStartCalls()).toHaveLength(1);
+    expect(attendanceWorkStartCalls()[0][0]).toBe("/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/work/start");
   });
 
   test("shows fixture countdown immediately but waits for install persistence before mqtt publish", async () => {
@@ -3520,6 +4171,10 @@ describe("LaboratoryPage runtime", () => {
     let releaseLaboratoryOperation = () => {};
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
+      const attendanceResponse = handleAttendanceFetch(url, options);
+      if (attendanceResponse) {
+        return attendanceResponse;
+      }
       if (url.includes("/api/laboratory/operations")) {
         return new Promise((resolve) => {
           releaseLaboratoryOperation = () => resolve(handleLaboratoryOperationFetch(url, options));
@@ -3637,6 +4292,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
     expect(laboratoryStartCalls()).toHaveLength(0);
+    expect(attendanceWorkStartCalls()).toHaveLength(0);
     expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
@@ -3647,6 +4303,8 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(laboratoryStartCalls()[0][0]).toBe("/api/laboratory/tasks/SYLU-2026-04-601/experiments/SYLU-2026-04-601-A/start");
+    expect(attendanceWorkStartCalls()).toHaveLength(0);
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-status"]')?.textContent || "").toContain("当前 00:00:03");
     expect(JSON.parse(String(laboratoryStartCalls()[0][1].body || "{}"))).toEqual(expect.objectContaining({
       labCode: "LAB_HOT_HUMID_2",
       labName: "高低温湿热二室",
@@ -3925,6 +4583,9 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").not.toContain("实验已超时");
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "实验已完成",
       status: "实验已完成",
@@ -3949,6 +4610,68 @@ describe("LaboratoryPage runtime", () => {
       runNo: "run-1",
       trayCodes: ["TP-001"],
     }));
+  });
+
+  test("automatically closes the completed experiment popup after sixty seconds", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:00:01.000Z",
+        status: "实验进行中",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [
+      {
+        id: "run-1",
+        run_no: "run-1",
+        schedule_id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        tray_codes: ["TP-001"],
+        status: "实验进行中",
+        started_at: "2026-04-02T09:59:58.000Z",
+        planned_end_at: "2026-04-02T10:00:01.000Z",
+      },
+    ];
+
+    await mountPage();
+
+    vi.advanceTimersByTime(2000);
+    await waitForLaboratoryCompleteCount(1);
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+
+    vi.advanceTimersByTime(59_000);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
+
+    vi.advanceTimersByTime(1_000);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
   });
 
   test("keeps the running modal open as completed when MQTT storage marks the run completed", async () => {
@@ -4660,7 +5383,7 @@ describe("LaboratoryPage runtime", () => {
           run_no: "RUN-VIB-SAME-SCHEDULE",
           task_code: "SYLU-2026-06-202",
           experiment_code: "SYLU-2026-06-202-A",
-          axis_code: "y+",
+          axis_code: "x-",
           step_no: 1,
           status: "实验进行中",
         },
@@ -4668,7 +5391,7 @@ describe("LaboratoryPage runtime", () => {
           run_no: "RUN-VIB-SAME-SCHEDULE",
           task_code: "SYLU-2026-06-202",
           experiment_code: "SYLU-2026-06-202-A",
-          axis_code: "x-",
+          axis_code: "y+",
           step_no: 2,
           status: "待执行",
         },
@@ -4678,9 +5401,112 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
     const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
 
-    expect(document.body.querySelector(".laboratory-recent-task")?.textContent || "").toContain("轴向：y+、x-");
-    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 x-");
+    expect(document.body.querySelector(".laboratory-recent-task")?.textContent || "").toContain("轴向：x-、y+");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y+");
     expect(axisButton?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("does not prompt attendance logout while continuing the next axis in the same schedule", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-206", name: "振动部分轴完成任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-206", experiment_code: "SYLU-2026-06-206-A", tray_code: "TP-VIB-206" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-partial-axis",
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          device: "振动一室",
+          axis_codes: ["x+", "y-"],
+          sub_experiment_code: "vib-partial-axis-segment",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-206-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-206",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-206" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-PARTIAL-AXIS",
+          run_no: "RUN-VIB-PARTIAL-AXIS",
+          schedule_id: "schedule-vib-partial-axis",
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-206"],
+          status: "实验进行中",
+          axis_codes: ["x+", "y-"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        {
+          run_no: "RUN-VIB-PARTIAL-AXIS",
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          sub_experiment_code: "vib-partial-axis-segment",
+          axis_code: "x+",
+          step_no: 1,
+          status: "实验进行中",
+        },
+        {
+          run_no: "RUN-VIB-PARTIAL-AXIS",
+          task_code: "SYLU-2026-06-206",
+          experiment_code: "SYLU-2026-06-206-A",
+          sub_experiment_code: "vib-partial-axis-segment",
+          axis_code: "y-",
+          step_no: 2,
+          status: "待执行",
+        },
+      ],
+    };
+
+    await mountPage();
+    document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitForLaboratoryCompleteCount(1);
+    await flushPageUpdates();
+
+    const completeBody = JSON.parse(String(laboratoryCompleteCalls().at(-1)?.[1]?.body || "{}"));
+    expect(completeBody).toEqual(expect.objectContaining({
+      axisCode: "x+",
+      nextAxisCode: "y-",
+      runNo: "RUN-VIB-PARTIAL-AXIS",
+      subExperimentCode: "vib-partial-axis-segment",
+      trayCodes: ["TP-VIB-206"],
+    }));
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("进行中");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").not.toContain("实验已完成");
+    vi.advanceTimersByTime(30_000);
+    await flushPageUpdates();
+    expect(attendanceLogoutCalls()).toHaveLength(0);
   });
 
   test("allows continuing axes from the active run schedule when the selected schedule row has different axes", async () => {
@@ -4961,5 +5787,88 @@ describe("LaboratoryPage runtime", () => {
       trayCodes: ["TP-VIB-204"],
     }));
     expect(completeBody.nextAxisCode).toBe("");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
+  });
+
+  test("prompts attendance logout when a running axis experiment completes from storage refresh", async () => {
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "SYLU-2026-06-207", name: "振动外部完成任务", test_type: "振动试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        {
+          task_code: "SYLU-2026-06-207",
+          experiment_code: "SYLU-2026-06-207-A",
+          experiment_name: "振动试验",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { task_code: "SYLU-2026-06-207", experiment_code: "SYLU-2026-06-207-A", tray_code: "TP-VIB-207" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          id: "schedule-vib-external-complete",
+          task_code: "SYLU-2026-06-207",
+          experiment_code: "SYLU-2026-06-207-A",
+          device: "振动一室",
+          axis_codes: ["x+"],
+          sub_experiment_code: "vib-external-axis-segment",
+          start_at: "2026-04-02T09:30:00.000Z",
+          end_at: "2026-04-02T10:30:00.000Z",
+          status: "实验进行中",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SYLU-2026-06-207-SP-001",
+          location: "振动一室",
+          owner: "周工",
+          status: "实验进行中",
+          flow_status: "实验进行中",
+          task_code: "SYLU-2026-06-207",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-207" }],
+        },
+      ],
+      [STORAGE_KEYS.experiment_runs]: [
+        {
+          id: "RUN-VIB-EXTERNAL-COMPLETE",
+          run_no: "RUN-VIB-EXTERNAL-COMPLETE",
+          schedule_id: "schedule-vib-external-complete",
+          task_code: "SYLU-2026-06-207",
+          experiment_code: "SYLU-2026-06-207-A",
+          device: "振动一室",
+          tray_codes: ["TP-VIB-207"],
+          status: "实验进行中",
+          axis_codes: ["x+"],
+          started_at: "2026-04-02T09:30:00.000Z",
+          planned_end_at: "2026-04-02T10:30:00.000Z",
+        },
+      ],
+    };
+
+    await mountPage();
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.experiment_runs]: snapshotState[STORAGE_KEYS.experiment_runs].map((run) =>
+        run.run_no === "RUN-VIB-EXTERNAL-COMPLETE"
+          ? { ...run, ended_at: "2026-04-02T10:00:00.000Z", status: "实验已完成", updated_at: "2026-04-02T10:00:00.000Z" }
+          : run,
+      ),
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs] },
+    }));
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
+    await flushPageUpdates();
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
   });
 });

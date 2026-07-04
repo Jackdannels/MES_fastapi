@@ -1,4 +1,5 @@
 import { isExperimentCompletedStatus } from "@/lib/statusNormalization";
+import { canonicalAxisCode, sortAxisCodes } from "@/lib/axisCodes";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -24,14 +25,14 @@ const parseAxisCodes = (value) => {
 
 const uniqueAxisCodes = (values = []) => {
   const seen = new Set();
-  return values.filter((value) => {
+  return sortAxisCodes(values.filter((value) => {
     const normalized = normalizeText(value);
     if (!normalized || seen.has(normalized)) {
       return false;
     }
     seen.add(normalized);
     return true;
-  });
+  }));
 };
 
 const resolveTaskCode = (entry) => normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo || entry?.code);
@@ -39,7 +40,7 @@ const resolveExperimentCode = (entry) =>
   normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo || entry?.code);
 const resolveTrayCode = (entry) => normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo || entry?.code);
 const resolveRunNo = (entry) => normalizeText(entry?.run_no || entry?.runNo || entry?.id);
-const resolveAxisCode = (entry) => normalizeText(entry?.axis_code || entry?.axisCode);
+const resolveAxisCode = (entry) => canonicalAxisCode(entry?.axis_code || entry?.axisCode);
 const resolveSubExperimentCode = (entry) =>
   normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo);
 
@@ -189,7 +190,7 @@ const resolveAxisProgress = ({
       && runNos.has(resolveRunNo(run))
       && isExperimentCompletedStatus(run?.status || run?.run_status || run?.runStatus),
     )
-    .flatMap((run) => parseAxisCodes(run?.axis_codes || run?.axisCodes))
+    .flatMap((run) => parseAxisCodes(run?.axis_codes || run?.axisCodes).map(canonicalAxisCode))
     .filter((axisCode) => requiredAxisCodeSet.has(axisCode));
   const completedAxisCodes = uniqueAxisCodes(
     [

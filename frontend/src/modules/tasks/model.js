@@ -1,5 +1,6 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
+import { DEFAULT_AXIS_CODES, formatAxisCodeLabel, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { RUNNING_TASK_DELETE_MESSAGE, taskHasRunningExperiment } from "@/lib/runningExperimentGuards";
 import { filterActiveTasks } from "@/lib/taskArchive";
@@ -36,7 +37,6 @@ const MIN_SAMPLE_COUNT = 1;
 const MAX_SAMPLE_COUNT = 99;
 const MAX_CONTACT_LENGTH = 15;
 const INVALID_TASK_TEXT_PATTERN = /[\uFFFD&^*#<>`{}|\\]/;
-const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
 const AXIS_AWARE_EXPERIMENT_TYPES = new Set(["冲击试验", "振动试验"]);
 const TASK_TEXT_FIELD_LABELS = {
   attachment: "附件",
@@ -52,23 +52,6 @@ const TASK_TEXT_FIELD_LABELS = {
 // 所有输入字段统一走字符串规范化，减少 null / undefined 分支。
 const normalizeText = (value) => String(value ?? "").trim();
 const isAxisAwareExperimentType = (value) => AXIS_AWARE_EXPERIMENT_TYPES.has(normalizeText(value));
-const formatAxisCodeLabel = (value) => normalizeText(value).toUpperCase();
-const normalizeAxisCodes = (value) => {
-  const rawValues = Array.isArray(value)
-    ? value
-    : normalizeText(value)
-      .split(/[,，、\s]+/)
-      .filter(Boolean);
-  const codes = [];
-  rawValues.forEach((item) => {
-    const normalized = normalizeText(item).toLowerCase();
-    if (!normalized || codes.includes(normalized)) {
-      return;
-    }
-    codes.push(normalized);
-  });
-  return codes;
-};
 const normalizeAxisCodesByTestType = (axisMap, selectedTypes = []) => {
   const source = axisMap && typeof axisMap === "object" ? axisMap : {};
   const selectedAxisTypes = collectExperimentTypes(selectedTypes).filter(isAxisAwareExperimentType);

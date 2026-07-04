@@ -1,4 +1,4 @@
-/* 系统信息页的页面布局、角色管理区块和设置样式。 */
+/* 人员信息页的页面布局、人员管理区块和设置样式。 */
 /* 页面采用标准纵向区块布局。 */
 .system-page {
   display: grid;
@@ -15,8 +15,9 @@
   justify-content: space-between;
 }
 
-/* 角色与设置卡片分别控制表格裁切和内部间距。 */
-.system-roles-card {
+/* 人员、工时与设置卡片分别控制表格裁切和内部间距。 */
+.system-roles-card,
+.system-worktime-card {
   overflow: hidden;
 }
 

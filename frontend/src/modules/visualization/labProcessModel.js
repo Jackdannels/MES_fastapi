@@ -352,19 +352,11 @@ const buildTrayRowsForLab = ({
         taskCode: aggregate.taskCode,
         trayCode: aggregate.trayCode,
       });
-      const axisPartialStatus = [
-        entry.lifecycleStatus,
-        flow.status,
-        flow.canonicalStatus,
-        ...asArray(flow.steps).map((step) => step?.label),
-      ].map(normalizeText).find((status) => isAxisPartialProgressStatus(status)) || "";
-      const displayStatus = axisPartialStatus || flow.status || "-";
-
       return {
-        canonicalStatus: axisPartialStatus || flow.canonicalStatus || flow.status || "-",
+        canonicalStatus: flow.canonicalStatus || flow.status || "-",
         quantity: aggregate.quantity,
         sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
-        status: displayStatus,
+        status: flow.status || "-",
         steps: asArray(flow.steps),
         taskCode: aggregate.taskCode,
         trayCode: aggregate.trayCode,

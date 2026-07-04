@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
+from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
@@ -203,7 +204,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(axis_code)
         axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def now_text() -> str:
@@ -1890,7 +1891,12 @@ def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest 
 
 
 @router.post("/tasks/{task_id}/allocate")
-def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...)) -> dict[str, Any]:
+def save_task_allocation(
+    task_id: str,
+    request: TaskAllocationRequest = Body(...),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
@@ -2017,7 +2023,12 @@ def save_task_allocation(task_id: str, request: TaskAllocationRequest = Body(...
     task["updated_at"] = now_business_text()
     snapshot["experiment_trays"] = next_experiment_trays
     snapshot["experiment_samples"] = next_experiment_samples
-    write_snapshot(snapshot, replace_task_codes={task_code(task)})
+    write_snapshot(
+        snapshot,
+        replace_task_codes={task_code(task)},
+        update_source=update_source,
+        update_request_id=update_request_id,
+    )
     return {
         "ok": True,
         "message": "托盘分配已保存",

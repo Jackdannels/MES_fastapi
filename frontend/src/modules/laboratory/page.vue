@@ -1,6 +1,24 @@
 <template>
   <div class="laboratory-page">
     <Teleport v-if="canTeleportScheduleAction" to=".header-actions-before-logout">
+      <div class="laboratory-attendance-header" data-testid="laboratory-attendance-header">
+        <button
+          class="action-btn secondary laboratory-attendance-login-button"
+          data-testid="laboratory-attendance-login"
+          type="button"
+          @click="openAttendanceLogin"
+        >
+          {{ attendanceLoggedIn ? "切换登录" : "试验间登录" }}
+        </button>
+        <div
+          class="laboratory-attendance-status"
+          :class="{ 'is-empty': !attendanceLoggedIn }"
+          data-testid="laboratory-attendance-status"
+        >
+          <strong>{{ attendanceStatus.employeeName }}</strong>
+          <span>{{ attendanceStatus.detail }}</span>
+        </div>
+      </div>
       <button
         class="action-btn secondary laboratory-header-action-button laboratory-header-action-button--overview"
         data-testid="laboratory-show-running-modal"
@@ -121,11 +139,13 @@
             v-for="row in recentTasks"
             :key="`recent-${row.id}`"
             class="laboratory-recent-task"
-            :class="{ 'is-current': currentTask && currentTask.id === row.id }"
+            :class="{ 'is-current': selectedTask && selectedTask.id === row.id }"
           >
             <div class="laboratory-recent-task__head">
               <strong class="laboratory-recent-task__code">{{ row.taskCode }}</strong>
-              <span v-if="currentTask && currentTask.id === row.id" class="pill">当前任务</span>
+              <span v-if="selectedTask && selectedTask.id === row.id" class="pill">
+                {{ currentTask && currentTask.id === row.id ? "当前任务" : "已选中" }}
+              </span>
             </div>
             <div class="laboratory-recent-task__experiment muted">{{ row.experimentName }}</div>
             <div v-if="row.axisCodes?.length" class="laboratory-recent-task__axes" data-testid="laboratory-recent-task-axes">
@@ -158,6 +178,13 @@
               </li>
             </ol>
             <div class="laboratory-flow-status" data-testid="laboratory-task-flow-status">{{ currentTaskFlow.currentStatus }}</div>
+            <div
+              v-if="currentTaskFlow.axisStatusLabel"
+              class="laboratory-flow-axis-status"
+              data-testid="laboratory-task-axis-status"
+            >
+              {{ currentTaskFlow.axisStatusLabel }}
+            </div>
             <div class="muted laboratory-flow-note">{{ progressMessage }}</div>
           </section>
 
@@ -166,7 +193,7 @@
               <div>
                 <div class="laboratory-flow-card__title">托盘流程图</div>
                 <div class="muted">
-                  {{ currentTask ? `${currentTask.taskCode} / ${currentTask.experimentName}` : "当前无可切换托盘" }}
+                  {{ trayFlowTask ? `${trayFlowTask.taskCode} / ${trayFlowTask.experimentName}` : "当前无可切换托盘" }}
                 </div>
               </div>
               <div class="laboratory-tray-tabs">
@@ -200,6 +227,96 @@
       </div>
     </section>
 
+    <Teleport to="body">
+      <AppModal
+        :open="attendanceLoginModalOpen"
+        :class="{ 'laboratory-attendance-login-modal--priority': attendanceLoginRunningExperimentActive }"
+        data-testid="laboratory-attendance-login-modal"
+        title="试验间登录"
+        @close="closeAttendanceLogin"
+      >
+        <div class="laboratory-modal-body">
+          <div class="laboratory-compare-head">
+            <h4>{{ labName }}员工登录</h4>
+            <span class="pill">考勤</span>
+          </div>
+          <div class="laboratory-attendance-modal-current">
+            <div class="laboratory-attendance-modal-current__status" :class="{ 'is-empty': !attendanceLoggedIn }">
+              <span>{{ attendanceLoggedIn ? "当前登录" : "当前未登录" }}</span>
+              <strong>{{ attendanceStatus.employeeName }}</strong>
+              <small>{{ attendanceStatus.detail }}</small>
+            </div>
+          </div>
+          <div v-if="attendanceLoginRunningExperimentActive" class="laboratory-attendance-running-warning">
+            {{ attendanceLoggedIn ? "当前试验正在进行，仅允许切换登录人员" : "当前试验正在进行，请先登录人员后继续操作" }}
+          </div>
+          <div class="form-grid">
+            <label class="form-field">
+              <span>员工账号</span>
+              <input v-model="attendanceLoginUsername" data-testid="laboratory-attendance-username" type="text" />
+            </label>
+            <label class="form-field">
+              <span>密码</span>
+              <input
+                v-model="attendanceLoginPassword"
+                data-testid="laboratory-attendance-password"
+                type="password"
+                @keyup.enter="submitAttendanceLogin"
+              />
+            </label>
+          </div>
+          <AppFeedback
+            v-if="attendanceLoginError"
+            :message="attendanceLoginError"
+            tone="error"
+            data-testid="laboratory-attendance-login-error"
+            @close="attendanceLoginError = ''"
+          />
+        </div>
+        <template #footer>
+          <button class="action-btn secondary" type="button" @click="closeAttendanceLogin">取消</button>
+          <button
+            v-if="!attendanceLoginRunningExperimentActive"
+            class="action-btn secondary laboratory-attendance-modal-footer-logout"
+            data-testid="laboratory-attendance-modal-logout"
+            type="button"
+            :disabled="!attendanceLoggedIn"
+            @click="logoutAttendance('manual')"
+          >
+            退出当前试验间登录
+          </button>
+          <button
+            class="action-btn"
+            data-testid="laboratory-attendance-login-submit"
+            type="button"
+            :disabled="attendanceSubmitting"
+            @click="submitAttendanceLogin"
+          >
+            {{ attendanceLoggedIn ? "切换并继续" : "登录并继续" }}
+          </button>
+        </template>
+      </AppModal>
+    </Teleport>
+
+    <AppModal
+      :open="attendanceLogoutPromptOpen"
+      :close-on-backdrop="false"
+      :close-on-esc="false"
+      :show-close="false"
+      data-testid="laboratory-attendance-logout-prompt"
+      title="实验完成，是否退出登录"
+      @close="() => {}"
+    >
+      <div class="laboratory-modal-body laboratory-prompt-card">
+        <p>当前实验已完成，{{ attendanceLogoutCountdown }} 秒后将自动退出当前试验间登录。</p>
+      </div>
+      <template #footer>
+        <button class="action-btn" data-testid="laboratory-attendance-logout-now" type="button" @click="logoutAttendance('completion-manual')">
+          立即退出登录
+        </button>
+      </template>
+    </AppModal>
+
     <AppModal
       :open="taskListModalOpen"
       class="laboratory-task-list-modal"
@@ -226,8 +343,8 @@
               :key="`${row.id}-task`"
               class="laboratory-task-list-row"
               :class="{
-                'is-current': currentTask && currentTask.id === row.id,
-                'is-pending': pendingTaskCode === row.id && (!currentTask || currentTask.id !== row.id),
+                'is-current': selectedTask && selectedTask.id === row.id,
+                'is-pending': pendingTaskCode === row.id && (!selectedTask || selectedTask.id !== row.id),
               }"
               :data-testid="`laboratory-task-row-${row.taskCode}`"
             >
@@ -571,6 +688,15 @@ const selectedLabName = computed(() => {
 
 const {
   actionState,
+  attendanceLoggedIn,
+  attendanceLoginError,
+  attendanceLoginModalOpen,
+  attendanceLoginPassword,
+  attendanceLoginUsername,
+  attendanceLogoutCountdown,
+  attendanceLogoutPromptOpen,
+  attendanceStatus,
+  attendanceSubmitting,
   canRequestFixtureInstall,
   canRequestReady,
   canTeleportScheduleAction,
@@ -578,6 +704,7 @@ const {
   canResetCurrentTask,
   canSelectTaskKey,
   checklist,
+  closeAttendanceLogin,
   closeCompleteConfirm,
   compareFeedback,
   compareScanInputRef,
@@ -609,6 +736,7 @@ const {
   currentTask,
   currentTaskFlow,
   hideRunningModal,
+  logoutAttendance,
   installModalOpen,
   installActionLabel,
   laboratoryMqError,
@@ -622,6 +750,7 @@ const {
   pendingTaskCode,
   progressMessage,
   laboratoryTaskNotice,
+  openAttendanceLogin,
   readyModalOpen,
   readyActionLabel,
   recentTasks,
@@ -632,6 +761,7 @@ const {
   runningModalExperiment,
   runningModalVisible,
   scheduleRows,
+  selectedTask,
   selectedTrayFlow,
   selectedTrayRow,
   setPendingTaskCode,
@@ -639,11 +769,14 @@ const {
   showRunningModal,
   summary,
   submitCompareScan,
+  submitAttendanceLogin,
   taskListModalOpen,
+  trayFlowTask,
 } = useLaboratoryPage({ selectedLabName });
 
 const fullContentModalOpen = ref(false);
 const fullContentDetail = ref(null);
+const attendanceLoginRunningExperimentActive = computed(() => Boolean(runningExperiment.value?.active));
 
 const previewItems = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
 const overflowCount = (items, limit) => Math.max(0, (Array.isArray(items) ? items.length : 0) - limit);

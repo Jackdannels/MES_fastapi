@@ -7,6 +7,111 @@
   white-space: nowrap;
 }
 
+.laboratory-attendance-header {
+  order: 96;
+  display: grid;
+  grid-template-columns: 124px 244px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.laboratory-attendance-login-button {
+  width: 100%;
+}
+
+.laboratory-attendance-status {
+  display: grid;
+  align-content: center;
+  min-height: 46px;
+  min-width: 244px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.04);
+}
+
+.laboratory-attendance-status.is-empty {
+  border-style: dashed;
+  background: rgba(19, 26, 34, 0.72);
+}
+
+.laboratory-attendance-status strong,
+.laboratory-attendance-status span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.laboratory-attendance-status strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.1;
+}
+
+.laboratory-attendance-status span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.laboratory-attendance-modal-current {
+  display: grid;
+  align-items: stretch;
+  padding: 12px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.42);
+  border-radius: 8px;
+  background: rgba(12, 20, 27, 0.76);
+}
+
+.laboratory-attendance-modal-current__status {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.laboratory-attendance-modal-current__status.is-empty {
+  color: var(--muted);
+}
+
+.laboratory-attendance-modal-current__status span,
+.laboratory-attendance-modal-current__status small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.laboratory-attendance-modal-current__status strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal.laboratory-attendance-login-modal--priority {
+  z-index: 120;
+}
+
+.laboratory-attendance-running-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(231, 183, 95, 0.52);
+  border-radius: var(--radius-control);
+  background: rgba(231, 183, 95, 0.14);
+  color: #ffe7b3;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.laboratory-attendance-modal-footer-logout {
+  min-width: 168px;
+}
+
 .laboratory-header-action-button--schedule {
   order: 96;
 }
@@ -45,6 +150,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
   z-index: 60;
 }
 
@@ -57,9 +163,11 @@
 .laboratory-running-overlay__content {
   position: relative;
   z-index: 1;
-  width: min(860px, 92vw);
-  max-height: min(82vh, 760px);
+  width: min(1040px, calc(100vw - 48px));
+  max-height: min(90vh, 860px);
   padding: 24px 28px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .laboratory-running-modal__head {
@@ -114,6 +222,7 @@
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  max-width: 100%;
 }
 
 .laboratory-running-axis-status {
@@ -316,6 +425,19 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+}
+
+.laboratory-flow-axis-status {
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid rgba(59, 130, 246, 0.24);
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .laboratory-flow-note {
@@ -1053,5 +1175,22 @@
   .laboratory-compare-scan {
     grid-template-columns: 1fr;
     display: grid;
+  }
+
+  .laboratory-attendance-header {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .laboratory-attendance-status {
+    min-width: 0;
+  }
+
+  .laboratory-attendance-modal-current {
+    grid-template-columns: 1fr;
+  }
+
+  .laboratory-attendance-modal-footer-logout {
+    width: 100%;
   }
 }

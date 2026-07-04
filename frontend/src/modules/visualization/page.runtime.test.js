@@ -377,7 +377,10 @@ describe("VisualizationPage runtime", () => {
       expect(previewText).toContain("13:00-16:00");
       expect(previewText).toContain("冲击一室");
       expect(previewText).toContain("盐雾试验室");
-      expect(previewText).toContain("REAL-TP-001 / REAL-TP-002");
+      const preview = wrapper.find('[data-testid="visual-single-preview"]');
+      const trayChips = preview.findAll('[data-testid="visual-task-plan-tray-chip"]');
+      expect(trayChips.map((chip) => chip.text())).toEqual(expect.arrayContaining(["REAL-TP-001", "REAL-TP-002"]));
+      expect(previewText).not.toContain("REAL-TP-001 / REAL-TP-002");
       expect(previewText).toContain("待分配托盘");
       expect(previewText).toContain("5件");
       expect(previewText).toContain("1件");

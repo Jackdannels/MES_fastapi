@@ -766,11 +766,22 @@ const buildTrayExperimentFlow = (input = {}) => {
     0,
   );
   const activePartialAxisExperiments = partialAxisExperiments.filter((experiment) => {
-    if (!normalizedStatusIsCompleted || !latestCompletedExperimentTime) {
+    if (!latestCompletedExperimentTime) {
       return true;
     }
     const partialAt = Number(experimentRuntimeEventMap.get(experiment.code)?.timeValue) || 0;
-    return partialAt >= latestCompletedExperimentTime;
+    if (!partialAt || partialAt >= latestCompletedExperimentTime) {
+      return true;
+    }
+    const currentLifecycleStatus = normalizeLifecycleStatus("", normalizedStatus);
+    const currentStatusKeepsPartial =
+      isAxisPartialProgressStatus(normalizedStatus)
+      && partialAxisStatusMatchesExperiment(normalizedStatus, experiment);
+    const selectedLabFlowKeepsPartial =
+      explicitExperimentCode === experiment.code
+      && PARTIAL_AXIS_STABLE_CURRENT_STATUSES.has(currentLifecycleStatus)
+      && currentLifecycleStatus !== "实验已完成";
+    return currentStatusKeepsPartial || selectedLabFlowKeepsPartial;
   });
   const historicalPartialAxisCodeSet = new Set(
     partialAxisExperiments
@@ -1187,7 +1198,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
     const latestWithdrawalRank = latestWithdrawalEntry
       ? resolveFlowStatusRank(latestWithdrawalEntry?.location, restoreTarget?.status || latestWithdrawalEntry?.status)
       : -1;
-    const shouldIgnoreHistoryTime = (entry, label, entryLocation) => {
+    const shouldIgnoreHistoryTime = (entry, label, entryLocation, historyExperimentEvent = null) => {
       if (!latestWithdrawal) {
         return false;
       }
@@ -1196,7 +1207,15 @@ const buildTrayFlowTimeMap = (input = {}) => {
         return false;
       }
       const labelRank = resolveFlowStatusRank(entryLocation, label);
-      return labelRank > latestWithdrawalRank;
+      if (labelRank <= latestWithdrawalRank) {
+        return false;
+      }
+      const restoredExperimentName = normalizeText(restoreTarget?.experimentName);
+      const historyExperimentName = normalizeText(historyExperimentEvent?.experimentName);
+      if (restoredExperimentName && historyExperimentName && restoredExperimentName !== historyExperimentName) {
+        return false;
+      }
+      return true;
     };
     if (latestWithdrawalEntry) {
       const withdrawalTime = latestWithdrawalEntry?.time
@@ -1253,20 +1272,29 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location);
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
+      const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
       const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].some((label) =>
         label === POST_EXPERIMENT_STAGING_SENT_STATUS || label === POST_EXPERIMENT_STAGING_STOCKED_STATUS,
       );
       const actualAppearanceStorage =
         statusLabel === APPEARANCE_STOCKED_STATUS
         && normalizeText(entry?.location).includes("外观检测间");
-      (withdrawalEntry ? [] : [statusLabel, actionLabel, detailLabel]).forEach((label) => {
+      const labels = withdrawalEntry
+        ? []
+        : [statusLabel, actionLabel, detailLabel].filter((label) => {
+          if (!experimentEvent || label !== actionLabel || label !== "已到达实验室") {
+            return true;
+          }
+          return !statusLabel || statusLabel === actionLabel;
+        });
+      labels.forEach((label) => {
         if (hasPostTestStagingLabel && label === "已到达暂存间") {
           return;
         }
         if (label === APPEARANCE_SENT_STATUS_LABEL) {
           return;
         }
-        if (!label || (!actualAppearanceStorage && shouldIgnoreHistoryTime(entry, label, entry?.location))) {
+        if (!label || (!actualAppearanceStorage && shouldIgnoreHistoryTime(entry, label, entry?.location, experimentEvent))) {
           return;
         }
         recordLatestFlowTime(label, time);
@@ -1278,7 +1306,6 @@ const buildTrayFlowTimeMap = (input = {}) => {
           recordLatestFlowTime(dispatchLabel, time);
         }
       }
-      const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
       if (experimentEvent) {
         const currentTime = entryTimeValue(entry);
         if (latestWithdrawal && currentTime < latestWithdrawal.time) {
@@ -1700,7 +1727,11 @@ function buildTrayFlowView(input = {}) {
         ? pushStep({
             key: `experiment-partial-axis-${currentExperimentIndex}`,
             label: partialAxisStatus,
-            reached: Boolean(partialAxisFollowUpStatus || shouldShowPartialAxisStaging),
+            reached: Boolean(
+              isAxisPartialProgressStatus(effectiveInput.status)
+              || partialAxisFollowUpStatus
+              || shouldShowPartialAxisStaging,
+            ),
           })
         : -1;
       const routeIndexes = routeSteps.map((label, index) =>
@@ -2069,16 +2100,19 @@ function buildTrayFlowView(input = {}) {
           });
         });
         const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
+        const finalStatusIsStagingStocked =
+          normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS
+          || normalizedFinalStatus === "已到达暂存间";
         const postTestStagingSentIndex = pushStep({
           key: "route-folded-post-staging-sent",
           label: "送至暂存间",
-          reached: normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "厂家收回",
+          reached: finalStatusIsStagingStocked || normalizedFinalStatus === "厂家收回",
           time: stepTimeMap.get("送至暂存间") || "",
         });
         const postTestStagingIndex = pushStep({
           key: "route-folded-post-staging",
           label: "已到达暂存间",
-          reached: normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS || normalizedFinalStatus === "厂家收回",
+          reached: finalStatusIsStagingStocked || normalizedFinalStatus === "厂家收回",
           time: stepTimeMap.get("已到达暂存间") || stepTimeMap.get(POST_EXPERIMENT_STAGING_STOCKED_STATUS) || "",
         });
         const foldedCompletedExperimentCodes = new Set(
@@ -2119,7 +2153,7 @@ function buildTrayFlowView(input = {}) {
           });
           steps[postTestStagingSentIndex].reached = true;
           steps[postTestStagingIndex].reached = true;
-        } else if (normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {
+        } else if (finalStatusIsStagingStocked) {
           activeIndex = postTestStagingIndex;
           currentStatus = "已到达暂存间";
           resultIndexes.forEach((stepIndex) => {

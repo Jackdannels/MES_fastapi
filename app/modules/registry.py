@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from fastapi import APIRouter
 
+from app.api.routes.attendance import router as attendance_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.companydepartment import router as companydepartment_router
 from app.api.routes.customer import router as customer_router
@@ -71,7 +72,7 @@ MODULES = (
         spa_routes=("/devices",),
     ),
     AppModule(key="data", api_routers=(yt_barcode_router, yt_object_router), spa_routes=("/data",)),
-    AppModule(key="system", spa_routes=("/system",)),
+    AppModule(key="system", api_routers=(attendance_router,), spa_routes=("/system",)),
     AppModule(key="visualization", spa_routes=("/visualization",)),
     AppModule(key="staging-management", spa_routes=("/staging-management",)),
     AppModule(key="appearance-inspection", spa_routes=("/appearance-inspection",)),

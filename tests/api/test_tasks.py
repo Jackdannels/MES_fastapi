@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -16,6 +16,8 @@ class FakeTaskStorage:
         experiment_samples=None,
         experiment_runs=None,
         experiment_run_trays=None,
+        experiment_run_steps=None,
+        staging_events=None,
         conflicts=None,
         devices=None,
         meta=None,
@@ -30,6 +32,8 @@ class FakeTaskStorage:
             "mes.experiment_samples": list(experiment_samples or []),
             "mes.experiment_runs": list(experiment_runs or []),
             "mes.experiment_run_trays": list(experiment_run_trays or []),
+            "mes.experiment_run_steps": list(experiment_run_steps or []),
+            "mes.staging_events": list(staging_events or []),
             "mes.conflicts": list(conflicts or []),
             "mes.devices": list(devices or []),
             "mes.meta": dict(meta or {}),
@@ -68,6 +72,8 @@ def build_client(
     experiment_samples=None,
     experiment_runs=None,
     experiment_run_trays=None,
+    experiment_run_steps=None,
+    staging_events=None,
     conflicts=None,
     devices=None,
     meta=None,
@@ -84,6 +90,8 @@ def build_client(
         experiment_samples=experiment_samples,
         experiment_runs=experiment_runs,
         experiment_run_trays=experiment_run_trays,
+        experiment_run_steps=experiment_run_steps,
+        staging_events=staging_events,
         conflicts=conflicts,
         devices=devices,
         meta=meta,
@@ -2077,6 +2085,9 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
         experiment_trays=[{"id": "REL-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
         experiment_samples=[{"id": "EXS-1", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "sample_code": "SYLU-2026-03-999-SP-001"}],
         experiment_runs=[{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A"}],
+        experiment_run_trays=[{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "tray_code": "SYLU-2026-03-999-TP-001"}],
+        experiment_run_steps=[{"run_no": "RUN-OLD", "task_code": "SYLU-2026-03-999", "experiment_code": "SYLU-2026-03-999-A", "axis_code": "x+", "status": "实验进行中"}],
+        staging_events=[{"id": "EVENT-OLD", "task_code": "SYLU-2026-03-999", "tray_code": "SYLU-2026-03-999-TP-001", "action": "stock_out"}],
         conflicts=[{"task_code": "SYLU-2026-03-999"}],
         devices=[{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
         meta={"schema_version": 2},
@@ -2105,7 +2116,50 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert storage.read("mes.experiment_trays") == []
     assert storage.read("mes.experiment_samples") == []
     assert storage.read("mes.experiment_runs") == []
+    assert storage.read("mes.experiment_run_trays") == []
+    assert storage.read("mes.experiment_run_steps") == []
+    assert storage.read("mes.staging_events") == []
     assert storage.read("mes.conflicts") == []
     assert storage.read("mes.devices") == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
     assert storage.read_all()["mes.meta"] == {"schema_version": 2}
+
+    from app.api.routes import tasks as tasks_route
+
+    assert "mes.experiment_run_steps" in tasks_route.TASK_STORAGE_UPDATE_KEYS
+    assert "mes.staging_events" in tasks_route.TASK_STORAGE_UPDATE_KEYS
+
+
+def test_tasks_reset_clears_attendance_sessions_without_deleting_users(monkeypatch):
+    from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, get_attendance_service, set_attendance_service_for_tests
+
+    client = build_client(monkeypatch)
+    current_time = {"value": datetime(2026, 7, 3, 8, 0, 0, tzinfo=timezone.utc)}
+    service = AttendanceService(
+        repository=InMemoryAttendanceRepository(),
+        now=lambda: current_time["value"],
+    )
+    set_attendance_service_for_tests(service)
+    service = get_attendance_service()
+    service.create_user(
+        username="task-reset-worker",
+        password="pw123",
+        employee_name="任务重置员工",
+        role_name="试验员",
+        active=True,
+    )
+    service.login_lab("冲击二室", username="task-reset-worker", password="pw123")
+    service.start_lab_work("冲击二室")
+    current_time["value"] = datetime(2026, 7, 3, 8, 5, 0, tzinfo=timezone.utc)
+    service.finish_work_interval(lab_name="冲击二室")
+    assert next(row for row in service.list_work_times("2026-07-03") if row["username"] == "task-reset-worker")["todaySeconds"] == 300
+
+    reset = client.post("/api/tasks/reset")
+    session = service.read_lab_session("冲击二室")
+    users = service.list_users()
+    worker = next(row for row in service.list_work_times("2026-07-03") if row["username"] == "task-reset-worker")
+
+    assert reset.status_code == 200
+    assert session["active"] is False
+    assert any(user["username"] == "task-reset-worker" for user in users)
+    assert worker["todaySeconds"] == 0
 

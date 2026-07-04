@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
+from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
 from app.services.mq_event_processor import generated_run_no, process_laboratory_event
 from app.services.mq_publisher import publish_laboratory_command
@@ -55,7 +56,7 @@ class ReadyRequest(BaseModel):
             axis_code = str(item or "").strip()
             if axis_code and axis_code not in axis_codes:
                 axis_codes.append(axis_code)
-        return axis_codes
+        return sort_axis_codes(axis_codes)
 
 
 class InterfaceModeRequest(BaseModel):

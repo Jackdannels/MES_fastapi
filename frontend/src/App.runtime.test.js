@@ -406,7 +406,9 @@ describe("App runtime boundary", () => {
     expect(navLabels).not.toContain("样品/托盘管理");
     expect(navLabels.indexOf("任务/托盘总览")).toBeLessThan(navLabels.indexOf("样品预接驳"));
     expect(navLabels.indexOf("样品预接驳")).toBeLessThan(navLabels.indexOf("排程看板"));
-    expect(navLabels.indexOf("系统信息")).toBeLessThan(navLabels.indexOf("历史任务数据"));
+    expect(navLabels).toContain("人员信息");
+    expect(navLabels).not.toContain("系统信息");
+    expect(navLabels.indexOf("人员信息")).toBeLessThan(navLabels.indexOf("历史任务数据"));
   });
 
   test("opens the exit dialog instead of logging out immediately", async () => {

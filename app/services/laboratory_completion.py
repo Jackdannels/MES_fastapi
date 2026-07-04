@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.axis_codes import canonical_axis_code, sort_axis_codes
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.appearance_inspection import (
     APPEARANCE_INSPECTION_DISPATCH_STATUS,
@@ -45,7 +46,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(axis_code)
         axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def completion_history_detail(task_code: Any, experiment_name: Any) -> str:
@@ -128,7 +129,7 @@ def required_axis_codes_for_completion(
                 seen.add(axis_code)
                 axes.append(axis_code)
         if axes:
-            return axes
+            return sort_axis_codes(axes)
     for experiment in experiments:
         if (
             normalize_text(experiment.get("task_code") or experiment.get("task_no")) == normalized_task_code
@@ -136,7 +137,7 @@ def required_axis_codes_for_completion(
         ):
             axes = normalize_axis_codes(experiment.get("axis_codes") or experiment.get("axisCodes"))
             if axes:
-                return axes
+                return sort_axis_codes(axes)
 
     axes: list[str] = []
     seen: set[str] = set()
@@ -153,7 +154,7 @@ def required_axis_codes_for_completion(
                 continue
             seen.add(axis_code)
             axes.append(axis_code)
-    return axes
+    return sort_axis_codes(axes)
 
 
 def run_axis_codes(run: dict[str, Any] | None) -> list[str]:
@@ -217,7 +218,7 @@ def completed_axis_codes_for_completion(
         return bool(tray_codes_by_run_no.get(step_run_no, set()) & affected_tray_codes)
 
     completed_axes = {
-        normalize_text(step.get("axis_code") or step.get("axisCode"))
+        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         for step in experiment_run_steps
         if normalize_text(step.get("task_code") or step.get("task_no")) == normalized_task_code
         and normalize_text(step.get("experiment_code") or step.get("experiment_no")) == normalized_experiment_code
@@ -228,7 +229,7 @@ def completed_axis_codes_for_completion(
         )
         and normalize_text(step.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES
         and step_matches_affected_tray_scope(step)
-        and normalize_text(step.get("axis_code") or step.get("axisCode"))
+        and canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
     }
     for relation in experiment_run_trays:
         if (

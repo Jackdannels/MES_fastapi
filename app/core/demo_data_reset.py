@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
+from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, DEFAULT_AXIS_CODES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
@@ -22,7 +23,7 @@ def _random_axis_requirements(rng: random.SystemRandom) -> list[str]:
     shuffled_axis_codes = list(DEFAULT_AXIS_CODES)
     rng.shuffle(shuffled_axis_codes)
     count = rng.randint(1, len(shuffled_axis_codes))
-    return shuffled_axis_codes[:count]
+    return sort_axis_codes(shuffled_axis_codes[:count])
 
 
 def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: datetime | None = None) -> dict[str, Any]:

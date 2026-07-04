@@ -1230,7 +1230,15 @@ const LabScheduleScreen = {
   },
 };
 
-const taskPlanTrayText = (entry) => (entry.trays?.length ? entry.trays.join(" / ") : "待分配托盘");
+const renderTaskPlanTrayCell = (entry) => {
+  const trays = Array.isArray(entry.trays) ? entry.trays : [];
+  if (!trays.length) {
+    return h("span", { class: "is-pending" }, "待分配托盘");
+  }
+  return h("div", { class: "visual-task-plan-tray-list has-tray" }, trays.map((tray, index) =>
+    h("span", { class: "visual-task-plan-tray-chip", "data-testid": "visual-task-plan-tray-chip", key: `${tray}-${index}` }, tray),
+  ));
+};
 const taskPlanRowToneClass = (taskIndex) => `visual-task-plan-row-tone is-tone-${taskIndex % 2 === 0 ? "a" : "b"}`;
 const flattenTaskPlanRows = (tasks) =>
   tasks.flatMap((task, taskIndex) =>
@@ -1308,7 +1316,7 @@ const TodayTaskPlanScreen = {
                         h("span", row.experimentType),
                         h("span", row.time),
                         h("span", row.lab),
-                        h("span", { class: row.trays.length ? "has-tray" : "is-pending" }, taskPlanTrayText(row)),
+                        renderTaskPlanTrayCell(row),
                         h("span", `${row.sampleCount}件`),
                       ]),
                     )

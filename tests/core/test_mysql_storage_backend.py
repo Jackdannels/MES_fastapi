@@ -290,7 +290,7 @@ def test_replace_experiments_writes_dispatched_axis_codes() -> None:
     insert_sql, rows = cursor.executemany_calls[0]
     assert "axis_codes_json" in insert_sql
     assert "axis_codes_json = VALUES(axis_codes_json)" in insert_sql
-    assert json.loads(rows[0]["axis_codes_json"]) == ["z-", "y+"]
+    assert json.loads(rows[0]["axis_codes_json"]) == ["y+", "z-"]
 
 
 def test_load_experiments_reads_dispatched_axis_codes() -> None:
@@ -323,7 +323,7 @@ def test_load_experiments_reads_dispatched_axis_codes() -> None:
     experiments = mysql_storage_loaders_module.load_experiments(cursor)
 
     assert "axis_codes_json" in cursor.executed_sql
-    assert experiments[0]["axis_codes"] == ["z-", "y+"]
+    assert experiments[0]["axis_codes"] == ["y+", "z-"]
 
 
 def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> None:
@@ -951,7 +951,7 @@ def test_schedule_mapping_accepts_legacy_device_name_field() -> None:
     assert insert_row["lab_code"] == "LAB_SALT"
 
 
-def test_schedule_mapping_round_trips_axis_codes_in_scheduled_order() -> None:
+def test_schedule_mapping_round_trips_axis_codes_in_standard_order() -> None:
     storage_schedule = {
         "id": "schedule-axis",
         "task_code": "SYLU-2026-06-201",
@@ -965,10 +965,10 @@ def test_schedule_mapping_round_trips_axis_codes_in_scheduled_order() -> None:
     insert_row = build_schedule_insert_row(storage_schedule)
     storage_item = build_storage_schedule_item(insert_row)
 
-    assert json.loads(insert_row["axis_codes_json"]) == ["z-", "y+", "x-"]
+    assert json.loads(insert_row["axis_codes_json"]) == ["x-", "y+", "z-"]
     assert insert_row["axis_batch_no"] == "batch-2"
     assert insert_row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
-    assert storage_item["axis_codes"] == ["z-", "y+", "x-"]
+    assert storage_item["axis_codes"] == ["x-", "y+", "z-"]
     assert storage_item["axis_batch_no"] == "batch-2"
     assert storage_item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Z"
 
@@ -1029,8 +1029,8 @@ def test_experiment_mapping_round_trips_dispatched_axis_codes() -> None:
         }
     )
 
-    assert json.loads(insert_row["axis_codes_json"]) == ["z-", "y+", "x-"]
-    assert storage_item["axis_codes"] == ["z-", "y+", "x-"]
+    assert json.loads(insert_row["axis_codes_json"]) == ["x-", "y+", "z-"]
+    assert storage_item["axis_codes"] == ["x-", "y+", "z-"]
 
 
 def test_experiment_mapping_round_trip_preserves_unscheduled_since() -> None:
@@ -3769,10 +3769,10 @@ def test_experiment_run_row_round_trips_axis_plan() -> None:
     )
     item = build_storage_experiment_run_item(row, tray_codes=["TP-AXIS-001"])
 
-    assert json.loads(row["axis_codes_json"]) == ["z-", "y+", "x-"]
+    assert json.loads(row["axis_codes_json"]) == ["x-", "y+", "z-"]
     assert row["axis_batch_no"] == "2"
     assert row["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
-    assert item["axis_codes"] == ["z-", "y+", "x-"]
+    assert item["axis_codes"] == ["x-", "y+", "z-"]
     assert item["axis_batch_no"] == "2"
     assert item["sub_experiment_code"] == "SYLU-2026-06-201-A-VIB-Y"
 

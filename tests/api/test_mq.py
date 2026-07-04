@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
+from datetime import datetime, timezone
 from types import ModuleType
 
 from app.api.routes import mq as mq_route
@@ -9,6 +10,7 @@ from app.core.config import Settings
 from app.services import mq_publisher
 from app.services import mq_runtime
 from app.services import mq_subscriber
+from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, set_attendance_service_for_tests
 from app.services.mq_event_processor import (
     MySQLMqEventRepository,
     merge_scoped_samples,
@@ -1301,6 +1303,58 @@ def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_a
     assert repository.messages[0]["sub_experiment_code"] == "SYLU-2026-03-001-A-AXIS-X"
     assert repository.events[0]["event_type"] == "EXPERIMENT_STARTED"
     assert repository.events[0]["sub_experiment_code"] == "SYLU-2026-03-001-A-AXIS-X"
+
+
+def test_process_experiment_started_and_ended_updates_attendance_work_interval():
+    current_time = {"value": datetime(2026, 7, 3, 8, 0, 0, tzinfo=timezone.utc)}
+    service = AttendanceService(
+        repository=InMemoryAttendanceRepository(),
+        now=lambda: current_time["value"],
+    )
+    set_attendance_service_for_tests(service)
+    service.create_user(
+        username="mqtt-worker",
+        password="pw123",
+        employee_name="MQTT员工",
+        role_name="试验员",
+        active=True,
+    )
+    service.login_lab("盐雾试验室", username="mqtt-worker", password="pw123", lab_code="LAB_SALT")
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab = {}
+
+    started_ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-started",
+        {
+            "lab_code": "LAB_SALT",
+            "started_at": "2026-07-03T08:00:00Z",
+        },
+        repository=repository,
+    )
+    active_session = service.read_lab_session("盐雾试验室")
+    repository.runs_by_lab["LAB_SALT"] = {
+        "run_no": repository.events[0]["run_no"],
+        "task_no": "SYLU-2026-03-001",
+        "experiment_no": "SYLU-2026-03-001-A",
+        "lab_code": "LAB_SALT",
+    }
+    current_time["value"] = datetime(2026, 7, 3, 8, 5, 0, tzinfo=timezone.utc)
+    ended_ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2026-07-03T08:05:00Z",
+        },
+        repository=repository,
+    )
+    current_time["value"] = datetime(2026, 7, 3, 8, 10, 0, tzinfo=timezone.utc)
+    worker = next(row for row in service.list_work_times("2026-07-03") if row["username"] == "mqtt-worker")
+
+    assert started_ack["status"] == "PROCESSED"
+    assert active_session["workStartedAt"] == "2026-07-03T16:00:00+08:00"
+    assert ended_ack["status"] == "PROCESSED"
+    assert service.read_lab_session("盐雾试验室")["workStartedAt"] is None
+    assert worker["todaySeconds"] == 300
 
 
 def test_process_experiment_started_uses_payload_run_no_for_created_run():
@@ -3706,6 +3760,29 @@ def test_process_experiment_ended_passes_axis_fields_to_run_completion():
 
     assert ack["status"] == "PROCESSED"
     assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "x-", "")]
+
+
+def test_process_axis_continuation_does_not_finish_attendance_work_interval(monkeypatch):
+    service = AttendanceService(repository=InMemoryAttendanceRepository())
+    set_attendance_service_for_tests(service)
+    finish_calls = []
+    monkeypatch.setattr(service, "finish_work_interval", lambda **kwargs: finish_calls.append(kwargs))
+    repository = FakeMqEventRepository()
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2026-05-16 11:00:00",
+            "axis_code": "y+",
+            "next_axis_code": "x-",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "x-", "")]
+    assert finish_calls == []
 
 
 def test_process_experiment_ended_passes_payload_sub_experiment_code_to_run_completion():

@@ -1,5 +1,6 @@
 // 提供排程页所需的表单、看板行、甘特数据和增删改辅助函数。
 import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { filterActiveTasks } from "@/lib/taskArchive";
@@ -140,24 +141,6 @@ const buildFallbackExperimentsForTask = (task) => {
     required_device: experimentTypes[index] || experimentTypes[0] || "",
     task_code: taskCode,
   }));
-};
-
-const normalizeAxisCodes = (value) => {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.replace(/，/g, ",").split(",")
-      : [];
-  const seen = new Set();
-  return rawValues
-    .map((item) => normalizeText(item).toLowerCase())
-    .filter((item) => {
-      if (!item || seen.has(item)) {
-        return false;
-      }
-      seen.add(item);
-      return true;
-    });
 };
 
 const resolveSubExperimentCode = (value = {}) =>

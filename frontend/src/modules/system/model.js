@@ -1,28 +1,34 @@
-// 定义系统页渲染使用的静态卡片、角色行和设置数据。
+// 定义人员信息页渲染使用的静态卡片、员工账号行和设置数据。
 const SYSTEM_SUMMARY_CARDS = Object.freeze([
-  { label: "用户", note: "本周活跃", value: 42 },
+  { label: "员工账号", note: "全部试验间可登录", value: 0 },
   { label: "班次", note: "白班/中班/夜班", value: 3 },
-  { label: "角色权限", note: "核心角色", value: 6 },
+  { label: "在线员工", note: "当前试验间登录", value: 0 },
 ]);
 
-const ROLE_ROWS = Object.freeze([
+const EMPLOYEE_ROWS = Object.freeze([
   {
-    id: "role-scheduler",
-    keyPermissions: "创建、改排",
-    name: "排程员",
-    scope: "任务 + 排程",
+    active: true,
+    allowedLabs: ["*"],
+    currentLabName: "",
+    employeeName: "张三",
+    id: "employee-zhangsan",
+    lastLoginAt: "",
+    online: false,
+    roleName: "试验员",
+    todaySeconds: 0,
+    username: "zhangsan",
   },
   {
-    id: "role-supervisor",
-    keyPermissions: "审批、数据锁定",
-    name: "试验主管",
-    scope: "过程 + 数据",
-  },
-  {
-    id: "role-device-engineer",
-    keyPermissions: "校准、维护",
-    name: "设备工程师",
-    scope: "设备",
+    active: true,
+    allowedLabs: ["*"],
+    currentLabName: "",
+    employeeName: "李四",
+    id: "employee-lisi",
+    lastLoginAt: "",
+    online: false,
+    roleName: "试验组长",
+    todaySeconds: 0,
+    username: "lisi",
   },
 ]);
 
@@ -32,33 +38,71 @@ const BASE_SETTINGS = Object.freeze({
   shiftConfig: "白班 08:00-16:00",
 });
 
-const EMPTY_ROLE_FORM = Object.freeze({
-  keyPermissions: "",
-  name: "",
-  scope: "",
+const EMPTY_EMPLOYEE_FORM = Object.freeze({
+  active: true,
+  employeeName: "",
+  password: "",
+  roleName: "试验员",
+  username: "",
 });
 
-// 将角色数据标准化为新增和编辑操作共用的表单结构。
-function createRoleForm(role = EMPTY_ROLE_FORM) {
+function formatWorkDuration(totalSeconds) {
+  const seconds = Number(totalSeconds);
+  const safeSeconds = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secondsOnly = safeSeconds % 60;
+  return `${hours}小时${minutes}分${secondsOnly}秒`;
+}
+
+function createEmployeeRow(row = {}) {
+  const allowedLabs = Array.isArray(row?.allowedLabs) ? row.allowedLabs : [];
+  const currentLabNames = Array.isArray(row?.currentLabNames)
+    ? row.currentLabNames.map((labName) => String(labName || "").trim()).filter(Boolean)
+    : [];
+  const currentLabName = currentLabNames.length > 0 ? currentLabNames.join("、") : String(row?.currentLabName || "").trim();
   return {
-    // 角色表单不直接复用原始对象，避免编辑态误改静态数据。
-    keyPermissions: String(role?.keyPermissions || ""),
-    name: String(role?.name || ""),
-    scope: String(role?.scope || ""),
+    active: row?.active !== false,
+    allowedLabs,
+    currentLabName,
+    currentLabNames,
+    employeeName: String(row?.employeeName || "").trim(),
+    id: row?.id || row?.username || "",
+    lastLoginAt: String(row?.lastLoginAt || "").trim(),
+    online: Boolean(row?.online),
+    roleName: String(row?.roleName || "").trim(),
+    statusLabel: row?.online ? "在线" : (row?.active === false ? "停用" : "离线"),
+    todaySeconds: Number(row?.todaySeconds || 0),
+    todayWorkTime: formatWorkDuration(row?.todaySeconds || 0),
+    username: String(row?.username || "").trim(),
   };
 }
 
-// 将系统页的静态卡片、角色行和设置打包为统一对象。
-function buildSystemPageState() {
+// 将员工数据标准化为新增和编辑操作共用的表单结构。
+function createEmployeeForm(employee = EMPTY_EMPLOYEE_FORM) {
   return {
-    roleRows: ROLE_ROWS.map((role) => ({
-      ...role,
-      // 每一行都预先挂载对应表单快照，便于页面直接进入编辑态。
-      form: createRoleForm(role),
+    active: employee?.active !== false,
+    employeeName: String(employee?.employeeName || ""),
+    password: "",
+    roleName: String(employee?.roleName || ""),
+    username: String(employee?.username || ""),
+  };
+}
+
+// 将系统页的静态卡片、员工行和设置打包为统一对象。
+function buildSystemPageState() {
+  const employeeRows = EMPLOYEE_ROWS.map(createEmployeeRow);
+  return {
+    employeeRows: employeeRows.map((employee) => ({
+      ...employee,
+      form: createEmployeeForm(employee),
     })),
     settings: { ...BASE_SETTINGS },
-    summaryCards: SYSTEM_SUMMARY_CARDS.map((card) => ({ ...card })),
+    summaryCards: SYSTEM_SUMMARY_CARDS.map((card) => ({
+      ...card,
+      value: card.label === "员工账号" ? employeeRows.length : card.label === "在线员工" ? employeeRows.filter((row) => row.online).length : card.value,
+    })),
   };
 }
 
-export { buildSystemPageState, createRoleForm, EMPTY_ROLE_FORM };
+export { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM, formatWorkDuration };

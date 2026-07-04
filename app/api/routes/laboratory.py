@@ -8,9 +8,11 @@ from fastapi import APIRouter, Body, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update
+from app.core.axis_codes import canonical_axis_code, sort_axis_codes
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
+from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
 from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import (
@@ -136,7 +138,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(axis_code)
         axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def as_list(value: Any) -> list[Any]:
@@ -462,7 +464,7 @@ def required_axis_codes_for_restore(
                 continue
             seen.add(axis_code)
             axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def latest_previous_partial_axis_completion(
@@ -555,7 +557,7 @@ def latest_previous_partial_axis_completion(
                 continue
             if normalize_text(step.get("status")) not in COMPLETED_EXPERIMENT_STATUSES:
                 continue
-            axis_code = normalize_text(step.get("axis_code") or step.get("axisCode"))
+            axis_code = canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
             if axis_code:
                 completed_axes.add(axis_code)
             event_times.extend(
@@ -1115,7 +1117,18 @@ def start_current_experiment(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             write_start_snapshot(snapshot, result)
+            attendance_service = get_attendance_service()
+            attendance_service.start_work_interval(
+                lab_code=request.lab_code,
+                lab_name=lab_name,
+                run_no=request.run_no,
+                task_code=normalized_task_code,
+                experiment_code=normalized_experiment_code,
+                source="api",
+                started_at=result.get("startedAt") or request.started_at,
+            )
             return {
+                "attendanceSession": attendance_service.read_lab_session(lab_name),
                 "ok": True,
                 "message": f"{normalized_task_code} / {current_experiment_name} 已开始",
                 **result,
@@ -1167,6 +1180,12 @@ def complete_current_experiment(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             write_completion_snapshot(result)
+            if should_finish_work_interval_for_completion(axis_code=request.axis_code, next_axis_code=request.next_axis_code):
+                get_attendance_service().finish_work_interval(
+                    run_no=request.run_no,
+                    lab_name=resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code),
+                    ended_at=request.completed_at,
+                )
             return {
                 "ok": True,
                 "message": f"{normalized_task_code} / {current_experiment_name} 已完成",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.axis_codes import canonical_axis_code, sort_axis_codes
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_completion import (
@@ -37,7 +38,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(normalized)
         result.append(normalized)
-    return result
+    return sort_axis_codes(result)
 
 
 def scheduled_axis_codes_for_experiment(
@@ -69,7 +70,7 @@ def scheduled_axis_codes_for_experiment(
                 continue
             seen.add(axis_code)
             axes.append(axis_code)
-    return axes
+    return sort_axis_codes(axes)
 
 
 def dispatched_axis_codes_for_experiment(
@@ -87,7 +88,7 @@ def dispatched_axis_codes_for_experiment(
             continue
         axes = normalize_axis_codes(experiment.get("axis_codes") or experiment.get("axisCodes"))
         if axes:
-            return axes
+            return sort_axis_codes(axes)
     return []
 
 
@@ -143,7 +144,7 @@ def planned_axis_codes_for_run(
         matched_run = run
         axes = normalize_axis_codes(run.get("axis_codes") or run.get("axisCodes"))
         if axes:
-            return axes
+            return sort_axis_codes(axes)
         break
     if matched_run:
         schedule_id = normalize_text(matched_run.get("schedule_id") or matched_run.get("scheduleId"))
@@ -153,7 +154,7 @@ def planned_axis_codes_for_run(
                     continue
                 axes = normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
                 if axes:
-                    return axes
+                    return sort_axis_codes(axes)
     return scheduled_axis_codes_for_experiment(
         snapshot.get("schedules", []),
         task_code=task_code,
@@ -179,7 +180,7 @@ def ensure_run_steps(
     existing = {
         (
             normalize_text(step.get("run_no") or step.get("runNo")),
-            normalize_text(step.get("axis_code") or step.get("axisCode")),
+            canonical_axis_code(step.get("axis_code") or step.get("axisCode")),
         )
         for step in next_steps
     }
@@ -217,8 +218,8 @@ def complete_storage_laboratory_axis_step(
     normalized_experiment_code = normalize_text(experiment_code)
     normalized_sub_experiment_code = normalize_text(sub_experiment_code)
     normalized_run_no = normalize_text(run_no)
-    normalized_axis_code = normalize_text(axis_code)
-    normalized_next_axis_code = normalize_text(next_axis_code)
+    normalized_axis_code = canonical_axis_code(axis_code)
+    normalized_next_axis_code = canonical_axis_code(next_axis_code)
     completed_time = format_business_datetime(completed_at) or normalize_text(completed_at) or now_business_text()
     if not normalized_task_code or not normalized_experiment_code or not normalized_run_no or not normalized_axis_code:
         raise ValueError("task_code, experiment_code, run_no and axis_code are required")
@@ -245,6 +246,7 @@ def complete_storage_laboratory_axis_step(
         run_axes = [*run_axes, normalized_axis_code]
     if normalized_next_axis_code and normalized_next_axis_code not in run_axes:
         run_axes = [*run_axes, normalized_next_axis_code]
+    run_axes = sort_axis_codes(run_axes)
     required_axes = required_axis_codes_for_experiment(
         snapshot,
         task_code=normalized_task_code,
@@ -256,6 +258,7 @@ def complete_storage_laboratory_axis_step(
         required_axes = [*required_axes, normalized_axis_code]
     if normalized_next_axis_code and normalized_next_axis_code not in required_axes:
         required_axes = [*required_axes, normalized_next_axis_code]
+    required_axes = sort_axis_codes(required_axes)
 
     steps = ensure_run_steps(
         snapshot.get("experiment_run_steps", []),
@@ -265,10 +268,24 @@ def complete_storage_laboratory_axis_step(
         sub_experiment_code=normalized_sub_experiment_code,
         task_code=normalized_task_code,
     )
+    completed_before = {
+        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
+        for step in steps
+        if normalize_text(step.get("run_no") or step.get("runNo")) == normalized_run_no
+        and normalize_text(step.get("status")) == AXIS_COMPLETED_STATUS
+    }
+    effective_next_axis_code = ""
+    if normalized_axis_code in run_axes:
+        for axis in run_axes[run_axes.index(normalized_axis_code) + 1:]:
+            if axis not in completed_before:
+                effective_next_axis_code = axis
+                break
+    elif normalized_next_axis_code in run_axes:
+        effective_next_axis_code = normalized_next_axis_code
     next_steps: list[dict[str, Any]] = []
     for step in steps:
         step_run_no = normalize_text(step.get("run_no") or step.get("runNo"))
-        step_axis_code = normalize_text(step.get("axis_code") or step.get("axisCode"))
+        step_axis_code = canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         if step_run_no != normalized_run_no:
             next_steps.append(step)
             continue
@@ -282,7 +299,7 @@ def complete_storage_laboratory_axis_step(
                     "updated_at": completed_time,
                 }
             )
-        elif normalized_next_axis_code and step_axis_code == normalized_next_axis_code:
+        elif effective_next_axis_code and step_axis_code == effective_next_axis_code:
             next_steps.append(
                 {
                     **step,
@@ -339,7 +356,7 @@ def complete_storage_laboratory_axis_step(
         return bool(tray_codes_by_run_no.get(step_run_no, set()) & current_run_tray_codes)
 
     completed_axes = {
-        normalize_text(step.get("axis_code") or step.get("axisCode"))
+        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         for step in next_steps
         if step_matches_experiment(step)
         and step_matches_current_run_tray_scope(step)
@@ -359,7 +376,7 @@ def complete_storage_laboratory_axis_step(
         return {**result, "experimentRunSteps": next_steps}
 
     current_run_completed_axes = {
-        normalize_text(step.get("axis_code") or step.get("axisCode"))
+        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
         for step in next_steps
         if normalize_text(step.get("run_no") or step.get("runNo")) == normalized_run_no
         and normalize_text(step.get("status")) == AXIS_COMPLETED_STATUS

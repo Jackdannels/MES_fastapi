@@ -322,6 +322,24 @@ const removeEditAxisExperiment = async (wrapper, experimentType) => {
 
 describe("TasksPage runtime", () => {
   beforeEach(() => {
+    const store = new Map();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem(key) {
+          return store.has(key) ? store.get(key) : null;
+        },
+        setItem(key, value) {
+          store.set(key, String(value));
+        },
+        removeItem(key) {
+          store.delete(key);
+        },
+        clear() {
+          store.clear();
+        },
+      },
+    });
     window.location.hash = "";
     routeState.hash = "";
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline"))));
@@ -390,11 +408,11 @@ describe("TasksPage runtime", () => {
     expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
     expect(wrapper.find('[data-testid="task-detail-modal"].modal.is-open').exists()).toBe(true);
     expect(wrapper.text()).toContain("任务详情");
-    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("冲击试验（Z-、X+）");
+    expect(wrapper.get('[data-testid="task-edit-test-types-trigger"]').text()).toContain("冲击试验（X+、Z-）");
 
     await wrapper.get('[data-testid="task-edit-test-types-trigger"]').trigger("click");
 
-    expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（Z-、X+）");
+    expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（X+、Z-）");
 
     await wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').trigger("click");
     await settle(wrapper);
@@ -2247,6 +2265,7 @@ describe("TasksPage runtime", () => {
         source: "tasks",
       }),
     }));
+    expect(window.localStorage.getItem("mes:snapshot-updated-at")).toContain("\"reason\":\"reset\"");
     window.removeEventListener("mes:snapshot-updated", snapshotUpdated);
   });
 

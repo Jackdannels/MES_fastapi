@@ -534,6 +534,34 @@ describe("schedulePageModel", () => {
     });
   });
 
+  test("buildScheduleRows displays axis text in standard sequence", async () => {
+    const { buildScheduleRows } = await import("./model");
+    const rows = buildScheduleRows({
+      tasks: [{ code: "SYLU-2026-03-AXIS", name: "轴向任务", test_type: "冲击试验" }],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          experiment_name: "冲击试验",
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-axis",
+          axis_codes: ["z-", "x+", "y-"],
+          task_code: "SYLU-2026-03-AXIS",
+          experiment_code: "SYLU-2026-03-AXIS-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00.000Z",
+          end_at: "2099-03-20T09:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+    });
+
+    expect(rows[0].axisLabel).toBe("X+ / Y- / Z-");
+  });
+
   test("buildScheduleRows resolves row status per experiment instead of sharing one task status", async () => {
     const { buildScheduleRows } = await import("./model");
     const rows = buildScheduleRows({
@@ -2372,9 +2400,9 @@ describe("schedulePageModel", () => {
     expect(options).toEqual([
       expect.objectContaining({
         code: "SYLU-2026-06-018-A",
-        axisCodes: ["z-", "y+", "x-", "x+"],
-        scheduledAxisCodes: ["z-", "y+"],
-        remainingAxisCodes: ["x-", "x+"],
+        axisCodes: ["x+", "x-", "y+", "z-"],
+        scheduledAxisCodes: ["y+", "z-"],
+        remainingAxisCodes: ["x+", "x-"],
       }),
     ]);
   });
@@ -2565,7 +2593,7 @@ describe("schedulePageModel", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.schedules).toHaveLength(1);
-    expect(result.schedules[0].axis_codes).toEqual(["y+", "x-", "z+"]);
+    expect(result.schedules[0].axis_codes).toEqual(["x-", "y+", "z+"]);
     expect(result.schedules[0].axis_batch_no).toBe("batch-1");
     expect(formatDateTime(result.schedules[0].start_at)).toBe("2099-03-20 08:00");
     expect(formatDateTime(result.schedules[0].end_at)).toBe("2099-03-20 09:00");

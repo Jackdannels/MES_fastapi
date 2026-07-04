@@ -203,6 +203,10 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-task-plan-row strong\s*{[^}]*width:\s*100%;[^}]*font-size:\s*16px;/s);
     expect(source).toMatch(/\.visual-task-plan-row span\s*{[^}]*width:\s*100%;[^}]*font-size:\s*15px;/s);
     expect(source).toMatch(/\.visual-task-plan-table-head span\s*{[^}]*font-size:\s*14px;/s);
+    expect(pageSource).toContain("visual-task-plan-tray-chip");
+    expect(source).toMatch(/\.visual-task-plan-table-head\.is-flat,\s*\.visual-task-plan-row\.is-flat\s*{[^}]*grid-template-columns:\s*minmax\(154px,\s*1\.08fr\)\s+minmax\(96px,\s*0\.7fr\)\s+minmax\(112px,\s*0\.74fr\)\s+minmax\(104px,\s*0\.68fr\)\s+minmax\(220px,\s*1\.62fr\)\s+minmax\(72px,\s*0\.44fr\);/s);
+    expect(source).toMatch(/\.visual-task-plan-tray-list\s*{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s);
+    expect(source).toMatch(/\.visual-task-plan-tray-chip\s*{[^}]*flex:\s*0 1 calc\(50% - 4px\);/s);
   });
 
   test("current lab task screen defines state tones and running-only countdown styles", () => {

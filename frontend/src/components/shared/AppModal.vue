@@ -1,6 +1,6 @@
 <template>
-  <div class="modal" :class="{ 'is-open': open }" @keydown.esc="emitClose">
-    <div v-if="open" class="modal-backdrop" @click="emitClose"></div>
+  <div class="modal" :class="{ 'is-open': open }" @keydown.esc="handleEscClose">
+    <div v-if="open" class="modal-backdrop" @click="handleBackdropClose"></div>
     <div
       v-if="open"
       class="modal-content"
@@ -11,7 +11,7 @@
     >
       <div class="modal-header">
         <strong :id="titleId">{{ title }}</strong>
-        <button class="modal-close modal-close--touch" type="button" @click="emitClose">关闭</button>
+        <button v-if="showClose" class="modal-close modal-close--touch" type="button" @click="emitClose">关闭</button>
       </div>
       <slot />
       <div v-if="$slots.footer" class="form-actions form-actions--touch">
@@ -23,9 +23,21 @@
 
 <script setup>
 const props = defineProps({
+  closeOnBackdrop: {
+    type: Boolean,
+    default: true,
+  },
+  closeOnEsc: {
+    type: Boolean,
+    default: true,
+  },
   open: {
     type: Boolean,
     default: false,
+  },
+  showClose: {
+    type: Boolean,
+    default: true,
   },
   title: {
     type: String,
@@ -41,5 +53,19 @@ const emitClose = () => {
     return;
   }
   emit("close");
+};
+
+const handleBackdropClose = () => {
+  if (!props.closeOnBackdrop) {
+    return;
+  }
+  emitClose();
+};
+
+const handleEscClose = () => {
+  if (!props.closeOnEsc) {
+    return;
+  }
+  emitClose();
 };
 </script>

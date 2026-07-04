@@ -1,30 +1,70 @@
-// 负责系统页的角色管理界面状态，并暴露静态页面模型。
-import { computed, ref } from "vue";
+// 负责系统页的员工账号管理界面状态，并暴露页面模型。
+import { computed, onMounted, ref } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useTableControls } from "@/composables/useTableControls";
-import { buildSystemPageState, createRoleForm, EMPTY_ROLE_FORM } from "./model";
+import {
+  createAttendanceUser,
+  deleteAttendanceUser,
+  listAttendanceWorkTimes,
+  resetAttendanceUserPassword,
+} from "@/lib/attendanceApi";
+import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
-// 将系统配置页的抽屉、弹窗和表格控制集中管理。
+const EMPLOYEE_ROLE_OPTIONS = Object.freeze(["试验员", "试验组长"]);
+
+// 将系统配置页的员工账号抽屉、弹窗和表格控制集中管理。
 function useSystemPage() {
   const systemState = buildSystemPageState();
-  const roleRows = ref(systemState.roleRows);
+  const employeeRows = ref(systemState.employeeRows);
   const summaryCards = ref(systemState.summaryCards);
   const settings = ref(systemState.settings);
 
-  const createRoleDialog = useDialogState();
-  const editRoleDrawer = useDialogState();
+  const createEmployeeDialog = useDialogState();
+  const editEmployeeDialog = useDialogState();
 
   const { query, sortDirection, sortKey, visibleRows } = useTableControls({
     pageSize: 20,
-    rows: roleRows,
-    searchFields: ["name", "scope", "keyPermissions"],
+    rows: employeeRows,
+    searchFields: ["employeeName", "username", "roleName", "statusLabel"],
+  });
+  const workTimeRows = computed(() => employeeRows.value);
+
+  const createEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
+  const createEmployeeError = ref("");
+  const adminActionFields = ref({
+    adminPassword: "",
+    adminUsername: "",
+    newPassword: "",
   });
 
-  const createRoleFields = ref(createRoleForm(EMPTY_ROLE_FORM));
+  // 编辑弹窗始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
+  const editEmployeeFields = computed(() => createEmployeeForm(editEmployeeDialog.payload.value?.form || EMPTY_EMPLOYEE_FORM));
 
-  // 编辑抽屉始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
-  const editRoleFields = computed(() => createRoleForm(editRoleDrawer.payload.value?.form || EMPTY_ROLE_FORM));
+  const refreshSummaryCards = () => {
+    summaryCards.value = [
+      { label: "员工账号", note: "全部试验间可登录", value: employeeRows.value.length },
+      { label: "班次", note: "白班/中班/夜班", value: 3 },
+      { label: "在线员工", note: "当前试验间登录", value: employeeRows.value.filter((row) => row.online).length },
+    ];
+  };
+
+  const loadEmployees = async () => {
+    try {
+      const rows = await listAttendanceWorkTimes();
+      if (Array.isArray(rows) && rows.length) {
+        employeeRows.value = rows.map((row) => {
+          const employee = createEmployeeRow(row);
+          return {
+            ...employee,
+            form: createEmployeeForm(employee),
+          };
+        });
+      }
+    } finally {
+      refreshSummaryCards();
+    }
+  };
 
   const toggleSort = (nextKey) => {
     if (sortKey.value === nextKey) {
@@ -35,41 +75,117 @@ function useSystemPage() {
     sortDirection.value = "asc";
   };
 
-  const openRoleModal = () => {
-    // 每次打开新增弹窗都重置为空白角色表单。
-    createRoleFields.value = createRoleForm(EMPTY_ROLE_FORM);
-    createRoleDialog.openWith({ id: "new-role" });
+  const openEmployeeModal = () => {
+    // 每次打开新增弹窗都重置为空白员工表单。
+    createEmployeeFields.value = createEmployeeForm(EMPTY_EMPLOYEE_FORM);
+    createEmployeeError.value = "";
+    createEmployeeDialog.openWith({ id: "new-employee" });
   };
 
-  const closeRoleModal = () => {
-    createRoleDialog.close();
+  const closeEmployeeModal = () => {
+    createEmployeeError.value = "";
+    createEmployeeDialog.close();
   };
 
-  const openRoleDrawer = (role) => {
-    // 抽屉直接持有选中角色，字段展示通过 editRoleFields 再做一层标准化。
-    editRoleDrawer.openWith(role);
+  const formatCreateEmployeeError = (error) => {
+    const message = String(error?.message || error || "").trim();
+    if (message.includes("already exists") || message.includes("已存在")) {
+      return "账号已存在，无法保存";
+    }
+    return message || "新增人员失败，无法保存";
   };
 
-  const closeRoleDrawer = () => {
-    editRoleDrawer.close();
+  const saveNewEmployee = async () => {
+    const form = createEmployeeFields.value;
+    createEmployeeError.value = "";
+    let createdEmployee;
+    try {
+      createdEmployee = await createAttendanceUser({
+        active: true,
+        employeeName: form.employeeName,
+        password: form.password,
+        roleName: form.roleName || EMPLOYEE_ROLE_OPTIONS[0],
+        username: form.username,
+      });
+    } catch (error) {
+      createEmployeeError.value = formatCreateEmployeeError(error);
+      return;
+    }
+    const employee = createEmployeeRow(createdEmployee);
+    employeeRows.value = [
+      ...employeeRows.value,
+      {
+        ...employee,
+        form: createEmployeeForm(employee),
+      },
+    ];
+    refreshSummaryCards();
+    closeEmployeeModal();
+    void loadEmployees();
   };
+
+  const openEmployeeDrawer = (employee) => {
+    // 保持对外方法名不变，内部改为居中弹窗，避免表格调用侧改动过大。
+    adminActionFields.value = {
+      adminPassword: "",
+      adminUsername: "",
+      newPassword: "",
+    };
+    editEmployeeDialog.openWith(employee);
+  };
+
+  const closeEmployeeDrawer = () => {
+    editEmployeeDialog.close();
+  };
+
+  const resetEmployeePassword = async () => {
+    const employee = editEmployeeDialog.payload.value;
+    if (!employee?.id) {
+      return;
+    }
+    await resetAttendanceUserPassword(employee.id, adminActionFields.value);
+    adminActionFields.value = {
+      ...adminActionFields.value,
+      newPassword: "",
+    };
+  };
+
+  const deleteEmployee = async () => {
+    const employee = editEmployeeDialog.payload.value;
+    if (!employee?.id) {
+      return;
+    }
+    await deleteAttendanceUser(employee.id, adminActionFields.value);
+    employeeRows.value = employeeRows.value.filter((row) => row.id !== employee.id);
+    refreshSummaryCards();
+    closeEmployeeDrawer();
+  };
+
+  onMounted(loadEmployees);
 
   return {
-    closeRoleDrawer,
-    closeRoleModal,
-    createRoleFields,
-    editRoleFields,
-    openRoleDrawer,
-    openRoleModal,
+    adminActionFields,
+    closeEmployeeDrawer,
+    closeEmployeeModal,
+    createEmployeeError,
+    createEmployeeFields,
+    editEmployeeFields,
+    employeeRoleOptions: EMPLOYEE_ROLE_OPTIONS,
+    deleteEmployee,
+    employeeDrawerOpen: editEmployeeDialog.open,
+    employeeModalOpen: createEmployeeDialog.open,
+    openEmployeeDrawer,
+    openEmployeeModal,
     query,
-    roleDrawerOpen: editRoleDrawer.open,
-    roleModalOpen: createRoleDialog.open,
+    resetEmployeePassword,
     settings,
+    saveNewEmployee,
     summaryCards,
     sortDirection,
     sortKey,
     toggleSort,
-    visibleRoleRows: visibleRows,
+    visibleEmployeeRows: visibleRows,
+    workTimeRows,
   };
 }
 

@@ -4,6 +4,7 @@ import {
   isExperimentRunningStatus,
   normalizeTaskStatusLabel,
 } from "@/lib/statusNormalization";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 
 const RUNNING_SCHEDULE_DELETE_MESSAGE = "实验已开始，不能删除排程";
 const RUNNING_SCHEDULE_RESCHEDULE_MESSAGE = "实验已开始，不能删除后重新排程";
@@ -31,24 +32,6 @@ const rowHasRunningExperimentStatus = (row, fields = ["status"]) =>
 const rowHasScheduleLockedStatus = (row, fields = ["status"]) =>
   fields.some((field) => SCHEDULE_LOCKED_TRAY_STATUSES.has(normalizeText(row?.[field])) || isExperimentRunningStatus(row?.[field]));
 const rowHasCompletedAxisStatus = (row) => AXIS_STEP_COMPLETED_STATUSES.has(normalizeText(row?.status ?? row?.step_status ?? row?.stepStatus));
-const normalizeAxisCodes = (value) => {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.replace(/，/g, ",").split(",")
-      : [];
-  const seen = new Set();
-  return rawValues
-    .map((item) => normalizeText(item).toLowerCase())
-    .filter((item) => {
-      if (!item || seen.has(item)) {
-        return false;
-      }
-      seen.add(item);
-      return true;
-    });
-};
-
 const taskHasRunningStatus = (task) => normalizeTaskStatusLabel(task?.status) === TASK_STATUS_RUNNING;
 
 const rowMatchesTask = (row, taskCode) => rowTaskCode(row) === normalizeText(taskCode);

@@ -9,32 +9,62 @@
   </section>
 
   <section class="card section system-roles-card">
-    <h3>角色权限矩阵</h3>
+    <h3>人员信息维护</h3>
     <div class="toolbar">
-      <input v-model="query" class="search-input" placeholder="筛选角色/权限" />
-      <button class="action-btn" data-testid="open-role-modal" type="button" @click="openRoleModal">新增角色</button>
+      <input v-model="query" class="search-input" placeholder="筛选员工/账号/角色" />
+      <button class="action-btn" data-testid="open-employee-modal" type="button" @click="openEmployeeModal">新增员工账号</button>
     </div>
-    <table class="table" id="role-table">
+    <table class="table" id="employee-table">
       <thead>
         <tr>
           <th>序号</th>
-          <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" @click="toggleSort('name')">角色</th>
-          <th data-sort :data-sort-dir="sortKey === 'scope' ? sortDirection : ''" @click="toggleSort('scope')">范围</th>
-          <th data-sort :data-sort-dir="sortKey === 'keyPermissions' ? sortDirection : ''" @click="toggleSort('keyPermissions')">关键权限</th>
+          <th data-sort :data-sort-dir="sortKey === 'employeeName' ? sortDirection : ''" @click="toggleSort('employeeName')">员工</th>
+          <th data-sort :data-sort-dir="sortKey === 'username' ? sortDirection : ''" @click="toggleSort('username')">账号</th>
+          <th data-sort :data-sort-dir="sortKey === 'roleName' ? sortDirection : ''" @click="toggleSort('roleName')">角色</th>
+          <th>状态</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(role, index) in visibleRoleRows" :key="role.id">
+        <tr v-for="(employee, index) in visibleEmployeeRows" :key="employee.id">
           <td>{{ index + 1 }}</td>
-          <td>{{ role.name }}</td>
-          <td>{{ role.scope }}</td>
-          <td>{{ role.keyPermissions }}</td>
+          <td>{{ employee.employeeName }}</td>
+          <td>{{ employee.username }}</td>
+          <td>{{ employee.roleName }}</td>
+          <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
           <td>
-            <button class="action-link" :data-testid="`open-role-drawer-${index}`" type="button" @click="openRoleDrawer(role)">
+            <button class="action-link" :data-testid="`open-employee-drawer-${index}`" type="button" @click="openEmployeeDrawer(employee)">
               编辑
             </button>
           </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card section system-worktime-card">
+    <h3>人员工作时间一览表</h3>
+    <table class="table" id="employee-worktime-table">
+      <thead>
+        <tr>
+          <th>序号</th>
+          <th>员工</th>
+          <th>账号</th>
+          <th>角色</th>
+          <th>今日工作时间</th>
+          <th>当前登录试验间</th>
+          <th>状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="(employee, index) in workTimeRows" :key="`worktime-${employee.id}`">
+          <td>{{ index + 1 }}</td>
+          <td>{{ employee.employeeName }}</td>
+          <td>{{ employee.username }}</td>
+          <td>{{ employee.roleName }}</td>
+          <td>{{ employee.todayWorkTime }}</td>
+          <td>{{ employee.currentLabName || "-" }}</td>
+          <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
         </tr>
       </tbody>
     </table>
@@ -62,43 +92,74 @@
     </div>
   </section>
 
-  <AppModal :open="roleModalOpen" title="新增角色" @close="closeRoleModal">
+  <AppModal :open="employeeModalOpen" title="新增员工账号" @close="closeEmployeeModal">
     <div class="form-grid">
       <div class="form-field">
-        <label>角色名称</label>
-        <input :value="createRoleFields.name" type="text" placeholder="例如：数据审核员" />
+        <label>员工姓名</label>
+        <input v-model="createEmployeeFields.employeeName" data-testid="employee-name-input" type="text" placeholder="例如：张三" />
       </div>
       <div class="form-field">
-        <label>权限范围</label>
-        <input :value="createRoleFields.scope" type="text" placeholder="过程 + 数据" />
+        <label>账号</label>
+        <input v-model="createEmployeeFields.username" data-testid="employee-username-input" type="text" placeholder="例如：zhangsan" />
       </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>关键权限</label>
-        <textarea :value="createRoleFields.keyPermissions" placeholder="列出关键操作权限"></textarea>
+      <div class="form-field">
+        <label>密码</label>
+        <input v-model="createEmployeeFields.password" data-testid="employee-password-input" type="password" placeholder="请输入初始密码" />
+      </div>
+      <div class="form-field">
+        <label>角色</label>
+        <select v-model="createEmployeeFields.roleName" data-testid="employee-role-select">
+          <option v-for="role in employeeRoleOptions" :key="role" :value="role">{{ role }}</option>
+        </select>
       </div>
     </div>
+    <AppFeedback
+      :message="createEmployeeError"
+      tone="error"
+      data-testid="employee-create-error"
+      @close="createEmployeeError = ''"
+    />
     <template #footer>
-      <button class="action-btn" type="button" @click="closeRoleModal">保存</button>
-      <button class="action-btn secondary" type="button" @click="closeRoleModal">取消</button>
+      <button class="action-btn" data-testid="employee-save" type="button" @click="saveNewEmployee">保存</button>
+      <button class="action-btn secondary" type="button" @click="closeEmployeeModal">取消</button>
     </template>
   </AppModal>
 
-  <AppDrawer :open="roleDrawerOpen" title="角色详情" @close="closeRoleDrawer">
+  <AppModal :open="employeeDrawerOpen" title="员工账号详情" @close="closeEmployeeDrawer">
     <div class="form-grid">
       <div class="form-field">
-        <label>角色名称</label>
-        <input :value="editRoleFields.name" type="text" placeholder="排程员" />
+        <label>员工姓名</label>
+        <input :value="editEmployeeFields.employeeName" type="text" placeholder="张三" />
       </div>
       <div class="form-field">
-        <label>范围</label>
-        <input :value="editRoleFields.scope" type="text" placeholder="任务 + 排程" />
+        <label>账号</label>
+        <input :value="editEmployeeFields.username" type="text" placeholder="zhangsan" />
       </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>权限说明</label>
-        <textarea :value="editRoleFields.keyPermissions" placeholder="更新权限描述"></textarea>
+      <div class="form-field">
+        <label>角色</label>
+        <select :value="editEmployeeFields.roleName" disabled>
+          <option v-for="role in employeeRoleOptions" :key="role" :value="role">{{ role }}</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label>管理员账号</label>
+        <input v-model="adminActionFields.adminUsername" data-testid="admin-username-input" type="text" placeholder="admin" />
+      </div>
+      <div class="form-field">
+        <label>管理员密码</label>
+        <input v-model="adminActionFields.adminPassword" data-testid="admin-password-input" type="password" placeholder="请输入管理员密码" />
+      </div>
+      <div class="form-field">
+        <label>新密码</label>
+        <input v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" />
       </div>
     </div>
-  </AppDrawer>
+    <template #footer>
+      <button class="action-btn" data-testid="employee-reset-password" type="button" @click="resetEmployeePassword">重置密码</button>
+      <button class="action-btn danger" data-testid="employee-delete" type="button" @click="deleteEmployee">删除账号</button>
+      <button class="action-btn secondary" type="button" @click="closeEmployeeDrawer">关闭</button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
@@ -107,25 +168,32 @@ defineOptions({
   name: "SystemPage",
 });
 
-import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { useSystemPage } from "./useSystemPage";
 
 const {
-  closeRoleDrawer,
-  closeRoleModal,
-  createRoleFields,
-  editRoleFields,
-  openRoleDrawer,
-  openRoleModal,
+  adminActionFields,
+  closeEmployeeDrawer,
+  closeEmployeeModal,
+  createEmployeeError,
+  createEmployeeFields,
+  deleteEmployee,
+  editEmployeeFields,
+  employeeRoleOptions,
+  openEmployeeDrawer,
+  openEmployeeModal,
   query,
-  roleDrawerOpen,
-  roleModalOpen,
+  resetEmployeePassword,
+  employeeDrawerOpen,
+  employeeModalOpen,
   settings,
+  saveNewEmployee,
   summaryCards,
   sortDirection,
   sortKey,
   toggleSort,
-  visibleRoleRows,
+  visibleEmployeeRows,
+  workTimeRows,
 } = useSystemPage();
 </script>

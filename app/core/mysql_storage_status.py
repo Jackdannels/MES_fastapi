@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
+from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import (
     CANONICAL_COMPLETED_STATUS,
     CANONICAL_RUNNING_STATUS,
@@ -65,7 +66,7 @@ def normalize_axis_codes(value: Any) -> list[str]:
             continue
         seen.add(axis_code)
         axis_codes.append(axis_code)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def record_sub_experiment_code(row: Dict[str, Any]) -> str:

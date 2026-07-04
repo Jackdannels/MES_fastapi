@@ -206,10 +206,12 @@ function notifyStorageSnapshotUpdated(updates = {}, options = {}) {
   }
   const source = String(options?.source || "").trim();
   const requestId = String(options?.requestId || "").trim();
+  const reason = String(options?.reason || "").trim();
   const marker = JSON.stringify({
     keys: Object.keys(updates || {}),
     ...(source ? { source } : {}),
     ...(requestId ? { requestId } : {}),
+    ...(reason ? { reason } : {}),
     updatedAt: formatLocalDateTime(),
   });
   let detail = null;
@@ -222,6 +224,7 @@ function notifyStorageSnapshotUpdated(updates = {}, options = {}) {
       keys: Object.keys(updates || {}),
       ...(source ? { source } : {}),
       ...(requestId ? { requestId } : {}),
+      ...(reason ? { reason } : {}),
       updatedAt: formatLocalDateTime(),
     };
   }

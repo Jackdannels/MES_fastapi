@@ -738,10 +738,36 @@ def test_start_axis_run_uses_current_schedule_axes_when_axis_codes_are_omitted()
         started_at="2026-06-24 09:00:00",
     )
 
-    assert result["experimentRuns"][0]["axis_codes"] == ["z-", "y+"]
-    assert [step["axis_code"] for step in result["experimentRunSteps"]] == ["z-", "y+"]
+    assert result["experimentRuns"][0]["axis_codes"] == ["y+", "z-"]
+    assert [step["axis_code"] for step in result["experimentRunSteps"]] == ["y+", "z-"]
     assert result["schedules"][0]["status"] == "实验进行中"
     assert result["schedules"][1]["status"] == "已排程"
+
+
+def test_start_axis_run_orders_axes_by_standard_sequence():
+    snapshot = _axis_snapshot()
+    snapshot["experiment_runs"] = []
+    snapshot["experiment_run_trays"] = []
+    snapshot["experiment_run_steps"] = []
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "x+", "y-"]
+    snapshot["schedules"] = [snapshot["schedules"][0]]
+    snapshot["schedules"][0]["axis_codes"] = ["z-", "x+", "y-"]
+    snapshot["schedules"][0]["status"] = "已排程"
+
+    result = start_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS-ORDERED",
+        lab_name="冲击一室",
+        schedule_id="SCH-AXIS-1",
+        tray_codes=["TP-AXIS"],
+        started_at="2026-06-24 09:00:00",
+    )
+
+    assert result["experimentRuns"][0]["axis_codes"] == ["x+", "y-", "z-"]
+    assert [step["axis_code"] for step in result["experimentRunSteps"]] == ["x+", "y-", "z-"]
+    assert [step["step_no"] for step in result["experimentRunSteps"]] == [1, 2, 3]
 
 
 def test_start_axis_run_closes_superseded_running_run_for_same_tray_scope():
@@ -834,22 +860,62 @@ def test_start_axis_run_rejects_axis_batch_without_sub_experiment_code():
 
 
 def test_axis_step_completion_keeps_experiment_running_until_all_planned_axes_finish():
+    snapshot = _axis_snapshot()
+    sub_experiment_code = snapshot["schedules"][0]["sub_experiment_code"]
+    snapshot["experiments"][0]["axis_codes"] = ["x+", "x-", "y+"]
+    snapshot["schedules"] = [snapshot["schedules"][0]]
+    snapshot["schedules"][0]["axis_codes"] = ["x+", "x-", "y+"]
+    snapshot["experiment_runs"][0]["axis_codes"] = ["x+", "x-", "y+"]
+    snapshot["experiment_run_steps"] = [
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x+", "step_no": 1, "status": "实验进行中"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x-", "step_no": 2, "status": "待执行"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "y+", "step_no": 3, "status": "待执行"},
+    ]
+
     result = complete_storage_laboratory_axis_step(
-        _axis_snapshot(),
+        snapshot,
         task_code="TASK-AXIS",
         experiment_code="EXP-IMPACT",
         run_no="RUN-AXIS",
-        axis_code="y+",
-        next_axis_code="x-",
+        axis_code="x+",
         completed_at="2026-06-24 10:00:00",
     )
 
     steps = {step["axis_code"]: step["status"] for step in result["experimentRunSteps"]}
-    assert steps["y+"] == "实验已完成"
+    assert steps["x+"] == "实验已完成"
     assert steps["x-"] == "实验进行中"
     assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
     assert result["experiments"][0]["status"] == "实验进行中"
     assert result["schedules"][0]["status"] == "实验进行中"
+
+
+def test_axis_step_completion_uses_standard_next_axis_sequence():
+    snapshot = _axis_snapshot()
+    snapshot["experiments"][0]["axis_codes"] = ["z-", "x+", "x-"]
+    snapshot["schedules"] = [snapshot["schedules"][0]]
+    snapshot["schedules"][0]["axis_codes"] = ["z-", "x+", "x-"]
+    snapshot["experiment_runs"][0]["axis_codes"] = ["z-", "x+", "x-"]
+    sub_experiment_code = snapshot["schedules"][0]["sub_experiment_code"]
+    snapshot["experiment_run_steps"] = [
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x+", "step_no": 1, "status": "实验进行中"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x-", "step_no": 2, "status": "待执行"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "z-", "step_no": 3, "status": "待执行"},
+    ]
+
+    result = complete_storage_laboratory_axis_step(
+        snapshot,
+        task_code="TASK-AXIS",
+        experiment_code="EXP-IMPACT",
+        run_no="RUN-AXIS",
+        axis_code="x+",
+        next_axis_code="z-",
+        completed_at="2026-06-24 10:00:00",
+    )
+
+    steps = {step["axis_code"]: step["status"] for step in result["experimentRunSteps"]}
+    assert steps["x+"] == "实验已完成"
+    assert steps["x-"] == "实验进行中"
+    assert steps["z-"] == "待执行"
 
 
 def test_axis_step_completion_uses_scheduled_axes_when_current_run_is_partial():
@@ -1584,7 +1650,7 @@ def test_axis_batches_use_sub_experiment_code_for_independent_run_lifecycle():
     assert runs["RUN-AXIS"]["sub_experiment_code"] == first_sub_code
     assert runs["RUN-AXIS"]["status"] == "实验已完成"
     assert runs["RUN-AXIS-2"]["sub_experiment_code"] == second_sub_code
-    assert runs["RUN-AXIS-2"]["axis_codes"] == ["x-", "x+"]
+    assert runs["RUN-AXIS-2"]["axis_codes"] == ["x+", "x-"]
     assert {
         step["axis_code"]
         for step in second_started["experimentRunSteps"]

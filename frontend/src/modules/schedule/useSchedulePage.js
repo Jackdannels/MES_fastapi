@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import {
   analyzeTaskTrayConflict,
@@ -173,28 +174,19 @@ function useSchedulePage() {
     };
   };
   const scheduleAxisRequirementOptions = computed(() => {
-    const axisCodes = Array.isArray(selectedExperimentOption.value?.axisCodes)
-      ? selectedExperimentOption.value.axisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
-      : [];
+    const axisCodes = normalizeAxisCodes(selectedExperimentOption.value?.axisCodes);
     return axisCodes.map(buildScheduleAxisOption);
   });
   const scheduleCompletedAxisOptions = computed(() => {
-    const completedAxisCodes = Array.isArray(selectedExperimentOption.value?.completedAxisCodes)
-      ? selectedExperimentOption.value.completedAxisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
-      : [];
+    const completedAxisCodes = normalizeAxisCodes(selectedExperimentOption.value?.completedAxisCodes);
     return completedAxisCodes.map(buildScheduleAxisOption);
   });
   const scheduleAxisOptions = computed(() => {
-    const remainingAxisCodes = Array.isArray(selectedExperimentOption.value?.remainingAxisCodes)
-      ? selectedExperimentOption.value.remainingAxisCodes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
-      : [];
+    const remainingAxisCodes = normalizeAxisCodes(selectedExperimentOption.value?.remainingAxisCodes);
     return remainingAxisCodes.map(buildScheduleAxisOption);
   });
   const scheduleAxisCodes = computed(() => {
-    const formAxisCodes = Array.isArray(scheduleForm.value.axis_codes)
-      ? scheduleForm.value.axis_codes.map((code) => normalizeText(code).toLowerCase()).filter(Boolean)
-      : [];
-    return formAxisCodes;
+    return normalizeAxisCodes(scheduleForm.value.axis_codes);
   });
   const scheduleAxisDisplayOptions = computed(() => scheduleAxisCodes.value.map(buildScheduleAxisOption));
   const showAxisSelector = computed(() =>
@@ -218,9 +210,7 @@ function useSchedulePage() {
       .join(" / "),
   );
   const normalizeScheduleAxisCodes = (schedule) =>
-    (Array.isArray(schedule?.axis_codes ?? schedule?.axisCodes) ? schedule?.axis_codes ?? schedule?.axisCodes : [])
-      .map((code) => normalizeText(code).toLowerCase())
-      .filter(Boolean);
+    normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
   const uniqueTextList = (values) => {
     const seen = new Set();
     return (Array.isArray(values) ? values : [])
@@ -510,7 +500,7 @@ function useSchedulePage() {
     }
 
     const task = rawTasks.value.find((entry) => normalizeText(entry?.code) === normalizeText(schedule?.task_code));
-    const axisLabel = uniqueTextList(schedules.flatMap(normalizeScheduleAxisCodes))
+    const axisLabel = normalizeAxisCodes(uniqueTextList(schedules.flatMap(normalizeScheduleAxisCodes)))
       .map((code) => code.toUpperCase())
       .join(" / ");
     const startAt = schedules

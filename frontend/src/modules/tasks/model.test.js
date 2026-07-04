@@ -7,6 +7,7 @@ import {
   buildTaskMetrics,
   buildTaskRows,
   buildTaskSampleCodes,
+  buildExperimentTypeAxisSummary,
   createTaskIntakeForm,
   createTaskRecord,
   deleteTaskSnapshot,
@@ -36,6 +37,12 @@ describe("tasks model", () => {
       "SYLU-2026-03-002",
       "SYLU-2026-03-003",
     ]);
+  });
+
+  test("buildExperimentTypeAxisSummary displays selected axes in standard sequence", () => {
+    expect(buildExperimentTypeAxisSummary(["冲击试验"], {
+      冲击试验: ["z-", "x+", "y-"],
+    })).toBe("冲击试验（X+、Y-、Z-）");
   });
 
   test("marks a task as running when any tray is sent to the lab", () => {
@@ -499,10 +506,10 @@ describe("tasks model", () => {
     );
 
     expect(task.axis_codes_by_test_type).toEqual({
-      冲击试验: ["z-", "x+"],
+      冲击试验: ["x+", "z-"],
     });
     expect(task.axisCodesByTestType).toEqual({
-      冲击试验: ["z-", "x+"],
+      冲击试验: ["x+", "z-"],
     });
   });
 
@@ -776,10 +783,10 @@ describe("tasks model", () => {
     );
 
     expect(rows[0].axis_codes_by_test_type).toEqual({
-      冲击试验: ["z-", "x+"],
+      冲击试验: ["x+", "z-"],
     });
     expect(buildTaskEditForm(rows[0]).axis_codes_by_test_type).toEqual({
-      冲击试验: ["z-", "x+"],
+      冲击试验: ["x+", "z-"],
     });
   });
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.axis_codes import canonical_axis_code
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.experiment_segments import (
     record_sub_experiment_code,
@@ -330,7 +331,12 @@ def start_storage_laboratory_experiment(
         )
     if planned_axis_codes and not normalized_sub_experiment_code:
         raise ValueError("sub_experiment_code is required for axis experiment start")
-    normalized_current_axis_code = normalize_text(current_axis_code) or (planned_axis_codes[0] if planned_axis_codes else "")
+    requested_current_axis_code = canonical_axis_code(current_axis_code)
+    normalized_current_axis_code = (
+        requested_current_axis_code
+        if requested_current_axis_code and requested_current_axis_code in planned_axis_codes
+        else (planned_axis_codes[0] if planned_axis_codes else "")
+    )
 
     run_record = {
         "id": normalized_run_no,
@@ -421,7 +427,7 @@ def start_storage_laboratory_experiment(
         existing_step_keys = {
             (
                 normalize_text(item.get("run_no") or item.get("runNo")),
-                normalize_text(item.get("axis_code") or item.get("axisCode")),
+                canonical_axis_code(item.get("axis_code") or item.get("axisCode")),
             )
             for item in experiment_run_steps
         }
@@ -438,7 +444,7 @@ def start_storage_laboratory_experiment(
                     }
                     if (
                         normalize_text(item.get("run_no") or item.get("runNo")) == normalized_run_no
-                        and normalize_text(item.get("axis_code") or item.get("axisCode")) == axis_code
+                        and canonical_axis_code(item.get("axis_code") or item.get("axisCode")) == axis_code
                     )
                     else item
                     for item in experiment_run_steps

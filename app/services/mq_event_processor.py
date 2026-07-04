@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
+from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
 from app.services.experiment_segments import record_sub_experiment_code
 from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_completion import (
@@ -890,8 +891,23 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_STARTED":
         if not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
+        get_attendance_service().start_work_interval(
+            lab_code=lab_code,
+            lab_name=normalize_text((run or {}).get("device_name") or (run or {}).get("device")),
+            run_no=run_no,
+            task_code=task_no,
+            experiment_code=experiment_no,
+            source="mqtt",
+            started_at=occurred_at,
+        )
     elif message_type == "EXPERIMENT_ENDED":
         repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
+        if should_finish_work_interval_for_completion(axis_code=payload_axis_code, next_axis_code=payload_next_axis_code):
+            get_attendance_service().finish_work_interval(
+                run_no=run_no,
+                lab_code=lab_code,
+                ended_at=occurred_at,
+            )
     elif message_type == "EXPERIMENT_RESULT":
         result_package = payload.get("result_package")
         if not isinstance(result_package, dict):

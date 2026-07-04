@@ -1,4 +1,4 @@
-// 注册系统信息模块的路由、样式和模块标识。
+// 注册人员信息模块的路由、样式和模块标识。
 import "./styles.css";
 import Page from "./page.vue";
 
@@ -8,8 +8,8 @@ export const route = {
   name: "system",
   component: Page,
   meta: {
-    title: "系统信息",
-    subtitle: "维护角色权限、通知方式、班次与基础运行配置。",
+    title: "人员信息",
+    subtitle: "维护人员账号、角色信息与试验间工作时间。",
     module: "central",
   },
 };

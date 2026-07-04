@@ -173,6 +173,46 @@ describe("experiment progress model", () => {
     expect(buildAxisPartialProgressStatus("冲击试验", progress)).toBe("冲击试验部分完成 3/6轴");
   });
 
+  test("orders required and completed axis codes in standard sequence", () => {
+    const progress = resolveAxisProgress({
+      experimentRuns: [
+        {
+          run_no: "RUN-AXIS-ORDERED",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_codes: ["TP-AXIS-001"],
+        },
+      ],
+      experimentRunSteps: [
+        { run_no: "RUN-AXIS-ORDERED", task_code: "TASK-AXIS", experiment_code: "EXP-AXIS", axis_code: "z-", status: "实验已完成" },
+        { run_no: "RUN-AXIS-ORDERED", task_code: "TASK-AXIS", experiment_code: "EXP-AXIS", axis_code: "x+", status: "实验已完成" },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-AXIS-ORDERED",
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          tray_code: "TP-AXIS-001",
+          run_tray_status: "实验进行中",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-AXIS",
+          experiment_code: "EXP-AXIS",
+          experiment_name: "冲击试验",
+          axis_codes: ["z-", "x+", "y-"],
+        },
+      ],
+      taskCode: "TASK-AXIS",
+      experimentCode: "EXP-AXIS",
+      trayCode: "TP-AXIS-001",
+    });
+
+    expect(progress.requiredAxisCodes).toEqual(["x+", "y-", "z-"]);
+    expect(progress.completedAxisCodes).toEqual(["x+", "z-"]);
+  });
+
   test("does not build a partial axis label when no axis has completed", () => {
     const progress = resolveAxisProgress({
       experiments: [

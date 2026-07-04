@@ -5,6 +5,7 @@ import {
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
 import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import {
@@ -62,21 +63,6 @@ const EXPERIMENT_TRAY_TERMINAL_STATUSES = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
-const normalizeAxisCodes = (value) => {
-  const rawValues = Array.isArray(value)
-    ? value
-    : typeof value === "string"
-      ? value.replace(/，/g, ",").split(",")
-      : [];
-  const seen = new Set();
-  return rawValues.map(normalizeText).filter((axisCode) => {
-    if (!axisCode || seen.has(axisCode)) {
-      return false;
-    }
-    seen.add(axisCode);
-    return true;
-  });
-};
 const resolveSubExperimentCode = (value = {}) =>
   normalizeText(value?.subExperimentCode ?? value?.sub_experiment_code ?? value?.sub_experiment_no ?? value?.subExperimentNo);
 const escapeRegExp = (value) => normalizeText(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1160,7 +1146,7 @@ const activateLatestCompletedExperimentStep = (flow) => {
 const resolveLaboratoryTaskAxisStatusLabel = (axisProgress = null) => {
   const statusLabel = normalizeText(axisProgress?.statusLabel);
   const totalStatusLabel = normalizeText(axisProgress?.totalStatusLabel);
-  return isCompletedAxisStatusLabel(statusLabel) ? totalStatusLabel || statusLabel : statusLabel;
+  return isCompletedAxisStatusLabel(statusLabel) ? totalStatusLabel || statusLabel : statusLabel || totalStatusLabel;
 };
 
 const buildLaboratoryTaskFlow = (status = STATUS_WAITING, axisProgress = null) => {
@@ -1168,7 +1154,8 @@ const buildLaboratoryTaskFlow = (status = STATUS_WAITING, axisProgress = null) =
   const activeIndex = LABORATORY_TASK_FLOW_INDEX.get(currentStatus) ?? 0;
   const axisStatusLabel = resolveLaboratoryTaskAxisStatusLabel(axisProgress);
   return {
-    currentStatus: axisStatusLabel || currentStatus,
+    axisStatusLabel,
+    currentStatus,
     steps: LABORATORY_TASK_FLOW_STEPS.map((step, index) => ({
       ...step,
       active: index === activeIndex,
@@ -1177,11 +1164,34 @@ const buildLaboratoryTaskFlow = (status = STATUS_WAITING, axisProgress = null) =
   };
 };
 
+const rowIsTerminalForCurrentTask = (row) =>
+  row?.completedForCurrentExperiment === true || rowHasReturnedStatus(row);
+
+const taskHasExperimentProgress = (currentTask) => {
+  const axisProgress = currentTask?.axisProgress;
+  if (
+    Number(axisProgress?.completedCount || 0) > 0
+    || Number(axisProgress?.totalCompletedCount || 0) > 0
+  ) {
+    return true;
+  }
+  return asArray(currentTask?.allTrayRows).some(rowIsTerminalForCurrentTask);
+};
+
 const resolveLaboratoryTaskStatus = (currentTask) => {
   if (!currentTask) {
     return STATUS_WAITING;
   }
+  const scopedTrayRows = asArray(currentTask?.allTrayRows).length > 0
+    ? asArray(currentTask?.allTrayRows)
+    : asArray(currentTask?.trayRows);
+  if (scopedTrayRows.length > 0 && scopedTrayRows.every(rowIsTerminalForCurrentTask)) {
+    return scopedTrayRows.every(rowHasReturnedStatus) ? STATUS_RETENTION : STATUS_COMPLETED;
+  }
   if (getRunningTrayRowsForCurrentTask(currentTask).length > 0) {
+    return STATUS_RUNNING;
+  }
+  if (taskHasExperimentProgress(currentTask)) {
     return STATUS_RUNNING;
   }
   return STATUS_SCHEDULED;
@@ -2826,15 +2836,16 @@ const buildLaboratoryScheduleRow = ({
     schedule,
     taskCode,
   });
+  const currentTaskContext = {
+    device,
+    experimentCode,
+    experimentName,
+    status: normalizeText(experiment?.status),
+    taskCode,
+  };
   const axisProgressTrayCodes = buildActiveAxisProgressTrayCodes({
     baseTrayCodes: buildScheduleAxisProgressTrayCodes({ experimentRuns, experimentRunTrays, schedule }),
-    currentTaskContext: {
-      device,
-      experimentCode,
-      experimentName,
-      status: normalizeText(experiment?.status),
-      taskCode,
-    },
+    currentTaskContext,
     trayRows,
   });
   const axisProgress = buildAxisProgressForSchedule({
@@ -2993,14 +3004,32 @@ const buildLaboratoryScheduleRow = ({
   };
 };
 
-const isFutureAxisContinuationRow = (row, nowTime) => {
+const isAxisContinuationRow = (row) => {
   const axisProgress = row?.axisProgress;
-  const startsInFuture = (toTime(row?.startAt) || 0) > nowTime;
-  return startsInFuture
-    && asArray(axisProgress?.scheduledAxisCodes).length > 0
+  return asArray(axisProgress?.scheduledAxisCodes).length > 0
     && asArray(axisProgress?.totalRequiredAxisCodes).length > asArray(axisProgress?.scheduledAxisCodes).length
     && Number(axisProgress?.totalCompletedCount || 0) > 0
     && Number(axisProgress?.completedCount || 0) === 0;
+};
+
+const isFutureAxisContinuationRow = (row, nowTime) =>
+  (toTime(row?.startAt) || 0) > nowTime && isAxisContinuationRow(row);
+
+const rowCanBeCurrentLaboratoryTask = (row, nowTime) => {
+  if (!isAxisContinuationRow(row)) {
+    return true;
+  }
+  const scopedTrayRows = asArray(row?.allTrayRows).length > 0
+    ? asArray(row?.allTrayRows)
+    : asArray(row?.trayRows);
+  return scopedTrayRows.length === 0
+    || taskHasCurrentLaboratoryDispatch(row)
+    || scopedTrayRows.some((trayRow) => rowPartialAxisStatusMatchesCurrentExperiment(trayRow, row));
+};
+
+const rowCanProvideCompletedLaboratoryFlow = (row) => {
+  const axisProgress = row?.axisProgress;
+  return asArray(axisProgress?.totalRemainingAxisCodes).length === 0;
 };
 
 const findTrayFlowContextTask = (scheduleRows, currentTask, selectedTrayCode) => {
@@ -3039,8 +3068,8 @@ function buildLaboratoryWorkbenchView({
   const experimentTrayCodeMap = buildExperimentTrayCodeMap(experimentTrays);
   const rowBuilderInput = { experimentMap, experimentRecordMap, experimentRuns, experimentRunSteps, experimentRunTrays, experimentTrayCodeMap, sampleMap, taskMap };
 
-  const activeSchedules = asArray(schedules).filter(
-    (schedule) => !scheduleExperimentIsCompleted({
+  const scheduleCompletionEntries = asArray(schedules).map((schedule) => ({
+    completed: scheduleExperimentIsCompleted({
       experiments,
       experimentRuns,
       experimentRunSteps,
@@ -3049,30 +3078,46 @@ function buildLaboratoryWorkbenchView({
       samples,
       schedule,
     }),
-  );
+    schedule,
+  }));
+  const activeSchedules = scheduleCompletionEntries
+    .filter((entry) => !entry.completed)
+    .map((entry) => entry.schedule);
+  const completedScheduleRows = scheduleCompletionEntries
+    .filter((entry) => entry.completed)
+    .map((entry) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule: entry.schedule }))
+    .sort((left, right) => (toTime(left.endAt || left.startAt) || 0) - (toTime(right.endAt || right.startAt) || 0));
   const allScheduleRows = activeSchedules
     .map((schedule) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule }))
     .sort((left, right) => (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0));
 
   const labRef = { code: labCode, name: labName };
-  const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
   const nowTime = now instanceof Date ? now.getTime() : toTime(now) || Date.now();
+  const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
+  const completedLabScheduleRows = completedScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
+  const currentCandidateRows = scheduleRows.filter((row) => rowCanBeCurrentLaboratoryTask(row, nowTime));
   const operationTask =
-    scheduleRows.find((row) => normalizeText(row?.runNo))
-    || scheduleRows.find((row) => !isFutureAxisContinuationRow(row, nowTime) && laboratoryRowHasStartedOperation(row));
-  const defaultCandidate = scheduleRows[0] || null;
+    currentCandidateRows.find((row) => normalizeText(row?.runNo))
+    || currentCandidateRows.find((row) => !isFutureAxisContinuationRow(row, nowTime) && laboratoryRowHasStartedOperation(row));
+  const defaultCandidate = currentCandidateRows[0] || null;
   const defaultTask = operationTask || defaultCandidate;
 
   const selectedKey = normalizeText(selectedTaskCode);
-  const selectedTaskCandidate =
+  const selectedDisplayTask =
     scheduleRows.find((row) => normalizeText(row.id) === selectedKey)
     || scheduleRows.find((row) => normalizeText(row.experimentKey) === selectedKey)
     || scheduleRows.find((row) => row.taskCode === selectedKey)
     || null;
-  const selectedTask = selectedTaskCandidate || null;
-  const currentTask = selectedTask || defaultTask;
-  const flowContextTask = findTrayFlowContextTask(scheduleRows, currentTask, selectedTrayCode);
-  const currentExperimentTrayRows = asArray(currentTask?.trayRows);
+  const selectedCurrentTask =
+    currentCandidateRows.find((row) => normalizeText(row.id) === selectedKey)
+    || currentCandidateRows.find((row) => normalizeText(row.experimentKey) === selectedKey)
+    || currentCandidateRows.find((row) => row.taskCode === selectedKey)
+    || null;
+  const currentTask = selectedKey ? selectedCurrentTask : defaultTask;
+  const flowContextTask = findTrayFlowContextTask(scheduleRows, currentTask || selectedDisplayTask, selectedTrayCode);
+  const trayFlowTask = currentTask || selectedDisplayTask || flowContextTask;
+  const selectedTask = selectedDisplayTask || currentTask || trayFlowTask;
+  const currentExperimentTrayRows = asArray(trayFlowTask?.trayRows);
   const flowContextTrayRows = asArray(flowContextTask?.trayRows);
   const selectedTrayRow =
     flowContextTrayRows.find((row) => row.trayCode === normalizeText(selectedTrayCode))
@@ -3168,8 +3213,15 @@ function buildLaboratoryWorkbenchView({
       : selectedTrayOnlyHasOtherExperimentCompletion
       ? EXPERIMENT_COMPLETED_STATUS
       : selectedTrayEffectiveResolvedFlowStatus;
-  const currentTaskStatus = resolveLaboratoryTaskStatus(currentTask);
-  const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress);
+  const completedFlowTask = currentTask
+    ? null
+    : completedLabScheduleRows.filter(rowCanProvideCompletedLaboratoryFlow).at(-1) || null;
+  const currentTaskStatus = currentTask
+    ? resolveLaboratoryTaskStatus(currentTask)
+    : completedFlowTask
+      ? resolveLaboratoryTaskStatus(completedFlowTask)
+      : STATUS_WAITING;
+  const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress || completedFlowTask?.axisProgress);
   const rawSelectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
         currentExperimentCode: selectedTrayAxisPartialStatusSupersededByLaterCompletion
@@ -3312,7 +3364,7 @@ function buildLaboratoryWorkbenchView({
     && normalizeText(operationTask.taskCode) === normalizeText(currentTask.taskCode)
     && normalizeText(operationTask.experimentCode) === normalizeText(currentTask.experimentCode);
   const runningExperiment = buildRunningExperimentView({
-    currentTask: operationTaskMatchesCurrentTask || !selectedTask ? (operationTask || currentTask) : currentTask,
+    currentTask: operationTaskMatchesCurrentTask || !selectedKey ? (operationTask || currentTask) : currentTask,
     now: now instanceof Date ? now : new Date(toTime(now) || Date.now()),
   });
 
@@ -3326,8 +3378,10 @@ function buildLaboratoryWorkbenchView({
     labName,
     runningExperiment,
     scheduleRows,
+    selectedTask,
     selectedTrayFlow,
     selectedTrayRow,
+    trayFlowTask,
   };
 }
 

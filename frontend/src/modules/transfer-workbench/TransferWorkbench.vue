@@ -1318,6 +1318,23 @@ const applyWorkspace = (workspace) => {
   resetInteractiveState();
 };
 
+const applyConfirmedStorageState = (progress = "已确认入库") => {
+  if (currentTask.value) {
+    currentTask.value = {
+      ...currentTask.value,
+      taskStatus: storedStatus,
+      taskProgress: progress,
+    };
+  }
+  assignedTrays.value = assignedTrays.value.map((tray) => ({
+    ...tray,
+    trayStatus: storedStatus,
+    samples: Array.isArray(tray.samples)
+      ? tray.samples.map((sample) => ({ ...sample, sampleStatus: storedStatus }))
+      : [],
+  }));
+};
+
 const applyWorkspaceSaveGuards = (workspace) => {
   if (!workspace?.task || !currentTask.value) {
     return;
@@ -1835,13 +1852,20 @@ const persistAllocation = async (showMessage = true, { allowExperimentMode = fal
       if (showMessage) showWorkbenchFeedback(message, "warning");
       return false;
     }
+    const storageUpdateMeta = trackOwnStorageRequest("allocate");
     const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/allocate`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-MES-Update-Source": storageUpdateMeta.source,
+        "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
+      },
       body: JSON.stringify(buildAllocationPayload()),
     });
     applyWorkspace(payload.workspace);
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "allocate" } }));
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
+      detail: { source: "transfer-workbench", reason: "allocate", requestId: storageUpdateMeta.requestId },
+    }));
     flushPendingRealtimeRefresh();
     if (showMessage) showWorkbenchFeedback(payload.message, "success");
     return true;
@@ -2039,13 +2063,7 @@ const confirmStorage = async () => {
   const confirmedTaskId = selectedTaskId.value;
   const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";
   applyWorkspace(payload.workspace);
-  if (currentTask.value) {
-    currentTask.value = {
-      ...currentTask.value,
-      taskStatus: storedStatus,
-      taskProgress: confirmedProgress,
-    };
-  }
+  applyConfirmedStorageState(confirmedProgress);
   if (confirmedTaskId) {
     updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
   }

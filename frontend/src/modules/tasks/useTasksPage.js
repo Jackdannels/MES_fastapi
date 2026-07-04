@@ -10,7 +10,7 @@ import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperime
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
-import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
+import { notifyStorageSnapshotUpdated } from "@/lib/storageApi";
 import { createTask, deleteTask as deleteTaskByApi, readTasks, resetTasks as resetTasksByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
@@ -131,7 +131,6 @@ function useTasksPage() {
   const intakeExperimentSummary = computed(() =>
     buildExperimentTypeAxisSummary(intakeForm.value.test_types, intakeForm.value.axis_codes_by_test_type)
   );
-  const intakeExperimentDraftPlainSummary = computed(() => buildExperimentTypeSummary(intakeExperimentDraft.value));
   const intakeExperimentDraftSummary = computed(() =>
     buildExperimentTypeAxisSummary(intakeExperimentDraft.value, intakeAxisDraftByTestType.value)
   );
@@ -1136,12 +1135,8 @@ function useTasksPage() {
     try {
       const summary = await resetTasksByApi();
       resetModal.close();
+      notifyStorageSnapshotUpdated(buildSnapshotFallback(), { source: "tasks", reason: "reset" });
       await loadTasksPage();
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
-          detail: { source: "tasks", reason: "reset" },
-        }));
-      }
       showResetFeedback(`任务数据已重置，共重建 ${summary.task_count} 个任务。`);
     } catch (error) {
       resetError.value = buildFailureMessage("任务重置失败，请稍后重试", error);

@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Iterable
 
+from app.core.axis_codes import DEFAULT_AXIS_CODES, sort_axis_codes
 from app.core.config import settings
 from app.core.time_utils import format_business_datetime, parse_business_datetime
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
@@ -49,7 +50,6 @@ EXPERIMENT_TYPE_OPTIONS: tuple[str, ...] = (
     "盐雾试验",
     "霉菌试验",
 )
-DEFAULT_AXIS_CODES: tuple[str, ...] = ("x+", "x-", "y+", "y-", "z+", "z-")
 AXIS_EXPERIMENT_TYPES: set[str] = {"冲击试验", "振动试验"}
 
 SAMPLE_TEXT_REPLACEMENTS: tuple[tuple[str, str], ...] = (
@@ -276,7 +276,7 @@ def _normalize_axis_codes(value: Any) -> list[str]:
         normalized = str(item or "").strip()
         if normalized and normalized not in axis_codes:
             axis_codes.append(normalized)
-    return axis_codes
+    return sort_axis_codes(axis_codes)
 
 
 def _experiment_requires_axis_codes(*values: Any) -> bool:
