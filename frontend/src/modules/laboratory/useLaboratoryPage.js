@@ -541,14 +541,18 @@ function useLaboratoryPage(options = {}) {
     && !operationLock.value.active,
   );
   const canRequestFixtureInstall = computed(() => actionState.value.canInstallSample || canResendFixtureInstall.value);
-  const canResendReady = computed(() =>
-    isMqttHostInterfaceMode()
-    && Boolean(currentTask.value)
-    && (Boolean(workflow.value.experimentConfirmed) || readyPublishRetryAvailable.value)
-    && !runningInteractionLocked.value
-    && !laboratoryUnderMaintenance.value
-    && !operationLock.value.active,
-  );
+  const canResendReady = computed(() => {
+    const readyTrayRows = (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
+      .filter((row) => String(row?.trayStatus || "").trim() === LAB_READY_STATUS);
+    return (
+      isMqttHostInterfaceMode()
+      && Boolean(currentTask.value)
+      && (readyPublishRetryAvailable.value || (Boolean(workflow.value.experimentConfirmed) && readyTrayRows.length > 0))
+      && !runningInteractionLocked.value
+      && !laboratoryUnderMaintenance.value
+      && !operationLock.value.active
+    );
+  });
   const canRequestReady = computed(() => actionState.value.canMarkReady || canResendReady.value);
   const installActionLabel = computed(() => (canResendFixtureInstall.value ? "重新下发安装" : "安装样品"));
   const readyActionLabel = computed(() => {

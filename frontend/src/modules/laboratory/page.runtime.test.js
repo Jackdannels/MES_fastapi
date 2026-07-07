@@ -1703,7 +1703,7 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  test("keeps laboratory MQ calls local when the host interface mode is mock", async () => {
+  test("publishes laboratory MQ calls in fixed MQTT mode", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
       {
@@ -1713,7 +1713,7 @@ describe("LaboratoryPage runtime", () => {
         status: "送至实验室",
         flow_status: "送至实验室",
         task_code: "SYLU-2026-04-101",
-        trays: [{ fixtureReady: true, fixture_ready: true, quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
+        trays: [{ quantity: 1, status: "送至实验室", tray_code: "TP-001" }],
       },
     ];
     const mounted = await mountPage();
@@ -1727,7 +1727,11 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
     await flushPageUpdates();
 
-    expect(laboratoryMqCalls()).toHaveLength(0);
+    const fixtureInstallCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
+    expect(JSON.parse(String(fixtureInstallCall[1].body || "{}"))).toEqual(expect.objectContaining({
+      lab_code: "LAB_SALT",
+      task_code: "SYLU-2026-04-101",
+    }));
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "工装夹具安装",
       status: "工装夹具安装",
@@ -2915,6 +2919,9 @@ describe("LaboratoryPage runtime", () => {
           return { ok: true, status: 200, json: async () => ({ ok: true }) };
         }
         return { ok: true, status: 200, json: async () => snapshotState };
+      }
+      if (url.includes("/api/mq/interface-mode")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, mode: HOST_INTERFACE_MODES.mqtt, subscriber_running: true }) };
       }
       if (url.includes("/api/mq/laboratory")) {
         return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };

@@ -8,7 +8,7 @@ from app.services.mq_subscriber import MqttSubscriberHandle, start_mqtt_subscrib
 from app.services.upper_computer_simulator import ensure_upper_computer_simulator_auto_mode
 
 
-HOST_INTERFACE_MODES = {"mock", "mqtt"}
+HOST_INTERFACE_MODES = {"mqtt"}
 
 
 class MqttRuntimeController:
@@ -20,14 +20,15 @@ class MqttRuntimeController:
         upper_computer_connector: Callable[[Settings], dict[str, object]] = ensure_upper_computer_simulator_auto_mode,
     ) -> None:
         self.app_settings = app_settings
-        self.mode = "mock"
+        self.mode = "mqtt"
+        self._reason = "not_started" if app_settings.MQTT_ENABLED else "disabled"
         self._starter = starter
         self._upper_computer_connector = upper_computer_connector
         self._upper_computer_status: dict[str, object] = {
             "enabled": bool(app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE),
             "connected": False,
             "auto_mode": False,
-            "reason": "paused",
+            "reason": self._reason,
         }
         self._subscriber: MqttSubscriberHandle | None = None
         self._lock = threading.RLock()
@@ -39,23 +40,13 @@ class MqttRuntimeController:
     def set_mode(self, mode: str) -> dict[str, object]:
         normalized_mode = str(mode or "").strip().lower()
         if normalized_mode not in HOST_INTERFACE_MODES:
-            raise ValueError("mode must be mock or mqtt")
+            raise ValueError("mode must be mqtt")
 
         with self._lock:
-            if normalized_mode == "mock":
-                self.mode = normalized_mode
-                self._stop_locked()
-                self._upper_computer_status = {
-                    "enabled": bool(self.app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE),
-                    "connected": False,
-                    "auto_mode": False,
-                    "reason": "paused",
-                }
-                return self._status_locked()
-
             if not self.app_settings.MQTT_ENABLED:
                 self._stop_locked()
                 self.mode = normalized_mode
+                self._reason = "disabled"
                 self._upper_computer_status = {
                     "enabled": bool(self.app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE),
                     "connected": False,
@@ -74,14 +65,14 @@ class MqttRuntimeController:
             ):
                 return self._status_locked()
 
-            if self._subscriber is None:
-                subscriber = self._starter(self.app_settings)
-                self._subscriber = subscriber
             try:
+                if self._subscriber is None:
+                    subscriber = self._starter(self.app_settings)
+                    self._subscriber = subscriber
                 self._upper_computer_status = self._upper_computer_connector(self.app_settings)
             except Exception:
-                if normalized_mode != self.mode:
-                    self._stop_locked()
+                self._stop_locked()
+                self._reason = "startup_failed"
                 self._upper_computer_status = {
                     "enabled": bool(self.app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE),
                     "connected": False,
@@ -90,6 +81,7 @@ class MqttRuntimeController:
                 }
                 raise
             self.mode = normalized_mode
+            self._reason = ""
             return self._status_locked()
 
     def shutdown(self) -> None:
@@ -121,10 +113,8 @@ class MqttRuntimeController:
 
     def _status_locked(self) -> dict[str, object]:
         subscriber_running = self._subscriber_is_running_locked()
-        reason = ""
-        if self.mode == "mock":
-            reason = "paused"
-        elif not self.app_settings.MQTT_ENABLED:
+        reason = self._reason
+        if not self.app_settings.MQTT_ENABLED:
             reason = "disabled"
         return {
             "ok": True,

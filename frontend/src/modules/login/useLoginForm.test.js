@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { useLoginForm } from "./useLoginForm";
-import { HOST_INTERFACE_MODE_STORAGE_KEY } from "@/lib/hostInterfaceMode";
 
 describe("useLoginForm", () => {
   const storageState = {};
@@ -26,7 +25,7 @@ describe("useLoginForm", () => {
       ok: true,
       status: 200,
       statusText: "OK",
-      json: async () => ({ ok: true, mode: "mock", subscriber_running: false }),
+      json: async () => ({ ok: true, mode: "mqtt", subscriber_running: true }),
     })));
   });
 
@@ -48,7 +47,6 @@ describe("useLoginForm", () => {
     expect(form.username.value).toBe("admin");
     expect(form.password.value).toBe("123");
     expect(form.moduleKey.value).toBe("central");
-    expect(form.interfaceMode.value).toBe("mock");
     expect(form.submitting.value).toBe(false);
 
     await form.submitLogin();
@@ -102,38 +100,7 @@ describe("useLoginForm", () => {
     expect(navigate).toHaveBeenCalledWith("/handover-system");
   });
 
-  test("persists the selected host interface mode for later MQ flow decisions", async () => {
-    const form = useLoginForm({
-      login: vi.fn(),
-      navigate: vi.fn(),
-      redirectPath: "",
-      resolveModuleHome: vi.fn(() => "/"),
-    });
-
-    await form.setInterfaceMode("mqtt");
-
-    expect(form.interfaceMode.value).toBe("mqtt");
-    expect(window.localStorage.getItem(HOST_INTERFACE_MODE_STORAGE_KEY)).toBe("mqtt");
-  });
-
-  test("syncs the selected host interface mode to the backend runtime", async () => {
-    const form = useLoginForm({
-      login: vi.fn(),
-      navigate: vi.fn(),
-      redirectPath: "",
-      resolveModuleHome: vi.fn(() => "/"),
-    });
-
-    await form.setInterfaceMode("mock");
-
-    expect(fetch).toHaveBeenCalledWith("/api/mq/interface-mode", expect.objectContaining({
-      body: JSON.stringify({ mode: "mock" }),
-      method: "POST",
-    }));
-  });
-
-  test("syncs a restored host interface mode before navigating after login", async () => {
-    window.localStorage.setItem(HOST_INTERFACE_MODE_STORAGE_KEY, "mqtt");
+  test("syncs MQTT mode before navigating after login", async () => {
     const login = vi.fn(async () => ({ module: "central", ok: true }));
     const navigate = vi.fn();
     const form = useLoginForm({
@@ -160,28 +127,15 @@ describe("useLoginForm", () => {
       json: async () => ({ detail: "MQTT 连接失败" }),
     });
     const form = useLoginForm({
-      login: vi.fn(),
+      login: vi.fn(async () => ({ module: "central", ok: true })),
       navigate: vi.fn(),
       redirectPath: "",
       resolveModuleHome: vi.fn(() => "/"),
     });
 
-    await form.setInterfaceMode("mqtt");
+    await form.submitLogin();
 
     expect(form.errorMessage.value).toBe("MQTT 连接失败");
-  });
-
-  test("restores a previously selected host interface mode", () => {
-    window.localStorage.setItem(HOST_INTERFACE_MODE_STORAGE_KEY, "mqtt");
-
-    const form = useLoginForm({
-      login: vi.fn(),
-      navigate: vi.fn(),
-      redirectPath: "",
-      resolveModuleHome: vi.fn(() => "/"),
-    });
-
-    expect(form.interfaceMode.value).toBe("mqtt");
   });
 
   test("navigates to the selected laboratory when the laboratory module succeeds", async () => {

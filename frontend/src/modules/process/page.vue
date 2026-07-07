@@ -58,16 +58,6 @@
           >
             查看任务
           </button>
-          <button
-            class="action-btn"
-            type="button"
-            :data-testid="`process-start-button-${lab.name}`"
-            :disabled="!lab.canStartExperiment"
-            :title="lab.startDisabledReason || ''"
-            @click="openStartExperimentModal(lab)"
-          >
-            开始实验
-          </button>
         </div>
         <div class="process-lab-hint">
           <span v-if="lab.runningTrayCount > 0">当前实验 {{ lab.runningTrayCount }} 个托盘</span>
@@ -367,38 +357,6 @@
       </div>
     </div>
   </div>
-
-  <div class="modal process-task-modal" :class="{ 'is-open': startExperimentModalOpen }" id="process-start-modal">
-    <div class="modal-backdrop" data-testid="process-start-backdrop" @click="closeStartExperimentModal"></div>
-    <div class="modal-content process-task-modal-content">
-      <div class="modal-header process-task-modal-header">
-        <div>
-          <div class="muted process-task-modal-eyebrow">开始实验确认</div>
-          <strong>确认开始实验</strong>
-        </div>
-        <button class="modal-close" type="button" @click="closeStartExperimentModal">关闭</button>
-      </div>
-
-      <div class="process-start-modal-body">
-        <div class="process-start-modal-meta">
-          <div><span>任务编号</span><strong>{{ startExperimentTaskDetail?.code || "-" }}</strong></div>
-          <div><span>实验名称</span><strong>{{ startExperimentTaskDetail?.targetExperiment || "-" }}</strong></div>
-        </div>
-        <div v-if="currentStartableTrayRows.length" class="process-start-tray-list">
-          <article v-for="tray in currentStartableTrayRows" :key="tray.trayCode" class="process-start-tray-card">
-            <strong>{{ tray.trayCode }}</strong>
-            <span>{{ tray.status }}</span>
-            <span>{{ tray.sampleSummary }}</span>
-          </article>
-        </div>
-        <div v-else class="muted">当前实验暂无可启动托盘。</div>
-        <div class="process-start-modal-actions">
-          <button class="action-btn secondary" type="button" @click="closeStartExperimentModal">取消</button>
-          <button class="action-btn" data-testid="process-confirm-start" type="button" @click="confirmStartExperiment">确认开始实验</button>
-        </div>
-      </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
@@ -414,23 +372,17 @@ defineOptions({
 const {
   activeFilter,
   closeTaskDrawer,
-  closeStartExperimentModal,
-  confirmStartExperiment,
-  currentStartableTrayRows,
   idleCount,
   loading,
   openTaskOverview,
-  openStartExperimentModal,
   overviewCount,
   processActionMessage,
   runningCount,
   scheduledCount,
   selectedTaskDetail,
-  startExperimentTaskDetail,
   selectTaskTray,
   setSelectedTaskForLab,
   setActiveFilter,
-  startExperimentModalOpen,
   taskDrawerOpen,
   visibleLabCards,
 } = useProcessLabs();

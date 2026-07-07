@@ -1,18 +1,13 @@
 const HOST_INTERFACE_MODE_STORAGE_KEY = "mes_lab_host_interface_mode_v1";
 const HOST_INTERFACE_MODE_CHANGED_EVENT = "mes:host-interface-mode-changed";
 const HOST_INTERFACE_MODES = Object.freeze({
-  mock: "mock",
   mqtt: "mqtt",
 });
 
-const normalizeHostInterfaceMode = (value) =>
-  value === HOST_INTERFACE_MODES.mqtt ? HOST_INTERFACE_MODES.mqtt : HOST_INTERFACE_MODES.mock;
+const normalizeHostInterfaceMode = () => HOST_INTERFACE_MODES.mqtt;
 
 const readHostInterfaceMode = () => {
-  if (typeof window === "undefined" || !window.localStorage || typeof window.localStorage.getItem !== "function") {
-    return HOST_INTERFACE_MODES.mock;
-  }
-  return normalizeHostInterfaceMode(window.localStorage.getItem(HOST_INTERFACE_MODE_STORAGE_KEY));
+  return HOST_INTERFACE_MODES.mqtt;
 };
 
 const writeHostInterfaceMode = (value) => {

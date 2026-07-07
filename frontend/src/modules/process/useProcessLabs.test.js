@@ -467,7 +467,7 @@ describe("useProcessLabs", () => {
 
     expect(loadSnapshot).toHaveBeenCalledTimes(2);
     expect(exposed.labCards.value[0]).toEqual(expect.objectContaining({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     }));
     vi.useRealTimers();
@@ -561,7 +561,7 @@ describe("useProcessLabs", () => {
     await flushStorageRefresh();
 
     expect(exposed.labCards.value.find((lab) => lab.name === "冲击一室")).toEqual(expect.objectContaining({
-      canStartExperiment: true,
+      canStartExperiment: false,
       experimentCode: "SYLU-2026-04-501-A",
       readyTrayCount: 1,
       targetExperiment: "冲击试验",
@@ -615,7 +615,7 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
 
     expect(labCards.value[0]).toEqual(expect.objectContaining({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
       statusClass: "is-scheduled",
       taskCode: "TASK-OPEN",
@@ -673,14 +673,14 @@ describe("useProcessLabs", () => {
     resolvers[1](createSnapshot("实验准备就绪"));
     await newerLoad;
     expect(labCards.value[0]).toEqual(expect.objectContaining({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     }));
 
     resolvers[0](createSnapshot("工装夹具安装"));
     await olderLoad;
     expect(labCards.value[0]).toEqual(expect.objectContaining({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     }));
   });
@@ -888,7 +888,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, openTaskOverview, processActionMessage, selectedTaskDetail, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "Lab-A", testType: "Impact Test" }],
       loadSnapshot,
@@ -899,7 +899,7 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
 
     expect(labCards.value[0]).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 2,
       runningTrayCount: 0,
       remainingTrayCount: 1,
@@ -910,84 +910,15 @@ describe("useProcessLabs", () => {
     expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
     expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
 
-    await startExperiment(labCards.value[0]);
 
-    expect(persistSnapshot).toHaveBeenCalledTimes(1);
-    const persisted = persistSnapshot.mock.calls[0][0];
-    expect(persisted["mes.tasks"]).toEqual([expect.objectContaining({ code: "TASK-001", status: "任务进行中" })]);
-    expect(persisted["mes.schedules"]).toEqual([
-      expect.objectContaining({
-        id: "schedule-1",
-        status: "实验进行中",
-        start_at: "2026-03-11T09:30:00Z",
-        end_at: "2026-03-11T10:30:00Z",
-        updated_at: "2026-03-11 16:00:00",
-      }),
-    ]);
-    expect(persisted["mes.experiments"]).toEqual([
-      expect.objectContaining({
-        task_code: "TASK-001",
-        experiment_code: "TASK-001-A",
-        status: "实验进行中",
-        updated_at: "2026-03-11 16:00:00",
-      }),
-    ]);
-    expect(persisted["mes.experiment_runs"]).toEqual([
-      expect.objectContaining({
-        schedule_id: "schedule-1",
-        task_code: "TASK-001",
-        experiment_code: "TASK-001-A",
-        device: "Lab-A",
-        tray_codes: ["TRAY-READY-1", "TRAY-READY-2"],
-        status: "实验进行中",
-        started_at: "2026-03-11 16:00:00",
-        planned_hours: 2,
-        planned_end_at: "2026-03-11 18:00:00",
-      }),
-    ]);
-    expect(persisted["mes.experiment_run_trays"]).toEqual([
-      expect.objectContaining({
-        task_code: "TASK-001",
-        experiment_code: "TASK-001-A",
-        tray_code: "TRAY-READY-1",
-        run_tray_status: "实验进行中",
-        started_at: "2026-03-11 16:00:00",
-      }),
-      expect.objectContaining({
-        task_code: "TASK-001",
-        experiment_code: "TASK-001-A",
-        tray_code: "TRAY-READY-2",
-        run_tray_status: "实验进行中",
-        started_at: "2026-03-11 16:00:00",
-      }),
-    ]);
-    expect(persisted["mes.samples"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "S-001",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TRAY-READY-1", status: "实验进行中" })],
-        }),
-        expect.objectContaining({
-          code: "S-002",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TRAY-READY-2", status: "实验进行中" })],
-        }),
-        expect.objectContaining({
-          code: "S-003",
-          status: "已到达实验室",
-          trays: [expect.objectContaining({ tray_code: "TRAY-WAIT", status: "已到达实验室" })],
-        }),
-      ]),
-    );
-    expect(processActionMessage.value).toBe("当前开始进行2个托盘，剩余1个托盘。");
+    expect(persistSnapshot).not.toHaveBeenCalled();
     expect(labCards.value[0]).toMatchObject({
       canStartExperiment: false,
-      readyTrayCount: 0,
-      runningTrayCount: 2,
+      readyTrayCount: 2,
+      runningTrayCount: 0,
       remainingTrayCount: 1,
     });
-    expect(selectedTaskDetail.value.runningTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-READY-1", "TRAY-READY-2"]);
+    expect(selectedTaskDetail.value.runningTrayRows).toEqual([]);
     expect(selectedTaskDetail.value.remainingTrayRows.map((row) => row.trayCode)).toEqual(["TRAY-WAIT"]);
     vi.useRealTimers();
   });
@@ -1059,7 +990,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -1070,7 +1001,7 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
 
     expect(labCards.value[0]).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       experimentCode: "TASK-SALT-A",
       remainingTrayCount: 0,
       readyTrayCount: 1,
@@ -1078,56 +1009,8 @@ describe("useProcessLabs", () => {
       taskCode: "TASK-SALT",
     });
 
-    await startExperiment(labCards.value[0]);
 
-    const persisted = persistSnapshot.mock.calls[0][0];
-    expect(persisted["mes.schedules"]).toEqual([
-      expect.objectContaining({
-        id: "schedule-salt-1",
-        start_at: "2026-05-31T10:44:31Z",
-        end_at: "2026-05-31T14:14:31Z",
-      }),
-    ]);
-    expect(persisted["mes.experiment_runs"]).toEqual([
-      expect.objectContaining({ id: "run-first", status: "实验已完成" }),
-      expect.objectContaining({
-        schedule_id: "schedule-salt-1",
-        task_code: "TASK-SALT",
-        experiment_code: "TASK-SALT-A",
-        device: "盐雾试验室",
-        tray_codes: ["TASK-SALT-TP-002"],
-        status: "实验进行中",
-        started_at: "2026-06-01 09:40:00",
-        planned_end_at: "2026-06-01 13:10:00",
-      }),
-    ]);
-    expect(persisted["mes.experiment_run_trays"]).toEqual([
-      expect.objectContaining({
-        run_no: "run-first",
-        tray_code: "TASK-SALT-TP-001",
-        run_tray_status: "实验已完成",
-      }),
-      expect.objectContaining({
-        task_code: "TASK-SALT",
-        experiment_code: "TASK-SALT-A",
-        tray_code: "TASK-SALT-TP-002",
-        run_tray_status: "实验进行中",
-        started_at: "2026-06-01 09:40:00",
-      }),
-    ]);
-    expect(persisted["mes.samples"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "SP-001",
-          trays: [expect.objectContaining({ tray_code: "TASK-SALT-TP-001", status: "已到达暂存间" })],
-        }),
-        expect.objectContaining({
-          code: "SP-002",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TASK-SALT-TP-002", status: "实验进行中" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -1185,7 +1068,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -1195,23 +1078,8 @@ describe("useProcessLabs", () => {
 
     await loadLabStatus();
     setSelectedTaskForLab("盐雾试验室", "TASK-B", "TASK-B-EXP");
-    await startExperiment(labCards.value[0]);
 
-    const persistedSamples = persistSnapshot.mock.calls[0][0]["mes.samples"];
-    expect(persistedSamples).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "SP-A",
-          status: "实验准备就绪",
-          trays: [expect.objectContaining({ tray_code: "TP-SHARED", status: "实验准备就绪" })],
-        }),
-        expect.objectContaining({
-          code: "SP-B",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TP-SHARED", status: "实验进行中" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -1244,7 +1112,7 @@ describe("useProcessLabs", () => {
     }));
     const persistSnapshot = vi.fn(async () => {});
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
-    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+    const { loadLabStatus } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "Lab-A", testType: "Impact Test" }],
       loadSnapshot,
@@ -1253,9 +1121,8 @@ describe("useProcessLabs", () => {
     });
 
     await loadLabStatus();
-    await startExperiment(labCards.value[0]);
 
-    expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
+    expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(false);
     dispatchEventSpy.mockRestore();
   });
 
@@ -1316,7 +1183,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "Lab-A", testType: "Impact Test" }],
       loadSnapshot,
@@ -1333,7 +1200,6 @@ describe("useProcessLabs", () => {
       startDisabledReason: "当前批次实验未结束",
     });
 
-    await startExperiment(labCards.value[0]);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
@@ -1372,7 +1238,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -1383,28 +1249,13 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
 
     expect(labCards.value[0]).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
-      startDisabledReason: "",
+      startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
     });
 
-    await startExperiment(labCards.value[0]);
 
-    expect(persistSnapshot).toHaveBeenCalledTimes(1);
-    expect(persistSnapshot.mock.calls[0][0]["mes.samples"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "S-001",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TRAY-MIXED", status: "实验进行中" })],
-        }),
-        expect.objectContaining({
-          code: "S-002",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TRAY-MIXED", status: "实验进行中" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("allows a ready scheduled tray to start even when its location label is not the lab display name", async () => {
@@ -1442,7 +1293,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, openTaskOverview, selectedTaskDetail } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -1455,30 +1306,14 @@ describe("useProcessLabs", () => {
 
     expect(selectedTaskDetail.value.readyTrayRows.map((row) => row.trayCode)).toEqual(["TP-002"]);
     expect(labCards.value[0]).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
       remainingTrayCount: 1,
-      startDisabledReason: "",
+      startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
     });
 
-    await startExperiment(labCards.value[0]);
 
-    expect(persistSnapshot).toHaveBeenCalledTimes(1);
-    const persistedSamples = persistSnapshot.mock.calls[0][0]["mes.samples"];
-    expect(persistedSamples).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "SP-001",
-          status: "送至实验室",
-          trays: [expect.objectContaining({ tray_code: "TP-001", status: "送至实验室" })],
-        }),
-        expect.objectContaining({
-          code: "SP-002",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "TP-002", status: "实验进行中" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("keeps a lab card scheduled when trays are only ready but not explicitly started", async () => {
@@ -2273,7 +2108,7 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
 
     expect(labCards.value[0]).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       experimentCode: "SYLU-2026-04-701-B",
       readyTrayCount: 1,
       targetExperiment: "盐雾试验-B",
@@ -2335,16 +2170,9 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const {
-      currentStartableTrayRows,
-      labCards,
+    const {      labCards,
       loadLabStatus,
-      openTaskOverview,
-      openStartExperimentModal,
-      selectedTaskDetail,
-      startExperiment,
-      startExperimentModalOpen,
-    } = useProcessLabs({
+      openTaskOverview,      selectedTaskDetail,    } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -2354,28 +2182,10 @@ describe("useProcessLabs", () => {
 
     await loadLabStatus();
     await openTaskOverview(labCards.value[0]);
-    await openStartExperimentModal(labCards.value[0]);
 
-    expect(startExperimentModalOpen.value).toBe(true);
-    expect(currentStartableTrayRows.value.map((row) => row.trayCode)).toEqual(["SYLU-2026-03-005-TP-001"]);
 
-    await startExperiment(labCards.value[0]);
 
-    const persisted = persistSnapshot.mock.calls[0][0];
-    expect(persisted["mes.samples"]).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "SYLU-2026-03-005-SP-001",
-          status: "实验进行中",
-          trays: [expect.objectContaining({ tray_code: "SYLU-2026-03-005-TP-001", status: "实验进行中" })],
-        }),
-        expect.objectContaining({
-          code: "SYLU-2026-03-005-SP-002",
-          status: "已到达实验室",
-          trays: [expect.objectContaining({ tray_code: "SYLU-2026-03-005-TP-002", status: "已到达实验室" })],
-        }),
-      ]),
-    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
     expect(selectedTaskDetail.value.remainingTrayCount).toBe(0);
     vi.useRealTimers();
   });
@@ -2416,12 +2226,7 @@ describe("useProcessLabs", () => {
     const persistSnapshot = vi.fn(async () => {});
     const {
       labCards,
-      loadLabStatus,
-      openStartExperimentModal,
-      processActionMessage,
-      startExperiment,
-      startExperimentModalOpen,
-    } = useProcessLabs({
+      loadLabStatus,    } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -2434,11 +2239,7 @@ describe("useProcessLabs", () => {
     expect(labCards.value[0].canStartExperiment).toBe(false);
     expect(labCards.value[0].startDisabledReason).toBe("MQTT模式下等待上位机发送实验开始信号");
 
-    await openStartExperimentModal(labCards.value[0]);
-    await startExperiment(labCards.value[0]);
 
-    expect(startExperimentModalOpen.value).toBe(false);
-    expect(processActionMessage.value).toBe("MQTT模式下等待上位机发送实验开始信号");
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
@@ -2497,12 +2298,7 @@ describe("useProcessLabs", () => {
     const persistSnapshot = vi.fn(async () => {});
     const {
       labCards,
-      loadLabStatus,
-      openStartExperimentModal,
-      processActionMessage,
-      startExperiment,
-      startExperimentModalOpen,
-    } = useProcessLabs({
+      loadLabStatus,    } = useProcessLabs({
       autoLoad: false,
       labs: [
         { code: "LAB_HOT_HUMID_1", name: "高低温湿热一室", testType: "高低温湿热试验" },
@@ -2527,11 +2323,7 @@ describe("useProcessLabs", () => {
       startDisabledReason: "试验间将在准备就绪后自动开始实验",
     });
 
-    await openStartExperimentModal(hostlessLab);
-    await startExperiment(hostlessLab);
 
-    expect(startExperimentModalOpen.value).toBe(false);
-    expect(processActionMessage.value).toBe("试验间将在准备就绪后自动开始实验");
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
@@ -2570,7 +2362,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, openStartExperimentModal, startExperiment, startExperimentModalOpen } = useProcessLabs({
+    const { loadLabStatus } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "盐雾试验室", testType: "盐雾试验" }],
       loadSnapshot,
@@ -2579,11 +2371,8 @@ describe("useProcessLabs", () => {
     });
 
     await loadLabStatus();
-    await openStartExperimentModal(labCards.value[0]);
 
-    expect(startExperimentModalOpen.value).toBe(false);
 
-    await startExperiment(labCards.value[0]);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
     vi.useRealTimers();
@@ -2757,7 +2546,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [
         { name: "盐雾试验室", testType: "盐雾试验" },
@@ -2780,7 +2569,6 @@ describe("useProcessLabs", () => {
     });
 
     setSelectedTaskForLab("振动一室", "SYLU-2026-03-006", "SYLU-2026-03-006-B");
-    await startExperiment(labCards.value.find((card) => card.name === "振动一室"));
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
@@ -2847,7 +2635,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [
         { name: "冲击一室", testType: "冲击试验" },
@@ -2867,12 +2655,11 @@ describe("useProcessLabs", () => {
       readyTrayCount: 0,
     });
     expect(tempCard).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     });
 
     setSelectedTaskForLab("冲击一室", "TASK-SHARED", "EXP-IMPACT");
-    await startExperiment(impactCard);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
@@ -2939,7 +2726,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [
         { name: "冲击二室", testType: "冲击试验" },
@@ -2959,12 +2746,11 @@ describe("useProcessLabs", () => {
       readyTrayCount: 0,
     });
     expect(tempShockCard).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     });
 
     setSelectedTaskForLab("冲击二室", "SYLU-2026-06-021", "SYLU-2026-06-021-A");
-    await startExperiment(impactCard);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
@@ -3042,7 +2828,7 @@ describe("useProcessLabs", () => {
       })),
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [{ name: "温度冲击二室", testType: "温度冲击试验" }],
       loadSnapshot,
@@ -3054,33 +2840,13 @@ describe("useProcessLabs", () => {
 
     const tempShockCard = labCards.value.find((card) => card.name === "温度冲击二室");
     expect(tempShockCard).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 3,
     });
 
     setSelectedTaskForLab("温度冲击二室", "SYLU-2026-06-021", "SYLU-2026-06-021-B");
-    await startExperiment(tempShockCard);
 
-    expect(persistSnapshot).toHaveBeenCalledTimes(1);
-    const persistedPayload = persistSnapshot.mock.calls[0][0];
-    expect(persistedPayload["mes.experiment_runs"][0]).toEqual(expect.objectContaining({
-      experiment_code: "SYLU-2026-06-021-B",
-      tray_codes: readyTrayCodes,
-    }));
-    expect(persistedPayload["mes.experiment_run_trays"].map((row) => row.tray_code)).toEqual(readyTrayCodes);
-    expect(
-      persistedPayload["mes.samples"].flatMap((sample) => sample.trays).map((tray) => ({
-        status: tray.status,
-        targetExperimentCode: tray.target_experiment_code,
-        targetLab: tray.target_lab,
-        trayCode: tray.tray_code,
-      })),
-    ).toEqual(readyTrayCodes.map((trayCode) => ({
-      status: "实验进行中",
-      targetExperimentCode: undefined,
-      targetLab: undefined,
-      trayCode,
-    })));
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("shows selected tray flow by tray target lab instead of the old laboratory schedule", async () => {
@@ -3193,7 +2959,7 @@ describe("useProcessLabs", () => {
       ],
     }));
     const persistSnapshot = vi.fn(async () => {});
-    const { labCards, loadLabStatus, setSelectedTaskForLab, startExperiment } = useProcessLabs({
+    const { labCards, loadLabStatus, setSelectedTaskForLab } = useProcessLabs({
       autoLoad: false,
       labs: [
         { name: "冲击一室", testType: "冲击试验" },
@@ -3213,12 +2979,11 @@ describe("useProcessLabs", () => {
       readyTrayCount: 0,
     });
     expect(tempCard).toMatchObject({
-      canStartExperiment: true,
+      canStartExperiment: false,
       readyTrayCount: 1,
     });
 
     setSelectedTaskForLab("冲击一室", "TASK-SHARED", "EXP-IMPACT");
-    await startExperiment(impactCard);
 
     expect(persistSnapshot).not.toHaveBeenCalled();
   });

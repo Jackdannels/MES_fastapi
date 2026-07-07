@@ -15,11 +15,10 @@ describe("LoginPage structure", () => {
     expect(source).toContain("试验室操作台");
     expect(source).toContain("LABORATORY_OPTIONS");
     expect(source).toContain("selectedLabName");
-    expect(source).toContain("接口模式");
-    expect(source).toContain("Mock");
-    expect(source).toContain("MQTT");
-    expect(source).toContain("setInterfaceMode");
-    expect(source).toContain("login-interface-mode");
+    expect(source).not.toContain("接口模式");
+    expect(source).not.toContain("Mock");
+    expect(source).not.toContain("setInterfaceMode");
+    expect(source).not.toContain("login-interface-mode");
     expect(source).not.toContain("盐雾试验室操作台");
     expect(source).not.toContain('ref("admin")');
     expect(source).not.toContain('ref("123")');

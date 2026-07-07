@@ -617,22 +617,22 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/api/mq/interface-mode").json() == {
             "ok": True,
-            "mode": "mock",
+            "mode": "mqtt",
             "mqtt_enabled": True,
             "subscriber_running": False,
             "upper_computer": {
                 "enabled": False,
                 "connected": False,
                 "auto_mode": False,
-                "reason": "paused",
+                "reason": "not_started",
             },
-            "reason": "paused",
+            "reason": "not_started",
         }
 
-    assert calls == [("shutdown", "mock")]
+    assert calls == [("shutdown", "mqtt")]
 
 
-def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_modes():
+def test_interface_mode_endpoint_starts_subscriber_and_rejects_mock_mode():
     calls = []
 
     class FakeHandle:
@@ -668,21 +668,9 @@ def test_interface_mode_endpoint_starts_and_stops_subscriber_when_switching_mode
     }
 
     mock_response = client.post("/api/mq/interface-mode", json={"mode": "mock"})
-    assert mock_response.status_code == 200
-    assert mock_response.json() == {
-        "ok": True,
-        "mode": "mock",
-        "mqtt_enabled": True,
-        "subscriber_running": False,
-        "upper_computer": {
-            "enabled": False,
-            "connected": False,
-            "auto_mode": False,
-            "reason": "paused",
-        },
-        "reason": "paused",
-    }
-    assert calls == [("start", True), "stop"]
+    assert mock_response.status_code == 422
+    assert mock_response.json()["detail"] == "mode must be mqtt"
+    assert calls == [("start", True)]
 
 
 def test_interface_mode_endpoint_auto_connects_upper_computer_simulator_when_enabled():
@@ -904,7 +892,7 @@ def test_interface_mode_endpoint_does_not_start_subscriber_when_env_disabled():
     assert calls == []
 
 
-def test_interface_mode_endpoint_reports_startup_failure_and_keeps_previous_mode():
+def test_interface_mode_endpoint_reports_startup_failure_and_keeps_mqtt_mode():
     app = FastAPI()
     app.state.mq_runtime = mq_runtime.MqttRuntimeController(
         Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False),
@@ -919,16 +907,16 @@ def test_interface_mode_endpoint_reports_startup_failure_and_keeps_previous_mode
     assert "broker unavailable" in response.json()["detail"]
     assert client.get("/api/mq/interface-mode").json() == {
         "ok": True,
-        "mode": "mock",
+        "mode": "mqtt",
         "mqtt_enabled": True,
         "subscriber_running": False,
         "upper_computer": {
             "enabled": False,
             "connected": False,
             "auto_mode": False,
-            "reason": "paused",
+            "reason": "startup_failed",
         },
-        "reason": "paused",
+        "reason": "startup_failed",
     }
 
 

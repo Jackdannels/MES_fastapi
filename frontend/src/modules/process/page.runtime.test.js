@@ -7,11 +7,7 @@ const mocks = vi.hoisted(() => ({
   activeFilter: null,
   allLabs: null,
   closeTaskDrawer: vi.fn(),
-  closeStartExperimentModal: vi.fn(),
-  confirmStartExperiment: vi.fn(),
-  currentStartableTrayRows: null,
   openTaskOverview: vi.fn(),
-  openStartExperimentModal: vi.fn(),
   processActionMessage: null,
   createSelectedTaskDetail() {
     return {
@@ -117,13 +113,9 @@ const mocks = vi.hoisted(() => ({
       mocks.activeFilter.value = "overview";
     }
     mocks.closeTaskDrawer.mockClear();
-    mocks.closeStartExperimentModal.mockClear();
-    mocks.confirmStartExperiment.mockClear();
     mocks.openTaskOverview.mockClear();
-    mocks.openStartExperimentModal.mockClear();
     mocks.selectTaskTray.mockClear();
     mocks.setSelectedTaskForLab.mockClear();
-    mocks.startExperiment.mockClear();
     if (mocks.selectedTaskDetail) {
       mocks.selectedTaskDetail.value = mocks.createSelectedTaskDetail();
     }
@@ -136,7 +128,6 @@ const mocks = vi.hoisted(() => ({
       mocks.activeFilter.value = value;
     }
   },
-  startExperiment: vi.fn(),
   taskDrawerOpen: null,
   visibleLabCards: null,
 }));
@@ -178,15 +169,7 @@ vi.mock("./useProcessLabs", async () => {
     },
   ]);
   mocks.processActionMessage = ref("当前开始进行2个托盘，剩余1个托盘。");
-  mocks.currentStartableTrayRows = ref([
-    {
-      sampleCodes: ["SP-003", "SP-004"],
-      status: "实验准备就绪",
-      trayCode: "TRAY-003",
-    },
-  ]);
   mocks.taskDrawerOpen = ref(true);
-  const startExperimentModalOpen = ref(false);
   mocks.visibleLabCards = computed(() => {
     if (mocks.activeFilter.value === "running") {
       return mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running");
@@ -212,17 +195,10 @@ vi.mock("./useProcessLabs", async () => {
     useProcessLabs: () => ({
       activeFilter: mocks.activeFilter,
       closeTaskDrawer: mocks.closeTaskDrawer,
-      closeStartExperimentModal: mocks.closeStartExperimentModal,
-      confirmStartExperiment: mocks.confirmStartExperiment,
-      currentStartableTrayRows: mocks.currentStartableTrayRows,
       idleCount: computed(() => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-idle").length),
       labCards: mocks.allLabs,
       loading: ref(false),
       openTaskOverview: mocks.openTaskOverview,
-      openStartExperimentModal: (...args) => {
-        startExperimentModalOpen.value = true;
-        return mocks.openStartExperimentModal(...args);
-      },
       overviewCount: computed(() => mocks.allLabs.value.length),
       processActionMessage: mocks.processActionMessage,
       runningCount: computed(() => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running").length),
@@ -230,15 +206,9 @@ vi.mock("./useProcessLabs", async () => {
         () => mocks.allLabs.value.filter((lab) => lab.statusClass === "is-running" || lab.statusClass === "is-scheduled").length
       ),
       selectedTaskDetail: mocks.selectedTaskDetail,
-      startExperimentTaskDetail: ref({
-        code: "SYLU-2026-03-001",
-        targetExperiment: "冲击试验",
-      }),
       selectTaskTray: mocks.selectTaskTray,
       setSelectedTaskForLab: mocks.setSelectedTaskForLab,
       setActiveFilter: mocks.setActiveFilter,
-      startExperiment: mocks.startExperiment,
-      startExperimentModalOpen,
       taskDrawerOpen: mocks.taskDrawerOpen,
       visibleLabCards: mocks.visibleLabCards,
     }),
@@ -246,7 +216,7 @@ vi.mock("./useProcessLabs", async () => {
 });
 
 describe("ProcessPage runtime", () => {
-  test("renders overview filter cards, start action, and a right-side tray flow column inside the task drawer", async () => {
+  test("renders overview filter cards without manual start action and keeps a right-side tray flow column inside the task drawer", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);
 
@@ -260,7 +230,8 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.text()).toContain("冲击一室");
     expect(wrapper.text()).toContain("盐雾试验室");
     expect(wrapper.text()).toContain("当前开始进行2个托盘，剩余1个托盘。");
-    expect(wrapper.get("[data-testid='process-start-button-冲击一室']").attributes("disabled")).toBeUndefined();
+    expect(wrapper.find("[data-testid='process-start-button-冲击一室']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("开始实验确认");
 
     await wrapper.get("button.action-btn.secondary").trigger("click");
 
@@ -356,18 +327,11 @@ describe("ProcessPage runtime", () => {
     expect(grid.findAll(".process-task-tray-row")).toHaveLength(3);
   });
 
-  test("switches visible labs by summary filter, disables idle actions, and supports tray/start actions", async () => {
+  test("switches visible labs by summary filter, disables idle task actions, and supports tray selection", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);
 
-    await wrapper.get("[data-testid='process-start-button-冲击一室']").trigger("click");
-
-    expect(mocks.openStartExperimentModal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "冲击一室",
-        taskCode: "SYLU-2026-03-001",
-      })
-    );
+    expect(wrapper.find("[data-testid='process-start-button-冲击一室']").exists()).toBe(false);
 
     await wrapper.get("[data-testid='process-tray-button-TRAY-003']").trigger("click");
 
@@ -384,7 +348,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.findAll(".process-lab-card")).toHaveLength(1);
     expect(wrapper.get(".process-lab-name").text()).toBe("盐雾试验室");
     expect(wrapper.get("[data-testid='process-task-button-盐雾试验室']").attributes("disabled")).toBeDefined();
-    expect(wrapper.get("[data-testid='process-start-button-盐雾试验室']").attributes("disabled")).toBeDefined();
+    expect(wrapper.find("[data-testid='process-start-button-盐雾试验室']").exists()).toBe(false);
   });
 
   test("collapses oversized task tray and sample sections behind a full detail modal", async () => {
@@ -438,21 +402,13 @@ describe("ProcessPage runtime", () => {
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-006");
   });
 
-  test("opens the start experiment modal and supports selecting the current lab task from a selector modal", async () => {
+  test("supports selecting the current lab task from a selector modal without a manual start modal", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);
 
-    await wrapper.get("[data-testid='process-start-button-冲击一室']").trigger("click");
-
-    expect(mocks.openStartExperimentModal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "冲击一室",
-        taskCode: "SYLU-2026-03-001",
-      })
-    );
-    expect(wrapper.text()).toContain("开始实验确认");
-    expect(wrapper.text()).toContain("TRAY-003");
-    expect(wrapper.text()).toContain("SP-003");
+    expect(wrapper.find("[data-testid='process-start-button-冲击一室']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("开始实验确认");
+    expect(wrapper.find("#process-start-modal").exists()).toBe(false);
 
     await wrapper.get("[data-testid='process-open-task-selector']").trigger("click");
 
