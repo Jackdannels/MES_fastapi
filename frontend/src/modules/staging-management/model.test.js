@@ -497,19 +497,19 @@ describe("staging-management model", () => {
     expect(row?.sampleType).toBe("霉菌试验");
   });
 
-  test("builds metrics from tray rows and staging events", () => {
-    const rows = buildZancunRowsFromSnapshot(createSnapshot(), { now: TODAY });
+  test("builds metrics from current tray rows instead of sample quantities", () => {
+    const snapshot = createSnapshot();
+    const stockedTray = snapshot[STORAGE_KEYS.samples].find((sample) => sample.task_code === "SYLU-2026-04-102");
+    stockedTray.trays = stockedTray.trays.map((tray) => ({ ...tray, quantity: 7 }));
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
     const metrics = buildZancunMetrics({
       now: TODAY,
       rows,
-      stagingEvents: createSnapshot()[STORAGE_KEYS.staging_events],
+      stagingEvents: snapshot[STORAGE_KEYS.staging_events],
     });
 
-    expect(metrics).toEqual({
-      stockedInTodayCount: 1,
-      stockedOutTodayCount: 1,
-      totalQuantity: 1,
-    });
+    expect(metrics.totalTrayCount).toBe(1);
+    expect(metrics.totalQuantity).toBeUndefined();
   });
 
   test("filters overview rows by metric mode and paginates in 4-row viewports", () => {
@@ -557,6 +557,32 @@ describe("staging-management model", () => {
     expect(stockOutDetail.nextStatus).toBe("已出库");
     expect(stockOutDetail.trayCode).toBe("SYLU-2026-04-102-TP-001");
     expect(stockOutDetail.targetLab).toBe("振动一室");
+  });
+
+  test("accepts prefixed tray QR payloads for staging scan detail and stock in", () => {
+    const snapshot = createSnapshot();
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "MES-TRAY:SYLU-2026-04-101-TP-001", "stockIn", { room: "staging" });
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: { code: "MES-TRAY:SYLU-2026-04-101-TP-001", mode: "stockIn", room: "staging" },
+      room: "staging",
+      snapshot,
+    });
+
+    expect(detail).toEqual(expect.objectContaining({
+      found: true,
+      trayCode: "SYLU-2026-04-101-TP-001",
+    }));
+    expect(result.error).toBe("");
+    expect(result.row).toEqual(expect.objectContaining({
+      trayCode: "SYLU-2026-04-101-TP-001",
+    }));
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_in",
+      room: "staging",
+      tray_code: "SYLU-2026-04-101-TP-001",
+    });
   });
 
   test("splits planned inbound and actual staging trays into separate sections", () => {

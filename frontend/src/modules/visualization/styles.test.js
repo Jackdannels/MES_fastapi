@@ -217,7 +217,7 @@ describe("visualization styles", () => {
     expect(pageSource).toContain("return CurrentLabTasksScreen");
     expect(pageSource).toContain("data-testid\": \"lab-matrix-countdown\"");
     expect(pageSource).toContain("visual-lab-matrix-screen");
-    expect(pageSource).not.toContain("visual-current-lab");
+    expect(pageSource).not.toContain("class: \"visual-current-lab");
     expect(pageSource).toContain("LAB TASK MATRIX");
     expect(pageSource).not.toContain("系统状态同步");
     expect(pageSource).toContain("已排程");
@@ -231,8 +231,17 @@ describe("visualization styles", () => {
     expect(pageSource).not.toContain("trayItems.length > 8");
     expect(source).toContain(".visual-lab-matrix-screen");
     expect(source).not.toContain(".visual-current-lab");
+    expect(source).not.toContain(".visual-standalone-screen");
     expect(source).toMatch(/\.visual-lab-matrix-screen\s*{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\);[^}]*background-size:\s*40px 40px,\s*40px 40px,\s*auto;/s);
     expect(source).toMatch(/\.visual-lab-matrix-screen \.header\s*{[^}]*display:\s*flex;[^}]*align-items:\s*end;[^}]*min-height:\s*clamp\(48px,\s*5vh,\s*74px\);[^}]*border-bottom:\s*1px solid rgba\(35,\s*215,\s*208,\s*0\.26\);/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.attendance-chip\s*{[^}]*margin-left:\s*auto;[^}]*flex:\s*0 1 10rem;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.attendance-chip\s*{[^}]*border:\s*0;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.attendance-chip\s*{[^}]*background:\s*transparent;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.attendance-chip\.is-empty\s*{[^}]*background:\s*transparent;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.badge\s*{[^}]*border:\s*0;/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.badge\s*{[^}]*background:\s*transparent;/s);
+    expect(source).not.toMatch(/\.visual-lab-matrix-screen \.card\.[^{]+ \.badge\s*{[^}]*border-color:/s);
+    expect(source).toMatch(/\.visual-lab-matrix-screen \.card-head,\s*\.visual-lab-matrix-screen \.countdown-head\s*{[^}]*gap:\s*4px;/s);
     expect(source).toMatch(/\.visual-lab-matrix-screen \.kicker\s*{[^}]*color:\s*var\(--cyan\);[^}]*font-size:\s*var\(--small\);/s);
     expect(source).toMatch(/\.visual-lab-matrix-screen h1\s*{[^}]*font-size:\s*clamp\(20px,\s*1\.28vw,\s*34px\);/s);
     expect(source).toMatch(/\.visual-lab-matrix-screen \.stat strong\s*{[^}]*font-size:\s*clamp\(21px,\s*1\.45vw,\s*38px\);[^}]*line-height:\s*1;/s);

@@ -291,7 +291,7 @@
 
             <div class="form-actions transfer-tray-actions transfer-tray-actions--top">
               <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes" @click="printAllTrayBarcodes">
-                {{ printingAllBarcodes ? "生成中..." : `打印条形码（${loadedTrayCount}）` }}
+                {{ printingAllBarcodes ? "生成中..." : `打印二维码（${loadedTrayCount}）` }}
               </button>
               <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation" @click="persistAllocation()">保存托盘</button>
               <button v-if="modeConfig.allowConfirm" class="action-btn" type="button" :disabled="!canConfirm" @click="confirmStorage">确认入库</button>
@@ -377,7 +377,7 @@
                 </div>
 
                 <div class="transfer-tray-card__footer">
-                  <div class="transfer-tray-card__count">条码：{{ tray.barcode?.barcodeNo || "未打印" }}</div>
+                  <div class="transfer-tray-card__count">二维码：{{ tray.barcode?.barcodeNo || "未打印" }}</div>
                   <div class="transfer-tray-card__actions">
                     <button
                       class="sample-tray-remove"
@@ -429,7 +429,7 @@
       <div class="transfer-modal__panel transfer-barcode-preview-modal" data-testid="barcode-modal">
         <div class="transfer-modal__head">
           <div>
-            <h3>条形码信息</h3>
+            <h3>二维码信息</h3>
             <div class="muted">{{ currentTask?.taskNo || "--" }} | {{ currentTask?.experimentTypeText || currentTask?.taskType || "--" }}</div>
           </div>
           <button class="action-btn secondary" type="button" @click="closeBarcodeModal">关闭</button>
@@ -444,12 +444,12 @@
           <article v-for="item in barcodePreviewItems" :key="item.barcodeId" class="transfer-modal__item transfer-barcode-preview-card">
             <div class="transfer-barcode-preview-card__top">
               <div>
-                <span class="transfer-barcode-preview-card__eyebrow">托盘条码</span>
+                <span class="transfer-barcode-preview-card__eyebrow">托盘二维码</span>
                 <strong>{{ item.barcodeDisplayNo }}</strong>
               </div>
               <span class="transfer-barcode-preview-count">{{ item.samples.length }} 件样品</span>
             </div>
-            <div v-if="item.barcodeSvg" class="transfer-modal__barcode transfer-barcode-preview-code" v-html="item.barcodeSvg"></div>
+            <div v-if="item.barcodeSvg" class="transfer-modal__barcode transfer-barcode-preview-code transfer-barcode-preview-code--themed" v-html="item.barcodeSvg"></div>
             <div class="transfer-barcode-preview-meta">
               <div>
                 <span>托盘</span>
@@ -566,7 +566,8 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
-import { buildCode128Svg } from "../handover-system/barcode.js";
+import { buildQrCodeSvg } from "@/lib/qrCode";
+import { buildTrayQrPayload } from "@/lib/trayQrCode";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";
 
@@ -664,29 +665,29 @@ const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
     allowReset: true,
-    detailHelper: "默认上限为 16，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印条码，但不允许再调整托盘。",
+    detailHelper: "默认上限为 16，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印二维码，但不允许再调整托盘。",
     detailHint: "支持触控先点托盘再点样品，也支持样品换位",
     detailTitle: "托盘分装与入库",
     eyebrow: "接驳区系统",
     headerSubtitle: "处理接驳区到样确认、托盘分装与交接。",
     headerTitle: "接驳区工作台",
-    overviewHint: "样品送达后可调整托盘分装，完成实验匹配并保存托盘后即可确认入库，打印条码为可选操作。",
+    overviewHint: "样品送达后可调整托盘分装，完成实验匹配并保存托盘后即可确认入库，打印二维码为可选操作。",
     overviewTitle: "接驳任务总览",
-    printTitle: "接驳区条码打印",
+    printTitle: "接驳区二维码打印",
     resetActionLabel: "重新入库",
   },
   "pre-allocation": {
     allowConfirm: false,
     allowReset: true,
-    detailHelper: "当前为预接驳预分装模式，可保存托盘方案与打印条码；正式入库由接驳区工作台执行。到货任务仅允许查看与打印。",
+    detailHelper: "当前为预接驳预分装模式，可保存托盘方案与打印二维码；正式入库由接驳区工作台执行。到货任务仅允许查看与打印。",
     detailHint: "支持鼠标拖拽与点击快速调整托盘",
     detailTitle: "任务样品分配管理",
     eyebrow: "样品管理",
     headerSubtitle: "在中控系统中预分配托盘方案，并同步给接驳区工作台。",
     headerTitle: "样品预分装",
-    overviewHint: "通过总任务清单进入任务样品分配管理。可保存托盘方案、打印条码并同步至接驳区，正式入库由接驳区执行。",
+    overviewHint: "通过总任务清单进入任务样品分配管理。可保存托盘方案、打印二维码并同步至接驳区，正式入库由接驳区执行。",
     overviewTitle: "样品预分装",
-    printTitle: "样品预分装条码打印",
+    printTitle: "样品预分装二维码打印",
     resetActionLabel: "重新分配",
   },
 };
@@ -711,7 +712,7 @@ const normalizeTaskStatus = (status) => {
   if (text === pendingStatus) return pendingStatus;
   return text;
 };
-const BARCODE_SAMPLE_PREVIEW_LIMIT = 8;
+const BARCODE_SAMPLE_PREVIEW_LIMIT = 4;
 const OVERVIEW_SAMPLE_CODE_LIMIT = 12;
 
 const normalizeText = (value) => String(value || "").trim();
@@ -1816,16 +1817,12 @@ const buildAllocationPayload = () => ({
   })),
 });
 
-const buildBarcodeSvg = (value) => {
-  return buildCode128Svg(value, { height: 72, moduleWidth: 2, quietZone: 12 });
-};
+const buildBarcodeSvg = (value) => buildQrCodeSvg(value);
 
 const resolveBarcodeValue = (barcode, tray) => String(
-  barcode?.barcodeNo
-  || barcode?.barcodeContent
-  || tray?.barcode?.barcodeNo
+  barcode?.barcodeContent
   || tray?.barcode?.barcodeContent
-  || tray?.trayNo
+  || buildTrayQrPayload(barcode?.barcodeNo || tray?.barcode?.barcodeNo || tray?.trayNo)
   || "--",
 ).trim() || "--";
 
@@ -1889,12 +1886,27 @@ const buildPrintDocument = () => {
     <article class="print-card">
       <header>
         <strong>${encodeHtml(item.barcodeDisplayNo)}</strong>
-        <span>${encodeHtml(item.trayNo)}</span>
       </header>
-      <div class="print-barcode">${item.barcodeSvg || ""}</div>
-      <div class="print-meta">内容：${encodeHtml(item.summaryText || "-")}</div>
-      <div class="print-meta">样品编号：${encodeHtml(item.sampleText || "-")}</div>
-      ${buildPrintExperimentTags(item)}
+      <div class="print-card-body">
+        <div class="print-qr-panel">
+          <div class="print-barcode">${item.barcodeSvg || ""}</div>
+        </div>
+        <div class="print-info-panel">
+          <div class="print-field">
+            <span>托盘</span>
+            <strong>${encodeHtml(item.trayNo)}</strong>
+          </div>
+          <div class="print-field">
+            <span>内容</span>
+            <strong>${encodeHtml(item.summaryText || "-")}</strong>
+          </div>
+          <div class="print-field print-field--samples">
+            <span>样品编号</span>
+            <strong>${encodeHtml(item.sampleText || "-")}</strong>
+          </div>
+          ${buildPrintExperimentTags(item)}
+        </div>
+      </div>
     </article>
   `).join("");
 
@@ -1905,15 +1917,22 @@ const buildPrintDocument = () => {
         <meta charset="UTF-8" />
         <title>${encodeHtml(modeConfig.value.printTitle)}</title>
         <style>
-          body { font-family: "IBM Plex Sans", "Microsoft YaHei", sans-serif; padding: 24px; color: #10233f; }
-          h1 { margin: 0 0 8px; font-size: 24px; }
-          p { margin: 0 0 18px; color: #64748b; }
-          .print-grid { display: grid; gap: 16px; }
-          .print-card { border: 1px solid #cbd5e1; border-radius: 16px; padding: 16px; break-inside: avoid; }
-          .print-card header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-          .print-barcode { margin: 12px 0; }
-          .print-meta { margin-top: 6px; font-size: 14px; }
-          .print-experiment-tags { margin-top: 12px; justify-content: flex-start; }
+          @page { margin: 0; }
+          body { margin: 0; font-family: "IBM Plex Sans", "Microsoft YaHei", sans-serif; color: #10233f; }
+          .print-grid { display: grid; gap: 0; }
+          .print-card { box-sizing: border-box; width: 100%; border: 1px solid #cbd5e1; border-radius: 16px; padding: 16px; break-inside: avoid; }
+          .print-card header { margin-bottom: 14px; }
+          .print-card header strong { font-size: 16px; }
+          .print-card-body { display: grid; grid-template-columns: 252px minmax(0, 1fr); gap: 18px; align-items: start; }
+          .print-qr-panel { display: flex; align-items: flex-start; justify-content: center; }
+          .print-barcode { display: flex; align-items: center; justify-content: center; width: 244px; min-height: 244px; margin: 0; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
+          .print-barcode svg { width: 220px; height: 220px; flex: 0 0 auto; }
+          .print-info-panel { display: grid; gap: 10px; min-width: 0; }
+          .print-field { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+          .print-field span { display: block; margin-bottom: 5px; color: #64748b; font-size: 12px; font-weight: 700; }
+          .print-field strong { display: block; color: #0f172a; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+          .print-field--samples strong { font-weight: 600; }
+          .print-experiment-tags { justify-content: flex-start; }
           .transfer-tray-experiment-tags { display: flex; flex-wrap: wrap; gap: 8px; }
           .transfer-tray-experiment-tag {
             display: inline-flex;
@@ -1928,12 +1947,14 @@ const buildPrintDocument = () => {
             border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
             color: var(--tray-experiment-color, #7dd3fc);
           }
+          @media screen and (max-width: 680px) {
+            .print-card-body { grid-template-columns: 1fr; }
+            .print-qr-panel { justify-content: flex-start; }
+          }
 ${buildExperimentTagPrintCss()}
         </style>
       </head>
       <body>
-        <h1>${encodeHtml(modeConfig.value.printTitle)}</h1>
-        <p>${encodeHtml(currentTask.value?.taskNo || "--")} | ${encodeHtml(currentTask.value?.experimentTypeText || currentTask.value?.taskType || "--")}</p>
         <section class="print-grid">${cards}</section>
       </body>
     </html>
@@ -1990,7 +2011,7 @@ const printBarcodePreview = async () => {
 
 const confirmBarcodePrint = async () => {
   if (!barcodePreviewItems.value.length) {
-    showWorkbenchFeedback("当前没有可打印的条码。", "warning");
+    showWorkbenchFeedback("当前没有可打印的二维码。", "warning");
     return;
   }
   try {
@@ -2002,7 +2023,7 @@ const confirmBarcodePrint = async () => {
   barcodePrintConfirmed.value = true;
   barcodeModalVisible.value = false;
   flushPendingRealtimeRefresh();
-  showWorkbenchFeedback("已发起条码打印。", "success");
+  showWorkbenchFeedback("已发起二维码打印。", "success");
 };
 
 const printAllTrayBarcodes = async () => {
@@ -2016,10 +2037,10 @@ const printAllTrayBarcodes = async () => {
     const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/print-barcodes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcodeType: "CODE128" }),
+      body: JSON.stringify({ barcodeType: "QRCODE" }),
     });
     applyWorkspace(payload.workspace);
-    barcodePreviewItems.value = (payload.barcodes || []).map((barcode) => {
+    barcodePreviewItems.value = await Promise.all((payload.barcodes || []).map(async (barcode) => {
       const tray = assignedTrays.value.find((item) => item.trayId === barcode.objectId);
       const barcodeValue = resolveBarcodeValue(barcode, tray);
       return {
@@ -2032,9 +2053,9 @@ const printAllTrayBarcodes = async () => {
         sampleText: formatSampleCodePreview(tray?.samples?.map((sample) => sample.sampleNo)),
         experimentLabels: Array.isArray(tray?.experimentLabels) ? [...tray.experimentLabels] : [],
         experimentCodes: Array.isArray(tray?.experimentCodes) ? [...tray.experimentCodes] : [],
-        barcodeSvg: buildBarcodeSvg(barcodeValue),
+        barcodeSvg: await buildBarcodeSvg(barcodeValue),
       };
-    });
+    }));
     barcodePrintConfirmed.value = false;
     barcodeModalVisible.value = true;
     sampleCodesModalVisible.value = false;
@@ -2085,7 +2106,7 @@ const executeReloadWorkspace = async () => {
   const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
   applyWorkspace(payload.workspace);
   activeTrayIndex.value = -1;
-  updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印条形码");
+  updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印二维码");
   showWorkbenchFeedback(props.mode === "pre-allocation"
     ? (normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "到货任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
     : payload.message, normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "warning" : "success");

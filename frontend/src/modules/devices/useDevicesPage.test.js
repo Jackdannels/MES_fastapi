@@ -369,6 +369,53 @@ describe("useDevicesPage", () => {
     );
   });
 
+  test("persists maintenance for the backfilled second hot-humid room", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [
+        {
+          code: "高低温湿热一室",
+          location: "高低温湿热一室",
+          name: "高低温湿热系统-1",
+          status: "可用",
+          type: "高低温湿热试验",
+        },
+      ],
+      "mes.experiment_trays": [],
+      "mes.experiment_runs": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    const secondRoom = wrapper.vm.deviceRows.find((row) => row.code === "高低温湿热二室");
+    wrapper.vm.openMaintenancePlan(secondRoom);
+    wrapper.vm.maintenancePlanForm.type = "保养";
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        "mes.devices": [
+          expect.objectContaining({ code: "高低温湿热一室" }),
+          expect.objectContaining({
+            code: "高低温湿热二室",
+            location: "高低温湿热二室",
+            maintenance_start_at: "2099-03-20 07:30:00",
+            maintenance_type: "保养",
+            name: "高低温湿热系统-2",
+            status: "保养",
+            type: "高低温湿热试验",
+          }),
+        ],
+      }),
+    );
+  });
+
   test("saves planned maintenance without an end time", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);

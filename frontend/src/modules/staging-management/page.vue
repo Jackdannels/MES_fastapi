@@ -1,28 +1,14 @@
 <template>
   <div class="staging-management-page">
-    <section class="grid cols-3 stagger">
-      <button
-        v-for="metric in metrics"
-        :key="metric.label"
-        :class="['card', 'zancun-metric-card', { 'is-active': activeMetricMode === metric.mode }]"
-        :data-testid="metric.testId"
-        type="button"
-        @click="selectMetricMode(metric.mode)"
-      >
-        <div class="muted">{{ metric.label }}</div>
-        <div class="kpi">{{ metric.value }}</div>
-        <div v-if="metric.caption" class="muted">{{ metric.caption }}</div>
-      </button>
-    </section>
-
     <section class="card section zancun-actions-card">
       <div class="zancun-actions-header">
         <div class="zancun-actions-header__main">
           <h3>{{ roomCopy.consoleTitle }}</h3>
-          <div class="zancun-current-view" data-testid="zancun-current-view">
-            <span class="zancun-current-view__label">当前查看</span>
-            <strong class="zancun-current-view__value">{{ activeMetricLabel }}</strong>
-          </div>
+        </div>
+        <div class="zancun-current-view zancun-current-view--option-a" data-testid="zancun-current-view">
+          <span class="zancun-current-view__label">{{ roomCopy.activeMetricLabel }}</span>
+          <strong class="zancun-current-view__value">{{ activeMetricLabel }}</strong>
+          <span class="zancun-current-view__unit">盘</span>
         </div>
         <span class="pill">标准流程</span>
       </div>
@@ -348,7 +334,7 @@ import {
 
 const ROOM_PAGE_COPY = {
   staging: {
-    activeMetricLabel: "暂存间中样品数量",
+    activeMetricLabel: "暂存间中托盘数量",
     consoleTitle: "暂存间控制台",
     currentColumnTitle: "暂存间样品",
     currentEmptyMessage: "当前页暂无暂存间样品",
@@ -360,7 +346,7 @@ const ROOM_PAGE_COPY = {
     plannedTitle: "允许暂存",
   },
   appearance: {
-    activeMetricLabel: "外观检测间中样品数量",
+    activeMetricLabel: "外观检测间中托盘数量",
     consoleTitle: "外观检测间控制台",
     currentColumnTitle: "外观检测间样品",
     currentEmptyMessage: "当前页暂无外观检测间样品",
@@ -398,7 +384,6 @@ const snapshot = ref({
   [STORAGE_KEYS.staging_events]: [],
 });
 const overviewQuery = ref("");
-const activeMetricMode = ref("all");
 const overviewCurrentPage = ref(1);
 const overviewPageSize = 4;
 const currentStagingCurrentPage = ref(1);
@@ -453,7 +438,6 @@ const overviewSourceRows = computed(() =>
 const overviewView = computed(() =>
   buildZancunOverviewView({
     filters: {
-      metricMode: activeMetricMode.value,
       query: overviewQuery.value,
     },
     page: 1,
@@ -466,45 +450,16 @@ const overviewView = computed(() =>
   }),
 );
 
-const metrics = computed(() => {
-  const summary = buildZancunMetrics({
+const stagingSummary = computed(() =>
+  buildZancunMetrics({
     now: nowValue(),
     room: activeRoom.value,
     rows: overviewSourceRows.value,
     stagingEvents: snapshot.value[STORAGE_KEYS.staging_events],
-  });
-  return [
-    {
-      caption: "",
-      label: roomCopy.value.activeMetricLabel,
-      mode: "active",
-      testId: "zancun-metric-active",
-      value: String(summary.totalQuantity),
-    },
-    {
-      caption: "",
-      label: "今日到货",
-      mode: "stockedInToday",
-      testId: "zancun-metric-stocked-in",
-      value: String(summary.stockedInTodayCount),
-    },
-    {
-      caption: "",
-      label: "今日已出库",
-      mode: "stockedOutToday",
-      testId: "zancun-metric-stocked-out",
-      value: String(summary.stockedOutTodayCount),
-    },
-  ];
-});
+  }),
+);
 
-const activeMetricLabel = computed(() => {
-  const matchedMetric = metrics.value.find((metric) => metric.mode === activeMetricMode.value);
-  if (matchedMetric) {
-    return matchedMetric.label;
-  }
-  return "全部托盘";
-});
+const activeMetricLabel = computed(() => String(stagingSummary.value.totalTrayCount ?? 0));
 
 const overviewRows = computed(() => overviewView.value.rows);
 const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value, { room: activeRoom.value }));
@@ -539,7 +494,7 @@ const plannedInboundRows = computed(() => paginateRows(plannedInboundAllRows.val
 const currentStagingSlots = computed(() => buildInventorySlots(currentStagingRows.value, roomCopy.value.currentEmptyMessage));
 const plannedInboundSlots = computed(() => buildInventorySlots(plannedInboundRows.value, roomCopy.value.plannedEmptyMessage));
 
-watch([overviewQuery, activeMetricMode], () => {
+watch(overviewQuery, () => {
   overviewCurrentPage.value = 1;
   currentStagingCurrentPage.value = 1;
 });
@@ -570,10 +525,6 @@ const setOverviewPage = (page) => {
 
 const setCurrentStagingPage = (page) => {
   currentStagingCurrentPage.value = normalizePage(page, currentStagingPageCount.value);
-};
-
-const selectMetricMode = (mode) => {
-  activeMetricMode.value = String(mode || "").trim() || "all";
 };
 
 const scanModalOpen = ref(false);

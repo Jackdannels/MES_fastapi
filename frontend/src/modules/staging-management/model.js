@@ -7,6 +7,7 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
+import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { isAxisProgressIncomplete, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
@@ -1710,9 +1711,7 @@ function buildZancunMetrics(input = {}) {
   return {
     stockedInTodayCount: stockedInToday.size,
     stockedOutTodayCount: stockedOutToday.size,
-    totalQuantity: rowList
-      .filter((row) => isCurrentStagingStatus(row?.status, config))
-      .reduce((sum, row) => sum + (Number(row?.quantity) || 0), 0),
+    totalTrayCount: rowList.filter((row) => isCurrentStagingStatus(row?.status, config)).length,
   };
 }
 
@@ -1787,7 +1786,7 @@ function buildZancunOverviewView(input = {}) {
 function buildZancunScanDetail(rows, code, mode, options = {}) {
   const config = resolveStorageRoomConfig(options.room);
   const rowList = asArray(rows);
-  const normalizedCode = normalizeText(code);
+  const normalizedCode = normalizeTrayScanCode(code);
   const actionMode = mode === "stockOut" ? "stockOut" : "stockIn";
   const matchedRow = rowList.find((row) => normalizeText(row?.trayCode) === normalizedCode);
 
@@ -1835,7 +1834,7 @@ function applyZancunInventoryAction(input = {}) {
       : payload.mode === "stockOut"
         ? "stockOut"
         : "stockIn";
-  const normalizedCode = normalizeText(payload.code);
+  const normalizedCode = normalizeTrayScanCode(payload.code);
   const actionTime = normalizeText(payload.actionTime || input.now) || formatLocalDateTime();
 
   const nextSnapshot = {

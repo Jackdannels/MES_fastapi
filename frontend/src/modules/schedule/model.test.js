@@ -17,6 +17,7 @@ import {
   buildRetentionInternalRows,
   buildScheduleRows,
   buildScheduleRescheduleForm,
+  buildSummaryCards,
   buildTaskScheduledOverlays,
   createScheduleRecord,
   deleteScheduleRecord,
@@ -255,6 +256,16 @@ describe("schedulePageModel", () => {
         label: expect.stringContaining("17:07"),
       }),
     );
+  });
+
+  test("buildSummaryCards shows the next schedule prompt thirty minutes from now", () => {
+    const cards = buildSummaryCards({
+      now: new Date("2099-03-20T09:30:00"),
+      schedules: [],
+      tasks: [],
+    });
+
+    expect(cards.nextAuto).toBe("2099-03-20 10:00");
   });
 
   test("buildGanttRows treats 13:00 end time as occupying the afternoon slot", () => {
@@ -1020,6 +1031,29 @@ describe("schedulePageModel", () => {
         custom_start: "15:05",
         planned_duration_unit: "days",
         planned_hours: 4,
+        time_slot: "custom",
+      }),
+    );
+  });
+
+  test("buildScheduleRescheduleForm moves an expired custom start to the current minute", () => {
+    const result = buildScheduleRescheduleForm(
+      {
+        device: "Lab-A",
+        experiment_code: "SYLU-2026-03-008-C",
+        planned_hours: 2.5,
+        start_at: "2099-03-20T09:15:00",
+        end_at: "2099-03-20T11:45:00",
+        task_code: "SYLU-2026-03-008",
+      },
+      new Date("2099-03-20T09:30:00"),
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        custom_start: "09:30",
+        planned_hours: 2.5,
+        schedule_date: "2099-03-20",
         time_slot: "custom",
       }),
     );

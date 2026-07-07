@@ -1498,6 +1498,26 @@ def test_storage_tray_stock_in_action_updates_only_target_tray(monkeypatch):
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_in"
 
 
+def test_storage_tray_stock_in_action_accepts_prefixed_tray_qr_payload(monkeypatch):
+    samples = [
+        {
+            "code": "SP-IN-QR",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "送至暂存间",
+            "flow_status": "送至暂存间",
+            "task_code": "TASK-IN-QR",
+            "trays": [{"tray_code": "TP-IN-QR", "status": "送至暂存间", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.samples": samples, "mes.staging_events": []})
+
+    response = client.post("/api/storage/rooms/staging/trays/MES-TRAY:TP-IN-QR/stock-in", json={})
+
+    assert response.status_code == 200
+    assert response.json()["trayCode"] == "TP-IN-QR"
+    assert storage.read("mes.staging_events")[-1]["tray_code"] == "TP-IN-QR"
+
+
 def test_storage_tray_stock_in_action_allows_partial_axis_completion(monkeypatch):
     samples = [
         {

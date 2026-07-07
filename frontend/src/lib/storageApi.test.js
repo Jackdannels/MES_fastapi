@@ -306,6 +306,25 @@ describe("storageApi", () => {
     );
   });
 
+  test("normalizes tray QR payload before writing single tray actions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, updatedKeys: [STORAGE_KEYS.samples, STORAGE_KEYS.staging_events] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await writeStorageTrayAction({
+      mode: "stockIn",
+      room: "staging",
+      trayCode: "MES-TRAY:TP-IN",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/rooms/staging/trays/TP-IN/stock-in", getFrontendApiBaseUrl()),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   test("writes single tray manufacturer return action", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

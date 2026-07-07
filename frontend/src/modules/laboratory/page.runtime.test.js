@@ -3537,6 +3537,62 @@ describe("LaboratoryPage runtime", () => {
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
   });
 
+  test("withdraws the reset snapshot when the current task changes before confirmation", async () => {
+    const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = [
+      {
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        experiment_name: "振动试验",
+        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+      },
+      { task_code: "SYLU-2026-04-201", experiment_code: "SYLU-2026-04-201-A", experiment_name: "盐雾试验-B" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "振动试验部分完成 3/6轴",
+        flow_status: "振动试验部分完成 3/6轴",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "振动试验部分完成 3/6轴", tray_code: "TP-001" }],
+      },
+      {
+        code: "SYLU-2026-04-201-SP-001",
+        location: "盐雾试验室",
+        owner: "李工",
+        status: "到货",
+        flow_status: "到货",
+        task_code: "SYLU-2026-04-201",
+        trays: [{ quantity: 1, status: "到货", tray_code: "TP-101" }],
+      },
+    ];
+
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    expect(mounted.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(true);
+
+    await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
+    await nextTick();
+    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+
+    await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
+    await nextTick();
+    expect(mounted.find('[data-testid="laboratory-reset-danger-modal"].is-open').exists()).toBe(true);
+
+    await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
+    await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
+
+    const withdrawCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/laboratory/tasks/SYLU-2026-04-101/experiments/SYLU-2026-04-101-A/withdraw-current"));
+    expect(withdrawCall).toBeDefined();
+    expect(JSON.parse(withdrawCall[1]?.body || "{}").trayCodes).toEqual(["TP-001"]);
+  });
+
   test("keeps the withdrawn tray state from the reset response when storage reload is stale", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
@@ -4584,7 +4640,7 @@ describe("LaboratoryPage runtime", () => {
     expect(runningModal()?.textContent || "").not.toContain("TP-007、");
   });
 
-  test("automatically completes the running experiment in storage when the countdown reaches zero", async () => {
+  test("keeps the running experiment overdue instead of completing from the client countdown", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
       experiment.experiment_code === "SYLU-2026-04-101-A"
@@ -4611,8 +4667,8 @@ describe("LaboratoryPage runtime", () => {
         task_code: "SYLU-2026-04-101",
         experiment_code: "SYLU-2026-04-101-A",
         device: "盐雾试验室",
-        start_at: "2026-04-02T09:59:58.000Z",
-        end_at: "2026-04-02T10:00:01.000Z",
+        start_at: "2026-04-02 17:59:58",
+        end_at: "2026-04-02 18:00:01",
         status: "实验进行中",
       },
     ];
@@ -4626,8 +4682,8 @@ describe("LaboratoryPage runtime", () => {
         device: "盐雾试验室",
         tray_codes: ["TP-001"],
         status: "实验进行中",
-        started_at: "2026-04-02T09:59:58.000Z",
-        planned_end_at: "2026-04-02T10:00:01.000Z",
+        started_at: "2026-04-02 17:59:58",
+        planned_end_at: "2026-04-02 18:00:01",
       },
     ];
 
@@ -4636,40 +4692,31 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-complete-confirm-modal"].is-open').exists()).toBe(false);
 
     vi.advanceTimersByTime(2000);
-    await nextTick();
-    await nextTick();
-    await waitForLaboratoryCompleteCount(1);
+    await flushPageUpdates();
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").not.toContain("实验已超时");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已超时");
+    expect(laboratoryCompleteCalls()).toHaveLength(0);
     document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
-      flow_status: "实验已完成",
-      status: "实验已完成",
-      trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TP-001" })],
+      flow_status: "实验进行中",
+      status: "实验进行中",
+      trays: [expect.objectContaining({ status: "实验进行中", tray_code: "TP-001" })],
     }));
     expect(snapshotState[STORAGE_KEYS.experiments]).toContainEqual(expect.objectContaining({
       experiment_code: "SYLU-2026-04-101-A",
-      status: "实验已完成",
+      status: "实验进行中",
     }));
     expect(snapshotState[STORAGE_KEYS.schedules]).toContainEqual(expect.objectContaining({
       experiment_code: "SYLU-2026-04-101-A",
-      status: "实验已完成",
+      status: "实验进行中",
     }));
     expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
       run_no: "run-1",
-      status: "实验已完成",
-      ended_at: expect.any(String),
-    }));
-    const completeCall = laboratoryCompleteCalls()[0];
-    expect(String(completeCall[0])).toContain("/api/laboratory/tasks/SYLU-2026-04-101/experiments/SYLU-2026-04-101-A/complete");
-    expect(JSON.parse(String(completeCall[1].body))).toEqual(expect.objectContaining({
-      runNo: "run-1",
-      trayCodes: ["TP-001"],
+      status: "实验进行中",
     }));
   });
 
@@ -4723,6 +4770,12 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
 
     vi.advanceTimersByTime(2000);
+    await flushPageUpdates();
+    expect(laboratoryCompleteCalls()).toHaveLength(0);
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryCompleteCount(1);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
 
@@ -4865,8 +4918,12 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
 
     vi.advanceTimersByTime(2000);
+    await flushPageUpdates();
+    expect(laboratoryCompleteCalls()).toHaveLength(0);
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
-    await nextTick();
+    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryCompleteCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(

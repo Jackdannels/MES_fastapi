@@ -2573,12 +2573,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   min-height: 28px;
 }
 
 .visual-lab-matrix-screen .card h2 {
+  flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   color: #fff;
@@ -2589,6 +2590,33 @@
   white-space: nowrap;
 }
 
+.visual-lab-matrix-screen .attendance-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  flex: 0 1 10rem;
+  min-width: 0;
+  max-width: 170px;
+  min-height: 24px;
+  padding: 3px 10px;
+  overflow: hidden;
+  color: #b9fff4;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: var(--small);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.visual-lab-matrix-screen .attendance-chip.is-empty {
+  color: rgba(187, 229, 226, 0.62);
+  background: transparent;
+}
+
 .visual-lab-matrix-screen .badge {
   display: inline-flex;
   align-items: center;
@@ -2596,9 +2624,9 @@
   gap: 5px;
   min-height: 24px;
   padding: 3px 8px;
-  border: 1px solid rgba(187, 229, 226, 0.52);
+  border: 0;
   color: #f7fffd;
-  background: rgba(205, 255, 249, 0.1);
+  background: transparent;
   font-size: var(--small);
   font-weight: 800;
   white-space: nowrap;
@@ -2612,10 +2640,10 @@
   background: currentColor;
 }
 
-.visual-lab-matrix-screen .card.planned .badge { color: #5fa5ff; border-color: var(--blue); }
-.visual-lab-matrix-screen .card.repair .badge { color: var(--red); border-color: var(--red); }
-.visual-lab-matrix-screen .card.running .badge { color: var(--green); border-color: var(--green); }
-.visual-lab-matrix-screen .card.near .badge { color: var(--orange); border-color: var(--orange); }
+.visual-lab-matrix-screen .card.planned .badge { color: #5fa5ff; }
+.visual-lab-matrix-screen .card.repair .badge { color: var(--red); }
+.visual-lab-matrix-screen .card.running .badge { color: var(--green); }
+.visual-lab-matrix-screen .card.near .badge { color: var(--orange); }
 
 .visual-lab-matrix-screen .card-body {
   display: grid;
@@ -2829,6 +2857,7 @@
   .visual-lab-matrix-screen .stat { min-height: 48px; padding: 6px 9px; }
   .visual-lab-matrix-screen .card { gap: 6px; }
   .visual-lab-matrix-screen .card-head { min-height: 24px; }
+  .visual-lab-matrix-screen .attendance-chip { max-width: 142px; min-height: 20px; padding: 2px 6px; }
   .visual-lab-matrix-screen .card-body { gap: 6px; }
   .visual-lab-matrix-screen .left { gap: 5px; grid-template-rows: minmax(35px, 0.78fr) minmax(32px, 0.7fr) minmax(32px, 0.7fr) minmax(40px, 0.86fr); }
   .visual-lab-matrix-screen .info,

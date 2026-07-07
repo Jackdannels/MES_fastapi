@@ -408,4 +408,127 @@ describe("scheduleExceptions", () => {
       expect.objectContaining({ experiment_code: "TASK-003-B", status: "实验已完成" }),
     ]);
   });
+
+  test("removes an expired unstarted axis schedule when sibling axes have started", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const taskCode = "TASK-AXIS-EXPIRED";
+    const experimentCode = "TASK-AXIS-EXPIRED-V";
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          {
+            task_code: taskCode,
+            experiment_code: experimentCode,
+            experiment_name: "振动试验",
+            status: "已排程",
+            unscheduled_since: "",
+            axis_codes: ["x+", "x-", "y+"],
+          },
+        ],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: taskCode, experiment_code: experimentCode, tray_code: "TASK-AXIS-EXPIRED-TP-001" },
+        ],
+        [STORAGE_KEYS.samples]: [
+          {
+            code: "TASK-AXIS-EXPIRED-SP-001",
+            task_code: taskCode,
+            location: "振动一室",
+            status: "实验已完成",
+            schedule_id: "schedule-axis-x-plus",
+            sub_experiment_code: `${experimentCode}-AXIS-001`,
+            axis_codes: ["x+"],
+            trays: [
+              {
+                tray_code: "TASK-AXIS-EXPIRED-TP-001",
+                status: "实验已完成",
+                target_experiment_code: experimentCode,
+                target_lab: "振动一室",
+                schedule_id: "schedule-axis-x-plus",
+                sub_experiment_code: `${experimentCode}-AXIS-001`,
+                axis_codes: ["x+"],
+              },
+            ],
+            history: [
+              {
+                action: "实验完成",
+                detail: `${taskCode} / 振动试验 / 实验已完成`,
+                schedule_id: "schedule-axis-x-plus",
+                sub_experiment_code: `${experimentCode}-AXIS-001`,
+                axis_codes: ["x+"],
+                time: "2099-03-20T09:00:00.000Z",
+              },
+            ],
+          },
+          {
+            code: "TASK-AXIS-EXPIRED-SP-002",
+            task_code: taskCode,
+            location: "振动一室",
+            status: "实验进行中",
+            schedule_id: "schedule-axis-x-minus",
+            sub_experiment_code: `${experimentCode}-AXIS-002`,
+            axis_codes: ["x-"],
+            trays: [
+              {
+                tray_code: "TASK-AXIS-EXPIRED-TP-001",
+                status: "实验进行中",
+                target_experiment_code: experimentCode,
+                target_lab: "振动一室",
+                schedule_id: "schedule-axis-x-minus",
+                sub_experiment_code: `${experimentCode}-AXIS-002`,
+                axis_codes: ["x-"],
+              },
+            ],
+            history: [
+              {
+                action: "开始实验",
+                detail: `${taskCode} / 振动试验 / 实验进行中`,
+                schedule_id: "schedule-axis-x-minus",
+                sub_experiment_code: `${experimentCode}-AXIS-002`,
+                axis_codes: ["x-"],
+                time: "2099-03-20T09:30:00.000Z",
+              },
+            ],
+          },
+        ],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: "schedule-axis-y-plus",
+            task_code: taskCode,
+            experiment_code: experimentCode,
+            device: "振动一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "已排程",
+            sub_experiment_code: `${experimentCode}-AXIS-003`,
+            axis_batch_no: "003",
+            axis_codes: ["y+"],
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [
+          { code: taskCode, status: "已排程", test_type: "振动试验" },
+        ],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(true);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([
+      expect.objectContaining({
+        type: SCHEDULE_EXCEPTION_TYPE,
+        status: "pending",
+        schedule_id: "schedule-axis-y-plus",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        reason: SCHEDULE_EXCEPTION_REASON,
+      }),
+    ]);
+    expect(result.snapshot[STORAGE_KEYS.experiments]).toEqual([
+      expect.objectContaining({
+        experiment_code: experimentCode,
+        status: "待排程",
+      }),
+    ]);
+  });
 });

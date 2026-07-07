@@ -43,28 +43,39 @@ body:has(.staging-management-page) .page-header h1 {
 }
 
 .zancun-actions-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   gap: 14px;
 }
 
 .zancun-actions-header__main {
   display: grid;
   gap: 10px;
+  justify-self: start;
+}
+
+.zancun-actions-header > .pill {
+  justify-self: end;
 }
 
 .zancun-current-view {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  min-height: 48px;
-  padding: 10px 14px;
+  justify-content: center;
+  gap: 18px;
+  min-height: 58px;
+  min-width: min(100%, 360px);
+  padding: 12px 22px;
   border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.94));
   box-shadow: var(--shadow);
+  justify-self: center;
+}
+
+.zancun-current-view--option-a {
+  white-space: nowrap;
 }
 
 .zancun-current-view__label {
@@ -72,21 +83,23 @@ body:has(.staging-management-page) .page-header h1 {
   align-items: center;
   justify-content: center;
   min-height: 28px;
-  padding: 0 10px;
-  border-radius: var(--radius-control);
-  border: 1px solid rgba(var(--industrial-accent-rgb), 0.36);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
   color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .zancun-current-view__value {
   color: var(--text);
-  font-size: 16px;
+  font-size: 36px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.zancun-current-view__unit {
+  color: var(--muted);
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.01em;
 }
 
 .zancun-console-panel {
@@ -536,7 +549,8 @@ body:has(.staging-management-page) .page-header h1 {
   }
 
   .zancun-actions-header {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .zancun-inventory-columns {
@@ -560,6 +574,13 @@ body:has(.staging-management-page) .page-header h1 {
 
   .zancun-current-view {
     width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    white-space: normal;
+  }
+
+  .zancun-actions-header > .pill {
+    justify-self: start;
   }
 
   .zancun-scan-code-row {

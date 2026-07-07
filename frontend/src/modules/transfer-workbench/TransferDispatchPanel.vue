@@ -7,7 +7,7 @@
     <div class="transfer-overview-shell__head">
       <div>
         <h2>托盘扫码出库</h2>
-        <div class="muted">请扫描托盘条码，系统将自动匹配目标实验室或暂存间。</div>
+        <div class="muted">请扫描托盘二维码，系统将自动匹配目标实验室或暂存间。</div>
       </div>
     </div>
 

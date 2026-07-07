@@ -6,6 +6,7 @@ import SystemPage from "./page.vue";
 
 describe("SystemPage runtime", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -73,6 +74,28 @@ describe("SystemPage runtime", () => {
     expect(pageText).toContain("2小时35分0秒");
     expect(pageText).toContain("冲击一室");
     expect(pageText).not.toContain("可登录试验间");
+  });
+
+  test("updates active employee work time every second without refreshing the page", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T08:15:00Z"));
+    const employees = stubAttendanceFetch();
+    employees[0] = {
+      ...employees[0],
+      activeWorkIntervalCount: 1,
+      calculatedAt: "2026-07-02T08:15:00Z",
+      todaySeconds: 9300,
+    };
+
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    expect(wrapper.get("#employee-worktime-table").text()).toContain("2小时35分0秒");
+
+    vi.advanceTimersByTime(2000);
+    await nextTick();
+
+    expect(wrapper.get("#employee-worktime-table").text()).toContain("2小时35分2秒");
   });
 
   test("opens and closes the employee account modal from Vue state", async () => {

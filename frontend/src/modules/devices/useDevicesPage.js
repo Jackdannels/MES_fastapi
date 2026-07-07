@@ -218,13 +218,27 @@ function useDevicesPage() {
     return { samplesByTaskCode, taskByCode };
   };
 
+  const rawDevicesIncludingMaintenanceTarget = (deviceCode) => {
+    const normalizedDeviceCode = normalizeText(deviceCode);
+    const deviceList = rawDevices.value.map((device) => ({ ...device }));
+    if (!normalizedDeviceCode || deviceList.some((device) => normalizeText(device?.code) === normalizedDeviceCode)) {
+      return deviceList;
+    }
+    const targetForm = buildDeviceForm(maintenancePlanDevice.value);
+    if (normalizeText(targetForm.code) !== normalizedDeviceCode) {
+      return deviceList;
+    }
+    const [targetDevice] = upsertDevice([], { ...targetForm, status: "可用" });
+    return targetDevice ? [...deviceList, targetDevice] : deviceList;
+  };
+
   const buildMaintenancePlanUpdates = ({ conflictingSchedules = [], deviceCode, form, timestamp }) => {
     const removedScheduleIds = new Set(conflictingSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
     const removedExperimentKeys = new Set(
       conflictingSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
     );
     const { samplesByTaskCode, taskByCode } = buildTransferConfirmedContext();
-    const nextDevices = rawDevices.value.map((device) => {
+    const nextDevices = rawDevicesIncludingMaintenanceTarget(deviceCode).map((device) => {
       if (normalizeText(device?.code) !== normalizeText(deviceCode)) {
         return { ...device };
       }
@@ -429,7 +443,7 @@ function useDevicesPage() {
     );
     const deviceCode = normalizeText(maintenancePlanDevice.value?.code);
     const plan = normalizeMaintenancePlan(form);
-    const nextDevices = rawDevices.value.map((device) =>
+    const nextDevices = rawDevicesIncludingMaintenanceTarget(deviceCode).map((device) =>
       normalizeText(device?.code) === deviceCode
         ? {
             ...device,

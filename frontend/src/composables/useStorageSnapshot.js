@@ -1,4 +1,4 @@
-import { SNAPSHOT_UPDATED_STORAGE_KEY, readStorageSnapshot, writeStorageUpdates } from "@/lib/storageApi";
+import { SNAPSHOT_UPDATED_STORAGE_KEY, readStorageSnapshot, writeStorageSchedulePatch, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { reconcileScheduleExceptions } from "@/lib/scheduleExceptions";
 
@@ -20,6 +20,51 @@ const readSnapshotUpdateMarker = () => {
   } catch {
     return "";
   }
+};
+
+const normalizeIdList = (value) => {
+  const values = value instanceof Set ? Array.from(value) : Array.isArray(value) ? value : [];
+  return Array.from(new Set(values.map((id) => String(id || "").trim()).filter(Boolean)));
+};
+
+const collectRemovedScheduleIds = (beforeSchedules, afterSchedules) => {
+  const remainingIds = new Set(
+    (Array.isArray(afterSchedules) ? afterSchedules : [])
+      .map((schedule) => String(schedule?.id || "").trim())
+      .filter(Boolean),
+  );
+  return normalizeIdList(
+    (Array.isArray(beforeSchedules) ? beforeSchedules : [])
+      .map((schedule) => String(schedule?.id || "").trim())
+      .filter((id) => id && !remainingIds.has(id)),
+  );
+};
+
+const buildScheduleExceptionPatch = (snapshot, reconciled) => {
+  const explicitExpiredScheduleIds = normalizeIdList(reconciled?.expiredScheduleIds);
+  const deletedScheduleIds = explicitExpiredScheduleIds.length
+    ? explicitExpiredScheduleIds
+    : collectRemovedScheduleIds(snapshot?.[STORAGE_KEYS.schedules], reconciled?.snapshot?.[STORAGE_KEYS.schedules]);
+  if (deletedScheduleIds.length === 0) {
+    return null;
+  }
+
+  const upsertKeys = [
+    STORAGE_KEYS.conflicts,
+    STORAGE_KEYS.experiments,
+    STORAGE_KEYS.tasks,
+  ];
+  const upserts = Object.fromEntries(
+    upsertKeys
+      .filter((key) => Array.isArray(reconciled?.updates?.[key]))
+      .map((key) => [key, reconciled.updates[key]]),
+  );
+  return {
+    ...(Object.keys(upserts).length ? { upserts } : {}),
+    deletes: {
+      [STORAGE_KEYS.schedules]: deletedScheduleIds,
+    },
+  };
 };
 
 function useStorageSnapshot(keys) {
@@ -55,7 +100,12 @@ function useStorageSnapshot(keys) {
             requestedKeys.map((key) => [key, Array.isArray(snapshot?.[key]) ? snapshot[key] : []]),
           );
         }
-        await writeStorageUpdates(reconciled.updates);
+        const scheduleExceptionPatch = buildScheduleExceptionPatch(snapshot, reconciled);
+        if (scheduleExceptionPatch) {
+          await writeStorageSchedulePatch(scheduleExceptionPatch);
+        } else {
+          await writeStorageUpdates(reconciled.updates);
+        }
       }
       return Object.fromEntries(
         requestedKeys.map((key) => [key, Array.isArray(reconciled.snapshot?.[key]) ? reconciled.snapshot[key] : []]),

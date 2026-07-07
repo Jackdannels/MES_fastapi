@@ -47,7 +47,7 @@ const createBootstrapPayload = () => ({
       experimentTypeText: "盐雾试验 / 振动试验",
       receivedTime: "2026-03-21 10:20",
       taskStatus: "未入库",
-      taskProgress: "样品已送达，待打印条形码",
+      taskProgress: "样品已送达，待打印二维码",
       sampleCodes: ["SYLU-2026-03-101-SP-001", "SYLU-2026-03-101-SP-002"],
       sampleCodesText: "SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002",
     },
@@ -79,7 +79,7 @@ const createWorkspacePayload = () => ({
     taskType: "盐雾试验 / 振动试验",
     experimentTypeText: "盐雾试验 / 振动试验",
     taskStatus: "未入库",
-    taskProgress: "样品已送达，待打印条形码",
+    taskProgress: "样品已送达，待打印二维码",
     receivedTime: "2026-03-21 10:20",
     trayLimit: 2,
     printedTrayCount: 0,
@@ -323,7 +323,7 @@ describe("TransferWorkbench runtime", () => {
         return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已重新分配", workspace: pendingWorkspace }) };
       }
       if (url.includes("/api/transfer-area/tasks/101/print-barcodes") || url.includes("/api/transfer-area/tasks/102/print-barcodes")) {
-        return { ok: true, status: 200, json: async () => ({ ok: true, message: "条形码已生成", barcodes: [], workspace: pendingWorkspace }) };
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "二维码已生成", barcodes: [], workspace: pendingWorkspace }) };
       }
       if (url.includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch") && (options.method || "GET") === "GET") {
         return { ok: true, status: 200, json: async () => dispatchLookupPayload };
@@ -370,7 +370,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.get('[data-testid="handover-nav-dispatch"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
-    expect(wrapper.text()).toContain("请扫描托盘条码");
+    expect(wrapper.text()).toContain("请扫描托盘二维码");
 
     await wrapper.get('[data-testid="handover-nav-overview"]').trigger("click");
     await settle(wrapper);
@@ -530,7 +530,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').classes()).toContain("transfer-dispatch-shell");
-    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("MES-TRAY:SYLU-2026-03-102-TP-001");
     await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
     await settle(wrapper);
 
@@ -701,7 +701,7 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="tray-error-sample-scan-input"]').exists()).toBe(true);
-    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("SYLU-2026-03-102-TP-001");
+    await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("MES-TRAY:SYLU-2026-03-102-TP-001");
     await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
     await settle(wrapper);
 
@@ -1060,7 +1060,7 @@ describe("TransferWorkbench runtime", () => {
       taskType: index < 8 ? "目标筛选试验" : "普通试验",
       experimentTypeText: index < 8 ? "目标筛选试验" : "普通试验",
       taskStatus: "未入库",
-      taskProgress: "样品已送达，待打印条形码",
+      taskProgress: "样品已送达，待打印二维码",
     }));
     bootstrapPayload.pendingTaskCount = 12;
     bootstrapPayload.storedTaskCount = 0;
@@ -1108,7 +1108,7 @@ describe("TransferWorkbench runtime", () => {
       seq: index + 1,
       taskNo: `SYLU-2026-03-${String(index + 1).padStart(3, "0")}`,
       taskStatus: "未入库",
-      taskProgress: "样品已送达，待打印条形码",
+    taskProgress: "样品已送达，待打印二维码",
     }));
     bootstrapPayload.pendingTaskCount = 5;
     bootstrapPayload.storedTaskCount = 0;
@@ -1956,7 +1956,8 @@ describe("TransferWorkbench runtime", () => {
           barcodeId: 10001,
           objectId: tray.trayId,
           barcodeNo: tray.trayNo,
-          barcodeContent: tray.trayNo,
+          barcodeType: "QRCODE",
+          barcodeContent: `MES-TRAY:${tray.trayNo}`,
         },
       })),
     };
@@ -1978,7 +1979,7 @@ describe("TransferWorkbench runtime", () => {
           status: 200,
           json: async () => ({
             ok: true,
-            message: "条形码已生成",
+            message: "二维码已生成",
             barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
             workspace: printedWorkspace,
           }),
@@ -2098,7 +2099,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
   });
 
-  test("barcode preview uses the tray number as the real barcode value and compact summary copy", async () => {
+  test("QR code preview uses the tray QR payload as the real scan value and compact summary copy", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspacePayload = createWorkspacePayload();
     const printedWorkspace = {
@@ -2110,7 +2111,8 @@ describe("TransferWorkbench runtime", () => {
           barcodeId: 9000 + tray.trayId,
           objectId: tray.trayId,
           barcodeNo: tray.trayNo,
-          barcodeContent: tray.trayNo,
+          barcodeType: "QRCODE",
+          barcodeContent: `MES-TRAY:${tray.trayNo}`,
         },
       })),
     };
@@ -2132,7 +2134,7 @@ describe("TransferWorkbench runtime", () => {
           status: 200,
           json: async () => ({
             ok: true,
-            message: "条形码已生成",
+            message: "二维码已生成",
             barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
             workspace: printedWorkspace,
           }),
@@ -2157,7 +2159,15 @@ describe("TransferWorkbench runtime", () => {
     await wrapper.get('[data-testid="transfer-print-barcodes"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get(".transfer-modal__barcode svg").attributes("aria-label")).toBe("SYLU-2026-03-101-TP-001");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/transfer-area/tasks/101/print-barcodes"),
+      expect.objectContaining({
+        body: JSON.stringify({ barcodeType: "QRCODE" }),
+        method: "POST",
+      }),
+    );
+    expect(wrapper.get('[data-testid="barcode-modal"]').text()).toContain("二维码信息");
+    expect(wrapper.get(".transfer-modal__barcode svg").attributes("aria-label")).toBe("MES-TRAY:SYLU-2026-03-101-TP-001");
     expect(wrapper.text()).toContain("内容：任务编号：SYLU-2026-03-101 | 样品数量：2");
     expect(wrapper.text()).toContain("样品编号：SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002");
     expect(wrapper.text()).not.toContain("TRAY|TASK:");
@@ -2175,7 +2185,8 @@ describe("TransferWorkbench runtime", () => {
           barcodeId: 9100 + tray.trayId,
           objectId: tray.trayId,
           barcodeNo: tray.trayNo,
-          barcodeContent: tray.trayNo,
+          barcodeType: "QRCODE",
+          barcodeContent: `MES-TRAY:${tray.trayNo}`,
         },
       })),
     };
@@ -2197,7 +2208,7 @@ describe("TransferWorkbench runtime", () => {
           status: 200,
           json: async () => ({
             ok: true,
-            message: "条形码已生成",
+            message: "二维码已生成",
             barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
             workspace: printedWorkspace,
           }),
@@ -2228,9 +2239,11 @@ describe("TransferWorkbench runtime", () => {
     expect(modal.find(".transfer-barcode-preview-card").exists()).toBe(true);
     expect(modal.find(".transfer-barcode-preview-meta").exists()).toBe(true);
     expect(modal.find(".transfer-barcode-preview-samples").exists()).toBe(true);
+    expect(modal.find(".transfer-barcode-preview-code").exists()).toBe(true);
+    expect(modal.find(".transfer-barcode-preview-code").classes()).toContain("transfer-barcode-preview-code--themed");
   });
 
-  test("barcode preview truncates long sample code lists after eight codes", async () => {
+  test("barcode preview truncates long sample code lists after four codes", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const sampleCodes = Array.from({ length: 16 }, (_, index) => `SYLU-2026-05-001-SP-${String(index + 1).padStart(3, "0")}`);
     const workspacePayload = createWorkspacePayload();
@@ -2264,7 +2277,8 @@ describe("TransferWorkbench runtime", () => {
           barcodeId: 9501,
           objectId: tray.trayId,
           barcodeNo: tray.trayNo,
-          barcodeContent: tray.trayNo,
+          barcodeType: "QRCODE",
+          barcodeContent: `MES-TRAY:${tray.trayNo}`,
         },
       })),
     };
@@ -2286,7 +2300,7 @@ describe("TransferWorkbench runtime", () => {
           status: 200,
           json: async () => ({
             ok: true,
-            message: "条形码已生成",
+            message: "二维码已生成",
             barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
             workspace: printedWorkspace,
           }),
@@ -2313,8 +2327,8 @@ describe("TransferWorkbench runtime", () => {
 
     const modalText = wrapper.get('[data-testid="barcode-modal"]').text();
     expect(modalText).toContain("样品数：16");
-    expect(modalText).toContain("SYLU-2026-05-001-SP-008 / ...");
-    expect(modalText).not.toContain("SYLU-2026-05-001-SP-009");
+    expect(modalText).toContain("SYLU-2026-05-001-SP-004 / ...");
+    expect(modalText).not.toContain("SYLU-2026-05-001-SP-005");
   });
 
   test("started stored tasks stay visible and block re-entry in pre-allocation mode", async () => {

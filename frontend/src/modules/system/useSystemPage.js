@@ -1,5 +1,5 @@
 // 负责系统页的员工账号管理界面状态，并暴露页面模型。
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useTableControls } from "@/composables/useTableControls";
@@ -15,6 +15,22 @@ import { buildQrCodeSvg, buildSvgImageDataUrl } from "@/lib/qrCode";
 import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
 const EMPLOYEE_ROLE_OPTIONS = Object.freeze(["试验员", "试验组长"]);
+const WORK_TIME_REFRESH_INTERVAL_MS = 30 * 1000;
+const WORK_TIME_TICK_INTERVAL_MS = 1000;
+
+const resolveLiveTodaySeconds = (employee, nowMs) => {
+  const baseSeconds = Number(employee?.todaySeconds || 0);
+  const activeCount = Number(employee?.activeWorkIntervalCount || 0);
+  if (!activeCount) {
+    return baseSeconds;
+  }
+  const calculatedAtMs = Date.parse(String(employee?.calculatedAt || ""));
+  if (!Number.isFinite(calculatedAtMs)) {
+    return baseSeconds;
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - calculatedAtMs) / 1000));
+  return baseSeconds + elapsedSeconds * activeCount;
+};
 
 // 将系统配置页的员工账号抽屉、弹窗和表格控制集中管理。
 function useSystemPage() {
@@ -22,6 +38,9 @@ function useSystemPage() {
   const employeeRows = ref(systemState.employeeRows);
   const summaryCards = ref(systemState.summaryCards);
   const settings = ref(systemState.settings);
+  const workTimeTickMs = ref(Date.now());
+  let workTimeTickTimer = null;
+  let workTimeRefreshTimer = null;
 
   const createEmployeeDialog = useDialogState();
   const editEmployeeDialog = useDialogState();
@@ -32,7 +51,15 @@ function useSystemPage() {
     rows: employeeRows,
     searchFields: ["employeeName", "username", "roleName", "statusLabel"],
   });
-  const workTimeRows = computed(() => employeeRows.value);
+  const workTimeRows = computed(() =>
+    employeeRows.value.map((employee) => ({
+      ...employee,
+      todayWorkTime: createEmployeeRow({
+        ...employee,
+        todaySeconds: resolveLiveTodaySeconds(employee, workTimeTickMs.value),
+      }).todayWorkTime,
+    })),
+  );
 
   const createEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
   const createEmployeeError = ref("");
@@ -265,7 +292,26 @@ function useSystemPage() {
     }
   };
 
-  onMounted(loadEmployees);
+  onMounted(() => {
+    void loadEmployees();
+    workTimeTickTimer = window.setInterval(() => {
+      workTimeTickMs.value = Date.now();
+    }, WORK_TIME_TICK_INTERVAL_MS);
+    workTimeRefreshTimer = window.setInterval(() => {
+      void loadEmployees();
+    }, WORK_TIME_REFRESH_INTERVAL_MS);
+  });
+
+  onBeforeUnmount(() => {
+    if (workTimeTickTimer) {
+      window.clearInterval(workTimeTickTimer);
+      workTimeTickTimer = null;
+    }
+    if (workTimeRefreshTimer) {
+      window.clearInterval(workTimeRefreshTimer);
+      workTimeRefreshTimer = null;
+    }
+  });
 
   return {
     adminActionFields,

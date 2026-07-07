@@ -1,3 +1,5 @@
+import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
+
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const firstNonEmptyArray = (...values) => {
   const arrays = values.filter(Array.isArray);
@@ -10,11 +12,11 @@ const normalizeQuantity = (value) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 const parseDate = (value) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const time = parseBusinessDateTimeToMs(value);
+  return Number.isFinite(time) ? new Date(time) : null;
 };
 const parseTimeValue = (value) => {
-  const time = Date.parse(String(value || ""));
+  const time = parseBusinessDateTimeToMs(value);
   return Number.isFinite(time) ? time : 0;
 };
 const addDays = (date, days) => {

@@ -5,7 +5,7 @@ import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } fro
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { HOST_INTERFACE_MODES, readHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { getLabHostInterfaceCapabilities } from "@/lib/labHostInterfaceCapabilities";
-import { formatLocalDateTime } from "@/lib/dateTime";
+import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { isExperimentCompletedStatus } from "@/lib/statusNormalization";
@@ -149,7 +149,7 @@ const summarizeUniqueTexts = (values, fallback = "-") => {
 };
 
 const parseScheduleTime = (value) => {
-  const parsed = Date.parse(String(value || ""));
+  const parsed = parseBusinessDateTimeToMs(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 };
 
@@ -761,7 +761,7 @@ function useProcessLabs(options = {}) {
     const relatedSchedules = schedules.value
       .filter((entry) => scheduleMatchesLab(entry, lab))
       .filter((entry) => !isCompletedSchedule(entry))
-      .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
+      .sort((left, right) => (parseBusinessDateTimeToMs(right?.start_at) || 0) - (parseBusinessDateTimeToMs(left?.start_at) || 0));
     const schedule =
       relatedSchedules.find(
         (entry) =>

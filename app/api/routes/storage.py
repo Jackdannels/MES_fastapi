@@ -78,6 +78,7 @@ SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES = {
     *COMPLETED_EXPERIMENT_STATUSES,
 }
 SCHEDULE_FIXTURE_LOCKED_DETAIL = "夹具安装后排程不可删除或重新排程。"
+TRAY_QR_PREFIX = "MES-TRAY:"
 SCHEDULE_LOCKED_FIELDS = {
     "device",
     "end_at",
@@ -94,6 +95,13 @@ _STORAGE_UPDATE_SUBSCRIBERS_LOCK = threading.Lock()
 
 def _normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _normalize_tray_scan_code(value: Any) -> str:
+    normalized = _normalize_text(value)
+    if normalized.upper().startswith(TRAY_QR_PREFIX):
+        return normalized[len(TRAY_QR_PREFIX) :].strip()
+    return normalized
 
 
 def _as_list(value: Any) -> list[Any]:
@@ -1521,10 +1529,11 @@ def _run_storage_tray_action(
 ) -> dict[str, Any]:
     storage = get_storage_backend()
     action_time = now_business_text()
+    normalized_tray_code = _normalize_tray_scan_code(tray_code)
     try:
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage.read_all()
-            updates = update_builder(snapshot, room=room, tray_code=tray_code, payload=payload, now=action_time)
+            updates = update_builder(snapshot, room=room, tray_code=normalized_tray_code, payload=payload, now=action_time)
             _validate_storage_update(storage, updates, snapshot)
             storage.write_many(updates)
     except StorageTrayActionError as error:
@@ -1533,8 +1542,8 @@ def _run_storage_tray_action(
     updated_samples = updates.get(SAMPLES_KEY, [])
     return {
         "ok": True,
-        "trayCode": tray_code,
-        "row": summarize_tray_row(updated_samples, tray_code),
+        "trayCode": normalized_tray_code,
+        "row": summarize_tray_row(updated_samples, normalized_tray_code),
         "updatedKeys": list(updates.keys()),
     }
 

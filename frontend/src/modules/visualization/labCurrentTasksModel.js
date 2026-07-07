@@ -1,4 +1,5 @@
 import { labIdentityMatches } from "@/lib/labIdentity";
+import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { buildDeviceRows } from "@/modules/devices/model";
 import { buildLaboratoryWorkbenchView } from "@/modules/laboratory/model";
 import { formatDateTime } from "@/modules/schedule/sharedModel";
@@ -14,7 +15,7 @@ const parseTime = (value) => {
   if (!text) {
     return NaN;
   }
-  const time = Date.parse(text);
+  const time = parseBusinessDateTimeToMs(text);
   return Number.isFinite(time) ? time : NaN;
 };
 

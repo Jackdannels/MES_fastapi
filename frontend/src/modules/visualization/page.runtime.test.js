@@ -18,6 +18,7 @@ const { REAL_DEVICE_LEDGER, snapshotState } = vi.hoisted(() => ({
     { code: "振动二室", status: "可用" },
   ],
   snapshotState: {
+    attendanceSessions: [],
     refreshRegistrations: [],
     snapshot: {},
   },
@@ -188,11 +189,19 @@ const buildCurrentLabTaskMatrixSnapshot = () => ({
 
 describe("VisualizationPage runtime", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/visualization");
+    snapshotState.attendanceSessions = [];
     snapshotState.refreshRegistrations = [];
     snapshotState.snapshot = {};
     vi.stubGlobal(
       "fetch",
       vi.fn((url) => {
+        if (String(url).includes("/api/attendance/lab-sessions")) {
+          return {
+            ok: true,
+            json: () => snapshotState.attendanceSessions,
+          };
+        }
         if (String(url).includes("/api/storage")) {
           return {
             ok: true,
@@ -208,6 +217,7 @@ describe("VisualizationPage runtime", () => {
   });
 
   afterEach(() => {
+    window.history.replaceState({}, "", "/visualization");
     vi.unstubAllGlobals();
   });
 
@@ -259,6 +269,50 @@ describe("VisualizationPage runtime", () => {
     expect(cards[0].findAll(".visual-lab-panel")).toHaveLength(2);
     expect(cards[0].find("select").exists()).toBe(false);
     expect(cards[0].find('[data-testid="visual-lab-select"]').exists()).toBe(false);
+  });
+
+  test("renders current laboratory login information on the fourth screen cards", async () => {
+    snapshotState.attendanceSessions = [
+      {
+        active: true,
+        employeeName: "王工",
+        labName: "四综合实验室",
+        loggedInAt: "2026-07-05T09:12:00+08:00",
+        username: "wanggong",
+      },
+    ];
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+
+    const currentTaskScreen = wrapper.findAll('[data-testid="visual-screen-card"]')[3];
+    expect(currentTaskScreen.text()).toContain("四综合实验室");
+    expect(currentTaskScreen.text()).toContain("王工");
+    expect(currentTaskScreen.text()).toContain("09:12登录");
+  });
+
+  test("keeps the normal eight-screen page when a retired standalone screen query is present", async () => {
+    window.history.pushState({}, "", "/visualization?screen=current-lab-tasks");
+    snapshotState.attendanceSessions = [
+      {
+        active: true,
+        employeeName: "王工",
+        labName: "四综合实验室",
+        loggedInAt: "2026-07-05T09:12:00+08:00",
+      },
+    ];
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find(".visualization-toolbar").exists()).toBe(true);
+    expect(wrapper.findAll('[data-testid="visual-screen-card"]')).toHaveLength(8);
+    expect(wrapper.find('[data-testid="visual-current-lab-standalone"]').exists()).toBe(false);
+    expect(wrapper.findAll('[data-testid="visual-screen-card"]')[3].text()).toContain("王工");
   });
 
   test("uses screens one and five together to show the four most active laboratory process panels", async () => {

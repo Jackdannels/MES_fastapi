@@ -114,8 +114,8 @@ const buildLatestStockOutTargetByTaskAndTray = (stagingEvents) => {
     }
     const key = `${taskCode}::${trayCode}`;
     const current = map.get(key);
-    const nextTime = Date.parse(normalizeText(event?.time)) || 0;
-    const currentTime = Date.parse(normalizeText(current?.time)) || -1;
+    const nextTime = parseTimeValue(event?.time) || 0;
+    const currentTime = parseTimeValue(current?.time) || -1;
     if (!current || nextTime >= currentTime) {
       map.set(key, event);
     }

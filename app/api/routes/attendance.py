@@ -137,6 +137,11 @@ def read_lab_session(lab_name: str) -> dict[str, Any]:
     return get_attendance_service().read_lab_session(normalized_lab_name)
 
 
+@router.get("/lab-sessions")
+def list_lab_sessions() -> list[dict[str, Any]]:
+    return get_attendance_service().list_lab_sessions()
+
+
 @router.post("/labs/{lab_name}/login")
 def login_lab(lab_name: str, payload: AttendanceLoginRequest) -> dict[str, Any]:
     normalized_lab_name = _normalize_lab_name(lab_name)

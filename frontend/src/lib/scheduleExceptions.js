@@ -1,6 +1,7 @@
 import { STORAGE_KEYS } from "./storageKeys";
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { formatLocalDateTime } from "./dateTime";
+import { normalizeAxisCodes } from "./axisCodes";
 import {
   EXPERIMENT_STATUS_COMPLETED,
   EXPERIMENT_STATUS_RUNNING,
@@ -95,6 +96,57 @@ const buildExperimentNameMap = (experiments) =>
     asArray(experiments).map((entry) => [normalizeText(entry?.experiment_code), normalizeText(entry?.experiment_name)]),
   );
 
+const rowScheduleId = (row) => normalizeText(row?.schedule_id ?? row?.scheduleId ?? row?.schedule_no ?? row?.scheduleNo);
+const rowAxisBatchNo = (row) => normalizeText(row?.axis_batch_no ?? row?.axisBatchNo);
+const rowSubExperimentCode = (row) =>
+  normalizeText(row?.sub_experiment_code ?? row?.subExperimentCode ?? row?.sub_experiment_no ?? row?.subExperimentNo);
+const rowAxisCodes = (row) => {
+  const explicitAxisCodes = normalizeAxisCodes(row?.axis_codes ?? row?.axisCodes);
+  if (explicitAxisCodes.length > 0) {
+    return explicitAxisCodes;
+  }
+  return normalizeAxisCodes(row?.axis_code ?? row?.axisCode);
+};
+
+const scheduleIdentifier = (schedule) => normalizeText(schedule?.id) || rowScheduleId(schedule);
+const scheduleHasAxisScope = (schedule) =>
+  Boolean(rowSubExperimentCode(schedule) || rowAxisBatchNo(schedule) || rowAxisCodes(schedule).length > 0);
+
+const rowMatchesScheduleScope = (row, schedule, { allowLegacyFallback = false } = {}) => {
+  const scheduleId = scheduleIdentifier(schedule);
+  const recordScheduleId = rowScheduleId(row);
+  if (scheduleId && recordScheduleId) {
+    return scheduleId === recordScheduleId;
+  }
+
+  const subExperimentCode = rowSubExperimentCode(schedule);
+  const recordSubExperimentCode = rowSubExperimentCode(row);
+  if (subExperimentCode && recordSubExperimentCode) {
+    return subExperimentCode === recordSubExperimentCode;
+  }
+
+  const axisBatchNo = rowAxisBatchNo(schedule);
+  const recordAxisBatchNo = rowAxisBatchNo(row);
+  if (axisBatchNo && recordAxisBatchNo) {
+    return axisBatchNo === recordAxisBatchNo;
+  }
+
+  const scheduledAxisCodes = rowAxisCodes(schedule);
+  const recordAxisCodes = rowAxisCodes(row);
+  if (scheduledAxisCodes.length > 0 && recordAxisCodes.length > 0) {
+    const recordAxisSet = new Set(recordAxisCodes);
+    return scheduledAxisCodes.some((axisCode) => recordAxisSet.has(axisCode));
+  }
+
+  const scheduleScoped = scheduleHasAxisScope(schedule);
+  const recordScoped = Boolean(recordScheduleId || recordSubExperimentCode || recordAxisBatchNo || recordAxisCodes.length > 0);
+  if (scheduleScoped || recordScoped) {
+    return false;
+  }
+
+  return allowLegacyFallback;
+};
+
 const parseExperimentHistoryDetail = (detail, taskCode) => {
   const segments = String(detail ?? "")
     .split(" / ")
@@ -113,10 +165,20 @@ const collectScheduleSamples = ({ experimentTrayMap, samples, schedule }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
   const scopedTrayCodes = experimentTrayMap.get(`${taskCode}::${experimentCode}`) || new Set();
+  const axisScopedSchedule = scheduleHasAxisScope(schedule);
 
   return asArray(samples).filter((sample) => {
     if (normalizeText(sample?.task_code) !== taskCode) {
       return false;
+    }
+    if (axisScopedSchedule) {
+      return rowMatchesScheduleScope(sample, schedule) || asArray(sample?.trays).some((tray) => {
+        const trayCode = normalizeText(tray?.tray_code);
+        if (scopedTrayCodes.size > 0 && !scopedTrayCodes.has(trayCode)) {
+          return false;
+        }
+        return rowMatchesScheduleScope(tray, schedule);
+      });
     }
     if (scopedTrayCodes.size === 0) {
       return true;
@@ -140,9 +202,23 @@ const resolveScheduleLifecycle = ({
   const scopedTraySnapshots = [];
   const experimentName = normalizeText(experimentNameByCode.get(experimentCode));
   const latestHistoryBySample = new Map();
+  const axisScopedSchedule = scheduleHasAxisScope(schedule);
 
   matchedSamples.forEach((sample) => {
+    const sampleMatchesScheduleScope = !axisScopedSchedule || rowMatchesScheduleScope(sample, schedule, { allowLegacyFallback: true });
+    const sampleHasMatchingScopedTray = !axisScopedSchedule || asArray(sample?.trays).some((tray) => {
+      const trayCode = normalizeText(tray?.tray_code);
+      return (scopedTrayCodes.size === 0 || scopedTrayCodes.has(trayCode)) && rowMatchesScheduleScope(tray, schedule);
+    });
     asArray(sample?.history).forEach((entry) => {
+      if (
+        axisScopedSchedule
+        && !rowMatchesScheduleScope(entry, schedule)
+        && !sampleMatchesScheduleScope
+        && !sampleHasMatchingScopedTray
+      ) {
+        return;
+      }
       const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
       if (!parsed || parsed.experimentName !== experimentName) {
         return;
@@ -173,6 +249,9 @@ const resolveScheduleLifecycle = ({
     trays.forEach((tray) => {
       const trayCode = normalizeText(tray?.tray_code);
       if (scopedTrayCodes.size > 0 && !scopedTrayCodes.has(trayCode)) {
+        return;
+      }
+      if (axisScopedSchedule && !rowMatchesScheduleScope(tray, schedule) && !sampleMatchesScheduleScope) {
         return;
       }
       const trayStatus = normalizeText(tray?.status) || normalizeText(sample?.status);

@@ -1720,7 +1720,7 @@ function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = 
   return {
     changeCount: 0,
     conflictCount: conflictRows.length,
-    nextAuto: formatDateTime(new Date(now.getTime() + 60 * 60 * 1000)),
+    nextAuto: formatDateTime(new Date(now.getTime() + 30 * 60 * 1000)),
     scheduleCount: rows.length,
   };
 }

@@ -51,6 +51,7 @@
             :labs="labsForScreen(screen)"
             :lab-names="labNames"
             :current-lab-task-view="currentLabTaskView"
+            :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
@@ -85,6 +86,7 @@
             :labs="labsForScreen(selectedScreen)"
             :lab-names="labNames"
             :current-lab-task-view="currentLabTaskView"
+            :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
             :schedule-view="scheduleView"
             :staging-view="stagingSamplesView"
@@ -175,6 +177,7 @@
                   :labs="labsForScreen(screen)"
                   :lab-names="labNames"
                   :current-lab-task-view="currentLabTaskView"
+                  :attendance-sessions="attendanceSessions"
                   :devices="deviceItems"
                   :schedule-view="scheduleView"
                   :staging-view="stagingSamplesView"
@@ -233,6 +236,7 @@ import { computed, h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
@@ -353,6 +357,7 @@ const VISUALIZATION_SNAPSHOT_KEYS = [
 ];
 const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS);
 const rawSnapshot = ref({});
+const attendanceSessions = ref([]);
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
 const readRawStorageSnapshot = async () => {
@@ -398,8 +403,10 @@ const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
 const currentNow = ref(new Date());
 let clockTimer = null;
+let attendanceRefreshTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
 const SCREEN_STAGE_HEIGHT = 1080;
+const ATTENDANCE_REFRESH_MS = 10_000;
 const COMBINED_COLUMNS = 4;
 const COMBINED_ROWS = 2;
 const COMBINED_GAP = 6;
@@ -674,6 +681,14 @@ const initializeSnapshot = async () => {
   const resolvedSnapshot = snapshot && typeof snapshot.then === "function" ? await snapshot : snapshot;
   rawSnapshot.value = mergeArraySnapshot(rawSnapshot.value, resolvedSnapshot, VISUALIZATION_SNAPSHOT_KEYS);
 };
+const refreshAttendanceSessions = async () => {
+  try {
+    const sessions = await listLaboratoryAttendanceSessions();
+    attendanceSessions.value = Array.isArray(sessions) ? sessions : [];
+  } catch {
+    // Keep the last visible login state during transient network failures.
+  }
+};
 useStorageSnapshotRefresh({
   keys: VISUALIZATION_SNAPSHOT_KEYS,
   refresh: refreshSnapshot,
@@ -736,12 +751,25 @@ const formatBeijingFlowTime = (value) => {
   const formatted = formatLocalDateTime(text) || text;
   return formatted.length >= 19 ? formatted.slice(5, 19) : formatted;
 };
+const normalizeVisualText = (value) => String(value || "").trim();
+const formatLoginTimeLabel = (value) => {
+  const text = normalizeVisualText(value);
+  if (!text) {
+    return "";
+  }
+  const formatted = formatLocalDateTime(text) || text;
+  if (formatted.length >= 16) {
+    return `${formatted.slice(11, 16)}登录`;
+  }
+  return `${formatted}登录`;
+};
 
 const CurrentLabTasksScreen = {
   name: "CurrentLabTasksScreen",
   props: {
     screen: { type: Object, required: false, default: null },
     currentLabTaskView: { type: Object, required: false, default: null },
+    attendanceSessions: { type: Array, required: false, default: () => [] },
     compact: { type: Boolean, default: false },
   },
   setup(props) {
@@ -812,6 +840,10 @@ const CurrentLabTasksScreen = {
     watch(() => props.currentLabTaskView, queueRefreshTrayLoops, { deep: true, flush: "post" });
 
     const renderLabCard = (lab) => {
+      const attendanceSession = (Array.isArray(props.attendanceSessions) ? props.attendanceSessions : [])
+        .find((session) => normalizeVisualText(session?.labName || session?.lab_name) === normalizeVisualText(lab.labName));
+      const attendanceName = normalizeVisualText(attendanceSession?.employeeName || attendanceSession?.employee_name || attendanceSession?.username);
+      const attendanceLoginTime = formatLoginTimeLabel(attendanceSession?.loggedInAt || attendanceSession?.logged_in_at);
       const previewToneClass = lab.statusTone === "running"
         ? "running"
         : lab.statusTone === "urgent"
@@ -843,6 +875,11 @@ const CurrentLabTasksScreen = {
         [
           h("div", { class: "card-head" }, [
             h("h2", lab.labName),
+            h(
+              "span",
+              { class: ["attendance-chip", attendanceName ? "is-active" : "is-empty"] },
+              attendanceName ? `${attendanceName}${attendanceLoginTime ? ` · ${attendanceLoginTime}` : ""}` : "未登录",
+            ),
             h("span", { class: "badge" }, lab.statusLabel || "-"),
           ]),
           h("div", { class: "card-body" }, [
@@ -921,8 +958,10 @@ onMounted(() => {
   refreshViewportSize();
   refreshVisualizationClock();
   initializeSnapshot();
+  refreshAttendanceSessions();
   window.addEventListener("resize", refreshViewportSize);
   clockTimer = window.setInterval(refreshVisualizationClock, 1000);
+  attendanceRefreshTimer = window.setInterval(refreshAttendanceSessions, ATTENDANCE_REFRESH_MS);
 });
 
 onUnmounted(() => {
@@ -930,6 +969,10 @@ onUnmounted(() => {
   if (clockTimer) {
     window.clearInterval(clockTimer);
     clockTimer = null;
+  }
+  if (attendanceRefreshTimer) {
+    window.clearInterval(attendanceRefreshTimer);
+    attendanceRefreshTimer = null;
   }
 });
 

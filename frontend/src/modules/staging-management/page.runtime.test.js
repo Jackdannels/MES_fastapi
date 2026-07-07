@@ -307,9 +307,9 @@ describe("StagingManagementPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.text()).toContain("SYLU-2026-04-101");
-    expect(mounted.text()).toContain("暂存间中样品数量1");
-    expect(mounted.text()).toContain("今日到货1");
-    expect(mounted.text()).toContain("今日已出库1");
+    expect(mounted.get('[data-testid="zancun-current-view"]').text()).toContain("暂存间中托盘数量1");
+    expect(mounted.text()).not.toContain("今日到货");
+    expect(mounted.text()).not.toContain("今日已出库");
     expect(mounted.findAll('[data-testid="zancun-current-staging-row"]')).toHaveLength(1);
     expect(mounted.findAll('[data-testid="zancun-planned-inbound-row"]')).toHaveLength(4);
     expect(mounted.text()).toContain("SYLU-2026-04-105-TP-001");
@@ -319,7 +319,7 @@ describe("StagingManagementPage runtime", () => {
   test("refreshes staging rows when tray data changes elsewhere", async () => {
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("暂存间中样品数量1");
+    expect(mounted.get('[data-testid="zancun-current-view"]').text()).toContain("暂存间中托盘数量1");
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).not.toContain("SYLU-2026-04-101-TP-001");
 
     remoteSnapshot = {
@@ -667,26 +667,19 @@ describe("StagingManagementPage runtime", () => {
     }));
   });
 
-  test("clicking KPI cards filters the inventory columns without opening scan modals", async () => {
+  test("merges the current tray count into the console header without KPI filters", async () => {
     const mounted = await mountPage();
     const summaryBar = mounted.get('[data-testid="zancun-current-view"]');
 
-    expect(summaryBar.text()).toContain("当前查看");
-    expect(summaryBar.text()).toContain("全部托盘");
-
-    await mounted.get('[data-testid="zancun-metric-stocked-out"]').trigger("click");
-
-    expect(mounted.text()).toContain("当前页暂无暂存间样品");
-    expect(mounted.text()).toContain("当前页暂无允许暂存托盘");
-    expect(mounted.text()).not.toContain("SYLU-2026-04-101-TP-001");
+    expect(summaryBar.classes()).toContain("zancun-current-view--option-a");
+    expect(summaryBar.text()).toContain("暂存间中托盘数量");
+    expect(summaryBar.text()).toContain("1");
+    expect(summaryBar.text()).toContain("盘");
+    expect(mounted.find('[data-testid="zancun-metric-stocked-out"]').exists()).toBe(false);
+    expect(mounted.find('[data-testid="zancun-metric-stocked-in"]').exists()).toBe(false);
+    expect(mounted.find('[data-testid="zancun-metric-active"]').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
-    expect(summaryBar.text()).toContain("今日已出库");
-
-    await mounted.get('[data-testid="zancun-metric-active"]').trigger("click");
-
     expect(mounted.text()).toContain("SYLU-2026-04-101-TP-001");
-    expect(mounted.text()).not.toContain("SYLU-2026-04-103-TP-001");
-    expect(summaryBar.text()).toContain("暂存间中样品数量");
   });
 
   test("tray rows are display-only and scan buttons open directly into focused edit mode", async () => {
@@ -713,7 +706,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
     await settlePage(mounted);
 
-    expect(mounted.text()).toContain("今日到货2");
+    expect(mounted.text()).not.toContain("今日到货");
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-101-TP-001/stock-in"),
       expect.objectContaining({ method: "POST" }),
@@ -727,7 +720,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-104-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
 
-    expect(mounted.text()).toContain("今日到货3");
+    expect(mounted.text()).not.toContain("今日到货");
     expect(fetch.mock.calls.some(([url, options = {}]) =>
       String(url).endsWith("/api/storage") && options.method === "PUT",
     )).toBe(false);
@@ -738,6 +731,26 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
 
     expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
+  });
+
+  test("stock-in scan accepts tray QR payloads and persists the plain tray code", async () => {
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("MES-TRAY:SYLU-2026-04-101-TP-001");
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    await settlePage(mounted);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-101-TP-001/stock-in"),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_in",
+      room: "staging",
+      tray_code: "SYLU-2026-04-101-TP-001",
+    });
+    expect(mounted.text()).not.toContain("未找到对应的入库托盘。");
   });
 
   test("stock-in scan rejects trays that have already been returned to manufacturer", async () => {
@@ -783,7 +796,7 @@ describe("StagingManagementPage runtime", () => {
 
     await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
 
-    expect(mounted.text()).toContain("今日已出库2");
+    expect(mounted.text()).not.toContain("今日已出库");
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-102-TP-001/stock-out"),
       expect.objectContaining({ method: "POST" }),

@@ -6,8 +6,9 @@ import {
 } from "@/modules/samples/samplesFlowModel";
 import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
-import { formatLocalDateTime } from "@/lib/dateTime";
+import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
+import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import {
   STATUS_COMPLETED,
   STATUS_RETENTION,
@@ -93,8 +94,7 @@ const historyEntryAppliesToTray = (entry, sampleTrayCodes, trayCode) => {
 };
 
 const toTime = (value) => {
-  const time = Date.parse(String(value || ""));
-  return Number.isFinite(time) ? time : null;
+  return parseBusinessDateTimeToMs(value);
 };
 
 const toPositiveNumber = (value) => {
@@ -3027,11 +3027,6 @@ const rowCanBeCurrentLaboratoryTask = (row, nowTime) => {
     || scopedTrayRows.some((trayRow) => rowPartialAxisStatusMatchesCurrentExperiment(trayRow, row));
 };
 
-const rowCanProvideCompletedLaboratoryFlow = (row) => {
-  const axisProgress = row?.axisProgress;
-  return asArray(axisProgress?.totalRemainingAxisCodes).length === 0;
-};
-
 const findTrayFlowContextTask = (scheduleRows, currentTask, selectedTrayCode) => {
   if (currentTask) {
     return currentTask;
@@ -3113,7 +3108,7 @@ function buildLaboratoryWorkbenchView({
     || currentCandidateRows.find((row) => normalizeText(row.experimentKey) === selectedKey)
     || currentCandidateRows.find((row) => row.taskCode === selectedKey)
     || null;
-  const currentTask = selectedKey ? selectedCurrentTask : defaultTask;
+  const currentTask = selectedKey && selectedDisplayTask ? selectedCurrentTask : defaultTask;
   const flowContextTask = findTrayFlowContextTask(scheduleRows, currentTask || selectedDisplayTask, selectedTrayCode);
   const trayFlowTask = currentTask || selectedDisplayTask || flowContextTask;
   const selectedTask = selectedDisplayTask || currentTask || trayFlowTask;
@@ -3213,15 +3208,10 @@ function buildLaboratoryWorkbenchView({
       : selectedTrayOnlyHasOtherExperimentCompletion
       ? EXPERIMENT_COMPLETED_STATUS
       : selectedTrayEffectiveResolvedFlowStatus;
-  const completedFlowTask = currentTask
-    ? null
-    : completedLabScheduleRows.filter(rowCanProvideCompletedLaboratoryFlow).at(-1) || null;
   const currentTaskStatus = currentTask
     ? resolveLaboratoryTaskStatus(currentTask)
-    : completedFlowTask
-      ? resolveLaboratoryTaskStatus(completedFlowTask)
-      : STATUS_WAITING;
-  const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress || completedFlowTask?.axisProgress);
+    : STATUS_WAITING;
+  const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress);
   const rawSelectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
         currentExperimentCode: selectedTrayAxisPartialStatusSupersededByLaterCompletion
@@ -3822,7 +3812,7 @@ function buildLaboratoryChecklist(task) {
 }
 
 function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], allScheduleRows = [], scanCode = "" }) {
-  const normalizedScanCode = normalizeText(scanCode);
+  const normalizedScanCode = normalizeTrayScanCode(scanCode);
   if (!normalizedScanCode) {
     return {
       guidance: "请扫描托盘编号",

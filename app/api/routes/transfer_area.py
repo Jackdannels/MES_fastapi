@@ -138,6 +138,8 @@ STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
     *TRAY_OUTBOUND_STATUSES,
     *STARTED_EXPERIMENT_TRAY_STATUSES,
 }
+TRAY_QR_TYPE = "QRCODE"
+TRAY_QR_PREFIX = "MES-TRAY:"
 
 
 class TrayAllocationPayload(BaseModel):
@@ -163,7 +165,7 @@ class TaskAllocationRequest(BaseModel):
 
 
 class TrayPrintBarcodeRequest(BaseModel):
-    barcode_type: str = Field(default="CODE128", alias="barcodeType")
+    barcode_type: str = Field(default=TRAY_QR_TYPE, alias="barcodeType")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -696,11 +698,23 @@ def encode_tray_id(tray_code: str, fallback_serial: int) -> int:
     return encode_task_tray_id(serial)
 
 
+def build_tray_qr_content(tray_code_value: str) -> str:
+    normalized = normalize_text(tray_code_value)
+    return f"{TRAY_QR_PREFIX}{normalized}" if normalized else ""
+
+
+def normalize_tray_scan_code(value: Any) -> str:
+    normalized = normalize_text(value)
+    if normalized.upper().startswith(TRAY_QR_PREFIX):
+        return normalized[len(TRAY_QR_PREFIX) :].strip()
+    return normalized
+
+
 def build_barcode_payload(tray_code_value: str, sample_count: int, barcode_id: int | None = None) -> dict[str, Any]:
     return {
         "barcodeId": barcode_id or max(9000, 9000 + tray_serial_from_code(tray_code_value)),
         "barcodeNo": tray_code_value,
-        "barcodeContent": tray_code_value,
+        "barcodeContent": build_tray_qr_content(tray_code_value),
     }
 
 
@@ -839,7 +853,8 @@ def build_assigned_trays(
         for tray in trays:
             tray["loadQty"] = len(tray["samples"])
             if tray["barcode"]:
-                tray["barcode"]["barcodeContent"] = tray["trayNo"]
+                tray["barcode"]["barcodeType"] = TRAY_QR_TYPE
+                tray["barcode"]["barcodeContent"] = build_tray_qr_content(tray["trayNo"])
                 tray["barcodeData"] = tray["barcode"]["barcodeContent"]
         return trays
 
@@ -1096,8 +1111,8 @@ def task_progress(
         return "中控已预分配托盘，等待样品送达"
     non_empty = [tray for tray in assigned_trays if tray["samples"]]
     if non_empty and all(tray["barcode"] for tray in non_empty):
-        return "条形码已打印，待确认入库"
-    return "样品已送达，待打印条形码"
+        return "二维码已打印，待确认入库"
+    return "样品已送达，待打印二维码"
 
 
 def serialize_workspace(
@@ -1236,7 +1251,7 @@ def find_task(snapshot: dict[str, list[dict[str, Any]]], task_id: str) -> dict[s
 
 
 def find_tray_samples(snapshot: dict[str, list[dict[str, Any]]], tray_code_value: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    normalized_tray_code = normalize_text(tray_code_value)
+    normalized_tray_code = normalize_tray_scan_code(tray_code_value)
     matched_samples = [
         sample
         for sample in snapshot["samples"]
@@ -1696,6 +1711,7 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
 
 @router.get("/trays/{tray_code}/dispatch")
 def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
+    tray_code = normalize_tray_scan_code(tray_code)
     snapshot = read_snapshot()
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
@@ -1714,6 +1730,7 @@ def dispatch_tray(
     update_source: str = Header(default="", alias="X-MES-Update-Source"),
     update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
 ) -> dict[str, Any]:
+    tray_code = normalize_tray_scan_code(tray_code)
     snapshot = read_snapshot()
     task, tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
@@ -1873,6 +1890,7 @@ def dispatch_tray(
 
 @router.get("/trays/{tray_code}/withdraw-dispatch")
 def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
+    tray_code = normalize_tray_scan_code(tray_code)
     snapshot = read_snapshot()
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
@@ -1883,6 +1901,7 @@ def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
 
 @router.post("/trays/{tray_code}/withdraw-dispatch")
 def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest = Body(...)) -> dict[str, Any]:
+    tray_code = normalize_tray_scan_code(tray_code)
     snapshot = read_snapshot()
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
@@ -2052,11 +2071,11 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
     if not has_saved_allocation(task_samples):
-        raise HTTPException(status_code=400, detail="请先保存托盘，再打印条形码")
+        raise HTTPException(status_code=400, detail="请先保存托盘，再打印二维码")
 
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
     if not assigned_trays:
-        raise HTTPException(status_code=400, detail="当前任务没有可打印条形码的托盘")
+        raise HTTPException(status_code=400, detail="当前任务没有可打印二维码的托盘")
 
     printed = []
     for tray in assigned_trays:
@@ -2067,7 +2086,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
                 barcode_id=max(9000, tray["trayId"] + 7000),
             ),
             "objectId": tray["trayId"],
-            "barcodeType": request.barcode_type,
+            "barcodeType": TRAY_QR_TYPE,
         }
         printed.append(barcode)
         sample_ids = {sample["sampleId"] for sample in tray["samples"]}
@@ -2084,7 +2103,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
                             "barcode_id": barcode["barcodeId"],
                             "barcode_no": barcode["barcodeNo"],
                             "barcode_content": barcode["barcodeContent"],
-                            "barcode_type": request.barcode_type,
+                            "barcode_type": TRAY_QR_TYPE,
                             "printed_at": now_text(),
                         }
                     )
@@ -2104,7 +2123,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
     tray_label_map = {tray["trayNo"]: tray.get("experimentLabels", []) for tray in workspace["assignedTrays"]}
     for barcode in printed:
         barcode["experimentLabels"] = tray_label_map.get(barcode["barcodeNo"], [])
-    return {"ok": True, "message": "条形码已生成", "barcodes": printed, "workspace": workspace}
+    return {"ok": True, "message": "二维码已生成", "barcodes": printed, "workspace": workspace}
 
 
 @router.post("/tasks/{task_id}/confirm-storage")

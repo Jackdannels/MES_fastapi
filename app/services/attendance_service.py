@@ -837,6 +837,14 @@ class AttendanceService:
             session = self.repository.update_session(int(session["id"]), {"last_seen_at": self._now()}) or session
         return self.serialize_session(session, lab_name=lab_name)
 
+    def list_lab_sessions(self) -> list[dict[str, Any]]:
+        now = self._now()
+        sessions = []
+        for session in self.repository.list_active_sessions():
+            updated = self.repository.update_session(int(session["id"]), {"last_seen_at": now}) or session
+            sessions.append(self.serialize_session(updated))
+        return sessions
+
     def _login_user_to_lab(self, user: dict[str, Any], lab_name: str, *, lab_code: str = "") -> dict[str, Any]:
         now = self._now()
         normalized_lab_name = normalize_text(lab_name) or self.repository.resolve_lab_name(lab_code)
@@ -1022,6 +1030,14 @@ class AttendanceService:
         active_by_username: dict[str, list[dict[str, Any]]] = {}
         for session in active_sessions:
             active_by_username.setdefault(normalize_text(session.get("username")), []).append(session)
+        active_interval_counts: dict[str, int] = {}
+        for interval in intervals:
+            if parse_datetime(interval.get("ended_at")) is not None:
+                continue
+            username = normalize_text(interval.get("username"))
+            if not username or report_date != now.date():
+                continue
+            active_interval_counts[username] = active_interval_counts.get(username, 0) + 1
         rows = []
         for user in self.repository.list_users():
             username = normalize_text(user.get("username"))
@@ -1038,6 +1054,8 @@ class AttendanceService:
                     "lastLoginAt": format_beijing(latest_login),
                     "online": bool(user_active_sessions),
                     "todaySeconds": total_seconds,
+                    "activeWorkIntervalCount": active_interval_counts.get(username, 0),
+                    "calculatedAt": format_beijing(now),
                 }
             )
         return rows

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createAttendanceUser,
   deleteAttendanceUser,
+  listLaboratoryAttendanceSessions,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,
   logoutLaboratoryAttendance,
@@ -25,6 +26,21 @@ describe("attendanceApi", () => {
     await readLaboratoryAttendanceSession("冲击一室");
 
     expect(fetch).toHaveBeenCalledWith("/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/session", {
+      headers: { Accept: "application/json" },
+      credentials: "include",
+    });
+  });
+
+  test("lists active laboratory attendance sessions", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [{ active: true, employeeName: "张三", labName: "四综合实验室" }],
+    }));
+
+    const sessions = await listLaboratoryAttendanceSessions();
+
+    expect(sessions).toEqual([{ active: true, employeeName: "张三", labName: "四综合实验室" }]);
+    expect(fetch).toHaveBeenCalledWith("/api/attendance/lab-sessions", {
       headers: { Accept: "application/json" },
       credentials: "include",
     });

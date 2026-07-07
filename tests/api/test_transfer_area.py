@@ -394,7 +394,7 @@ def test_transfer_area_dispatch_lookup_returns_staging_and_sorted_lab_candidates
         ],
     )
 
-    response = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+    response = client.get("/api/transfer-area/trays/MES-TRAY:SYLU-2026-03-102-TP-001/dispatch")
 
     assert response.status_code == 200
     payload = response.json()
@@ -2597,7 +2597,7 @@ def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch)
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
-    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "QRCODE"})
     confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
     reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
 
@@ -2723,7 +2723,7 @@ def test_transfer_area_workspace_mutations_publish_storage_updates(monkeypatch):
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
-    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "QRCODE"})
     confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
     reloaded = client.post("/api/transfer-area/tasks/task-101/reload")
 
@@ -2978,7 +2978,7 @@ def test_transfer_area_workspace_remaining_trays_counts_current_preallocation(mo
     assert len(workspace.json()["trayInventory"]) == 6
 
 
-def test_transfer_area_prints_preallocated_barcodes_before_arrival(monkeypatch):
+def test_transfer_area_prints_preallocated_qrcodes_before_arrival(monkeypatch):
     client, storage = build_client(monkeypatch)
     tasks = storage.read("mes.tasks")
     tasks[0]["arrival_at"] = ""
@@ -2994,16 +2994,24 @@ def test_transfer_area_prints_preallocated_barcodes_before_arrival(monkeypatch):
     }
 
     allocated = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
-    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "QRCODE"})
 
     assert allocated.status_code == 200
     assert printed.status_code == 200
+    assert printed.json()["message"] == "二维码已生成"
     assert [barcode["barcodeNo"] for barcode in printed.json()["barcodes"]] == [
         "SYLU-2026-03-101-TP-001",
         "SYLU-2026-03-101-TP-002",
     ]
+    assert [barcode["barcodeType"] for barcode in printed.json()["barcodes"]] == ["QRCODE", "QRCODE"]
+    assert [barcode["barcodeContent"] for barcode in printed.json()["barcodes"]] == [
+        "MES-TRAY:SYLU-2026-03-101-TP-001",
+        "MES-TRAY:SYLU-2026-03-101-TP-002",
+    ]
     assert printed.json()["workspace"]["task"]["receivedTime"] == ""
     assert printed.json()["workspace"]["assignedTrays"][0]["barcode"]["barcodeNo"] == "SYLU-2026-03-101-TP-001"
+    assert printed.json()["workspace"]["assignedTrays"][0]["barcode"]["barcodeContent"] == "MES-TRAY:SYLU-2026-03-101-TP-001"
+    assert printed.json()["workspace"]["assignedTrays"][0]["barcodeData"] == "MES-TRAY:SYLU-2026-03-101-TP-001"
 
 
 def test_transfer_area_print_rejects_unsaved_preallocation(monkeypatch):
@@ -3012,10 +3020,10 @@ def test_transfer_area_print_rejects_unsaved_preallocation(monkeypatch):
     tasks[0]["arrival_at"] = ""
     storage.write("mes.tasks", tasks)
 
-    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "CODE128"})
+    printed = client.post("/api/transfer-area/tasks/task-101/print-barcodes", json={"barcodeType": "QRCODE"})
 
     assert printed.status_code == 400
-    assert printed.json()["detail"] == "请先保存托盘，再打印条形码"
+    assert printed.json()["detail"] == "请先保存托盘，再打印二维码"
 
 
 def test_transfer_area_allocate_rejects_incomplete_experiment_tray_assignments(monkeypatch):
@@ -3554,7 +3562,7 @@ def test_transfer_area_rejects_all_reentry_actions_for_explicitly_returned_task(
 
     dispatch_lookup = client.get("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
     allocated = client.post("/api/transfer-area/tasks/task-102/allocate", json=allocation)
-    printed = client.post("/api/transfer-area/tasks/task-102/print-barcodes", json={"barcodeType": "CODE128"})
+    printed = client.post("/api/transfer-area/tasks/task-102/print-barcodes", json={"barcodeType": "QRCODE"})
     confirmed = client.post("/api/transfer-area/tasks/task-102/confirm-storage")
 
     assert dispatch_lookup.status_code == 404

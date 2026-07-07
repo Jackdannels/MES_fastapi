@@ -23,7 +23,7 @@ import {
   readLaboratoryAttendanceSession,
 } from "@/lib/attendanceApi";
 import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
-import { formatLocalDateTime } from "@/lib/dateTime";
+import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -75,11 +75,11 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 
 const normalizeText = (value) => String(value ?? "").trim();
 const formatFlowTimeForAttendance = (value) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const time = parseBusinessDateTimeToMs(value);
+  if (!Number.isFinite(time)) {
     return "--:--";
   }
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return formatLocalDateTime(new Date(time), { includeSeconds: false }).slice(-5);
 };
 const formatAttendanceDuration = (elapsedSeconds) => {
   const seconds = Math.max(0, Math.floor(Number(elapsedSeconds) || 0));
@@ -243,6 +243,7 @@ function useLaboratoryPage(options = {}) {
   const readyPublishRetryAvailable = ref(false);
   const resetConfirmModalOpen = ref(false);
   const resetDangerModalOpen = ref(false);
+  const resetTarget = ref(null);
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
@@ -291,8 +292,8 @@ function useLaboratoryPage(options = {}) {
     }
     const loggedInAt = normalizeText(attendanceSession.value?.loggedInAt || attendanceSession.value?.logged_in_at);
     const workStartedAt = attendanceWorkStartedAt.value;
-    const workStartedTime = workStartedAt ? new Date(workStartedAt).getTime() : Number.NaN;
-    const elapsedSeconds = Number.isNaN(workStartedTime)
+    const workStartedTime = workStartedAt ? parseBusinessDateTimeToMs(workStartedAt) : null;
+    const elapsedSeconds = !Number.isFinite(workStartedTime)
       ? 0
       : Math.floor((tickNow.value.getTime() - workStartedTime) / 1000);
     return {
@@ -837,6 +838,7 @@ function useLaboratoryPage(options = {}) {
     confirmedModalOpen.value = false;
     resetConfirmModalOpen.value = false;
     resetDangerModalOpen.value = false;
+    resetTarget.value = null;
     completePromptVisible.value = false;
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
@@ -999,18 +1001,6 @@ function useLaboratoryPage(options = {}) {
       clearRunningModalRestoreTimer();
     },
     { immediate: true },
-  );
-
-  watch(
-    () => runningExperiment.value.remainingSeconds,
-    (remainingSeconds) => {
-      if (!runningExperiment.value.active || remainingSeconds > 0) {
-        return;
-      }
-      void completeRunningExperiment({ keepModal: true }).catch((error) => {
-        console.warn(error);
-      });
-    },
   );
 
   const resetCompareState = () => {
@@ -1259,6 +1249,32 @@ function useLaboratoryPage(options = {}) {
         .map((row) => String(row?.trayCode || "").trim())
         .filter(Boolean),
     ));
+  const buildResetTarget = () => {
+    const task = currentTask.value;
+    const trayCodes = getCurrentResettableTrayCodes();
+    const taskCode = normalizeText(task?.taskCode);
+    const experimentCode = normalizeText(task?.experimentCode);
+    if (!taskCode || !experimentCode || trayCodes.length === 0) {
+      return null;
+    }
+    return {
+      experimentCode,
+      experimentName: normalizeText(task?.experimentName),
+      scheduleId: normalizeText(task?.id || task?.scheduleId || task?.schedule_id),
+      taskCode,
+      taskId: normalizeText(task?.taskId || task?.task_id || task?.taskCode),
+      taskName: normalizeText(task?.taskName || task?.name),
+      trayCodes,
+    };
+  };
+  const resetTargetIsValid = (target) =>
+    Boolean(
+      target
+      && normalizeText(target.taskCode)
+      && normalizeText(target.experimentCode)
+      && Array.isArray(target.trayCodes)
+      && target.trayCodes.length > 0,
+    );
   const getCurrentTaskTrayRowsByStatus = (status) =>
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
@@ -1765,15 +1781,32 @@ function useLaboratoryPage(options = {}) {
     if (!canResetCurrentTask.value) {
       return;
     }
+    const target = buildResetTarget();
+    if (!resetTargetIsValid(target)) {
+      laboratoryMqError.value = {
+        detail: "当前任务或托盘信息已变化，请刷新后重试。",
+        title: "撤回任务失败",
+      };
+      return;
+    }
+    resetTarget.value = target;
+    clearLaboratoryMqError();
     resetConfirmModalOpen.value = true;
   };
   const closeResetConfirm = () => {
     resetConfirmModalOpen.value = false;
+    resetTarget.value = null;
     flushPendingRealtimeRefresh();
   };
   const confirmResetPrompt = () => {
-    if (!canResetCurrentTask.value) {
+    if (!resetTargetIsValid(resetTarget.value)) {
       resetConfirmModalOpen.value = false;
+      resetDangerModalOpen.value = false;
+      resetTarget.value = null;
+      laboratoryMqError.value = {
+        detail: "撤回目标已失效，请重新打开撤回确认。",
+        title: "撤回任务失败",
+      };
       return;
     }
     resetConfirmModalOpen.value = false;
@@ -1781,33 +1814,49 @@ function useLaboratoryPage(options = {}) {
   };
   const closeResetDanger = () => {
     resetDangerModalOpen.value = false;
+    resetTarget.value = null;
     flushPendingRealtimeRefresh();
   };
   const confirmResetTask = async () => {
-    if (!canResetCurrentTask.value) {
+    const target = resetTarget.value;
+    if (!resetTargetIsValid(target)) {
       resetDangerModalOpen.value = false;
+      resetTarget.value = null;
+      laboratoryMqError.value = {
+        detail: "撤回目标已失效，请重新打开撤回确认。",
+        title: "撤回任务失败",
+      };
       return;
     }
-    clearHostlessTimers();
-    const withdrawResult = await withdrawCurrentLaboratoryExperiment({
-      experimentCode: currentTask.value?.experimentCode,
-      reason: "试验间内撤回当前实验任务",
-      taskCode: currentTask.value?.taskCode,
-      trayCodes: getCurrentResettableTrayCodes(),
-    });
-    resetDangerModalOpen.value = false;
-    resetCompareState();
     try {
-      await load();
-    } catch {
-      // The withdraw API response is authoritative for the local tray flow.
+      clearLaboratoryMqError();
+      clearHostlessTimers();
+      const withdrawResult = await withdrawCurrentLaboratoryExperiment({
+        experimentCode: target.experimentCode,
+        reason: "试验间内撤回当前实验任务",
+        taskCode: target.taskCode,
+        trayCodes: target.trayCodes,
+      });
+      resetDangerModalOpen.value = false;
+      resetTarget.value = null;
+      resetCompareState();
+      try {
+        await load();
+      } catch {
+        // The withdraw API response is authoritative for the local tray flow.
+      }
+      applyWithdrawResponse(withdrawResult);
+      if (typeof window !== "undefined") {
+        ignoreNextSamplesUpdatedLoad = true;
+        window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+      }
+      flushPendingRealtimeRefresh();
+    } catch (error) {
+      laboratoryMqError.value = {
+        detail: formatErrorMessage(error),
+        title: "撤回任务失败",
+      };
     }
-    applyWithdrawResponse(withdrawResult);
-    if (typeof window !== "undefined") {
-      ignoreNextSamplesUpdatedLoad = true;
-      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    }
-    flushPendingRealtimeRefresh();
   };
   const openCompleteConfirm = () => {
     if (!runningExperiment.value?.active) {

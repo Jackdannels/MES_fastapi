@@ -78,6 +78,8 @@ function createEmployeeRow(row = {}) {
     qrTokenCreatedAt: String(row?.qrTokenCreatedAt || "").trim(),
     roleName: String(row?.roleName || "").trim(),
     statusLabel: row?.online ? "在线" : (row?.active === false ? "停用" : "离线"),
+    activeWorkIntervalCount: Number(row?.activeWorkIntervalCount || 0),
+    calculatedAt: String(row?.calculatedAt || "").trim(),
     todaySeconds: Number(row?.todaySeconds || 0),
     todayWorkTime: formatWorkDuration(row?.todaySeconds || 0),
     username: String(row?.username || "").trim(),

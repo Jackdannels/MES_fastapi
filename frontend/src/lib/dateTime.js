@@ -1,12 +1,30 @@
 const pad2 = (value) => String(value ?? "").padStart(2, "0");
 const LOCAL_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?$/;
+const TIMEZONE_SUFFIX_PATTERN = /[zZ]|[+-]\d{2}:?\d{2}$/;
+
+function parseBusinessDateTimeToMs(value) {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isFinite(time) ? time : null;
+  }
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return null;
+  }
+  const localMatch = normalized.match(LOCAL_DATE_TIME_PATTERN);
+  const parseValue = localMatch && !TIMEZONE_SUFFIX_PATTERN.test(normalized)
+    ? `${localMatch[1]}T${localMatch[2]}:${localMatch[3] || "00"}+08:00`
+    : normalized;
+  const time = Date.parse(parseValue);
+  return Number.isFinite(time) ? time : null;
+}
 
 // 业务时间统一按北京时间本地字符串输出，不携带时区。
 function formatLocalDateTime(value = new Date(), { includeSeconds = true } = {}) {
   if (typeof value === "string") {
     const normalized = value.trim();
     const localMatch = normalized.match(LOCAL_DATE_TIME_PATTERN);
-    if (localMatch && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    if (localMatch && !TIMEZONE_SUFFIX_PATTERN.test(normalized)) {
       const seconds = localMatch[3] || "00";
       return includeSeconds
         ? `${localMatch[1]} ${localMatch[2]}:${seconds}`
@@ -38,4 +56,4 @@ function formatLocalDateTime(value = new Date(), { includeSeconds = true } = {})
   return includeSeconds ? `${year}-${month}-${day} ${hours}:${minutes}:${seconds}` : `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
-export { formatLocalDateTime };
+export { formatLocalDateTime, parseBusinessDateTimeToMs };

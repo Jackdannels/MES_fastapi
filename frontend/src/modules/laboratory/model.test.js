@@ -2552,11 +2552,11 @@ describe("laboratory model", () => {
     });
     const match = validateLaboratoryTrayScan({
       currentTask: view.currentTask,
-      scanCode: "TP-001",
+      scanCode: "MES-TRAY:TP-001",
       scheduleRows: view.scheduleRows,
     });
 
-    expect(match).toEqual(expect.objectContaining({ ok: true, tone: "success" }));
+    expect(match).toEqual(expect.objectContaining({ ok: true, tone: "success", trayCode: "TP-001" }));
     expect(mismatch).toEqual(
       expect.objectContaining({
         guidance: "当前任务并非优先所选任务。该托盘可前往：盐雾试验室",
@@ -11331,6 +11331,193 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "振动试验部分完成 3/6轴")).toEqual(
       expect.objectContaining({ active: true }),
     );
+  });
+
+  test("buildLaboratoryWorkbenchView resets current task flow when completed lab schedules leave no current task", () => {
+    const taskCode = "SYLU-2026-09-001";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          ended_at: "2026-07-06 10:30:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-SALT-COMPLETE",
+          schedule_id: "schedule-salt-complete",
+          status: "实验已完成",
+          task_code: taskCode,
+          tray_codes: [trayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          ended_at: "2026-07-06 10:30:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-SALT-COMPLETE",
+          run_tray_status: "实验已完成",
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode },
+      ],
+      experiments: [
+        {
+          experiment_code: experimentCode,
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+          status: "实验已完成",
+          task_code: taskCode,
+        },
+      ],
+      labName: "盐雾试验室",
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "盐雾试验室",
+          status: "实验已完成",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "实验已完成", tray_code: trayCode }],
+        },
+      ],
+      schedules: [
+        {
+          device: "盐雾试验室",
+          experiment_code: experimentCode,
+          id: "schedule-salt-complete",
+          start_at: "2026-07-06 08:30:00",
+          status: "实验已完成",
+          task_code: taskCode,
+        },
+      ],
+      tasks: [{ code: taskCode, name: "完成后空闲任务", test_type: "盐雾试验" }],
+    });
+
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows).toHaveLength(0);
+    expect(view.currentTaskFlow.currentStatus).toBe("待排程");
+    expect(view.currentTaskFlow.axisStatusLabel).toBe("");
+  });
+
+  test("buildLaboratoryWorkbenchView falls back to default task when selected axis schedule is no longer displayed", () => {
+    const taskCode = "SYLU-2026-09-002";
+    const experimentCode = `${taskCode}-A`;
+    const firstSubExperimentCode = `${experimentCode}-AXIS-X`;
+    const secondSubExperimentCode = `${experimentCode}-AXIS-Y`;
+    const firstTrayCode = `${taskCode}-TP-001`;
+    const secondTrayCode = `${taskCode}-TP-002`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          ended_at: "2026-07-06 10:30:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-X-001",
+          schedule_id: "schedule-axis-x",
+          status: "实验已完成",
+          sub_experiment_code: firstSubExperimentCode,
+          task_code: taskCode,
+          tray_codes: [firstTrayCode, secondTrayCode],
+        },
+      ],
+      experimentRunSteps: [
+        {
+          axis_code: "x+",
+          experiment_code: experimentCode,
+          run_no: "RUN-X-001",
+          status: "实验已完成",
+          sub_experiment_code: firstSubExperimentCode,
+          task_code: taskCode,
+        },
+      ],
+      experimentRunTrays: [
+        {
+          ended_at: "2026-07-06 10:30:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-X-001",
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          sub_experiment_code: firstSubExperimentCode,
+          task_code: taskCode,
+          tray_code: firstTrayCode,
+        },
+        {
+          ended_at: "2026-07-06 10:30:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-X-001",
+          run_tray_status: "实验已完成",
+          status: "实验已完成",
+          sub_experiment_code: firstSubExperimentCode,
+          task_code: taskCode,
+          tray_code: secondTrayCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: experimentCode, task_code: taskCode, tray_code: firstTrayCode },
+        { experiment_code: experimentCode, task_code: taskCode, tray_code: secondTrayCode },
+      ],
+      experiments: [
+        {
+          axis_codes: ["x+", "y+"],
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          required_device: "振动一室",
+          status: "实验进行中",
+          task_code: taskCode,
+        },
+      ],
+      labName: "振动一室",
+      now: new Date("2026-07-06T11:00:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          location: "振动一室",
+          status: "振动试验部分完成 1/2轴",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "振动试验部分完成 1/2轴", tray_code: firstTrayCode }],
+        },
+        {
+          code: `${taskCode}-SP-002`,
+          location: "振动一室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [{ quantity: 1, status: "送至实验室", tray_code: secondTrayCode }],
+        },
+      ],
+      schedules: [
+        {
+          axis_codes: ["x+"],
+          device: "振动一室",
+          experiment_code: experimentCode,
+          id: "schedule-axis-x",
+          start_at: "2026-07-06 08:30:00",
+          status: "实验已完成",
+          sub_experiment_code: firstSubExperimentCode,
+          task_code: taskCode,
+        },
+        {
+          axis_codes: ["y+"],
+          device: "振动一室",
+          experiment_code: experimentCode,
+          id: "schedule-axis-y",
+          start_at: "2026-07-06 10:30:00",
+          status: "已排程",
+          sub_experiment_code: secondSubExperimentCode,
+          task_code: taskCode,
+        },
+      ],
+      selectedTaskCode: "schedule-axis-x",
+      selectedTrayCode: secondTrayCode,
+      tasks: [{ code: taskCode, name: "同室分轴任务", test_type: "振动试验" }],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+
+    expect(view.scheduleRows.map((row) => row.id)).toEqual(["schedule-axis-y"]);
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      id: "schedule-axis-y",
+      subExperimentCode: secondSubExperimentCode,
+    }));
+    expect(getLaboratoryActionState(workflow).canCompare).toBe(true);
   });
 
   test("revertLaboratoryTaskToPreviousStableState keeps running trays locked unless explicitly allowed", () => {

@@ -208,22 +208,39 @@ function buildScheduleEditForm(schedule) {
   };
 }
 
-function buildScheduleRescheduleForm(schedule) {
-  const editForm = buildScheduleEditForm(schedule);
+function resolveRescheduleCustomStart(editForm, now) {
+  if (editForm.time_slot !== "custom") {
+    return editForm;
+  }
+  const current = truncateToMinute(parseDate(now)) || null;
+  const startAt = parseDate(`${editForm.schedule_date}T${editForm.custom_start}:00`);
+  if (!current || !startAt || startAt >= current) {
+    return editForm;
+  }
   return {
-    axis_batch_no: editForm.axis_batch_no,
-    axis_codes: editForm.axis_codes,
-    custom_end: editForm.custom_end,
-    custom_start: editForm.custom_start,
-    device: editForm.device,
-    experiment_code: editForm.experiment_code,
-    lab_code: editForm.lab_code,
-    lab_id: editForm.lab_id,
-    planned_hours: editForm.planned_hours,
-    planned_duration_unit: editForm.planned_duration_unit,
-    schedule_date: editForm.schedule_date,
-    task_code: editForm.task_code,
-    time_slot: editForm.time_slot,
+    ...editForm,
+    custom_start: toLocalTimeValue(current),
+    schedule_date: toLocalDateValue(current),
+  };
+}
+
+function buildScheduleRescheduleForm(schedule, now = null) {
+  const editForm = buildScheduleEditForm(schedule);
+  const nextForm = now ? resolveRescheduleCustomStart(editForm, now) : editForm;
+  return {
+    axis_batch_no: nextForm.axis_batch_no,
+    axis_codes: nextForm.axis_codes,
+    custom_end: nextForm.custom_end,
+    custom_start: nextForm.custom_start,
+    device: nextForm.device,
+    experiment_code: nextForm.experiment_code,
+    lab_code: nextForm.lab_code,
+    lab_id: nextForm.lab_id,
+    planned_hours: nextForm.planned_hours,
+    planned_duration_unit: nextForm.planned_duration_unit,
+    schedule_date: nextForm.schedule_date,
+    task_code: nextForm.task_code,
+    time_slot: nextForm.time_slot,
   };
 }
 

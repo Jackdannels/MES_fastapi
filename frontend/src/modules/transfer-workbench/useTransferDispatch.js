@@ -2,6 +2,7 @@ import { reactive } from "vue";
 
 import { useFeedback } from "@/composables/useFeedback";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
@@ -53,7 +54,7 @@ function useTransferDispatch(options = {}) {
   };
 
   const lookupTray = async () => {
-    const trayCode = normalizeText(state.scanCode);
+    const trayCode = normalizeTrayScanCode(state.scanCode);
     if (!trayCode) {
       feedbackState.show("请输入或扫描托盘编号。", "warning");
       return false;
@@ -84,7 +85,7 @@ function useTransferDispatch(options = {}) {
   };
 
   const submitDestination = async (destination) => {
-    const trayCode = normalizeText(state.tray?.trayNo || state.scanCode);
+    const trayCode = normalizeTrayScanCode(state.tray?.trayNo || state.scanCode);
     if (!trayCode) {
       feedbackState.show("请先扫描托盘编号。", "warning");
       return false;

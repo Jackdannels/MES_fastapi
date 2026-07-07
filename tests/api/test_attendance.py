@@ -45,6 +45,36 @@ def test_attendance_login_allows_employee_in_any_laboratory(client):
     assert response.json()["username"] == "zhangsan"
 
 
+def test_attendance_lists_active_lab_sessions(client):
+    first = client.post(
+        "/api/attendance/labs/%E5%9B%9B%E7%BB%BC%E5%90%88%E5%AE%9E%E9%AA%8C%E5%AE%A4/login",
+        json={"username": "zhangsan", "password": "123"},
+    )
+    second = client.post(
+        "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
+        json={"username": "lisi", "password": "123"},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    response = client.get("/api/attendance/lab-sessions")
+
+    assert response.status_code == 200
+    sessions = response.json()
+    assert sessions == [
+        {
+            **first.json(),
+            "lastSeenAt": sessions[0]["lastSeenAt"],
+        },
+        {
+            **second.json(),
+            "lastSeenAt": sessions[1]["lastSeenAt"],
+        },
+    ]
+    assert [session["labName"] for session in sessions] == ["四综合实验室", "盐雾试验室"]
+    assert [session["employeeName"] for session in sessions] == ["张三", "李四"]
+
+
 def test_attendance_logout_closes_active_session_and_work_time_lists_employee(client):
     login_response = client.post(
         "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%BA%8C%E5%AE%A4/login",
@@ -250,7 +280,10 @@ def test_attendance_work_time_starts_when_laboratory_step_begins(client, monkeyp
 
     current_time["value"] = datetime(2026, 7, 2, 8, 5, 42, tzinfo=timezone.utc)
     active_rows = client.get("/api/attendance/work-times?date=2026-07-02").json()
-    assert next(row for row in active_rows if row["username"] == "timer-worker")["todaySeconds"] == 42
+    active_worker = next(row for row in active_rows if row["username"] == "timer-worker")
+    assert active_worker["todaySeconds"] == 42
+    assert active_worker["activeWorkIntervalCount"] == 1
+    assert active_worker["calculatedAt"] == "2026-07-02T16:05:42+08:00"
 
 
 def test_attendance_admin_can_reset_password_and_delete_employee(client):

@@ -1,5 +1,6 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
+import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -49,7 +50,7 @@ const resolveRunStatus = (entry) => normalizeText(entry?.run_tray_status || entr
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
-  const time = Date.parse(String(value || ""));
+  const time = parseBusinessDateTimeToMs(value);
   if (!Number.isFinite(time)) {
     return "-";
   }
@@ -62,11 +63,11 @@ const formatDateTime = (value) => {
 };
 
 const scheduleIsActiveAt = (schedule, now) => {
-  const start = Date.parse(String(schedule?.start_at || ""));
+  const start = parseBusinessDateTimeToMs(schedule?.start_at);
   if (!Number.isFinite(start) || start > now) {
     return false;
   }
-  const end = Date.parse(String(schedule?.end_at || ""));
+  const end = parseBusinessDateTimeToMs(schedule?.end_at);
   return !Number.isFinite(end) || end >= now;
 };
 
@@ -314,7 +315,7 @@ const buildProcessLabCards = (
               taskStatusMap,
             })
         )
-        .sort((left, right) => Date.parse(String(right?.start_at || "")) - Date.parse(String(left?.start_at || "")));
+        .sort((left, right) => (parseBusinessDateTimeToMs(right?.start_at) || 0) - (parseBusinessDateTimeToMs(left?.start_at) || 0));
 
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
       const runningSchedule =
@@ -336,7 +337,7 @@ const buildProcessLabCards = (
       // 没有进行中的情况下，展示最近的未来排程。
       const upcomingSchedule =
         labSchedules.find((entry) => {
-          const start = Date.parse(String(entry?.start_at || ""));
+          const start = parseBusinessDateTimeToMs(entry?.start_at);
           return Number.isFinite(start) && start > now;
         }) || null;
       const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || null;

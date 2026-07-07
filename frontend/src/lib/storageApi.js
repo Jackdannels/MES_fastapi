@@ -1,5 +1,6 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { formatLocalDateTime } from "./dateTime.js";
+import { normalizeTrayScanCode } from "./trayQrCode.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
@@ -90,7 +91,7 @@ function normalizeSegment(value, fallback = "") {
 function storageTrayActionEndpoint(action = {}) {
   const mode = String(action?.mode || "").trim();
   const room = normalizeSegment(action?.room, "staging");
-  const trayCode = normalizeSegment(action?.trayCode || action?.tray_code);
+  const trayCode = normalizeSegment(normalizeTrayScanCode(action?.trayCode || action?.tray_code));
   const actionName = mode === "manufacturerReturn"
     ? "manufacturer-return"
     : mode === "stockIn"

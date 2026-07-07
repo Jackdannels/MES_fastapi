@@ -53,7 +53,7 @@ const createBootstrapPayload = () => ({
       experimentTypeText: "盐雾试验 / 振动试验",
       receivedTime: "2026-03-21 10:20",
       taskStatus: "未入库",
-      taskProgress: "样品已送达，待打印条形码",
+      taskProgress: "样品已送达，待打印二维码",
       sampleCodes: ["SYLU-2026-03-101-SP-001", "SYLU-2026-03-101-SP-002", "SYLU-2026-03-101-SP-003", "SYLU-2026-03-101-SP-004"],
       sampleCodesText: "SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002 / SYLU-2026-03-101-SP-003 / SYLU-2026-03-101-SP-004",
     },
@@ -85,7 +85,7 @@ const createWorkspacePayload = () => ({
     taskType: "盐雾试验 / 振动试验",
     experimentTypeText: "盐雾试验 / 振动试验",
     taskStatus: "未入库",
-    taskProgress: "样品已送达，待打印条形码",
+    taskProgress: "样品已送达，待打印二维码",
     receivedTime: "2026-03-21 10:20",
     trayLimit: 2,
     printedTrayCount: 0,
@@ -124,7 +124,7 @@ const createWorkspacePayload = () => ({
 const createPrintedWorkspace = (workspacePayload) => ({
   ...workspacePayload,
   allocationSaved: true,
-  task: { ...workspacePayload.task, taskProgress: "条形码已打印，待确认入库", printedTrayCount: 2 },
+  task: { ...workspacePayload.task, taskProgress: "二维码已打印，待确认入库", printedTrayCount: 2 },
   assignedTrays: workspacePayload.assignedTrays.map((tray, index) => ({
     ...tray,
     trayStatus: "待入库",
@@ -132,7 +132,8 @@ const createPrintedWorkspace = (workspacePayload) => ({
       barcodeId: 901 + index,
       objectId: tray.trayId,
       barcodeNo: tray.trayNo,
-      barcodeContent: tray.trayNo,
+      barcodeType: "QRCODE",
+      barcodeContent: `MES-TRAY:${tray.trayNo}`,
     },
   })),
 });
@@ -151,7 +152,7 @@ const createStoredWorkspace = (printedWorkspace) => ({
 const createReloadedWorkspace = (workspacePayload) => ({
   ...workspacePayload,
   allocationSaved: false,
-  task: { ...workspacePayload.task, taskStatus: "未入库", taskProgress: "样品已送达，待打印条形码", printedTrayCount: 0 },
+  task: { ...workspacePayload.task, taskStatus: "未入库", taskProgress: "样品已送达，待打印二维码", printedTrayCount: 0 },
   experiments: Array.isArray(workspacePayload.experiments)
     ? workspacePayload.experiments.map((experiment) => ({
         ...experiment,
@@ -207,7 +208,7 @@ describe("TransferAreaPage runtime", () => {
           status: 200,
           json: async () => ({
             ok: true,
-            message: "条形码已生成",
+            message: "二维码已生成",
             barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
             workspace: printedWorkspace,
           }),
@@ -221,7 +222,7 @@ describe("TransferAreaPage runtime", () => {
         return { ok: true, status: 200, json: async () => ({ ok: true, message: "任务已确认入库", workspace: storedWorkspace }) };
       }
       if (url.includes("/api/transfer-area/tasks/101/reload")) {
-        bootstrapPayload.taskOverview[0] = { ...bootstrapPayload.taskOverview[0], taskStatus: "未入库", taskProgress: "样品已送达，待打印条形码" };
+        bootstrapPayload.taskOverview[0] = { ...bootstrapPayload.taskOverview[0], taskStatus: "未入库", taskProgress: "样品已送达，待打印二维码" };
         bootstrapPayload.pendingTaskCount = 1;
         bootstrapPayload.storedTaskCount = 1;
         workspaceState = reloadedWorkspace;
@@ -356,7 +357,7 @@ describe("TransferAreaPage runtime", () => {
 
     expect(wrapper.find(".transfer-overview-status-actions .is-active").text()).toContain("未入库");
     expect(wrapper.text()).toContain("SYLU-2026-03-101");
-    expect(wrapper.text()).toContain("样品已送达，待打印条形码");
+    expect(wrapper.text()).toContain("样品已送达，待打印二维码");
   });
 
   test("overview status filter switches between pending and stored tasks", async () => {
@@ -461,7 +462,7 @@ describe("TransferAreaPage runtime", () => {
     expect(printFramePrintMock).toHaveBeenCalledTimes(1);
   });
 
-  test("printed barcode document uses standard Code128 svg markup", async () => {
+  test("printed QR code document uses the tray QR payload in SVG markup", async () => {
     const originalCreateElement = document.createElement.bind(document);
     const iframe = originalCreateElement("iframe");
     Object.defineProperty(iframe, "contentDocument", {
@@ -505,11 +506,20 @@ describe("TransferAreaPage runtime", () => {
     const printedHtml = printFrameDocumentWriteMock.mock.calls.at(-1)?.[0] || "";
 
     expect(printedHtml).toContain('xmlns="http://www.w3.org/2000/svg"');
-    expect(printedHtml).toMatch(/<rect[^>]+width="4"/);
-    expect(previewSvgLabel).toBe("SYLU-2026-03-101-TP-001");
-    expect(printedHtml).toContain('aria-label="SYLU-2026-03-101-TP-001"');
-    expect(printedHtml).toContain("任务编号：SYLU-2026-03-101 | 样品数量：2");
-    expect(printedHtml).toContain("样品编号：SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002");
+    expect(printedHtml).toContain("<path");
+    expect(printedHtml).toContain('class="print-card-body"');
+    expect(printedHtml).toContain('class="print-qr-panel"');
+    expect(printedHtml).toContain('class="print-info-panel"');
+    expect(printedHtml).toContain(".print-barcode svg { width: 220px; height: 220px;");
+    expect(printedHtml).toContain("@media screen and (max-width: 680px)");
+    expect(printedHtml).not.toContain("<h1>");
+    expect(printedHtml).not.toContain(`<p>${createWorkspacePayload().task.taskNo}`);
+    expect(previewSvgLabel).toBe("MES-TRAY:SYLU-2026-03-101-TP-001");
+    expect(printedHtml).toContain('aria-label="MES-TRAY:SYLU-2026-03-101-TP-001"');
+    expect(printedHtml).toContain("<span>内容</span>");
+    expect(printedHtml).toContain("<strong>任务编号：SYLU-2026-03-101 | 样品数量：2</strong>");
+    expect(printedHtml).toContain("<span>样品编号</span>");
+    expect(printedHtml).toContain("<strong>SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002</strong>");
   });
 
   test("barcode preview and print document keep experiment tag colors aligned with tray selection", async () => {
@@ -571,7 +581,8 @@ describe("TransferAreaPage runtime", () => {
             barcodeId: 980 + index,
             objectId: tray.trayId,
             barcodeNo: tray.trayNo,
-            barcodeContent: tray.trayNo,
+            barcodeType: "QRCODE",
+            barcodeContent: `MES-TRAY:${tray.trayNo}`,
           },
       })),
     };
@@ -599,7 +610,7 @@ describe("TransferAreaPage runtime", () => {
             status: 200,
             json: async () => ({
               ok: true,
-              message: "条形码已生成",
+              message: "二维码已生成",
               barcodes: printedWorkspace.assignedTrays.map((tray) => tray.barcode),
               workspace: printedWorkspace,
             }),

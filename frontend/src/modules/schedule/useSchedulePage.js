@@ -1133,7 +1133,7 @@ function useSchedulePage() {
       [STORAGE_KEYS.streams]: result.streams,
       [STORAGE_KEYS.tasks]: result.tasks,
     });
-    await replaceScheduleForm(buildScheduleRescheduleForm(schedule));
+    await replaceScheduleForm(buildScheduleRescheduleForm(schedule, now.value));
     scheduleWarning.value = "";
     closeTaskDetailModal();
   };

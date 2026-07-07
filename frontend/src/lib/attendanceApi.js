@@ -40,6 +40,10 @@ async function readLaboratoryAttendanceSession(labName) {
   return readJson(`/api/attendance/labs/${encodeLabName(labName)}/session`, "读取试验间登录信息失败");
 }
 
+async function listLaboratoryAttendanceSessions() {
+  return readJson("/api/attendance/lab-sessions", "读取试验间登录信息失败");
+}
+
 async function loginLaboratoryAttendance({ labName, password, username }) {
   return writeJson(`/api/attendance/labs/${encodeLabName(labName)}/login`, {
     body: {
@@ -146,6 +150,7 @@ async function deleteAttendanceUser(userId, payload = {}) {
 export {
   createAttendanceUser,
   deleteAttendanceUser,
+  listLaboratoryAttendanceSessions,
   listAttendanceUsers,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,
