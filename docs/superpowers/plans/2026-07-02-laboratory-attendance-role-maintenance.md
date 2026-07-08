@@ -4,7 +4,7 @@
 
 **Goal:** Add per-laboratory employee login, attendance tracking, completion logout prompting, and System-page role/employee maintenance.
 
-**Architecture:** Add a focused backend attendance router with in-memory development storage matching the project's existing lightweight CRUD style. Frontend integration is split between a small attendance API client, laboratory page state/guarding, and System page table/form updates. Protected laboratory actions use a single guard so mock and MQTT UI flows share the same business rule.
+**Architecture:** Add a focused backend attendance router with in-memory development storage matching the project's existing lightweight CRUD style. Frontend integration is split between a small attendance API client, laboratory page state/guarding, and System page table/form updates. Protected laboratory actions use a single guard so REST/API and MQTT UI flows share the same business rule.
 
 **Tech Stack:** FastAPI, Pydantic, Vue 3 composition API, Vitest, pytest.
 

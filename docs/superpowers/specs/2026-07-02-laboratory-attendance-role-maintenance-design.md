@@ -38,5 +38,5 @@ Add per-laboratory employee attendance to the laboratory console and replace the
 
 ## Notes
 
-- This feature is independent of the physical device interface. Mock mode and MQTT mode continue using the same UI guard and attendance API.
+- This feature is independent of the physical device interface. REST/API flows and MQTT mode continue using the same UI guard and attendance API.
 - No git commit is created by this implementation because project rules require explicit user approval for commits.

@@ -97,7 +97,7 @@ Rename or alias `buildSaltSprayLaboratoryView` to a generic export while preserv
 
 - [ ] **Step 3: Write failing runtime tests**
 
-Mock route query `lab=冲击一室` and master labs containing `LAB_IMPACT_1`. Assert the page renders `冲击一室操作台`, filters to `冲击一室`, and MQ payload uses the current lab id/code rather than `salt-spray-lab-01`.
+Set route query `lab=冲击一室` and master labs containing `LAB_IMPACT_1`. Assert the page renders `冲击一室操作台`, filters to `冲击一室`, and MQ payload uses the current lab id/code rather than `salt-spray-lab-01`.
 
 Run: `rtk npm run test:run -- src/modules/laboratory/page.runtime.test.js`
 Expected: FAIL before implementation.

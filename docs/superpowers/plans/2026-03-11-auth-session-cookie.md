@@ -131,10 +131,10 @@ git commit -m "feat: add auth session and logout endpoints"
 
 ```js
 test("fetchAuthSession hydrates session from backend", async () => {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+  vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: true,
     json: async () => ({ username: "admin", module: "visual", logged_at: "2026-03-11T00:00:00Z" }),
-  }));
+  })));
 
   const session = await fetchAuthSession();
 
@@ -144,7 +144,7 @@ test("fetchAuthSession hydrates session from backend", async () => {
 
 test("fetchAuthSession clears malformed local cache when backend rejects", async () => {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ username: "admin", module: "visual", logged_at: "x" }));
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ detail: "Unauthorized" }) }));
+  vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ detail: "Unauthorized" }) })));
 
   const session = await fetchAuthSession();
 

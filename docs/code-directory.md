@@ -28,7 +28,7 @@
 - `app/api/routes/crud_factory.py`：通用 CRUD 路由工厂。
 - `app/core/`：后端核心业务和基础设施。
 - `app/core/config.py`：运行配置、环境变量和应用设置。
-- `app/core/storage_backend.py`：统一存储后端抽象、快照归一化、mock/MySQL 后端选择。
+- `app/core/storage_backend.py`：统一存储后端抽象、快照归一化、本地 JSON/MySQL 后端选择。
 - `app/core/mysql_storage_backend.py`：MySQL 存储后端兼容入口和数据库读写编排，并重导出拆分后的 codec、mapper、schema、master reader、snapshot、loader、replacer、sample write/load、status、status SQL helper 以保持旧导入路径可用。
 - `app/core/mysql_storage_codecs.py`：MySQL 存储层纯 codec/helper，负责文本、时间、数字、布尔、meta 编解码。
 - `app/core/mysql_storage_mappers.py`：MySQL 存储层纯 row mapper，负责任务、实验、实验运行、排班、设备、数据流、样品入库行、样品重建和派发目标恢复等前端数据与数据库行之间的转换。

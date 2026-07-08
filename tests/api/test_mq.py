@@ -632,7 +632,7 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     assert calls == [("shutdown", "mqtt")]
 
 
-def test_interface_mode_endpoint_starts_subscriber_and_rejects_mock_mode():
+def test_interface_mode_endpoint_starts_subscriber_and_rejects_unsupported_mode():
     calls = []
 
     class FakeHandle:
@@ -667,9 +667,9 @@ def test_interface_mode_endpoint_starts_subscriber_and_rejects_mock_mode():
         "reason": "",
     }
 
-    mock_response = client.post("/api/mq/interface-mode", json={"mode": "mock"})
-    assert mock_response.status_code == 422
-    assert mock_response.json()["detail"] == "mode must be mqtt"
+    unsupported_response = client.post("/api/mq/interface-mode", json={"mode": "legacy"})
+    assert unsupported_response.status_code == 422
+    assert unsupported_response.json()["detail"] == "mode must be mqtt"
     assert calls == [("start", True)]
 
 
@@ -1425,7 +1425,7 @@ def test_process_experiment_started_prefers_ready_context_over_payload_experimen
     assert repository.events[0]["experiment_no"] == "SYLU-2026-06-002-C"
 
 
-def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
+def test_mysql_start_run_for_context_uses_shared_start_rules(monkeypatch):
     class FakeStorage:
         def __init__(self):
             self.writes = []
@@ -1528,7 +1528,7 @@ def test_mysql_start_run_for_context_uses_mock_start_rules(monkeypatch):
     assert written["mes.experiment_run_trays"][0]["sub_experiment_code"] == "EXP-001-AXIS-X"
 
 
-def test_mysql_start_run_for_context_rejects_returned_trays_with_mock_start_rules(monkeypatch):
+def test_mysql_start_run_for_context_rejects_returned_trays_with_shared_start_rules(monkeypatch):
     class FakeStorage:
         def __init__(self):
             self.writes = []
@@ -2412,7 +2412,7 @@ def test_mysql_find_current_context_rejects_old_lab_after_tray_moved_to_next_lab
     assert connection.cursor_obj.schedule_query_executed is False
 
 
-def test_mysql_mark_run_ended_keeps_mock_completion_history_idempotent(monkeypatch):
+def test_mysql_mark_run_ended_keeps_shared_completion_history_idempotent(monkeypatch):
     completion_detail = "TASK-001 / 振动实验 / 实验已完成"
 
     class FakeStorage:
@@ -2623,7 +2623,7 @@ def test_mysql_mark_run_ended_rejects_missing_run_tray_relation_without_run_tray
     assert storage.writes == []
 
 
-def test_mysql_mark_run_ended_uses_mock_completion_rules(monkeypatch):
+def test_mysql_mark_run_ended_uses_shared_completion_rules(monkeypatch):
     class FakeStorage:
         def __init__(self):
             self.writes = []

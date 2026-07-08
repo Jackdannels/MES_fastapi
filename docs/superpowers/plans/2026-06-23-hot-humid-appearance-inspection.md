@@ -45,7 +45,7 @@
 **Files:**
 - Read-only unless a small missing test is clearly required.
 
-- [ ] Audit mock/API and MQTT/event paths to confirm both reach the shared backend rule or shared storage state.
+- [ ] Audit REST/API and MQTT/event paths to confirm both reach the shared backend rule or shared storage state.
 - [ ] Check for remaining literal `["盐雾", "霉菌"]` or `("盐雾", "霉菌")` eligibility rules.
 - [ ] Recommend exact backend and frontend verification commands.
 - [ ] After integration, verify no route still rejects 高低温湿热一室/二室 while allowing salt/mold.

@@ -30,17 +30,17 @@ Add assertions that:
 Run: `npm run test:run -- src/modules/process/page.runtime.test.js`
 Expected: FAIL because the current page still renders `补充信息` and left-side sample details.
 
-### Task 2: Update mocked selected tray data for list rendering
+### Task 2: Update selected tray test data for list rendering
 
 **Files:**
 - Modify: `frontend/src/modules/process/page.runtime.test.js`
 
-- [ ] **Step 1: Add explicit `sampleCodes` arrays to the mocked tray rows**
+- [ ] **Step 1: Add explicit `sampleCodes` arrays to the test tray rows**
 
 - [ ] **Step 2: Re-run the test**
 
 Run: `npm run test:run -- src/modules/process/page.runtime.test.js`
-Expected: FAIL with UI mismatch, not mock data errors.
+Expected: FAIL with UI mismatch, not test data errors.
 
 ## Chunk 2: Drawer UI
 

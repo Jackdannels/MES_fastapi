@@ -28,7 +28,7 @@ describe("industrial blackbox module theme coverage", () => {
     expect(samples).toContain(".samples-module-card");
     expect(samples).toContain(".sample-flow-card");
     expect(login).toContain(".login-card");
-    expect(login).toContain(".login-interface-mode__option.is-active");
+    expect(login).toContain(".login-submit");
     expect(process).toContain(".process-control-summary-item");
     expect(process).toContain(".process-lab-card");
     expect(overview).toContain(".task-overview-module-card");

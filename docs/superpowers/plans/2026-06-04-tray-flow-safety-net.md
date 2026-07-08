@@ -77,7 +77,7 @@ Run: `rtk npm --prefix frontend run test:run -- src/modules/samples/samplesFlowM
 
 Fix only experiment-scoped time/status selection.
 
-### Task 4: MQTT/Mock Start Guard Regression
+### Task 4: MQTT Start Guard Regression
 
 **Files:**
 - Modify: `frontend/src/modules/process/useProcessLabs.test.js`
@@ -86,7 +86,7 @@ Fix only experiment-scoped time/status selection.
 
 - [x] **Step 1: Write/extend tests**
 
-Assert a tray completed in impact and moved to temperature shock cannot be started from impact in mock or MQTT.
+Assert a tray completed in impact and moved to temperature shock cannot be started from impact through MQTT or REST/API flows.
 
 - [x] **Step 2: Run targeted frontend/backend tests**
 

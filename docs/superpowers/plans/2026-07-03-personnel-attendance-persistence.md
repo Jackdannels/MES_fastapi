@@ -4,7 +4,7 @@
 
 **Goal:** Persist personnel accounts and attendance work intervals, show a personnel work-time overview before base configuration, and count concurrent same-person laboratory work additively.
 
-**Architecture:** Move attendance business rules behind a shared service used by REST/mock flows and MQTT event processing. Store personnel, lab sessions, and work intervals in repository-backed records, with an in-memory repository for tests and a MySQL repository for production database persistence. UI labels change from system information to personnel information, and work-time rows are rendered in a separate section.
+**Architecture:** Move attendance business rules behind a shared service used by REST/API flows and MQTT event processing. Store personnel, lab sessions, and work intervals in repository-backed records, with an in-memory repository for tests and a MySQL repository for production database persistence. UI labels change from system information to personnel information, and work-time rows are rendered in a separate section.
 
 **Tech Stack:** FastAPI, pytest, MySQL via existing connection helpers, Vue 3, Vitest.
 
@@ -42,7 +42,7 @@
 - [ ] Seed default demo users only when no personnel rows exist.
 - [ ] Use the existing DB connection helpers for production persistence.
 
-## Chunk 2: Mock/MQTT Lifecycle Integration
+## Chunk 2: REST/MQTT Lifecycle Integration
 
 ### Task 4: Failing tests for lifecycle integration
 

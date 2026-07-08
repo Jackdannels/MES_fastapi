@@ -77,9 +77,9 @@ Expected: PASS
 **Files:**
 - Modify only if necessary: `frontend/src/modules/process/page.runtime.test.js`
 
-- [ ] **Step 1: Update runtime mocks/assertions if the filtered tray counts change**
+- [ ] **Step 1: Update runtime test doubles/assertions if the filtered tray counts change**
 
-Only adjust runtime tests if the new scoped behavior changes existing mocked expectations.
+Only adjust runtime tests if the new scoped behavior changes existing test-double expectations.
 
 - [ ] **Step 2: Run runtime verification**
 

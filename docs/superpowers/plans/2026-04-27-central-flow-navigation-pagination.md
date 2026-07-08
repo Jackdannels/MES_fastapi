@@ -458,7 +458,7 @@ Expected: process event refresh test passes and existing behavior remains green.
 
 - [ ] **Step 1: Add runtime assertion**
 
-After mounting the page, dispatch `new CustomEvent(SAMPLES_UPDATED_EVENT)` and assert storage fetch is called again or rendered flow text updates from changed mock storage.
+After mounting the page, dispatch `new CustomEvent(SAMPLES_UPDATED_EVENT)` and assert storage fetch is called again or rendered flow text updates from changed test storage.
 
 - [ ] **Step 2: Run and verify RED**
 

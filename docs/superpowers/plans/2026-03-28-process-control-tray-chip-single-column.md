@@ -19,7 +19,7 @@
 
 - [ ] **Step 1: Write the failing test**
 
-Assert that in a multi-tray mocked drawer:
+Assert that in a multi-tray test-fixture drawer:
 - the tray chip container has a single-column/dense class
 - the tray chip still has the emphasis class
 
