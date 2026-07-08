@@ -159,9 +159,39 @@
         <input v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" />
       </div>
     </div>
+    <AppFeedback
+      v-if="adminActionError"
+      :message="adminActionError"
+      tone="error"
+      data-testid="employee-admin-action-feedback"
+      @close="adminActionError = ''"
+    />
+    <AppFeedback
+      v-if="adminActionSuccess"
+      :message="adminActionSuccess"
+      tone="success"
+      data-testid="employee-admin-action-feedback"
+      @close="adminActionSuccess = ''"
+    />
     <template #footer>
-      <button class="action-btn" data-testid="employee-reset-password" type="button" @click="resetEmployeePassword">重置密码</button>
-      <button class="action-btn danger" data-testid="employee-delete" type="button" @click="deleteEmployee">删除账号</button>
+      <button
+        class="action-btn"
+        data-testid="employee-reset-password"
+        type="button"
+        :disabled="adminActionSubmitting"
+        @click="resetEmployeePassword"
+      >
+        重置密码
+      </button>
+      <button
+        class="action-btn danger"
+        data-testid="employee-delete"
+        type="button"
+        :disabled="adminActionSubmitting"
+        @click="deleteEmployee"
+      >
+        删除账号
+      </button>
       <button class="action-btn secondary" type="button" @click="closeEmployeeDrawer">关闭</button>
     </template>
   </AppModal>
@@ -221,7 +251,10 @@ import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { useSystemPage } from "./useSystemPage";
 
 const {
+  adminActionError,
   adminActionFields,
+  adminActionSubmitting,
+  adminActionSuccess,
   closeEmployeeDrawer,
   closeEmployeeModal,
   createEmployeeError,

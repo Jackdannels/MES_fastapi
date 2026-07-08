@@ -68,6 +68,9 @@ function useSystemPage() {
     adminUsername: "",
     newPassword: "",
   });
+  const adminActionError = ref("");
+  const adminActionSubmitting = ref(false);
+  const adminActionSuccess = ref("");
   const qrPayload = ref("");
   const qrSvg = ref("");
   const qrError = ref("");
@@ -166,34 +169,57 @@ function useSystemPage() {
       adminUsername: "",
       newPassword: "",
     };
+    adminActionError.value = "";
+    adminActionSuccess.value = "";
     editEmployeeDialog.openWith(employee);
   };
 
   const closeEmployeeDrawer = () => {
+    adminActionError.value = "";
+    adminActionSuccess.value = "";
     editEmployeeDialog.close();
   };
 
   const resetEmployeePassword = async () => {
     const employee = editEmployeeDialog.payload.value;
-    if (!employee?.id) {
+    if (!employee?.id || adminActionSubmitting.value) {
       return;
     }
-    await resetAttendanceUserPassword(employee.id, adminActionFields.value);
-    adminActionFields.value = {
-      ...adminActionFields.value,
-      newPassword: "",
-    };
+    adminActionError.value = "";
+    adminActionSuccess.value = "";
+    adminActionSubmitting.value = true;
+    try {
+      await resetAttendanceUserPassword(employee.id, adminActionFields.value);
+      adminActionFields.value = {
+        ...adminActionFields.value,
+        newPassword: "",
+      };
+      adminActionSuccess.value = "密码已重置";
+    } catch (error) {
+      adminActionError.value = String(error?.message || error || "重置密码失败");
+    } finally {
+      adminActionSubmitting.value = false;
+    }
   };
 
   const deleteEmployee = async () => {
     const employee = editEmployeeDialog.payload.value;
-    if (!employee?.id) {
+    if (!employee?.id || adminActionSubmitting.value) {
       return;
     }
-    await deleteAttendanceUser(employee.id, adminActionFields.value);
-    employeeRows.value = employeeRows.value.filter((row) => row.id !== employee.id);
-    refreshSummaryCards();
-    closeEmployeeDrawer();
+    adminActionError.value = "";
+    adminActionSuccess.value = "";
+    adminActionSubmitting.value = true;
+    try {
+      await deleteAttendanceUser(employee.id, adminActionFields.value);
+      employeeRows.value = employeeRows.value.filter((row) => row.id !== employee.id);
+      refreshSummaryCards();
+      closeEmployeeDrawer();
+    } catch (error) {
+      adminActionError.value = String(error?.message || error || "删除账号失败");
+    } finally {
+      adminActionSubmitting.value = false;
+    }
   };
 
   const renderQrPayload = async (payload) => {
@@ -234,17 +260,25 @@ function useSystemPage() {
       if (String(row.id) !== String(nextEmployee.id)) {
         return row;
       }
+      const mergedEmployee = createEmployeeRow({
+        ...row,
+        ...nextUser,
+      });
       return {
         ...row,
-        ...nextEmployee,
-        form: createEmployeeForm(nextEmployee),
+        ...mergedEmployee,
+        form: createEmployeeForm(mergedEmployee),
       };
     });
     if (qrEmployeeDialog.payload.value && String(qrEmployeeDialog.payload.value.id) === String(nextEmployee.id)) {
+      const mergedEmployee = createEmployeeRow({
+        ...qrEmployeeDialog.payload.value,
+        ...nextUser,
+      });
       qrEmployeeDialog.payload.value = {
         ...qrEmployeeDialog.payload.value,
-        ...nextEmployee,
-        form: createEmployeeForm(nextEmployee),
+        ...mergedEmployee,
+        form: createEmployeeForm(mergedEmployee),
       };
     }
     refreshSummaryCards();
@@ -314,7 +348,10 @@ function useSystemPage() {
   });
 
   return {
+    adminActionError,
     adminActionFields,
+    adminActionSubmitting,
+    adminActionSuccess,
     closeEmployeeDrawer,
     closeEmployeeModal,
     closeEmployeeQrModal,

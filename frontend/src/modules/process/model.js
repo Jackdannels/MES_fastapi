@@ -1,6 +1,6 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
-import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { formatBusinessDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -50,16 +50,11 @@ const resolveRunStatus = (entry) => normalizeText(entry?.run_tray_status || entr
 
 // 过程卡片只展示月/日 + 时:分，因此在这里统一格式化。
 const formatDateTime = (value) => {
-  const time = parseBusinessDateTimeToMs(value);
-  if (!Number.isFinite(time)) {
+  const dateTime = formatBusinessDateTime(value);
+  if (!dateTime) {
     return "-";
   }
-  const date = new Date(time);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${month}/${day} ${hours}:${minutes}`;
+  return `${dateTime.slice(5, 7)}/${dateTime.slice(8, 10)} ${dateTime.slice(11, 16)}`;
 };
 
 const scheduleIsActiveAt = (schedule, now) => {
@@ -200,10 +195,9 @@ const scheduleExperimentIsCompleted = ({ experiments, experimentRunSteps = [], e
   return statuses.length > 0 && statuses.every((status) => COMPLETED_TRAY_STATUSES.has(normalizeExperimentStatusLabel(status)));
 };
 
-const experimentHasRunningTrays = ({ experimentRuns = [], experimentRunTrays = [], experimentTrays = [], schedule }) => {
+const experimentHasRunningTrays = ({ experimentRunTrays = [], experimentTrays = [], schedule }) => {
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
-  const labName = normalizeText(schedule?.device);
   if (!taskCode) {
     return false;
   }

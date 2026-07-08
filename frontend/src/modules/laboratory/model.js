@@ -6,7 +6,13 @@ import {
 } from "@/modules/samples/samplesFlowModel";
 import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
-import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import {
+  formatBusinessDateKey,
+  formatBusinessDateTime,
+  formatBusinessTime,
+  formatLocalDateTime,
+  parseBusinessDateTimeToMs,
+} from "@/lib/dateTime";
 import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import {
@@ -124,35 +130,15 @@ const addDurationToDateTime = (dateTime, durationMs) => {
 };
 
 const formatTime = (value) => {
-  const time = toTime(value);
-  if (!Number.isFinite(time)) {
-    return "-";
-  }
-  const date = new Date(time);
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
+  return formatBusinessTime(value) || "-";
 };
 
 const formatDateKey = (value) => {
-  const time = value instanceof Date ? value.getTime() : toTime(value);
-  if (!Number.isFinite(time)) {
-    return "";
-  }
-  const date = new Date(time);
-  const year = String(date.getFullYear());
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatBusinessDateKey(value);
 };
 
 const formatDateTime = (value) => {
-  const time = toTime(value);
-  if (!Number.isFinite(time)) {
-    return "-";
-  }
-  const date = new Date(time);
-  return `${formatDateKey(date)} ${formatTime(date)}`;
+  return formatBusinessDateTime(value) || "-";
 };
 
 const formatDuration = (totalSeconds) => {
@@ -3015,7 +3001,7 @@ const isAxisContinuationRow = (row) => {
 const isFutureAxisContinuationRow = (row, nowTime) =>
   (toTime(row?.startAt) || 0) > nowTime && isAxisContinuationRow(row);
 
-const rowCanBeCurrentLaboratoryTask = (row, nowTime) => {
+const rowCanBeCurrentLaboratoryTask = (row) => {
   if (!isAxisContinuationRow(row)) {
     return true;
   }
@@ -3078,10 +3064,6 @@ function buildLaboratoryWorkbenchView({
   const activeSchedules = scheduleCompletionEntries
     .filter((entry) => !entry.completed)
     .map((entry) => entry.schedule);
-  const completedScheduleRows = scheduleCompletionEntries
-    .filter((entry) => entry.completed)
-    .map((entry) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule: entry.schedule }))
-    .sort((left, right) => (toTime(left.endAt || left.startAt) || 0) - (toTime(right.endAt || right.startAt) || 0));
   const allScheduleRows = activeSchedules
     .map((schedule) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule }))
     .sort((left, right) => (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0));
@@ -3089,8 +3071,7 @@ function buildLaboratoryWorkbenchView({
   const labRef = { code: labCode, name: labName };
   const nowTime = now instanceof Date ? now.getTime() : toTime(now) || Date.now();
   const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
-  const completedLabScheduleRows = completedScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
-  const currentCandidateRows = scheduleRows.filter((row) => rowCanBeCurrentLaboratoryTask(row, nowTime));
+  const currentCandidateRows = scheduleRows.filter((row) => rowCanBeCurrentLaboratoryTask(row));
   const operationTask =
     currentCandidateRows.find((row) => normalizeText(row?.runNo))
     || currentCandidateRows.find((row) => !isFutureAxisContinuationRow(row, nowTime) && laboratoryRowHasStartedOperation(row));

@@ -359,6 +359,7 @@
   background: var(--bg-card-raised);
   color: var(--text);
   box-shadow: var(--shadow);
+  text-align: center;
 }
 
 .laboratory-action-item.is-locked {
@@ -385,6 +386,8 @@
 .laboratory-action-copy {
   display: grid;
   gap: 6px;
+  justify-items: center;
+  text-align: center;
 }
 
 .laboratory-action-copy h4 {
@@ -393,6 +396,7 @@
 }
 
 .laboratory-action-button {
+  justify-content: center;
   width: 100%;
   min-height: 46px;
 }

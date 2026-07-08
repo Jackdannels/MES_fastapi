@@ -19,16 +19,11 @@ import {
   validateLaboratoryTrayScan,
 } from "./model";
 import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFallback";
+import { formatBusinessDateTime, formatBusinessTime } from "@/lib/dateTime";
 
 const NOW = new Date("2026-04-02T10:00:00.000Z");
-const toDisplayedTime = (value) => {
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-};
-const toDisplayedDateTime = (value) => {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${toDisplayedTime(value)}`;
-};
+const toDisplayedTime = (value) => formatBusinessTime(value);
+const toDisplayedDateTime = (value) => formatBusinessDateTime(value);
 
 describe("laboratory model", () => {
   afterEach(() => {
@@ -6979,6 +6974,36 @@ describe("laboratory model", () => {
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "振动试验部分完成 3/6轴")).not.toEqual(
       expect.objectContaining({ active: true }),
     );
+  });
+
+  test("buildSaltSprayLaboratoryView formats schedule labels in Beijing business time", () => {
+    const view = buildSaltSprayLaboratoryView({
+      experiments: [
+        { task_code: "SYLU-2026-07-001", experiment_code: "SYLU-2026-07-001-A", experiment_name: "盐雾试验-A" },
+      ],
+      now: new Date("2026-07-03T01:30:00.000Z"),
+      samples: [],
+      schedules: [
+        {
+          id: "schedule-beijing",
+          task_code: "SYLU-2026-07-001",
+          experiment_code: "SYLU-2026-07-001-A",
+          device: "盐雾试验室",
+          start_at: "2026-07-03T01:00:00.000Z",
+          end_at: "2026-07-03T03:00:00.000Z",
+        },
+      ],
+      tasks: [
+        { code: "SYLU-2026-07-001", name: "盐雾连接器", test_type: "盐雾试验" },
+      ],
+    });
+
+    expect(view.scheduleRows[0]).toEqual(expect.objectContaining({
+      dateTimeRange: "2026-07-03 09:00 - 2026-07-03 11:00",
+      endDateTimeLabel: "2026-07-03 11:00",
+      startDateTimeLabel: "2026-07-03 09:00",
+      timeRange: "09:00 - 11:00",
+    }));
   });
 
   test("applyLaboratoryTaskStep only updates the targeted trays for the current task", () => {

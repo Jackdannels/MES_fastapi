@@ -1,4 +1,10 @@
 import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import {
+  formatBusinessDateKey,
+  formatBusinessDateTime,
+  formatBusinessTime,
+  parseBusinessDateTimeToMs,
+} from "@/lib/dateTime";
 
 const RETENTION_DEVICE = "恒温恒湿间（暂存间）";
 const RETENTION_KEYWORD = "暂存间";
@@ -20,27 +26,16 @@ const isRetentionDevice = (value) => {
 
 // 输入可能来自 ISO 字符串、空值或 Date 实例，统一在这里做容错解析。
 const parseDate = (value) => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const time = parseBusinessDateTimeToMs(value);
+  return Number.isFinite(time) ? new Date(time) : null;
 };
 const toLocalDateValue = (date) => {
-  const source = date instanceof Date ? new Date(date.getTime()) : new Date(date);
-  if (Number.isNaN(source.getTime())) {
-    return "";
-  }
-  const year = source.getFullYear();
-  const month = String(source.getMonth() + 1).padStart(2, "0");
-  const day = String(source.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatBusinessDateKey(date);
 };
 
 // 从日期对象中提取 HH:mm，供时间输入框和展示逻辑复用。
 const toLocalTimeValue = (value) => {
-  const date = parseDate(value);
-  if (!date) {
-    return "";
-  }
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return formatBusinessTime(value);
 };
 
 const truncateToMinute = (value) => {
@@ -54,18 +49,19 @@ const truncateToMinute = (value) => {
 
 // 排程表格统一展示 yyyy-MM-dd HH:mm 格式。
 const formatDateTime = (value) => {
-  const date = parseDate(value);
-  if (!date) {
-    return "";
-  }
-  return `${toLocalDateValue(date)} ${toLocalTimeValue(date)}`;
+  return formatBusinessDateTime(value);
 };
 
 // 甘特图和默认排程窗口经常需要按天偏移。
 const addDays = (date, days) => {
-  const nextDate = new Date(date.getTime());
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
+  const dateTime = formatBusinessDateTime(date, { includeSeconds: true });
+  const match = dateTime.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2}:\d{2})$/);
+  if (!match) {
+    return null;
+  }
+  const day = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + Number(days || 0)));
+  const dateKey = `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, "0")}-${String(day.getUTCDate()).padStart(2, "0")}`;
+  return parseDate(`${dateKey}T${match[4]}`);
 };
 
 const buildSlotBoundary = (dateValue, timeValue) => parseDate(`${dateValue}T${timeValue}:00`);

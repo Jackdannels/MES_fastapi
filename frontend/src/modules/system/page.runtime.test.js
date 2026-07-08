@@ -257,6 +257,8 @@ describe("SystemPage runtime", () => {
         newPassword: "new-password",
       }),
     }));
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("密码已重置");
+    expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("");
 
     await wrapper.get('[data-testid="employee-delete"]').trigger("click");
     await flushPromises();
@@ -269,6 +271,51 @@ describe("SystemPage runtime", () => {
       }),
     }));
     expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(0);
+  });
+
+  test("shows administrator action errors without closing the employee modal", async () => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/attendance/work-times")) {
+        return { ok: true, json: async () => employees };
+      }
+      if (url.includes("/api/attendance/users/1/password/reset")) {
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ detail: "Invalid administrator credentials" }),
+        };
+      }
+      if (url.includes("/api/attendance/users/1") && (options.method || "GET") === "DELETE") {
+        return {
+          ok: false,
+          status: 401,
+          json: async () => ({ detail: "Invalid administrator credentials" }),
+        };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="admin-username-input"]').setValue("bad-admin");
+    await wrapper.get('[data-testid="admin-password-input"]').setValue("wrong");
+    await wrapper.get('[data-testid="reset-password-input"]').setValue("new-password");
+    await wrapper.get('[data-testid="employee-reset-password"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("Invalid administrator credentials");
+    expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("new-password");
+
+    await wrapper.get('[data-testid="employee-delete"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(1);
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("Invalid administrator credentials");
   });
 
   test("generates an employee QR code from the personnel management table", async () => {
@@ -286,9 +333,14 @@ describe("SystemPage runtime", () => {
             qrPayload: "MES-ATTENDANCE:QR:test-token-001",
             qrToken: "test-token-001",
             user: {
-              ...employees[0],
+              active: true,
+              allowedLabs: ["*"],
+              employeeName: "张三",
               hasQrToken: true,
+              id: 1,
               qrTokenCreatedAt: "2026-07-02T16:20:00+08:00",
+              roleName: "试验员",
+              username: "zhangsan",
             },
           }),
         };
@@ -310,6 +362,7 @@ describe("SystemPage runtime", () => {
     }));
     expect(wrapper.get('[data-testid="employee-qr-modal"]').text()).toContain("张三");
     expect(wrapper.get('[data-testid="employee-qr-payload"]').text()).toContain("MES-ATTENDANCE:QR:test-token-001");
+    expect(wrapper.get("#employee-worktime-table").text()).toContain("冲击一室");
   });
 
   test("opens an existing employee QR code without resetting it", async () => {

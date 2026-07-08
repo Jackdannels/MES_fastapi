@@ -295,8 +295,11 @@ function resolveDeviceDotClass(status) {
   if (normalized === DEVICE_STATUS_AVAILABLE) {
     return "timeline-dot--available";
   }
-  if (normalized === DEVICE_STATUS_REPAIR || normalized === DEVICE_STATUS_CARE) {
-    return "timeline-dot--attention";
+  if (normalized === DEVICE_STATUS_REPAIR) {
+    return "timeline-dot--repair";
+  }
+  if (normalized === DEVICE_STATUS_CARE) {
+    return "timeline-dot--care";
   }
   return "timeline-dot--available";
 }

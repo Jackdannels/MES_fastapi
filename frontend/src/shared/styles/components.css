@@ -936,6 +936,14 @@ input[type="datetime-local"].format-hint-empty::-webkit-calendar-picker-indicato
   background: #f43f5e;
 }
 
+#dashboard-device-list .timeline-dot--repair {
+  background: #f43f5e;
+}
+
+#dashboard-device-list .timeline-dot--care {
+  background: #f59e0b;
+}
+
 #dashboard-device-list .timeline-dot--disabled {
   background: #94a3b8;
 }

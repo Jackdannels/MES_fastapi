@@ -37,6 +37,27 @@ describe("processLabModel", () => {
     );
   });
 
+  test("buildProcessLabCards formats schedule time in Beijing business time", () => {
+    const cards = buildProcessLabCards(
+      [{ code: "LAB_SALT", name: "Salt Spray Lab", testType: "Salt Spray Test" }],
+      [{ code: "TASK-SALT", test_type: "Salt Spray Test" }],
+      [
+        {
+          device: "Salt Spray Lab",
+          lab_code: "LAB_SALT",
+          end_at: "2026-07-03T02:30:00.000Z",
+          start_at: "2026-07-03T01:00:00.000Z",
+          task_code: "TASK-SALT",
+        },
+      ],
+      Date.parse("2026-07-03T01:30:00.000Z"),
+    );
+
+    expect(cards.find((card) => card.name === "Salt Spray Lab")).toEqual(
+      expect.objectContaining({ scheduleTime: "07/03 09:00 - 07/03 10:30" }),
+    );
+  });
+
   test("buildProcessLabCards returns all formal labs and marks unscheduled labs idle", () => {
     const cards = buildProcessLabCards(
       [...labs, { name: "Thermal Impact Lab", testType: "Thermal Impact Test" }],

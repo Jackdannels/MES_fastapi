@@ -353,9 +353,9 @@ describe("dashboard model", () => {
 
     expect(viewModel.deviceItems).toEqual([
       expect.objectContaining({ code: "LAB-AVAILABLE", status: "可用", dotClass: "timeline-dot--available" }),
-      expect.objectContaining({ code: "LAB-MAINTAIN", status: "维修", dotClass: "timeline-dot--attention" }),
-      expect.objectContaining({ code: "LAB-CARE", status: "保养", dotClass: "timeline-dot--attention" }),
-      expect.objectContaining({ code: "LAB-DISABLED", status: "维修", dotClass: "timeline-dot--attention" }),
+      expect.objectContaining({ code: "LAB-MAINTAIN", status: "维修", dotClass: "timeline-dot--repair" }),
+      expect.objectContaining({ code: "LAB-CARE", status: "保养", dotClass: "timeline-dot--care" }),
+      expect.objectContaining({ code: "LAB-DISABLED", status: "维修", dotClass: "timeline-dot--repair" }),
       expect.objectContaining({ code: "LAB-RUNNING", status: "可用", dotClass: "timeline-dot--available" }),
     ]);
   });
