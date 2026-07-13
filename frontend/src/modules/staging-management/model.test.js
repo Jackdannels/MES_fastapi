@@ -2392,6 +2392,12 @@ describe("staging-management model", () => {
 
     expect(row).toEqual(expect.objectContaining({ status: "待入库" }));
     expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toEqual(expect.objectContaining({
+      action: "stock_in",
+      location: "外观检测间",
+      room: "appearance",
+      status: "实验后外观检测间存放",
+    }));
     expect(result.row).toEqual(expect.objectContaining({ status: "实验后外观检测间存放" }));
     expect(result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`)).toMatchObject({
       location: "外观检测间",
@@ -2872,6 +2878,12 @@ describe("staging-management model", () => {
     const sectionsAfterStockIn = buildZancunInventorySections(rowsAfterStockIn, { room: "appearance" });
 
     expect(result.error).toBe("");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toEqual(expect.objectContaining({
+      action: "stock_in",
+      location: "外观检测间",
+      room: "appearance",
+      status: "实验前外观检测间存放",
+    }));
     expect(updatedSample?.trays[0]).toMatchObject({
       status: "实验前外观检测间存放",
       target_experiment_code: "SYLU-2026-06-031-A",

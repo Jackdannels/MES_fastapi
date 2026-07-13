@@ -29,7 +29,10 @@ const resolveLabHealth = (device) => {
   if (status.includes("停用") || status.includes("禁用") || status.includes("不可用")) {
     return { alert: "设备停用", healthLabel: "停用", healthState: "disabled", status };
   }
-  if (status.includes("维护") || status.includes("维修") || status.includes("校准") || status.includes("保养")) {
+  if (status.includes("保养")) {
+    return { alert: "设备保养中", healthLabel: "保养", healthState: "upkeep", status };
+  }
+  if (status.includes("维护") || status.includes("维修") || status.includes("校准")) {
     return { alert: "设备维护中", healthLabel: "维护", healthState: "maintenance", status };
   }
   return { alert: "", healthLabel: "正常", healthState: "ok", status };

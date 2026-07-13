@@ -37,6 +37,24 @@ const buildExcludedRoomIdentitySet = (devices) => {
   });
   return excluded;
 };
+const resolveDeviceIssueTone = (...values) => {
+  const text = values.map(normalizeText).filter(Boolean).join(" ");
+  if (text.includes("保养")) {
+    return "upkeep";
+  }
+  if (text.includes("维护") || text.includes("校准")) {
+    return "maintenance";
+  }
+  if (
+    text.includes("故障")
+    || text.includes("维修")
+    || text.includes("停用")
+    || text.includes("不可用")
+  ) {
+    return "repair";
+  }
+  return "";
+};
 const statusIsRepair = (value) => {
   const text = normalizeText(value);
   return text.includes("故障")
@@ -85,6 +103,14 @@ const buildExperimentByKey = (experiments) => {
 const findDeviceRowForLab = (deviceRows, labName) => {
   const lab = normalizeText(labName);
   return asArray(deviceRows).find((device) =>
+    normalizeText(device?.code) === lab
+    || normalizeText(device?.name) === lab
+    || normalizeText(device?.location) === lab,
+  ) || null;
+};
+const findRawDeviceForLab = (devices, labName) => {
+  const lab = normalizeText(labName);
+  return asArray(devices).find((device) =>
     normalizeText(device?.code) === lab
     || normalizeText(device?.name) === lab
     || normalizeText(device?.location) === lab,
@@ -193,7 +219,7 @@ const trayItemsFromCodes = (trayCodes, sampleCount) => {
   });
 };
 
-const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, taskByCode }) => {
+const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, snapshot, taskByCode }) => {
   const labRef = labRefFromName(labName);
   const workbench = buildLaboratoryWorkbenchView({
     tasks: snapshot.tasks,
@@ -233,10 +259,11 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, task
   const remainingSeconds = Number(workbench.runningExperiment?.remainingSeconds) || 0;
   const isUrgentRunning = countdown.active && remainingSeconds <= URGENT_REMAINING_SECONDS;
   const isCompleted = Boolean(completedTask) || statusIsCompleted(currentTask?.status);
-  const repair = statusIsRepair(deviceRow?.status) || statusIsRepair(deviceRow?.safetyStatus);
+  const issueTone = resolveDeviceIssueTone(rawDevice?.status, deviceRow?.status, deviceRow?.safetyStatus);
+  const repair = Boolean(issueTone) || statusIsRepair(deviceRow?.status) || statusIsRepair(deviceRow?.safetyStatus);
   const taskCode = normalizeText(displayTask?.taskCode);
   const statusTone = repair
-    ? "repair"
+    ? issueTone || "repair"
     : isUrgentRunning || isCompleted
       ? "urgent"
       : countdown.active || normalizeText(deviceRow?.status) === "工作中"
@@ -245,7 +272,7 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, snapshot, task
           ? "task"
           : "idle";
   const statusLabel = repair
-    ? normalizeText(deviceRow?.status) || "维修"
+    ? normalizeText(rawDevice?.status) || normalizeText(deviceRow?.status) || "维修"
     : isUrgentRunning
       ? formatUrgentMinutes(remainingSeconds)
       : isCompleted
@@ -310,6 +337,7 @@ function buildLabCurrentTaskMatrixView(input = {}) {
     experimentByKey,
     labName,
     now,
+    rawDevice: findRawDeviceForLab(snapshot.devices, labName),
     snapshot,
     taskByCode,
   }));
@@ -321,11 +349,13 @@ function buildLabCurrentTaskMatrixView(input = {}) {
         summary.task += 1;
       }
       if (lab.statusTone === "repair") summary.repair += 1;
+      if (lab.statusTone === "maintenance") summary.maintenance += 1;
+      if (lab.statusTone === "upkeep") summary.upkeep += 1;
       if (lab.statusTone === "running") summary.running += 1;
       if (lab.statusTone === "urgent") summary.urgent += 1;
       return summary;
     },
-    { repair: 0, running: 0, scheduled: 0, task: 0, total: 0, urgent: 0 },
+    { maintenance: 0, repair: 0, running: 0, scheduled: 0, task: 0, total: 0, upkeep: 0, urgent: 0 },
   );
 
   return {

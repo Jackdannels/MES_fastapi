@@ -3,6 +3,7 @@ import threading
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 
 class FakeStorage:
@@ -1689,6 +1690,8 @@ def test_storage_tray_stock_in_action_allows_dispatched_pre_experiment_appearanc
     assert updated["history"][0]["action"] == "外观检测间扫码入库"
     assert storage.read("mes.staging_events")[-1]["room"] == "appearance"
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_in"
+    assert storage.read("mes.staging_events")[-1]["location"] == "外观检测间"
+    assert storage.read("mes.staging_events")[-1]["status"] == "实验前外观检测间存放"
 
 
 def test_storage_tray_stock_in_action_allows_completed_appearance_required_experiment(monkeypatch):
@@ -1797,6 +1800,8 @@ def test_storage_tray_stock_in_action_allows_completed_appearance_required_exper
     assert updated["history"][0]["action"] == "外观检测间扫码入库"
     assert storage.read("mes.staging_events")[-1]["room"] == "appearance"
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_in"
+    assert storage.read("mes.staging_events")[-1]["location"] == "外观检测间"
+    assert storage.read("mes.staging_events")[-1]["status"] == "实验后外观检测间存放"
 
 
 def test_storage_tray_stock_in_action_rejects_repeat_operation_from_latest_state(monkeypatch):
@@ -2195,6 +2200,122 @@ def test_storage_allows_deleting_partially_completed_multi_axis_schedule(monkeyp
     assert storage.read("mes.experiment_run_steps") == experiment_run_steps
 
 
+def test_storage_rejects_maintenance_window_over_existing_schedule(monkeypatch):
+    schedules = [
+        {
+            "id": "schedule-maintenance-conflict",
+            "task_code": "TASK-MAINTENANCE",
+            "experiment_code": "EXP-MAINTENANCE",
+            "device": "冲击一室",
+            "start_at": "2099-03-20 09:00",
+            "end_at": "2099-03-20 11:00",
+            "status": "已排程",
+        }
+    ]
+    devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": devices, "mes.schedules": schedules})
+    attempted_devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "status": "可用",
+            "maintenance_start_at": "2099-03-20 10:00",
+            "maintenance_end_at": "",
+            "maintenance_type": "计划保养",
+        }
+    ]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 409
+    assert "维护窗口内已有排程" in response.json()["detail"]
+    assert storage.read("mes.devices") == devices
+
+
+def test_storage_allows_unrelated_device_save_when_historical_maintenance_conflict_is_unchanged(monkeypatch):
+    schedules = [
+        {
+            "id": "schedule-historical-maintenance-conflict",
+            "task_code": "TASK-HISTORICAL",
+            "experiment_code": "EXP-HISTORICAL",
+            "device": "冲击一室",
+            "start_at": "2099-03-20 09:00",
+            "end_at": "2099-03-20 11:00",
+            "status": "已排程",
+        }
+    ]
+    devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "status": "可用",
+            "maintenance_start_at": "2099-03-20 10:00",
+            "maintenance_end_at": "",
+            "maintenance_type": "计划维修",
+        },
+        {"code": "振动一室", "name": "振动一室", "owner": "原负责人", "status": "可用"},
+    ]
+    client, storage = build_client(monkeypatch, {"mes.devices": devices, "mes.schedules": schedules})
+    attempted_devices = [
+        devices[0],
+        {**devices[1], "owner": "新负责人"},
+    ]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 200
+    assert storage.read("mes.devices") == attempted_devices
+
+
+@pytest.mark.parametrize(
+    ("start_at", "end_at"),
+    [
+        ("2099-03-20 10:00", "2099-03-20 10:00"),
+        ("2099-03-20 10:00", "2099-03-20 09:00"),
+    ],
+)
+def test_storage_rejects_maintenance_window_ending_at_or_before_start(monkeypatch, start_at, end_at):
+    existing_devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+    attempted_devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "status": "可用",
+            "maintenance_start_at": start_at,
+            "maintenance_end_at": end_at,
+            "maintenance_type": "计划维修",
+        }
+    ]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "维护结束时间必须晚于开始时间"
+    assert storage.read("mes.devices") == existing_devices
+
+
+def test_storage_rejects_maintenance_end_time_without_a_valid_start_time(monkeypatch):
+    existing_devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+    attempted_devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "status": "可用",
+            "maintenance_start_at": "",
+            "maintenance_end_at": "2099-03-20 10:00",
+            "maintenance_type": "计划维修",
+        }
+    ]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "维护结束时间需要有效的开始时间"
+    assert storage.read("mes.devices") == existing_devices
+
+
 def test_storage_schedule_patch_upserts_changed_rows_without_replacing_full_snapshot(monkeypatch):
     existing_schedule = {
         "id": "schedule-existing",
@@ -2287,6 +2408,36 @@ def test_storage_schedule_patch_rejects_concurrent_duplicate_experiment_scope(mo
     assert response.status_code == 409
     assert "重复排程" in response.json()["detail"]
     assert storage.read("mes.schedules") == [existing_schedule]
+
+
+def test_storage_schedule_patch_rejects_schedule_inside_maintenance_window(monkeypatch):
+    device = {
+        "code": "高低温湿热一室",
+        "name": "高低温湿热一室",
+        "status": "可用",
+        "maintenance_start_at": "2099-03-20 08:00",
+        "maintenance_end_at": "",
+        "maintenance_type": "计划维修",
+    }
+    schedule = {
+        "id": "schedule-maintenance-window",
+        "task_code": "TASK-MAINTENANCE-WINDOW",
+        "experiment_code": "EXP-MAINTENANCE-WINDOW",
+        "device": "高低温湿热一室",
+        "start_at": "2099-03-21 09:00",
+        "end_at": "2099-03-21 10:00",
+        "status": "已排程",
+    }
+    client, storage = build_client(monkeypatch, {"mes.devices": [device], "mes.schedules": []})
+
+    response = client.post(
+        "/api/storage/schedules/patch",
+        json={"upserts": {"mes.schedules": [schedule]}},
+    )
+
+    assert response.status_code == 409
+    assert "维护状态" in response.json()["detail"]
+    assert storage.read("mes.schedules") == []
 
 
 def test_storage_update_event_stream_yields_published_keys():

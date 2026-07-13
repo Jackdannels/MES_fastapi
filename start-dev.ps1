@@ -7,6 +7,7 @@ param(
     [int]$FrontendWaitTimeoutSeconds = 90,
     [int]$BrowserWaitTimeoutSeconds = 120,
     [switch]$DisableAutoOpenBrowser,
+    [string]$StateFile = "",
     [switch]$DryRun
 )
 
@@ -171,8 +172,20 @@ if ($DryRun) {
     exit 0
 }
 
-Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot
-Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot
+$backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot -PassThru
+$frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot -PassThru
+if ($StateFile) {
+    $stateDirectory = Split-Path -Parent $StateFile
+    if ($stateDirectory) { New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null }
+    [pscustomobject]@{
+        backendCommandPid = $backendProcess.Id
+        frontendCommandPid = $frontendProcess.Id
+        browserPid = 0
+        backendPort = $BackendPort
+        frontendPort = $FrontendPort
+        frontendUrl = $frontendNetworkUrl
+    } | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
+}
 if (-not $DisableAutoOpenBrowser) {
     Start-Process -FilePath "powershell.exe" `
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encodedBrowserOpen `

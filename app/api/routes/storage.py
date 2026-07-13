@@ -30,7 +30,12 @@ from app.services.storage_tray_actions import (
     build_stock_out_updates,
     summarize_tray_row,
 )
-from app.services.storage_schedule_patch import StorageSchedulePatchError, build_schedule_patch_updates
+from app.services.storage_schedule_patch import (
+    StorageSchedulePatchError,
+    build_schedule_patch_updates,
+    validate_maintenance_time_order,
+    validate_schedule_maintenance_conflicts,
+)
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -1407,6 +1412,50 @@ def _read_current_storage_value(storage: Any, current_snapshot: Dict[str, Any] |
     return storage.read(key)
 
 
+def _device_update_key(device: Any) -> str:
+    if not isinstance(device, dict):
+        return ""
+    return _normalize_text(device.get("code") or device.get("id") or device.get("lab_code") or device.get("labCode"))
+
+
+def _changed_device_rows(current_devices: Any, next_devices: Any) -> list[dict[str, Any]]:
+    current_rows = current_devices if isinstance(current_devices, list) else []
+    next_rows = next_devices if isinstance(next_devices, list) else []
+    current_by_key = {
+        _device_update_key(device): device
+        for device in current_rows if isinstance(device, dict) and _device_update_key(device)
+    }
+    return [
+        device
+        for device in next_rows if isinstance(device, dict)
+        if not _device_update_key(device) or current_by_key.get(_device_update_key(device)) != device
+    ]
+
+
+def _validate_device_schedule_maintenance_conflicts(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None) -> None:
+    if "mes.schedules" not in updates and "mes.devices" not in updates:
+        return
+    schedules = updates.get("mes.schedules", _read_current_storage_value(storage, current_snapshot, "mes.schedules"))
+    devices = updates.get("mes.devices", _read_current_storage_value(storage, current_snapshot, "mes.devices"))
+    changed_devices = None
+    if "mes.devices" in updates:
+        changed_devices = _changed_device_rows(
+            _read_current_storage_value(storage, current_snapshot, "mes.devices"),
+            devices,
+        )
+    try:
+        if changed_devices is not None:
+            validate_maintenance_time_order(changed_devices)
+        validate_schedule_maintenance_conflicts(
+            schedules if isinstance(schedules, list) else [],
+            devices if isinstance(devices, list) else [],
+            changed_devices=changed_devices,
+            changed_schedules=updates.get("mes.schedules") if isinstance(updates.get("mes.schedules"), list) else None,
+        )
+    except StorageSchedulePatchError as error:
+        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+
+
 def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None = None) -> None:
     if "mes.schedules" in updates:
         _validate_fixture_locked_schedules(
@@ -1418,6 +1467,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snap
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_trays"),
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_steps"),
         )
+    _validate_device_schedule_maintenance_conflicts(storage, updates, current_snapshot)
     if "mes.samples" not in updates:
         return
     current_samples = _read_current_storage_value(storage, current_snapshot, "mes.samples")

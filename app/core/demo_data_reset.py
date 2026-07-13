@@ -136,8 +136,23 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
 
 def reset_demo_data(storage_backend: Any) -> dict[str, Any]:
     current_snapshot = storage_backend.read_all() if hasattr(storage_backend, "read_all") else {}
+    current_devices = current_snapshot.get("mes.devices", []) if isinstance(current_snapshot, dict) else []
+    reset_date = datetime.now().date()
+    rng = random.SystemRandom()
     preserved_snapshot = {
-        "mes.devices": list(current_snapshot.get("mes.devices", [])) if isinstance(current_snapshot, dict) else [],
+        "mes.devices": [
+            {
+                **device,
+                "maintenance_end_at": "",
+                "maintenance_note": "",
+                "maintenance_start_at": "",
+                "maintenance_type": "",
+                "next_cal": (reset_date + timedelta(days=rng.randint(30, 60))).isoformat(),
+                "status": "可用",
+            }
+            for device in current_devices
+            if isinstance(device, dict)
+        ],
         "mes.meta": dict(current_snapshot.get("mes.meta", {})) if isinstance(current_snapshot, dict) else {},
     }
     snapshot = build_demo_reset_snapshot(preserved_snapshot)

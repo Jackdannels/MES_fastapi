@@ -191,7 +191,7 @@ describe("visualization model", () => {
     expect(maintenanceLab).toEqual(expect.objectContaining({
       countdown: expect.objectContaining({ active: false }),
       statusLabel: "保养",
-      statusTone: "repair",
+      statusTone: "upkeep",
       taskCode: "-",
     }));
     expect(waitingLab).toEqual(expect.objectContaining({
@@ -203,6 +203,35 @@ describe("visualization model", () => {
       statusTone: "task",
       taskCode: "TASK-WAIT",
     }));
+  });
+
+  test("buildLabCurrentTaskMatrixView assigns separate tones to repair maintenance and upkeep states", () => {
+    const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
+      labNames: ["维修试验室", "维护试验室", "保养试验室"],
+      now: new Date("2026-06-17T14:45:00+08:00"),
+      devices: [
+        { code: "维修试验室", name: "维修试验室", status: "维修" },
+        { code: "维护试验室", name: "维护试验室", status: "维护" },
+        { code: "保养试验室", name: "保养试验室", status: "保养" },
+      ],
+      tasks: [],
+      schedules: [],
+      experiments: [],
+      experimentRuns: [],
+      experimentRunSteps: [],
+      experimentRunTrays: [],
+      experimentTrays: [],
+      samples: [],
+    });
+
+    expect(view.labs.map((lab) => [lab.labName, lab.statusLabel, lab.statusTone])).toEqual([
+      ["维修试验室", "维修", "repair"],
+      ["维护试验室", "维护", "maintenance"],
+      ["保养试验室", "保养", "upkeep"],
+    ]);
+    expect(view.counts.repair).toBe(1);
+    expect(view.counts.maintenance).toBe(1);
+    expect(view.counts.upkeep).toBe(1);
   });
 
   test("buildLabCurrentTaskMatrixView scopes running lab trays to the active experiment run", () => {
@@ -1888,6 +1917,24 @@ describe("visualization model", () => {
     }));
   });
 
+  test("marks lab process upkeep devices as upkeep instead of maintenance", () => {
+    const panels = buildLabProcessPanels({
+      devices: [
+        { code: "霉菌试验室", status: "保养" },
+        { code: "高低温湿热二室", status: "保养" },
+      ],
+      labNames: ["霉菌试验室", "高低温湿热二室"],
+      samples: [],
+      experimentTrays: [],
+      schedules: [],
+    });
+
+    expect(panels.map((panel) => [panel.name, panel.alert, panel.healthLabel, panel.healthState, panel.state])).toEqual([
+      ["霉菌试验室", "设备保养中", "保养", "upkeep", "保养"],
+      ["高低温湿热二室", "设备保养中", "保养", "upkeep", "保养"],
+    ]);
+  });
+
   test("builds staging sample board grouped by task and tray with capacity metrics", () => {
     const view = buildStagingSamplesView({
       capacity: 100,
@@ -2345,6 +2392,124 @@ describe("visualization model", () => {
     }));
     expect(view.summary.appearanceTrayCount).toBe(1);
     expect(view.summary.currentTrayCount).toBe(0);
+  });
+
+  test("uses explicit appearance stock-in event status before falling back to sample state", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-APPEARANCE-EVENT-STATUS", name: "外观事件状态任务", test_type: "霉菌试验" }],
+      experiments: [
+        { task_code: "TASK-APPEARANCE-EVENT-STATUS", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-APPEARANCE-EVENT-STATUS", experiment_code: "EXP-MOLD", tray_code: "TP-APPEARANCE-EVENT-STATUS" },
+      ],
+      samples: [
+        {
+          code: "SP-APPEARANCE-EVENT-STATUS",
+          task_code: "TASK-APPEARANCE-EVENT-STATUS",
+          location: "霉菌试验室",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [{
+            tray_code: "TP-APPEARANCE-EVENT-STATUS",
+            status: "送至实验室",
+            target_experiment_code: "EXP-MOLD",
+            target_lab: "霉菌试验室",
+            quantity: 1,
+          }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          room: "appearance",
+          status: "实验前外观检测间存放",
+          task_code: "TASK-APPEARANCE-EVENT-STATUS",
+          time: "2026-06-06T10:00:00+08:00",
+          tray_code: "TP-APPEARANCE-EVENT-STATUS",
+        },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "appearance",
+      stagingKindLabel: "实验前外观检测间存放",
+      status: "实验前外观检测间存放",
+    }));
+  });
+
+  test("infers pre-experiment appearance storage from target experiment when stock-in event lacks status", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-APPEARANCE-INFER-PRE", name: "外观推断任务", test_type: "霉菌试验" }],
+      experiments: [
+        { task_code: "TASK-APPEARANCE-INFER-PRE", experiment_code: "EXP-MOLD", experiment_name: "霉菌试验", required_device: "霉菌试验室" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-APPEARANCE-INFER-PRE", experiment_code: "EXP-MOLD", tray_code: "TP-APPEARANCE-INFER-PRE" },
+      ],
+      samples: [
+        {
+          code: "SP-APPEARANCE-INFER-PRE",
+          task_code: "TASK-APPEARANCE-INFER-PRE",
+          location: "霉菌试验室",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [{
+            tray_code: "TP-APPEARANCE-INFER-PRE",
+            status: "送至实验室",
+            target_experiment_code: "EXP-MOLD",
+            target_lab: "霉菌试验室",
+            quantity: 1,
+          }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          room: "appearance",
+          task_code: "TASK-APPEARANCE-INFER-PRE",
+          time: "2026-06-06T10:00:00+08:00",
+          tray_code: "TP-APPEARANCE-INFER-PRE",
+        },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "appearance",
+      stagingKindLabel: "实验前外观检测间存放",
+      status: "实验前外观检测间存放",
+    }));
+  });
+
+  test("does not silently default ambiguous appearance stock-in events to post-experiment storage", () => {
+    const view = buildStagingSamplesView({
+      tasks: [{ code: "TASK-APPEARANCE-UNKNOWN", name: "外观未知任务", test_type: "冲击试验" }],
+      samples: [
+        {
+          code: "SP-APPEARANCE-UNKNOWN",
+          task_code: "TASK-APPEARANCE-UNKNOWN",
+          location: "外观检测间",
+          status: "送至实验室",
+          flow_status: "送至实验室",
+          trays: [{ tray_code: "TP-APPEARANCE-UNKNOWN", status: "送至实验室", quantity: 1 }],
+        },
+      ],
+      stagingEvents: [
+        {
+          action: "stock_in",
+          room: "appearance",
+          task_code: "TASK-APPEARANCE-UNKNOWN",
+          time: "2026-06-06T10:00:00+08:00",
+          tray_code: "TP-APPEARANCE-UNKNOWN",
+        },
+      ],
+    });
+
+    expect(view.tasks[0].trays[0]).toEqual(expect.objectContaining({
+      stagingKind: "appearance",
+      stagingKindLabel: "外观检测间存放",
+      status: "外观检测间存放",
+    }));
   });
 
   test("does not show sent-to-appearance trays as planned appearance inbound", () => {

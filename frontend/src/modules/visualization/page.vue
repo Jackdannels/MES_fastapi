@@ -848,8 +848,8 @@ const CurrentLabTasksScreen = {
         ? "running"
         : lab.statusTone === "urgent"
           ? "near"
-          : lab.statusTone === "repair"
-            ? "repair"
+          : ["repair", "maintenance", "upkeep"].includes(lab.statusTone)
+            ? lab.statusTone
             : lab.statusTone === "task" || lab.statusTone === "scheduled"
               ? "planned"
               : "";
@@ -933,6 +933,7 @@ const CurrentLabTasksScreen = {
     return () => {
       const labs = Array.isArray(props.currentLabTaskView?.labs) ? props.currentLabTaskView.labs : [];
       const counts = props.currentLabTaskView?.counts || {};
+      const issueCount = (counts.repair || 0) + (counts.maintenance || 0) + (counts.upkeep || 0);
       return h("div", { ref: matrixRoot, class: ["visual-lab-matrix-screen", "screen", props.compact ? "is-compact" : ""] }, [
         h("header", { class: "header" }, [
           h("div", [
@@ -942,7 +943,7 @@ const CurrentLabTasksScreen = {
         ]),
         h("div", { class: "stats" }, [
           h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
-          h("div", { class: "metric-repair stat red" }, [h("span", "维修/保养"), h("strong", counts.repair || 0)]),
+          h("div", { class: "metric-repair stat red" }, [h("span", "维修/维护/保养"), h("strong", issueCount)]),
           h("div", { class: "metric-running stat green" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
           h("div", { class: "metric-urgent stat orange" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
         ]),
@@ -1131,6 +1132,9 @@ const scheduleStateLabel = (state) => {
   }
   if (normalized === "conflict") {
     return "冲突";
+  }
+  if (normalized === "maintenance-conflict") {
+    return "维护冲突";
   }
   if (normalized === "completed") {
     return "已完成";
@@ -1502,7 +1506,7 @@ const StagingSamplesScreen = {
             h("strong", metric.value),
           ])),
           h("div", { class: ["visual-staging-overview-item", "visual-staging-kind-summary"], "data-testid": "visual-staging-kind-summary" }, [
-            h("span", "暂存间存放/计划暂存/实验后暂存间存放/实验后外观检测间存放"),
+            h("span", "暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放"),
             h("strong", [
               h("b", { class: "kind-current" }, String(summary.currentTrayCount ?? 0)),
               h("i", "/"),

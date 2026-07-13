@@ -357,7 +357,7 @@ const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
   const startAt = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
   const current = parseDate(now) || new Date();
-  return Boolean(startAt && endAt && startAt <= current && current <= endAt);
+  return Boolean(startAt && startAt <= current && (!endAt || current <= endAt));
 };
 
 const resolveDeviceUnavailableReason = (device, now = new Date()) => {
@@ -388,7 +388,7 @@ const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
 const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt) => {
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  return Boolean(maintenanceStart && maintenanceEnd && startAt && endAt && maintenanceStart < endAt && maintenanceEnd > startAt);
+  return Boolean(maintenanceStart && startAt && endAt && maintenanceStart < endAt && (!maintenanceEnd || maintenanceEnd > startAt));
 };
 
 const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = new Date(), startAt = null }) => {
@@ -435,6 +435,26 @@ const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt })
     };
   }
   return null;
+};
+
+const resolveMaintenanceConflictSlotMeta = ({ device, deviceCode, matchedSchedules = [], segmentEnd, segmentStart }) => {
+  const hasMaintenanceConflict = matchedSchedules.some((schedule) => {
+    const startAt = parseDate(schedule?.start_at);
+    const endAt = parseDate(schedule?.end_at);
+    return startAt && endAt
+      && overlaps(startAt, endAt, segmentStart, segmentEnd)
+      && deviceMaintenanceOverlapsSchedule(device, startAt, endAt);
+  });
+  if (!hasMaintenanceConflict) {
+    return null;
+  }
+  const name = normalizeText(deviceCode);
+  return {
+    className: "gantt-slot conflict maintenance-conflict",
+    label: "维护冲突",
+    state: "maintenance-conflict",
+    title: `${name}维护中，已有排程占用，请调整`,
+  };
 };
 
 const findDeviceRecord = (devices = [], deviceCode = "") =>
@@ -1455,6 +1475,46 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         }
 
         const items = buildSlotTaskItems({ matchedSchedules: matched, now, experimentNameByCode });
+        const maintenanceConflictMeta = resolveMaintenanceConflictSlotMeta({
+          device: deviceByCode.get(device),
+          deviceCode: device,
+          matchedSchedules: matched,
+          segmentEnd,
+          segmentStart,
+        });
+        if (maintenanceConflictMeta) {
+          return {
+            className: maintenanceConflictMeta.className,
+            allItems: items,
+            date: day.key,
+            displayMode: "conflict",
+            items,
+            key: slotKey,
+            label: maintenanceConflictMeta.label,
+            overflowCount: Math.max(0, items.length - 1),
+            scheduleId: normalizeText(matched[0]?.id),
+            segment,
+            stackKey: slotKey,
+            state: maintenanceConflictMeta.state,
+            taskColor: items[0]?.color || resolveTaskColor(matched[0]?.task_code),
+            title: [maintenanceConflictMeta.title, ...items.map((item) => item.title)].filter(Boolean).join("\n"),
+          };
+        }
+        if (deviceMaintenanceOverlapsSchedule(deviceByCode.get(device), segmentStart, segmentEnd)) {
+          return {
+            className: "gantt-slot idle maintenance",
+            date: day.key,
+            displayMode: "idle",
+            items: [],
+            key: slotKey,
+            label: "维护中",
+            overflowCount: 0,
+            scheduleId: "",
+            segment,
+            state: "maintenance",
+            title: `${normalizeText(device)}维护中，暂不可排程`,
+          };
+        }
         const slotTitle = items.map((item, index) => `${index >= 2 ? "隐藏: " : ""}${item.title}`).join("\n");
         if (items.length === 2) {
           return {

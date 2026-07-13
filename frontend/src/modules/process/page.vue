@@ -175,7 +175,16 @@
               >
                 {{ trayCode }}
               </button>
-              <span v-if="hiddenTrayCodeCount > 0" class="process-task-more-count">+{{ hiddenTrayCodeCount }}</span>
+              <button
+                v-if="hiddenTrayCodeCount > 0"
+                class="process-task-more-count process-task-more-button"
+                :aria-label="`查看全部 ${hiddenTrayCodeCount} 个隐藏托盘`"
+                data-testid="process-show-all-trays-count"
+                type="button"
+                @click="openTaskFullList"
+              >
+                +{{ hiddenTrayCodeCount }}
+              </button>
               <button
                 v-if="hiddenTrayCodeCount > 0"
                 class="process-task-more-button"

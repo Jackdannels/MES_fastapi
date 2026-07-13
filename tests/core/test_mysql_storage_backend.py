@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.core import mysql_storage_backend as mysql_storage_backend_module
 from app.core import mysql_storage_codecs as mysql_storage_codecs_module
@@ -4351,8 +4351,21 @@ def test_reset_demo_data_preserves_devices_when_writing_mysql_backend(monkeypatc
 
     snapshot = reset_demo_data(backend)
 
-    assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
-    assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    device = snapshot["mes.devices"][0]
+    assert {key: value for key, value in device.items() if key != "next_cal"} == {
+        "id": "device-1",
+        "code": "LAB-001",
+        "name": "振动一室",
+        "maintenance_end_at": "",
+        "maintenance_note": "",
+        "maintenance_start_at": "",
+        "maintenance_type": "",
+        "status": "可用",
+    }
+    next_calibration_date = datetime.strptime(device["next_cal"], "%Y-%m-%d").date()
+    reset_date = datetime.now().date()
+    assert reset_date + timedelta(days=30) <= next_calibration_date <= reset_date + timedelta(days=60)
+    assert writes["mes.devices"] == snapshot["mes.devices"]
     assert len(writes["mes.tasks"]) == 20
     assert writes["mes.schedules"] == []
     assert writes["mes.experiment_trays"] == []

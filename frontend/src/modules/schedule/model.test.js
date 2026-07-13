@@ -2263,6 +2263,97 @@ describe("schedulePageModel", () => {
     }));
   });
 
+  test("buildGanttRows treats maintenance without an end time as open-ended", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2099-03-20T12:00",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [],
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
+      label: "维护中",
+      state: "maintenance",
+      title: "冲击一室维护中，暂不可排程",
+    }));
+  });
+
+  test("buildGanttRows keeps same-day maintenance visible after an afternoon experiment ends", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2099-03-20T16:30",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-before-maintenance",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T08:00:00",
+          end_at: "2099-03-20T13:30:00",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [{ code: "TASK-001", status: STATUS_SCHEDULED, test_type: "冲击试验" }],
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    expect(impactRow?.slots[0]).toEqual(expect.objectContaining({ scheduleId: "schedule-before-maintenance" }));
+    expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
+      label: "维护中",
+      state: "maintenance",
+    }));
+  });
+
+  test("buildGanttRows exposes maintenance conflicts instead of hiding maintenance behind an existing schedule", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2099-03-20T12:00",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          device: "冲击一室",
+          start_at: "2099-03-20T13:00:00",
+          end_at: "2099-03-20T14:00:00",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [{ code: "TASK-001", status: STATUS_SCHEDULED, test_type: "冲击试验" }],
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
+      className: expect.stringContaining("maintenance-conflict"),
+      label: "维护冲突",
+      scheduleId: "schedule-1",
+      state: "maintenance-conflict",
+      title: expect.stringContaining("冲击一室维护中"),
+    }));
+  });
+
   test("resolveRetentionTimeState snaps retention scheduling to now", () => {
     const result = resolveRetentionTimeState(new Date(2099, 2, 20, 9, 15, 0));
 
@@ -2338,6 +2429,40 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("该设备处于维护状态，不可排程");
   });
 
+  test("createScheduleRecord rejects a schedule inside open-ended planned maintenance", () => {
+    const result = createScheduleRecord({
+      devices: [
+        {
+          code: "Lab-A",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "可用",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          experiment_name: "A实验",
+        },
+      ],
+      form: {
+        custom_start: "09:00",
+        device: "Lab-A",
+        experiment_code: "TASK-001-A",
+        planned_hours: 1,
+        schedule_date: "2099-03-21",
+        task_code: "TASK-001",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-20T07:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBe("该设备处于维护状态，不可排程");
+  });
+
   test("createScheduleRecord rejects a disabled device with a disabled-device message", () => {
     const result = createScheduleRecord({
       devices: [{ code: "冲击一室", status: "停用" }],
@@ -2406,6 +2531,53 @@ describe("schedulePageModel", () => {
     expect(result.schedules[0].experiment_code).toBe("SYLU-2026-03-001-A");
     expect(result.schedules[0].planned_hours).toBe(1.5);
     expect(formatDateTime(result.schedules[0].end_at)).toContain("2099-03-20 09:30");
+  });
+
+  test("updateScheduleRecord rejects edits into open-ended planned maintenance", () => {
+    const result = updateScheduleRecord({
+      devices: [
+        {
+          code: "Lab-A",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "可用",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          experiment_name: "A实验",
+          unscheduled_since: "",
+        },
+      ],
+      form: {
+        custom_start: "09:00",
+        device: "Lab-A",
+        experiment_code: "SYLU-2026-03-001-A",
+        id: "schedule-1",
+        planned_hours: "1",
+        schedule_date: "2099-03-20",
+        task_code: "SYLU-2026-03-001",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-10T08:00:00.000Z"),
+      schedules: [
+        {
+          id: "schedule-1",
+          task_code: "SYLU-2026-03-001",
+          experiment_code: "SYLU-2026-03-001-A",
+          device: "Lab-A",
+          planned_hours: 1,
+          start_at: "2099-03-21T08:00:00.000Z",
+          end_at: "2099-03-21T09:00:00.000Z",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "SYLU-2026-03-001", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBe("该设备处于维护状态，不可排程");
   });
 
   test("buildExperimentOptions keeps impact or vibration experiments available while scheduled axes remain", () => {

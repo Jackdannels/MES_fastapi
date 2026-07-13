@@ -5,7 +5,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -1243,7 +1243,18 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
                 "mes.staging_events": [{"id": "EVENT-OLD", "task_code": "SYLU-2026-03-999", "tray_code": "SYLU-2026-03-999-TP-001"}],
                 "mes.streams": [{"task_code": "SYLU-2026-03-999", "status": "采集中"}],
                 "mes.conflicts": [{"task_code": "SYLU-2026-03-999"}],
-                "mes.devices": [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}],
+                "mes.devices": [
+                    {
+                        "id": "device-1",
+                        "code": "LAB-001",
+                        "maintenance_end_at": "2026-07-12 18:00",
+                        "maintenance_note": "年度维修",
+                        "maintenance_start_at": "2026-07-11 08:00",
+                        "maintenance_type": "计划维修",
+                        "name": "振动一室",
+                        "status": "维修",
+                    }
+                ],
                 "mes.meta": {"schema_version": 2},
             }
 
@@ -1252,7 +1263,21 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
 
     snapshot = reset_demo_data(_DummyStorage())
 
-    assert snapshot["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert [{key: value for key, value in device.items() if key != "next_cal"} for device in snapshot["mes.devices"]] == [
+        {
+            "id": "device-1",
+            "code": "LAB-001",
+            "maintenance_end_at": "",
+            "maintenance_note": "",
+            "maintenance_start_at": "",
+            "maintenance_type": "",
+            "name": "振动一室",
+            "status": "可用",
+        }
+    ]
+    next_calibration_date = datetime.strptime(snapshot["mes.devices"][0]["next_cal"], "%Y-%m-%d").date()
+    reset_date = datetime.now().date()
+    assert reset_date + timedelta(days=30) <= next_calibration_date <= reset_date + timedelta(days=60)
     assert len(snapshot["mes.tasks"]) == 20
     assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in snapshot["mes.tasks"])
     assert snapshot["mes.schedules"] == []
@@ -1266,7 +1291,7 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
     assert snapshot["mes.conflicts"] == []
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in snapshot["mes.samples"])
     assert all(experiment["status"] == "待排程" for experiment in snapshot["mes.experiments"])
-    assert writes["mes.devices"] == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    assert writes["mes.devices"] == snapshot["mes.devices"]
     assert writes["mes.experiment_run_trays"] == []
     assert writes["mes.experiment_run_steps"] == []
     assert writes["mes.staging_events"] == []

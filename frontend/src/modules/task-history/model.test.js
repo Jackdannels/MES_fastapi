@@ -86,6 +86,36 @@ describe("task history model", () => {
     ]);
   });
 
+  test("shows the final tray experiment completion time on returned task flows", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-FINAL-TRAY", name: "末托盘完成任务", status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-FINAL-001",
+          task_code: "TASK-FINAL-TRAY",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-FINAL-001", status: "厂家收回" }],
+          history: [
+            { status: "实验已完成", detail: "TASK-FINAL-TRAY / 试验A / 实验已完成", time: "2026-07-11T10:15:00+08:00" },
+            { status: "厂家收回", detail: "TP-FINAL-001 厂家收回", time: "2026-07-11T11:00:00+08:00" },
+          ],
+        },
+        {
+          code: "SP-FINAL-002",
+          task_code: "TASK-FINAL-TRAY",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-FINAL-002", status: "厂家收回" }],
+          history: [
+            { status: "实验已完成", detail: "TASK-FINAL-TRAY / 试验B / 实验已完成", time: "2026-07-11T13:30:00+08:00" },
+            { status: "厂家收回", detail: "TP-FINAL-002 厂家收回", time: "2026-07-11T14:00:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.tasks[0].taskFlow.find((step) => step.label === "任务已完成")?.time).toBe("2026-07-11T13:30:00+08:00");
+  });
+
   test("maps sample history times onto the returned task status flow", () => {
     const view = buildReturnedTaskHistoryView({
       tasks: [{ code: "TASK-FLOW-TIME", name: "流程时间任务", status: "厂家收回" }],

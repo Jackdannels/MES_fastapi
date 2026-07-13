@@ -26,6 +26,7 @@ SNAPSHOT_KEYS = (
 TASK_STORAGE_UPDATE_KEYS = (
     *SNAPSHOT_KEYS,
     "mes.conflicts",
+    "mes.devices",
 )
 RETURNED_STATUS = "厂家收回"
 MIN_SAMPLE_COUNT = 1

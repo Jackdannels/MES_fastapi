@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MES 启动器菜单方案</title>
+  <style>
+    :root {
+      --canvas: #eef2f5;
+      --ink: #17212b;
+      --muted: #637282;
+      --panel: #ffffff;
+      --line: #d6dee5;
+      --red: #be3342;
+      --orange: #d87620;
+      --green: #237a52;
+      --blue: #1d6288;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }
+    main { max-width: 1180px; margin: 0 auto; padding: 36px 28px 64px; }
+    h1 { margin: 0; font-size: 26px; font-weight: 700; }
+    .lead { margin: 8px 0 32px; color: var(--muted); font-size: 14px; }
+    .options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+    .option { min-width: 0; }
+    .option h2 { margin: 0 0 8px; font-size: 17px; }
+    .option > p { min-height: 40px; margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .launcher { min-height: 400px; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 10px 25px rgba(30, 50, 68, 0.08); }
+    .window-bar { display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 14px; border-bottom: 1px solid var(--line); background: #f8fafb; color: #3b4a58; font-size: 13px; }
+    .window-dot { width: 10px; height: 10px; border-radius: 50%; background: #b7c3cc; }
+    .window-dot:first-child { background: #d75a62; }
+    .window-dot:nth-child(2) { background: #e6a64a; }
+    .window-dot:nth-child(3) { background: #5ca97d; }
+    .launcher-body { padding: 20px; }
+    .system-name { font-size: 22px; font-weight: 700; }
+    .system-meta { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    .status { display: flex; align-items: center; gap: 7px; margin: 20px 0; padding: 10px 12px; border: 1px solid #c9dce6; border-radius: 6px; background: #edf7fb; color: #215a75; font-size: 13px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .action-list { display: grid; gap: 9px; }
+    button { font: inherit; cursor: default; }
+    .action-row { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 11px; width: 100%; min-height: 58px; padding: 0 13px; border: 1px solid var(--line); border-radius: 6px; background: #fff; text-align: left; }
+    .action-row strong { display: block; font-size: 14px; }
+    .action-row small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+    .glyph { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 5px; color: #fff; font-weight: 700; }
+    .close .glyph, .close .command { background: var(--red); }
+    .restart .glyph, .restart .command { background: var(--orange); }
+    .start .glyph, .start .command { background: var(--green); }
+    .command { padding: 6px 8px; border-radius: 4px; color: #fff; font-size: 11px; }
+    .dialog-layout { display: grid; place-items: center; min-height: 336px; background: #f3f6f8; }
+    .dialog { width: min(100%, 300px); border: 1px solid var(--line); border-radius: 8px; background: #fff; box-shadow: 0 16px 32px rgba(21, 37, 50, .16); }
+    .dialog-head { padding: 18px 18px 12px; font-size: 16px; font-weight: 700; }
+    .dialog-note { padding: 0 18px 15px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .dialog-actions { border-top: 1px solid var(--line); }
+    .dialog-actions button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 13px 18px; border: 0; border-bottom: 1px solid var(--line); background: #fff; text-align: left; }
+    .dialog-actions button:last-child { border-bottom: 0; }
+    .dialog-actions b { font-size: 14px; }
+    .tag { padding: 3px 7px; border-radius: 4px; color: #fff; font-size: 11px; }
+    .console { min-height: 336px; background: #18242d; color: #e7eff3; }
+    .console-status { padding: 18px; border-bottom: 1px solid #364751; }
+    .console-status strong { display: block; font-size: 16px; }
+    .console-status span { display: block; margin-top: 6px; color: #a7bbc7; font-size: 12px; }
+    .console-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; padding: 18px; }
+    .console-actions button { min-height: 120px; padding: 12px 8px; border: 0; border-radius: 6px; color: #fff; font-weight: 700; }
+    .console-actions small { display: block; margin-top: 8px; color: rgba(255,255,255,.82); font-weight: 400; font-size: 11px; line-height: 1.45; }
+    .close-fill { background: var(--red); } .restart-fill { background: var(--orange); } .start-fill { background: var(--green); }
+    .feedback { margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--blue); background: #edf4f7; color: #315166; font-size: 12px; line-height: 1.5; }
+    .recommend { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 3px; background: #e0edf3; color: #215a75; font-size: 11px; font-weight: 600; vertical-align: 2px; }
+    @media (max-width: 900px) { .options { grid-template-columns: 1fr; } .option > p { min-height: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>MES 启动器菜单方案</h1>
+    <p class="lead">三个动作都需要先检测后端与前端进程。关闭、重启会二次确认；重复开启或关闭时显示明确状态反馈。</p>
+    <section class="options">
+      <article class="option">
+        <h2>方案 A：指令列表 <span class="recommend">推荐</span></h2>
+        <p>信息密度适中，动作名称、影响和颜色同时呈现，适合桌面启动器的日常重复使用。</p>
+        <div class="launcher">
+          <div class="window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span>MES 启动器</span></div>
+          <div class="launcher-body">
+            <div class="system-name">MES 系统</div><div class="system-meta">本机服务 · 127.0.0.1:8000 / 5173</div>
+            <div class="status"><i class="status-dot"></i>系统正在运行，前端与后端已就绪</div>
+            <div class="action-list">
+              <button class="action-row close"><i class="glyph">×</i><span><strong>关闭 MES 系统</strong><small>关闭后端、前端和对应终端窗口</small></span><i class="command">关闭</i></button>
+              <button class="action-row restart"><i class="glyph">↻</i><span><strong>重启 MES 系统</strong><small>重启服务并刷新已打开的系统页面</small></span><i class="command">重启</i></button>
+              <button class="action-row start"><i class="glyph">▶</i><span><strong>开启 MES 系统</strong><small>启动后端与前端服务</small></span><i class="command">开启</i></button>
+            </div>
+            <div class="feedback">状态提示示例：MES 系统已经打开，无需再次开启。</div>
+          </div>
+        </div>
+      </article>
+      <article class="option">
+        <h2>方案 B：安全确认</h2>
+        <p>菜单更克制，危险操作放入确认式对话框语境，适合更强调误操作防护的使用场景。</p>
+        <div class="launcher">
+          <div class="window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span>MES 启动器</span></div>
+          <div class="dialog-layout">
+            <div class="dialog">
+              <div class="dialog-head">MES 系统控制</div>
+              <div class="dialog-note">检测到系统正在运行。请选择要执行的操作。</div>
+              <div class="dialog-actions">
+                <button><b>关闭 MES 系统</b><span class="tag close-fill">关闭</span></button>
+                <button><b>重启 MES 系统</b><span class="tag restart-fill">重启</span></button>
+                <button><b>开启 MES 系统</b><span class="tag start-fill">开启</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+      <article class="option">
+        <h2>方案 C：运维面板</h2>
+        <p>三种操作并列，当前运行状态优先，适合需要快速一键切换服务状态的值守或开发环境。</p>
+        <div class="launcher">
+          <div class="window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span>MES 启动器</span></div>
+          <div class="console">
+            <div class="console-status"><strong>运行中</strong><span>后端 8000 · 前端 5173 · 页面已连接</span></div>
+            <div class="console-actions">
+              <button class="close-fill">关闭<small>终止服务<br>关闭终端</small></button>
+              <button class="restart-fill">重启<small>重启服务<br>刷新页面</small></button>
+              <button class="start-fill">开启<small>启动终端<br>等待服务</small></button>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

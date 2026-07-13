@@ -274,8 +274,16 @@ describe("visualization styles", () => {
     expect(source).toContain(".visual-lab-matrix-screen .stat.orange");
     expect(source).toContain(".visual-lab-matrix-screen .card.planned");
     expect(source).toContain(".visual-lab-matrix-screen .card.repair");
+    expect(source).toContain(".visual-lab-matrix-screen .card.maintenance");
+    expect(source).toContain(".visual-lab-matrix-screen .card.upkeep");
     expect(source).toContain(".visual-lab-matrix-screen .card.running");
     expect(source).toContain(".visual-lab-matrix-screen .card.near");
+    const repairCardRule = source.match(/\.visual-lab-matrix-screen \.card\.repair\s*{[^}]*}/s)?.[0] || "";
+    const maintenanceCardRule = source.match(/\.visual-lab-matrix-screen \.card\.maintenance\s*{[^}]*}/s)?.[0] || "";
+    const upkeepCardRule = source.match(/\.visual-lab-matrix-screen \.card\.upkeep\s*{[^}]*}/s)?.[0] || "";
+    expect(repairCardRule).not.toBe(maintenanceCardRule);
+    expect(repairCardRule).not.toBe(upkeepCardRule);
+    expect(maintenanceCardRule).not.toBe(upkeepCardRule);
     expect(source).toContain(".visual-lab-matrix-screen .card.is-blinking");
     expect(source).toContain("@keyframes lab-matrix-pulse");
     expect(source).toContain(".visual-lab-matrix-screen .countdown");

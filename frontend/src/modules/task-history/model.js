@@ -362,14 +362,14 @@ const TASK_FLOW_TIME_LABELS = new Map([
   [RETURNED_STATUS, RETURNED_STATUS],
 ]);
 
-const buildReturnedTaskStatusFlow = (flowEntries = []) => {
+const buildReturnedTaskStatusFlow = (flowEntries = [], completedAt = "") => {
   const activeIndex = TASK_STATUS_FLOW_STEPS.length - 1;
   const timeByLabel = new Map(asArray(flowEntries).map((entry) => [normalizeText(entry?.label), normalizeText(entry?.time)]));
   return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
     ...step,
     active: index === activeIndex,
     reached: index <= activeIndex,
-    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || "",
+    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || (step.label === "任务已完成" ? completedAt : ""),
   }));
 };
 
@@ -454,6 +454,10 @@ const buildTaskRow = (task, samples, context = {}) => {
   const trays = buildTrayRows(samples, isFullyReturned ? returnedTrayCodes : null);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
+  const completedAt = experimentRows
+    .map((experiment) => experiment.completedAt)
+    .filter((time) => parseTimeValue(time))
+    .sort((left, right) => parseTimeValue(right) - parseTimeValue(left))[0] || "";
   const sampleFlowEntries = filterTaskFlowForExperiments(stats?.flowEntries || collectFlowEntries(samples), experimentRows);
   const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
   const remainingTrayCount = Math.max(allTrayCount - returnedTrayCount, 0);
@@ -478,7 +482,7 @@ const buildTaskRow = (task, samples, context = {}) => {
     experimentCount: experimentRows.length,
     experimentCompletedCount: completedCount,
     experiments: experimentRows,
-    taskFlow: isFullyReturned ? buildReturnedTaskStatusFlow(sampleFlowEntries) : buildRunningTaskStatusFlow(sampleFlowEntries),
+    taskFlow: isFullyReturned ? buildReturnedTaskStatusFlow(sampleFlowEntries, completedAt) : buildRunningTaskStatusFlow(sampleFlowEntries),
     trays,
   };
 };

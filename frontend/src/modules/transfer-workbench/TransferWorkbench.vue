@@ -1012,7 +1012,7 @@ const currentExperimentName = computed(() => resolveExperimentDisplayName(experi
 const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
 const experimentSelectionLocked = computed(() => allocationReadOnly.value);
 const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
-const canDragSamples = computed(() => props.mode === "pre-allocation" && !taskEditingLocked.value);
+const canDragSamples = computed(() => !taskEditingLocked.value);
 const parseNonNegativeCount = (value) => {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;

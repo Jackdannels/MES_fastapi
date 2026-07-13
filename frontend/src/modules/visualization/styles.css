@@ -673,6 +673,12 @@
   background: rgba(120, 53, 15, 0.48);
 }
 
+.visual-lab-state.is-upkeep {
+  color: #fef08a;
+  border: 1px solid rgba(250, 204, 21, 0.46);
+  background: rgba(113, 63, 18, 0.46);
+}
+
 .visual-flow-line {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
@@ -2564,6 +2570,8 @@
 
 .visual-lab-matrix-screen .card.planned { border-color: var(--blue); background: linear-gradient(135deg, rgba(8, 40, 68, 0.9), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.repair { border-color: var(--red); background: linear-gradient(135deg, rgba(58, 18, 18, 0.9), rgba(2, 15, 20, 0.86)); }
+.visual-lab-matrix-screen .card.maintenance { border-color: #a855f7; background: linear-gradient(135deg, rgba(54, 26, 86, 0.9), rgba(2, 15, 20, 0.86)); }
+.visual-lab-matrix-screen .card.upkeep { border-color: #eab308; background: linear-gradient(135deg, rgba(66, 54, 11, 0.9), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.running { border-color: var(--green); background: linear-gradient(135deg, rgba(7, 52, 38, 0.88), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.near { border-color: var(--orange); background: linear-gradient(135deg, rgba(58, 45, 16, 0.92), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.is-blinking { animation: lab-matrix-pulse 1.25s ease-in-out infinite; }
@@ -2642,6 +2650,8 @@
 
 .visual-lab-matrix-screen .card.planned .badge { color: #5fa5ff; }
 .visual-lab-matrix-screen .card.repair .badge { color: var(--red); }
+.visual-lab-matrix-screen .card.maintenance .badge { color: #c084fc; }
+.visual-lab-matrix-screen .card.upkeep .badge { color: #facc15; }
 .visual-lab-matrix-screen .card.running .badge { color: var(--green); }
 .visual-lab-matrix-screen .card.near .badge { color: var(--orange); }
 

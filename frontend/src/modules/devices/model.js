@@ -11,6 +11,7 @@ const REPAIR_DEVICE_STATUS = "维修";
 const CARE_DEVICE_STATUS = "保养";
 const MAINTENANCE_DEVICE_STATUS = REPAIR_DEVICE_STATUS;
 const DISABLED_DEVICE_STATUS = "停用";
+const COMPLETED_SCHEDULE_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
 
 const DEFAULT_POINT_ROWS = Object.freeze([
   {
@@ -295,18 +296,22 @@ function resolveMaintenanceScheduleImpact({ deviceCode, endAt, schedules = [], s
   const normalizedDevice = normalizeText(deviceCode);
   const maintenanceStart = parseDate(startAt);
   const maintenanceEnd = parseDate(endAt);
-  if (!normalizedDevice || !maintenanceStart || !maintenanceEnd || maintenanceEnd <= maintenanceStart) {
+  if (!normalizedDevice || !maintenanceStart || (maintenanceEnd && maintenanceEnd <= maintenanceStart)) {
     return { conflictingSchedules: [] };
   }
 
   return {
     conflictingSchedules: asArray(schedules).filter((schedule) => {
+      const scheduleStatus = normalizeText(schedule?.status ?? schedule?.schedule_status ?? schedule?.scheduleStatus);
+      if (COMPLETED_SCHEDULE_STATUSES.has(scheduleStatus)) {
+        return false;
+      }
       if (!scheduleMatchesLab(schedule, { code: normalizedDevice, name: normalizedDevice })) {
         return false;
       }
       const scheduleStart = parseDate(schedule?.start_at);
       const scheduleEnd = parseDate(schedule?.end_at);
-      return Boolean(scheduleStart && scheduleEnd && maintenanceStart < scheduleEnd && maintenanceEnd > scheduleStart);
+      return Boolean(scheduleStart && scheduleEnd && maintenanceStart < scheduleEnd && (!maintenanceEnd || maintenanceEnd > scheduleStart));
     }),
   };
 }

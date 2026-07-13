@@ -2,6 +2,7 @@ import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import {
   APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+  requiresPreExperimentAppearanceStorage,
 } from "@/modules/samples/sampleFlow.constants";
 import { normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
 import { trayExperimentRunIsCompleted } from "@/modules/experiment-progress/model";
@@ -21,6 +22,7 @@ import { sampleHasCompletedExperiment } from "./experimentCompletionModel";
 
 const STAGING_CURRENT_STATUSES = new Set(["暂存间存放", "已到达暂存间"]);
 const APPEARANCE_CURRENT_STATUSES = new Set(["实验后外观检测间存放", APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]);
+const APPEARANCE_UNKNOWN_STOCKED_STATUS = "外观检测间存放";
 const POST_TEST_STAGING_KEYWORD = "实验后暂存间";
 const APPEARANCE_LOCATION_KEYWORD = "外观检测间";
 const PLANNED_APPEARANCE_STATUSES = new Set(["送至外观检测间"]);
@@ -32,7 +34,7 @@ const STAGING_KIND_LABELS = {
   current: "暂存间存放",
   planned: "计划暂存",
   "post-test": "实验后暂存间",
-  appearance: "实验后外观检测间存放",
+  appearance: APPEARANCE_UNKNOWN_STOCKED_STATUS,
 };
 const VISIBLE_STAGING_KINDS = new Set(["current", "planned", "post-test", "appearance"]);
 const STORAGE_SNAPSHOT_KEYS = {
@@ -120,6 +122,8 @@ const isAppearanceEventRoom = (event) =>
   normalizeText(event?.room || event?.storage_room || event?.storageRoom) === "appearance";
 const isAppearanceStockInEvent = (event) =>
   normalizeText(event?.action) === "stock_in" && isAppearanceEventRoom(event);
+const resolveAppearanceEventStatus = (event) =>
+  normalizeText(event?.status || event?.stock_in_status || event?.stockInStatus || event?.current_status || event?.currentStatus);
 const isStockOutToStaging = (event) =>
   normalizeText(event?.action) === "stock_out"
   && (
@@ -232,7 +236,42 @@ const trayAssignedExperimentsAreCompleted = ({ experimentRunSteps, experimentRun
   );
 };
 
-const resolveStagingTrayKind = (row, latestEvent) => {
+const addUniqueText = (values, value) => {
+  const text = normalizeText(value);
+  if (text && !values.includes(text)) {
+    values.push(text);
+  }
+};
+
+const rowTargetsPreExperimentAppearance = ({ experiments, row }) => {
+  const experimentByKey = buildExperimentByTaskAndCode(experiments);
+  return asArray(row.targetExperimentCodes).some((experimentCode, index) => {
+    const experiment = experimentByKey.get(`${row.taskCode}::${experimentCode}`) || {};
+    return requiresPreExperimentAppearanceStorage(
+      row.targetLabs?.[index],
+      experimentCode,
+      resolveExperimentName(experiment),
+      experiment?.required_device,
+    );
+  });
+};
+
+const resolveAppearanceStockInStatus = ({ experiments, latestEvent, row }) => {
+  const eventStatus = resolveAppearanceEventStatus(latestEvent);
+  if (isAppearanceStatus(eventStatus)) {
+    return eventStatus;
+  }
+  const explicitStatus = row.statuses.find((status) => isAppearanceStatus(status));
+  if (explicitStatus) {
+    return explicitStatus;
+  }
+  if (rowTargetsPreExperimentAppearance({ experiments, row })) {
+    return APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS;
+  }
+  return APPEARANCE_UNKNOWN_STOCKED_STATUS;
+};
+
+const resolveStagingTrayKind = (row, latestEvent, experiments) => {
   const latestAction = normalizeText(latestEvent?.action);
   const plannedStatus = row.statuses.find((status) => isPlannedStagingStatus(status));
   if (latestAction === "manufacturer_return" || row.statuses.some((status) => isReturnedStatus(status))) {
@@ -255,8 +294,10 @@ const resolveStagingTrayKind = (row, latestEvent) => {
     row.statuses.some((status) => isAppearanceStatus(status))
     || isAppearanceStockInEvent(latestEvent)
   ) {
-    const appearanceStatus = row.statuses.find((status) => isAppearanceStatus(status)) || "实验后外观检测间存放";
-    return buildStagingKind("appearance", appearanceStatus);
+    const appearanceStatus = isAppearanceStockInEvent(latestEvent)
+      ? resolveAppearanceStockInStatus({ experiments, latestEvent, row })
+      : row.statuses.find((status) => isAppearanceStatus(status));
+    return buildStagingKind("appearance", appearanceStatus, appearanceStatus);
   }
   if (row.hasPostTestStagingLocation || row.statuses.some((status) => isPostTestStagingStatus(status))) {
     return buildStagingKind("post-test", POST_EXPERIMENT_STAGING_STOCKED_STATUS);
@@ -343,6 +384,8 @@ function buildStagingSamplesView(input = {}) {
         sampleCodes: [],
         sampleTypeFallback: "",
         statuses: [],
+        targetExperimentCodes: [],
+        targetLabs: [],
         taskCode,
         taskName: resolveTaskName(task),
         testType: resolveTaskTestType(task),
@@ -369,6 +412,8 @@ function buildStagingSamplesView(input = {}) {
         || isAppearanceLocation(sample?.current_location);
       current.sampleTypeFallback =
         current.sampleTypeFallback || normalizeText(sample?.sample_type || task?.sample_type || task?.test_type);
+      addUniqueText(current.targetExperimentCodes, tray?.target_experiment_code || tray?.targetExperimentCode);
+      addUniqueText(current.targetLabs, tray?.target_lab || tray?.targetLab);
       [
         normalizeText(tray?.status),
         normalizeText(sample?.status),
@@ -413,6 +458,8 @@ function buildStagingSamplesView(input = {}) {
         sampleCodes: [],
         sampleTypeFallback: "",
         statuses: [],
+        targetExperimentCodes: [],
+        targetLabs: [],
         taskCode,
         taskName: resolveTaskName(task),
         testType: resolveTaskTestType(task),
@@ -429,7 +476,7 @@ function buildStagingSamplesView(input = {}) {
         appearanceRow: appearanceRowByKey.get(rowKey),
         stagingRow: stagingRowByKey.get(rowKey),
       });
-      const legacyKind = resolveStagingTrayKind(row, latestEvent);
+      const legacyKind = resolveStagingTrayKind(row, latestEvent, input.experiments);
       const stagingKind = legacyKind || (storageBackedKind?.kind === "planned" ? null : storageBackedKind);
       if (plannedKindRequiresStorageConfirmation(row, stagingKind, latestEvent) && !storageBackedKind) {
         return null;

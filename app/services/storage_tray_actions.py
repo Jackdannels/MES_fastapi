@@ -376,6 +376,8 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
             "action": "stock_in",
             "time": now,
             "operator": owner,
+            "location": location,
+            "status": status,
         }
     )
     return {SAMPLES_KEY: updated_samples, STAGING_EVENTS_KEY: events}

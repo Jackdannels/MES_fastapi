@@ -402,6 +402,31 @@ describe("ProcessPage runtime", () => {
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-006");
   });
 
+  test("opens the full tray list when clicking the overflowing tray count", async () => {
+    mocks.reset();
+    const trayRows = Array.from({ length: 6 }, (_, index) => {
+      const number = String(index + 1).padStart(3, "0");
+      return {
+        sampleCodes: [`SP-${number}`],
+        status: "实验准备就绪",
+        trayCode: `TRAY-${number}`,
+      };
+    });
+    mocks.selectedTaskDetail.value = {
+      ...mocks.createSelectedTaskDetail(),
+      trayCodes: trayRows.map((row) => row.trayCode),
+      trayCount: trayRows.length,
+      trayRows,
+    };
+
+    const wrapper = mount(ProcessPage);
+
+    await wrapper.get("[data-testid='process-show-all-trays-count']").trigger("click");
+
+    expect(wrapper.find('[data-testid="process-task-full-list-modal"].is-open').exists()).toBe(true);
+    expect(wrapper.findAll("[data-testid^='process-full-tray-row-']")).toHaveLength(6);
+  });
+
   test("supports selecting the current lab task from a selector modal without a manual start modal", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);

@@ -2043,6 +2043,26 @@ function applyZancunInventoryAction(input = {}) {
     normalizeText(selectedDestination?.targetExperimentName) || normalizeText(payload.targetExperimentName) || normalizeText(matchedRow.targetExperimentName);
   const stockOutEventTargetType =
     normalizeText(selectedDestination?.targetType) || selectedTargetType || "lab";
+  const isPostExperimentStagingStockIn =
+    actionMode === "stockIn"
+    && config.key === "staging"
+    && matchedRow.isPostExperimentInbound;
+  const nextStockInStatus =
+    actionMode === "stockIn"
+      ? matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
+        ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
+          ? APPEARANCE_STOCKED_STATUS
+          : isPostExperimentStagingStockIn
+            ? POST_EXPERIMENT_STAGING_STATUS
+            : config.stockInStatus
+      : "";
+  const nextStockInLocation =
+    actionMode === "stockIn"
+      ? isPostExperimentStagingStockIn
+        ? POST_EXPERIMENT_STAGING_LOCATION
+        : config.currentLocation
+      : "";
 
   nextSnapshot[STAGING_EVENTS_KEY].push({
     id: createId("staging-event"),
@@ -2070,25 +2090,13 @@ function applyZancunInventoryAction(input = {}) {
           target_lab_id: resolvedTargetLabId,
           target_type: stockOutEventTargetType,
         }
-      : {}),
+      : {
+          location: nextStockInLocation,
+          status: nextStockInStatus,
+        }),
   });
 
   if (actionMode === "stockIn") {
-    const isPostExperimentStagingStockIn =
-      config.key === "staging"
-      && matchedRow.isPostExperimentInbound;
-    const nextStockInStatus =
-      matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
-        ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
-        : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
-          ? APPEARANCE_STOCKED_STATUS
-        : isPostExperimentStagingStockIn
-          ? POST_EXPERIMENT_STAGING_STATUS
-          : config.stockInStatus;
-    const nextStockInLocation =
-      isPostExperimentStagingStockIn
-        ? POST_EXPERIMENT_STAGING_LOCATION
-        : config.currentLocation;
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockInAction,
       historyDetail: `${matchedRow.trayCode} ${nextStockInStatus}`,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 from typing import Any
 
 from app.core.time_utils import parse_business_datetime
@@ -15,8 +16,13 @@ PATCHABLE_KEYS = {
     "mes.tasks",
 }
 SCHEDULES_KEY = "mes.schedules"
+DEVICES_KEY = "mes.devices"
 STORAGE_AREA_CODES = {"AREA_STAGING_PRE", "AREA_STAGING_POST", "AREA_APPEARANCE"}
 COMPLETED_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+MAINTENANCE_STATUSES = ("维护", "维修", "保养", "校准")
+SCHEDULE_MAINTENANCE_CONFLICT_DETAIL = "该设备处于维护状态，不可排程"
+MAINTENANCE_SCHEDULE_CONFLICT_DETAIL = "维护窗口内已有排程，请先调整或删除排程"
+MAINTENANCE_END_TIME_DETAIL = "维护结束时间必须晚于开始时间"
 
 
 class StorageSchedulePatchError(Exception):
@@ -56,6 +62,32 @@ def schedule_device(schedule: Any) -> str:
     return normalize_text(schedule.get("device") or schedule.get("device_name") or schedule.get("deviceName") or schedule.get("lab_name") or schedule.get("labName"))
 
 
+def device_id(device: Any) -> str:
+    if not isinstance(device, dict):
+        return ""
+    return normalize_text(device.get("id") or device.get("lab_id") or device.get("labId"))
+
+
+def device_code(device: Any) -> str:
+    if not isinstance(device, dict):
+        return ""
+    return normalize_text(device.get("code") or device.get("lab_code") or device.get("labCode"))
+
+
+def device_names(device: Any) -> set[str]:
+    if not isinstance(device, dict):
+        return set()
+    return {
+        value
+        for value in [
+            device_code(device),
+            normalize_text(device.get("name")),
+            normalize_text(device.get("location")),
+        ]
+        if value
+    }
+
+
 def schedule_targets_storage_area(schedule: Any) -> bool:
     code = schedule_lab_code(schedule)
     if code:
@@ -76,12 +108,50 @@ def schedules_match_lab(left: Any, right: Any) -> bool:
     return bool(schedule_device(left) and schedule_device(left) == schedule_device(right))
 
 
+def schedule_matches_device(schedule: Any, device: Any) -> bool:
+    lab_id = schedule_lab_id(schedule)
+    if lab_id and device_id(device):
+        return lab_id == device_id(device)
+    lab_code = schedule_lab_code(schedule)
+    names = device_names(device)
+    if lab_code and names:
+        return lab_code in names
+    scheduled_device = schedule_device(schedule)
+    return bool(scheduled_device and scheduled_device in names)
+
+
 def schedule_window(schedule: Any) -> tuple[Any, Any]:
     if not isinstance(schedule, dict):
         return None, None
     return parse_business_datetime(schedule.get("start_at") or schedule.get("startAt")), parse_business_datetime(
         schedule.get("end_at") or schedule.get("endAt")
     )
+
+
+def device_maintenance_window(device: Any) -> tuple[Any, Any] | None:
+    if not isinstance(device, dict):
+        return None
+    start_at = parse_business_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
+    end_at = parse_business_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
+    status = normalize_text(device.get("status"))
+    has_maintenance_status = any(keyword in status for keyword in MAINTENANCE_STATUSES)
+    if not start_at and not has_maintenance_status:
+        return None
+    if not start_at:
+        start_at = datetime.min
+    if end_at and end_at <= start_at:
+        return None
+    return start_at, end_at
+
+
+def validate_maintenance_time_order(devices: list[dict[str, Any]]) -> None:
+    for device in devices:
+        start_at = parse_business_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
+        end_at = parse_business_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
+        if end_at and not start_at:
+            raise StorageSchedulePatchError("维护结束时间需要有效的开始时间", status_code=422)
+        if start_at and end_at and end_at <= start_at:
+            raise StorageSchedulePatchError(MAINTENANCE_END_TIME_DETAIL, status_code=422)
 
 
 def schedule_status(schedule: Any) -> str:
@@ -98,6 +168,15 @@ def schedules_overlap(left: Any, right: Any) -> bool:
     left_start, left_end = schedule_window(left)
     right_start, right_end = schedule_window(right)
     return bool(left_start and left_end and right_start and right_end and left_start < right_end and right_start < left_end)
+
+
+def schedule_overlaps_maintenance(schedule: Any, device: Any) -> bool:
+    schedule_start, schedule_end = schedule_window(schedule)
+    maintenance_window = device_maintenance_window(device)
+    if not schedule_start or not schedule_end or not maintenance_window:
+        return False
+    maintenance_start, maintenance_end = maintenance_window
+    return maintenance_start < schedule_end and (maintenance_end is None or maintenance_end > schedule_start)
 
 
 def schedule_task_code(schedule: Any) -> str:
@@ -167,6 +246,42 @@ def validate_schedule_conflicts(next_schedules: list[dict[str, Any]], changed_sc
                 raise StorageSchedulePatchError("排程冲突，请调整时间或实验室", status_code=409)
 
 
+def validate_schedule_maintenance_conflicts(
+    schedules: list[dict[str, Any]],
+    devices: list[dict[str, Any]],
+    *,
+    changed_devices: list[dict[str, Any]] | None = None,
+    changed_schedules: list[dict[str, Any]] | None = None,
+) -> None:
+    def check_devices(device_candidates: list[dict[str, Any]]) -> None:
+        for device in device_candidates:
+            if not device_maintenance_window(device):
+                continue
+            for schedule in schedules:
+                if schedule_targets_storage_area(schedule) or schedule_is_completed(schedule):
+                    continue
+                if schedule_matches_device(schedule, device) and schedule_overlaps_maintenance(schedule, device):
+                    raise StorageSchedulePatchError(MAINTENANCE_SCHEDULE_CONFLICT_DETAIL, status_code=409)
+
+    def check_schedules(schedule_candidates: list[dict[str, Any]]) -> None:
+        for schedule in schedule_candidates:
+            if schedule_targets_storage_area(schedule) or schedule_is_completed(schedule):
+                continue
+            for device in devices:
+                if schedule_matches_device(schedule, device) and schedule_overlaps_maintenance(schedule, device):
+                    raise StorageSchedulePatchError(SCHEDULE_MAINTENANCE_CONFLICT_DETAIL, status_code=409)
+
+    if changed_devices is not None:
+        check_devices(changed_devices)
+    if changed_schedules is not None:
+        check_schedules(changed_schedules)
+    if changed_devices is not None or changed_schedules is not None:
+        return
+
+    check_schedules(schedules)
+    check_devices(devices)
+
+
 def normalize_patch(payload: dict[str, Any]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, set[str]]]:
     upserts: dict[str, list[dict[str, Any]]] = {}
     deletes: dict[str, set[str]] = {}
@@ -218,4 +333,9 @@ def build_schedule_patch_updates(snapshot: dict[str, Any], payload: dict[str, An
 
     if SCHEDULES_KEY in updates:
         validate_schedule_conflicts(updates[SCHEDULES_KEY], upserts.get(SCHEDULES_KEY, []))
+        validate_schedule_maintenance_conflicts(
+            updates[SCHEDULES_KEY],
+            as_list(snapshot.get(DEVICES_KEY)),
+            changed_schedules=upserts.get(SCHEDULES_KEY, []),
+        )
     return updates

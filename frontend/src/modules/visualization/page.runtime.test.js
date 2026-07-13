@@ -481,7 +481,8 @@ describe("VisualizationPage runtime", () => {
       expect(runningCard.classes()).toContain("running");
       expect(runningCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(true);
       expect(runningCard.text()).toContain("01:15:00");
-      expect(maintenanceCard.classes()).toContain("repair");
+      expect(maintenanceCard.classes()).toContain("upkeep");
+      expect(maintenanceCard.classes()).not.toContain("repair");
       expect(maintenanceCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(false);
       expect(waitingCard.classes()).toContain("planned");
       expect(waitingCard.find('[data-testid="lab-matrix-countdown"]').exists()).toBe(false);
@@ -957,6 +958,54 @@ describe("VisualizationPage runtime", () => {
     }
   });
 
+  test("shows maintenance conflicts in the enlarged schedule screen", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-26T10:00:00+08:00"));
+    snapshotState.snapshot = {
+      "mes.devices": [
+        {
+          code: "冲击一室",
+          name: "冲击一室",
+          status: "可用",
+          maintenance_start_at: "2026-05-26T08:00:00+08:00",
+          maintenance_end_at: "",
+        },
+      ],
+      "mes.experiment_trays": [],
+      "mes.experiments": [
+        { task_code: "TASK-MAINT-CONFLICT", experiment_code: "EXP-MAINT-CONFLICT", experiment_name: "冲击试验", required_device: "冲击一室" },
+      ],
+      "mes.samples": [],
+      "mes.schedules": [
+        {
+          id: "schedule-maint-conflict",
+          task_code: "TASK-MAINT-CONFLICT",
+          experiment_code: "EXP-MAINT-CONFLICT",
+          device: "冲击一室",
+          start_at: "2026-05-26T09:00:00+08:00",
+          end_at: "2026-05-26T11:00:00+08:00",
+          status: "已排程",
+        },
+      ],
+      "mes.tasks": [{ code: "TASK-MAINT-CONFLICT", status: "已排程", test_type: "冲击试验" }],
+    };
+
+    try {
+      const wrapper = mountPage();
+
+      await Promise.resolve();
+      await wrapper.vm.$nextTick();
+
+      await wrapper.findAll('[data-testid="visual-screen-card"]')[1].trigger("click");
+
+      const preview = wrapper.find('[data-testid="visual-single-preview"]');
+      expect(preview.text()).toContain("维护冲突");
+      expect(preview.find(".visual-schedule-slot.state-maintenance-conflict").exists()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("switches the enlarged schedule screen date window with arrow buttons", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-23T10:00:00+08:00"));
@@ -1264,7 +1313,7 @@ describe("VisualizationPage runtime", () => {
     const preview = wrapper.find('[data-testid="visual-single-preview"]');
     const overview = preview.get('[data-testid="visual-staging-overview"]');
     const kindSummary = preview.get('[data-testid="visual-staging-kind-summary"]');
-    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存间存放/实验后外观检测间存放");
+    expect(overview.text()).toContain("暂存间存放/计划暂存/实验后暂存间存放/外观检测间存放");
     expect(kindSummary.text()).toContain("1/1/1/0");
     expect(kindSummary.find(".kind-planned").exists()).toBe(true);
     expect(kindSummary.find(".kind-allowed").exists()).toBe(false);

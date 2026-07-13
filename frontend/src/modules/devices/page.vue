@@ -225,7 +225,7 @@
             :disabled="!canSetDeviceAvailable"
             @click="setDeviceAvailable"
           >
-            设为可用
+            {{ deviceLifecycleActionLabel }}
           </button>
         </div>
       </div>
@@ -372,6 +372,7 @@ const {
   connectionForm,
   deviceDrawerOpen,
   deviceForm,
+  deviceLifecycleActionLabel,
   deviceRows,
   editDeviceStatusClass,
   editDeviceOpen,

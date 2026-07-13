@@ -941,6 +941,30 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
   });
 
+  test("handover mode lets an unlocked task move a sample by drag and drop", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        mode: "handover",
+      },
+    });
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    const sourceSample = wrapper.get('[data-testid="transfer-tray-card-0"] .sample-tray-sample-tag');
+    expect(sourceSample.attributes("draggable")).toBe("true");
+
+    await sourceSample.trigger("dragstart");
+    await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("drop");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("当前样品 1 / 2");
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("当前样品 2 / 2");
+
+    wrapper.unmount();
+  });
+
   test("asks for confirmation before resetting a scheduled task", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspaceWithSchedules = {

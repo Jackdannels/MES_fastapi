@@ -42,6 +42,8 @@ const isUnavailableDeviceStatus = (status) => {
   return ["维护", "维修", "保养", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
 };
 const isPlannedMaintenanceType = (type) => normalizeText(type).startsWith("计划");
+const MAINTENANCE_SCHEDULE_CONFLICT_WARNING = "请先调整或删除该设备维护窗口内的排程";
+const MAINTENANCE_END_TIME_WARNING = "结束时间必须晚于开始时间";
 const maintenanceTypeToStatus = (type) => (normalizeText(type).includes("保养") ? "保养" : "维修");
 const isRunningExperimentStatus = (status) => ["实验进行中", "实验中"].includes(normalizeText(status));
 const parseTime = (value) => {
@@ -103,7 +105,34 @@ function useDevicesPage() {
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
   const visiblePointRows = computed(() => buildVisiblePointRows(pointRows.value, pointQuery.value));
   const editDeviceStatusClass = computed(() => resolveStatusClass(deviceForm.value.status));
-  const canSetDeviceAvailable = computed(() => !["空闲", "工作中"].includes(normalizeText(deviceForm.value.status)));
+  const hasFuturePlannedMaintenance = computed(() => {
+    const startAt = parseTime(deviceForm.value.maintenance_start_at);
+    return Boolean(
+      isPlannedMaintenanceType(deviceForm.value.maintenance_type)
+      && startAt
+      && startAt > now.value.getTime(),
+    );
+  });
+  const hasActivePlannedMaintenance = computed(() => {
+    const startAt = parseTime(deviceForm.value.maintenance_start_at);
+    const endAt = parseTime(deviceForm.value.maintenance_end_at);
+    const current = now.value.getTime();
+    return Boolean(
+      isPlannedMaintenanceType(deviceForm.value.maintenance_type)
+      && startAt
+      && startAt <= current
+      && (!endAt || current <= endAt),
+    );
+  });
+  const canSetDeviceAvailable = computed(
+    () => hasFuturePlannedMaintenance.value || hasActivePlannedMaintenance.value || !["空闲", "工作中"].includes(normalizeText(deviceForm.value.status)),
+  );
+  const deviceLifecycleActionLabel = computed(() => {
+    if (hasFuturePlannedMaintenance.value) {
+      return "取消计划";
+    }
+    return hasActivePlannedMaintenance.value ? "提前结束" : "设为可用";
+  });
 
   const { query, sortDirection, sortKey, visibleRows } = useTableControls({
     rows: baseRows,
@@ -693,6 +722,12 @@ function useDevicesPage() {
       maintenancePlanWarning.value = "请选择开始时间";
       return;
     }
+    const startAt = parseTime(form.startAt);
+    const endAt = parseTime(form.endAt);
+    if (normalizeText(form.endAt) && (!endAt || !startAt || endAt <= startAt)) {
+      maintenancePlanWarning.value = MAINTENANCE_END_TIME_WARNING;
+      return;
+    }
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode,
       endAt: form.endAt,
@@ -700,12 +735,7 @@ function useDevicesPage() {
       startAt: form.startAt,
     });
     if (impact.conflictingSchedules.length > 0) {
-      maintenanceConflictDetail.value = {
-        conflictingSchedules: impact.conflictingSchedules,
-        deviceCode,
-        form,
-      };
-      maintenanceConflictModal.openWith(maintenanceConflictDetail.value);
+      maintenancePlanWarning.value = MAINTENANCE_SCHEDULE_CONFLICT_WARNING;
       return;
     }
     await persistMaintenancePlan({ deviceCode, form });
@@ -917,6 +947,7 @@ function useDevicesPage() {
     createNewDevice,
     deviceDrawerOpen: deviceDrawer.open,
     deviceForm,
+    deviceLifecycleActionLabel,
     deviceRows: visibleRows,
     editDeviceStatusClass,
     editDeviceOpen: editDeviceModal.open,

@@ -301,6 +301,25 @@ describe("devices model", () => {
     expect(impact.conflictingSchedules).toEqual([expect.objectContaining({ id: "schedule-1" })]);
   });
 
+  test("treats maintenance without an end time as overlapping future schedules", () => {
+    const impact = resolveMaintenanceScheduleImpact({
+      deviceCode: "冲击一室",
+      endAt: "",
+      schedules: [
+        {
+          id: "schedule-future",
+          device: "冲击一室",
+          end_at: "2099-03-21T10:00",
+          start_at: "2099-03-21T08:00",
+          task_code: "TASK-001",
+        },
+      ],
+      startAt: "2099-03-20T09:00",
+    });
+
+    expect(impact.conflictingSchedules).toEqual([expect.objectContaining({ id: "schedule-future" })]);
+  });
+
   test("finds maintenance schedule conflicts by lab code before display names", () => {
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode: "LAB_IMPACT_1",
