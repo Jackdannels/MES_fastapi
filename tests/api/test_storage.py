@@ -359,6 +359,8 @@ def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance
                     "task_code": "TASK-PRE-APPEARANCE-REPEAT",
                     "room": "appearance",
                     "action": "stock_in",
+                    "appearance_phase": "pre_experiment",
+                    "target_experiment_code": "EXP-SALT",
                     "time": "2026-06-06T21:40:00",
                 },
                 {
@@ -367,6 +369,7 @@ def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance
                     "task_code": "TASK-PRE-APPEARANCE-REPEAT",
                     "room": "appearance",
                     "action": "stock_out",
+                    "appearance_phase": "pre_experiment",
                     "target_lab": "盐雾试验室",
                     "target_experiment_code": "EXP-SALT",
                     "target_type": "lab",
@@ -387,6 +390,55 @@ def test_storage_rejects_repeat_pre_experiment_appearance_stock_after_appearance
     assert response.status_code == 400
     assert response.json()["detail"] == "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
     assert storage.read("mes.samples") == samples
+
+
+def test_storage_allows_pre_experiment_appearance_stock_for_next_target_after_salt_cycle(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-NEXT-TARGET",
+            "location": "高低温湿热一室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET",
+            "trays": [
+                {
+                    "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "高低温湿热一室",
+                    "target_experiment_code": "EXP-HOT-HUMID",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {"task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"},
+                {"task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "experiment_code": "EXP-HOT-HUMID", "experiment_name": "高低温湿热试验"},
+            ],
+            "mes.staging_events": [
+                {"id": "salt-pre-in", "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET", "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "room": "appearance", "action": "stock_in", "appearance_phase": "pre_experiment", "target_experiment_code": "EXP-SALT", "status": "实验前外观检测间存放", "time": "2026-06-06T21:40:00"},
+                {"id": "salt-pre-out", "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET", "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "room": "appearance", "action": "stock_out", "appearance_phase": "pre_experiment", "target_lab": "盐雾试验室", "target_experiment_code": "EXP-SALT", "target_type": "lab", "time": "2026-06-06T21:50:00"},
+                {"id": "salt-post-in", "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET", "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "room": "appearance", "action": "stock_in", "appearance_phase": "post_experiment", "status": "实验后外观检测间存放", "time": "2026-06-06T22:10:00"},
+                {"id": "salt-post-out", "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET", "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "room": "appearance", "action": "stock_out", "appearance_phase": "post_experiment", "target_lab": "恒温恒湿间（暂存间）", "target_type": "staging", "time": "2026-06-06T22:20:00"},
+                {"id": "hot-dispatch", "tray_code": "TP-PRE-APPEARANCE-NEXT-TARGET", "task_code": "TASK-PRE-APPEARANCE-NEXT-TARGET", "room": "staging", "action": "stock_out", "target_lab": "高低温湿热一室", "target_experiment_code": "EXP-HOT-HUMID", "target_type": "lab", "time": "2026-06-06T22:30:00"},
+            ],
+        },
+    )
+
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "外观检测间"
+    attempted[0]["status"] = "实验前外观检测间存放"
+    attempted[0]["flow_status"] = "实验前外观检测间存放"
+    attempted[0]["trays"][0]["status"] = "实验前外观检测间存放"
+
+    response = client.put("/api/storage/mes.samples", json=attempted)
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-HOT-HUMID"
 
 
 def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatch_withdrawn(monkeypatch):
@@ -426,6 +478,8 @@ def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatc
                     "task_code": "TASK-PRE-APPEARANCE-WITHDRAWN",
                     "room": "appearance",
                     "action": "stock_in",
+                    "appearance_phase": "pre_experiment",
+                    "target_experiment_code": "EXP-SALT",
                     "time": "2026-06-06T21:40:00",
                 },
                 {
@@ -434,6 +488,7 @@ def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatc
                     "task_code": "TASK-PRE-APPEARANCE-WITHDRAWN",
                     "room": "appearance",
                     "action": "stock_out",
+                    "appearance_phase": "pre_experiment",
                     "target_lab": "盐雾试验室",
                     "target_experiment_code": "EXP-SALT",
                     "target_type": "lab",
@@ -1692,6 +1747,8 @@ def test_storage_tray_stock_in_action_allows_dispatched_pre_experiment_appearanc
     assert storage.read("mes.staging_events")[-1]["action"] == "stock_in"
     assert storage.read("mes.staging_events")[-1]["location"] == "外观检测间"
     assert storage.read("mes.staging_events")[-1]["status"] == "实验前外观检测间存放"
+    assert storage.read("mes.staging_events")[-1]["appearance_phase"] == "pre_experiment"
+    assert storage.read("mes.staging_events")[-1]["target_experiment_code"] == "EXP-MOLD"
 
 
 def test_storage_tray_stock_in_action_allows_completed_appearance_required_experiment(monkeypatch):

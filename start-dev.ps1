@@ -153,6 +153,10 @@ exit 1
 "@
 
 $encodedBrowserOpen = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($browserOpenScript))
+$windowsTerminal = Get-Command "wt.exe" -ErrorAction SilentlyContinue
+if (-not $windowsTerminal) {
+    $backendCommand += " --no-use-colors"
+}
 
 if ($DryRun) {
     Write-Host "Backend command:"
@@ -172,8 +176,17 @@ if ($DryRun) {
     exit 0
 }
 
-$backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot -PassThru
-$frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot -PassThru
+if ($windowsTerminal) {
+    $terminalProcess = Start-Process -FilePath $windowsTerminal.Source `
+        -ArgumentList "-w", "new", "new-tab", "--title", '"MES Backend"', "cmd.exe", "/k", $backendCommand, ";", "new-tab", "--title", '"MES Frontend"', "cmd.exe", "/k", $frontendCommand `
+        -WorkingDirectory $ProjectRoot `
+        -PassThru
+    $backendProcess = $terminalProcess
+    $frontendProcess = $terminalProcess
+} else {
+    $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot -PassThru
+    $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot -PassThru
+}
 if ($StateFile) {
     $stateDirectory = Split-Path -Parent $StateFile
     if ($stateDirectory) { New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null }

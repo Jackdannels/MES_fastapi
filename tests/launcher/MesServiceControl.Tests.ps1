@@ -2,6 +2,33 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $controller = Join-Path $projectRoot "scripts\mes-service-control.ps1"
 
 Describe "MES service controller" {
+    It "detects Windows Terminal before choosing development terminal hosts" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '\$windowsTerminal = Get-Command "wt\.exe" -ErrorAction SilentlyContinue'
+    }
+
+    It "starts titled backend and frontend tabs through Windows Terminal when available" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '(?s)\$terminalProcess = Start-Process -FilePath \$windowsTerminal\.Source.*?"new-tab", "--title", ''"MES Backend"'', "cmd\.exe", "/k", \$backendCommand.*?"new-tab", "--title", ''"MES Frontend"'', "cmd\.exe", "/k", \$frontendCommand'
+        $startScript | Should Match '\$backendProcess = \$terminalProcess'
+        $startScript | Should Match '\$frontendProcess = \$terminalProcess'
+    }
+
+    It "keeps multiword Windows Terminal tab titles quoted after ArgumentList is joined" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match "\x27`"MES Backend`"\x27"
+        $startScript | Should Match "\x27`"MES Frontend`"\x27"
+    }
+
+    It "adds the backend no-color switch only on the cmd fallback path" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '(?s)if \(-not \$windowsTerminal\) \{\s*\$backendCommand \+= " --no-use-colors"\s*\}'
+    }
+
     It "records the real frontend network URL for the browser launch" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 

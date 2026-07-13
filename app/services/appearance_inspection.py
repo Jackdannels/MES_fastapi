@@ -187,7 +187,13 @@ def appearance_flow_markers(sample: Any, staging_events: Any, tray_code: str) ->
     return markers
 
 
-def pre_experiment_appearance_already_dispatched(sample: Any, tray: Any, staging_events: Any) -> bool:
+def pre_experiment_appearance_already_dispatched(
+    sample: Any,
+    tray: Any,
+    staging_events: Any,
+    *,
+    target_experiment_code: Any = "",
+) -> bool:
     if not isinstance(sample, dict) or not isinstance(tray, dict):
         return False
     sample_statuses = {
@@ -196,10 +202,44 @@ def pre_experiment_appearance_already_dispatched(sample: Any, tray: Any, staging
     }
     if status_text(tray) != LAB_DISPATCHED_STATUS and LAB_DISPATCHED_STATUS not in sample_statuses:
         return False
-    markers = appearance_flow_markers(sample, staging_events, tray_code_text(tray))
-    if not markers:
-        return False
-    latest_action = markers[-1][2]
-    return latest_action == APPEARANCE_STOCK_OUT_ACTION and any(
-        action == APPEARANCE_STOCK_IN_ACTION for _, _, action in markers[:-1]
+    target_code = normalize_text(target_experiment_code) or normalize_text(
+        tray.get("target_experiment_code")
+        or tray.get("targetExperimentCode")
+        or tray.get("experiment_code")
+        or tray.get("experimentCode")
     )
+    if not target_code:
+        return False
+
+    task_code = normalize_text(sample.get("task_code") or sample.get("task_no"))
+    tray_code = tray_code_text(tray)
+    events: list[tuple[datetime, int, dict[str, Any]]] = []
+    for index, event in enumerate(as_list(staging_events)):
+        if not isinstance(event, dict) or staging_event_room(event) != APPEARANCE_EVENT_ROOM:
+            continue
+        if normalize_text(event.get("tray_code") or event.get("trayCode")) != tray_code:
+            continue
+        event_task_code = normalize_text(event.get("task_code") or event.get("taskCode") or event.get("task_no") or event.get("taskNo"))
+        if task_code and event_task_code and event_task_code != task_code:
+            continue
+        events.append((parse_datetime_value(event.get("time")) or datetime.min, index, event))
+    events.sort(key=lambda item: (item[0], item[1]))
+
+    dispatched = False
+    for _, _, event in events:
+        action = normalize_text(event.get("action"))
+        phase = normalize_text(event.get("appearance_phase") or event.get("appearancePhase"))
+        event_target_code = normalize_text(
+            event.get("target_experiment_code")
+            or event.get("targetExperimentCode")
+            or event.get("experiment_code")
+            or event.get("experimentCode")
+        )
+        if event_target_code != target_code:
+            continue
+        if action == STOCK_OUT_WITHDRAW_ACTION:
+            dispatched = False
+            continue
+        if action == APPEARANCE_STOCK_OUT_ACTION and phase == "pre_experiment":
+            dispatched = True
+    return dispatched

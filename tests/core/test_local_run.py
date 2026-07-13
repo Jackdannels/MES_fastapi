@@ -78,6 +78,21 @@ def test_run_local_script_help_is_invokable_from_repo_root():
     assert "SERVE_WEB_APP=true" in result.stdout
 
 
+def test_run_local_script_no_use_colors_option_is_documented_and_accepted():
+    repo_root = Path(__file__).resolve().parents[2]
+
+    result = subprocess.run(
+        [sys.executable, "scripts/run_local.py", "--no-use-colors", "--help"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--no-use-colors" in result.stdout
+
+
 def test_trial_run_script_help_is_invokable_from_repo_root():
     repo_root = Path(__file__).resolve().parents[2]
 

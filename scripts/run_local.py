@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--reload", action="store_true")
     parser.add_argument(
+        "--no-use-colors",
+        action="store_true",
+        help="Disable ANSI colors in Uvicorn output.",
+    )
+    parser.add_argument(
         "--env-file",
         default=".env",
         help="Path to the env file. Use SERVE_WEB_APP=true there to enable compatibility web hosting.",
@@ -44,6 +49,8 @@ def main() -> int:
     ]
     if args.reload:
         command.append("--reload")
+    if args.no_use_colors:
+        command.append("--no-use-colors")
     return subprocess.call(command, cwd=REPO_ROOT, env=env)
 
 

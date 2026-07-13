@@ -592,11 +592,19 @@ const hasAppearanceStockInBeforeLatestLabDispatch = ({ config, latestStorageEven
   if (targetType === "appearance" || targetType === "staging" || targetText.includes("外观检测间") || targetText.includes("暂存间")) {
     return false;
   }
+  const targetExperimentCode = normalizeText(
+    latestStorageEvent?.target_experiment_code || latestStorageEvent?.targetExperimentCode,
+  );
+  if (!targetExperimentCode) {
+    return false;
+  }
   const latestDispatchTime = parseTimeValue(latestStorageEvent?.time);
   return asArray(trayStorageEvents).some((event) =>
     eventMatchesRoom(event, config)
-    && normalizeText(event?.action) === "stock_in"
-    && (!latestDispatchTime || parseTimeValue(event?.time) < latestDispatchTime),
+    && normalizeText(event?.action) === "stock_out"
+    && normalizeText(event?.appearance_phase || event?.appearancePhase) === "pre_experiment"
+    && normalizeText(event?.target_experiment_code || event?.targetExperimentCode) === targetExperimentCode
+    && (!latestDispatchTime || parseTimeValue(event?.time) <= latestDispatchTime),
   );
 };
 
@@ -1450,16 +1458,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && eventTargetsPostExperimentStaging(latestStorageEvent);
       const appearanceAlreadyDispatchedFromStorage =
         hasAppearanceStockInBeforeLatestLabDispatch({ config, latestStorageEvent, trayStorageEvents });
-      const appearancePreInspectionAlreadyDispatched =
-        appearanceAlreadyDispatchedFromStorage
-        || (
-          config.key === "appearance"
-          && normalizeText(lastEvent?.action) === "stock_out"
-          && !eventTargetsPostExperimentStaging(lastEvent)
-          && events
-            .slice(0, -1)
-            .some((event) => normalizeText(event?.action) === "stock_in")
-        );
+      const appearancePreInspectionAlreadyDispatched = appearanceAlreadyDispatchedFromStorage;
       const lastStockInEvent = events
         .slice()
         .reverse()
@@ -2063,6 +2062,26 @@ function applyZancunInventoryAction(input = {}) {
         ? POST_EXPERIMENT_STAGING_LOCATION
         : config.currentLocation
       : "";
+  const appearanceStockInPhase =
+    config.key === "appearance" && actionMode === "stockIn"
+      ? nextStockInStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        ? "pre_experiment"
+        : nextStockInStatus === APPEARANCE_STOCKED_STATUS
+          ? "post_experiment"
+          : ""
+      : "";
+  const appearanceStockOutPhase =
+    config.key === "appearance" && actionMode === "stockOut"
+      ? normalizeText(matchedRow.status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+        ? "pre_experiment"
+        : normalizeText(matchedRow.status) === APPEARANCE_STOCKED_STATUS
+          ? "post_experiment"
+          : ""
+      : "";
+  const appearanceStockInTargetExperimentCode =
+    appearanceStockInPhase
+      ? normalizeText(matchedRow.originalTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
+      : "";
 
   nextSnapshot[STAGING_EVENTS_KEY].push({
     id: createId("staging-event"),
@@ -2089,10 +2108,13 @@ function applyZancunInventoryAction(input = {}) {
           target_lab_code: resolvedTargetLabCode,
           target_lab_id: resolvedTargetLabId,
           target_type: stockOutEventTargetType,
+          ...(appearanceStockOutPhase ? { appearance_phase: appearanceStockOutPhase } : {}),
         }
       : {
           location: nextStockInLocation,
           status: nextStockInStatus,
+          ...(appearanceStockInPhase ? { appearance_phase: appearanceStockInPhase } : {}),
+          ...(appearanceStockInTargetExperimentCode ? { target_experiment_code: appearanceStockInTargetExperimentCode } : {}),
         }),
   });
 

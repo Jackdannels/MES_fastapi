@@ -133,6 +133,7 @@ import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -142,6 +143,8 @@ import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule 
 
 const TASK_RESET_EVENT = "mes:open-task-reset";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
+const NAV_ALERT_STORAGE_KEYS = [STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.conflicts];
+const NAV_ALERT_FALLBACK_REFRESH_MS = 60 * 1000;
 
 const route = useRoute();
 const router = useRouter();
@@ -150,7 +153,7 @@ const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
 const pendingScheduleExceptionCount = ref(0);
 const errorSample = useTrayErrorSampleHandling();
-let navAlertTimer = null;
+let navAlertFallbackTimer = null;
 
 const pageTitle = computed(() => route.meta?.title || "七二四新火工区信息化中控管理系统");
 const pageSubtitle = computed(() => route.meta?.subtitle || "");
@@ -203,6 +206,18 @@ const refreshTaskOverviewAlert = async () => {
   pendingScheduleExceptionCount.value = (Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [])
     .filter((entry) => String(entry?.status || "").trim() === "pending")
     .length;
+};
+
+useStorageSnapshotRefresh({
+  keys: NAV_ALERT_STORAGE_KEYS,
+  refresh: refreshTaskOverviewAlert,
+});
+
+const refreshTaskOverviewAlertFallback = () => {
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return;
+  }
+  void refreshTaskOverviewAlert();
 };
 
 const handleCentralNavClick = async (navItem, event) => {
@@ -292,14 +307,13 @@ const switchModule = async (targetModule) => {
 
 onMounted(() => {
   void refreshTaskOverviewAlert();
-  navAlertTimer = window.setInterval(() => {
-    void refreshTaskOverviewAlert();
-  }, 5000);
+  navAlertFallbackTimer = window.setInterval(refreshTaskOverviewAlertFallback, NAV_ALERT_FALLBACK_REFRESH_MS);
 });
 
 onBeforeUnmount(() => {
-  if (navAlertTimer) {
-    window.clearInterval(navAlertTimer);
+  if (navAlertFallbackTimer) {
+    window.clearInterval(navAlertFallbackTimer);
+    navAlertFallbackTimer = null;
   }
 });
 </script>

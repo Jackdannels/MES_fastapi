@@ -112,6 +112,26 @@ def allows_completed_post_experiment_appearance_stock_in(config: dict[str, Any],
     )
 
 
+def appearance_phase(status: str) -> str:
+    normalized_status = normalize_text(status)
+    if normalized_status == "实验前外观检测间存放":
+        return "pre_experiment"
+    if normalized_status == "实验后外观检测间存放":
+        return "post_experiment"
+    return ""
+
+
+def tray_target_experiment_code(tray: Any) -> str:
+    if not isinstance(tray, dict):
+        return ""
+    return normalize_text(
+        tray.get("target_experiment_code")
+        or tray.get("targetExperimentCode")
+        or tray.get("experiment_code")
+        or tray.get("experimentCode")
+    )
+
+
 def create_staging_event_id(tray_code: str, events: list[Any]) -> str:
     return f"staging-event-{tray_code}-{len(events) + 1}"
 
@@ -280,6 +300,11 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
 
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
+    appearance_metadata: dict[str, Any] = {}
+    if config["event_room"] == APPEARANCE_ROOM:
+        phase = appearance_phase(current_status)
+        if phase:
+            appearance_metadata["appearance_phase"] = phase
     is_staging_target = target_type == STAGING_ROOM or target_lab == STAGING_LOCATION
     location = STAGING_LOCATION if is_staging_target else target_lab
     status = "送至暂存间" if is_staging_target else "送至实验室"
@@ -315,6 +340,7 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
             "target_lab_code": target_lab_code,
             "target_lab_id": target_lab_id,
             "target_type": target_type,
+            **appearance_metadata,
         }
     )
     return {SAMPLES_KEY: updated_samples, STAGING_EVENTS_KEY: events}
@@ -357,6 +383,15 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     owner = normalize_text(payload.get("operator")) or "扫码登记"
     status = normalize_text(payload.get("status")) or config["stock_in_status"]
     location = normalize_text(payload.get("location")) or config["stock_in_location"]
+    appearance_metadata: dict[str, Any] = {}
+    if config["event_room"] == APPEARANCE_ROOM:
+        phase = appearance_phase(status)
+        target_experiment_code = tray_target_experiment_code(matches[0][1])
+        if phase:
+            appearance_metadata["appearance_phase"] = phase
+        if target_experiment_code:
+            appearance_metadata["target_experiment_code"] = target_experiment_code
+            appearance_metadata["experiment_code"] = target_experiment_code
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,
@@ -378,6 +413,7 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
             "operator": owner,
             "location": location,
             "status": status,
+            **appearance_metadata,
         }
     )
     return {SAMPLES_KEY: updated_samples, STAGING_EVENTS_KEY: events}

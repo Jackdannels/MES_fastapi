@@ -627,6 +627,8 @@ def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn
             "task_code": "TASK-1",
             "room": "appearance",
             "action": "stock_in",
+            "appearance_phase": "pre_experiment",
+            "target_experiment_code": "EXP-SALT",
             "time": "2026-06-06T21:40:00",
         },
         {
@@ -634,6 +636,7 @@ def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn
             "task_code": "TASK-1",
             "room": "appearance",
             "action": "stock_out",
+            "appearance_phase": "pre_experiment",
             "target_lab": "盐雾试验室",
             "target_experiment_code": "EXP-SALT",
             "time": "2026-06-06T21:50:00",
@@ -642,14 +645,41 @@ def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn
 
     assert pre_experiment_appearance_already_dispatched(sample, tray, staging_events)
 
+    tray["target_lab"] = "高低温湿热一室"
+    tray["target_experiment_code"] = "EXP-HOT-HUMID"
+    assert not pre_experiment_appearance_already_dispatched(sample, tray, staging_events)
+
+    tray["target_lab"] = "盐雾试验室"
+    tray["target_experiment_code"] = "EXP-SALT"
+
+    unscoped_events = [
+        {
+            "tray_code": "TP-1",
+            "task_code": "TASK-1",
+            "room": "appearance",
+            "action": "stock_in",
+            "time": "2026-06-06T21:40:00",
+        },
+        {
+            "tray_code": "TP-1",
+            "task_code": "TASK-1",
+            "room": "appearance",
+            "action": "stock_out",
+            "target_experiment_code": "EXP-SALT",
+            "time": "2026-06-06T21:50:00",
+        },
+    ]
+    assert not pre_experiment_appearance_already_dispatched(sample, tray, unscoped_events)
+
     withdrawn_events = [
         *staging_events,
         {
             "tray_code": "TP-1",
             "task_code": "TASK-1",
-            "room": "appearance",
-            "action": "stock_out_withdraw",
-            "time": "2026-06-06T21:55:00",
+                "room": "appearance",
+                "action": "stock_out_withdraw",
+                "target_experiment_code": "EXP-SALT",
+                "time": "2026-06-06T21:55:00",
         },
     ]
     assert not pre_experiment_appearance_already_dispatched(sample, tray, withdrawn_events)

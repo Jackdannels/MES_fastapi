@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App.vue";
 import { getNavigationModules } from "@/modules";
 
-const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock } = vi.hoisted(() => ({
+const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock, storageRefreshOptions } = vi.hoisted(() => ({
   routeState: {
     meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
@@ -18,6 +18,7 @@ const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionM
   logoutSessionMock: vi.fn(() => Promise.resolve()),
   switchSessionModuleMock: vi.fn(async (moduleKey) => ({ ok: true, module: moduleKey })),
   loadSnapshotMock: vi.fn(async () => ({ "mes.tasks": [], "mes.experiments": [] })),
+  storageRefreshOptions: { current: null },
 }));
 
 const reactiveRoute = reactive(routeState);
@@ -46,6 +47,13 @@ vi.mock("@/auth", () => ({
 vi.mock("@/composables/useStorageSnapshot", () => ({
   useStorageSnapshot: () => ({
     loadSnapshot: loadSnapshotMock,
+  }),
+}));
+
+vi.mock("@/composables/useStorageSnapshotRefresh", () => ({
+  useStorageSnapshotRefresh: vi.fn((options) => {
+    storageRefreshOptions.current = options;
+    return { flushPendingRefresh: vi.fn(), hasPendingRefresh: { value: false }, stop: vi.fn() };
   }),
 }));
 
@@ -108,7 +116,51 @@ describe("App runtime boundary", () => {
     switchSessionModuleMock.mockClear();
     loadSnapshotMock.mockReset();
     loadSnapshotMock.mockResolvedValue({ "mes.tasks": [], "mes.experiments": [] });
+    storageRefreshOptions.current = null;
+    vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  test("refreshes navigation alerts when relevant storage updates arrive", async () => {
+    mountApp();
+    await nextTick();
+    await Promise.resolve();
+
+    expect(storageRefreshOptions.current).toEqual(expect.objectContaining({
+      keys: expect.arrayContaining(["mes.tasks", "mes.experiments", "mes.schedules", "mes.samples", "mes.conflicts"]),
+      refresh: expect.any(Function),
+    }));
+
+    loadSnapshotMock.mockClear();
+    await storageRefreshOptions.current.refresh();
+
+    expect(loadSnapshotMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses a visible-page minute fallback instead of a five-second navigation-alert poll", async () => {
+    vi.useFakeTimers();
+    mountApp();
+    await Promise.resolve();
+    loadSnapshotMock.mockClear();
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(loadSnapshotMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(55_000);
+    expect(loadSnapshotMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("skips the navigation-alert fallback refresh while the page is hidden", async () => {
+    const visibilitySpy = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    vi.useFakeTimers();
+    mountApp();
+    await Promise.resolve();
+    loadSnapshotMock.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(loadSnapshotMock).not.toHaveBeenCalled();
+    visibilitySpy.mockRestore();
   });
 
   test("renders central shell for samples route", async () => {
