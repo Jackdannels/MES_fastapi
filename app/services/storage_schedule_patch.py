@@ -19,10 +19,10 @@ SCHEDULES_KEY = "mes.schedules"
 DEVICES_KEY = "mes.devices"
 STORAGE_AREA_CODES = {"AREA_STAGING_PRE", "AREA_STAGING_POST", "AREA_APPEARANCE"}
 COMPLETED_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
-MAINTENANCE_STATUSES = ("维护", "维修", "保养", "校准")
-SCHEDULE_MAINTENANCE_CONFLICT_DETAIL = "该设备处于维护状态，不可排程"
-MAINTENANCE_SCHEDULE_CONFLICT_DETAIL = "维护窗口内已有排程，请先调整或删除排程"
-MAINTENANCE_END_TIME_DETAIL = "维护结束时间必须晚于开始时间"
+MAINTENANCE_STATUSES = ("维修", "保养")
+SCHEDULE_MAINTENANCE_CONFLICT_DETAIL = "该设备处于维修状态，不可排程"
+MAINTENANCE_SCHEDULE_CONFLICT_DETAIL = "维保窗口内已有排程，请先调整或删除排程"
+MAINTENANCE_END_TIME_DETAIL = "维保结束时间必须晚于开始时间"
 
 
 class StorageSchedulePatchError(Exception):
@@ -149,7 +149,7 @@ def validate_maintenance_time_order(devices: list[dict[str, Any]]) -> None:
         start_at = parse_business_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
         end_at = parse_business_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
         if end_at and not start_at:
-            raise StorageSchedulePatchError("维护结束时间需要有效的开始时间", status_code=422)
+            raise StorageSchedulePatchError("维保结束时间需要有效的开始时间", status_code=422)
         if start_at and end_at and end_at <= start_at:
             raise StorageSchedulePatchError(MAINTENANCE_END_TIME_DETAIL, status_code=422)
 

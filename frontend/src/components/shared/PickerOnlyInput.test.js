@@ -40,6 +40,7 @@ describe("PickerOnlyInput", () => {
   test("opens a themed calendar for date values and emits the selected day", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {
+        initialCalendarDate: "2026-06-01",
         modelValue: "",
         type: "date",
       },

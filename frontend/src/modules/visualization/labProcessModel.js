@@ -32,8 +32,8 @@ const resolveLabHealth = (device) => {
   if (status.includes("保养")) {
     return { alert: "设备保养中", healthLabel: "保养", healthState: "upkeep", status };
   }
-  if (status.includes("维护") || status.includes("维修") || status.includes("校准")) {
-    return { alert: "设备维护中", healthLabel: "维护", healthState: "maintenance", status };
+  if (status.includes("维修")) {
+    return { alert: "设备维修中", healthLabel: "维修", healthState: "repair", status };
   }
   return { alert: "", healthLabel: "正常", healthState: "ok", status };
 };

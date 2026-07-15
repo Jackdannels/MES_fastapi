@@ -12,6 +12,7 @@ const CARE_DEVICE_STATUS = "保养";
 const MAINTENANCE_DEVICE_STATUS = REPAIR_DEVICE_STATUS;
 const DISABLED_DEVICE_STATUS = "停用";
 const COMPLETED_SCHEDULE_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
+const PLANNED_MAINTENANCE_TYPES = new Set(["计划保养", "计划维修"]);
 
 const DEFAULT_POINT_ROWS = Object.freeze([
   {
@@ -49,6 +50,10 @@ const DEFAULT_POINT_ROWS = Object.freeze([
 // 设备页所有输入都先转成干净字符串，便于后续构造表单和展示行。
 const normalizeText = (value) => String(value ?? "").trim();
 
+const isPlannedMaintenanceType = (value) => PLANNED_MAINTENANCE_TYPES.has(normalizeText(value));
+
+const maintenancePlanDisplayValue = (value) => normalizeText(value) || "/";
+
 const parseDate = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? new Date(parsed) : null;
@@ -65,10 +70,13 @@ const maintenanceTypeToSafetyStatus = (type) => (normalizeText(type).includes("�
 
 const normalizeSafetyStatus = (status) => {
   const normalized = normalizeText(status);
+  if (normalized.includes(DISABLED_DEVICE_STATUS)) {
+    return DISABLED_DEVICE_STATUS;
+  }
   if (normalized.includes("保养")) {
     return CARE_DEVICE_STATUS;
   }
-  if (normalized.includes("维修") || normalized.includes("维护") || normalized.includes("校准")) {
+  if (normalized.includes("维修")) {
     return REPAIR_DEVICE_STATUS;
   }
   return DEFAULT_DEVICE_STATUS;
@@ -139,7 +147,7 @@ function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = 
   }
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
   const current = parseDate(now) || new Date();
-  if ([REPAIR_DEVICE_STATUS, CARE_DEVICE_STATUS, "维护/校准"].includes(storedStatus) && maintenanceEnd && maintenanceEnd < current) {
+  if ([REPAIR_DEVICE_STATUS, CARE_DEVICE_STATUS].includes(storedStatus) && maintenanceEnd && maintenanceEnd < current) {
     return IDLE_DEVICE_STATUS;
   }
   const safetyStatus = normalizeSafetyStatus(storedStatus);
@@ -182,6 +190,7 @@ function buildDeviceRows(devices, schedules, now = new Date(), samples = [], exp
     // 设备状态优先以实际运行托盘推导结果为准，再回退到设备自身状态。
     const status = resolveDeviceStatus(device, schedules, samples, experimentTrays, now, experimentRuns);
     const safetyStatus = normalizeSafetyStatus(device?.status);
+    const hasPlannedMaintenance = isPlannedMaintenanceType(device?.maintenance_type);
     return {
       acquisitionEnabled: normalizeText(device?.acquisition_enabled) || "启用",
       code: normalizeText(device?.code) || `DEVICE-${index + 1}`,
@@ -193,8 +202,8 @@ function buildDeviceRows(devices, schedules, now = new Date(), samples = [], exp
       maintenanceType: normalizeText(device?.maintenance_type),
       model: normalizeText(device?.model) || "",
       name: normalizeText(device?.name) || "-",
-      nextCal: normalizeText(device?.next_cal) || "-",
-      nextCalRaw: normalizeText(device?.next_cal),
+      maintenancePlanEndAt: hasPlannedMaintenance ? maintenancePlanDisplayValue(device?.maintenance_end_at) : "/",
+      nextMaintenanceAt: hasPlannedMaintenance ? maintenancePlanDisplayValue(device?.maintenance_start_at) : "/",
       owner: normalizeText(device?.owner) || "",
       safetyStatus,
       status,
@@ -222,7 +231,6 @@ function createDeviceForm() {
     location: "",
     model: "",
     name: "",
-    next_cal: "",
     owner: "",
     status: DEFAULT_DEVICE_STATUS,
     type: "",
@@ -241,7 +249,6 @@ function buildDeviceForm(device = {}) {
     maintenance_type: normalizeText(device?.maintenanceType ?? device?.maintenance_type),
     model: normalizeText(device?.model),
     name: normalizeText(device?.name),
-    next_cal: normalizeText(device?.nextCalRaw ?? device?.next_cal),
     owner: normalizeText(device?.owner),
     status: normalizeText(device?.status) || DEFAULT_DEVICE_STATUS,
     type: normalizeText(device?.type),
@@ -256,11 +263,10 @@ function buildSelectedDevice(device = {}) {
   };
 }
 
-// 维护操作只关心最近校准信息和本次维护记录。
+// 维保操作只关心本次维保记录。
 function createMaintenanceForm(device = {}) {
   return {
-    latestCalibration: normalizeText(device?.nextCalRaw ?? device?.next_cal),
-    maintenanceType: "校准",
+    maintenanceType: "维修",
     record: "",
   };
 }
@@ -334,7 +340,6 @@ function upsertDevice(devices, form) {
     maintenance_type: normalizeText(form?.maintenance_type),
     model: normalizeText(form?.model),
     name: normalizeText(form?.name),
-    next_cal: normalizeText(form?.next_cal),
     owner: normalizeText(form?.owner),
     status: normalizeSafetyStatus(form?.status) || DEFAULT_DEVICE_STATUS,
     type: normalizeText(form?.type),
@@ -377,7 +382,6 @@ function appendDevice(devices, form) {
     maintenance_type: normalizeText(form?.maintenance_type),
     model: normalizeText(form?.model),
     name: normalizeText(form?.name),
-    next_cal: normalizeText(form?.next_cal),
     owner: normalizeText(form?.owner),
     status: normalizeSafetyStatus(form?.status) || DEFAULT_DEVICE_STATUS,
     type: normalizeText(form?.type),

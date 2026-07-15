@@ -230,7 +230,7 @@ def device_is_unavailable(device: dict[str, Any] | None) -> bool:
     now = now_business_datetime()
     if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
         return True
-    if any(keyword in status for keyword in ["维护", "维修", "保养"]) and not (end_at and end_at < now):
+    if any(keyword in status for keyword in ["维修", "保养"]) and not (end_at and end_at < now):
         return True
     return bool(start_at and start_at <= now and (not end_at or now <= end_at))
 
@@ -1826,7 +1826,7 @@ def dispatch_tray(
         unavailable_device = find_unavailable_device(snapshot, target_name)
         if unavailable_device:
             device_name = normalize_text(unavailable_device.get("code")) or target_name
-            raise HTTPException(status_code=400, detail=f"{device_name}设备维护中，禁止送至该实验室")
+            raise HTTPException(status_code=400, detail=f"{device_name}设备维修中，禁止送至该实验室")
         if (
             current_tray_status in TRAY_OUTBOUND_STATUSES
             and current_tray_status not in TRAY_LAB_REDISPATCH_STATUSES

@@ -33,13 +33,14 @@ const STATUS_READY = "实验准备就绪";
 const TASK_STATUS_RUNNING = "任务进行中";
 const TASK_STATUS_COMPLETED = "任务已完成";
 const STATUS_IDLE = "空闲";
-const STATUS_MAINTENANCE = "维护/校准";
+const STATUS_MAINTENANCE = "维修";
+const URGENT_REMAINING_MILLISECONDS = 30 * 60 * 1000;
 const COMPLETED_TRAY_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, "实验后暂存间存放", RETURNED_STATUS]);
 const normalizeText = (value) => String(value || "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const isDeviceUnavailable = (device) => {
   const status = normalizeText(device?.status);
-  return status.includes("维护") || status.includes("维修") || status.includes("停用") || status.includes("禁用") || status.includes("不可用");
+  return status.includes("维修") || status.includes("保养") || status.includes("停用") || status.includes("禁用") || status.includes("不可用");
 };
 const findDeviceByLabName = (devices, labName) =>
   asArray(devices).find((device) => normalizeText(device?.code) === normalizeText(labName) || normalizeText(device?.name) === normalizeText(labName));
@@ -64,6 +65,26 @@ const scheduleIsActiveAt = (schedule, now) => {
   }
   const end = parseBusinessDateTimeToMs(schedule?.end_at);
   return !Number.isFinite(end) || end >= now;
+};
+
+const scheduleIsMarkedCompleted = ({ experiments, schedule }) => {
+  if (isExperimentCompletedStatus(schedule?.status)) {
+    return true;
+  }
+  const taskCode = normalizeText(schedule?.task_code);
+  const experimentCode = normalizeText(schedule?.experiment_code);
+  return asArray(experiments).some((experiment) =>
+    normalizeText(experiment?.task_code) === taskCode
+    && normalizeText(experiment?.experiment_code) === experimentCode
+    && isExperimentCompletedStatus(experiment?.status)
+  );
+};
+
+const formatUrgentMinutes = (remainingMilliseconds) => {
+  if (remainingMilliseconds <= 0) {
+    return "已完成";
+  }
+  return `${Math.ceil(remainingMilliseconds / 60000)} 分钟`;
 };
 
 const resolveScheduledExperimentLabel = ({ experiments, fallback, schedule, taskCode }) => {
@@ -310,6 +331,21 @@ const buildProcessLabCards = (
             })
         )
         .sort((left, right) => (parseBusinessDateTimeToMs(right?.start_at) || 0) - (parseBusinessDateTimeToMs(left?.start_at) || 0));
+      const completedSchedule = scheduleList
+        .filter((entry) => scheduleMatchesLab(entry, lab))
+        .filter((entry) =>
+          scheduleIsMarkedCompleted({ experiments, schedule: entry })
+          && scheduleExperimentIsCompleted({
+            experiments,
+            experimentRunSteps,
+            experimentRunTrays,
+            experimentTrays,
+            samples: sampleList,
+            schedule: entry,
+            taskStatusMap,
+          })
+        )
+        .sort((left, right) => (parseBusinessDateTimeToMs(right?.end_at) || 0) - (parseBusinessDateTimeToMs(left?.end_at) || 0))[0] || null;
 
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
       const runningSchedule =
@@ -334,7 +370,7 @@ const buildProcessLabCards = (
           const start = parseBusinessDateTimeToMs(entry?.start_at);
           return Number.isFinite(start) && start > now;
         }) || null;
-      const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || null;
+      const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || completedSchedule || null;
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
@@ -349,14 +385,26 @@ const buildProcessLabCards = (
 
       const device = findDeviceByLabName(devices, lab.name);
       const deviceUnavailable = isDeviceUnavailable(device);
+      const isCompleted = Boolean(completedSchedule) && nextSchedule === completedSchedule;
+      const remainingMilliseconds = parseBusinessDateTimeToMs(nextSchedule?.end_at) - now;
+      const isUrgentRunning = Boolean(runningSchedule)
+        && Number.isFinite(remainingMilliseconds)
+        && remainingMilliseconds >= 0
+        && remainingMilliseconds <= URGENT_REMAINING_MILLISECONDS;
       let status = STATUS_IDLE;
       let statusClass = "is-idle";
-      if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === TASK_STATUS_RUNNING)) {
-        status = STATUS_RUNNING;
-        statusClass = "is-running";
-      } else if (deviceUnavailable) {
+      if (deviceUnavailable) {
         status = normalizeText(device?.status) || STATUS_MAINTENANCE;
         statusClass = "is-maintenance";
+      } else if (isCompleted) {
+        status = EXPERIMENT_STATUS_COMPLETED;
+        statusClass = "is-urgent";
+      } else if (isUrgentRunning) {
+        status = formatUrgentMinutes(remainingMilliseconds);
+        statusClass = "is-urgent";
+      } else if (runningSchedule || (!normalizeText(nextSchedule?.experiment_code) && aggregatedTaskStatus === TASK_STATUS_RUNNING)) {
+        status = STATUS_RUNNING;
+        statusClass = "is-running";
       } else if (activeSchedule || readySchedule || upcomingSchedule) {
         status = STATUS_SCHEDULED;
         statusClass = "is-scheduled";
@@ -370,7 +418,7 @@ const buildProcessLabCards = (
           : "暂无排程",
         hasTask: Boolean(taskCode),
         canStartExperiment: Boolean(readySchedule) && !deviceUnavailable,
-        startDisabledReason: deviceUnavailable ? "设备维护中，禁止开始实验" : "",
+        startDisabledReason: deviceUnavailable ? "设备维修中，禁止开始实验" : "",
         status,
         statusClass,
         targetExperiment: taskCode ? targetExperiment : "未分配",

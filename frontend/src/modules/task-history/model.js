@@ -94,6 +94,8 @@ const resolveExperimentCode = (experiment) => normalizeText(experiment?.experime
 const resolveExperimentName = (experiment) => normalizeText(experiment?.experiment_name || experiment?.experimentName || experiment?.required_device || experiment?.test_type || experiment?.name);
 const resolveExperimentStatus = (experiment) => normalizeText(experiment?.status || experiment?.experiment_status || experiment?.experimentStatus);
 const resolveExperimentTime = (experiment) => normalizeText(experiment?.completed_at || experiment?.completedAt || experiment?.updated_at || experiment?.updatedAt || experiment?.created_at || experiment?.createdAt);
+const resolveScheduleTaskCode = (schedule) => normalizeText(schedule?.task_code || schedule?.taskCode || schedule?.task_no || schedule?.taskNo);
+const resolveScheduleStartTime = (schedule) => normalizeText(schedule?.start_at || schedule?.startAt || schedule?.scheduled_at || schedule?.scheduledAt);
 const resolveRelationTaskCode = (relation) => normalizeText(relation?.task_code || relation?.taskCode || relation?.taskNo || relation?.task_no);
 const resolveRelationExperimentCode = (relation) => normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experimentNo || relation?.experiment_no);
 const resolveTaskArchiveStatus = (task) => normalizeText(task?.transfer_status || task?.transferStatus || task?.status || task?.displayStatus || task?.display_status);
@@ -357,30 +359,45 @@ const filterTaskFlowForExperiments = (flowEntries, experiments) => {
 };
 
 const TASK_FLOW_TIME_LABELS = new Map([
+  ["待排程", "到货"],
   ["任务进行中", "实验进行中"],
-  ["任务已完成", "实验已完成"],
   [RETURNED_STATUS, RETURNED_STATUS],
 ]);
 
-const buildReturnedTaskStatusFlow = (flowEntries = [], completedAt = "") => {
+const resolveEarliestScheduledAt = (schedules) => asArray(schedules)
+  .map(resolveScheduleStartTime)
+  .filter((time) => parseTimeValue(time))
+  .sort((left, right) => parseTimeValue(left) - parseTimeValue(right))[0] || "";
+
+const resolveTaskFlowStepTime = ({ completedAt = "", forceCompletedAt = false, scheduledAt = "", step, timeByLabel }) => {
+  if (step.label === "已排程") {
+    return scheduledAt;
+  }
+  if (step.label === "任务已完成") {
+    return forceCompletedAt ? completedAt : timeByLabel.get("实验已完成") || completedAt;
+  }
+  return timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || "";
+};
+
+const buildReturnedTaskStatusFlow = (flowEntries = [], { completedAt = "", forceCompletedAt = false, scheduledAt = "" } = {}) => {
   const activeIndex = TASK_STATUS_FLOW_STEPS.length - 1;
   const timeByLabel = new Map(asArray(flowEntries).map((entry) => [normalizeText(entry?.label), normalizeText(entry?.time)]));
   return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
     ...step,
     active: index === activeIndex,
     reached: index <= activeIndex,
-    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || (step.label === "任务已完成" ? completedAt : ""),
+    time: resolveTaskFlowStepTime({ completedAt, forceCompletedAt, scheduledAt, step, timeByLabel }),
   }));
 };
 
-const buildRunningTaskStatusFlow = (flowEntries = []) => {
+const buildRunningTaskStatusFlow = (flowEntries = [], { scheduledAt = "" } = {}) => {
   const activeIndex = TASK_STATUS_FLOW_STEPS.findIndex((step) => step.label === "任务进行中");
   const timeByLabel = new Map(asArray(flowEntries).map((entry) => [normalizeText(entry?.label), normalizeText(entry?.time)]));
   return TASK_STATUS_FLOW_STEPS.map((step, index) => ({
     ...step,
     active: index === activeIndex,
     reached: index <= activeIndex,
-    time: timeByLabel.get(TASK_FLOW_TIME_LABELS.get(step.label)) || "",
+    time: resolveTaskFlowStepTime({ scheduledAt, step, timeByLabel }),
   }));
 };
 
@@ -442,6 +459,7 @@ const buildTrayRows = (samples, includedTrayCodes = null) => {
 const buildTaskRow = (task, samples, context = {}) => {
   const experiments = asArray(context.experiments);
   const experimentTrays = asArray(context.experimentTrays);
+  const schedules = asArray(context.schedules);
   const stats = context.stats || null;
   const code = resolveTaskCode(task) || resolveSampleTaskCode(samples[0]);
   const assignedTrayCodes = stats?.assignedTrayCodes || collectAssignedTrayCodes(task, samples, experimentTrays);
@@ -453,13 +471,17 @@ const buildTaskRow = (task, samples, context = {}) => {
     : hasExplicitReturnedStatus(task);
   const trays = buildTrayRows(samples, isFullyReturned ? returnedTrayCodes : null);
   const experimentRows = buildExperimentRows(task || { code }, samples, experiments, experimentTrays);
+  const scheduledAt = resolveEarliestScheduledAt(schedules);
+  const sampleFlowEntries = filterTaskFlowForExperiments(stats?.flowEntries || collectFlowEntries(samples), experimentRows);
+  const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
+  const hasExperimentActivity = Boolean(scheduledAt)
+    || sampleFlowEntries.some((entry) => entry.label === "实验进行中" || entry.label === "实验已完成");
   const completedCount = experimentRows.filter((experiment) => experiment.completed).length;
-  const completedAt = experimentRows
+  const latestExperimentCompletedAt = experimentRows
     .map((experiment) => experiment.completedAt)
     .filter((time) => parseTimeValue(time))
     .sort((left, right) => parseTimeValue(right) - parseTimeValue(left))[0] || "";
-  const sampleFlowEntries = filterTaskFlowForExperiments(stats?.flowEntries || collectFlowEntries(samples), experimentRows);
-  const returnedAt = sampleFlowEntries.find((entry) => entry.label === RETURNED_STATUS)?.time || "";
+  const completedAt = hasExperimentActivity ? latestExperimentCompletedAt : returnedAt;
   const remainingTrayCount = Math.max(allTrayCount - returnedTrayCount, 0);
   const sampleStats = collectSampleStats(task, samples, returnedTrayCodes);
   const displayStatus = isFullyReturned
@@ -482,7 +504,9 @@ const buildTaskRow = (task, samples, context = {}) => {
     experimentCount: experimentRows.length,
     experimentCompletedCount: completedCount,
     experiments: experimentRows,
-    taskFlow: isFullyReturned ? buildReturnedTaskStatusFlow(sampleFlowEntries, completedAt) : buildRunningTaskStatusFlow(sampleFlowEntries),
+    taskFlow: isFullyReturned
+      ? buildReturnedTaskStatusFlow(sampleFlowEntries, { completedAt, forceCompletedAt: !hasExperimentActivity, scheduledAt })
+      : buildRunningTaskStatusFlow(sampleFlowEntries, { scheduledAt }),
     trays,
   };
 };
@@ -508,6 +532,8 @@ function buildReturnedTaskHistoryView(input = {}) {
   const samplesByTaskCode = groupByTaskCode(samples, resolveSampleTaskCode);
   const experimentsByTaskCode = groupByTaskCode(experiments, resolveExperimentTaskCode);
   const experimentTraysByTaskCode = groupByTaskCode(experimentTrays, resolveRelationTaskCode);
+  const schedules = asArray(input.schedules);
+  const schedulesByTaskCode = groupByTaskCode(schedules, resolveScheduleTaskCode);
 
   const taskRecordsByCode = new Map(tasks.map((task) => [resolveTaskCode(task), task]).filter(([code]) => code));
   const taskCodes = new Set([...taskRecordsByCode.keys(), ...samplesByTaskCode.keys()]);
@@ -547,6 +573,7 @@ function buildReturnedTaskHistoryView(input = {}) {
     return buildTaskRow(summary.task, samplesByTaskCode.get(taskCode) || [], {
       experimentTrays: experimentTraysByTaskCode.get(taskCode) || [],
       experiments: experimentsByTaskCode.get(taskCode) || [],
+      schedules: schedulesByTaskCode.get(taskCode) || [],
       stats: taskStatsByCode.get(taskCode),
     });
   });

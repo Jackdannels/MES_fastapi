@@ -162,7 +162,7 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.experiment_trays",
     "mes.experiment_samples",
 )
-SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", "mes.staging_events", STORAGE_META_KEY)
+SNAPSHOT_STORAGE_KEYS = ("mes.conflicts", "mes.maintenance_records", "mes.staging_events", STORAGE_META_KEY)
 
 
 class MySQLMesStorageBackend(StorageBackend):

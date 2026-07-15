@@ -336,7 +336,7 @@ function useLaboratoryPage(options = {}) {
   const laboratoryMaintenanceNotice = computed(() => {
     const reason = resolveDeviceUnavailableReason(selectedLabDevice.value, tickNow.value);
     if (reason) {
-      return "设备维护中，禁止实验室操作";
+      return "设备维修中，禁止实验室操作";
     }
     return "";
   });

@@ -276,8 +276,6 @@ function normalizeDeviceStatus(status) {
   }
   if (
     normalized.includes(DEVICE_STATUS_REPAIR)
-    || normalized.includes("维护")
-    || normalized.includes("校准")
     || normalized.includes("故障")
     || normalized.includes("停用")
     || normalized.includes("禁用")

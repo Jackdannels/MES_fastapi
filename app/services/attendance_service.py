@@ -151,9 +151,11 @@ class InMemoryAttendanceRepository:
         self._next_user_id = 1
         self._next_session_id = 1
         self._next_interval_id = 1
+        self._next_operation_log_id = 1
         self.users: dict[int, dict[str, Any]] = {}
         self.sessions: list[dict[str, Any]] = []
         self.intervals: list[dict[str, Any]] = []
+        self.operation_logs: list[dict[str, Any]] = []
 
     def has_users(self) -> bool:
         with self._lock:
@@ -296,6 +298,18 @@ class InMemoryAttendanceRepository:
             count = len(self.intervals)
             self.intervals = []
             return count
+
+    def create_operation_log(self, operation_log: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            normalized = deepcopy(operation_log)
+            normalized["id"] = self._next_operation_log_id
+            self._next_operation_log_id += 1
+            self.operation_logs.append(normalized)
+            return deepcopy(normalized)
+
+    def list_operation_logs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [deepcopy(row) for row in self.operation_logs]
 
     def resolve_lab_name(self, lab_code: str) -> str:
         normalized = normalize_text(lab_code)
@@ -664,6 +678,51 @@ class MySQLAttendanceRepository:
             connection.commit()
         return count
 
+    def create_operation_log(self, operation_log: dict[str, Any]) -> dict[str, Any]:
+        self.ensure_schema()
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO biz_lab_operation_log (
+                      session_id, username, employee_name, lab_name, lab_code, action_name,
+                      task_no, experiment_no, tray_no, run_no, source, operated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        operation_log.get("session_id"),
+                        operation_log["username"],
+                        operation_log["employee_name"],
+                        operation_log["lab_name"],
+                        operation_log.get("lab_code") or "",
+                        operation_log["action"],
+                        operation_log.get("task_code") or "",
+                        operation_log.get("experiment_code") or "",
+                        operation_log.get("tray_no") or "",
+                        operation_log.get("run_no") or "",
+                        operation_log.get("source") or "",
+                        mysql_datetime(operation_log["operated_at"]),
+                    ),
+                )
+                operation_log_id = int(cursor.lastrowid or 0)
+            connection.commit()
+        return {**operation_log, "id": operation_log_id}
+
+    def list_operation_logs(self) -> list[dict[str, Any]]:
+        self.ensure_schema()
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT operation_log_id AS id, session_id, username, employee_name, lab_name,
+                           lab_code, action_name AS action, task_no AS task_code,
+                           experiment_no AS experiment_code, tray_no, run_no, source, operated_at
+                    FROM biz_lab_operation_log
+                    ORDER BY operated_at DESC, operation_log_id DESC
+                    """,
+                )
+                return self._rows(cursor)
+
     def resolve_lab_name(self, lab_code: str) -> str:
         self.ensure_schema()
         normalized = normalize_text(lab_code)
@@ -872,6 +931,7 @@ class AttendanceService:
                 "username": user["username"],
             }
         )
+        self.record_operation(session, action="试验间登录", source="manual", operated_at=now)
         if replaced_interval:
             session = self.repository.update_session(int(session["id"]), {"last_seen_at": now, "work_started_at": now}) or session
             self.start_work_interval(
@@ -905,6 +965,7 @@ class AttendanceService:
         closed = self.repository.close_active_lab_session(lab_name, "", reason=reason, now=now)
         if closed:
             self.finish_work_interval(lab_name=lab_name, ended_at=now)
+            self.record_operation(closed, action="试验间退出", source="manual", operated_at=now)
         return self.serialize_session(closed, lab_name=lab_name)
 
     def start_lab_work(self, lab_name: str) -> dict[str, Any]:
@@ -941,7 +1002,7 @@ class AttendanceService:
             ) or session
         if existing:
             return existing
-        return self.repository.start_interval(
+        interval = self.repository.start_interval(
             {
                 "session_id": session.get("id"),
                 "username": session["username"],
@@ -956,6 +1017,16 @@ class AttendanceService:
                 "ended_at": None,
             }
         )
+        self.record_operation(
+            session,
+            action="开始试验" if normalize_text(task_code) or normalize_text(experiment_code) else "开始工作",
+            source=normalize_text(source) or "api",
+            task_code=task_code,
+            experiment_code=experiment_code,
+            run_no=run_no,
+            operated_at=now,
+        )
+        return interval
 
     def finish_work_interval(
         self,
@@ -978,7 +1049,101 @@ class AttendanceService:
             )
             if not has_open_session_interval:
                 self.repository.update_session(int(session_id), {"work_started_at": None})
+        session = self.repository.find_active_session(lab_name=normalize_text(interval.get("lab_name")), lab_code=normalize_text(interval.get("lab_code")))
+        if session and normalize_text(session.get("username")) == normalize_text(interval.get("username")):
+            self.record_operation(
+                session,
+                action="完成试验" if normalize_text(interval.get("task_code")) or normalize_text(interval.get("experiment_code")) else "结束工作",
+                source=normalize_text(interval.get("source")) or "api",
+                task_code=normalize_text(interval.get("task_code")),
+                experiment_code=normalize_text(interval.get("experiment_code")),
+                run_no=normalize_text(interval.get("run_no")),
+                operated_at=parse_business_datetime(ended_at) or self._now(),
+            )
         return finished
+
+    def record_operation(
+        self,
+        session: dict[str, Any] | None,
+        *,
+        action: str,
+        source: str,
+        task_code: str = "",
+        experiment_code: str = "",
+        tray_no: str = "",
+        run_no: str = "",
+        operated_at: datetime | str | None = None,
+    ) -> dict[str, Any] | None:
+        if not session:
+            return None
+        username = normalize_text(session.get("username"))
+        employee_name = normalize_text(session.get("employee_name"))
+        lab_name = normalize_text(session.get("lab_name"))
+        if not username or not employee_name or not lab_name:
+            return None
+        return self.repository.create_operation_log(
+            {
+                "session_id": session.get("id"),
+                "username": username,
+                "employee_name": employee_name,
+                "lab_name": lab_name,
+                "lab_code": normalize_text(session.get("lab_code")),
+                "action": normalize_text(action),
+                "task_code": normalize_text(task_code),
+                "experiment_code": normalize_text(experiment_code),
+                "tray_no": normalize_text(tray_no),
+                "run_no": normalize_text(run_no),
+                "source": normalize_text(source),
+                "operated_at": parse_business_datetime(operated_at) or self._now(),
+            }
+        )
+
+    def serialize_operation_log(self, operation_log: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "action": normalize_text(operation_log.get("action")),
+            "employeeName": normalize_text(operation_log.get("employee_name")),
+            "experimentCode": normalize_text(operation_log.get("experiment_code")),
+            "id": operation_log.get("id"),
+            "labName": normalize_text(operation_log.get("lab_name")),
+            "operatedAt": format_beijing(parse_datetime(operation_log.get("operated_at"))),
+            "runNo": normalize_text(operation_log.get("run_no")),
+            "source": normalize_text(operation_log.get("source")),
+            "taskCode": normalize_text(operation_log.get("task_code")),
+            "trayNo": normalize_text(operation_log.get("tray_no")),
+            "username": normalize_text(operation_log.get("username")),
+        }
+
+    def list_operation_logs(
+        self,
+        *,
+        raw_date: str | None = None,
+        employee_name: str = "",
+        employee_names: list[str] | None = None,
+        lab_name: str = "",
+        lab_names: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        report_date = self.resolve_report_date(raw_date) if raw_date else None
+        normalized_employee_name = normalize_text(employee_name)
+        normalized_employee_names = {normalize_text(name) for name in (employee_names or []) if normalize_text(name)}
+        normalized_lab_name = normalize_text(lab_name)
+        normalized_lab_names = {normalize_text(name) for name in (lab_names or []) if normalize_text(name)}
+        rows = []
+        for row in self.repository.list_operation_logs():
+            operated_at = parse_datetime(row.get("operated_at"))
+            if report_date and (operated_at is None or format_beijing(operated_at)[:10] != report_date.isoformat()):
+                continue
+            row_employee_name = normalize_text(row.get("employee_name"))
+            row_lab_name = normalize_text(row.get("lab_name"))
+            if normalized_employee_names and row_employee_name not in normalized_employee_names:
+                continue
+            if not normalized_employee_names and normalized_employee_name and normalized_employee_name not in row_employee_name:
+                continue
+            if normalized_lab_names and row_lab_name not in normalized_lab_names:
+                continue
+            if not normalized_lab_names and normalized_lab_name and normalized_lab_name != row_lab_name:
+                continue
+            rows.append(self.serialize_operation_log(row))
+        return sorted(rows, key=lambda row: (row.get("operatedAt") or "", int(row.get("id") or 0)), reverse=True)
 
     def clear_all_sessions(self, *, reason: str = "reset") -> dict[str, int]:
         now = self._now()
@@ -1117,6 +1282,27 @@ CREATE TABLE IF NOT EXISTS biz_lab_work_interval (
   KEY idx_biz_lab_work_username_time (username, started_at),
   KEY idx_biz_lab_work_run_no (run_no),
   KEY idx_biz_lab_work_lab_open (lab_name, ended_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS biz_lab_operation_log (
+  operation_log_id BIGINT NOT NULL AUTO_INCREMENT,
+  session_id BIGINT NULL,
+  username VARCHAR(80) NOT NULL,
+  employee_name VARCHAR(100) NOT NULL,
+  lab_name VARCHAR(100) NOT NULL,
+  lab_code VARCHAR(50) NULL,
+  action_name VARCHAR(100) NOT NULL,
+  task_no VARCHAR(80) NULL,
+  experiment_no VARCHAR(80) NULL,
+  tray_no VARCHAR(100) NULL,
+  run_no VARCHAR(80) NULL,
+  source VARCHAR(20) NULL,
+  operated_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (operation_log_id),
+  KEY idx_biz_lab_operation_time (operated_at),
+  KEY idx_biz_lab_operation_employee_time (username, operated_at),
+  KEY idx_biz_lab_operation_lab_time (lab_name, operated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 

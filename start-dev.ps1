@@ -105,9 +105,10 @@ $backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
 $frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
 $frontendNetworkHost = Resolve-PrimaryLanIpv4
 $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
+$launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
-    $backendCommand = "call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py --reload --host $BackendHost --port $BackendPort"
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py --reload --host $BackendHost --port $BackendPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
 }
@@ -131,7 +132,7 @@ exit 1
 "@
 
 $encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
-$frontendCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost --port $FrontendPort"
+$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost --port $FrontendPort"
 
 $browserOpenScript = @"
 `$deadline = (Get-Date).AddSeconds($BrowserWaitTimeoutSeconds)
@@ -197,6 +198,7 @@ if ($StateFile) {
         backendPort = $BackendPort
         frontendPort = $FrontendPort
         frontendUrl = $frontendNetworkUrl
+        launcherSessionId = $launcherSessionId
     } | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
 }
 if (-not $DisableAutoOpenBrowser) {

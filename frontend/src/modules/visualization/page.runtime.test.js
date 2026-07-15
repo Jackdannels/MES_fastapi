@@ -927,7 +927,7 @@ describe("VisualizationPage runtime", () => {
     vi.setSystemTime(new Date("2026-05-26T10:00:00+08:00"));
     snapshotState.snapshot = {
       "mes.devices": [
-        { code: "冲击一室", name: "冲击一室", status: "维护/校准" },
+        { code: "冲击一室", name: "冲击一室", status: "维修" },
       ],
       "mes.experiment_trays": [],
       "mes.experiments": [],
@@ -944,15 +944,60 @@ describe("VisualizationPage runtime", () => {
 
       const secondCard = wrapper.findAll('[data-testid="visual-screen-card"]')[1];
       expect(secondCard.text()).toContain("三日实验室排期屏");
-      expect(secondCard.text()).toContain("维护中");
+      expect(secondCard.text()).toContain("维修中");
 
       await secondCard.trigger("click");
 
       const preview = wrapper.find('[data-testid="visual-single-preview"]');
       expect(preview.text()).toContain("冲击一室");
-      expect(preview.text()).toContain("维护中");
+      expect(preview.text()).toContain("维修中");
       expect(preview.find(".visual-schedule-slot.state-maintenance").exists()).toBe(true);
-      expect(preview.find(".visual-schedule-slot.state-maintenance").text()).toBe("维护中");
+      expect(preview.find(".visual-schedule-slot.state-maintenance").text()).toBe("维修中");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rotates overlapping schedules one at a time with a breathing progress rail", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-23T10:00:00+08:00"));
+    snapshotState.snapshot = {
+      "mes.experiment_trays": [],
+      "mes.experiments": [
+        { task_code: "TASK-ROT-001", experiment_code: "EXP-ROT-001", experiment_name: "振动试验" },
+        { task_code: "TASK-ROT-002", experiment_code: "EXP-ROT-002", experiment_name: "温度冲击试验" },
+        { task_code: "TASK-ROT-003", experiment_code: "EXP-ROT-003", experiment_name: "高低温试验" },
+      ],
+      "mes.samples": [],
+      "mes.schedules": [
+        { id: "schedule-rot-001", task_code: "TASK-ROT-001", experiment_code: "EXP-ROT-001", device: "振动一室", start_at: "2026-05-23T08:00:00+08:00", end_at: "2026-05-23T09:00:00+08:00", status: "已排程" },
+        { id: "schedule-rot-002", task_code: "TASK-ROT-002", experiment_code: "EXP-ROT-002", device: "振动一室", start_at: "2026-05-23T09:00:00+08:00", end_at: "2026-05-23T10:00:00+08:00", status: "已排程" },
+        { id: "schedule-rot-003", task_code: "TASK-ROT-003", experiment_code: "EXP-ROT-003", device: "振动一室", start_at: "2026-05-23T10:00:00+08:00", end_at: "2026-05-23T11:00:00+08:00", status: "已排程" },
+      ],
+      "mes.tasks": [
+        { code: "TASK-ROT-001", name: "轮播任务一", test_type: "振动试验" },
+        { code: "TASK-ROT-002", name: "轮播任务二", test_type: "温度冲击试验" },
+        { code: "TASK-ROT-003", name: "轮播任务三", test_type: "高低温试验" },
+      ],
+    };
+
+    try {
+      const wrapper = mountPage();
+      await Promise.resolve();
+      await wrapper.vm.$nextTick();
+      await wrapper.findAll('[data-testid="visual-screen-card"]')[1].trigger("click");
+
+      const rotatingSlot = wrapper.find('[data-testid="visual-single-preview"] .visual-schedule-slot.has-rotating-items');
+      expect(rotatingSlot.exists()).toBe(true);
+      expect(rotatingSlot.findAll(".visual-schedule-task")).toHaveLength(1);
+      expect(rotatingSlot.findAll(".visual-schedule-cycle-light")).toHaveLength(3);
+      expect(rotatingSlot.text()).toContain("TASK-ROT-001");
+
+      await vi.advanceTimersByTimeAsync(4200);
+      await wrapper.vm.$nextTick();
+
+      expect(rotatingSlot.text()).toContain("TASK-ROT-002");
+      expect(rotatingSlot.findAll(".visual-schedule-cycle-light.is-active")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -999,7 +1044,7 @@ describe("VisualizationPage runtime", () => {
       await wrapper.findAll('[data-testid="visual-screen-card"]')[1].trigger("click");
 
       const preview = wrapper.find('[data-testid="visual-single-preview"]');
-      expect(preview.text()).toContain("维护冲突");
+      expect(preview.text()).toContain("维修冲突");
       expect(preview.find(".visual-schedule-slot.state-maintenance-conflict").exists()).toBe(true);
     } finally {
       vi.useRealTimers();

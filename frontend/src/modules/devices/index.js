@@ -9,7 +9,7 @@ export const route = {
   component: Page,
   meta: {
     title: "设备资源",
-    subtitle: "维护设备台账、连接配置、点位映射与校准维护记录。",
+    subtitle: "管理设备台账、连接配置、点位映射与维保记录。",
     module: "central",
   },
 };

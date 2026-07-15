@@ -185,14 +185,14 @@ describe("processLabModel", () => {
       Date.parse("2026-04-01T13:00:00Z"),
       [{ task_code: "TASK-001", experiment_code: "TASK-001-A", experiment_name: "盐雾试验" }],
       [],
-      [{ code: "Salt Lab", status: "维护/校准" }],
+      [{ code: "Salt Lab", status: "保养" }],
     );
 
     expect(cards[0]).toEqual(
       expect.objectContaining({
         canStartExperiment: false,
-        startDisabledReason: "设备维护中，禁止开始实验",
-        status: "维护/校准",
+        startDisabledReason: "设备维修中，禁止开始实验",
+        status: "保养",
         statusClass: "is-maintenance",
       }),
     );
@@ -377,7 +377,7 @@ describe("processLabModel", () => {
     );
   });
 
-  test("buildProcessLabCards ignores active schedules whose experiment is already completed", () => {
+  test("buildProcessLabCards keeps the latest completed experiment visible as an urgent lab", () => {
     const cards = buildProcessLabCards(
       [{ name: "Impact Lab 1", testType: "冲击试验" }],
       [{ code: "TASK-001", test_type: "冲击试验" }],
@@ -404,14 +404,44 @@ describe("processLabModel", () => {
 
     expect(cards[0]).toEqual(
       expect.objectContaining({
-        hasTask: false,
-        scheduleTime: "暂无排程",
-        status: "空闲",
-        statusClass: "is-idle",
-        taskCode: "-",
-        targetExperiment: "未分配",
+        hasTask: true,
+        status: "实验已完成",
+        statusClass: "is-urgent",
+        taskCode: "TASK-001",
+        targetExperiment: "冲击试验",
       })
     );
+  });
+
+  test("buildProcessLabCards marks a running experiment due within thirty minutes as urgent", () => {
+    const cards = buildProcessLabCards(
+      [{ name: "Salt Lab", testType: "盐雾试验" }],
+      [{ code: "TASK-URGENT", test_type: "盐雾试验" }],
+      [{
+        device: "Salt Lab",
+        end_at: "2026-04-09T10:20:00Z",
+        experiment_code: "TASK-URGENT-A",
+        start_at: "2026-04-09T08:00:00Z",
+        task_code: "TASK-URGENT",
+      }],
+      [],
+      Date.parse("2026-04-09T10:00:00Z"),
+      [{ task_code: "TASK-URGENT", experiment_code: "TASK-URGENT-A", experiment_name: "盐雾试验" }],
+      [{ task_code: "TASK-URGENT", experiment_code: "TASK-URGENT-A", tray_code: "TP-001" }],
+      [],
+      [],
+      [{
+        task_code: "TASK-URGENT",
+        experiment_code: "TASK-URGENT-A",
+        tray_code: "TP-001",
+        run_tray_status: "实验进行中",
+      }],
+    );
+
+    expect(cards[0]).toEqual(expect.objectContaining({
+      status: "20 分钟",
+      statusClass: "is-urgent",
+    }));
   });
 
   test("buildProcessLabCards keeps scoped trays visible when only the experiment global status is completed", () => {

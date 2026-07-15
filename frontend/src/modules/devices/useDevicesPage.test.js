@@ -145,7 +145,7 @@ describe("useDevicesPage", () => {
 
     expect(wrapper.vm.maintenanceConflictOpen).toBe(false);
     expect(wrapper.vm.maintenanceConflictDetail).toBe(null);
-    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维护窗口内的排程");
+    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维修窗口内的排程");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
@@ -280,14 +280,14 @@ describe("useDevicesPage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.deviceRows[0].status).toBe("维修");
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith({
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       "mes.devices": [
         expect.objectContaining({
           code: "冲击一室",
           status: "维修",
         }),
       ],
-    });
+    }));
 
     vi.setSystemTime(new Date("2099-03-20T09:01:00"));
     await vi.advanceTimersByTimeAsync(1000);
@@ -298,7 +298,18 @@ describe("useDevicesPage", () => {
       "mes.devices": [
         expect.objectContaining({
           code: "冲击一室",
+          maintenance_end_at: "",
+          maintenance_note: "",
+          maintenance_start_at: "",
+          maintenance_type: "",
           status: "可用",
+        }),
+      ],
+      "mes.maintenance_records": [
+        expect.objectContaining({
+          device_code: "冲击一室",
+          maintenance_type: "维修",
+          status: "已结束",
         }),
       ],
     });
@@ -334,14 +345,14 @@ describe("useDevicesPage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.deviceRows[0].status).toBe("保养");
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith({
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       "mes.devices": [
         expect.objectContaining({
           code: "冲击一室",
           status: "保养",
         }),
       ],
-    });
+    }));
   });
 
   test("blocks immediate repair when an existing schedule falls after the start time", async () => {
@@ -357,7 +368,7 @@ describe("useDevicesPage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.maintenanceConflictOpen).toBe(false);
-    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维护窗口内的排程");
+    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维修窗口内的排程");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
@@ -421,7 +432,7 @@ describe("useDevicesPage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.maintenanceConflictOpen).toBe(false);
-    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维护窗口内的排程");
+    expect(wrapper.vm.maintenancePlanWarning).toBe("请先调整或删除该设备维修窗口内的排程");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
@@ -684,7 +695,7 @@ describe("useDevicesPage", () => {
     await wrapper.vm.setDeviceAvailable();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith({
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       "mes.devices": [
         expect.objectContaining({
           code: "冲击一室",
@@ -695,7 +706,58 @@ describe("useDevicesPage", () => {
           status: "可用",
         }),
       ],
+      "mes.maintenance_records": [
+        expect.objectContaining({
+          device_code: "冲击一室",
+          maintenance_note: "提前结束",
+          maintenance_type: "维修",
+          status: "已结束",
+        }),
+      ],
+    }));
+  });
+
+  test("does not automatically reactivate a disabled device after its maintenance ends", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [
+        {
+          code: "冲击一室",
+          maintenance_end_at: "2099-03-20T07:00",
+          maintenance_note: "设备停用中",
+          maintenance_start_at: "2099-03-20T06:00",
+          maintenance_type: "计划保养",
+          name: "冲击试验系统-1",
+          status: "停用",
+        },
+      ],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+      "mes.maintenance_records": [],
     });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.deviceRows[0].status).toBe("停用");
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      "mes.devices": [
+        expect.objectContaining({
+          maintenance_end_at: "",
+          maintenance_start_at: "",
+          maintenance_type: "",
+          status: "停用",
+        }),
+      ],
+      "mes.maintenance_records": [
+        expect.objectContaining({
+          device_code: "冲击一室",
+          status: "已结束",
+        }),
+      ],
+    }));
   });
 
   test("rejects a planned maintenance end time that is not after its start time", async () => {
@@ -745,7 +807,7 @@ describe("useDevicesPage", () => {
     await wrapper.vm.setDeviceAvailable();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith({
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       "mes.devices": [
         expect.objectContaining({
           maintenance_end_at: "",
@@ -755,7 +817,7 @@ describe("useDevicesPage", () => {
           status: "可用",
         }),
       ],
-    });
+    }));
   });
 
   test("cancels a future planned maintenance with an end time", async () => {
@@ -789,7 +851,7 @@ describe("useDevicesPage", () => {
     await wrapper.vm.setDeviceAvailable();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith({
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
       "mes.devices": [
         expect.objectContaining({
           maintenance_end_at: "",
@@ -799,7 +861,7 @@ describe("useDevicesPage", () => {
           status: "可用",
         }),
       ],
-    });
+    }));
   });
 
   test("keeps the early-end action available after an open edit dialog crosses the planned start time", async () => {
@@ -846,5 +908,33 @@ describe("useDevicesPage", () => {
 
     expect(wrapper.vm.canSetDeviceAvailable).toBe(false);
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("sorts persisted maintenance records newest first and filters by device", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [
+        { code: "冲击一室", name: "冲击试验系统-1", status: "可用" },
+        { code: "振动一室", name: "振动试验系统-1", status: "可用" },
+      ],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+      "mes.maintenance_records": [
+        { device_code: "冲击一室", ended_at: "2099-03-19 09:00:00", id: "record-earlier" },
+        { device_code: "振动一室", ended_at: "2099-03-20 09:00:00", id: "record-later" },
+      ],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenanceRecordRows.map((record) => record.id)).toEqual(["record-later", "record-earlier"]);
+
+    wrapper.vm.maintenanceRecordDeviceFilter = "冲击一室";
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenanceRecordRows.map((record) => record.id)).toEqual(["record-earlier"]);
   });
 });

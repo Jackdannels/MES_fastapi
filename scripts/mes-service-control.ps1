@@ -50,14 +50,72 @@ function Stop-ProcessTree($ProcessId) {
     }
 }
 
+function Get-ProcessMap {
+    $map = @{}
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | ForEach-Object {
+        $map[[int]$_.ProcessId] = $_
+    }
+    return $map
+}
+
+function Get-MesCommandPids($ProcessMap, [string]$LauncherSessionId = "") {
+    $sessionMarker = if ($LauncherSessionId) { "MES_LAUNCHER_SESSION=$LauncherSessionId" } else { "" }
+    @($ProcessMap.Values | Where-Object {
+        $commandLine = [string]$_.CommandLine
+        if (-not $commandLine -or [string]$_.Name -notmatch "(?i)^cmd\.exe$") { return $false }
+        if ($sessionMarker) { return $commandLine -like "*$sessionMarker*" }
+        return $commandLine -like "*$ProjectRoot*" -and (
+            $commandLine -like "*scripts\run_local.py*" -or $commandLine -like "*npm run dev*"
+        )
+    } | Select-Object -ExpandProperty ProcessId -Unique)
+}
+
+function Get-ParentCommandPids($ProcessMap, $ProcessIds) {
+    $commandPids = @()
+    foreach ($processId in @($ProcessIds)) {
+        $currentId = [int]$processId
+        for ($depth = 0; $depth -lt 32 -and $ProcessMap.ContainsKey($currentId); $depth++) {
+            $process = $ProcessMap[$currentId]
+            if ([string]$process.Name -match "(?i)^cmd\.exe$") {
+                $commandPids += $currentId
+                break
+            }
+            $currentId = [int]$process.ParentProcessId
+        }
+    }
+    return @($commandPids | Select-Object -Unique)
+}
+
+function Stop-TrackedMesProcess($ProcessId) {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) { return }
+    # Windows Terminal is shared by tabs and may host unrelated user shells; close only MES command trees.
+    if ($process.ProcessName -match "(?i)^(WindowsTerminal|wt|OpenConsole)$") { return }
+    Stop-ProcessTree $ProcessId
+}
+
+function Wait-MesPortsReleased {
+    $deadline = (Get-Date).AddSeconds(10)
+    do {
+        if (@(Get-ListenerPids $backendPort).Count -eq 0 -and @(Get-ListenerPids $frontendPort).Count -eq 0) { return }
+        Start-Sleep -Milliseconds 200
+    } while ((Get-Date) -lt $deadline)
+    throw "MES服务端口未能在10秒内释放"
+}
+
 function Stop-MesSystem {
     if (-not (Test-MesRunning)) { return @{ status = "not_running"; message = "未检测到开启的MES系统，无需关闭" } }
     if ($DryRun) { return @{ status = "stopped"; message = "MES系统已关闭" } }
 
     $state = Read-State
-    @($state.browserPid, $state.backendCommandPid, $state.frontendCommandPid) | ForEach-Object { Stop-ProcessTree $_ }
+    $processMap = Get-ProcessMap
+    $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) | Select-Object -Unique }
+    @($state.browserPid, $state.backendCommandPid, $state.frontendCommandPid) | ForEach-Object { Stop-TrackedMesProcess $_ }
+    Get-MesCommandPids $processMap $state.launcherSessionId | ForEach-Object { Stop-ProcessTree $_ }
+    Get-ParentCommandPids $processMap $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
     if (-not $IgnorePortListeners) {
-        @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) | Select-Object -Unique | ForEach-Object { Stop-ProcessTree $_ }
+        $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
+        Wait-MesPortsReleased
     }
     if (Test-Path -LiteralPath $StateFile) { Remove-Item -LiteralPath $StateFile -Force }
     return @{ status = "stopped"; message = "MES系统已关闭" }

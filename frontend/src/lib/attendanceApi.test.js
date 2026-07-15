@@ -4,6 +4,7 @@ import {
   createAttendanceUser,
   deleteAttendanceUser,
   listLaboratoryAttendanceSessions,
+  listAttendanceOperationLogs,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,
   logoutLaboratoryAttendance,
@@ -118,6 +119,63 @@ describe("attendanceApi", () => {
         active: true,
       }),
     });
+  });
+
+  test("lists employee operation logs with administrator credentials and optional filters", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    }));
+
+    await listAttendanceOperationLogs({
+      adminPassword: "123",
+      adminUsername: "admin",
+      date: "2026-07-15",
+      employeeName: "张三",
+      labName: "盐雾试验室",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/attendance/operation-logs/query", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        adminUsername: "admin",
+        adminPassword: "123",
+        date: "2026-07-15",
+        employeeName: "张三",
+        labName: "盐雾试验室",
+      }),
+    });
+  });
+
+  test("sends multi-select employee and laboratory filters for operation logs", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    }));
+
+    await listAttendanceOperationLogs({
+      adminPassword: "123",
+      adminUsername: "admin",
+      employeeNames: ["张三", "李四"],
+      labNames: ["冲击一室", "盐雾试验室"],
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/attendance/operation-logs/query", expect.objectContaining({
+      body: JSON.stringify({
+        adminUsername: "admin",
+        adminPassword: "123",
+        date: "",
+        employeeName: "",
+        labName: "",
+        employeeNames: ["张三", "李四"],
+        labNames: ["冲击一室", "盐雾试验室"],
+      }),
+    }));
   });
 
   test("starts laboratory attendance work timer", async () => {

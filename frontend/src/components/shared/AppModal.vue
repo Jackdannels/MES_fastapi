@@ -3,7 +3,7 @@
     <div v-if="open" class="modal-backdrop" @click="handleBackdropClose"></div>
     <div
       v-if="open"
-      class="modal-content"
+      :class="['modal-content', contentClass]"
       role="dialog"
       aria-modal="true"
       :aria-labelledby="title ? titleId : undefined"
@@ -30,6 +30,10 @@ const props = defineProps({
   closeOnEsc: {
     type: Boolean,
     default: true,
+  },
+  contentClass: {
+    type: String,
+    default: "",
   },
   open: {
     type: Boolean,

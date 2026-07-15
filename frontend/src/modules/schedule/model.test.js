@@ -2226,10 +2226,10 @@ describe("schedulePageModel", () => {
     expect(tempShockRow?.slots.some((slot) => slot.scheduleId === "schedule-30-c")).toBe(true);
   });
 
-  test("buildGanttRows marks idle slots as maintenance or disabled when devices are unavailable", () => {
+  test("buildGanttRows marks idle slots as repair or disabled when devices are unavailable", () => {
     const gantt = buildGanttRows({
       devices: [
-        { code: "冲击一室", status: "维护/校准" },
+        { code: "冲击一室", status: "维修" },
         { code: "冲击二室", status: "停用" },
         {
           code: "振动一室",
@@ -2246,9 +2246,9 @@ describe("schedulePageModel", () => {
 
     expect(gantt.rows.find((row) => row.device === "冲击一室")?.slots[0]).toEqual(expect.objectContaining({
       className: expect.stringContaining("maintenance"),
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
-      title: "冲击一室维护中，暂不可排程",
+      title: "冲击一室维修中，暂不可排程",
     }));
     expect(gantt.rows.find((row) => row.device === "冲击二室")?.slots[0]).toEqual(expect.objectContaining({
       className: expect.stringContaining("disabled"),
@@ -2257,10 +2257,55 @@ describe("schedulePageModel", () => {
       title: "冲击二室已停用，暂不可排程",
     }));
     expect(gantt.rows.find((row) => row.device === "振动一室")?.slots[0]).toEqual(expect.objectContaining({
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
-      title: "振动一室维护中，暂不可排程",
+      title: "振动一室维修中，暂不可排程",
     }));
+  });
+
+  test("buildGanttRows does not render a past repair window as active", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_end_at: "2099-03-20T10:00",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "维修",
+        },
+      ],
+      now: new Date("2099-03-20T11:00:00"),
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [],
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    expect(impactRow?.slots).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "空闲", state: "idle" }),
+    ]));
+    expect(impactRow?.slots.some((slot) => slot.state === "maintenance")).toBe(false);
+  });
+
+  test("buildGanttRows limits a timed repair to only the overlapping slot while it is still active", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "高低温湿热二室",
+          maintenance_end_at: "2099-03-20T16:49:00",
+          maintenance_start_at: "2099-03-20T13:49:00",
+          status: "维修",
+        },
+      ],
+      now: new Date("2099-03-20T14:00:00"),
+      schedules: [],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [],
+    });
+
+    const row = gantt.rows.find((item) => item.device === "高低温湿热二室");
+    expect(row?.slots[0]).toEqual(expect.objectContaining({ state: "idle", label: "空闲" }));
+    expect(row?.slots[1]).toEqual(expect.objectContaining({ state: "maintenance", label: "维修中" }));
+    expect(row?.slots.slice(2).every((slot) => slot.state === "idle")).toBe(true);
   });
 
   test("buildGanttRows treats maintenance without an end time as open-ended", () => {
@@ -2280,9 +2325,9 @@ describe("schedulePageModel", () => {
 
     const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
     expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
-      title: "冲击一室维护中，暂不可排程",
+      title: "冲击一室维修中，暂不可排程",
     }));
   });
 
@@ -2314,7 +2359,7 @@ describe("schedulePageModel", () => {
     const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
     expect(impactRow?.slots[0]).toEqual(expect.objectContaining({ scheduleId: "schedule-before-maintenance" }));
     expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
     }));
   });
@@ -2347,10 +2392,10 @@ describe("schedulePageModel", () => {
     const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
     expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
       className: expect.stringContaining("maintenance-conflict"),
-      label: "维护冲突",
+      label: "维修冲突",
       scheduleId: "schedule-1",
       state: "maintenance-conflict",
-      title: expect.stringContaining("冲击一室维护中"),
+      title: expect.stringContaining("冲击一室维修中"),
     }));
   });
 
@@ -2426,7 +2471,42 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "冲击试验" }],
     });
 
-    expect(result.error).toBe("该设备处于维护状态，不可排程");
+    expect(result.error).toBe("该设备处于维修状态，不可排程");
+  });
+
+  test("createScheduleRecord allows a schedule after the repair window has ended", () => {
+    const result = createScheduleRecord({
+      devices: [
+        {
+          code: "Lab-A",
+          maintenance_end_at: "2099-03-20T10:00",
+          maintenance_start_at: "2099-03-20T08:00",
+          status: "维修",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "TASK-001",
+          experiment_code: "TASK-001-A",
+          experiment_name: "A实验",
+        },
+      ],
+      form: {
+        custom_start: "11:00",
+        device: "Lab-A",
+        experiment_code: "TASK-001-A",
+        planned_hours: 1,
+        schedule_date: "2099-03-20",
+        task_code: "TASK-001",
+        time_slot: "custom",
+      },
+      now: new Date("2099-03-20T11:00:00"),
+      schedules: [],
+      streams: [],
+      tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "UNKNOWN" }],
+    });
+
+    expect(result.error).toBeUndefined();
   });
 
   test("createScheduleRecord rejects a schedule inside open-ended planned maintenance", () => {
@@ -2460,7 +2540,7 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "TASK-001", status: STATUS_WAITING, test_type: "UNKNOWN" }],
     });
 
-    expect(result.error).toBe("该设备处于维护状态，不可排程");
+    expect(result.error).toBe("该设备处于维修状态，不可排程");
   });
 
   test("createScheduleRecord rejects a disabled device with a disabled-device message", () => {
@@ -2577,7 +2657,7 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "SYLU-2026-03-001", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
     });
 
-    expect(result.error).toBe("该设备处于维护状态，不可排程");
+    expect(result.error).toBe("该设备处于维修状态，不可排程");
   });
 
   test("buildExperimentOptions keeps impact or vibration experiments available while scheduled axes remain", () => {

@@ -42,9 +42,6 @@ const resolveDeviceIssueTone = (...values) => {
   if (text.includes("保养")) {
     return "upkeep";
   }
-  if (text.includes("维护") || text.includes("校准")) {
-    return "maintenance";
-  }
   if (
     text.includes("故障")
     || text.includes("维修")
@@ -59,8 +56,6 @@ const statusIsRepair = (value) => {
   const text = normalizeText(value);
   return text.includes("故障")
     || text.includes("维修")
-    || text.includes("维护")
-    || text.includes("校准")
     || text.includes("保养")
     || text.includes("停用")
     || text.includes("不可用");
@@ -349,13 +344,12 @@ function buildLabCurrentTaskMatrixView(input = {}) {
         summary.task += 1;
       }
       if (lab.statusTone === "repair") summary.repair += 1;
-      if (lab.statusTone === "maintenance") summary.maintenance += 1;
       if (lab.statusTone === "upkeep") summary.upkeep += 1;
       if (lab.statusTone === "running") summary.running += 1;
       if (lab.statusTone === "urgent") summary.urgent += 1;
       return summary;
     },
-    { maintenance: 0, repair: 0, running: 0, scheduled: 0, task: 0, total: 0, upkeep: 0, urgent: 0 },
+    { repair: 0, running: 0, scheduled: 0, task: 0, total: 0, upkeep: 0, urgent: 0 },
   );
 
   return {

@@ -40,8 +40,8 @@ describe("visualization styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
     const pageSource = readFileSync(visualizationPagePath, "utf8");
 
-    expect(pageSource).toContain("scheduleSlotTaskColor(slot)");
-    expect(pageSource).toContain("\"--schedule-task-color\": scheduleSlotTaskColor(slot)");
+    expect(pageSource).toContain("scheduleSlotTaskColor(slot, activeItem)");
+    expect(pageSource).toContain("\"--schedule-task-color\": taskColor");
     expect(pageSource).toContain("\"--schedule-task-color\": item?.color || slot.taskColor");
     const occupiedSlotRule = source.slice(
       source.indexOf(".visual-schedule-slot.is-planned,"),
@@ -50,6 +50,20 @@ describe("visualization styles", () => {
     expect(occupiedSlotRule).toContain(".visual-schedule-slot.state-busy");
     expect(occupiedSlotRule).toContain(".visual-schedule-slot.state-stacked");
     expect(occupiedSlotRule).toContain("var(--schedule-task-color)");
+  });
+
+  test("schedule screen rotates overlapping plans with a low-profile breathing light rail", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readFileSync(visualizationPagePath, "utf8");
+
+    expect(pageSource).toContain("SCHEDULE_SLOT_ROTATION_INTERVAL_MS = 4200");
+    expect(pageSource).toContain("has-rotating-items");
+    expect(pageSource).toContain("visual-schedule-cycle-lights");
+    expect(source).toContain(".visual-schedule-cycle-light.is-active");
+    expect(source).toContain("@keyframes visual-schedule-cycle-breathe");
+    expect(source).toContain("background: #f8fafc");
+    expect(source).toContain("rgba(34, 211, 238, 0.96)");
+    expect(source).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
   test("visualization cells constrain long text inside their panels", () => {
@@ -282,7 +296,12 @@ describe("visualization styles", () => {
     const maintenanceCardRule = source.match(/\.visual-lab-matrix-screen \.card\.maintenance\s*{[^}]*}/s)?.[0] || "";
     const upkeepCardRule = source.match(/\.visual-lab-matrix-screen \.card\.upkeep\s*{[^}]*}/s)?.[0] || "";
     expect(repairCardRule).not.toBe(maintenanceCardRule);
-    expect(repairCardRule).not.toBe(upkeepCardRule);
+    expect(upkeepCardRule).toContain("border-color: var(--red)");
+    expect(upkeepCardRule).toContain("background: linear-gradient(135deg, rgba(58, 18, 18, 0.9), rgba(2, 15, 20, 0.86))");
+    const repairBadgeRule = source.match(/\.visual-lab-matrix-screen \.card\.repair \.badge\s*{[^}]*}/s)?.[0] || "";
+    const upkeepBadgeRule = source.match(/\.visual-lab-matrix-screen \.card\.upkeep \.badge\s*{[^}]*}/s)?.[0] || "";
+    expect(repairBadgeRule).toContain("color: var(--red)");
+    expect(upkeepBadgeRule).toContain("color: var(--red)");
     expect(maintenanceCardRule).not.toBe(upkeepCardRule);
     expect(source).toContain(".visual-lab-matrix-screen .card.is-blinking");
     expect(source).toContain("@keyframes lab-matrix-pulse");

@@ -1,4 +1,4 @@
-// 负责设备台账状态、维护表单、维护计划和点位管理流程。
+// 负责设备台账状态、维保表单、维保计划和点位管理流程。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
@@ -39,10 +39,10 @@ import {
 const normalizeText = (value) => String(value ?? "").trim();
 const isUnavailableDeviceStatus = (status) => {
   const normalized = normalizeText(status);
-  return ["维护", "维修", "保养", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
+  return ["维修", "保养", "停用", "禁用", "不可用"].some((keyword) => normalized.includes(keyword));
 };
 const isPlannedMaintenanceType = (type) => normalizeText(type).startsWith("计划");
-const MAINTENANCE_SCHEDULE_CONFLICT_WARNING = "请先调整或删除该设备维护窗口内的排程";
+const MAINTENANCE_SCHEDULE_CONFLICT_WARNING = "请先调整或删除该设备维修窗口内的排程";
 const MAINTENANCE_END_TIME_WARNING = "结束时间必须晚于开始时间";
 const maintenanceTypeToStatus = (type) => (normalizeText(type).includes("保养") ? "保养" : "维修");
 const isRunningExperimentStatus = (status) => ["实验进行中", "实验中"].includes(normalizeText(status));
@@ -51,6 +51,31 @@ const parseTime = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 const toBusinessDateTimeValue = (value = new Date()) => formatLocalDateTime(value);
+const MAINTENANCE_RECORD_STATUS = "已结束";
+
+const maintenanceRecordType = (value) => (normalizeText(value).includes("保养") ? "保养" : "维修");
+
+const buildMaintenanceRecord = ({ device, endedAt, endMode }) => ({
+  device_code: normalizeText(device?.code),
+  device_name: normalizeText(device?.name) || normalizeText(device?.code),
+  ended_at: toBusinessDateTimeValue(new Date(endedAt)),
+  end_mode: normalizeText(endMode),
+  id: `maintenance-record-${normalizeText(device?.code) || "device"}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+  maintenance_note: normalizeText(device?.maintenance_note),
+  maintenance_type: maintenanceRecordType(device?.maintenance_type),
+  started_at: normalizeText(device?.maintenance_start_at),
+  status: MAINTENANCE_RECORD_STATUS,
+});
+
+const clearMaintenanceFields = (device, { status, updatedAt }) => ({
+  ...device,
+  maintenance_end_at: "",
+  maintenance_note: "",
+  maintenance_start_at: "",
+  maintenance_type: "",
+  status,
+  updated_at: toBusinessDateTimeValue(updatedAt),
+});
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPage() {
@@ -61,6 +86,7 @@ function useDevicesPage() {
     STORAGE_KEYS.experiment_runs,
     STORAGE_KEYS.experiment_run_trays,
     STORAGE_KEYS.experiment_trays,
+    STORAGE_KEYS.maintenance_records,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.tasks,
@@ -71,6 +97,7 @@ function useDevicesPage() {
   const rawExperimentRuns = ref([]);
   const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
+  const rawMaintenanceRecords = ref([]);
   const rawSamples = ref([]);
   const rawSchedules = ref([]);
   const rawTasks = ref([]);
@@ -99,6 +126,14 @@ function useDevicesPage() {
   const baseRows = computed(() =>
     buildDeviceRows(rawDevices.value, rawSchedules.value, now.value, rawSamples.value, rawExperimentTrays.value, rawExperimentRuns.value),
   );
+  const maintenanceRecordDeviceFilter = ref("");
+  const maintenanceRecordRows = computed(() => {
+    const deviceCode = normalizeText(maintenanceRecordDeviceFilter.value);
+    return rawMaintenanceRecords.value
+      .filter((record) => !deviceCode || normalizeText(record?.device_code) === deviceCode)
+      .map((record) => ({ ...record }))
+      .sort((left, right) => (parseTime(right?.ended_at) || 0) - (parseTime(left?.ended_at) || 0));
+  });
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
   const maintenancePlanIsPlanned = computed(() => isPlannedMaintenanceType(maintenancePlanForm.value.type));
@@ -157,10 +192,12 @@ function useDevicesPage() {
     }
   };
 
-  const persistDevices = async (nextDevices) => {
+  const persistDevices = async (nextDevices, nextMaintenanceRecords = rawMaintenanceRecords.value) => {
     rawDevices.value = nextDevices;
+    rawMaintenanceRecords.value = nextMaintenanceRecords;
     await persistSnapshot({
       [STORAGE_KEYS.devices]: nextDevices,
+      [STORAGE_KEYS.maintenance_records]: nextMaintenanceRecords,
     });
   };
 
@@ -170,6 +207,7 @@ function useDevicesPage() {
       return null;
     }
     let changed = false;
+    const nextMaintenanceRecords = rawMaintenanceRecords.value.map((record) => ({ ...record }));
     const nextDevices = rawDevices.value.map((device) => {
       const startAt = parseTime(device?.maintenance_start_at);
       const endAt = parseTime(device?.maintenance_end_at);
@@ -189,25 +227,29 @@ function useDevicesPage() {
           updated_at: toBusinessDateTimeValue(currentDate),
         };
       }
-      if (endAt && endAt < current && normalizeText(device?.status) !== "可用") {
+      if (endAt && endAt < current) {
         changed = true;
-        return {
-          ...device,
-          status: "可用",
-          updated_at: toBusinessDateTimeValue(currentDate),
-        };
+        nextMaintenanceRecords.unshift(buildMaintenanceRecord({
+          device,
+          endedAt: endAt,
+          endMode: "自动结束",
+        }));
+        return clearMaintenanceFields(device, {
+          status: normalizeText(device?.status) === "停用" ? "停用" : "可用",
+          updatedAt: currentDate,
+        });
       }
       return { ...device };
     });
-    return changed ? nextDevices : null;
+    return changed ? { devices: nextDevices, maintenanceRecords: nextMaintenanceRecords } : null;
   };
 
   const syncTimedMaintenanceStatuses = async (currentDate = new Date()) => {
-    const nextDevices = buildTimedMaintenanceStatusUpdates(currentDate);
-    if (!nextDevices) {
+    const updates = buildTimedMaintenanceStatusUpdates(currentDate);
+    if (!updates) {
       return;
     }
-    await persistDevices(nextDevices);
+    await persistDevices(updates.devices, updates.maintenanceRecords);
   };
 
   const saveCurrentDevice = async () => {
@@ -223,11 +265,11 @@ function useDevicesPage() {
   const buildMaintenanceException = ({ schedule, timestamp }) => ({
     acknowledged_at: "",
     created_at: timestamp,
-    detail: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维护，已自动删除`,
+    detail: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维修，已自动删除`,
     device: normalizeText(schedule?.device),
     experiment_code: normalizeText(schedule?.experiment_code),
     id: `device-maintenance-${normalizeText(schedule?.id) || Date.now()}`,
-    reason: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维护，已自动删除`,
+    reason: `${normalizeText(schedule?.device) || "对应试验间"}在排程期间维修，已自动删除`,
     schedule_id: normalizeText(schedule?.id),
     status: "pending",
     task_code: normalizeText(schedule?.task_code),
@@ -635,11 +677,13 @@ function useDevicesPage() {
     const nextSelected = buildSelectedDevice(row ?? deviceForm.value);
     selectedDevice.value = nextSelected;
     maintenanceForm.value = createMaintenanceForm(row ?? deviceForm.value);
+    maintenanceRecordDeviceFilter.value = normalizeText(row?.code);
     deviceDrawer.openWith(nextSelected);
   };
 
   const closeDeviceDrawer = () => {
     deviceDrawer.close();
+    maintenanceRecordDeviceFilter.value = "";
     flushPendingStorageRefresh();
   };
 
@@ -785,20 +829,21 @@ function useDevicesPage() {
     if (!deviceCode || !canSetDeviceAvailable.value) {
       return;
     }
+    const endedAt = new Date();
+    const nextMaintenanceRecords = [
+      buildMaintenanceRecord({
+        device: rawDevices.value.find((device) => normalizeText(device?.code) === deviceCode),
+        endedAt,
+        endMode: hasFuturePlannedMaintenance.value ? "取消计划" : "提前结束",
+      }),
+      ...rawMaintenanceRecords.value.map((record) => ({ ...record })),
+    ];
     const nextDevices = rawDevices.value.map((device) =>
       normalizeText(device?.code) === deviceCode
-        ? {
-            ...device,
-            maintenance_end_at: "",
-            maintenance_note: "",
-            maintenance_start_at: "",
-            maintenance_type: "",
-            status: "可用",
-            updated_at: toBusinessDateTimeValue(new Date()),
-          }
+        ? clearMaintenanceFields(device, { status: "可用", updatedAt: endedAt })
         : { ...device },
     );
-    await persistDevices(nextDevices);
+    await persistDevices(nextDevices, nextMaintenanceRecords);
     closeEditDevice();
   };
 
@@ -873,6 +918,7 @@ function useDevicesPage() {
     rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
       ? snapshot[STORAGE_KEYS.experiment_trays]
       : [];
+    rawMaintenanceRecords.value = Array.isArray(snapshot[STORAGE_KEYS.maintenance_records]) ? snapshot[STORAGE_KEYS.maintenance_records] : [];
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
@@ -896,6 +942,7 @@ function useDevicesPage() {
       STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_trays,
+      STORAGE_KEYS.maintenance_records,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.schedules,
       STORAGE_KEYS.tasks,
@@ -955,6 +1002,8 @@ function useDevicesPage() {
     maintenanceConflictDetail,
     maintenanceConflictOpen: maintenanceConflictModal.open,
     maintenanceForm,
+    maintenanceRecordDeviceFilter,
+    maintenanceRecordRows,
     maintenancePlanForm,
     maintenancePlanIsPlanned,
     maintenancePlanWarning,

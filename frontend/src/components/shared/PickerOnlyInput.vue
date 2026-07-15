@@ -71,6 +71,10 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  displaySlashDate: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -87,7 +91,12 @@ const inputAttrs = computed(() => {
 const isCustomDate = computed(() => props.type === "date");
 const isExternallyReadonly = computed(() => Boolean(inputAttrs.value.readonly || inputAttrs.value.disabled));
 const inputType = computed(() => (isCustomDate.value ? "text" : props.type));
-const displayValue = computed(() => props.modelValue);
+const displayValue = computed(() => {
+  if (props.displaySlashDate && props.type === "date") {
+    return String(props.modelValue || "").replaceAll("-", " / ");
+  }
+  return props.modelValue;
+});
 const calendarYear = computed(() => calendarCursor.value.getFullYear());
 const calendarMonth = computed(() => calendarCursor.value.getMonth());
 const todayValue = computed(() => toDateValue(new Date()));

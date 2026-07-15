@@ -84,6 +84,27 @@ async function listAttendanceWorkTimes(date = "") {
   return readJson(`/api/attendance/work-times${query}`, "读取员工工作时间失败");
 }
 
+async function listAttendanceOperationLogs(filters = {}) {
+  const employeeNames = Array.isArray(filters.employeeNames)
+    ? filters.employeeNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  const labNames = Array.isArray(filters.labNames)
+    ? filters.labNames.map((name) => String(name || "").trim()).filter(Boolean)
+    : [];
+  return writeJson("/api/attendance/operation-logs/query", {
+    body: {
+      adminUsername: String(filters.adminUsername || "").trim(),
+      adminPassword: String(filters.adminPassword || ""),
+      date: String(filters.date || "").trim(),
+      employeeName: String(filters.employeeName || "").trim(),
+      labName: String(filters.labName || "").trim(),
+      ...(employeeNames.length ? { employeeNames } : {}),
+      ...(labNames.length ? { labNames } : {}),
+    },
+    message: "读取员工工作日志失败",
+  });
+}
+
 async function listAttendanceUsers() {
   return readJson("/api/attendance/users", "读取员工账号失败");
 }
@@ -152,6 +173,7 @@ export {
   deleteAttendanceUser,
   listLaboratoryAttendanceSessions,
   listAttendanceUsers,
+  listAttendanceOperationLogs,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,
   loginLaboratoryAttendanceByQr,

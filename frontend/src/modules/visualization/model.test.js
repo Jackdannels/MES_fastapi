@@ -205,13 +205,13 @@ describe("visualization model", () => {
     }));
   });
 
-  test("buildLabCurrentTaskMatrixView assigns separate tones to repair maintenance and upkeep states", () => {
+  test("buildLabCurrentTaskMatrixView assigns repair and upkeep tones to the supported maintenance states", () => {
     const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
-      labNames: ["维修试验室", "维护试验室", "保养试验室"],
+      labNames: ["维修一室", "维修二室", "保养试验室"],
       now: new Date("2026-06-17T14:45:00+08:00"),
       devices: [
-        { code: "维修试验室", name: "维修试验室", status: "维修" },
-        { code: "维护试验室", name: "维护试验室", status: "维护" },
+        { code: "维修一室", name: "维修一室", status: "维修" },
+        { code: "维修二室", name: "维修二室", status: "维修" },
         { code: "保养试验室", name: "保养试验室", status: "保养" },
       ],
       tasks: [],
@@ -225,12 +225,12 @@ describe("visualization model", () => {
     });
 
     expect(view.labs.map((lab) => [lab.labName, lab.statusLabel, lab.statusTone])).toEqual([
-      ["维修试验室", "维修", "repair"],
-      ["维护试验室", "维护", "maintenance"],
+      ["维修一室", "维修", "repair"],
+      ["维修二室", "维修", "repair"],
       ["保养试验室", "保养", "upkeep"],
     ]);
-    expect(view.counts.repair).toBe(1);
-    expect(view.counts.maintenance).toBe(1);
+    expect(view.counts.repair).toBe(2);
+    expect(view.counts.maintenance).toBeUndefined();
     expect(view.counts.upkeep).toBe(1);
   });
 
@@ -1854,7 +1854,7 @@ describe("visualization model", () => {
   test("marks visualization schedule idle slots as maintenance or disabled from device state", () => {
     const view = buildLabScheduleThreeDayView({
       devices: [
-        { code: "冲击一室", status: "维护/校准" },
+        { code: "冲击一室", status: "维修" },
         { code: "冲击二室", status: "停用" },
       ],
       labNames: ["冲击一室", "冲击二室"],
@@ -1863,7 +1863,7 @@ describe("visualization model", () => {
     });
 
     expect(view.rows.find((row) => row.device === "冲击一室")?.slots[0]).toEqual(expect.objectContaining({
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
     }));
     expect(view.rows.find((row) => row.device === "冲击二室")?.slots[0]).toEqual(expect.objectContaining({
@@ -1872,9 +1872,28 @@ describe("visualization model", () => {
     }));
   });
 
+  test("keeps visualization maintenance markers inside the planned maintenance window", () => {
+    const view = buildLabScheduleThreeDayView({
+      devices: [{
+        code: "高低温湿热二室",
+        maintenance_end_at: "2026-05-23T16:49:00+08:00",
+        maintenance_start_at: "2026-05-23T13:49:00+08:00",
+        status: "维修",
+      }],
+      labNames: ["高低温湿热二室"],
+      now: new Date("2026-05-23T14:00:00+08:00"),
+      schedules: [],
+    });
+
+    const slots = view.rows.find((row) => row.device === "高低温湿热二室")?.slots || [];
+    expect(slots[0]).toEqual(expect.objectContaining({ state: "idle", label: "空闲" }));
+    expect(slots[1]).toEqual(expect.objectContaining({ state: "maintenance", label: "维修中" }));
+    expect(slots.slice(2).every((slot) => slot.state === "idle")).toBe(true);
+  });
+
   test("marks lab process panel as maintenance when the matched device is unavailable", () => {
     const panels = buildLabProcessPanels({
-      devices: [{ code: "冲击一室", status: "维护/校准" }],
+      devices: [{ code: "冲击一室", status: "维修" }],
       labNames: ["冲击一室"],
       samples: [
         {
@@ -1910,10 +1929,10 @@ describe("visualization model", () => {
     });
 
     expect(panels[0]).toEqual(expect.objectContaining({
-      alert: "设备维护中",
-      healthLabel: "维护",
-      healthState: "maintenance",
-      state: "维护/校准",
+      alert: "设备维修中",
+      healthLabel: "维修",
+      healthState: "repair",
+      state: "维修",
     }));
   });
 

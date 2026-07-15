@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   samples: "mes.samples",
   staging_events: "mes.staging_events",
   devices: "mes.devices",
+  maintenance_records: "mes.maintenance_records",
   streams: "mes.streams",
   conflicts: "mes.conflicts",
 };

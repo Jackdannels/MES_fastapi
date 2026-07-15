@@ -943,7 +943,7 @@ const CurrentLabTasksScreen = {
         ]),
         h("div", { class: "stats" }, [
           h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
-          h("div", { class: "metric-repair stat red" }, [h("span", "维修/维护/保养"), h("strong", issueCount)]),
+          h("div", { class: "metric-repair stat red" }, [h("span", "维修/保养"), h("strong", issueCount)]),
           h("div", { class: "metric-running stat green" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
           h("div", { class: "metric-urgent stat orange" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
         ]),
@@ -1134,7 +1134,7 @@ const scheduleStateLabel = (state) => {
     return "冲突";
   }
   if (normalized === "maintenance-conflict") {
-    return "维护冲突";
+    return "维修冲突";
   }
   if (normalized === "completed") {
     return "已完成";
@@ -1143,7 +1143,7 @@ const scheduleStateLabel = (state) => {
     return "空闲";
   }
   if (normalized === "maintenance") {
-    return "维护中";
+    return "维修中";
   }
   if (normalized === "disabled") {
     return "停用";
@@ -1156,8 +1156,10 @@ const compactTimeRange = (value) => {
   return matches.length >= 2 ? `${matches[0]}-${matches.at(-1)}` : String(value || "").trim();
 };
 
-const scheduleSlotTaskColor = (slot) =>
-  String(slot?.taskColor || slot?.items?.find((item) => item?.color)?.color || "").trim();
+const SCHEDULE_SLOT_ROTATION_INTERVAL_MS = 4200;
+
+const scheduleSlotTaskColor = (slot, item = null) =>
+  String(item?.color || slot?.taskColor || slot?.items?.find((candidate) => candidate?.color)?.color || "").trim();
 
 const renderScheduleItem = (item, slot, compact) =>
   h("div", { class: "visual-schedule-task", style: item?.color || slot.taskColor ? { "--schedule-task-color": item?.color || slot.taskColor } : null }, [
@@ -1166,16 +1168,19 @@ const renderScheduleItem = (item, slot, compact) =>
     h("small", compactTimeRange(item?.timeRange || slot.title)),
   ]);
 
-const renderScheduleSlot = (slot, compact) => {
-  const items = Array.isArray(slot?.items) ? slot.items : [];
-  const visibleItems = items.length ? items.slice(0, compact ? 1 : 2) : [];
+const renderScheduleSlot = (slot, compact, cycleTick = 0) => {
+  const allItems = Array.isArray(slot?.allItems) && slot.allItems.length ? slot.allItems : [];
+  const items = allItems.length ? allItems : Array.isArray(slot?.items) ? slot.items : [];
+  const rotatesItems = !compact && items.length > 1;
+  const activeItem = items.length ? items[rotatesItems ? cycleTick % items.length : 0] : null;
+  const visibleItems = activeItem ? [activeItem] : [];
   const stateLabel = scheduleStateLabel(slot.state);
   const normalizedState = String(slot?.state || "").trim();
   const isPlainCell = stateLabel === "已排程" || stateLabel === "空闲";
   const hidesStateBadge = normalizedState === "running";
   const isStatusOnlyCell = visibleItems.length === 0 && ["maintenance", "disabled"].includes(normalizedState);
-  const taskColor = scheduleSlotTaskColor(slot);
-  return h("div", { class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : ""], style: taskColor ? { "--schedule-task-color": scheduleSlotTaskColor(slot) } : null }, [
+  const taskColor = scheduleSlotTaskColor(slot, activeItem);
+  return h("div", { "aria-label": rotatesItems ? `同一时段共${items.length}项排程，正在轮播第${cycleTick % items.length + 1}项` : undefined, class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : "", rotatesItems ? "has-rotating-items" : ""], style: taskColor ? { "--schedule-task-color": taskColor } : null }, [
     isPlainCell || isStatusOnlyCell || hidesStateBadge ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
     ...(visibleItems.length
       ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
@@ -1184,7 +1189,11 @@ const renderScheduleSlot = (slot, compact) => {
         : slot.state !== "idle"
         ? [h("div", { class: "visual-schedule-task", style: slot.taskColor ? { "--schedule-task-color": slot.taskColor } : null }, [h("strong", slot.label || "-"), h("small", compactTimeRange(slot.title))])]
         : [h("div", { class: "visual-schedule-idle" }, "空闲")]),
-    slot.overflowCount > 0 ? h("div", { class: "visual-schedule-overflow" }, `+${slot.overflowCount}`) : null,
+    rotatesItems
+      ? h("div", { "aria-hidden": "true", class: "visual-schedule-cycle-lights" }, items.map((item, index) =>
+        h("span", { class: ["visual-schedule-cycle-light", index === cycleTick % items.length ? "is-active" : ""], key: item?.scheduleId || item?.taskCode || index }),
+      ))
+      : slot.overflowCount > 0 ? h("div", { class: "visual-schedule-overflow" }, `+${slot.overflowCount}`) : null,
   ]);
 };
 
@@ -1198,6 +1207,24 @@ const LabScheduleScreen = {
   },
   emits: ["schedule-today", "schedule-window"],
   setup(props, { emit }) {
+    const scheduleCycleTick = ref(0);
+    let scheduleCycleTimer = null;
+
+    onMounted(() => {
+      if (!props.compact && typeof window !== "undefined") {
+        scheduleCycleTimer = window.setInterval(() => {
+          scheduleCycleTick.value += 1;
+        }, SCHEDULE_SLOT_ROTATION_INTERVAL_MS);
+      }
+    });
+
+    onUnmounted(() => {
+      if (scheduleCycleTimer) {
+        window.clearInterval(scheduleCycleTimer);
+        scheduleCycleTimer = null;
+      }
+    });
+
     return () => {
       const view = props.scheduleView || { dayCounts: [], days: [], rows: [], summary: {} };
       const rows = Array.isArray(view.rows) ? view.rows.slice(0, props.compact ? 5 : 10) : [];
@@ -1267,7 +1294,7 @@ const LabScheduleScreen = {
             ...(rows.length
               ? rows.flatMap((row) => [
                 h("div", { class: "visual-schedule-lab-name", key: `${row.device}-name` }, row.device),
-                ...row.slots.map((slot) => h("div", { class: "visual-schedule-cell", key: slot.key }, renderScheduleSlot(slot, props.compact))),
+                ...row.slots.map((slot) => h("div", { class: "visual-schedule-cell", key: slot.key }, renderScheduleSlot(slot, props.compact, scheduleCycleTick.value))),
               ])
               : [h("div", { class: "visual-schedule-empty" }, "暂无排期")]),
           ]),
@@ -1668,7 +1695,7 @@ const ANALYSIS_PRODUCT_COUNTS = {
 const ANALYSIS_COLORS = ["#2563eb", "#f97316", "#16a34a", "#ef4444", "#a855f7", "#eab308", "#0891b2", "#db2777", "#65a30d", "#dc2626"];
 const analysisStatusRows = [
   { color: "#2dd4bf", count: 86, label: "正常", percent: 78.2 },
-  { color: "#f59e0b", count: 15, label: "维护", percent: 13.6 },
+  { color: "#ef4444", count: 15, label: "维修", percent: 13.6 },
   { color: "#ef4444", count: 9, label: "停用", percent: 8.2 },
   { color: "#64748b", count: 46, label: "占用", percent: 42 },
 ];
@@ -2111,7 +2138,6 @@ const AnalysisScreen = {
         const status = String(device?.status || "").trim();
         return status.includes("维修")
           || status.includes("保养")
-          || status.includes("维护")
           || status.includes("停用")
           || status.includes("禁用")
           || status.includes("故障");

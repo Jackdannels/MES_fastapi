@@ -24,6 +24,49 @@ def test_attendance_login_opens_active_lab_session(client):
     assert session_response.json()["username"] == "zhangsan"
 
 
+def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_admin_only(client):
+    login_response = client.post(
+        "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
+        json={"username": "zhangsan", "password": "123"},
+    )
+    assert login_response.status_code == 200
+
+    work_response = client.post(
+        "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/work/start",
+        json={},
+    )
+    assert work_response.status_code == 200
+
+    denied = client.post("/api/attendance/operation-logs/query", json={"adminUsername": "worker", "adminPassword": "bad"})
+    assert denied.status_code == 401
+
+    response = client.post(
+        "/api/attendance/operation-logs/query",
+        json={"adminUsername": "admin", "adminPassword": "123", "labName": "盐雾试验室"},
+    )
+
+    assert response.status_code == 200
+    logs = response.json()
+    assert [log["action"] for log in logs] == ["开始工作", "试验间登录"]
+    assert {log["username"] for log in logs} == {"zhangsan"}
+    assert {log["employeeName"] for log in logs} == {"张三"}
+    assert {log["labName"] for log in logs} == {"盐雾试验室"}
+
+    multi_select_response = client.post(
+        "/api/attendance/operation-logs/query",
+        json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
+            "employeeNames": ["张三", "李四"],
+            "labNames": ["盐雾试验室", "冲击一室"],
+        },
+    )
+
+    assert multi_select_response.status_code == 200
+    assert {log["employeeName"] for log in multi_select_response.json()} == {"张三"}
+    assert {log["labName"] for log in multi_select_response.json()} == {"盐雾试验室"}
+
+
 def test_attendance_login_rejects_wrong_password(client):
     response = client.post(
         "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login",

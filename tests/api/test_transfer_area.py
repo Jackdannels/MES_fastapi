@@ -1033,7 +1033,7 @@ def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "振动一室设备维护中，禁止送至该实验室"
+    assert response.json()["detail"] == "振动一室设备维修中，禁止送至该实验室"
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
     assert all(sample["status"] == "到货" for sample in updated_samples)
 
@@ -1107,7 +1107,7 @@ def test_transfer_area_dispatch_to_lab_rejects_open_ended_maintenance_after_star
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "振动一室设备维护中，禁止送至该实验室"
+    assert response.json()["detail"] == "振动一室设备维修中，禁止送至该实验室"
 
 
 def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monkeypatch):

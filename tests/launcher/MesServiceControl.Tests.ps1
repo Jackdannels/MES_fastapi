@@ -35,6 +35,24 @@ Describe "MES service controller" {
         $startScript | Should Match 'frontendUrl = \$frontendNetworkUrl'
     }
 
+    It "tags both terminal commands with a launcher session for precise process cleanup" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '\$launcherSessionId = \[Guid\]::NewGuid\(\)\.ToString\("N"\)'
+        $startScript | Should Match 'MES_LAUNCHER_SESSION=\$launcherSessionId'
+        $startScript | Should Match 'launcherSessionId = \$launcherSessionId'
+    }
+
+    It "closes MES command trees and waits for the service ports to be released" {
+        $controllerSource = Get-Content -LiteralPath $controller -Raw
+
+        $controllerSource | Should Match 'function Get-MesCommandPids'
+        $controllerSource | Should Match 'function Get-ParentCommandPids'
+        $controllerSource | Should Match 'function Wait-MesPortsReleased'
+        $controllerSource | Should Match 'Get-MesCommandPids \$processMap \$state\.launcherSessionId'
+        $controllerSource | Should Match 'Get-ParentCommandPids \$processMap \$listenerPids'
+    }
+
     It "keeps launcher actions asynchronous while a command is running" {
         $launcherSource = Get-Content -LiteralPath (Join-Path $projectRoot "tools\launcher\MesLauncher.cs") -Raw
 

@@ -48,7 +48,10 @@
   </section>
 
   <section class="card section system-worktime-card">
-    <h3>人员工作时间一览表</h3>
+    <div class="system-worktime-heading">
+      <h3>人员工作时间一览表</h3>
+      <button class="action-btn" data-testid="open-employee-operation-logs" type="button" @click="openEmployeeOperationLogs">员工工作日志</button>
+    </div>
     <table class="table" id="employee-worktime-table">
       <thead>
         <tr>
@@ -238,6 +241,98 @@
       <button class="action-btn secondary" type="button" @click="closeEmployeeQrModal">关闭</button>
     </template>
   </AppModal>
+
+  <AppModal :open="employeeOperationLogsOpen" content-class="system-operation-log-modal" data-testid="employee-operation-logs-modal" title="员工工作日志" @close="closeEmployeeOperationLogs">
+    <div class="form-grid">
+      <div class="form-field"><label>管理员账号</label><input v-model="operationLogFilters.adminUsername" data-testid="operation-log-admin-username" type="text" placeholder="admin" /></div>
+      <div class="form-field"><label>管理员密码</label><input v-model="operationLogFilters.adminPassword" data-testid="operation-log-admin-password" type="password" placeholder="请输入管理员密码" /></div>
+      <div class="form-field"><label>日期</label><PickerOnlyInput v-model="operationLogFilters.date" display-slash-date data-testid="operation-log-date" type="date" /></div>
+      <div class="form-field">
+        <label>员工</label>
+        <div class="system-multi-select">
+          <button
+            class="system-multi-select__trigger"
+            data-testid="operation-log-employee"
+            type="button"
+            :aria-expanded="operationLogEmployeeMenuOpen"
+            aria-haspopup="listbox"
+            @click="toggleOperationLogEmployeeMenu"
+          >
+            {{ operationLogEmployeeLabel }}
+          </button>
+          <div v-if="operationLogEmployeeMenuOpen" class="system-multi-select__menu" role="listbox" aria-label="选择员工" aria-multiselectable="true">
+            <button
+              v-for="employee in operationLogEmployeeOptions"
+              :key="employee.id"
+              class="system-multi-select__option"
+              :class="{ 'is-selected': isOperationLogEmployeeSelected(employee.employeeName) }"
+              :data-testid="`operation-log-employee-option-${employee.id}`"
+              type="button"
+              role="option"
+              :aria-selected="isOperationLogEmployeeSelected(employee.employeeName)"
+              @click="toggleOperationLogEmployee(employee.employeeName)"
+            >
+              <span>{{ employee.employeeName }}</span>
+              <span class="system-multi-select__check" aria-hidden="true">✓</span>
+            </button>
+            <div v-if="!operationLogEmployeeOptions.length" class="system-multi-select__empty">暂无可选员工</div>
+          </div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label>试验间</label>
+        <button class="system-multi-select__trigger" data-testid="operation-log-lab" type="button" @click="openOperationLogLabSelector">
+          {{ operationLogLabLabel }}
+        </button>
+      </div>
+    </div>
+    <AppFeedback v-if="operationLogError" :message="operationLogError" tone="error" @close="operationLogError = ''" />
+    <div class="system-operation-log-table-wrap">
+      <table class="table" data-testid="employee-operation-logs-table">
+        <thead><tr><th>员工</th><th>账号</th><th>试验间</th><th>操作</th><th>任务/试验/托盘</th><th>时间</th><th>来源</th></tr></thead>
+        <tbody>
+          <tr v-if="!operationLogRows.length"><td colspan="7" class="muted">请输入管理员凭据后查询</td></tr>
+          <tr v-for="log in operationLogRows" :key="log.id">
+            <td>{{ log.employeeName || "/" }}</td><td>{{ log.username || "/" }}</td><td>{{ log.labName || "/" }}</td><td>{{ log.action || "/" }}</td>
+            <td>{{ [log.taskCode, log.experimentCode, log.trayNo].filter(Boolean).join(" / ") || "/" }}</td><td>{{ log.operatedAt || "/" }}</td><td>{{ log.source || "/" }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <template #footer>
+      <button class="action-btn" data-testid="query-employee-operation-logs" type="button" :disabled="operationLogSubmitting" @click="loadEmployeeOperationLogs">查询</button>
+      <button class="action-btn secondary" type="button" @click="closeEmployeeOperationLogs">关闭</button>
+    </template>
+  </AppModal>
+
+  <AppModal
+    :open="operationLogLabSelectorOpen"
+    content-class="system-operation-lab-selector-modal"
+    data-testid="operation-log-lab-selector"
+    title="选择试验间"
+    @close="closeOperationLogLabSelector"
+  >
+    <div class="system-operation-lab-options" role="listbox" aria-label="选择试验间" aria-multiselectable="true">
+      <button
+        v-for="labName in operationLogLabOptions"
+        :key="labName"
+        class="system-operation-lab-option"
+        :class="{ 'is-selected': isOperationLogLabSelected(labName) }"
+        :data-testid="`operation-log-lab-option-${labName}`"
+        type="button"
+        role="option"
+        :aria-selected="isOperationLogLabSelected(labName)"
+        @click="toggleOperationLogLab(labName)"
+      >
+        <span>{{ labName }}</span>
+        <span class="system-multi-select__check" aria-hidden="true">✓</span>
+      </button>
+    </div>
+    <template #footer>
+      <button class="action-btn secondary" type="button" @click="clearOperationLogLabs">清空</button>
+      <button class="action-btn" data-testid="confirm-operation-log-labs" type="button" @click="closeOperationLogLabSelector">确定</button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
@@ -248,6 +343,7 @@ defineOptions({
 
 import AppModal from "@/components/shared/AppModal.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useSystemPage } from "./useSystemPage";
 
 const {
@@ -257,6 +353,7 @@ const {
   adminActionSuccess,
   closeEmployeeDrawer,
   closeEmployeeModal,
+  closeEmployeeOperationLogs,
   createEmployeeError,
   createEmployeeFields,
   deleteEmployee,
@@ -269,11 +366,13 @@ const {
   resetEmployeePassword,
   employeeDrawerOpen,
   employeeModalOpen,
+  employeeOperationLogsOpen,
   employeeQrModalOpen,
   settings,
   closeEmployeeQrModal,
   saveNewEmployee,
   openEmployeeQrModal,
+  openEmployeeOperationLogs,
   summaryCards,
   sortDirection,
   sortKey,
@@ -282,7 +381,26 @@ const {
   qrPayload,
   qrSubmitting,
   qrSvg,
+  operationLogError,
+  operationLogEmployeeLabel,
+  operationLogEmployeeMenuOpen,
+  operationLogEmployeeOptions,
+  operationLogFilters,
+  operationLogLabLabel,
+  operationLogLabOptions,
+  operationLogLabSelectorOpen,
+  operationLogRows,
+  operationLogSubmitting,
+  clearOperationLogLabs,
+  closeOperationLogLabSelector,
+  isOperationLogEmployeeSelected,
+  isOperationLogLabSelected,
+  loadEmployeeOperationLogs,
+  openOperationLogLabSelector,
   resetEmployeeQrToken,
+  toggleOperationLogEmployee,
+  toggleOperationLogEmployeeMenu,
+  toggleOperationLogLab,
   toggleSort,
   visibleEmployeeRows,
   workTimeRows,

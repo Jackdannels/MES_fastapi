@@ -38,6 +38,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.samples",
     "mes.staging_events",
     "mes.devices",
+    "mes.maintenance_records",
     "mes.streams",
     "mes.conflicts",
 )

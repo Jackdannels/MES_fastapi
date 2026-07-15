@@ -243,7 +243,7 @@ describe("useSchedulePage", () => {
   test("shows maintenance labs as disabled manual choices with a maintenance hint", async () => {
     const snapshot = buildSnapshot();
     snapshot["mes.devices"] = [
-      { code: "冲击一室", status: "维护/校准" },
+      { code: "冲击一室", status: "维修" },
       { code: "冲击二室", status: "停用" },
       { code: "振动一室", status: "可用" },
     ];
@@ -260,7 +260,7 @@ describe("useSchedulePage", () => {
       expect.arrayContaining([
         expect.objectContaining({
           disabled: true,
-          title: expect.stringContaining("冲击一室维护中，暂不可排程"),
+          title: expect.stringContaining("冲击一室维修中，暂不可排程"),
           value: "冲击一室",
         }),
         expect.objectContaining({
@@ -270,7 +270,7 @@ describe("useSchedulePage", () => {
         }),
       ]),
     );
-    expect(wrapper.vm.maintenanceLabNotice).toBe("冲击一室维护中，暂不可排程；冲击二室已停用，暂不可排程");
+    expect(wrapper.vm.maintenanceLabNotice).toBe("冲击一室维修中，暂不可排程；冲击二室已停用，暂不可排程");
   });
 
   test("keeps the current task code and resets the rest of the top form after scheduling one experiment", async () => {
@@ -635,7 +635,7 @@ describe("useSchedulePage", () => {
 
   test("does not auto-select the only matching lab when it is unavailable", async () => {
     const snapshot = buildSnapshot();
-    snapshot["mes.devices"] = [{ code: "盐雾试验室", status: "维护/校准" }];
+    snapshot["mes.devices"] = [{ code: "盐雾试验室", status: "维修" }];
     snapshot["mes.experiments"][1].required_device = "盐雾试验";
     mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
     mocks.readMasterLabs.mockResolvedValueOnce([
@@ -652,7 +652,7 @@ describe("useSchedulePage", () => {
 
     expect(wrapper.vm.manualLabOptions).toEqual([]);
     expect(wrapper.vm.scheduleForm.device).toBe("");
-    expect(wrapper.vm.maintenanceLabNotice).toContain("盐雾试验室维护中，暂不可排程");
+    expect(wrapper.vm.maintenanceLabNotice).toContain("盐雾试验室维修中，暂不可排程");
   });
 
   test("falls back to static lab options when master labs fail to load", async () => {

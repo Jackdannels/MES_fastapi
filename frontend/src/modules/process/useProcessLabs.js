@@ -881,7 +881,19 @@ function useProcessLabs(options = {}) {
         readyTrayCount: actionState.readyTrayCount,
         remainingTrayCount: actionState.remainingTrayCount,
         runningTrayCount: actionState.runningTrayCount,
-        startDisabledReason: "设备维护中，禁止开始实验",
+        startDisabledReason: "设备维修中，禁止开始实验",
+        targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
+      };
+    }
+    if (normalizeText(scopedLab?.statusClass) === "is-urgent") {
+      return {
+        ...scopedLab,
+        canStartExperiment: false,
+        experimentCode: activeExperimentCode,
+        readyTrayCount: actionState.readyTrayCount,
+        remainingTrayCount: actionState.remainingTrayCount,
+        runningTrayCount: actionState.runningTrayCount,
+        startDisabledReason: actionState.startDisabledReason,
         targetExperiment: toText(scheduledExperimentName, toText(task?.test_type, toText(scopedLab?.targetExperiment))),
       };
     }

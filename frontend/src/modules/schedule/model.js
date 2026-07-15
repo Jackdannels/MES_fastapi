@@ -18,7 +18,8 @@ const STATUS_SCHEDULED = "已排程";
 const STATUS_RUNNING = "实验进行中";
 const STATUS_COMPLETED = "实验已完成";
 const STATUS_RETENTION = "暂存间存放";
-const DEVICE_STATUS_MAINTENANCE = "维护/校准";
+const DEVICE_STATUS_REPAIR = "维修";
+const DEVICE_STATUS_UPKEEP = "保养";
 const DEVICE_STATUS_DISABLED = "停用";
 const STREAMING_STATUS = "Streaming";
 const STARTED_TRAY_STATUSES = new Set([
@@ -360,19 +361,34 @@ const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
   return Boolean(startAt && startAt <= current && (!endAt || current <= endAt));
 };
 
+const isExpiredMaintenanceWindow = (device, now = new Date()) => {
+  const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  const current = parseDate(now) || new Date();
+  return Boolean(endAt && endAt < current);
+};
+
+const isActiveMaintenanceDeviceStatus = (status) =>
+  status === DEVICE_STATUS_UPKEEP || status === DEVICE_STATUS_REPAIR;
+
 const resolveDeviceUnavailableReason = (device, now = new Date()) => {
   const status = normalizeText(device?.status);
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
   const current = parseDate(now) || new Date();
-  const hasMaintenanceWindow = Boolean(maintenanceStart && maintenanceEnd);
   if (status === DEVICE_STATUS_DISABLED || status.includes("停用") || status.includes("禁用")) {
     return "disabled";
   }
-  if (hasMaintenanceWindow && maintenanceEnd < current) {
+  // 有计划时间边界时，状态字段不能覆盖该边界；甘特图必须按每个槽位的时刻判断。
+  if (maintenanceStart) {
+    if (maintenanceStart <= current && (!maintenanceEnd || current <= maintenanceEnd)) {
+      return "maintenance";
+    }
+    if (maintenanceEnd && maintenanceEnd < current) {
+      return status.includes("不可用") ? "unavailable" : "";
+    }
     return status.includes("不可用") ? "unavailable" : "";
   }
-  if (status === DEVICE_STATUS_MAINTENANCE || status.includes("维护") || status.includes("维修") || isDeviceInMaintenanceWindow(device, now)) {
+  if (isActiveMaintenanceDeviceStatus(status)) {
     return "maintenance";
   }
   if (status.includes("不可用")) {
@@ -385,20 +401,23 @@ const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
   return Boolean(resolveDeviceUnavailableReason(device, now));
 };
 
-const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt) => {
+const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt, now = new Date()) => {
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  if (isExpiredMaintenanceWindow(device, now)) {
+    return false;
+  }
   return Boolean(maintenanceStart && startAt && endAt && maintenanceStart < endAt && (!maintenanceEnd || maintenanceEnd > startAt));
 };
 
 const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = new Date(), startAt = null }) => {
   const reason = resolveDeviceUnavailableReason(device, now)
-    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt) ? "maintenance" : "");
+    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt, now) ? "maintenance" : "");
   if (reason === "disabled") {
     return "该设备已停用，不可排程";
   }
   if (reason === "maintenance") {
-    return "该设备处于维护状态，不可排程";
+    return "该设备处于维修状态，不可排程";
   }
   if (reason === "unavailable") {
     return "该设备不可用，不可排程";
@@ -408,8 +427,8 @@ const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = new Dat
 
 const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt }) => {
   const name = normalizeText(deviceCode);
-  const reason = resolveDeviceUnavailableReason(device, now)
-    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt) ? "maintenance" : "");
+  const reason = (isExpiredMaintenanceWindow(device, now) ? "" : resolveDeviceUnavailableReason(device, startAt || now))
+    || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt, now) ? "maintenance" : "");
   if (reason === "disabled") {
     return {
       className: "gantt-slot idle disabled",
@@ -421,9 +440,9 @@ const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt })
   if (reason === "maintenance") {
     return {
       className: "gantt-slot idle maintenance",
-      label: "维护中",
+      label: "维修中",
       state: "maintenance",
-      title: `${name}维护中，暂不可排程`,
+      title: `${name}维修中，暂不可排程`,
     };
   }
   if (reason === "unavailable") {
@@ -437,13 +456,13 @@ const resolveUnavailableSlotMeta = ({ device, deviceCode, endAt, now, startAt })
   return null;
 };
 
-const resolveMaintenanceConflictSlotMeta = ({ device, deviceCode, matchedSchedules = [], segmentEnd, segmentStart }) => {
+const resolveMaintenanceConflictSlotMeta = ({ device, deviceCode, matchedSchedules = [], now, segmentEnd, segmentStart }) => {
   const hasMaintenanceConflict = matchedSchedules.some((schedule) => {
     const startAt = parseDate(schedule?.start_at);
     const endAt = parseDate(schedule?.end_at);
     return startAt && endAt
       && overlaps(startAt, endAt, segmentStart, segmentEnd)
-      && deviceMaintenanceOverlapsSchedule(device, startAt, endAt);
+      && deviceMaintenanceOverlapsSchedule(device, startAt, endAt, now);
   });
   if (!hasMaintenanceConflict) {
     return null;
@@ -451,9 +470,9 @@ const resolveMaintenanceConflictSlotMeta = ({ device, deviceCode, matchedSchedul
   const name = normalizeText(deviceCode);
   return {
     className: "gantt-slot conflict maintenance-conflict",
-    label: "维护冲突",
+    label: "维修冲突",
     state: "maintenance-conflict",
-    title: `${name}维护中，已有排程占用，请调整`,
+    title: `${name}维修中，已有排程占用，请调整`,
   };
 };
 
@@ -1479,6 +1498,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
           device: deviceByCode.get(device),
           deviceCode: device,
           matchedSchedules: matched,
+          now,
           segmentEnd,
           segmentStart,
         });
@@ -1500,19 +1520,19 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
             title: [maintenanceConflictMeta.title, ...items.map((item) => item.title)].filter(Boolean).join("\n"),
           };
         }
-        if (deviceMaintenanceOverlapsSchedule(deviceByCode.get(device), segmentStart, segmentEnd)) {
+        if (deviceMaintenanceOverlapsSchedule(deviceByCode.get(device), segmentStart, segmentEnd, now)) {
           return {
             className: "gantt-slot idle maintenance",
             date: day.key,
             displayMode: "idle",
             items: [],
             key: slotKey,
-            label: "维护中",
+            label: "维修中",
             overflowCount: 0,
             scheduleId: "",
             segment,
             state: "maintenance",
-            title: `${normalizeText(device)}维护中，暂不可排程`,
+            title: `${normalizeText(device)}维修中，暂不可排程`,
           };
         }
         const slotTitle = items.map((item, index) => `${index >= 2 ? "隐藏: " : ""}${item.title}`).join("\n");
@@ -1789,7 +1809,7 @@ function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = 
 function syncTaskStatuses(tasks, schedules, now = new Date(), samples = [], experimentTrays = []) {
   return (Array.isArray(tasks) ? tasks : []).map((task) => ({
     ...task,
-    // 任务状态完全以当前排程快照重新计算，避免手工维护多处状态。
+    // 任务状态完全以当前排程快照重新计算，避免手工同步多处状态。
     status: resolveTaskStatus(task, schedules, samples, now, experimentTrays),
   }));
 }

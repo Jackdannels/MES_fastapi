@@ -29,25 +29,27 @@
     <table class="table" id="device-table">
       <thead>
         <tr>
-          <th>序号</th>
+          <th class="devices-sequence-column">序号</th>
           <th data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" @click="toggleSort('code')">设备编号</th>
           <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" @click="toggleSort('name')">设备名称</th>
           <th data-sort :data-sort-dir="sortKey === 'type' ? sortDirection : ''" @click="toggleSort('type')">试验类型</th>
           <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" @click="toggleSort('status')">状态</th>
           <th data-sort :data-sort-dir="sortKey === 'location' ? sortDirection : ''" @click="toggleSort('location')">位置</th>
-          <th data-sort :data-sort-dir="sortKey === 'nextCal' ? sortDirection : ''" @click="toggleSort('nextCal')">下次校准</th>
+          <th>下次维保</th>
+          <th>维保计划结束时间</th>
           <th>操作</th>
         </tr>
       </thead>
       <tbody id="device-table-body">
         <tr v-for="(row, index) in deviceRows" :key="row.id">
-          <td>{{ index + 1 }}</td>
+          <td class="devices-sequence-column">{{ index + 1 }}</td>
           <td>{{ row.code }}</td>
           <td>{{ row.name }}</td>
           <td>{{ row.type }}</td>
           <td><span :class="row.statusClass">{{ row.status }}</span></td>
           <td>{{ row.location }}</td>
-          <td>{{ row.nextCal }}</td>
+          <td>{{ row.nextMaintenanceAt }}</td>
+          <td>{{ row.maintenancePlanEndAt }}</td>
           <td>
             <div class="devices-action-cell">
               <button
@@ -298,10 +300,10 @@
     </template>
   </AppModal>
 
-  <AppModal :open="maintenanceConflictOpen" title="维护计划冲突确认" @close="cancelMaintenanceConflict">
+  <AppModal :open="maintenanceConflictOpen" title="维保计划冲突确认" @close="cancelMaintenanceConflict">
     <div class="devices-maintenance-conflict" data-testid="maintenance-conflict-modal">
-      <strong>计划维护时间与已排程设备阶段重叠。</strong>
-      <p>确认后会删除该设备在维护时间内的排程信息，并同步至排程页异常处理。</p>
+      <strong>计划维保时间与已排程设备阶段重叠。</strong>
+      <p>确认后会删除该设备在维保时间内的排程信息，并同步至排程页异常处理。</p>
       <ul>
         <li v-for="schedule in maintenanceConflictDetail?.conflictingSchedules || []" :key="schedule.id">
           {{ schedule.task_code }} / {{ schedule.experiment_code || "-" }} / {{ schedule.start_at }} - {{ schedule.end_at }}
@@ -316,34 +318,47 @@
     </template>
   </AppModal>
 
-  <AppDrawer :open="deviceDrawerOpen" title="设备维保记录" @close="closeDeviceDrawer">
-    <div class="form-grid">
-      <div class="form-field">
-        <label>设备编号</label>
-        <input :value="selectedDevice.code" type="text" placeholder="设备编号" />
-      </div>
-      <div class="form-field">
-        <label>设备名称</label>
-        <input :value="selectedDevice.name" type="text" placeholder="设备名称" />
-      </div>
-      <div class="form-field">
-        <label>最近校准</label>
-        <PickerOnlyInput v-model="maintenanceForm.latestCalibration" type="date" />
-      </div>
-      <div class="form-field">
-        <label>维保类型</label>
-        <select v-model="maintenanceForm.maintenanceType">
-          <option>校准</option>
-          <option>保养</option>
-          <option>维修</option>
+  <AppModal :open="deviceDrawerOpen" content-class="devices-maintenance-record-modal" title="设备维保记录" @close="closeDeviceDrawer">
+    <div class="devices-maintenance-records">
+      <div class="form-field devices-maintenance-record-filter">
+        <label for="maintenance-record-device">设备</label>
+        <select id="maintenance-record-device" v-model="maintenanceRecordDeviceFilter">
+          <option value="">全部设备</option>
+          <option v-for="row in deviceRows" :key="row.code" :value="row.code">{{ row.code }} / {{ row.name }}</option>
         </select>
       </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>维保记录</label>
-        <textarea v-model="maintenanceForm.record" placeholder="记录维保内容与结果"></textarea>
+      <div class="devices-maintenance-record-table-wrap">
+        <table class="table devices-maintenance-record-table">
+          <thead>
+            <tr>
+              <th>设备</th>
+              <th>维保类型</th>
+              <th>开始时间</th>
+              <th>结束时间</th>
+              <th>维保说明</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="record in maintenanceRecordRows" :key="record.id">
+              <td>{{ record.device_code }} / {{ record.device_name }}</td>
+              <td>{{ record.maintenance_type }}</td>
+              <td>{{ record.started_at || "/" }}</td>
+              <td>{{ record.ended_at || "/" }}</td>
+              <td>{{ record.maintenance_note || "/" }}</td>
+              <td>{{ record.status }}</td>
+            </tr>
+            <tr v-if="maintenanceRecordRows.length === 0">
+              <td class="devices-maintenance-record-empty" colspan="6">暂无维保记录</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
-  </AppDrawer>
+    <template #footer>
+      <button class="action-btn secondary" type="button" @click="closeDeviceDrawer">关闭</button>
+    </template>
+  </AppModal>
   </div>
 </template>
 
@@ -352,7 +367,6 @@ defineOptions({
   name: "DevicesPage",
 });
 
-import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
@@ -378,7 +392,8 @@ const {
   editDeviceOpen,
   maintenanceConflictDetail,
   maintenanceConflictOpen,
-  maintenanceForm,
+  maintenanceRecordDeviceFilter,
+  maintenanceRecordRows,
   maintenancePlanForm,
   maintenancePlanIsPlanned,
   maintenancePlanWarning,

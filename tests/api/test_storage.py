@@ -85,6 +85,24 @@ class DelayedThreadSafeStorage(FakeStorage):
                 self.payloads[key] = deepcopy(value)
 
 
+def test_storage_persists_device_maintenance_records(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    records = [
+        {
+            "device_code": "冲击一室",
+            "maintenance_type": "维修",
+            "started_at": "2026-07-15 08:00:00",
+            "ended_at": "2026-07-15 09:00:00",
+            "status": "已结束",
+        }
+    ]
+
+    response = client.put("/api/storage", json={"mes.maintenance_records": records})
+
+    assert response.status_code == 200
+    assert storage.read("mes.maintenance_records") == records
+
+
 def build_client(monkeypatch, payloads=None):
     from app.api.routes import storage as storage_route
 
@@ -1201,7 +1219,7 @@ def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(mo
     response = client.put("/api/storage", json={"mes.samples": updated})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "盐雾试验室设备维护中，禁止实验室操作"
+    assert response.json()["detail"] == "盐雾试验室设备维修中，禁止实验室操作"
     assert storage.read("mes.samples") == samples
 
 
@@ -1276,7 +1294,7 @@ def test_storage_rejects_laboratory_progress_after_open_ended_maintenance_starts
     response = client.put("/api/storage", json={"mes.samples": updated})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "盐雾试验室设备维护中，禁止实验室操作"
+    assert response.json()["detail"] == "盐雾试验室设备维修中，禁止实验室操作"
     assert storage.read("mes.samples") == samples
 
 
@@ -2285,7 +2303,7 @@ def test_storage_rejects_maintenance_window_over_existing_schedule(monkeypatch):
     response = client.put("/api/storage", json={"mes.devices": attempted_devices})
 
     assert response.status_code == 409
-    assert "维护窗口内已有排程" in response.json()["detail"]
+    assert "维保窗口内已有排程" in response.json()["detail"]
     assert storage.read("mes.devices") == devices
 
 
@@ -2348,7 +2366,7 @@ def test_storage_rejects_maintenance_window_ending_at_or_before_start(monkeypatc
     response = client.put("/api/storage", json={"mes.devices": attempted_devices})
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "维护结束时间必须晚于开始时间"
+    assert response.json()["detail"] == "维保结束时间必须晚于开始时间"
     assert storage.read("mes.devices") == existing_devices
 
 
@@ -2369,7 +2387,7 @@ def test_storage_rejects_maintenance_end_time_without_a_valid_start_time(monkeyp
     response = client.put("/api/storage", json={"mes.devices": attempted_devices})
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "维护结束时间需要有效的开始时间"
+    assert response.json()["detail"] == "维保结束时间需要有效的开始时间"
     assert storage.read("mes.devices") == existing_devices
 
 
@@ -2493,7 +2511,7 @@ def test_storage_schedule_patch_rejects_schedule_inside_maintenance_window(monke
     )
 
     assert response.status_code == 409
-    assert "维护状态" in response.json()["detail"]
+    assert "维修状态" in response.json()["detail"]
     assert storage.read("mes.schedules") == []
 
 

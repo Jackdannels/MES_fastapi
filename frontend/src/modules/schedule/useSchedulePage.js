@@ -291,7 +291,7 @@ function useSchedulePage() {
     const startAt = normalizeText(device?.maintenance_start_at ?? device?.maintenanceStartAt);
     const endAt = normalizeText(device?.maintenance_end_at ?? device?.maintenanceEndAt);
     const range = startAt || endAt ? `（${formatDateTime(startAt)} - ${formatDateTime(endAt)}）` : "";
-    return `${name}维护中，暂不可排程${range}`;
+    return `${name}维修中，暂不可排程${range}`;
   };
   const buildLabOptionItems = ({ options, selectedDevice = "" }) =>
     (Array.isArray(options) ? options : []).map((option) => {

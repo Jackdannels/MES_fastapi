@@ -33,6 +33,14 @@ class AttendancePasswordResetRequest(AttendanceAdminRequest):
     new_password: str = Field(alias="newPassword")
 
 
+class AttendanceOperationLogQuery(AttendanceAdminRequest):
+    date: str | None = None
+    employee_name: str = Field(default="", alias="employeeName")
+    employee_names: list[str] = Field(default_factory=list, alias="employeeNames")
+    lab_name: str = Field(default="", alias="labName")
+    lab_names: list[str] = Field(default_factory=list, alias="labNames")
+
+
 class AttendanceUserCreate(BaseModel):
     username: str
     password: str
@@ -186,5 +194,20 @@ def start_lab_work(lab_name: str) -> dict[str, Any]:
 def list_work_times(date: str | None = None) -> list[dict[str, Any]]:
     try:
         return get_attendance_service().list_work_times(date)
+    except AttendanceError as exc:
+        raise _service_error(exc) from exc
+
+
+@router.post("/operation-logs/query")
+def list_operation_logs(payload: AttendanceOperationLogQuery) -> list[dict[str, Any]]:
+    _verify_admin_credentials(payload)
+    try:
+        return get_attendance_service().list_operation_logs(
+            raw_date=payload.date,
+            employee_name=payload.employee_name,
+            employee_names=payload.employee_names,
+            lab_name=payload.lab_name,
+            lab_names=payload.lab_names,
+        )
     except AttendanceError as exc:
         raise _service_error(exc) from exc

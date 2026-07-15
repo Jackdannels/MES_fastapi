@@ -65,8 +65,7 @@ vi.mock("./useDevicesPage", () => ({
       location: "液相实验室",
       model: "1260",
       name: "高效液相色谱仪",
-        next_cal: "2026-04-01",
-        owner: "张工",
+      owner: "张工",
       status: "空闲",
       type: "液相色谱",
     }),
@@ -75,8 +74,9 @@ vi.mock("./useDevicesPage", () => ({
         code: "HPLC-01",
         id: "device-1",
         location: "液相实验室",
+        maintenancePlanEndAt: "2026-04-01 12:00",
         name: "高效液相色谱仪",
-        nextCal: "2026-04-01",
+        nextMaintenanceAt: "2026-04-01 08:00",
         status: "空闲",
         statusClass: "status",
         type: "液相色谱",
@@ -89,11 +89,18 @@ vi.mock("./useDevicesPage", () => ({
       conflictingSchedules: [],
     }),
     maintenanceConflictOpen: computed(() => devicesState.maintenanceConflictOpen),
-    maintenanceForm: ref({
-      latestCalibration: "2026-03-01",
-      maintenanceType: "校准",
-      record: "年度校准完成",
-    }),
+    maintenanceRecordDeviceFilter: ref(""),
+    maintenanceRecordRows: computed(() => [
+      {
+        device_code: "HPLC-01",
+        device_name: "高效液相色谱仪",
+        ended_at: "2026-04-01 12:00",
+        maintenance_note: "年度保养",
+        maintenance_type: "保养",
+        started_at: "2026-04-01 08:00",
+        status: "已结束",
+      },
+    ]),
     maintenancePlanForm: ref({
       endAt: "",
       note: "",
@@ -170,11 +177,16 @@ describe("DevicesPage runtime", () => {
 
     expect(wrapper.text()).toContain("HPLC-01");
     expect(wrapper.text()).toContain("高效液相色谱仪");
+    expect(wrapper.text()).toContain("下次维保");
+    expect(wrapper.text()).toContain("维保计划结束时间");
+    expect(wrapper.text()).toContain("2026-04-01 08:00");
+    expect(wrapper.text()).toContain("2026-04-01 12:00");
+    expect(wrapper.text()).not.toContain("下次校准");
     expect(wrapper.find('[data-testid="device-save"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="device-add"]').exists()).toBe(false);
   });
 
-  test("opens maintenance drawer and point modal from Vue state", async () => {
+  test("opens the central maintenance records modal and point modal from Vue state", async () => {
     const wrapper = mount(DevicesPage);
 
     await wrapper.get('[data-testid="open-device-drawer"]').trigger("click");
@@ -187,8 +199,18 @@ describe("DevicesPage runtime", () => {
     devicesState.pointModalOpen = true;
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
+    expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+  });
+
+  test("renders real maintenance records in the central modal", () => {
+    devicesState.deviceDrawerOpen = true;
+    const wrapper = mount(DevicesPage);
+
+    expect(wrapper.text()).toContain("设备维保记录");
+    expect(wrapper.text()).toContain("高效液相色谱仪");
+    expect(wrapper.text()).toContain("年度保养");
+    expect(wrapper.find(".app-drawer").exists()).toBe(false);
   });
 
   test("replaces table details action with edit and maintenance plan actions", async () => {

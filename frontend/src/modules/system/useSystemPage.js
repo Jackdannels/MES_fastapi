@@ -6,17 +6,41 @@ import { useTableControls } from "@/composables/useTableControls";
 import {
   createAttendanceUser,
   deleteAttendanceUser,
+  listAttendanceOperationLogs,
   listAttendanceWorkTimes,
   readAttendanceUserQrToken,
   resetAttendanceUserQrToken,
   resetAttendanceUserPassword,
 } from "@/lib/attendanceApi";
 import { buildQrCodeSvg, buildSvgImageDataUrl } from "@/lib/qrCode";
+import { formatBusinessDateKey } from "@/lib/dateTime";
+import { TEST_LABS } from "@/lib/labs";
+import { readMasterLabs } from "@/lib/masterDataApi";
 import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
 const EMPLOYEE_ROLE_OPTIONS = Object.freeze(["试验员", "试验组长"]);
 const WORK_TIME_REFRESH_INTERVAL_MS = 30 * 1000;
 const WORK_TIME_TICK_INTERVAL_MS = 1000;
+const DEFAULT_ADMIN_CREDENTIALS = Object.freeze({
+  adminPassword: "123",
+  adminUsername: "admin",
+});
+
+const createAdminActionFields = () => ({
+  ...DEFAULT_ADMIN_CREDENTIALS,
+  newPassword: "",
+});
+
+const createOperationLogFilters = () => ({
+  ...DEFAULT_ADMIN_CREDENTIALS,
+  date: formatBusinessDateKey(new Date()),
+  employeeName: "",
+  employeeNames: [],
+  labName: "",
+  labNames: [],
+});
+
+const uniqueTextValues = (values) => [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 
 const resolveLiveTodaySeconds = (employee, nowMs) => {
   const baseSeconds = Number(employee?.todaySeconds || 0);
@@ -45,6 +69,7 @@ function useSystemPage() {
   const createEmployeeDialog = useDialogState();
   const editEmployeeDialog = useDialogState();
   const qrEmployeeDialog = useDialogState();
+  const operationLogDialog = useDialogState();
 
   const { query, sortDirection, sortKey, visibleRows } = useTableControls({
     pageSize: 20,
@@ -63,11 +88,7 @@ function useSystemPage() {
 
   const createEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
   const createEmployeeError = ref("");
-  const adminActionFields = ref({
-    adminPassword: "",
-    adminUsername: "",
-    newPassword: "",
-  });
+  const adminActionFields = ref(createAdminActionFields());
   const adminActionError = ref("");
   const adminActionSubmitting = ref(false);
   const adminActionSuccess = ref("");
@@ -75,6 +96,32 @@ function useSystemPage() {
   const qrSvg = ref("");
   const qrError = ref("");
   const qrSubmitting = ref(false);
+  const operationLogRows = ref([]);
+  const operationLogError = ref("");
+  const operationLogSubmitting = ref(false);
+  const operationLogFilters = ref(createOperationLogFilters());
+  const operationLogEmployeeMenuOpen = ref(false);
+  const operationLogLabSelectorOpen = ref(false);
+  const operationLogLabOptions = ref([...TEST_LABS]);
+  const operationLogEmployeeOptions = computed(() => {
+    const seenEmployeeNames = new Set();
+    return employeeRows.value.filter((employee) => {
+      const employeeName = String(employee?.employeeName || "").trim();
+      if (!employeeName || seenEmployeeNames.has(employeeName)) {
+        return false;
+      }
+      seenEmployeeNames.add(employeeName);
+      return true;
+    });
+  });
+  const operationLogEmployeeLabel = computed(() => {
+    const selected = operationLogFilters.value.employeeNames || [];
+    return selected.length ? selected.join("、") : "选择员工";
+  });
+  const operationLogLabLabel = computed(() => {
+    const selected = operationLogFilters.value.labNames || [];
+    return selected.length ? selected.join("、") : "选择试验间";
+  });
 
   // 编辑弹窗始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
   const editEmployeeFields = computed(() => createEmployeeForm(editEmployeeDialog.payload.value?.form || EMPTY_EMPLOYEE_FORM));
@@ -164,11 +211,7 @@ function useSystemPage() {
 
   const openEmployeeDrawer = (employee) => {
     // 保持对外方法名不变，内部改为居中弹窗，避免表格调用侧改动过大。
-    adminActionFields.value = {
-      adminPassword: "",
-      adminUsername: "",
-      newPassword: "",
-    };
+    adminActionFields.value = createAdminActionFields();
     adminActionError.value = "";
     adminActionSuccess.value = "";
     editEmployeeDialog.openWith(employee);
@@ -252,6 +295,91 @@ function useSystemPage() {
   const closeEmployeeQrModal = () => {
     qrError.value = "";
     qrEmployeeDialog.close();
+  };
+
+  const openEmployeeOperationLogs = () => {
+    operationLogError.value = "";
+    operationLogRows.value = [];
+    operationLogFilters.value = createOperationLogFilters();
+    operationLogEmployeeMenuOpen.value = false;
+    operationLogDialog.openWith({ id: "employee-operation-logs" });
+  };
+
+  const closeEmployeeOperationLogs = () => {
+    operationLogError.value = "";
+    operationLogEmployeeMenuOpen.value = false;
+    operationLogLabSelectorOpen.value = false;
+    operationLogDialog.close();
+  };
+
+  const toggleOperationLogEmployeeMenu = () => {
+    operationLogEmployeeMenuOpen.value = !operationLogEmployeeMenuOpen.value;
+  };
+
+  const isOperationLogEmployeeSelected = (employeeName) =>
+    operationLogFilters.value.employeeNames.includes(String(employeeName || "").trim());
+
+  const toggleOperationLogEmployee = (employeeName) => {
+    const normalizedEmployeeName = String(employeeName || "").trim();
+    if (!normalizedEmployeeName) {
+      return;
+    }
+    const selected = operationLogFilters.value.employeeNames;
+    operationLogFilters.value.employeeNames = selected.includes(normalizedEmployeeName)
+      ? selected.filter((name) => name !== normalizedEmployeeName)
+      : [...selected, normalizedEmployeeName];
+  };
+
+  const openOperationLogLabSelector = async () => {
+    operationLogEmployeeMenuOpen.value = false;
+    operationLogLabSelectorOpen.value = true;
+    try {
+      const masterLabs = await readMasterLabs();
+      const labNames = uniqueTextValues(masterLabs.map((lab) => lab?.labName || lab?.name));
+      if (labNames.length) {
+        operationLogLabOptions.value = labNames;
+      }
+    } catch {
+      // 主数据暂不可用时继续使用内置试验间清单，保证筛选弹窗仍可工作。
+    }
+  };
+
+  const closeOperationLogLabSelector = () => {
+    operationLogLabSelectorOpen.value = false;
+  };
+
+  const isOperationLogLabSelected = (labName) =>
+    operationLogFilters.value.labNames.includes(String(labName || "").trim());
+
+  const toggleOperationLogLab = (labName) => {
+    const normalizedLabName = String(labName || "").trim();
+    if (!normalizedLabName) {
+      return;
+    }
+    const selected = operationLogFilters.value.labNames;
+    operationLogFilters.value.labNames = selected.includes(normalizedLabName)
+      ? selected.filter((name) => name !== normalizedLabName)
+      : [...selected, normalizedLabName];
+  };
+
+  const clearOperationLogLabs = () => {
+    operationLogFilters.value.labNames = [];
+  };
+
+  const loadEmployeeOperationLogs = async () => {
+    if (operationLogSubmitting.value) {
+      return;
+    }
+    operationLogError.value = "";
+    operationLogSubmitting.value = true;
+    try {
+      const rows = await listAttendanceOperationLogs(operationLogFilters.value);
+      operationLogRows.value = Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      operationLogError.value = String(error?.message || error || "读取员工工作日志失败");
+    } finally {
+      operationLogSubmitting.value = false;
+    }
   };
 
   const updateEmployeeRow = (nextUser) => {
@@ -355,6 +483,7 @@ function useSystemPage() {
     closeEmployeeDrawer,
     closeEmployeeModal,
     closeEmployeeQrModal,
+    closeEmployeeOperationLogs,
     createEmployeeError,
     createEmployeeFields,
     editEmployeeFields,
@@ -364,7 +493,9 @@ function useSystemPage() {
     employeeDrawerOpen: editEmployeeDialog.open,
     employeeModalOpen: createEmployeeDialog.open,
     employeeQrModalOpen: qrEmployeeDialog.open,
+    employeeOperationLogsOpen: operationLogDialog.open,
     openEmployeeQrModal,
+    openEmployeeOperationLogs,
     openEmployeeDrawer,
     openEmployeeModal,
     query,
@@ -373,6 +504,22 @@ function useSystemPage() {
     qrPayload,
     qrSubmitting,
     qrSvg,
+    operationLogError,
+    operationLogEmployeeLabel,
+    operationLogEmployeeMenuOpen,
+    operationLogEmployeeOptions,
+    operationLogFilters,
+    operationLogLabLabel,
+    operationLogLabOptions,
+    operationLogLabSelectorOpen,
+    operationLogRows,
+    operationLogSubmitting,
+    clearOperationLogLabs,
+    closeOperationLogLabSelector,
+    isOperationLogEmployeeSelected,
+    isOperationLogLabSelected,
+    loadEmployeeOperationLogs,
+    openOperationLogLabSelector,
     resetEmployeeQrToken,
     resetEmployeePassword,
     settings,
@@ -381,6 +528,9 @@ function useSystemPage() {
     sortDirection,
     sortKey,
     toggleSort,
+    toggleOperationLogEmployee,
+    toggleOperationLogEmployeeMenu,
+    toggleOperationLogLab,
     visibleEmployeeRows: visibleRows,
     workTimeRows,
   };

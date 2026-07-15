@@ -105,8 +105,14 @@
 }
 
 .process-lab-card.is-maintenance {
-  border-color: rgba(245, 158, 11, 0.42);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.12);
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.16);
+}
+
+.process-lab-card.is-urgent {
+  border-color: rgba(245, 158, 11, 0.56);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+  animation: process-lab-urgent-pulse 1.25s ease-in-out infinite;
 }
 
 .process-lab-top {
@@ -160,9 +166,22 @@
 }
 
 .process-lab-card.is-maintenance .process-lab-status {
-  border-color: rgba(231, 183, 95, 0.48);
-  background: rgba(231, 183, 95, 0.16);
-  color: var(--accent-2);
+  border-color: rgba(248, 113, 113, 0.52);
+  background: rgba(127, 29, 29, 0.2);
+  color: #fecaca;
+}
+
+.process-lab-card.is-urgent .process-lab-status {
+  border-color: rgba(251, 146, 60, 0.56);
+  background: rgba(124, 45, 18, 0.2);
+  color: #fed7aa;
+}
+
+@keyframes process-lab-urgent-pulse {
+  50% {
+    border-color: rgba(251, 146, 60, 0.95);
+    box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.4), 0 0 20px rgba(245, 158, 11, 0.28);
+  }
 }
 
 /* 卡片主体按行展示关键字段。 */
@@ -231,5 +250,11 @@
 
   .process-lab-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-lab-card.is-urgent {
+    animation: none;
   }
 }

@@ -25,6 +25,7 @@ const scheduleOverlapsWindow = (schedule, windowStart, windowEnd) => {
 };
 
 const normalizeScheduleSlot = (slot) => ({
+  allItems: asArray(slot?.allItems),
   className: normalizeText(slot?.className),
   date: normalizeText(slot?.date),
   displayMode: normalizeText(slot?.displayMode),

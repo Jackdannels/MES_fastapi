@@ -275,6 +275,38 @@ describe("devices model", () => {
     expect(rows[0]).toEqual(expect.objectContaining({ status: "空闲", statusClass: "status" }));
   });
 
+  test("exposes planned maintenance start and end dates instead of legacy calibration dates", () => {
+    const rows = buildDeviceRows(
+      [
+        {
+          code: "盐雾试验室",
+          maintenance_end_at: "2099-03-20T12:00",
+          maintenance_start_at: "2099-03-20T08:00",
+          maintenance_type: "计划保养",
+          name: "盐雾试验箱",
+          next_cal: "2099-01-01",
+        },
+        {
+          code: "霉菌试验室",
+          maintenance_start_at: "2099-03-21T08:00",
+          maintenance_type: "维修",
+          name: "霉菌培养箱",
+        },
+      ],
+      [],
+    );
+
+    expect(rows.find((row) => row.code === "盐雾试验室")).toEqual(expect.objectContaining({
+      maintenancePlanEndAt: "2099-03-20T12:00",
+      nextMaintenanceAt: "2099-03-20T08:00",
+    }));
+    expect(rows.find((row) => row.code === "霉菌试验室")).toEqual(expect.objectContaining({
+      maintenancePlanEndAt: "/",
+      nextMaintenanceAt: "/",
+    }));
+    expect(rows.find((row) => row.code === "盐雾试验室")).not.toHaveProperty("nextCal");
+  });
+
   test("finds schedules overlapped by a planned maintenance window", () => {
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode: "冲击一室",

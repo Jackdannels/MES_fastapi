@@ -74,6 +74,36 @@ describe("SystemPage runtime", () => {
     expect(pageText).toContain("2小时35分0秒");
     expect(pageText).toContain("冲击一室");
     expect(pageText).not.toContain("可登录试验间");
+    expect(wrapper.get('[data-testid="open-employee-operation-logs"]').text()).toBe("员工工作日志");
+  });
+
+  test("provides default administrator credentials and multi-select work-log filters", async () => {
+    stubAttendanceFetch();
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+
+    expect(wrapper.get('[data-testid="operation-log-admin-username"]').element.value).toBe("admin");
+    expect(wrapper.get('[data-testid="operation-log-admin-password"]').element.value).toBe("123");
+    expect(wrapper.get('[data-testid="operation-log-date"]').element.value).toMatch(/^\d{4} \/ \d{2} \/ \d{2}$/);
+
+    await wrapper.get('[data-testid="operation-log-date"]').trigger("click");
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(true);
+
+    await wrapper.get('[data-testid="operation-log-employee"]').trigger("click");
+    const employeeOption = wrapper.get('[data-testid="operation-log-employee-option-1"]');
+    await employeeOption.trigger("click");
+    expect(employeeOption.classes()).toContain("is-selected");
+    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
+
+    await wrapper.get('[data-testid="operation-log-lab"]').trigger("click");
+    await flushPromises();
+    const labOption = wrapper.get('[data-testid="operation-log-lab-option-冲击一室"]');
+    await labOption.trigger("click");
+    expect(labOption.classes()).toContain("is-selected");
+    await wrapper.get('[data-testid="confirm-operation-log-labs"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("冲击一室");
   });
 
   test("updates active employee work time every second without refreshing the page", async () => {
@@ -242,6 +272,8 @@ describe("SystemPage runtime", () => {
     await flushPromises();
 
     await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    expect(wrapper.get('[data-testid="admin-username-input"]').element.value).toBe("admin");
+    expect(wrapper.get('[data-testid="admin-password-input"]').element.value).toBe("123");
     await wrapper.get('[data-testid="admin-username-input"]').setValue("admin");
     await wrapper.get('[data-testid="admin-password-input"]').setValue("123");
     await wrapper.get('[data-testid="reset-password-input"]').setValue("new-password");

@@ -1225,7 +1225,7 @@ describe("LaboratoryPage runtime", () => {
     snapshotState = {
       ...createSnapshot(),
       [STORAGE_KEYS.devices]: [
-        { code: "盐雾试验室", name: "盐雾试验室", status: "维护/校准" },
+        { code: "盐雾试验室", name: "盐雾试验室", status: "维修" },
       ],
       [STORAGE_KEYS.samples]: [
         {
@@ -1241,7 +1241,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("设备维护中，禁止实验室操作");
+    expect(mounted.text()).toContain("设备维修中，禁止实验室操作");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
@@ -1267,7 +1267,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("设备维护中，禁止实验室操作");
+    expect(mounted.text()).toContain("设备维修中，禁止实验室操作");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();

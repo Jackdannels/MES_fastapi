@@ -143,6 +143,64 @@ describe("task history model", () => {
     ]);
   });
 
+  test("uses arrival and first experiment schedule times, and completes a direct return at the return time", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-DIRECT-RETURN", name: "直接收回任务", status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-DIRECT-001",
+          task_code: "TASK-DIRECT-RETURN",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-DIRECT-001", status: "厂家收回" }],
+          history: [
+            { status: "到货", time: "2026-07-15T08:00:00+08:00" },
+            { status: "实验后暂存间存放", time: "2026-07-15T09:00:00+08:00" },
+            { status: "厂家收回", time: "2026-07-15T10:00:00+08:00" },
+          ],
+        },
+      ],
+    });
+
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.time])).toEqual([
+      ["待排程", "2026-07-15T08:00:00+08:00"],
+      ["已排程", ""],
+      ["任务进行中", ""],
+      ["任务已完成", "2026-07-15T10:00:00+08:00"],
+      ["厂家收回", "2026-07-15T10:00:00+08:00"],
+    ]);
+  });
+
+  test("uses the first experiment schedule time for the task scheduled step", () => {
+    const view = buildReturnedTaskHistoryView({
+      tasks: [{ code: "TASK-SCHEDULED-AT", name: "排程时间任务", status: "厂家收回" }],
+      samples: [
+        {
+          code: "SP-SCHEDULED-001",
+          task_code: "TASK-SCHEDULED-AT",
+          status: "厂家收回",
+          trays: [{ tray_code: "TP-SCHEDULED-001", status: "厂家收回" }],
+          history: [
+            { status: "到货", time: "2026-07-15T08:00:00+08:00" },
+            { status: "实验已完成", time: "2026-07-15T14:00:00+08:00" },
+            { status: "厂家收回", time: "2026-07-15T15:00:00+08:00" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: "TASK-SCHEDULED-AT", experiment_code: "EXP-LATE", start_at: "2026-07-15T11:00:00+08:00" },
+        { task_code: "TASK-SCHEDULED-AT", experiment_code: "EXP-FIRST", start_at: "2026-07-15T09:30:00+08:00" },
+      ],
+    });
+
+    expect(view.tasks[0].taskFlow.map((step) => [step.label, step.time])).toEqual([
+      ["待排程", "2026-07-15T08:00:00+08:00"],
+      ["已排程", "2026-07-15T09:30:00+08:00"],
+      ["任务进行中", ""],
+      ["任务已完成", "2026-07-15T14:00:00+08:00"],
+      ["厂家收回", "2026-07-15T15:00:00+08:00"],
+    ]);
+  });
+
   test("filters returned task history by search text and recent day window with pagination", () => {
     const view = buildReturnedTaskHistoryView({
       now: "2026-05-19T12:00:00+08:00",
