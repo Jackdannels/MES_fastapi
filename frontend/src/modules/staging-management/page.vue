@@ -138,6 +138,7 @@
               data-testid="zancun-scan-code"
               type="text"
               placeholder="请扫描或输入托盘编号"
+              @input="handleScanInput"
               @keyup="handleScanKeyup"
             />
             <button
@@ -322,6 +323,7 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { writeStorageTrayAction, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
   applyZancunInventoryAction,
@@ -571,6 +573,10 @@ const resetScanForm = () => {
   scanForm.code = "";
 };
 
+const handleScanInput = (event) => {
+  scanForm.code = normalizeTrayScanCode(event?.target?.value);
+};
+
 const resetScanCodeAfterAttempt = () => {
   resetScanForm();
   if (scanInputRef.value) {
@@ -701,6 +707,7 @@ const resolveScannedDetail = () => {
     return null;
   }
 
+  scanForm.code = normalizeTrayScanCode(scanForm.code);
   const detail = buildZancunScanDetail(overviewSourceRows.value, scanForm.code, activeScanMode.value, { room: activeRoom.value });
   if (!detail.found) {
     scanWarning.value = activeScanMode.value === "stockIn" ? "未找到对应的入库托盘。" : "未找到对应的出库托盘。";
@@ -715,12 +722,13 @@ const submitStockInScan = async () => {
   if (scanSubmitting.value) {
     return;
   }
-  const scannedCode = String(scanForm.code ?? "").trim();
+  const scannedCode = normalizeTrayScanCode(scanForm.code);
   if (!scannedCode) {
     scanWarning.value = "请先完成扫码或输入托盘编号。";
     resetScanCodeAfterAttempt();
     return;
   }
+  scanForm.code = scannedCode;
   const detail = buildZancunScanDetail(overviewSourceRows.value, scannedCode, activeScanMode.value, { room: activeRoom.value });
 
   scanSubmitting.value = true;

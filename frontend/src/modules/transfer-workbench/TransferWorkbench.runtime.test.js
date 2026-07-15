@@ -531,10 +531,13 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="transfer-dispatch-panel"]').classes()).toContain("transfer-dispatch-shell");
     await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("MES-TRAY:SYLU-2026-03-102-TP-001");
+    expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("SYLU-2026-03-102-TP-001");
     await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001");
+    expect(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element.value).toBe("");
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="transfer-dispatch-scan-input"]').element);
     const summary = wrapper.get('[data-testid="transfer-dispatch-tray-summary"]');
     expect(summary.exists()).toBe(true);
     const summaryTaskNo = summary.get('[data-testid="transfer-dispatch-summary-task-no"]');
@@ -702,10 +705,13 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.get('[data-testid="tray-error-sample-scan-input"]').exists()).toBe(true);
     await wrapper.get('[data-testid="tray-error-sample-scan-input"]').setValue("MES-TRAY:SYLU-2026-03-102-TP-001");
+    expect(wrapper.get('[data-testid="tray-error-sample-scan-input"]').element.value).toBe("SYLU-2026-03-102-TP-001");
     await wrapper.get('[data-testid="tray-error-sample-query"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("振动一室");
+    expect(wrapper.get('[data-testid="tray-error-sample-scan-input"]').element.value).toBe("");
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="tray-error-sample-scan-input"]').element);
     expect(wrapper.get('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(true);
 
     await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");

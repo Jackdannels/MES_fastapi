@@ -460,9 +460,9 @@ describe("VisualizationPage runtime", () => {
       expect(fourthCard.text()).toContain("已排程");
       expect(fourthCard.text()).not.toContain("有任务");
       expect(fourthCard.find(".metric-scheduled").text()).toContain("1");
-      expect(fourthCard.find(".metric-repair").text()).toContain("1");
+      expect(fourthCard.find(".metric-repair").text()).toContain("0");
       expect(fourthCard.find(".metric-running").text()).toContain("1");
-      expect(fourthCard.find(".metric-urgent").text()).toContain("0");
+      expect(fourthCard.find(".metric-upkeep").text()).toContain("1");
       expect(fourthCard.text()).toContain("TASK-RUN");
       expect(fourthCard.text()).toContain("TASK-WAIT");
       expect(fourthCard.text()).toContain("保养");

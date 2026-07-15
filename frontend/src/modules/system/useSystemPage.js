@@ -15,7 +15,6 @@ import {
 import { buildQrCodeSvg, buildSvgImageDataUrl } from "@/lib/qrCode";
 import { formatBusinessDateKey } from "@/lib/dateTime";
 import { TEST_LABS } from "@/lib/labs";
-import { readMasterLabs } from "@/lib/masterDataApi";
 import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
 const EMPLOYEE_ROLE_OPTIONS = Object.freeze(["试验员", "试验组长"]);
@@ -39,8 +38,6 @@ const createOperationLogFilters = () => ({
   labName: "",
   labNames: [],
 });
-
-const uniqueTextValues = (values) => [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 
 const resolveLiveTodaySeconds = (employee, nowMs) => {
   const baseSeconds = Number(employee?.todaySeconds || 0);
@@ -330,18 +327,10 @@ function useSystemPage() {
       : [...selected, normalizedEmployeeName];
   };
 
-  const openOperationLogLabSelector = async () => {
+  const openOperationLogLabSelector = () => {
     operationLogEmployeeMenuOpen.value = false;
     operationLogLabSelectorOpen.value = true;
-    try {
-      const masterLabs = await readMasterLabs();
-      const labNames = uniqueTextValues(masterLabs.map((lab) => lab?.labName || lab?.name));
-      if (labNames.length) {
-        operationLogLabOptions.value = labNames;
-      }
-    } catch {
-      // 主数据暂不可用时继续使用内置试验间清单，保证筛选弹窗仍可工作。
-    }
+    operationLogLabOptions.value = [...TEST_LABS];
   };
 
   const closeOperationLogLabSelector = () => {

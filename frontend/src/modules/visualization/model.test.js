@@ -200,7 +200,7 @@ describe("visualization model", () => {
       startAt: "2026-06-17 15:20",
       endAt: "2026-06-17 16:30",
       statusLabel: "已排程",
-      statusTone: "task",
+      statusTone: "scheduled",
       taskCode: "TASK-WAIT",
     }));
   });
@@ -479,14 +479,14 @@ describe("visualization model", () => {
         remainingLabel: "00:25:00",
       }),
       shouldBlink: true,
-      statusLabel: "25 分钟",
-      statusTone: "urgent",
+      statusLabel: "实验进行中",
+      statusTone: "running",
     }));
     expect(view.labs.find((lab) => lab.labName === "四综合实验室")).toEqual(expect.objectContaining({
       countdown: expect.objectContaining({ active: false }),
-      shouldBlink: true,
+      shouldBlink: false,
       statusLabel: "实验已完成",
-      statusTone: "urgent",
+      statusTone: "completed",
       taskCode: "TASK-DONE",
     }));
   });

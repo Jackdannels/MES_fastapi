@@ -2560,7 +2560,7 @@
 
 .visual-lab-matrix-screen .stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--gap);
 }
 
@@ -2592,6 +2592,8 @@
 .visual-lab-matrix-screen .stat.red { border-color: var(--red); background-color: rgba(240, 75, 67, 0.09); }
 .visual-lab-matrix-screen .stat.green { border-color: var(--green); background-color: rgba(19, 197, 123, 0.1); }
 .visual-lab-matrix-screen .stat.orange { border-color: var(--orange); background-color: rgba(245, 166, 35, 0.12); }
+.visual-lab-matrix-screen .stat.gray { border-color: #71839a; background-color: rgba(113, 131, 154, 0.1); }
+.visual-lab-matrix-screen .stat.purple { border-color: #a87cff; background-color: rgba(168, 124, 255, 0.12); }
 
 .visual-lab-matrix-screen .grid {
   display: grid;
@@ -2620,6 +2622,7 @@
 .visual-lab-matrix-screen .card.maintenance { border-color: #a855f7; background: linear-gradient(135deg, rgba(54, 26, 86, 0.9), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.upkeep { border-color: var(--red); background: linear-gradient(135deg, rgba(58, 18, 18, 0.9), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.running { border-color: var(--green); background: linear-gradient(135deg, rgba(7, 52, 38, 0.88), rgba(2, 15, 20, 0.86)); }
+.visual-lab-matrix-screen .card.completed { border-color: var(--orange); background: linear-gradient(135deg, rgba(58, 45, 16, 0.92), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.near { border-color: var(--orange); background: linear-gradient(135deg, rgba(58, 45, 16, 0.92), rgba(2, 15, 20, 0.86)); }
 .visual-lab-matrix-screen .card.is-blinking { animation: lab-matrix-pulse 1.25s ease-in-out infinite; }
 
@@ -2700,6 +2703,7 @@
 .visual-lab-matrix-screen .card.maintenance .badge { color: #c084fc; }
 .visual-lab-matrix-screen .card.upkeep .badge { color: var(--red); }
 .visual-lab-matrix-screen .card.running .badge { color: var(--green); }
+.visual-lab-matrix-screen .card.completed .badge { color: var(--orange); }
 .visual-lab-matrix-screen .card.near .badge { color: var(--orange); }
 
 .visual-lab-matrix-screen .card-body {

@@ -449,7 +449,9 @@
               </div>
               <span class="transfer-barcode-preview-count">{{ item.samples.length }} 件样品</span>
             </div>
-            <div v-if="item.barcodeSvg" class="transfer-modal__barcode transfer-barcode-preview-code transfer-barcode-preview-code--themed" v-html="item.barcodeSvg"></div>
+            <div class="transfer-barcode-preview-layout">
+              <div v-if="item.barcodeSvg" class="transfer-modal__barcode transfer-barcode-preview-code transfer-barcode-preview-code--themed" v-html="item.barcodeSvg"></div>
+              <div class="transfer-barcode-preview-info">
             <div class="transfer-barcode-preview-meta">
               <div>
                 <span>托盘</span>
@@ -477,6 +479,8 @@
               >
                 {{ label }}
               </span>
+            </div>
+              </div>
             </div>
           </article>
         </div>

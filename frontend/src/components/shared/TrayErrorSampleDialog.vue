@@ -9,11 +9,12 @@
       <div class="tray-error-sample-toolbar">
         <input
           ref="scanInputRef"
-          v-model="model.state.scanCode"
+          :value="model.state.scanCode"
           class="search-input tray-error-sample-input"
           data-testid="tray-error-sample-scan-input"
           placeholder="请扫描或输入托盘编号"
           type="text"
+          @input="model.updateScanCode($event.target.value)"
           @keyup.enter="handleLookup"
         />
         <button

@@ -53,17 +53,23 @@ function useTransferDispatch(options = {}) {
     feedbackState.clear();
   };
 
+  const updateScanCode = (value) => {
+    state.scanCode = normalizeTrayScanCode(value);
+  };
+
   const lookupTray = async () => {
     const trayCode = normalizeTrayScanCode(state.scanCode);
     if (!trayCode) {
       feedbackState.show("请输入或扫描托盘编号。", "warning");
       return false;
     }
+    state.scanCode = trayCode;
 
     state.loading = true;
     try {
       const payload = await fetchTrayDispatch(trayCode);
       applyDispatchPayload(payload);
+      state.scanCode = "";
       feedbackState.clear();
       return true;
     } catch (error) {
@@ -140,6 +146,7 @@ function useTransferDispatch(options = {}) {
     resetDispatch,
     state,
     submitDestination,
+    updateScanCode,
   };
 }
 

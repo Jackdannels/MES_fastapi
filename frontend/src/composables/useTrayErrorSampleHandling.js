@@ -66,6 +66,10 @@ function useTrayErrorSampleHandling(options = {}) {
     feedbackState.clear();
   };
 
+  const updateScanCode = (value) => {
+    state.scanCode = normalizeTrayScanCode(value);
+  };
+
   const open = () => {
     reset();
     state.open = true;
@@ -94,11 +98,13 @@ function useTrayErrorSampleHandling(options = {}) {
       feedbackState.show("请输入或扫描托盘编号。", "warning");
       return false;
     }
+    state.scanCode = trayCode;
 
     state.loading = true;
     try {
       const payload = await fetchWithdrawDispatchLookup(trayCode);
       applyDispatchPayload(payload);
+      state.scanCode = "";
       feedbackState.clear();
       return true;
     } catch (error) {
@@ -147,6 +153,7 @@ function useTrayErrorSampleHandling(options = {}) {
     open,
     reset,
     state,
+    updateScanCode,
     withdrawDispatch,
   };
 }

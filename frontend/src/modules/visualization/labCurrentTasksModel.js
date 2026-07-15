@@ -259,22 +259,22 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, sna
   const taskCode = normalizeText(displayTask?.taskCode);
   const statusTone = repair
     ? issueTone || "repair"
-    : isUrgentRunning || isCompleted
-      ? "urgent"
+    : isCompleted
+      ? "completed"
       : countdown.active || normalizeText(deviceRow?.status) === "工作中"
         ? "running"
         : taskCode
-          ? "task"
-          : "idle";
+          ? "scheduled"
+          : "unplanned";
   const statusLabel = repair
-    ? normalizeText(rawDevice?.status) || normalizeText(deviceRow?.status) || "维修"
-    : isUrgentRunning
-      ? formatUrgentMinutes(remainingSeconds)
-      : isCompleted
-        ? "实验已完成"
-        : countdown.active
-          ? "实验进行中"
-          : normalizeText(workbench.currentTaskStatus) || normalizeText(deviceRow?.status) || "空闲";
+    ? issueTone === "upkeep" ? "保养" : "维修"
+    : isCompleted
+      ? "实验已完成"
+      : countdown.active
+        ? "实验进行中"
+        : taskCode
+          ? "已排程"
+          : "未排程";
   const startAt = resolveDisplayDateTime(displayTask?.startDateTimeLabel, displayTask?.startAt);
   const endAt = resolveDisplayDateTime(displayTask?.endDateTimeLabel, displayTask?.endAt);
 
@@ -286,9 +286,9 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, sna
     labName,
     planTimeLabel: buildPlanTimeLabel(startAt, endAt),
     sampleCount: displaySampleCount,
-    shouldBlink: statusTone === "urgent",
+    shouldBlink: isUrgentRunning,
     startAt,
-    stageLabel: normalizeText(workbench.currentTaskFlow?.currentStatus) || normalizeText(displayTask?.status) || statusLabel,
+    stageLabel: statusLabel,
     statusLabel,
     statusTone,
     taskCode: taskCode || "-",
@@ -339,17 +339,15 @@ function buildLabCurrentTaskMatrixView(input = {}) {
   const counts = labs.reduce(
     (summary, lab) => {
       summary.total += 1;
-      if (lab.statusTone === "task") {
-        summary.scheduled += 1;
-        summary.task += 1;
-      }
+      if (lab.statusTone === "unplanned") summary.unplanned += 1;
+      if (lab.statusTone === "scheduled") summary.scheduled += 1;
       if (lab.statusTone === "repair") summary.repair += 1;
       if (lab.statusTone === "upkeep") summary.upkeep += 1;
       if (lab.statusTone === "running") summary.running += 1;
-      if (lab.statusTone === "urgent") summary.urgent += 1;
+      if (lab.statusTone === "completed") summary.completed += 1;
       return summary;
     },
-    { repair: 0, running: 0, scheduled: 0, task: 0, total: 0, upkeep: 0, urgent: 0 },
+    { completed: 0, repair: 0, running: 0, scheduled: 0, total: 0, unplanned: 0, upkeep: 0 },
   );
 
   return {

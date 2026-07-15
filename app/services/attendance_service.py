@@ -311,6 +311,12 @@ class InMemoryAttendanceRepository:
         with self._lock:
             return [deepcopy(row) for row in self.operation_logs]
 
+    def clear_operation_logs(self) -> int:
+        with self._lock:
+            count = len(self.operation_logs)
+            self.operation_logs = []
+            return count
+
     def resolve_lab_name(self, lab_code: str) -> str:
         normalized = normalize_text(lab_code)
         for row in DEFAULT_LABS:
@@ -722,6 +728,17 @@ class MySQLAttendanceRepository:
                     """,
                 )
                 return self._rows(cursor)
+
+    def clear_operation_logs(self) -> int:
+        self.ensure_schema()
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM biz_lab_operation_log")
+                row = cursor.fetchone()
+                count = int((row or [0])[0] or 0)
+                cursor.execute("DELETE FROM biz_lab_operation_log")
+            connection.commit()
+        return count
 
     def resolve_lab_name(self, lab_code: str) -> str:
         self.ensure_schema()
@@ -1150,6 +1167,7 @@ class AttendanceService:
         intervals = self.repository.list_intervals()
         closed_intervals = sum(1 for interval in intervals if interval.get("ended_at") is None)
         cleared_intervals = self.repository.clear_intervals()
+        cleared_operation_logs = self.repository.clear_operation_logs()
 
         closed_sessions = 0
         for session in self.repository.list_active_sessions():
@@ -1163,6 +1181,7 @@ class AttendanceService:
                 closed_sessions += 1
         return {
             "clearedIntervals": cleared_intervals,
+            "clearedOperationLogs": cleared_operation_logs,
             "closedIntervals": closed_intervals,
             "closedSessions": closed_sessions,
         }

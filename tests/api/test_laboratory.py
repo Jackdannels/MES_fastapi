@@ -1035,7 +1035,7 @@ def test_laboratory_withdraw_current_allows_stale_target_when_current_history_is
     assert updated["trays"][0]["target_lab"] == "冲击一室"
 
 
-def test_laboratory_withdraw_current_uses_latest_restore_point_over_current_partial_axis(monkeypatch):
+def test_laboratory_withdraw_current_rejects_partial_axis_even_with_a_newer_restore_point(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "冲击一室",
@@ -1171,16 +1171,12 @@ def test_laboratory_withdraw_current_uses_latest_restore_point_over_current_part
 
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-A/withdraw-current", json={"trayCodes": ["TP-501"]})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["restoredStatus"] == "实验已完成"
-    assert payload["restoredLocation"] == "四综合实验室"
-    assert payload["restoredExperimentName"] == "四综合试验"
+    assert response.status_code == 409
+    assert "已有完成轴向" in response.json()["detail"]
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "实验已完成"
-    assert updated["location"] == "四综合实验室"
-    assert updated["trays"][0]["status"] == "实验已完成"
-    assert "撤回至四综合试验已完成" in updated["history"][0]["detail"]
+    assert updated["status"] == "已到达实验室"
+    assert updated["location"] == "冲击一室"
+    assert updated["trays"][0]["status"] == "已到达实验室"
 
 
 def test_laboratory_withdraw_current_restores_handover_origin_to_arrived(monkeypatch):
@@ -1975,7 +1971,7 @@ def test_laboratory_withdraw_current_restores_pre_appearance_for_all_samples_on_
     assert all("撤回至实验前外观检测间存放" in sample["history"][0]["detail"] for sample in updated_samples)
 
 
-def test_laboratory_withdraw_current_restores_previous_partial_axis_completion(monkeypatch):
+def test_laboratory_withdraw_current_rejects_completed_axis_run(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "冲击二室",
@@ -2049,19 +2045,16 @@ def test_laboratory_withdraw_current_restores_previous_partial_axis_completion(m
 
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-A/withdraw-current", json={"trayCodes": ["TP-501"]})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["restoredStatus"] == "冲击试验部分完成 3/6轴"
-    assert payload["restoredExperimentName"] == "冲击试验"
+    assert response.status_code == 409
+    assert "已有完成轴向" in response.json()["detail"]
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "冲击试验部分完成 3/6轴"
-    assert updated["flow_status"] == "冲击试验部分完成 3/6轴"
-    assert updated["location"] == "冲击一室"
-    assert updated["trays"][0]["status"] == "冲击试验部分完成 3/6轴"
-    assert "撤回至冲击试验部分完成" in updated["history"][0]["detail"]
+    assert updated["status"] == "已到达实验室"
+    assert updated["flow_status"] == "已到达实验室"
+    assert updated["location"] == "冲击二室"
+    assert updated["trays"][0]["status"] == "已到达实验室"
 
 
-def test_laboratory_withdraw_current_uses_later_staging_origin_over_partial_axis_completion(monkeypatch):
+def test_laboratory_withdraw_current_rejects_completed_axis_run_even_when_staging_has_newer_events(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "冲击二室",
@@ -2149,18 +2142,15 @@ def test_laboratory_withdraw_current_uses_later_staging_origin_over_partial_axis
 
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-A/withdraw-current", json={"trayCodes": ["TP-501"]})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["restoredStatus"] == "已到达暂存间"
-    assert payload["restoredExperimentName"] == ""
+    assert response.status_code == 409
+    assert "已有完成轴向" in response.json()["detail"]
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "已到达暂存间"
-    assert updated["location"] == "恒温恒湿间（暂存间）"
-    assert updated["trays"][0]["status"] == "已到达暂存间"
-    assert "撤回至已到达暂存间" in updated["history"][0]["detail"]
+    assert updated["status"] == "已到达实验室"
+    assert updated["location"] == "冲击二室"
+    assert updated["trays"][0]["status"] == "已到达实验室"
 
 
-def test_laboratory_withdraw_current_uses_later_other_experiment_completion_over_current_partial_axis(monkeypatch):
+def test_laboratory_withdraw_current_rejects_current_partial_axis_even_after_another_experiment_completes(monkeypatch):
     sample = sample_with_history(
         "已到达实验室",
         "振动二室",
@@ -2322,18 +2312,15 @@ def test_laboratory_withdraw_current_uses_later_other_experiment_completion_over
 
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-C/withdraw-current", json={"trayCodes": ["TP-501"]})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["restoredStatus"] == "实验已完成"
-    assert payload["restoredExperimentName"] == "冲击试验"
+    assert response.status_code == 409
+    assert "已有完成轴向" in response.json()["detail"]
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "实验已完成"
-    assert updated["location"] == "冲击一室"
-    assert updated["trays"][0]["status"] == "实验已完成"
-    assert "撤回至冲击试验已完成" in updated["history"][0]["detail"]
+    assert updated["status"] == "已到达实验室"
+    assert updated["location"] == "振动二室"
+    assert updated["trays"][0]["status"] == "已到达实验室"
 
 
-def test_laboratory_withdraw_current_partial_axis_restores_previous_stable_progress(monkeypatch):
+def test_laboratory_withdraw_current_rejects_current_partial_axis_status(monkeypatch):
     sample = sample_with_history(
         "振动试验部分完成 3/6轴",
         "振动一室",
@@ -2431,15 +2418,13 @@ def test_laboratory_withdraw_current_partial_axis_restores_previous_stable_progr
 
     response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-C/withdraw-current", json={"trayCodes": ["TP-501"]})
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["restoredStatus"] == "冲击试验部分完成 3/6轴"
-    assert payload["restoredExperimentName"] == "冲击试验"
+    assert response.status_code == 409
+    assert "已有完成轴向" in response.json()["detail"]
     updated = storage.read("mes.samples")[0]
-    assert updated["status"] == "冲击试验部分完成 3/6轴"
-    assert updated["trays"][0]["status"] == "冲击试验部分完成 3/6轴"
+    assert updated["status"] == "振动试验部分完成 3/6轴"
+    assert updated["trays"][0]["status"] == "振动试验部分完成 3/6轴"
     assert updated["trays"][0]["target_experiment_code"] == "EXP-A"
-    assert updated["trays"][0]["target_lab"] == "冲击一室"
+    assert updated["trays"][0]["target_lab"] == "振动一室"
 
 
 def test_laboratory_withdraw_current_prefers_staging_origin_over_previous_experiment_partial_axis(monkeypatch):

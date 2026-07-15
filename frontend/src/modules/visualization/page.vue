@@ -848,6 +848,8 @@ const CurrentLabTasksScreen = {
         ? "running"
         : lab.statusTone === "urgent"
           ? "near"
+          : lab.statusTone === "completed"
+            ? "completed"
           : ["repair", "maintenance", "upkeep"].includes(lab.statusTone)
             ? lab.statusTone
             : lab.statusTone === "task" || lab.statusTone === "scheduled"
@@ -933,7 +935,6 @@ const CurrentLabTasksScreen = {
     return () => {
       const labs = Array.isArray(props.currentLabTaskView?.labs) ? props.currentLabTaskView.labs : [];
       const counts = props.currentLabTaskView?.counts || {};
-      const issueCount = (counts.repair || 0) + (counts.maintenance || 0) + (counts.upkeep || 0);
       return h("div", { ref: matrixRoot, class: ["visual-lab-matrix-screen", "screen", props.compact ? "is-compact" : ""] }, [
         h("header", { class: "header" }, [
           h("div", [
@@ -942,10 +943,12 @@ const CurrentLabTasksScreen = {
           ]),
         ]),
         h("div", { class: "stats" }, [
-          h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled ?? counts.task ?? 0)]),
-          h("div", { class: "metric-repair stat red" }, [h("span", "维修/保养"), h("strong", issueCount)]),
+          h("div", { class: "metric-unplanned stat gray" }, [h("span", "未排程"), h("strong", counts.unplanned || 0)]),
+          h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled || 0)]),
           h("div", { class: "metric-running stat green" }, [h("span", "实验进行中"), h("strong", counts.running || 0)]),
-          h("div", { class: "metric-urgent stat orange" }, [h("span", "临近/完成"), h("strong", counts.urgent || 0)]),
+          h("div", { class: "metric-completed stat orange" }, [h("span", "实验已完成"), h("strong", counts.completed || 0)]),
+          h("div", { class: "metric-repair stat red" }, [h("span", "维修"), h("strong", counts.repair || 0)]),
+          h("div", { class: "metric-upkeep stat purple" }, [h("span", "保养"), h("strong", counts.upkeep || 0)]),
         ]),
         labs.length
           ? h("div", { class: "grid" }, labs.map(renderLabCard))

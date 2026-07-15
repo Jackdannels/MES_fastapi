@@ -471,6 +471,7 @@
               data-testid="laboratory-compare-scan-input"
               type="text"
               placeholder="请扫描或输入托盘编号"
+              @input="compareScanCode = normalizeTrayScanCode($event.target.value)"
               @keyup.enter="submitCompareScan"
             />
           </label>
@@ -718,6 +719,7 @@ defineOptions({
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useLaboratoryPage } from "./useLaboratoryPage";

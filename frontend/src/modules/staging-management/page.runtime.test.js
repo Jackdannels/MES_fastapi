@@ -738,6 +738,7 @@ describe("StagingManagementPage runtime", () => {
 
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("MES-TRAY:SYLU-2026-04-101-TP-001");
+    expect(mounted.get('[data-testid="zancun-scan-code"]').element.value).toBe("SYLU-2026-04-101-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
     await settlePage(mounted);
 

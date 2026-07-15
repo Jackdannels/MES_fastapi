@@ -19,15 +19,15 @@
         data-testid="transfer-dispatch-scan-input"
         placeholder="输入或扫描托盘编号"
         type="text"
-        @input="dispatchState.state.scanCode = $event.target.value"
-        @keyup.enter="dispatchState.lookupTray"
+        @input="dispatchState.updateScanCode($event.target.value)"
+        @keyup.enter="handleLookup"
       />
       <button
         class="action-btn"
         data-testid="transfer-dispatch-scan-submit"
         type="button"
         :disabled="dispatchState.state.loading"
-        @click="dispatchState.lookupTray"
+        @click="handleLookup"
       >
         {{ dispatchState.state.loading ? "查询中..." : "查询托盘" }}
       </button>
@@ -192,6 +192,13 @@ const resolveDispatchExperimentTagTone = (value) => {
 onMounted(() => {
   void focusScanInput();
 });
+
+const handleLookup = async () => {
+  const lookedUp = await dispatchState.lookupTray();
+  if (lookedUp) {
+    await focusScanInput();
+  }
+};
 
 const handleDestinationSubmit = async (destination) => {
   const submitted = await dispatchState.submitDestination(destination);

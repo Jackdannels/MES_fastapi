@@ -841,8 +841,6 @@ def resolve_restore_snapshot(
     task_code: str,
     current_experiment_name: str,
     tray_code: str,
-    current_experiment_code: str = "",
-    skip_current_partial_axis: bool = False,
 ) -> dict[str, str]:
     completed = latest_previous_completed_experiment(
         sample,
@@ -854,7 +852,6 @@ def resolve_restore_snapshot(
         snapshot,
         task_code=task_code,
         tray_code=tray_code,
-        exclude_experiment_code=current_experiment_code if skip_current_partial_axis else "",
     )
     staging = latest_staging_origin_snapshot(sample, snapshot, tray_code)
     appearance = latest_appearance_origin_snapshot(sample, snapshot, tray_code)
@@ -955,7 +952,7 @@ def status_matches_current_partial_axis(status: str, current_experiment_name: st
 
 def is_withdrawable_laboratory_status(status: str, current_experiment_name: str = "") -> bool:
     normalized = normalize_text(status)
-    return normalized in ALLOW_WITHDRAW_STATUSES or status_matches_current_partial_axis(normalized, current_experiment_name)
+    return normalized in ALLOW_WITHDRAW_STATUSES
 
 
 def latest_current_experiment_withdrawable_history_status(
@@ -984,19 +981,82 @@ def latest_current_experiment_withdrawable_history_status(
     return normalize_text(latest_match.get("status")) if latest_match else ""
 
 
-def sample_or_tray_has_current_partial_axis_status(
-    sample: dict[str, Any],
-    matched_tray_codes: list[str],
-    current_experiment_name: str,
-) -> bool:
-    if status_matches_current_partial_axis(sample.get("status"), current_experiment_name):
-        return True
-    matched_code_set = {normalize_text(code) for code in matched_tray_codes}
-    return any(
-        normalize_text(tray.get("tray_code")) in matched_code_set
-        and status_matches_current_partial_axis(tray.get("status"), current_experiment_name)
-        for tray in as_list(sample.get("trays"))
-    )
+def status_has_current_experiment_progress(status: Any, current_experiment_name: str) -> bool:
+    return status_matches_current_partial_axis(normalize_text(status), current_experiment_name)
+
+
+def completed_axis_tray_codes(
+    snapshot: dict[str, list[dict[str, Any]]],
+    sample_matches: list[tuple[dict[str, Any], list[str]]],
+    *,
+    task_code: str,
+    experiment_code: str,
+    experiment_name: str,
+) -> list[str]:
+    """Return selected trays that already contain progress for the current experiment.
+
+    Status and history checks catch legacy or manually corrected rows. Run, tray-run,
+    and step records make the restriction authoritative even when a current status was
+    overwritten unexpectedly.
+    """
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    selected_codes = {
+        normalize_text(tray_code)
+        for _sample, tray_codes in sample_matches
+        for tray_code in tray_codes
+        if normalize_text(tray_code)
+    }
+    if not selected_codes:
+        return []
+
+    blocked_codes: set[str] = set()
+    for sample, tray_codes in sample_matches:
+        matched_codes = {normalize_text(tray_code) for tray_code in tray_codes if normalize_text(tray_code)}
+        if status_has_current_experiment_progress(sample.get("status"), experiment_name):
+            blocked_codes.update(matched_codes)
+        for tray in as_list(sample.get("trays")):
+            tray_code = normalize_text(tray.get("tray_code"))
+            if tray_code in matched_codes and status_has_current_experiment_progress(tray.get("status"), experiment_name):
+                blocked_codes.add(tray_code)
+        for entry in as_list(sample.get("history")):
+            parsed = parse_experiment_history_detail(entry.get("detail"), normalized_task_code)
+            if parsed and parsed["experimentName"] == normalize_text(experiment_name) and status_has_current_experiment_progress(
+                parsed["status"], experiment_name
+            ):
+                blocked_codes.update(matched_codes)
+
+    tray_codes_by_run: dict[str, set[str]] = {}
+    for relation in snapshot["experiment_run_trays"]:
+        if (
+            normalize_text(relation.get("task_code") or relation.get("task_no")) != normalized_task_code
+            or normalize_text(relation.get("experiment_code") or relation.get("experiment_no")) != normalized_experiment_code
+        ):
+            continue
+        tray_code = normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+        if tray_code not in selected_codes:
+            continue
+        run_no = normalize_text(relation.get("run_no") or relation.get("runNo"))
+        if run_no:
+            tray_codes_by_run.setdefault(run_no, set()).add(tray_code)
+        if normalize_text(relation.get("status") or relation.get("run_tray_status")) in COMPLETED_EXPERIMENT_STATUSES:
+            blocked_codes.add(tray_code)
+
+    for run in snapshot["experiment_runs"]:
+        if (
+            normalize_text(run.get("task_code") or run.get("task_no")) != normalized_task_code
+            or normalize_text(run.get("experiment_code") or run.get("experiment_no")) != normalized_experiment_code
+            or normalize_text(run.get("status")) not in COMPLETED_EXPERIMENT_STATUSES
+        ):
+            continue
+        blocked_codes.update(tray_codes_by_run.get(normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")), set()))
+
+    for step in snapshot["experiment_run_steps"]:
+        if normalize_text(step.get("status")) not in COMPLETED_EXPERIMENT_STATUSES:
+            continue
+        blocked_codes.update(tray_codes_by_run.get(normalize_text(step.get("run_no") or step.get("runNo")), set()))
+
+    return sorted(blocked_codes)
 
 
 def withdrawable_sample_matches(
@@ -1228,6 +1288,20 @@ def withdraw_current_experiment(
             if not sample_matches:
                 raise HTTPException(status_code=404, detail="当前实验未找到对应托盘样品")
 
+            progressed_tray_codes = completed_axis_tray_codes(
+                snapshot,
+                sample_matches,
+                task_code=normalized_task_code,
+                experiment_code=normalized_experiment_code,
+                experiment_name=current_experiment_name,
+            )
+            if progressed_tray_codes:
+                joined_tray_codes = "、".join(progressed_tray_codes)
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"托盘 {joined_tray_codes} 当前实验已有完成轴向，不允许撤回实验任务；请保持当前实验进度",
+                )
+
             withdrawable_matches = withdrawable_sample_matches(
                 sample_matches,
                 current_experiment_name=current_experiment_name,
@@ -1251,19 +1325,12 @@ def withdraw_current_experiment(
             }
             for sample, matched_tray_codes in withdrawable_matches:
                 restore_sample = restore_samples_by_code.get(normalize_text(sample.get("code")), sample)
-                skip_current_partial_axis = sample_or_tray_has_current_partial_axis_status(
-                    sample,
-                    matched_tray_codes,
-                    current_experiment_name,
-                )
                 restore_snapshot = resolve_restore_snapshot(
                     restore_sample,
                     restore_lookup_snapshot,
                     normalized_task_code,
                     current_experiment_name,
                     matched_tray_codes[0],
-                    current_experiment_code=normalized_experiment_code,
-                    skip_current_partial_axis=skip_current_partial_axis,
                 )
                 restored_targets.append(restore_snapshot)
                 next_trays = []

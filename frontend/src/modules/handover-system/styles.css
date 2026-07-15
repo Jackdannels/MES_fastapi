@@ -892,7 +892,7 @@
 }
 
 .transfer-barcode-preview-modal {
-  width: min(820px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - 32px));
   padding: 18px;
   border-color: rgba(20, 184, 166, 0.34);
   background:
@@ -987,8 +987,8 @@
 }
 
 .transfer-barcode-preview-code {
-  margin: 12px 0;
-  padding: 16px;
+  margin: 0;
+  padding: 12px;
   border-color: rgba(45, 212, 191, 0.34);
   background:
     linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(14, 165, 233, 0.06)),
@@ -1000,7 +1000,7 @@
 
 .transfer-barcode-preview-code svg {
   margin-inline: auto;
-  width: min(220px, 100%);
+  width: min(190px, 100%);
   height: auto;
   padding: 12px;
   border-radius: 6px;
@@ -1013,6 +1013,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+
+.transfer-barcode-preview-layout { display: grid; grid-template-columns: minmax(174px, .72fr) minmax(0, 1.5fr); gap: 12px; align-items: stretch; margin-top: 12px; }
+.transfer-barcode-preview-layout .transfer-barcode-preview-code { display: grid; place-items: center; min-height: 100%; }
+.transfer-barcode-preview-info { min-width: 0; }
 
 .transfer-barcode-preview-meta div,
 .transfer-barcode-preview-detail,
@@ -1036,6 +1040,11 @@
 .transfer-barcode-preview-samples,
 .transfer-barcode-preview-card .transfer-modal__experiment-tags {
   margin-top: 8px;
+}
+
+@media (max-width: 620px) {
+  .transfer-barcode-preview-layout { grid-template-columns: 1fr; }
+  .transfer-barcode-preview-layout .transfer-barcode-preview-code { min-height: auto; }
 }
 
 .transfer-barcode-preview-modal .transfer-modal__actions {

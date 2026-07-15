@@ -512,6 +512,7 @@ def test_attendance_clear_all_sessions_preserves_personnel_accounts():
     current_time["value"] = datetime(2026, 7, 3, 8, 5, 0, tzinfo=timezone.utc)
     service.finish_work_interval(lab_name="冲击二室")
     assert next(row for row in service.list_work_times("2026-07-03") if row["username"] == "reset-worker")["todaySeconds"] == 300
+    assert service.list_operation_logs(raw_date="2026-07-03")
 
     result = service.clear_all_sessions(reason="task-reset")
     session = service.read_lab_session("冲击二室")
@@ -520,9 +521,11 @@ def test_attendance_clear_all_sessions_preserves_personnel_accounts():
 
     assert result["closedSessions"] == 1
     assert result["clearedIntervals"] == 1
+    assert result["clearedOperationLogs"] == 3
     assert session["active"] is False
     assert any(user["username"] == "reset-worker" for user in users)
     assert worker["todaySeconds"] == 0
+    assert service.list_operation_logs(raw_date="2026-07-03") == []
 
 
 def test_api_experiment_start_and_complete_updates_attendance_work_interval(monkeypatch):
